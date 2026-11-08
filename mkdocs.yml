@@ -82,6 +82,7 @@ nav:
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
+    - RFC-0002 — The job runtime: rfc/RFC-0002-job-runtime.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md

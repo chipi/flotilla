@@ -40,7 +40,9 @@ inventory and the design.
    [ADR-0002](ADR-0002-run-in-docker.md): it runs in containers in the production engine, deployed
    by the operator account, as non-root users.*
 9. **Local models first.** Each job declares its model policy, and every call goes through LiteLLM.
-   The daily brief is local only.
+   The daily brief is local only. *Amended by [RFC-0002](../rfc/RFC-0002-job-runtime.md) §3
+   (operator, 2026-11-08): every call goes through the one model client to an OpenAI-compatible
+   endpoint; LiteLLM is the reference deployment, not a requirement.*
 10. **It reports into the homelab's observability stack** like every other service: metrics, logs,
     traces, LLM traces, errors, ops events, dashboards and alerts.
 11. **MIT licence. The docs site is MkDocs Material**, strict, on GitHub Pages.

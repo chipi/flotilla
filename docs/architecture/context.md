@@ -15,7 +15,7 @@ sources. It uses the ones that exist and is careful about what it may change.
 
 | System | Direction | Why | Notes |
 |---|---|---|---|
-| LiteLLM gateway | out | every model call | per-fleet virtual key and budget; local models first; no direct provider calls |
+| LiteLLM gateway | out | every model call | the reference OpenAI-compatible endpoint ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §3); per-fleet virtual key and budget; local models first |
 | Local models (X3 Qwen3-30B in Ollama, DGX Qwen3-30B in vLLM) | via LiteLLM | reasoning in agent steps | the DGX endpoint has no tool calling yet |
 | VictoriaMetrics, VictoriaLogs, VictoriaTraces | in (read) | evidence for triage and ops jobs | read-only tools |
 | VictoriaMetrics, VictoriaLogs, VictoriaTraces | out (write) | flotilla's own metrics, logs, traces | through the host's Alloy collector |

@@ -32,7 +32,7 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | Control plane | Go, stdlib-first (`flotillad`, CLI, MCP server, server-rendered UI in one binary) | grows from fleetd; single binary (ADR-0001) |
 | Job runtime | Python (stdlib-first) | the triage fleet is Python; SEO data work (Parquet, DuckDB) (ADR-0001) |
 | State | SQLite on the host (runs, ledger, approvals, budgets); Parquet for analytical fleet data | one file, transactional, easy to back up |
-| Models | through a LiteLLM gateway only; local first; per-job model policy | ADR-0001 §9 |
+| Models | any OpenAI-compatible endpoint through one model client; LiteLLM is the reference deployment; local first; per-job model policy | ADR-0001 §9, RFC-0002 §3 |
 | Test framework | `go test` (fleetd); the triage fleet's own stdlib test scripts (`test_units.py`, `test_capture.py`, `test_scrub.py`) and replays (`make replay`) | as imported from the homelab, phase 1 |
 | Linter / formatter | gofmt + go vet (fleetd); Python byte-compile (ruff not yet: it would be a new dependency) | phase 1 |
 | CI runner | GitHub Actions | matches `chipi` standard |
@@ -58,8 +58,9 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
    that changes decisions is replayed against recorded past cases before it ships (the operator's
    `replay-proven-fix` practice). Nothing rewrites its own playbooks or specs at runtime.
 4. **Gates are code.** What leaves the platform is decided by deterministic checks after the model.
-5. **Every model call goes through LiteLLM,** under the job's declared model policy. No direct
-   provider calls, and no silent cloud fallback.
+5. **Every model call goes through the one model client,** to an OpenAI-compatible endpoint, under
+   the job's declared model policy (RFC-0002 §3). LiteLLM is the reference deployment, not a
+   requirement. No undeclared fallback.
 6. **Observable like every homelab service.**
    - Metrics, logs, traces, LLM traces, errors, ops events, dashboards and alerts on the homelab's
      conventions (RFC-0001 §6.2).

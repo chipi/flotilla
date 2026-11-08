@@ -34,7 +34,7 @@ sixth. The operator decided, 2026-11-08:
   2. add the SEO fleet;
   3. remove all fleet code from agentic-ai-homelab.
 
-**Non-goals for this RFC:** the SEO fleet itself (RFC-0002), multi-user or multi-tenant use, any
+**Non-goals for this RFC:** the SEO fleet itself (RFC-0003; first numbered RFC-0002, renumbered 2026-11-08), multi-user or multi-tenant use, any
 cloud-hosted part, and adopting a third-party agent framework.
 
 ## 2. What exists today (inventory summary)
@@ -328,7 +328,7 @@ Each phase leaves everything working. The triage fleet never stops.
    runs the triage fleet unchanged through a spec that wraps today's command (`steps: [{ run:
    "python3 orchestrator.py --cycle …" }]`). Shadow-compare it against the old fleetd for a few days,
    then switch.
-3. **Job runtime and the triage fleet onto it:**
+3. **Job runtime and the triage fleet onto it** ([RFC-0002](RFC-0002-job-runtime.md)):
    - one LLM client;
    - the ledger client writing decisions, with the TSV history imported;
    - the playbook moved out of `triage.py` into a file;
@@ -348,7 +348,7 @@ Each phase leaves everything working. The triage fleet never stops.
    - the fleet docs (RFC-0002 to RFC-0005, ADR-0008, the guides), moved;
    - redirects left in the docs.
 
-   Step 2 (RFC-0002, the SEO fleet) starts once phases 2–3 are done; it needs the runtime, not the UI.
+   Step 2 (RFC-0003, the SEO fleet) starts once phases 2–3 are done; it needs the runtime, not the UI.
 
 ## 10. Decisions (operator, 2026-11-08)
 

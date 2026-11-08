@@ -35,7 +35,7 @@ A library, plus the `flotilla-run` entry point that a fleet worker executes for 
 | **Tool registry** | the read-only functions a model may call. Each checks its scope (site, repo, time range, size cap) and returns provenance with the data. |
 | **Gates** | deterministic checks on the model's answer: evidence cited and real, not a duplicate, in scope, plus the fleet's own gates. A gate failure records the decision as `gated`, not dropped silently. |
 | **Outputs** | the only write paths: a GitHub issue, comment, PR or label; a finding file; a page; a push. Each checks scope against config and runs only when the stage allows it or after approval. |
-| **LLM client** | one client for every call, through LiteLLM, under the job's model policy. It records model, tokens, cost and latency, and traces to Langfuse. |
+| **LLM client** | one client for every call, to any OpenAI-compatible endpoint (LiteLLM is the reference deployment), under the job's model policy. It records model, tokens, cost and latency, and traces every call ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §3). |
 | **Ledger client** | reports decisions to flotillad. It never writes the database directly. |
 | **Config loader** | reads `~/.config/flotilla/config.yaml` and the secrets files it names. One set of names, no drift. |
 
