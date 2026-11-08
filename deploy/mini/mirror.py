@@ -37,6 +37,9 @@ LIVE = os.path.realpath(os.path.expanduser("~/signal-fleet"))
 JOB = "triage/cycle"
 TREES = ("results", "queue", "export")
 SYNCED = ("queue", "export")          # deletions follow the volume here; results/ only gains
+# written on the host, not by the fleet: the deploy log (homelab's deploy hooks, then flotilla's
+# deploy append it there). The volume's copy is stale, so the mirror never writes it.
+HOST_OWNED = {"results/deploys.tsv"}
 DONE = ("ok", "error", "timeout", "interrupted")
 
 
@@ -107,6 +110,8 @@ def install(src_root, dest):
         for dirpath, _, files in os.walk(base):
             for name in files:
                 rel = os.path.relpath(os.path.join(dirpath, name), src_root)
+                if rel in HOST_OWNED:
+                    continue
                 seen.add(rel)
                 data = open(os.path.join(src_root, rel), "rb").read()
                 target = os.path.join(dest, rel)

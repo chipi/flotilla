@@ -20,11 +20,13 @@ class T(unittest.TestCase):
         for rel, body in {"results/dispositions.tsv": "ts\tx\n1\ta\n", "results/filed.tsv": "f\n",
                           "results/probes/20261108T190000Z__glitchtip_X-1.json": "{}",
                           "queue/bug-1.json": "{}", "export/inbox.json": '{"schema":"fleet_inbox/v1"}',
+                          "results/deploys.tsv": "STALE VOLUME COPY",
                           "frozen/ledgers/w45/filed.tsv": "MUST NOT COPY", "fleet.env.bak-1": "SECRET"}.items():
             p = os.path.join(self.vol, rel); os.makedirs(os.path.dirname(p), exist_ok=True); open(p, "w").write(body)
         os.makedirs(os.path.join(self.dest, "frozen"))
         open(os.path.join(self.dest, "frozen", "mine"), "w").write("the freeze's own")
         open(os.path.join(self.dest, "fleet-gateway.env"), "w").write("HOST SECRET")
+        os.makedirs(os.path.join(self.dest, "results")); open(os.path.join(self.dest, "results", "deploys.tsv"), "w").write("HOST DEPLOY LOG")
         self.states = [{"running": False, "stage": "propose",
                         "runs": [run(2, "2026-11-08T20:00:00Z", "2026-11-08T20:01:00Z"), run(1, "2026-11-08T19:50:00Z", "2026-11-08T19:51:00Z")]}]
         self.logs = []
@@ -53,6 +55,7 @@ class T(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.dest, "frozen", "ledgers")), "frozen/ is never written")
         self.assertEqual(open(os.path.join(self.dest, "fleet-gateway.env")).read(), "HOST SECRET")
         self.assertFalse(os.path.exists(os.path.join(self.dest, "fleet.env.bak-1")))
+        self.assertEqual(open(os.path.join(self.dest, "results/deploys.tsv")).read(), "HOST DEPLOY LOG", "the deploy log is the host's")
 
     def test_stamp_and_cycles(self):
         self.go()
@@ -69,14 +72,14 @@ class T(unittest.TestCase):
     def test_skip_while_running(self):
         self.assertEqual(self.go([dict(self.states[0], running=True)]), 0)
         self.assertIn("in flight", self.logs[-1])
-        self.assertFalse(os.path.exists(os.path.join(self.dest, "results")))
+        self.assertFalse(os.path.exists(os.path.join(self.dest, "results/dispositions.tsv")))
 
     def test_race_discards_the_copy(self):
         """The fleet session's race (2026-11-08): a run starts between the check and the end of the copy."""
         later = dict(self.states[0], runs=[run(3, "2026-11-08T20:02:00Z", None, status="running")] + self.states[0]["runs"])
         self.assertEqual(self.go([self.states[0], dict(later, running=True)]), 0)
         self.assertIn("RACED", self.logs[-1])
-        self.assertFalse(os.path.exists(os.path.join(self.dest, "results")), "nothing installed")
+        self.assertFalse(os.path.exists(os.path.join(self.dest, "results/dispositions.tsv")), "nothing installed")
         self.assertFalse(os.path.exists(os.path.join(self.dest, "results/.mirror_stamp")), "no stamp for a raced copy")
         # a run that started AND finished during the copy is a race too
         done = dict(self.states[0], runs=[run(3, "2026-11-08T20:02:00Z", "2026-11-08T20:02:30Z")] + self.states[0]["runs"])
