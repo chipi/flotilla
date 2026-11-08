@@ -71,6 +71,34 @@ filing gate keep reading `~/signal-fleet` on the host, kept current by a host-si
 - the fleet session's code readers move to `~/flotilla/repo` (signal-fleet/mvp at the same path),
   with the homelab-to-flotilla commit map in fleet-eval-data.
 
+Built (flotilla 4bc3ef2..290564e, `deploy/mini/mirror.py`): checked before and after each copy (the
+fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Running as LaunchDaemon
+`com.flotilla.mirror` into `~/flotilla/mirror-test` only; the fleet session checked its shape
+(2026-11-08, 21:2xZ).
+
+## Where it stands (2026-11-08, 21:45Z)
+
+- **Shadow running again**: the operator resumed both jobs at 21:38:32Z (their operator token is
+  `~/flotilla/operator.token` on the mini, mode 600); first runs ok 21:39Z. The comparison with
+  fleetd (`deploy/mini/shadow-compare.sh`) builds up from here.
+- **The fleet session's reader changes**: operator's go 2026-11-08 21:4xZ, relayed to it. It points
+  its weekly freeze, weekly check and filing gate at `~/flotilla/mirror-test` and reports when they
+  pass.
+
+## Before the switch (2.8), in order
+
+1. A few days of shadow; `shadow-compare.sh` read and every differing decision explained.
+2. The fleet session reports its readers pass against `~/flotilla/mirror-test`.
+3. The homelab-to-flotilla commit map in fleet-eval-data
+   (`projects/signal-fleet-replays/commit-map.tsv`), with the cutover time.
+4. flotilla's deploy appends `results/deploys.tsv` with the `repo` column.
+5. The operator's go for the switch. Then, in one window: STOP fleetd's triage
+   (`~/signal-fleet/STOP`); seed the live state volume from `~/signal-fleet`; set
+   `TRIAGE_STATE_VOLUME` to it, `MIRROR_DEST` to `~/signal-fleet` and `MIRROR_LIVE=1`; deploy; the
+   operator raises the stage (`flotilla stage triage/cycle propose`, their token); watch one day of
+   cycles, the Hub, deploy-verify and the fleet session's gates. Rollback: STOP flotilla's triage
+   fleet, remove fleetd's STOP.
+
 ## Decisions taken
 
 - **Specs and config are YAML**, the SQLite driver, the trace exporter and the base images: [ADR-0003](../adr/ADR-0003-dependencies-and-images.md) (operator, 2026-11-08).
