@@ -60,7 +60,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 4. **Gates are code.** What leaves the platform is decided by deterministic checks after the model.
 5. **Every model call goes through the one model client,** to an OpenAI-compatible endpoint, under
    the job's declared model policy (RFC-0002 §3). LiteLLM is the reference deployment, not a
-   requirement. No undeclared fallback.
+   requirement. No undeclared fallback. An `external` step (a coding harness) points at the same
+   endpoint under the fleet's own key and budget, and the runtime records its inputs and outputs.
 6. **Observable like every homelab service.**
    - Metrics, logs, traces, LLM traces, errors, ops events, dashboards and alerts on the homelab's
      conventions (RFC-0001 §6.2).

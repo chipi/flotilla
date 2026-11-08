@@ -34,4 +34,4 @@ landed on an answer.
 ## Index
 
 - [RFC-0001 — One fleet platform from the fleets we have](RFC-0001-fleet-platform.md) (Accepted → ADR-0001, 2026-11-08)
-- [RFC-0002 — The job runtime: harness, context, memory, external knowledge](RFC-0002-job-runtime.md) (Proposed, 2026-11-08)
+- [RFC-0002 — The job runtime: harness, context, memory, external knowledge, evaluation](RFC-0002-job-runtime.md) (Proposed, revision 2, 2026-11-08)
