@@ -39,6 +39,10 @@ class T(unittest.TestCase):
                     rel = os.path.relpath(os.path.join(dp, f), self.vol)
                     out = os.path.join(tmp, rel); os.makedirs(os.path.dirname(out), exist_ok=True)
                     open(out, "wb").write(open(os.path.join(self.vol, rel), "rb").read())
+                    os.chmod(out, m.perm(os.path.join(self.vol, rel)))
+            for dp, _, _ in os.walk(src):     # tar's extractall sets folder modes after the files
+                d = os.path.join(tmp, os.path.relpath(dp, self.vol)); os.makedirs(d, exist_ok=True)
+                os.chmod(d, m.perm(dp))
 
     def go(self, states=None, dest=None, cfg=None):
         seq = list(states or self.states)
@@ -109,6 +113,24 @@ class T(unittest.TestCase):
             self.assertTrue(self.logs[-1].startswith("MIRROR PASS"))
         finally:
             m.LIVE = old
+
+    def test_modes_follow_the_volume(self):
+        """Captures are production data: 600 in a 700 folder in the volume, and so in the mirror."""
+        probes = os.path.join(self.vol, "results/probes")
+        cap = os.path.join(probes, "20261108T190000Z__glitchtip_X-1.json")
+        os.chmod(cap, 0o600); os.chmod(probes, 0o700)
+        new = os.path.join(probes, "20261108T200000Z__grafana_ab.json")    # not in the mirror yet
+        open(new, "w").write('{"n":1}'); os.chmod(new, 0o600)
+        os.chmod(os.path.join(self.vol, "export/inbox.json"), 0o644)
+        # a copy made before the fix: same bytes, world-readable
+        os.makedirs(os.path.join(self.dest, "results/probes"))
+        old = os.path.join(self.dest, "results/probes/20261108T190000Z__glitchtip_X-1.json")
+        open(old, "w").write("{}"); os.chmod(old, 0o644); os.chmod(os.path.dirname(old), 0o755)
+        self.assertEqual(self.go(), 0, self.logs)
+        self.assertEqual(m.perm(old), 0o600)
+        self.assertEqual(m.perm(os.path.join(self.dest, "results/probes/20261108T200000Z__grafana_ab.json")), 0o600)
+        self.assertEqual(m.perm(os.path.dirname(old)), 0o700)
+        self.assertEqual(m.perm(os.path.join(self.dest, "export/inbox.json")), 0o644, "the Hub's file stays readable")
 
     def test_atomic_write_leaves_no_temp(self):
         self.go()

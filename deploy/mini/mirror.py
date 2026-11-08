@@ -12,7 +12,9 @@ Only between runs, and checked twice: the copy is made only when no triage run i
 last run ended after the stamp, and it is kept only if, read again after the copy, no run is in
 flight and no newer run has started. Otherwise it is thrown away and the next tick tries again. Each
 file lands whole: written next to its destination, then renamed. queue/ and export/ are synced (a
-file gone from the volume goes from the mirror too); results/ only gains and updates.
+file gone from the volume goes from the mirror too); results/ only gains and updates. Every file and
+folder keeps the mode it has in the volume: the captures are 600 in 700 folders (production data),
+and must not become readable by the host's other accounts.
 
 Writes, besides the copies:
   results/.mirror_stamp  {"end": <UTC end of the last run included>, "run_id": ..., "copied_at": ...}
@@ -92,13 +94,17 @@ def newest_start(runs):
     return max((r["started_at"] for r in real), default="")
 
 
-def write_atomic(path, data):
+def write_atomic(path, data, mode=0o644):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".mirror-")
     with os.fdopen(fd, "wb") as f:
         f.write(data)
-    os.chmod(tmp, 0o644)
+    os.chmod(tmp, mode)
     os.replace(tmp, path)
+
+
+def perm(path):
+    return os.stat(path).st_mode & 0o777
 
 
 def install(src_root, dest):
@@ -108,19 +114,26 @@ def install(src_root, dest):
     for top in TREES:
         base = os.path.join(src_root, top)
         for dirpath, _, files in os.walk(base):
+            ddir = os.path.join(dest, os.path.relpath(dirpath, src_root))
+            os.makedirs(ddir, exist_ok=True)
+            if perm(ddir) != perm(dirpath):
+                os.chmod(ddir, perm(dirpath))
             for name in files:
                 rel = os.path.relpath(os.path.join(dirpath, name), src_root)
                 if rel in HOST_OWNED:
                     continue
                 seen.add(rel)
-                data = open(os.path.join(src_root, rel), "rb").read()
+                src = os.path.join(src_root, rel)
+                data, mode = open(src, "rb").read(), perm(src)
                 target = os.path.join(dest, rel)
                 try:
                     if open(target, "rb").read() == data:
+                        if perm(target) != mode:
+                            os.chmod(target, mode)
                         continue
                 except OSError:
                     pass
-                write_atomic(target, data)
+                write_atomic(target, data, mode)
                 changed += 1
     for top in SYNCED:
         for dirpath, _, files in os.walk(os.path.join(dest, top)):
