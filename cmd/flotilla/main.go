@@ -54,6 +54,26 @@ func main() {
 			break
 		}
 	}
+	// -json: the API's answer as it is, for scripts (deploy/mini/mirror.sh)
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-json" {
+			args = append(args[:i], args[i+1:]...)
+			switch cmd {
+			case "status":
+				os.Stdout.Write(do("GET", "/v1/status", nil))
+			case "runs":
+				q := "/v1/runs?limit=" + n
+				if len(args) > 0 {
+					q += "&job=" + args[0]
+				}
+				os.Stdout.Write(do("GET", q, nil))
+			default:
+				fmt.Fprintln(os.Stderr, "-json works with status and runs")
+				os.Exit(2)
+			}
+			return
+		}
+	}
 	switch cmd {
 	case "status":
 		var out struct {
