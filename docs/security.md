@@ -64,11 +64,15 @@ is enforced.
   - a local-only job must refuse a cloud model.
 - **A threat-model review** with every new fleet and every new kind of output.
 
+The defaults behind T2, T6, T9, T11 and the credential rules (deny-by-default egress through an
+allowlisting proxy, identities, image handling, rotation) are in
+[Deployment → Defaults](architecture/deployment.md#defaults).
+
 ## Not covered yet
 
-- Signing the images and verifying their provenance.
-- A formal review of the coding harness used by the bugfix fleet, which runs code from the repos it
-  fixes.
-- Rotation schedules for each credential.
-- How container egress limits (T2) are enforced: the homelab has no per-container egress policy
-  yet (see [Deployment](architecture/deployment.md#not-decided)).
+- Image signing: planned before any fleet reaches `live`, not built.
+- A security review of the coding harness used by the bugfix fleet, which runs code from the repos
+  it fixes. Due before phase 6.
+- The egress proxy (Smokescreen, approved 2026-11-08) has been checked only for licence (MIT) and
+  activity. Reviewing its configuration and testing that a denied host is refused are part of
+  phase 2.

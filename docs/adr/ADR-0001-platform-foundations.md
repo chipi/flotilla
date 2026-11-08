@@ -36,7 +36,9 @@ inventory and the design.
    - In git: code, specs, playbooks and schemas.
    - On the host only: config, secrets, the ledger, findings and fleet data.
    - Production payloads stay in the private `fleet-eval-data` repo.
-8. **It runs on the homelab mini** (64 GB once fitted) as the `claude` account.
+8. **It runs on the homelab mini** (64 GB once fitted) as the `claude` account. *Amended by
+   [ADR-0002](ADR-0002-run-in-docker.md): it runs in containers in the production engine, deployed
+   by the operator account, as non-root users.*
 9. **Local models first.** Each job declares its model policy, and every call goes through LiteLLM.
    The daily brief is local only.
 10. **It reports into the homelab's observability stack** like every other service: metrics, logs,

@@ -38,7 +38,7 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | CI runner | GitHub Actions | matches `chipi` standard |
 | Docs site | MkDocs Material → GitHub Pages, strict build | matches `chipi` standard |
 | Secrets / config | mode-600 files on the host, named in `~/.config/flotilla/config.yaml`; never in git | public repo |
-| Deploy target | the homelab Mac mini, as the `claude` account | ADR-0001 §8 |
+| Deploy target | the homelab Mac mini: containers in the production engine, deployed by the operator account; development on the dev engine | ADR-0002 |
 
 ---
 

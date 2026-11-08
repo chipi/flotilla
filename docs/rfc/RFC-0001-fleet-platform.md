@@ -295,6 +295,8 @@ Go, means rewriting the triage fleet. Neither buys enough to justify the rewrite
 - **Untrusted input** (alert text, issue bodies, web pages) reaches the model as data, never as
   instructions to the runner. Gates check outputs against evidence.
 - **Runs as `claude`** on the mini (ADR-0009). Today fleetd runs as the operator; the move fixes that.
+  *Superseded by ADR-0002: non-root containers in the production engine, deployed by the operator
+  account.*
 - **Network:** API, UI and MCP listen on the tailnet only (ACL implicit deny).
 - **Public repo hygiene:**
   - No production payloads.
@@ -348,7 +350,8 @@ Each phase leaves everything working. The triage fleet never stops.
 3. **The UI:** served by the Go binary, with no separate frontend build. **Accepted.**
 4. **The daily brief:** **local models only**; the cloud fallback is dropped.
 5. **The reference corpora with production payloads:** **moved to the private `fleet-eval-data`
-   repo**, not into flotilla. Scrubbing them from agentic-ai-homelab's public history is not decided.
+   repo**, not into flotilla. agentic-ai-homelab's public history is **not scrubbed** (operator, 2026-11-08: "These are not
+   super sensitive information").
 6. **License:** **MIT.**
 7. **Docs site:** like every other project here, MkDocs Material built strict and published to
    GitHub Pages.
