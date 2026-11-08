@@ -93,8 +93,11 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
    weekly check and filing gate reading `cycles.tsv`, deploys.tsv's 7th field by position;
    fleet-eval-data b98d392 on the mini. First real test: the first weekly freeze after the switch
    (Saturdays 11:17 Amsterdam).*
-3. The homelab-to-flotilla commit map in fleet-eval-data
-   (`projects/signal-fleet-replays/commit-map.tsv`), with the cutover time.
+3. ~~The homelab-to-flotilla commit map in fleet-eval-data
+   (`projects/signal-fleet-replays/commit-map.tsv`), with the cutover time.~~ *Dropped 2026-11-08
+   (fleet session): `hostpaths.periods()` takes the repo from each deploy-log row, and the homelab
+   checkout stays on the mini until phase 7. If it goes before the old periods leave the replay
+   windows, the fleet session asks for the map then.*
 4. flotilla's deploy appends `results/deploys.tsv` with `flotilla` in the 7th field, a rollback too
    (the header stays as it is; the fleet session reads the field by position). *Built:
    `deploy/mini/triage_hooks.sh`, called by `deploy.sh`; the log is `TRIAGE_DEPLOY_LOG`, mirror-test's
