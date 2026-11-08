@@ -100,9 +100,9 @@ declared freshness raises its stale alert.
 
 | Failure | Behaviour |
 |---|---|
-| The model endpoint is down | the run fails loudly and is retried at the next trigger; never a silent switch to another model |
+| The model endpoint is down | a rejected key or billing error (401, 403, 402), or at least two deferred cases and none decided: the run ends `endpoint_down` with one aggregate signal, deduped across runs; a transient error defers the case to the next run, up to the job's `defer_limit`, then escalates. Never a silent switch to another model ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
 | A tool errors | the error is given to the model as the tool's answer; after `max_steps` the candidate is recorded as `incomplete` |
-| A malformed answer twice | the candidate is recorded as `invalid_output` with the raw answer referenced in the trace |
+| Malformed answers until the step limit | the candidate is recorded as `invalid_output` with the raw answers in the run's record |
 | The worker crashes or hangs | the deadline kills the run; its decisions so far stay in the ledger, marked with the run's failed status |
 | flotillad restarts | the scheduler resumes; a run that was in flight is marked `interrupted`; missed triggers run once at start-up, or not at all, as the spec declares |
 | Budget spent mid-run | the run finishes the candidate in hand and stops; the remaining candidates are recorded as `deferred` |

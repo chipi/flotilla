@@ -31,7 +31,7 @@ One file, owned by flotillad. Workers never open it; they report through the API
 |---|---|
 | `id`, `fleet`, `job`, `run_id` | where it came from |
 | `subject` | what it is about: an alert fingerprint, an issue, a page URL, a day |
-| `dedup_key` | what makes a repeat recognisable |
+| keys | what makes a repeat recognisable: rows in `decision_keys(decision_id, kind, value)`, as many as the fleet's dedup needs, looked up in the order its spec declares |
 | `decision` | the conclusion: file, dismiss, escalate, propose-fix, finding, brief-section … |
 | `evidence` | references to what the tools returned: source, query, dataset version, time range |
 | `model`, `playbook_version`, `spec_version` | what produced it |
@@ -42,7 +42,13 @@ One file, owned by flotillad. Workers never open it; they report through the API
 | `trace_id` | the run's trace, to open the full investigation |
 
 Rows are never deleted or rewritten. A status change is a new event, and the row carries the
-current status. History imported from the existing fleets (the triage fleet's `dispositions.tsv`
+current status. A recurrence of the same subject is an event on its decision, not a new decision.
+Operator feedback on a decision is an event of kind `feedback`; an agent's feedback is `proposed`
+until the operator confirms it.
+
+**Notes** (`notes` table): short lessons with a scope (fleet, job, subject pattern), who proposed
+and activated them, a review-by date and what they supersede. Only active notes reach a model; see
+[ADR-0004](../adr/ADR-0004-job-runtime.md). History imported from the existing fleets (the triage fleet's `dispositions.tsv`
 and `filed.tsv`) keeps its original timestamps and is marked `imported`.
 
 ## Fleet data

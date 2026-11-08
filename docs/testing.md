@@ -56,6 +56,7 @@ this repo. It is synthetic, deterministic and harmless:
 | Check | What it answers | How |
 |---|---|---|
 | **Replay corpus** | does a change alter decisions on known cases? | recorded inputs with the expected decisions (the triage fleet already has 15 such gates, `signal-fleet/replays.sh`). Every change to a playbook, gate, detector or spec replays them; any changed decision fails unless accepted with a reason. |
+| **Evaluation modes** | which proof does a change need? | four modes: code replay, exact replay, model replay and shadow comparison, with a table of which change needs which ([ADR-0004](adr/ADR-0004-job-runtime.md), RFC-0002 §8) |
 | **Shadow comparison** | does the new platform decide like the old one? | during migration, the fleet runs in `shadow` on flotilla beside the existing implementation for N days; decisions are compared per subject; differences are explained before switching |
 | **Stage ladder** | is it ready to act? | `shadow` → `propose` → `live`, each step on evidence: shadow agreement, then the operator's approval rate in `propose` |
 | **Decision quality, live** | is it still making good decisions? | from the ledger: approval and rejection rate, the reasons for rejections, duplicates caught by gates, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |

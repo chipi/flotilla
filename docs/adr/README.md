@@ -46,3 +46,4 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0001 — Platform foundations](ADR-0001-platform-foundations.md) (Accepted, 2026-11-08)
 - [ADR-0002 — Run in Docker, one worker per fleet](ADR-0002-run-in-docker.md) (Accepted, 2026-11-08)
 - [ADR-0003 — Dependencies, spec format and base images](ADR-0003-dependencies-and-images.md) (Accepted, 2026-11-08)
+- [ADR-0004 — The job runtime: five core concepts](ADR-0004-job-runtime.md) (Accepted, 2026-11-08)

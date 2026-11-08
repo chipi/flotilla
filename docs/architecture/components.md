@@ -31,7 +31,7 @@ A library, plus the `flotilla-run` entry point that a fleet worker executes for 
 |---|---|
 | **Sources** | collect facts (alerts, errors, metrics, Search Console rows, crawl snapshots) into the run's working data. No model involved. |
 | **Detectors** | deterministic checks that turn facts into candidates (a regression, an opportunity, an alert worth triage). |
-| **Agent loop** | for each candidate: the playbook as system prompt, the evidence and prior decisions as context, the job's declared tools offered to the model. It answers each tool call through the tool registry. It stops at `max_steps` or on an answer that matches the output schema; a malformed answer gets one retry. |
+| **Agent loop** | for each candidate: the playbook as system prompt, the evidence and prior decisions as context, the job's declared tools offered to the model. It answers each tool call through the tool registry. It stops at its limits (`max_steps`, `max_tool_calls`, timeouts) or on an answer that matches the output schema; a malformed or empty answer is retried within the step limit ([ADR-0004](../adr/ADR-0004-job-runtime.md)). |
 | **Tool registry** | the read-only functions a model may call. Each checks its scope (site, repo, time range, size cap) and returns provenance with the data. |
 | **Gates** | deterministic checks on the model's answer: evidence cited and real, not a duplicate, in scope, plus the fleet's own gates. A gate failure records the decision as `gated`, not dropped silently. |
 | **Outputs** | the only write paths: a GitHub issue, comment, PR or label; a finding file; a page; a push. Each checks scope against config and runs only when the stage allows it or after approval. |

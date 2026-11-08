@@ -145,7 +145,7 @@ steps:
   - gate:    [intent, cleanup, dismiss, edge, dedup]
   - output:  { kind: github_issue, repo_map: config.repo_map, labels: triage }
 stage: propose
-budget: { usd_per_day: 2, timeout: 20m }
+budget: { day_usd: 2, timeout: 20m }   # usd_per_day in the first draft; day_usd as implemented
 ```
 
 The same format carries the daily brief (`ops/daily-brief`: collect from five sources, an agent step

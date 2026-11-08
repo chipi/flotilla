@@ -112,6 +112,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 ## Named ADR anchors
 
 - [ADR-0001 — Platform foundations](docs/adr/ADR-0001-platform-foundations.md): read first.
+- [ADR-0004 — The job runtime](docs/adr/ADR-0004-job-runtime.md): the five core concepts (harness,
+  context, memory, external knowledge, evaluation); read before any runtime or fleet work.
 
 ---
 

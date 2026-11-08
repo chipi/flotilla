@@ -1,8 +1,8 @@
 # RFC-0002 — the job runtime: harness, context, memory, external knowledge, evaluation
 
-**Status:** Proposed, revision 3. The operator settled the first open choices on 2026-11-08 (§10).
+**Status:** Accepted → [ADR-0004](../adr/ADR-0004-job-runtime.md) (operator, 2026-11-08), revision 3.
 Revisions 1 and 2 were reviewed by an independent advisor the same day; revision 3 takes in both
-reviews (§14). Under review before phase 3 code.
+reviews, and a third pass found it ready (§14).
 **Date:** 2026-11-08
 **Inputs:**
 - [RFC-0001](RFC-0001-fleet-platform.md) §9, phase 3, and [Components](../architecture/components.md);
@@ -599,14 +599,13 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 
 ## 12. Docs amended on acceptance
 
-These say something this RFC changes (AGENTS.md rule 28):
+These said something this RFC changes (AGENTS.md rule 28), and were amended with the acceptance:
 - `docs/architecture/components.md`: the agent loop row ("a malformed answer gets one retry");
 - `docs/architecture/run-lifecycle.md`, failure behaviour: the endpoint down, a malformed answer
   twice;
 - `docs/architecture/data.md`: `dedup_key` becomes `decision_keys`; feedback as an event; `notes`;
 - RFC-0001 §5's spec sketch: `usd_per_day` is `day_usd` in the implemented spec;
-- `docs/testing.md`: the replay corpus row (fixed with this revision: 15 gates, not 18) and the
-  four evaluation modes.
+- `docs/testing.md`: the replay corpus row (15 gates, not 18) and the four evaluation modes.
 
 ## 13. Alternatives considered
 
