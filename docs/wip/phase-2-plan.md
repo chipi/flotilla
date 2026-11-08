@@ -35,6 +35,31 @@ fleet in `shadow` beside fleetd first, then takes over.
 
 The bugfix fleet stays on fleetd (it is disabled there today) until phase 6.
 
+## Progress (2026-11-08)
+
+| Step | State | Evidence |
+|---|---|---|
+| 2.1 flotillad | done | `make ci-fast`: ci-fast PASS (unit tests for spec, store, sched, api, worker client, telemetry) |
+| 2.2 worker | done | 12 worker tests OK; two mutants (inherited environment, leader-only kill) fail them |
+| 2.3 images, compose | done | images `sha-75a7491` on ghcr; `deploy/e2e/run.sh`: E2E PASS, 26 checks |
+| 2.4 egress | done | e2e: an open allowlist fails it; on the mini every host the triage cycle used was allowed by rule and `example.com` refused |
+| 2.5 observability | **partial** | metrics, JSON logs, traces, deploy event, alert rules `flotilla-silent` and `flotilla-job-stale` (homelab 85343a9, live, drift 0). **Not done:** errors to GlitchTip, a dashboard, `deploy-verify` project `flotilla` |
+| 2.6 heartbeat | **partial** | runs every 10 min through the worker and the proxy; the stale alert is not yet seen firing on purpose |
+| 2.7 shadow | **running** | since 18:45Z on the mini (`deploy/mini/deploy.sh sha-75a7491` → DEPLOY PASS); first shadow cycle ok: 1 Grafana alert and 10 GlitchTip issues, all already decided, no model call. **Not done:** the comparison with fleetd |
+| 2.8 switch | not started | needs the comparison, the fleet session's scripts, and where the live state lives (below) |
+
+**Decided on the way:**
+- **State and secrets are Docker volumes, not host folders.** Every stack on the mini mounts host
+  folders read-only, and the VM shares `/Users` over sshfs on the lima SSH connection whose failures
+  took production down before. `deploy/mini/secrets.sh` copies the secrets into volumes.
+- **The shadow state was seeded from a copy of `~/signal-fleet`** without any env file. The folder
+  holds ten backups of the fleet's secrets file; the first seed version would have copied them.
+
+**Open before the switch (2.8):** the live fleet's state is `~/signal-fleet` on the host, read by the
+Hub (`export/inbox.json`) and by the fleet session's weekly freeze and filing gate. With the state in
+a volume they need another way in: the flotilla API, or a read-only export the host copies out. To
+decide with the fleet session.
+
 ## Decisions taken
 
 - **Specs and config are YAML**, the SQLite driver, the trace exporter and the base images: [ADR-0003](../adr/ADR-0003-dependencies-and-images.md) (operator, 2026-11-08).
