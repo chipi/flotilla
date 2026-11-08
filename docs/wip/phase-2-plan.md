@@ -88,10 +88,22 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
 ## Before the switch (2.8), in order
 
 1. A few days of shadow; `shadow-compare.sh` read and every differing decision explained.
-2. The fleet session reports its readers pass against `~/flotilla/mirror-test`.
+2. ~~The fleet session reports its readers pass against `~/flotilla/mirror-test`.~~ *Done
+   2026-11-08 (fleet session): weekly freeze named by `.mirror_stamp` and refusing a stalled mirror,
+   weekly check and filing gate reading `cycles.tsv`, deploys.tsv's 7th field by position;
+   fleet-eval-data b98d392 on the mini. First real test: the first weekly freeze after the switch
+   (Saturdays 11:17 Amsterdam).*
 3. The homelab-to-flotilla commit map in fleet-eval-data
    (`projects/signal-fleet-replays/commit-map.tsv`), with the cutover time.
-4. flotilla's deploy appends `results/deploys.tsv` with the `repo` column.
+4. flotilla's deploy appends `results/deploys.tsv` with `flotilla` in the 7th field, a rollback too
+   (the header stays as it is; the fleet session reads the field by position).
+4a. flotilla's deploy runs the filing gate as homelab's `gates.sh` does:
+   `SF_CHECKOUT=~/flotilla/repo python3 ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py PREV NOW`,
+   PREV and NOW flotilla commits. A FAIL rolls back unless `SF_FILING_GATE_ACCEPT` names a reason.
+4b. The stale sweep's once-a-day marker survives runs: it is
+   `/home/worker/signal-fleet/results/.stale_last_run` in the state volume (checked 2026-11-08 on the
+   shadow volume: present, `2026-11-08`, copied by the seed). Still to see: the first write by the
+   worker itself, after 00:00Z.
 5. The operator's go for the switch. Then, in one window: STOP fleetd's triage
    (`~/signal-fleet/STOP`); seed the live state volume from `~/signal-fleet`; set
    `TRIAGE_STATE_VOLUME` to it, `MIRROR_DEST` to `~/signal-fleet` and `MIRROR_LIVE=1`; deploy; the
