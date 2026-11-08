@@ -106,6 +106,9 @@ echo "== secrets and seeded state (deploy/mini/secrets.sh, as a deploy runs it)"
 printf 'SEED_SECRET=must-not-be-copied\n' > "$WORK/config/fleet.env"
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/STOP"
+# the mini's folder also holds backups of the secrets file: they must stay out too
+cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env.bak-20261027"
+cp "$WORK/config/fleet.env" "$WORK/seed/results/fleet.env.bak-presync"
 if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG >"$WORK/secrets.log" 2>&1 \
    && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1; then
   ok "secrets and state seeded ($(grep -c ' <- ' "$WORK/secrets.log") secret files)"
@@ -156,9 +159,9 @@ N="$($D exec flotilla-worker-triage sh -c 'env | grep -c "^FLOTILLA_WORKER_TOKEN
 [ "$N" = 0 ] && ok "no worker token in the worker's environment (it reads a file)" || bad "worker token in the environment: $N"
 M="$($D exec flotilla-worker-triage sh -c 'stat -c "%a %u" /run/flotilla/fleet.env /run/flotilla/worker.token' 2>&1 | tr '\n' ' ')"
 [ "$M" = "600 10001 600 10001 " ] && ok "the worker's secrets are mode 600, its own uid ($M)" || bad "worker secret modes: $M"
-S="$($D exec flotilla-worker-triage sh -c 'ls -A /home/worker/signal-fleet; cat /home/worker/signal-fleet/results/dispositions.tsv' 2>&1 | tr '\n' ' ')"
-case "$S" in *fleet-gateway.env*|*STOP*) bad "seeding copied the secrets file or the STOP flag: $S" ;;
-  *fingerprint*) ok "the seeded state has the ledgers and neither the secrets file nor STOP" ;; *) bad "seeded state: $S" ;; esac
+S="$($D exec flotilla-worker-triage sh -c 'find /home/worker/signal-fleet; cat /home/worker/signal-fleet/results/dispositions.tsv' 2>&1 | tr '\n' ' ')"
+case "$S" in *.env*|*STOP*) bad "seeding copied an env file (secrets or a backup of them) or STOP: $S" ;;
+  *fingerprint*) ok "the seeded state has the ledgers and no env file (secrets or their backups) or STOP" ;; *) bad "seeded state: $S" ;; esac
 $D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /home/worker/signal-fleet/w' 2>/dev/null \
   && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
 

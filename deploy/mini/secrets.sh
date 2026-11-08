@@ -3,8 +3,9 @@
 #
 #   secrets.sh <image tag>                     copy the secrets into their volumes (every deploy)
 #   secrets.sh <image tag> --seed-state VOLUME DIR
-#                                              copy DIR (the triage fleet's ~/signal-fleet, without its
-#                                              secrets file and STOP flag) into VOLUME, if it is empty
+#                                              copy DIR (the triage fleet's ~/signal-fleet, without any
+#                                              env file, its secrets and their backups, and without its
+#                                              STOP flag) into VOLUME, if it is empty
 #
 # Each file is written by a throwaway container of our own worker image, with no network, as root
 # inside it only to set the owner: mode 600, owned by the uid of the container that reads it
@@ -37,7 +38,8 @@ if [ "${2:-}" = --seed-state ]; then
   if [ -n "$($D run --rm --network none --entrypoint sh -v "$VOL:/s" "$IMG" -c 'ls -A /s')" ]; then
     echo "SEED SKIP: $VOL is not empty (it is seeded once; remove it to seed again)"; exit 0
   fi
-  tar -C "$DIR" --exclude ./fleet-gateway.env --exclude ./STOP -cf - . \
+  # every env file and its backups (fleet-gateway.env.bak-*, fleet.env.bak-*) stays out: they are secrets
+  tar -C "$DIR" --exclude '*.env' --exclude '*.env.*' --exclude ./STOP -cf - . \
     | $D run --rm -i --network none --user 0 --entrypoint sh -v "$VOL:/s" "$IMG" \
         -c 'tar -xf - -C /s && chown -R 10001:10001 /s && echo "  $(find /s -type f | wc -l) files, $(du -sh /s | cut -f1)"'
   echo "SEED PASS: $VOL from $DIR"
