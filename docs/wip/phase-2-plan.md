@@ -96,17 +96,23 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
 3. The homelab-to-flotilla commit map in fleet-eval-data
    (`projects/signal-fleet-replays/commit-map.tsv`), with the cutover time.
 4. flotilla's deploy appends `results/deploys.tsv` with `flotilla` in the 7th field, a rollback too
-   (the header stays as it is; the fleet session reads the field by position).
+   (the header stays as it is; the fleet session reads the field by position). *Built:
+   `deploy/mini/triage_hooks.sh`, called by `deploy.sh`; the log is `TRIAGE_DEPLOY_LOG`, mirror-test's
+   until the switch, since the live fleet still runs homelab code.*
 4a. flotilla's deploy runs the filing gate as homelab's `gates.sh` does:
    `SF_CHECKOUT=~/flotilla/repo python3 ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py PREV NOW`,
    PREV and NOW flotilla commits. A FAIL rolls back unless `SF_FILING_GATE_ACCEPT` names a reason.
+   *Built: it runs before the pull, so a refused deploy changes nothing (the checkout goes back to
+   the deployed commit); a rollback skips it. `deploy/mini/test_triage_hooks.py`: 13 tests, four
+   mutants killed.*
 4b. The stale sweep's once-a-day marker survives runs: it is
    `/home/worker/signal-fleet/results/.stale_last_run` in the state volume (checked 2026-11-08 on the
    shadow volume: present, `2026-11-08`, copied by the seed). Still to see: the first write by the
    worker itself, after 00:00Z.
 5. The operator's go for the switch. Then, in one window: STOP fleetd's triage
    (`~/signal-fleet/STOP`); seed the live state volume from `~/signal-fleet`; set
-   `TRIAGE_STATE_VOLUME` to it, `MIRROR_DEST` to `~/signal-fleet` and `MIRROR_LIVE=1`; deploy; the
+   `TRIAGE_STATE_VOLUME` to it, `MIRROR_DEST` to `~/signal-fleet`, `MIRROR_LIVE=1` and
+   `TRIAGE_DEPLOY_LOG` to `~/signal-fleet/results/deploys.tsv`; deploy; the
    operator raises the stage (`flotilla stage triage/cycle propose`, their token); watch one day of
    cycles, the Hub, deploy-verify and the fleet session's gates. Rollback: STOP flotilla's triage
    fleet, remove fleetd's STOP.

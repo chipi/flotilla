@@ -17,10 +17,13 @@
 # from the host's files on every deploy.
 #   deployed.tsv     every deploy: time, tag, commit, result (the previous tag is read from here)
 #
+# The triage fleet's hooks (triage_hooks.sh, loaded from this checkout before it moves): a deploy runs the
+# filing gate against the commit deployed now, and a deploy or rollback appends the fleet's deploy log.
+#
 # Ends with DEPLOY PASS or DEPLOY FAIL; a deploy and a rollback each write an ops_event/v1 line to
 # VictoriaLogs (event_type deploy, service flotilla).
 set -uo pipefail
-export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin   # appended: an SSH session's PATH lacks /usr/local/bin (docker)
 H="${FLOTILLA_HOME:-$HOME/flotilla}"
 REPO="$H/repo"
 LOG="$H/deployed.tsv"
@@ -42,10 +45,20 @@ event() {  # status tag message
 
 previous() { awk -F'\t' '$4=="pass"{t=$2} END{print t}' "$LOG" 2>/dev/null; }
 CURRENT="$(previous)"
+CURRENT_COMMIT="$(awk -F'\t' '$4=="pass"{c=$3} END{print c}' "$LOG" 2>/dev/null)"
+HOOKS="$REPO/deploy/mini/triage_hooks.sh"
+[ -f "$HOOKS" ] || die "$HOOKS missing"
+# shellcheck source=triage_hooks.sh
+. "$HOOKS"
+envget() { (set -a; . "$H/.env" >/dev/null 2>&1; eval "printf '%s' \"\${$1:-}\""); }
+TRIAGE_DEPLOY_LOG="$(envget TRIAGE_DEPLOY_LOG)"
+TRIAGE_FILING_GATE="$(envget TRIAGE_FILING_GATE)"
+EVENT=deploy
 if [ "${1:-}" = --rollback ]; then
   TAG="$(awk -F'\t' '$4=="pass"{p=c; c=$2} END{print p}' "$LOG" 2>/dev/null)"
   [ -n "$TAG" ] || die "no earlier passing deploy to roll back to"
   say "rollback: $CURRENT -> $TAG"
+  EVENT=rollback
 else
   TAG="${1:-}"
 fi
@@ -61,6 +74,14 @@ git -C "$REPO" fetch -q origin || die "git fetch failed"
 COMMIT="$(git -C "$REPO" rev-parse --verify -q "${TAG#sha-}^{commit}")" || die "no commit ${TAG#sha-} in chipi/flotilla"
 git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$COMMIT" || die "checkout failed"
 
+if [ "$EVENT" = deploy ]; then
+  say "== the triage fleet's filing gate (${CURRENT_COMMIT:0:7} -> ${COMMIT:0:7})"
+  if ! triage_filing_gate "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; then   # pipefail: the gate's status
+    [ -n "$CURRENT_COMMIT" ] && git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
+    die "filing gate failed for $TAG (set SF_FILING_GATE_ACCEPT=\"<why>\" to accept the change)"
+  fi
+fi
+
 say "== pull $TAG"
 compose "$TAG" pull -q || die "images for $TAG not pullable (did the images workflow run for ${TAG#sha-}?)"
 
@@ -75,8 +96,9 @@ grep -q "^CHECK PASS" <<<"$OUT" || die "flotillad -check failed for $TAG"
 
 say "== up"
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
+triage_deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'
 ok=0
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   if docker exec flotillad /usr/local/bin/flotilla health >/dev/null 2>&1 \
      && docker exec flotillad /usr/local/bin/flotilla status 2>/dev/null | grep -q '"ok":true'; then ok=1; break; fi
   sleep 2
@@ -87,6 +109,7 @@ if [ "$ok" -ne 1 ]; then
     say "flotillad or the worker did not come up healthy: back to $CURRENT"
     git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "${CURRENT#sha-}"
     compose "$CURRENT" up -d --remove-orphans >/dev/null 2>&1
+    triage_deploy_log rollback "$COMMIT" "$CURRENT_COMMIT" | sed 's/^/   /'
     event failure "$TAG" "unhealthy after up; rolled back to $CURRENT"
     say "DEPLOY FAIL ($TAG): rolled back to $CURRENT"; exit 1
   fi
