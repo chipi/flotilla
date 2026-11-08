@@ -34,13 +34,15 @@ var version = "dev"
 
 // Config is one installation: where things are. Nothing here is in the public repo's specs.
 type Config struct {
-	Listen        string                  `yaml:"listen"`
-	SpecsDir      string                  `yaml:"specs_dir"`
-	StateDir      string                  `yaml:"state_dir"`
-	Environment   string                  `yaml:"environment"`
-	Timezone      string                  `yaml:"timezone"`
-	VMURL         string                  `yaml:"vm_url"`
-	OTLPTracesURL string                  `yaml:"otlp_traces_url"`
+	Listen        string `yaml:"listen"`
+	SpecsDir      string `yaml:"specs_dir"`
+	StateDir      string `yaml:"state_dir"`
+	Environment   string `yaml:"environment"`
+	Timezone      string `yaml:"timezone"`
+	VMURL         string `yaml:"vm_url"`
+	OTLPTracesURL string `yaml:"otlp_traces_url"`
+	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
+	ErrorsDSNFile string                  `yaml:"errors_dsn_file"`
 	CallersFile   string                  `yaml:"callers_file"`
 	Workers       map[string]WorkerConfig `yaml:"workers"`
 	// jobs this installation does not run, whatever their spec says (e.g. an e2e stack that has no
@@ -164,6 +166,12 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	flushErrors, err := telemetry.Errors(cfg.ErrorsDSNFile, cfg.Environment, version)
+	if err != nil {
+		log.Error("errors to GlitchTip", "err", err)
+		os.Exit(1)
+	}
+	defer flushErrors()
 	shutdown, err := telemetry.Tracing(ctx, cfg.OTLPTracesURL, cfg.Environment, version)
 	if err != nil {
 		log.Error("tracing", "err", err)

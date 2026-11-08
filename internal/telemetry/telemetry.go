@@ -25,9 +25,10 @@ import (
 
 const Service = "flotillad"
 
-// Logger writes JSON lines to stdout with service, environment and version on each.
+// Logger writes JSON lines to stdout with service, environment and version on each; ERROR records
+// also go to GlitchTip once Errors has been set up.
 func Logger(env, version string) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", Service, "environment", env, "version", version)
+	return slog.New(ErrorHandler{slog.NewJSONHandler(os.Stdout, nil)}).With("service", Service, "environment", env, "version", version)
 }
 
 // Tracing sets the global tracer provider. An empty endpoint leaves tracing off (a no-op tracer).

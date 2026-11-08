@@ -16,6 +16,7 @@ base images for the containers.
 |---|---|---|
 | SQLite | `modernc.org/sqlite` | pure Go: no C toolchain, builds into a static binary on a distroless image |
 | Spec and config format | YAML, `gopkg.in/yaml.v3`, strict (unknown fields are errors) | specs are written by people; comments help. The Python side does not read specs in phase 2, so no PyYAML yet |
+| Errors | `github.com/getsentry/sentry-go` (operator, 2026-11-08): flotillad's own ERROR log records to GlitchTip, one issue per message | the Sentry protocol GlitchTip speaks; no own protocol code |
 | Traces | the OpenTelemetry Go SDK and its OTLP/HTTP exporter | the standard; correct propagation and batching. To VictoriaTraces' `/insert/opentelemetry/v1/traces` |
 | Images | build: `golang:1.26`; run: `gcr.io/distroless/static-debian12:nonroot` (flotillad, Smokescreen); workers: `python:3.12-slim` | official, small, non-root; glibc for later Python wheels (DuckDB, Parquet). All pinned by digest in the Dockerfiles |
 | Egress proxy | Smokescreen, built from a pinned commit (ADR-0002) | |
