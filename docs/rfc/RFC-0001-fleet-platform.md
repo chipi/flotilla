@@ -315,6 +315,13 @@ Each phase leaves everything working. The triage fleet never stops.
    - Move the production corpora to the private eval repo.
    - Turn hard-coded specifics into config.
    - Add CI (tests, spec schema, secrets scan).
+
+   *Done 2026-11-08, with two changes:*
+   - The config pass moved to phase 3, where the job runtime's config loader is built. Doing it
+     now would mean doing it twice, and the values were already public in agentic-ai-homelab.
+     The repo maps and host defaults stay in the code until then (AGENTS.md, "Known deviation").
+   - CI has no spec schema yet (there are no specs before phase 2) and no secrets scan job (it
+     would add a dependency); the scan runs before every push, as in the other repos.
 2. **flotillad**, observable from its first deploy (§6.2: metrics, logs, traces, GlitchTip,
    ops events, its dashboard and alerts, with the old fleetd alerts kept until the switch). It is
    fleetd plus the registry, the SQLite store, the ledger, the API and the CLI. It
