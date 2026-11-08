@@ -10,9 +10,11 @@
 # Layout under FLOTILLA_HOME (default ~/flotilla), none of it in git:
 #   repo/            a checkout of github.com/chipi/flotilla (the compose file comes from the commit
 #                    of the tag being deployed)
-#   .env             the installation: FLOTILLA_CONFIG, FLOTILLA_STATE, TRIAGE_ENV_FILE, TRIAGE_STATE
+#   .env             the installation: FLOTILLA_CONFIG, TRIAGE_ENV_FILE, TRIAGE_STATE_VOLUME
 #   config/          flotillad.yaml, callers.yaml, cli.token, worker-triage.token, worker-triage.env,
 #                    smokescreen.yaml, egress-acl.yaml (deploy/compose/README.md)
+# State and secrets live in Docker volumes (the compose file); secrets.sh refills the secret volumes
+# from the host's files on every deploy.
 #   deployed.tsv     every deploy: time, tag, commit, result (the previous tag is read from here)
 #
 # Ends with DEPLOY PASS or DEPLOY FAIL; a deploy and a rollback each write an ops_event/v1 line to
@@ -61,6 +63,10 @@ git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$COMMIT" || di
 
 say "== pull $TAG"
 compose "$TAG" pull -q || die "images for $TAG not pullable (did the images workflow run for ${TAG#sha-}?)"
+
+say "== secrets into their volumes (a rotated secret is picked up here)"
+FLOTILLA_HOME="$H" bash "$REPO/deploy/mini/secrets.sh" "$TAG" | sed 's/^/   /'
+[ "${PIPESTATUS[0]}" = 0 ] || die "secrets.sh failed"
 
 say "== check config, callers and specs with the new flotillad"
 OUT="$(compose "$TAG" run --rm --no-deps flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"

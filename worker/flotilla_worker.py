@@ -5,6 +5,7 @@ says what to run and when; the worker runs it and reports. Python stdlib only.
 
   POST /v1/runs   {run_id, job, command, workdir, timeout_s, spend_file, env}  -> the result, when done
   GET  /healthz   {ok, worker, version, running}
+  GET  /livez     {ok} without a token: the container healthcheck
 
 Every request needs `Authorization: Bearer <the worker token>`; nothing else on the network can
 start a run. One run per job at a time (a second start of a running job is 409).
@@ -170,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
         return bool(token) and hmac.compare_digest(got.encode(), ("Bearer " + token).encode())
 
     def do_GET(self):
+        if self.path == "/livez":   # the container healthcheck: up and serving; says nothing else
+            return self._send(200, {"ok": True})
         if not self._authorized():
             return self._send(401, {"error": "unauthorized"})
         if self.path != "/healthz":

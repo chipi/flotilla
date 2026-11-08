@@ -2,7 +2,8 @@
 # Python, no packages installed). Build context: the repo root.
 #   docker build -f deploy/docker/worker-triage.Dockerfile --build-arg VERSION=sha-<7> -t flotilla-worker-triage:sha-<7> .
 FROM python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
-RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker
+RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker \
+ && install -d -o 10001 -g 10001 /home/worker/signal-fleet   # the state volume takes this owner
 COPY worker /opt/flotilla/worker
 COPY signal-fleet/mvp /opt/flotilla/signal-fleet/mvp
 ARG VERSION=dev

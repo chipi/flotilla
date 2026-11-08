@@ -20,20 +20,19 @@ fails=0
 ok() { echo "PASS $*"; }
 bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-compose() {
-  FLOTILLA_REGISTRY=local FLOTILLA_TAG=$TAG FLOTILLA_CONFIG="$WORK/config" FLOTILLA_STATE="$WORK/state" \
-  TRIAGE_ENV_FILE="$WORK/config/fleet.env" TRIAGE_STATE="$WORK/triage-state" \
-  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse \
-  $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"
-}
+E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG=$TAG FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
+  FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
+  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse
+  DOCKER_CONTEXT=${DOCKER_CONTEXT_DEV:-dev})
+compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"; }
 
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets; do
+    $D volume rm "$v" >/dev/null 2>&1
+  done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
-  # the containers wrote state as their own uids: remove it from a container, as root there
-  [ -d "$WORK" ] && $D run --rm --label $LABEL -v "$WORK:/w" \
-    python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b sh -c 'rm -rf /w/* /w/.[!.]*' >/dev/null 2>&1
   rm -rf "$WORK"
 }
 if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
@@ -47,8 +46,8 @@ done
 ok "images built"
 
 echo "== config and stand-ins"
-mkdir -p "$WORK/config" "$WORK/state" "$WORK/triage-state"
-chmod 777 "$WORK/state" "$WORK/triage-state"   # the containers run as non-root uids
+mkdir -p "$WORK/config"
+printf '%s\n' "${E2E_ENV[@]}" > "$WORK/.env"
 tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 OP=$(tok); AGENT=$(tok); WT=$(tok)
 hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
@@ -70,7 +69,7 @@ vm_url: http://victoriametrics:8080
 otlp_traces_url: http://victoriatraces:8080/insert/opentelemetry/v1/traces
 callers_file: /etc/flotilla/callers.yaml
 workers:
-  triage: {url: "http://worker-triage:8081", token_file: /etc/flotilla/worker-triage.token}
+  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
 disabled_jobs: [triage/cycle]
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
@@ -102,6 +101,19 @@ stub victoriametrics e2e-backend; stub victoriatraces e2e-backend; stub litellm 
 # off the allowlist but reachable and answering: refusing it is the proxy's doing, nothing else
 stub forbidden e2e-backend
 ok "stand-ins up"
+
+echo "== secrets and seeded state (deploy/mini/secrets.sh, as a deploy runs it)"
+printf 'SEED_SECRET=must-not-be-copied\n' > "$WORK/config/fleet.env"
+mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
+cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/STOP"
+if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG >"$WORK/secrets.log" 2>&1 \
+   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1; then
+  ok "secrets and state seeded ($(grep -c ' <- ' "$WORK/secrets.log") secret files)"
+else
+  cat "$WORK/secrets.log"; bad "secrets.sh"
+fi
+FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep -q "SEED SKIP" \
+  && ok "a seeded state volume is never overwritten" || bad "seeding twice did not skip"
 
 echo "== up"
 if ! compose up -d >"$WORK/up.log" 2>&1; then
@@ -142,6 +154,13 @@ except urllib.error.HTTPError as e: print(e.code)' 2>&1)"
 [ "$W" = 401 ] && ok "the worker refuses a wrong token" || bad "worker with a wrong token: $W"
 N="$($D exec flotilla-worker-triage sh -c 'env | grep -c "^FLOTILLA_WORKER_TOKEN=" || true' 2>&1)"
 [ "$N" = 0 ] && ok "no worker token in the worker's environment (it reads a file)" || bad "worker token in the environment: $N"
+M="$($D exec flotilla-worker-triage sh -c 'stat -c "%a %u" /run/flotilla/fleet.env /run/flotilla/worker.token' 2>&1 | tr '\n' ' ')"
+[ "$M" = "600 10001 600 10001 " ] && ok "the worker's secrets are mode 600, its own uid ($M)" || bad "worker secret modes: $M"
+S="$($D exec flotilla-worker-triage sh -c 'ls -A /home/worker/signal-fleet; cat /home/worker/signal-fleet/results/dispositions.tsv' 2>&1 | tr '\n' ' ')"
+case "$S" in *fleet-gateway.env*|*STOP*) bad "seeding copied the secrets file or the STOP flag: $S" ;;
+  *fingerprint*) ok "the seeded state has the ledgers and neither the secrets file nor STOP" ;; *) bad "seeded state: $S" ;; esac
+$D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /home/worker/signal-fleet/w' 2>/dev/null \
+  && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
 
 echo "== hardening"
 for c in flotillad flotilla-worker-triage flotilla-egress; do

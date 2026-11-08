@@ -1,13 +1,20 @@
 # flotilla on one host (ADR-0002): flotillad, the triage worker and the egress proxy.
 #
-# Everything about the installation comes from the environment (an .env next to this file on the
-# host, never in git; see .env.example) and from the files in FLOTILLA_CONFIG (README.md).
+# Installation paths come from the environment (FLOTILLA_HOME/.env on the host, never in git) and the
+# files in FLOTILLA_CONFIG (README.md). Nothing here writes to the host: the store, the triage
+# fleet's state and the secrets live in Docker volumes inside the VM. Host folders are mounted
+# read-only, for config only, like every other stack on the mini; writing through the VM's sshfs
+# mount would ride the lima SSH connection whose failures took production down before.
+#
+# Secrets reach the containers through their own volumes, filled by deploy/mini/secrets.sh from the
+# host's files (mode 600 there, owned by the container's uid in the volume). Nothing secret is in an
+# environment variable or a bind mount.
 #
 # Networks:
 #   flotilla       internal: no route out. flotillad, the worker and the proxy talk here.
 #   out            the proxy's way to the internet (api.github.com).
 #   the services'  the proxy joins the networks of the services jobs read (VictoriaMetrics, LiteLLM,
-#                  GlitchTip, Langfuse) and reaches them by container name: never through the
+#                  GlitchTip, Langfuse) and reaches them by container name, never through the
 #                  host's port forwards.
 # Nothing is published on the host. The CLI runs inside flotillad: docker exec flotillad flotilla status
 name: flotilla
@@ -34,15 +41,16 @@ services:
       HTTPS_PROXY: http://egress:4750
       NO_PROXY: worker-triage,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
-      FLOTILLA_TOKEN_FILE: /etc/flotilla/cli.token
+      FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
     volumes:
       - ${FLOTILLA_CONFIG:?set FLOTILLA_CONFIG}/flotillad.yaml:/etc/flotilla/flotillad.yaml:ro
       - ${FLOTILLA_CONFIG}/callers.yaml:/etc/flotilla/callers.yaml:ro
-      - ${FLOTILLA_CONFIG}/worker-triage.token:/etc/flotilla/worker-triage.token:ro
-      - ${FLOTILLA_CONFIG}/cli.token:/etc/flotilla/cli.token:ro
-      - ${FLOTILLA_STATE:?set FLOTILLA_STATE}:/var/lib/flotilla
+      - flotillad-secrets:/run/flotilla:ro
+      - state:/var/lib/flotilla
     networks: [flotilla]
-    depends_on: [egress, worker-triage]
+    depends_on:
+      egress: {condition: service_started}
+      worker-triage: {condition: service_healthy}   # the first run starts at boot: the worker must be listening
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
@@ -56,17 +64,23 @@ services:
     mem_limit: 1g
     cpus: 1.0
     tmpfs: ["/tmp:size=64m"]
-    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]   # JOB_* overrides only; no secrets in it
     environment:
-      FLOTILLA_WORKER_TOKEN_FILE: /etc/flotilla/worker-triage.token
-      FLOTILLA_ENV_FILES: /etc/flotilla/fleet.env
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_ENV_FILES: /run/flotilla/fleet.env
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
       JOB_HTTP_PROXY: http://egress:4750
       JOB_HTTPS_PROXY: http://egress:4750
     volumes:
-      - ${FLOTILLA_CONFIG}/worker-triage.token:/etc/flotilla/worker-triage.token:ro
-      - ${TRIAGE_ENV_FILE:?set TRIAGE_ENV_FILE}:/etc/flotilla/fleet.env:ro
-      - ${TRIAGE_STATE:?set TRIAGE_STATE}:/home/worker/signal-fleet
+      - worker-triage-secrets:/run/flotilla:ro
+      - triage-state:/home/worker/signal-fleet
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 1s
     networks: [flotilla]
 
   egress:
@@ -80,6 +94,18 @@ services:
       - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-acl.yaml:/etc/smokescreen/acl.yaml:ro
     networks: [flotilla, out, backend, litellm, glitchtip, langfuse]
+
+# Named so that a compose project rename can never strand them. TRIAGE_STATE_VOLUME picks the
+# triage fleet's state: a shadow copy beside fleetd, or the live state after the switch.
+volumes:
+  state:
+    name: ${FLOTILLA_STATE_VOLUME:-flotilla-state}
+  flotillad-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-flotillad-secrets
+  worker-triage-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-secrets
+  triage-state:
+    name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}
 
 networks:
   flotilla:

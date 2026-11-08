@@ -9,10 +9,14 @@ COPY internal internal
 ARG VERSION=dev
 # timetzdata: the store's local day (the budget day) does not depend on the image's zoneinfo
 RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags "-s -w -X main.version=${VERSION}" -o /out/flotillad ./cmd/flotillad \
- && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/flotilla ./cmd/flotilla
+ && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/flotilla ./cmd/flotilla \
+ && mkdir -p /out/state
 
 FROM gcr.io/distroless/static-debian12@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/flotillad /out/flotilla /usr/local/bin/
+# a new named volume takes the owner of the directory it is mounted on: without this the store's
+# volume is root's and flotillad (nonroot) cannot open its database
+COPY --from=build --chown=65532:65532 /out/state /var/lib/flotilla
 # the specs travel with the image: a spec change is a deploy (ADR-0002)
 COPY fleets /opt/flotilla/fleets
 USER nonroot:nonroot

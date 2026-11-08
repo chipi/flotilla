@@ -126,6 +126,8 @@ class TestHTTP(unittest.TestCase):
 
     def test_auth(self):
         self.assertEqual(self.call("/healthz", token="wrong")[0], 401)
+        code, body = self.call("/livez", token="wrong")
+        self.assertEqual((code, body), (200, {"ok": True}), "livez is the healthcheck: no token, no detail")
         code, body = self.call("/healthz")
         self.assertEqual((code, body["ok"]), (200, True))
 

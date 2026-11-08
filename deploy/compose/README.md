@@ -9,28 +9,40 @@ installation lives on the host, outside git. Placeholders below are in `<angle b
 ```
 ~/flotilla/
   repo/                     git clone https://github.com/chipi/flotilla.git repo
-  .env                      the paths below (compose reads it)
-  config/                   mode 600 for the tokens, 644 for the rest (the containers run as non-root)
+  .env                      the installation (compose and the deploy scripts read it)
+  config/                   read-only into the containers: 644 for the YAML, 600 for the tokens
     flotillad.yaml
     callers.yaml            who may call the API, by token hash
     cli.token               the token the CLI inside flotillad uses (an agent token: see below)
     worker-triage.token     flotillad <-> worker, 32+ random characters
-    worker-triage.env       the installation's overrides for jobs (JOB_*)
+    worker-triage.env       the installation's overrides for jobs (JOB_*); no secrets
     smokescreen.yaml        the proxy: listen address, which private ranges it may reach
     egress-acl.yaml         the proxy: which host names jobs may reach
-  state/                    flotillad's SQLite store and its daily backups
   deployed.tsv              written by deploy/mini/deploy.sh
 ```
+
+**State and secrets are Docker volumes**, not host folders: `flotilla-state` (the store and its daily
+backups), the triage fleet's state (`TRIAGE_STATE_VOLUME`), and `flotilla-flotillad-secrets` /
+`flotilla-worker-triage-secrets`. Nothing writes to the host through the VM's file sharing.
+`deploy/mini/secrets.sh` copies the tokens and the triage secrets file into the secret volumes on
+every deploy (mode 600, owned by the reading container's uid); the token files above are read on
+the host only, by that script.
 
 `.env`:
 
 ```sh
 FLOTILLA_CONFIG=<home>/flotilla/config
-FLOTILLA_STATE=<home>/flotilla/state
-TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # mounted read-only into the worker only
-TRIAGE_STATE=<the triage fleet's state folder>        # mounted as the worker's ~/signal-fleet
+TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's secrets volume
+TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (shadow copy, or live after the switch)
 # the services' Docker networks, when they are not the defaults
 # NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default
+```
+
+A shadow state volume is seeded once from the live fleet's folder, without its secrets file and STOP
+flag, and never overwritten after:
+
+```sh
+~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
 ```
 
 `config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`, `disabled_jobs`):
@@ -45,7 +57,7 @@ vm_url: http://victoriametrics:8428     # through the proxy
 otlp_traces_url: http://victoriatraces:10428/insert/opentelemetry/v1/traces
 callers_file: /etc/flotilla/callers.yaml
 workers:
-  triage: {url: "http://worker-triage:8081", token_file: /etc/flotilla/worker-triage.token}
+  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
 ```
 
 `config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
