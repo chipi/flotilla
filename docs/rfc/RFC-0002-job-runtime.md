@@ -176,7 +176,8 @@ OpenAI-compatible endpoint, under the job's model policy; LiteLLM is the referen
 undeclared fallback. An `external` step (§4) points its coding harness at the same endpoint, and the
 runtime records that step's inputs and outputs.
 
-**Budgets** (spec `budget:`, the names the spec code already uses, `internal/spec/spec.go:68`):
+**Budgets** (spec `budget:`; `day_usd` as the spec code already has it, `internal/spec/spec.go:68`;
+`day_tokens` is new):
 
 ```yaml
 budget: { day_usd: 2.0, day_tokens: 2000000 }
@@ -216,8 +217,8 @@ It is the same code for every fleet. Fleets differ only in what they configure.
     the same turn.
   - Limits are set from what the evaluation corpus measured, not guessed. A limit that would cut a
     run that completes today is a behaviour change (§8).
-- **The spec is validated against the aliases.** A job that declares tools on an alias with
-  `tools: none` is refused.
+- **The spec is validated against the aliases at load,** on the host, since aliases live in host
+  config, not git. A job that declares tools on an alias with `tools: none` is refused.
 - **Every request and reply is recorded:** the exact messages, the raw reply, the tool calls and the
   tool results.
 - **Left out on purpose:** planning turns, sub-agents, compaction mid-run, self-modification.
@@ -446,8 +447,9 @@ signal supplied. Configured per installation, used per fleet:
 knowledge:
   homelab-handbook:
     kind: files
-    from: ~/agentic-ai-homelab              # the host checkout the deploy copies from
     volume: flotilla-knowledge              # mounted read-only at /knowledge in the worker
+    # the host checkout the deploy copies from is in the deploy's FLOTILLA_HOME/.env
+    # (KNOWLEDGE_HOMELAB_FROM), like the secrets paths secrets.sh reads
     paths: [docs/recipes/**, docs/adr/**, infra/**/README.md]
     maps:
       by_service: { litellm: infra/litellm/README.md, glitchtip: infra/glitchtip/README.md }
@@ -489,7 +491,8 @@ different things.
 | the harness code, the client, the context builder, meant to change nothing | exact replay |
 | a playbook or fragment, a context layer or budget, a limit, activating a note, a different model | model replay |
 | a tool's implementation (its query, window or trimming) | re-freeze the tool results with the new tool (`freeze.py --refreeze`), then model replay |
-| an alias remapped to another deployment in config | model replay; the run id is recorded in the deploy's ops event, since config has no commit message |
+| an alias remapped to another deployment in flotilla's config | model replay; the run id is recorded in the deploy's ops event, since config has no commit message |
+| a re-route on the gateway side (LiteLLM's own config) | flotilla cannot gate it. A changed deployment id (`x-litellm-model-id`) on a known alias raises an alert, and a model replay follows |
 | the client's transport, or anything that touches the wire | exact replay, then shadow comparison |
 | an `external` step | not replayable. Its gates (repro-first, the delta suite) and the operator's review of the diff are the proof |
 
@@ -672,3 +675,6 @@ These say something this RFC changes (AGENTS.md rule 28):
   - **Smaller fixes:** `interrupted` when flotillad is lost mid-run; spec validation of tools
     against aliases; `step_timeout` set from the worst case; exact-match knowledge keys; the cost
     body field first; the "JSON" word rule.
+- **2026-11-08, advisor's third pass on revision 3:** ready for the operator's acceptance. Four
+  one-line edits made: `day_tokens` marked new; alias validation at load; the knowledge source path
+  in the deploy's `.env`; a row for gateway-side re-routes.
