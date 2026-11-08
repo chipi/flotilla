@@ -43,9 +43,9 @@ The bugfix fleet stays on fleetd (it is disabled there today) until phase 6.
 | 2.2 worker | done | 12 worker tests OK; two mutants (inherited environment, leader-only kill) fail them |
 | 2.3 images, compose | done | images `sha-75a7491` on ghcr; `deploy/e2e/run.sh`: E2E PASS, 26 checks |
 | 2.4 egress | done | e2e: an open allowlist fails it; on the mini every host the triage cycle used was allowed by rule and `example.com` refused |
-| 2.5 observability | **partial** | metrics, JSON logs, traces, deploy event, alert rules `flotilla-silent` and `flotilla-job-stale` (homelab 85343a9, live, drift 0). **Not done:** errors to GlitchTip, a dashboard, `deploy-verify` project `flotilla` |
+| 2.5 observability | **partial** | metrics, JSON logs, traces, deploy event, alert rules `flotilla-silent` and `flotilla-job-stale` (homelab 85343a9, live, drift 0), dashboard `flotilla` (homelab 5f39c5c), deploy-verify project `flotilla` (homelab e8a5967: DEPLOY-VERIFY PASS). **Not done:** errors to GlitchTip (needs a Sentry SDK: a dependency) |
 | 2.6 heartbeat | **partial** | runs every 10 min through the worker and the proxy; the stale alert is not yet seen firing on purpose |
-| 2.7 shadow | **running** | since 18:45Z on the mini (`deploy/mini/deploy.sh sha-75a7491` → DEPLOY PASS); first shadow cycle ok: 1 Grafana alert and 10 GlitchTip issues, all already decided, no model call. **Not done:** the comparison with fleetd |
+| 2.7 shadow | **paused since 18:5xZ** (its gauges were summed into the Hub; fixed by service filters) | since 18:45Z on the mini (`deploy/mini/deploy.sh sha-75a7491` → DEPLOY PASS); first shadow cycle ok: 1 Grafana alert and 10 GlitchTip issues, all already decided, no model call. **Not done:** the comparison with fleetd |
 | 2.8 switch | not started | needs the comparison, the fleet session's scripts, and where the live state lives (below) |
 
 **Decided on the way:**
@@ -55,10 +55,21 @@ The bugfix fleet stays on fleetd (it is disabled there today) until phase 6.
 - **The shadow state was seeded from a copy of `~/signal-fleet`** without any env file. The folder
   holds ten backups of the fleet's secrets file; the first seed version would have copied them.
 
-**Open before the switch (2.8):** the live fleet's state is `~/signal-fleet` on the host, read by the
-Hub (`export/inbox.json`) and by the fleet session's weekly freeze and filing gate. With the state in
-a volume they need another way in: the flotilla API, or a read-only export the host copies out. To
-decide with the fleet session.
+**The state mirror (agreed with the fleet session, 2026-11-08; to build before 2.8).** After the
+switch the live state is a volume; the Hub and the fleet session's weekly freeze, weekly check and
+filing gate keep reading `~/signal-fleet` on the host, kept current by a host-side mirror:
+- a launchd job under the operator account, every 2 min; it copies only when no triage run is in
+  flight and the last run ended after its stamp (so never mid-write);
+- it copies `results/` (dispositions.tsv, filed.tsv, probes/ with capture names unchanged), `queue/`
+  and `export/`, each file whole and atomically (temp file + rename); never `frozen/` (the weekly
+  freeze writes it) and never `fleet-gateway.env` (stays a host file; the freezer reads it);
+- `results/.mirror_stamp`: end time (UTC) and id of the last run the copy includes; the freeze names
+  its snapshot by it;
+- `results/cycles.tsv`: run_id, start_utc, end_utc, status, stage per run; replaces the first line of
+  each day in `~/fleetd/fleetd.log`, which weekly_check.py reads as that day's stale sweep;
+- `results/deploys.tsv`: flotilla's deploy appends the same 6 columns plus `repo`;
+- the fleet session's code readers move to `~/flotilla/repo` (signal-fleet/mvp at the same path),
+  with the homelab-to-flotilla commit map in fleet-eval-data.
 
 ## Decisions taken
 
