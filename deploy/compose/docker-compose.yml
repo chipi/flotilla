@@ -100,12 +100,16 @@ services:
 volumes:
   state:
     name: ${FLOTILLA_STATE_VOLUME:-flotilla-state}
+  # created and filled by deploy/mini/secrets.sh before compose runs; compose never removes them
   flotillad-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-flotillad-secrets
+    external: true
   worker-triage-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-secrets
+    external: true
   triage-state:
     name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}
+    external: true
 
 networks:
   flotilla:

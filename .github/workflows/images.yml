@@ -13,7 +13,7 @@ on:
       - fleets/**
       - worker/**
       - signal-fleet/mvp/**
-      - deploy/docker/**
+      - deploy/**   # deploy.sh takes the compose file from the image tag's commit: a compose change needs images too
       - .github/workflows/images.yml
   workflow_dispatch:
 

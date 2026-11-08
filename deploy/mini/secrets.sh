@@ -51,4 +51,7 @@ put $V-flotillad-secrets cli.token 65532 "$FLOTILLA_CONFIG/cli.token"
 put $V-flotillad-secrets worker-triage.token 65532 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets fleet.env 10001 "$TRIAGE_ENV_FILE"
+# the triage state volume is external to compose too: make sure it exists (an empty one takes the
+# image's directory owner on first mount)
+$D volume create "${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}" >/dev/null
 echo "SECRETS PASS"
