@@ -31,13 +31,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 HERE = os.path.dirname(os.path.abspath(__file__))
-CORPUS = os.path.join(HERE, "..", "reference-operational", "replay-2026-10-01.json")
-LEDGER = os.path.join(HERE, "..", "reference-filing", "filed-2026-10-01.tsv")
-BASE_REV = "12ed430"   # main before these fixes
+CORPUS = evaldata.path("reference-operational", "replay-2026-10-01.json")
+LEDGER = evaldata.path("reference-filing", "filed-2026-10-01.tsv")
+BASE_REV = "957162b"  # homelab 12ed430   # main before these fixes
 _TMP = tempfile.mkdtemp(prefix="sf-gt-replay-")
 os.environ["SF_FILED_LEDGER"] = os.path.join(_TMP, "filed.tsv")
 shutil.copy(LEDGER, os.environ["SF_FILED_LEDGER"])

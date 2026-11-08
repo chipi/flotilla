@@ -33,8 +33,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | Job runtime | Python (stdlib-first) | the triage fleet is Python; SEO data work (Parquet, DuckDB) (ADR-0001) |
 | State | SQLite on the host (runs, ledger, approvals, budgets); Parquet for analytical fleet data | one file, transactional, easy to back up |
 | Models | through a LiteLLM gateway only; local first; per-job model policy | ADR-0001 §9 |
-| Test framework | `go test`; pytest | wired in phase 1 |
-| Linter / formatter | gofmt + go vet; ruff | wired in phase 1 |
+| Test framework | `go test` (fleetd); the triage fleet's own stdlib test scripts (`test_units.py`, `test_capture.py`, `test_scrub.py`) and replays (`make replay`) | as imported from the homelab, phase 1 |
+| Linter / formatter | gofmt + go vet (fleetd); Python byte-compile (ruff not yet: it would be a new dependency) | phase 1 |
 | CI runner | GitHub Actions | matches `chipi` standard |
 | Docs site | MkDocs Material → GitHub Pages, strict build | matches `chipi` standard |
 | Secrets / config | mode-600 files on the host, named in `~/.config/flotilla/config.yaml`; never in git | public repo |
@@ -69,12 +69,33 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 
 ---
 
+## Code layout (phase 1)
+
+| Path | What | Runs from |
+|---|---|---|
+| `fleetd/` | the Go scheduler and the bugfix chain; becomes `flotillad` in phase 2 | still agentic-ai-homelab's copy on the mini |
+| `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests, `deploy/` the homelab deploy hooks, `replays.sh` the replay gates | still agentic-ai-homelab's copy on the mini |
+| `bugfix-fleet/` | the bugfix fleet: bake-off harness scripts (used by `fleetd chain`) and a TypeScript MVP (no CI, RFC-0001 §11) | still agentic-ai-homelab's copy on the mini |
+
+- Imported from agentic-ai-homelab at `f0ed072` with their history (`git filter-repo`), without
+  `signal-fleet/reference*`: the replay corpora are real scrubbed production data and live in the
+  private `fleet-eval-data` repo, `projects/signal-fleet-replays`. The replays find them through
+  `SF_EVAL_DATA`, and the alert rules through `SF_ALERT_RULES` (`signal-fleet/replays.sh`).
+- A replay's `BASE_REV` is a commit in **this** repo's history; each carries the homelab commit it
+  replaced in a comment.
+- **Known deviation from rule 1 until the config pass:** the imported code still holds real
+  repo maps and host defaults (`signal-fleet/mvp/filing.py`, `config.py`, `fleetd/deploy/*.json`).
+  They were already public in agentic-ai-homelab; moving them into host config is the rest of
+  phase 1.
+- Until phase 2 the live fleet runs agentic-ai-homelab's copy. A fix the live fleet needs lands
+  there first and is ported here.
+
 ## Domain knowledge
 
-- The fleets being migrated live in
-  [agentic-ai-homelab](https://github.com/chipi/agentic-ai-homelab) until their phase: `fleetd/`,
-  `signal-fleet/`, `bugfix-fleet/`, `infra/homelab-home/briefing-job.js`. RFC-0001 §2 has the
-  inventory: what each does, its state, and its coupling.
+- The fleets being migrated came from
+  [agentic-ai-homelab](https://github.com/chipi/agentic-ai-homelab): `fleetd/`, `signal-fleet/`,
+  `bugfix-fleet/` (now here), and `infra/homelab-home/briefing-job.js` (still there). RFC-0001 §2 has
+  the inventory: what each does, its state, and its coupling.
 - The homelab services flotilla depends on (LiteLLM, the observability stack, GlitchTip, Grafana)
   are operated from agentic-ai-homelab. Its operations handbook (`docs/recipes/agent-access.md`)
   says how to reach each one.

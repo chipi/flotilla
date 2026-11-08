@@ -40,11 +40,12 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEDGER = os.path.join(HERE, "..", "reference-filing", "filed-2026-10-17.tsv")
-CORPUS = os.path.join(HERE, "..", "reference-filing", "identity-2026-10-17.json")
-BASE_REV = "237371c"   # main before these fixes
+LEDGER = evaldata.path("reference-filing", "filed-2026-10-17.tsv")
+CORPUS = evaldata.path("reference-filing", "identity-2026-10-17.json")
+BASE_REV = "1e9a3e5"  # homelab 237371c   # main before these fixes
 GROUP_RULES_SINCE = "2026-08-20"   # f9a6b14 (2026-08-19) last changed GROUP_RULES
 NOW = datetime(2026, 10, 17, 15, 30, tzinfo=timezone.utc)
 _TMP = tempfile.mkdtemp(prefix="sf-identity-replay-")

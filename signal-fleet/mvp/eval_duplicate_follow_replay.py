@@ -32,11 +32,12 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEDGER = os.path.join(HERE, "..", "reference-filing", "filed-2026-10-02.tsv")
-CORPUS = os.path.join(HERE, "..", "reference-filing", "duplicates-2026-10-02.json")
-BASE_REV = "857ddf8"   # main before this fix
+LEDGER = evaldata.path("reference-filing", "filed-2026-10-02.tsv")
+CORPUS = evaldata.path("reference-filing", "duplicates-2026-10-02.json")
+BASE_REV = "499400f"  # homelab 857ddf8   # main before this fix
 NOW = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
 _TMP = tempfile.mkdtemp(prefix="sf-dup-replay-")
 os.environ["SF_FILED_LEDGER"] = os.path.join(_TMP, "filed.tsv")

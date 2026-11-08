@@ -24,13 +24,14 @@ import sys
 import tempfile
 import urllib.error
 from collections import Counter
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CORPUS = os.path.join(HERE, "..", "reference-triager-failures", "replay-2026-10-01.json")
-BASE_REV = "e992391"   # main just before #11
+CORPUS = evaldata.path("reference-triager-failures", "replay-2026-10-01.json")
+BASE_REV = "de217a3"  # homelab e992391   # main just before #11
 
 
 def _load(path, name):

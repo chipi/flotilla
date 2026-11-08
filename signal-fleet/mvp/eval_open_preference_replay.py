@@ -30,11 +30,12 @@ import os
 import subprocess
 import sys
 import tempfile
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEDGER = os.path.join(HERE, "..", "reference-filing", "filed-2026-10-02.tsv")
-STATES = os.path.join(HERE, "..", "reference-filing", "issue-states-2026-10-02.json")
-BASE_REV = "0702aee"   # main before this fix
+LEDGER = evaldata.path("reference-filing", "filed-2026-10-02.tsv")
+STATES = evaldata.path("reference-filing", "issue-states-2026-10-02.json")
+BASE_REV = "a3c6adf"  # homelab 0702aee   # main before this fix
 os.environ["SF_FILED_LEDGER"] = LEDGER
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 

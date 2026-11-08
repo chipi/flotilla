@@ -36,11 +36,11 @@ var version = "dev"
 type FleetConfig struct {
 	Name         string  `json:"name"`
 	Enabled      bool    `json:"enabled"`
-	Interval     string  `json:"interval"`      // Go duration, e.g. "10m"
-	CycleCmd     string  `json:"cycle_cmd"`     // run via sh -c
+	Interval     string  `json:"interval"`  // Go duration, e.g. "10m"
+	CycleCmd     string  `json:"cycle_cmd"` // run via sh -c
 	Workdir      string  `json:"workdir"`
-	EnvFile      string  `json:"env_file"`      // KEY=VAL lines, optional
-	StopFlag     string  `json:"stop_flag"`     // file present => skip cycles
+	EnvFile      string  `json:"env_file"`  // KEY=VAL lines, optional
+	StopFlag     string  `json:"stop_flag"` // file present => skip cycles
 	BudgetDayUSD float64 `json:"budget_day_usd"`
 	SpendFile    string  `json:"spend_file"`    // cycle writes last-cycle USD here, optional
 	Stage        string  `json:"stage"`         // shadow | propose | live

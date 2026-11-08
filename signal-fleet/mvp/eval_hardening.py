@@ -24,8 +24,9 @@ os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 
 import sources
 import triage
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
-DATASET = os.path.join(os.path.dirname(__file__), "..", "reference-hardening",
+DATASET = evaldata.path("reference-hardening",
                        "hardening-cases.json")
 
 

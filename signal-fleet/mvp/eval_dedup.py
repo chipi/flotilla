@@ -22,8 +22,9 @@ os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 import filing
 import sources
 import triage
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
-CORPUS = os.path.join(os.path.dirname(__file__), "..", "reference-dedup", "corpus.json")
+CORPUS = evaldata.path("reference-dedup", "corpus.json")
 
 # floors — a margin below the 2026-08-28 measured numbers (collapse 55%, top cluster
 # x12). If a change drops dedup below these, the incident becomes a red test.

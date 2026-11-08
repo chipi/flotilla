@@ -26,10 +26,11 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CORPUS = os.path.join(HERE, "..", "reference-inbox-open", "corpus-2026-11-04.json")
-BASE_REV = "f9b0d50"   # main before the open-only count
+CORPUS = evaldata.path("reference-inbox-open", "corpus-2026-11-04.json")
+BASE_REV = "8563ad8"  # homelab f9b0d50   # main before the open-only count
 FILED_COLS = ["fingerprint", "repo", "issue", "group_key", "filed_at", "last_comment_day", "norm_key", "alert_key"]
 DISP_COLS = ["ts", "fingerprint", "alertname", "disposition", "reason"]
 

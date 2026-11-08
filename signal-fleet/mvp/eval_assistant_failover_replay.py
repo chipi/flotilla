@@ -29,13 +29,14 @@ import os
 import subprocess
 import sys
 import tempfile
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 HERE = os.path.dirname(os.path.abspath(__file__))
-CORPUS = os.path.join(HERE, "..", "reference-operational", "replay-2026-11-03-assistant-failover.json")
-CONTROLS = os.path.join(HERE, "..", "reference-operational", "replay-2026-10-01.json")
-BASE_REV = "e6696ca"   # main before the assistant-failover gate
+CORPUS = evaldata.path("reference-operational", "replay-2026-11-03-assistant-failover.json")
+CONTROLS = evaldata.path("reference-operational", "replay-2026-10-01.json")
+BASE_REV = "ea9dad0"  # homelab e6696ca   # main before the assistant-failover gate
 X3, OTHER = "100.92.54.65", "100.69.49.126"
 
 

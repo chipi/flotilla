@@ -44,6 +44,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
@@ -51,8 +52,8 @@ _FILED = tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False)
 _FILED.close()
 os.environ["SF_FILED_LEDGER"] = _FILED.name
 HERE = os.path.dirname(os.path.abspath(__file__))
-CORPUS = os.path.join(HERE, "..", "reference-oom-edge", "corpus-2026-10-27.json")
-BASE_REV = "2e41270"   # main before this fix
+CORPUS = evaldata.path("reference-oom-edge", "corpus-2026-10-27.json")
+BASE_REV = "a4b59e8"  # homelab 2e41270   # main before this fix
 FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 import actions   # noqa: E402

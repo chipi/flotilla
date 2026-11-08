@@ -36,6 +36,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
@@ -45,8 +46,8 @@ _FILED = tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False)
 _FILED.close()
 os.environ["SF_FILED_LEDGER"] = _FILED.name
 HERE = os.path.dirname(os.path.abspath(__file__))
-CORPUS = os.path.join(HERE, "..", "reference-recurrence", "glitchtip-history-2026-10-01.tsv.gz")
-BASE_REV = "1343851"   # main before this fix
+CORPUS = evaldata.path("reference-recurrence", "glitchtip-history-2026-10-01.tsv.gz")
+BASE_REV = "b7deba0"  # homelab 1343851   # main before this fix
 
 import actions   # noqa: E402
 import config    # noqa: E402

@@ -34,8 +34,9 @@ from collections import defaultdict
 
 import filing
 import scrub
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
-CORPUS = os.path.join(os.path.dirname(__file__), "..", "reference-filing",
+CORPUS = evaldata.path("reference-filing",
                       "replay-2026-09-30.json")
 NORM_KEY_SINCE = "2026-08-27"          # ceda02b: normalized dedup key (#1) introduced
 

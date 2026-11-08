@@ -19,11 +19,18 @@ Projects like Hermes Agent and OpenClaw are inspiration, not dependencies.
 
 ## Status
 
-**Design phase.** The design is
+**Migration, phase 1.** The design is
 [RFC-0001](docs/rfc/RFC-0001-fleet-platform.md), and the decisions taken on it are in
-[ADR-0001](docs/adr/ADR-0001-platform-foundations.md). The existing fleets still live in
-[agentic-ai-homelab](https://github.com/chipi/agentic-ai-homelab) and move here phase by phase
-(RFC-0001 §9).
+[ADR-0001](docs/adr/ADR-0001-platform-foundations.md) and
+[ADR-0002](docs/adr/ADR-0002-run-in-docker.md). The existing fleets' code (`fleetd/`,
+`signal-fleet/`, `bugfix-fleet/`) was imported from
+[agentic-ai-homelab](https://github.com/chipi/agentic-ai-homelab) with its history; the live fleets
+still run from there until phase 2 (RFC-0001 §9).
+
+```bash
+make ci-fast       # gofmt + go vet + go test (fleetd), the triage fleet's unit tests
+make replay        # the triage fleet's replays; needs the private corpora (signal-fleet/replays.sh)
+```
 
 ## Shape
 

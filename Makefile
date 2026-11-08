@@ -40,21 +40,34 @@ help: ## Show this help (default target)
 		$(MAKEFILE_LIST)
 
 # ---- Atomic gates -------------------------------------------------------------
-# Design phase: the repo holds docs only, so there is nothing to format, lint or test yet. Phase 1
-# (RFC-0001 §9) brings fleetd (Go) and the triage fleet (Python) and replaces these with gofmt /
-# go vet / go test and ruff / pytest. Until then they say so and pass; they are not a skipped check.
+# fleetd (Go) and the triage fleet (Python, stdlib only) since phase 1. The bugfix fleet's
+# TypeScript MVP has no lockfile and no CI yet (RFC-0001 §11 asks whether it is worth keeping).
+# The replays need the private corpora, so they are `make replay`, run on a host, not in CI.
+
+SF_MVP := signal-fleet/mvp
 
 .PHONY: format
-format: ## Apply formatters (gofmt, ruff format) — none yet: no code
-	@echo "format: no code yet (design phase)"
+format: ## Apply gofmt to fleetd
+	@cd fleetd && gofmt -w . && echo "format PASS"
 
 .PHONY: lint
-lint: ## Run linters (go vet, ruff) — none yet: no code
-	@echo "lint: no code yet (design phase)"
+lint: ## gofmt check + go vet (fleetd), byte-compile every Python file (signal-fleet)
+	@cd fleetd && test -z "$$(gofmt -l .)" || { echo "lint FAIL: gofmt would change:"; gofmt -l .; exit 1; }
+	@cd fleetd && go vet ./...
+	@python3 -m compileall -q signal-fleet >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+	@echo "lint PASS"
 
 .PHONY: test-unit
-test-unit: ## Fast unit tests (go test, pytest) — none yet: no code
-	@echo "test-unit: no code yet (design phase)"
+test-unit: ## go test (fleetd) + the triage fleet's unit tests, with an empty HOME
+	@cd fleetd && go test ./...
+	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py; do \
+	  HOME=$$h SF_OBSERV_DISABLED=1 python3 $$t >/tmp/flotilla-$$t.log 2>&1 && echo "PASS $$t" || { echo "FAIL $$t"; tail -20 /tmp/flotilla-$$t.log; rm -rf $$h; exit 1; }; \
+	done; rm -rf $$h
+	@echo "test-unit PASS"
+
+.PHONY: replay
+replay: ## The triage fleet's replay gates (needs SF_EVAL_DATA and SF_ALERT_RULES; see signal-fleet/replays.sh)
+	@bash signal-fleet/replays.sh
 
 .PHONY: test-integration
 test-integration: ## Integration tests (real services) — none yet: no code

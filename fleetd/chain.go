@@ -2,15 +2,18 @@
 //
 // Go owns: intake (GitHub), state machine, all GitHub writes, ledger, metrics.
 // LLM episodes stay external leaf executors (the measured lab instruments):
-//   triage  → bugfix-fleet/bakeoff/triage_run.sh (TRIAGE_BASE=origin/main)
-//   fix     → bugfix-fleet/bakeoff/harnesses/pi.sh (one episode, no oracle)
+//
+//	triage  → bugfix-fleet/bakeoff/triage_run.sh (TRIAGE_BASE=origin/main)
+//	fix     → bugfix-fleet/bakeoff/harnesses/pi.sh (one episode, no oracle)
+//
 // Production has no hidden oracle (RFC-0002 go-live): acceptance =
 // repro-first (a new/changed test in the diff — enforced MECHANICALLY here)
 // + the full vitest suite green + reviewer + operator merge.
 //
 // Stages: shadow  = nothing leaves the machine (no GH writes, no push)
-//         propose = verdict labels + comments + DRAFT PR
-//         live    = ready PR
+//
+//	propose = verdict labels + comments + DRAFT PR
+//	live    = ready PR
 //
 // Usage: fleetd chain -config chain.json [-once] [-issue N]
 package main
@@ -50,8 +53,8 @@ type ChainConfig struct {
 	Advisor        string  `json:"advisor"`          // "off" disables §4.2 consultations
 	WorkerModel    string  `json:"worker_model"`     // default deepseek-v4-flash (promoted 2026-07-26)
 	ReviewerModel  string  `json:"reviewer_model"`   // e.g. claude-sonnet-4-6; ""/off disables
-	LedgerDir   string `json:"ledger_dir"`
-	VMURL       string `json:"vm_url"`
+	LedgerDir      string  `json:"ledger_dir"`
+	VMURL          string  `json:"vm_url"`
 }
 
 func chainMain(args []string) {
@@ -188,11 +191,11 @@ func processIssue(cc ChainConfig, is ghIssue) {
 
 	// ── 1 · triage episode (leaf: the measured lab triager, base = main) ──
 	ticket := map[string]any{
-		"id":          fmt.Sprintf("real-orrery-%d", is.Number),
-		"repo":        "orrery",
-		"level":       "L0-real",
-		"source_url":  is.URL,
-		"description": is.Title + "\n\n" + is.Body,
+		"id":               fmt.Sprintf("real-orrery-%d", is.Number),
+		"repo":             "orrery",
+		"level":            "L0-real",
+		"source_url":       is.URL,
+		"description":      is.Title + "\n\n" + is.Body,
 		"oracle_test_file": "", "code_files": []string{},
 	}
 	tj, _ := json.Marshal(ticket)

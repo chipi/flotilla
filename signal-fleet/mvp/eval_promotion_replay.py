@@ -32,11 +32,12 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DISP = os.path.join(HERE, "..", "reference-recurrence", "dispositions-2026-10-17.tsv.gz")
-FILED = os.path.join(HERE, "..", "reference-filing", "filed-2026-10-17.tsv")
-BASE_REV = "69f88f1"   # main before this fix
+DISP = evaldata.path("reference-recurrence", "dispositions-2026-10-17.tsv.gz")
+FILED = evaldata.path("reference-filing", "filed-2026-10-17.tsv")
+BASE_REV = "b866129"  # homelab 69f88f1   # main before this fix
 _TMP = tempfile.mkdtemp(prefix="sf-promo-replay-")
 os.environ["SF_FILED_LEDGER"] = os.path.join(_TMP, "filed.tsv")
 os.environ["SF_LEDGER"] = os.path.join(_TMP, "dispositions.tsv")

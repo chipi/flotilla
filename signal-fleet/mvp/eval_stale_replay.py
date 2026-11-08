@@ -23,8 +23,9 @@ import sys
 
 import filing
 import stale
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
-CORPUS = os.path.join(os.path.dirname(__file__), "..", "reference-stale", "replay-2026-09-30.json")
+CORPUS = evaldata.path("reference-stale", "replay-2026-09-30.json")
 REPO = "chipi/agentic-ai-homelab"
 
 # Known blind spots: real issues the nudge WILL flag, and why. Kept visible, not hidden.

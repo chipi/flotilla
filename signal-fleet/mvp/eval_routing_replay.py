@@ -23,11 +23,14 @@ import os
 import sys
 
 import filing
+import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 
-HERE = os.path.dirname(__file__)
-CORPUS = os.path.join(HERE, "..", "reference-filing", "replay-2026-09-30.json")
-RULES = os.path.join(HERE, "..", "..", "infra", "observability", "backend", "grafana",
-                     "provisioning", "alerting", "rules.yaml")
+CORPUS = evaldata.path("reference-filing", "replay-2026-09-30.json")
+# The live alert rules, from the homelab checkout that provisions Grafana (another repo):
+# infra/observability/backend/grafana/provisioning/alerting/rules.yaml there.
+RULES = os.environ.get("SF_ALERT_RULES") or sys.exit(
+    "SF_ALERT_RULES is not set: point it at the homelab checkout's "
+    "infra/observability/backend/grafana/provisioning/alerting/rules.yaml")
 PROD_REPO = "chipi/podcast_scraper"
 # Rules whose QUERY result keeps `instance` (by (instance, ...) or no aggregation) —
 # their routing never depended on rule labels, and this change does not touch them.
