@@ -1,0 +1,301 @@
+// Package sched decides when a job runs and runs it through its worker: fleetd's loop, with the
+// controls, run records and budget in the store instead of flag files and a JSON state file.
+package sched
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/chipi/flotilla/internal/spec"
+	"github.com/chipi/flotilla/internal/store"
+	"github.com/chipi/flotilla/internal/worker"
+)
+
+// Runner is the worker client (an interface so the tests can stand in for it).
+type Runner interface {
+	Run(ctx context.Context, r worker.Request) (*worker.Result, error)
+}
+
+// Metrics receives one sample per run; telemetry pushes them to VictoriaMetrics.
+type Metrics interface {
+	Run(job, status, stage string, durationS, spendDayUSD float64)
+	LastSuccess(job string, at time.Time)
+}
+
+// Control keys. A fleet's "stop" skips every job of the fleet; a job's "paused" skips that job; a
+// job's "stage" overrides the spec's default.
+const (
+	KeyStop   = "stop"
+	KeyPaused = "paused"
+	KeyStage  = "stage"
+)
+
+var ErrRunning = errors.New("already running")
+
+type Scheduler struct {
+	Store    *store.Store
+	Jobs     []*spec.Job
+	Workers  map[string]Runner
+	Metrics  Metrics
+	Location *time.Location
+	Log      *slog.Logger
+	Now      func() time.Time
+
+	mu      sync.Mutex
+	running map[string]string // job id -> run id
+}
+
+func (s *Scheduler) init() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.running == nil {
+		s.running = map[string]string{}
+	}
+	if s.Now == nil {
+		s.Now = time.Now
+	}
+	if s.Location == nil {
+		s.Location = time.Local
+	}
+	if s.Log == nil {
+		s.Log = slog.Default()
+	}
+}
+
+// Job returns the loaded spec for "fleet/job".
+func (s *Scheduler) Job(id string) *spec.Job {
+	for _, j := range s.Jobs {
+		if j.ID() == id {
+			return j
+		}
+	}
+	return nil
+}
+
+// Loop runs every enabled job on its trigger until ctx ends: once at start, then every interval.
+func (s *Scheduler) Loop(ctx context.Context) {
+	s.init()
+	var wg sync.WaitGroup
+	for _, j := range s.Jobs {
+		if !j.Enabled {
+			s.Log.Info("job disabled in its spec", "job", j.ID())
+			continue
+		}
+		if _, ok := s.Workers[j.Worker]; !ok {
+			s.Log.Error("job's worker is not configured: job not started", "job", j.ID(), "worker", j.Worker)
+			continue
+		}
+		wg.Add(1)
+		go func(j *spec.Job) {
+			defer wg.Done()
+			s.Log.Info("job loop started", "job", j.ID(), "every", j.Every.String(), "worker", j.Worker)
+			t := time.NewTicker(j.Every)
+			defer t.Stop()
+			for {
+				if _, err := s.RunNow(ctx, j.ID(), "schedule", "flotillad"); err != nil && !errors.Is(err, ErrRunning) {
+					s.Log.Error("run failed", "job", j.ID(), "err", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+			}
+		}(j)
+	}
+	wg.Wait()
+}
+
+// RunNow runs one job now and waits for it. trigger says why ("schedule", "manual"), actor who.
+// A skipped run (STOP, paused, budget) is recorded with its reason and returned without error.
+func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*store.Run, error) {
+	s.init()
+	j := s.Job(id)
+	if j == nil {
+		return nil, fmt.Errorf("no job %s", id)
+	}
+	runner, ok := s.Workers[j.Worker]
+	if !ok {
+		return nil, fmt.Errorf("job %s: worker %s is not configured", id, j.Worker)
+	}
+	runID := newRunID(j, s.Now())
+	s.mu.Lock()
+	if prev, busy := s.running[id]; busy {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("%s: %w (%s)", id, ErrRunning, prev)
+	}
+	s.running[id] = runID
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); delete(s.running, id); s.mu.Unlock() }()
+
+	stage, err := s.Stage(ctx, j)
+	if err != nil {
+		return nil, err
+	}
+	rec := store.Run{ID: runID, Job: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Stage: stage}
+	if reason, err := s.skipReason(ctx, j); err != nil {
+		return nil, err
+	} else if reason != "" {
+		rec.Detail, rec.Status = reason, store.StatusSkipped
+		rec.StartedAt = s.Now().UTC().Format(time.RFC3339Nano)
+		if err := s.Store.SkippedRun(ctx, rec); err != nil {
+			return nil, err
+		}
+		s.Log.Info("run skipped", "job", id, "run_id", runID, "reason", reason)
+		s.metric(j, store.StatusSkipped, stage, 0)
+		return &rec, nil
+	}
+
+	day := s.Now().In(s.Location).Format("2006-01-02")
+	spent, err := s.Store.Spend(ctx, day, id)
+	if err != nil {
+		return nil, err
+	}
+	tracer := otel.Tracer("flotillad")
+	ctx, span := tracer.Start(ctx, "run "+id, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
+		attribute.String("flotilla.job", id), attribute.String("flotilla.run_id", runID),
+		attribute.String("flotilla.stage", stage), attribute.String("flotilla.trigger", trigger),
+		attribute.String("flotilla.worker", j.Worker), attribute.String("flotilla.spec_hash", j.Hash)))
+	defer span.End()
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+
+	rec.StartedAt = s.Now().UTC().Format(time.RFC3339Nano)
+	rec.Status = store.StatusRunning
+	rec.TraceID = span.SpanContext().TraceID().String()
+	if err := s.Store.StartRun(ctx, rec); err != nil {
+		return nil, err
+	}
+	env := map[string]string{
+		"FLEETD_STAGE":       stage,
+		"FLEETD_CYCLE_ID":    runID,
+		"FLEETD_BUDGET_LEFT": fmt.Sprintf("%.4f", j.Budget.DayUSD-spent),
+		"FLOTILLA_RUN_ID":    runID,
+		"FLOTILLA_JOB":       id,
+	}
+	if tp := carrier.Get("traceparent"); tp != "" {
+		env["TRACEPARENT"] = tp
+	}
+	s.Log.Info("run start", "job", id, "run_id", runID, "stage", stage, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
+	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Job: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
+		TimeoutS: j.Limit.Seconds(), SpendFile: j.Run.SpendFile, Env: env})
+
+	status, detail, spend, dur := store.StatusError, "", 0.0, 0.0
+	var exit *int
+	if callErr != nil {
+		detail = callErr.Error()
+	} else {
+		status, exit, spend, dur = res.Status, res.ExitCode, res.SpendUSD, res.DurationS
+		if status != store.StatusOK {
+			detail = tail(res.OutputTail, 800)
+		}
+	}
+	// a cancelled flotillad must still record the run it ran
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := s.Store.FinishRun(fctx, runID, status, exit, spend, dur, detail); err != nil {
+		return nil, err
+	}
+	total := spent
+	if spend > 0 {
+		if total, err = s.Store.AddSpend(fctx, day, id, spend); err != nil {
+			return nil, err
+		}
+	}
+	span.SetAttributes(attribute.String("flotilla.status", status), attribute.Float64("flotilla.spend_usd", spend))
+	if status != store.StatusOK {
+		span.SetStatus(codes.Error, status)
+	}
+	lvl := slog.LevelInfo
+	if status != store.StatusOK {
+		lvl = slog.LevelWarn
+	}
+	s.Log.Log(ctx, lvl, "run end", "job", id, "run_id", runID, "status", status, "duration_s", dur, "spend_usd", spend,
+		"spend_day_usd", total, "detail", detail)
+	if s.Metrics != nil {
+		s.Metrics.Run(id, status, stage, dur, total)
+		if status == store.StatusOK {
+			s.Metrics.LastSuccess(id, s.Now())
+		}
+	}
+	out := rec
+	out.Status, out.ExitCode, out.SpendUSD, out.Detail = status, exit, spend, detail
+	out.DurationS = &dur
+	return &out, nil
+}
+
+// Stage is the job's effective stage: the control if set, else the spec's default.
+func (s *Scheduler) Stage(ctx context.Context, j *spec.Job) (string, error) {
+	v, err := s.Store.Control(ctx, j.ID(), KeyStage)
+	if err != nil || v == "" {
+		return j.Stage, err
+	}
+	return v, nil
+}
+
+func (s *Scheduler) skipReason(ctx context.Context, j *spec.Job) (string, error) {
+	if v, err := s.Store.Control(ctx, j.Fleet, KeyStop); err != nil {
+		return "", err
+	} else if v == "1" {
+		return "fleet " + j.Fleet + " is STOPped", nil
+	}
+	if v, err := s.Store.Control(ctx, j.ID(), KeyPaused); err != nil {
+		return "", err
+	} else if v == "1" {
+		return "job is paused", nil
+	}
+	if j.Budget.DayUSD > 0 {
+		day := s.Now().In(s.Location).Format("2006-01-02")
+		spent, err := s.Store.Spend(ctx, day, j.ID())
+		if err != nil {
+			return "", err
+		}
+		if spent >= j.Budget.DayUSD {
+			return fmt.Sprintf("daily budget reached ($%.4f of $%.2f)", spent, j.Budget.DayUSD), nil
+		}
+	}
+	return "", nil
+}
+
+func (s *Scheduler) metric(j *spec.Job, status, stage string, dur float64) {
+	if s.Metrics != nil {
+		s.Metrics.Run(j.ID(), status, stage, dur, 0)
+	}
+}
+
+// Running lists the jobs with a run in flight.
+func (s *Scheduler) Running() map[string]string {
+	s.init()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]string, len(s.running))
+	for k, v := range s.running {
+		out[k] = v
+	}
+	return out
+}
+
+func newRunID(j *spec.Job, now time.Time) string {
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%s-%s-%s-%s", j.Fleet, j.Job, now.UTC().Format("20060102T150405"), hex.EncodeToString(b))
+}
+
+func tail(s string, n int) string {
+	if len(s) > n {
+		return s[len(s)-n:]
+	}
+	return s
+}

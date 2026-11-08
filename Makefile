@@ -40,26 +40,32 @@ help: ## Show this help (default target)
 		$(MAKEFILE_LIST)
 
 # ---- Atomic gates -------------------------------------------------------------
-# fleetd (Go) and the triage fleet (Python, stdlib only) since phase 1. The bugfix fleet's
-# TypeScript MVP has no lockfile and no CI yet (RFC-0001 §11 asks whether it is worth keeping).
-# The replays need the private corpora, so they are `make replay`, run on a host, not in CI.
+# Go: flotillad and the CLI (the root module) and fleetd (its own module, until it retires). Python:
+# the worker and the triage fleet (stdlib only). The bugfix fleet's TypeScript MVP has no lockfile
+# and no CI yet (RFC-0001 §11). The replays need the private corpora, so they are `make replay`, run
+# on a host, not in CI. Without Go installed: make GO=scripts/go.sh GOFMT="scripts/go.sh gofmt" ...
 
 SF_MVP := signal-fleet/mvp
+GO     ?= go
+GOFMT  ?= gofmt
 
 .PHONY: format
-format: ## Apply gofmt to fleetd
-	@cd fleetd && gofmt -w . && echo "format PASS"
+format: ## Apply gofmt to every Go file
+	@$(GOFMT) -w cmd internal fleetd && echo "format PASS"
 
 .PHONY: lint
-lint: ## gofmt check + go vet (fleetd), byte-compile every Python file (signal-fleet)
-	@cd fleetd && test -z "$$(gofmt -l .)" || { echo "lint FAIL: gofmt would change:"; gofmt -l .; exit 1; }
-	@cd fleetd && go vet ./...
-	@python3 -m compileall -q signal-fleet >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+lint: ## gofmt check + go vet (both modules), byte-compile every Python file
+	@out="$$($(GOFMT) -l cmd internal fleetd)"; test -z "$$out" || { echo "lint FAIL: gofmt would change:"; echo "$$out"; exit 1; }
+	@$(GO) vet ./...
+	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
+	@python3 -m compileall -q signal-fleet worker deploy >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@echo "lint PASS"
 
 .PHONY: test-unit
-test-unit: ## go test (fleetd) + the triage fleet's unit tests, with an empty HOME
-	@cd fleetd && go test ./...
+test-unit: ## go test (both modules), the worker's tests, the triage fleet's unit tests (empty HOME)
+	@$(GO) test ./...
+	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) test ./...
+	@python3 worker/test_worker.py >/tmp/flotilla-test_worker.log 2>&1 && echo "PASS worker/test_worker.py" || { echo "FAIL worker/test_worker.py"; tail -30 /tmp/flotilla-test_worker.log; exit 1; }
 	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py; do \
 	  HOME=$$h SF_OBSERV_DISABLED=1 python3 $$t >/tmp/flotilla-$$t.log 2>&1 && echo "PASS $$t" || { echo "FAIL $$t"; tail -20 /tmp/flotilla-$$t.log; rm -rf $$h; exit 1; }; \
 	done; rm -rf $$h
@@ -69,9 +75,12 @@ test-unit: ## go test (fleetd) + the triage fleet's unit tests, with an empty HO
 replay: ## The triage fleet's replay gates (needs SF_EVAL_DATA and SF_ALERT_RULES; see signal-fleet/replays.sh)
 	@bash signal-fleet/replays.sh
 
+.PHONY: test-e2e
+test-e2e: ## The compose stack on the dev Docker engine with stand-in services (deploy/e2e/run.sh)
+	@bash deploy/e2e/run.sh
+
 .PHONY: test-integration
-test-integration: ## Integration tests (real services) — none yet: no code
-	@echo "test-integration: no code yet (design phase)"
+test-integration: test-e2e ## Integration = the e2e stack (flotillad, worker, proxy together)
 
 # ---- Composite tiers ---------------------------------------------------------
 

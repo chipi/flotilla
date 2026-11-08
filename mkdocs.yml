@@ -78,11 +78,13 @@ nav:
     - Overview: adr/README.md
     - ADR-0001 — Platform foundations: adr/ADR-0001-platform-foundations.md
     - ADR-0002 — Run in Docker: adr/ADR-0002-run-in-docker.md
+    - ADR-0003 — Dependencies and images: adr/ADR-0003-dependencies-and-images.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
   - In progress:
     - Overview: wip/README.md
+    - Phase 2 plan: wip/phase-2-plan.md
   - History:
     - Overview: history/README.md
     - 0001 — Genesis: history/0001-genesis.md

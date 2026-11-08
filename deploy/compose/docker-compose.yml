@@ -1,0 +1,99 @@
+# flotilla on one host (ADR-0002): flotillad, the triage worker and the egress proxy.
+#
+# Everything about the installation comes from the environment (an .env next to this file on the
+# host, never in git; see .env.example) and from the files in FLOTILLA_CONFIG (README.md).
+#
+# Networks:
+#   flotilla       internal: no route out. flotillad, the worker and the proxy talk here.
+#   out            the proxy's way to the internet (api.github.com).
+#   the services'  the proxy joins the networks of the services jobs read (VictoriaMetrics, LiteLLM,
+#                  GlitchTip, Langfuse) and reaches them by container name: never through the
+#                  host's port forwards.
+# Nothing is published on the host. The CLI runs inside flotillad: docker exec flotillad flotilla status
+name: flotilla
+
+x-hardening: &hardening
+  read_only: true
+  init: true   # PID 1 reaps orphans: a job's grandchildren must not pile up as zombies
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  flotillad:
+    <<: *hardening
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-flotillad:${FLOTILLA_TAG:?set FLOTILLA_TAG}
+    container_name: flotillad
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      HTTP_PROXY: http://egress:4750
+      HTTPS_PROXY: http://egress:4750
+      NO_PROXY: worker-triage,egress,localhost,127.0.0.1
+      FLOTILLA_URL: http://127.0.0.1:8484
+      FLOTILLA_TOKEN_FILE: /etc/flotilla/cli.token
+    volumes:
+      - ${FLOTILLA_CONFIG:?set FLOTILLA_CONFIG}/flotillad.yaml:/etc/flotilla/flotillad.yaml:ro
+      - ${FLOTILLA_CONFIG}/callers.yaml:/etc/flotilla/callers.yaml:ro
+      - ${FLOTILLA_CONFIG}/worker-triage.token:/etc/flotilla/worker-triage.token:ro
+      - ${FLOTILLA_CONFIG}/cli.token:/etc/flotilla/cli.token:ro
+      - ${FLOTILLA_STATE:?set FLOTILLA_STATE}:/var/lib/flotilla
+    networks: [flotilla]
+    depends_on: [egress, worker-triage]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/flotilla", "health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  worker-triage:
+    <<: *hardening
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-triage:${FLOTILLA_TAG}
+    container_name: flotilla-worker-triage
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs: ["/tmp:size=64m"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]
+    environment:
+      FLOTILLA_WORKER_TOKEN_FILE: /etc/flotilla/worker-triage.token
+      FLOTILLA_ENV_FILES: /etc/flotilla/fleet.env
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      JOB_HTTP_PROXY: http://egress:4750
+      JOB_HTTPS_PROXY: http://egress:4750
+    volumes:
+      - ${FLOTILLA_CONFIG}/worker-triage.token:/etc/flotilla/worker-triage.token:ro
+      - ${TRIAGE_ENV_FILE:?set TRIAGE_ENV_FILE}:/etc/flotilla/fleet.env:ro
+      - ${TRIAGE_STATE:?set TRIAGE_STATE}:/home/worker/signal-fleet
+    networks: [flotilla]
+
+  egress:
+    <<: *hardening
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-egress
+    mem_limit: 128m
+    cpus: 0.5
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    volumes:
+      - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/egress-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [flotilla, out, backend, litellm, glitchtip, langfuse]
+
+networks:
+  flotilla:
+    internal: true
+  out: {}
+  backend:
+    name: ${NET_BACKEND:-backend_default}
+    external: true
+  litellm:
+    name: ${NET_LITELLM:-litellm_default}
+    external: true
+  glitchtip:
+    name: ${NET_GLITCHTIP:-glitchtip_default}
+    external: true
+  langfuse:
+    name: ${NET_LANGFUSE:-langfuse_default}
+    external: true

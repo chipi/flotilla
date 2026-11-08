@@ -11,6 +11,10 @@ prioritized task lists. Promotion targets:
 | `docs/history/0NNN-...md` | The session that produced it has wrapped |
 | *delete* | Turned out not to matter |
 
+## Open notes
+
+- [Phase 2 plan](phase-2-plan.md): flotillad runs the triage fleet (→ a history entry when phase 2 ends).
+
 WIP notes that haven't been touched in a quarter should be either promoted
 or deleted. Stale plans rot, and stale plans that look "official" rot worst.
 

@@ -1,0 +1,18 @@
+fleet: platform
+job: heartbeat
+description: >-
+  The platform's own canary: proves the scheduler, a worker, the store, egress through the proxy
+  (an allowed host answers, a host off the list is refused) and telemetry, every 10 minutes. No
+  model, no outward action. If it is stale, the platform is broken whatever the fleets say.
+enabled: true
+worker: triage
+trigger:
+  every: 10m
+run:
+  command: python3 /opt/flotilla/worker/heartbeat.py
+  workdir: .
+  timeout: 1m
+stage: live
+budget:
+  day_usd: 0
+freshness: 25m

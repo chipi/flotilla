@@ -1,0 +1,54 @@
+# Build the three images and push them to ghcr.io, tagged sha-<7> (ADR-0002). A deploy names that
+# tag; nothing deploys :latest. Runs on main when anything an image contains changes, and by hand.
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - cmd/**
+      - internal/**
+      - go.mod
+      - go.sum
+      - fleets/**
+      - worker/**
+      - signal-fleet/mvp/**
+      - deploy/docker/**
+      - .github/workflows/images.yml
+  workflow_dispatch:
+
+concurrency:
+  group: images-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for i in flotillad worker-triage smokescreen; do
+            ref="ghcr.io/chipi/flotilla-$i:$TAG"
+            docker build -f "deploy/docker/$i.Dockerfile" --build-arg VERSION="$TAG" \
+              --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+              --label org.opencontainers.image.revision=${{ github.sha }} \
+              -t "$ref" .
+            docker push "$ref"
+            echo "pushed $ref $(docker inspect --format '{{index .RepoDigests 0}}' "$ref")"
+          done

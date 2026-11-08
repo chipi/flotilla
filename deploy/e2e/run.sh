@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# End to end: the real compose file and images on the dev Docker engine, with stand-in services.
+#
+#   deploy/e2e/run.sh            build the images, bring the stack up, check, tear down
+#   KEEP=1 deploy/e2e/run.sh     leave it up to look around (tear down: deploy/e2e/run.sh down)
+#
+# Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
+# is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a
+# stage; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token.
+# Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+D="docker --context ${DOCKER_CONTEXT_DEV:-dev}"
+P=flotilla-e2e
+TAG=e2e-local
+LABEL=flotilla.e2e=1
+NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse"
+WORK="${E2E_WORK:-$ROOT/.e2e}"
+fails=0
+ok() { echo "PASS $*"; }
+bad() { echo "FAIL $*"; fails=$((fails + 1)); }
+
+compose() {
+  FLOTILLA_REGISTRY=local FLOTILLA_TAG=$TAG FLOTILLA_CONFIG="$WORK/config" FLOTILLA_STATE="$WORK/state" \
+  TRIAGE_ENV_FILE="$WORK/config/fleet.env" TRIAGE_STATE="$WORK/triage-state" \
+  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse \
+  $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"
+}
+
+down() {
+  compose down -v --remove-orphans >/dev/null 2>&1
+  for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
+  for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
+  # the containers wrote state as their own uids: remove it from a container, as root there
+  [ -d "$WORK" ] && $D run --rm --label $LABEL -v "$WORK:/w" \
+    python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b sh -c 'rm -rf /w/* /w/.[!.]*' >/dev/null 2>&1
+  rm -rf "$WORK"
+}
+if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
+down
+
+echo "== build"
+for i in flotillad worker-triage smokescreen; do
+  $D build -q -f "$ROOT/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$ROOT" >/dev/null \
+    || { echo "BUILD FAIL $i"; exit 1; }
+done
+ok "images built"
+
+echo "== config and stand-ins"
+mkdir -p "$WORK/config" "$WORK/state" "$WORK/triage-state"
+chmod 777 "$WORK/state" "$WORK/triage-state"   # the containers run as non-root uids
+tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+OP=$(tok); AGENT=$(tok); WT=$(tok)
+hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
+printf %s "$WT" > "$WORK/config/worker-triage.token"
+printf %s "$OP" > "$WORK/config/cli.token"          # the CLI inside flotillad acts as the operator here
+printf %s "$AGENT" > "$WORK/agent.token"
+cat > "$WORK/config/callers.yaml" <<EOF
+callers:
+  - {name: operator, role: operator, token_sha256: $(hash "$OP")}
+  - {name: e2e-agent, role: agent, token_sha256: $(hash "$AGENT")}
+EOF
+cat > "$WORK/config/flotillad.yaml" <<EOF
+listen: 127.0.0.1:8484
+specs_dir: /opt/flotilla/fleets
+state_dir: /var/lib/flotilla
+environment: e2e
+timezone: Europe/Amsterdam
+vm_url: http://victoriametrics:8080
+otlp_traces_url: http://victoriatraces:8080/insert/opentelemetry/v1/traces
+callers_file: /etc/flotilla/callers.yaml
+workers:
+  triage: {url: "http://worker-triage:8081", token_file: /etc/flotilla/worker-triage.token}
+disabled_jobs: [triage/cycle]
+EOF
+echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
+cat > "$WORK/config/worker-triage.env" <<EOF
+JOB_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
+JOB_HEARTBEAT_DENIED_URL=http://forbidden:8080/
+EOF
+cat > "$WORK/config/smokescreen.yaml" <<EOF
+ip: 0.0.0.0
+port: 4750
+acl_file: /etc/smokescreen/acl.yaml
+allow_missing_role: true
+allow_ranges: [172.16.0.0/12]
+EOF
+cat > "$WORK/config/egress-acl.yaml" <<EOF
+version: v1
+services: []
+default:
+  project: flotilla
+  action: ${E2E_ACL_ACTION:-enforce}   # E2E_ACL_ACTION=open is the mutation check: the run must FAIL
+  allowed_domains: [victoriametrics, victoriatraces, litellm]
+EOF
+chmod 644 "$WORK"/config/*
+for n in $NETS; do $D network create --label $LABEL "$n" >/dev/null; done
+stub() { $D run -d --label $LABEL --name "e2e-$1" --network "$2" --network-alias "$1" --memory 64m \
+  -v "$ROOT/deploy/e2e/stub.py:/stub.py:ro" python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b \
+  python3 -u /stub.py "$1" >/dev/null; }
+stub victoriametrics e2e-backend; stub victoriatraces e2e-backend; stub litellm e2e-litellm
+# off the allowlist but reachable and answering: refusing it is the proxy's doing, nothing else
+stub forbidden e2e-backend
+ok "stand-ins up"
+
+echo "== up"
+if ! compose up -d >"$WORK/up.log" 2>&1; then
+  cat "$WORK/up.log"; bad "compose up"; [ "${KEEP:-}" = 1 ] || down; echo "E2E FAIL ($fails)"; exit 1
+fi
+cli() { $D exec flotillad /usr/local/bin/flotilla "$@"; }
+for i in $(seq 1 60); do
+  cli runs platform/heartbeat 2>/dev/null | grep -q -E " (ok|error|timeout) " && break; sleep 2
+done
+RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
+echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
+$D logs flotilla-worker-triage 2>&1 | grep -q '"line": "HEARTBEAT PASS"' && ok "the heartbeat saw allowed-in and denied-out" \
+  || bad "no HEARTBEAT PASS in the worker's log"
+$D logs flotilla-egress 2>&1 | grep -q "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"
+[ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
+cli status | grep -E "^platform/heartbeat" | grep -q -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
+
+echo "== telemetry"
+sleep 8
+$D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_run{environment="e2e",job="platform/heartbeat",service="flotillad",stage="live",status="ok"' \
+  && ok "flotilla_run reached VictoriaMetrics through the proxy" || bad "no flotilla_run sample at the VictoriaMetrics stand-in"
+$D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_up' && ok "flotilla_up pushed" || bad "no flotilla_up"
+$D logs e2e-victoriatraces 2>&1 | grep -q "POST /insert/opentelemetry/v1/traces" && ok "traces reached VictoriaTraces through the proxy" \
+  || bad "no traces at the VictoriaTraces stand-in"
+
+echo "== controls and auth"
+OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla stage platform/heartbeat shadow 2>&1)"
+echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot change a stage ($OUT)" || bad "agent stage change: $OUT"
+cli stop platform >/dev/null && cli run platform/heartbeat >/dev/null
+sleep 3
+cli runs platform/heartbeat -n 1 | grep -q " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
+cli start platform >/dev/null
+cli events -n 5 | grep -q "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
+W="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
+r=urllib.request.Request("http://127.0.0.1:8081/healthz",headers={"Authorization":"Bearer wrong"})
+try: urllib.request.urlopen(r); print(200)
+except urllib.error.HTTPError as e: print(e.code)' 2>&1)"
+[ "$W" = 401 ] && ok "the worker refuses a wrong token" || bad "worker with a wrong token: $W"
+N="$($D exec flotilla-worker-triage sh -c 'env | grep -c "^FLOTILLA_WORKER_TOKEN=" || true' 2>&1)"
+[ "$N" = 0 ] && ok "no worker token in the worker's environment (it reads a file)" || bad "worker token in the environment: $N"
+
+echo "== hardening"
+for c in flotillad flotilla-worker-triage flotilla-egress; do
+  RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
+  case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
+done
+for c in flotillad flotilla-worker-triage; do
+  NW="$($D inspect "$c" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+  [ "$NW" = "${P}_flotilla " ] && ok "$c is on the internal network only" || bad "$c networks: '$NW'"
+done
+NW="$($D network inspect ${P}_flotilla --format '{{.Internal}}' 2>&1)"
+[ "$NW" = true ] && ok "the flotilla network is internal (no route out)" || bad "flotilla network internal=$NW"
+
+if [ "${KEEP:-}" != 1 ]; then down; fi
+if [ "$fails" -eq 0 ]; then echo "E2E PASS"; else echo "E2E FAIL ($fails)"; exit 1; fi

@@ -44,3 +44,6 @@ build/
 
 # MkDocs build output
 site/
+
+# e2e work dir (deploy/e2e/run.sh)
+.e2e/
