@@ -102,6 +102,7 @@ func readToken(path string) (string, error) {
 func main() {
 	cfgPath := flag.String("config", "/etc/flotilla/flotillad.yaml", "config file")
 	check := flag.Bool("check", false, "load config, callers and specs, print them, exit")
+	testError := flag.Bool("send-test-error", false, "send one labelled ERROR to GlitchTip through the configured path, then exit")
 	flag.Parse()
 
 	cfg, err := loadConfig(*cfgPath)
@@ -172,6 +173,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer flushErrors()
+	if *testError {
+		if cfg.ErrorsDSNFile == "" {
+			fmt.Fprintln(os.Stderr, "errors_dsn_file is not set: nothing to send to")
+			os.Exit(2)
+		}
+		log.Error("flotillad test error (send-test-error)", "probe", time.Now().UTC().Format(time.RFC3339))
+		flushErrors()
+		fmt.Println("TEST ERROR SENT")
+		return
+	}
 	shutdown, err := telemetry.Tracing(ctx, cfg.OTLPTracesURL, cfg.Environment, version)
 	if err != nil {
 		log.Error("tracing", "err", err)
