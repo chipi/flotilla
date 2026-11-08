@@ -34,6 +34,7 @@ the host only, by that script.
 FLOTILLA_CONFIG=<home>/flotilla/config
 TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's secrets volume
 TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (shadow copy, or live after the switch)
+FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
 # the services' Docker networks, when they are not the defaults
 # NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default
 ```
@@ -55,6 +56,7 @@ environment: operations
 timezone: <Region/City>                 # the budget day
 vm_url: http://victoriametrics:8428     # through the proxy
 otlp_traces_url: http://victoriatraces:10428/insert/opentelemetry/v1/traces
+errors_dsn_file: /run/flotilla/errors.env     # optional: secrets.sh copies FLOTILLA_ERRORS_DSN_FILE here
 callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
