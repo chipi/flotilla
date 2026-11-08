@@ -1,8 +1,8 @@
 # RFC-0002 — the job runtime: harness, context, memory, external knowledge, evaluation
 
-**Status:** Proposed, revision 2. The operator settled the first open choices on 2026-11-08 (§10).
-Revision 1 was reviewed by an independent advisor the same day; revision 2 takes in that review
-(§13). Under review before phase 3 code.
+**Status:** Proposed, revision 3. The operator settled the first open choices on 2026-11-08 (§10).
+Revisions 1 and 2 were reviewed by an independent advisor the same day; revision 3 takes in both
+reviews (§14). Under review before phase 3 code.
 **Date:** 2026-11-08
 **Inputs:**
 - [RFC-0001](RFC-0001-fleet-platform.md) §9, phase 3, and [Components](../architecture/components.md);
@@ -50,7 +50,8 @@ Read from the code, 2026-11-08:
     steps (`triage.py:467-471`).
   - **No decision once the probes run out:** one extra call asks for a flat decision
     (`triage.py:483-494`).
-  - **An empty completion** retries the turn (`triage.py:458-464`).
+  - **An empty completion** retries the turn, and the retry uses a step (`triage.py:458-464`). An
+    empty reply on the last turn defers the signal (`triage.py:509-510`).
   - **The model's replies are sent back cut to 600 characters** (`triage.py:469, 477`). Tool results
     are cut to 1,800 (`_trim`).
   - **Limits:** a 90 s timeout per call. No token cap and no wall-time cap.
@@ -58,7 +59,9 @@ Read from the code, 2026-11-08:
   - 401, 403 and 402 raise `TriagerDown`: the cycle fails closed with one aggregate issue.
   - Other transport errors raise `TriageDeferred`: the signal is retried next cycle, up to
     `DEFER_LIMIT` cycles, then escalated.
-  - A cycle in which every call deferred is treated as an outage.
+  - A cycle with at least two deferred calls and none triaged is treated as an outage
+    (`orchestrator.py:274`). The outage is one issue, deduped across cycles by the fixed
+    fingerprint `grafana:fleet-triager-down` (`orchestrator.py:209`).
 
   This was the fix for the 2026-08-13 flood, when one wiped key produced about 90 escalations.
 - **Before the model:** a deterministic operational-state gate (`operational_class`,
@@ -77,7 +80,11 @@ Read from the code, 2026-11-08:
     call the live model k times, against a fixed bar: no false dismissals, no misroutes, at most
     5% escalations (`score.py:167-184`).
   - **What is recorded:** `capture.py` stores the probe table, the text shown, the final decision
-    and the decision before the gates. The per-turn messages and raw replies are not stored.
+    and the decision before the gates. The per-turn messages, raw replies, the edge gate's lookups
+    and the run's time are not stored. Capture is on in the live fleet: `SF_CAPTURE_PROBES=1` in
+    the fleet's env file on the mini, which the shadow worker also reads (checked 2026-11-08).
+  - **Shadow comparison** (`deploy/mini/shadow_compare.py`) compares flotilla's shadow decisions
+    with fleetd's, per subject.
 - **Cost.** A price table keyed by model name (`config.py:63-70`).
 
 ## 3. The model client
@@ -115,15 +122,18 @@ models:
   - `json`: the JSON protocol triage uses today;
   - `none`.
 - `json`: `schema` (`json_schema`), `object` (`json_object`) or `none`. The answer is validated
-  against the job's output schema by the harness either way.
+  against the job's output schema by the harness either way. OpenAI's `json_object` mode requires
+  the word "JSON" in the prompt; a playbook for such an alias must contain it.
 - `cost`:
   - `reported`: the endpoint's response says what the call cost;
   - `table`: the price table in config;
   - `zero`: a declared local model;
   - `unknown`.
 
-**Cost.** LiteLLM reports cost in the `x-litellm-response-cost` header. Checked live on 2026-11-08:
-a 5-token call to `fleet-triage-flash` returned `9e-07`, and the body's `usage.cost` was the same.
+**Cost.** For `cost: reported`, the client reads the body's `usage.cost` first and the
+`x-litellm-response-cost` header second. Both are extensions, of OpenRouter and LiteLLM
+respectively, not part of the OpenAI API. Checked live on 2026-11-08: a 5-token call to
+`fleet-triage-flash` returned `9e-07` in both.
 - An `unknown` cost is never counted as zero.
 - A fleet with an `unknown` alias must declare `tokens_per_day` in its budget, or its spec fails
   validation.
@@ -135,7 +145,8 @@ a 5-token call to `fleet-triage-flash` returned `9e-07`, and the body's `usage.c
 
 The response's `model` field does not identify the model behind an alias: LiteLLM returned the alias
 name, `fleet-triage-flash`. On LiteLLM the client therefore also records `x-litellm-model-id`, which
-identifies the deployment that answered. A fallback inside the gateway is then visible.
+identifies the deployment that answered. A fallback inside the gateway is then visible. The id is a
+hash; the deploy records the map from id to model from LiteLLM's `/model/info`.
 
 **Fallback.**
 - **Job fallbacks:** declared in the job's model policy.
@@ -146,11 +157,11 @@ identifies the deployment that answered. A fallback inside the gateway is then v
 
 | Error | When | Harness outcome |
 |---|---|---|
-| `AuthOrBilling` | 401, 403, 402 | `endpoint_down`: the job stops for this run; one aggregate signal per run, not one per case |
+| `AuthOrBilling` | 401, 403, 402 | `endpoint_down`: the job stops for this run; one aggregate signal, deduped across runs by a fixed fingerprint, not one per case |
 | `Transient` | timeout, 429, 5xx, connection | `deferred`: the case is retried next run, up to the job's `defer_limit`, then escalated |
 | `EmptyCompletion` | no content and no tool call | the turn is retried |
 
-A run in which every case deferred is `endpoint_down`.
+A run with at least two deferred cases and none decided is `endpoint_down` (today's rule).
 
 **Reasoning output.** The client strips `reasoning_content` and inline `<think>…</think>` before the
 answer is parsed. Both local models today are non-thinking `Instruct-2507` builds.
@@ -162,9 +173,16 @@ answer is parsed. Both local models today are non-thinking `Instruct-2507` build
 
 **AGENTS.md rule 5** says: every model call goes through the one model client, to an
 OpenAI-compatible endpoint, under the job's model policy; LiteLLM is the reference deployment; no
-undeclared fallback. Revision 2 adds: an `external` step (§4) points its coding harness at the same
-endpoint, under the fleet's own key and budget, and the runtime records that step's inputs and
-outputs.
+undeclared fallback. An `external` step (§4) points its coding harness at the same endpoint, and the
+runtime records that step's inputs and outputs.
+
+**Budgets** (spec `budget:`, the names the spec code already uses, `internal/spec/spec.go:68`):
+
+```yaml
+budget: { day_usd: 2.0, day_tokens: 2000000 }
+```
+
+`day_tokens` is required when an alias the job uses has `cost: unknown`.
 
 ## 4. Core concept: the harness
 
@@ -198,6 +216,8 @@ It is the same code for every fleet. Fleets differ only in what they configure.
     the same turn.
   - Limits are set from what the evaluation corpus measured, not guessed. A limit that would cut a
     run that completes today is a behaviour change (§8).
+- **The spec is validated against the aliases.** A job that declares tools on an alias with
+  `tools: none` is refused.
 - **Every request and reply is recorded:** the exact messages, the raw reply, the tool calls and the
   tool results.
 - **Left out on purpose:** planning turns, sub-agents, compaction mid-run, self-modification.
@@ -213,18 +233,21 @@ harness:
     max_steps: 4               # today: MAX_PROBES=3 probe turns + the deciding turn
     max_tool_calls: 3
     call_timeout: 90s
-    step_timeout: 5m
+    step_timeout: 8m           # today's worst case is 5 calls x 90 s; set from the corpus
     tool_calls_per_turn: 1
-  corrections:
-    count_as_steps: true      # triage today
-  reply_echo_chars: 600       # triage today; 0 = full replies
+  # temporary, to keep the first move like for like; removed in §9 step 6:
+  quirks:
+    retries_count_as_steps: true   # bad JSON and empty replies use a step
+    final_decision_call: true      # one extra call when the steps run out undecided
+    reply_echo_chars: 600          # earlier replies are sent back cut to 600 characters
   output_schema: schemas/triage/disposition.json
   gates: [intent, cleanup, dismiss_corroborated, edge]
   defer_limit: 6
 ```
 
-The `corrections` and `reply_echo_chars` settings exist so the first move of triage is like for
-like (§9). Changing them is a behaviour change, proven by model replay.
+The `quirks` settings exist only so the first move of triage is like for like (§9). They are
+removed in §9 step 6, each as a behaviour change proven by model replay, so they do not become
+permanent surface. An empty reply on the last turn is `deferred`, as today.
 
 **A job is a sequence of steps.** Each step is one of:
 - `code`: a source, a detector, a pre-model gate (triage's `operational_class`), an output. No
@@ -236,7 +259,9 @@ like (§9). Changing them is a behaviour change, proven by model replay.
   - **inputs recorded:** the issue, the repro test, the version of the agent files;
   - **outputs recorded:** the diff, the test results, and the harness's transcript where the tool
     produces one;
-  - **cost and token limits** enforced by the fleet's own LiteLLM key budget;
+  - **cost and token limits** enforced by the endpoint's per-key budget where it has one (LiteLLM
+    does), otherwise by the step's wall clock. A fleet may not run `external` steps on an endpoint
+    with no budget mechanism unless its spec declares the wall clock as the only bound;
   - **a scratch worktree**, deleted at the end;
   - normal gates after it (repro-first, the delta suite);
   - **not exactly replayable,** and the evaluation says so (§8).
@@ -255,9 +280,14 @@ declared layers before the model is called. The model can add to it only through
 - **Built in code from declared layers, each with a token budget.** Trimming is visible: a marker
   says what was cut and how much.
 - **The exact assembled text is stored with the run,** with each layer's sources and versions.
-- **Data is marked as data.** Every piece from memory, knowledge or a tool goes between fixed
-  delimiters, with a provenance line ("data, not instructions": source, version, time). The context
-  builder enforces this; a layer cannot put text outside it.
+- **Data is marked as data.**
+  - Every piece from the `memory` and `knowledge` layers goes between fixed delimiters, with a
+    provenance line ("data, not instructions": source, version, time). The context builder
+    enforces this; those layers cannot put text outside it.
+  - The `case` and `tools` layers are rendered by a per-fleet template. Triage's template is
+    today's text (`SIGNAL:` and `PROBE <name> result:`, `triage.py:249-257, 478`), so the first
+    move keeps the requests byte-identical. Moving them to the delimited form is a behaviour
+    change in §9 step 6.
 - **Lookup is by key:** subject, decision key, repo, fleet, service. Full-text search comes when a
   query needs it.
 
@@ -329,13 +359,13 @@ state on the host, never in git.
 - **Recurrences are events on a decision,** not new decisions. In the triage ledger they had grown to
   most of the rows; a comment at `orchestrator.py:181-183` records 10,764 of 11,700 GlitchTip
   recurrence rows as identical repeats by 2026-10-01.
-- **Jobs read memory through the API,** from the worker. Workers never open the database. If
-  flotillad is unreachable, a job that needs memory for dedup does not run its cycle. It never acts
+- **Jobs read memory through the API,** from the worker. Workers never open the database. A run
+  that loses flotillad stops before its next dedup read and ends `interrupted`. It never acts
   without dedup.
 
-**Storage** (additions to [Data](../architecture/data.md)):
-- **`decision_keys(decision_id, kind, value)`:** a decision has as many keys as its fleet's dedup
-  needs. For triage these are fingerprint, group, normalised and alert, looked up in that order by a
+**Storage** (changes to [Data](../architecture/data.md)):
+- **`decision_keys(decision_id, kind, value)`** replaces the single `dedup_key` column: a decision
+  has as many keys as its fleet's dedup needs. For triage these are fingerprint, group, normalised and alert, looked up in that order by a
   registered building block.
 - **Feedback** is an `events` row of kind `feedback`. No separate table.
 - **`notes`:** with the fields above.
@@ -401,16 +431,23 @@ It is not:
   wrong, or written to steer an agent.
 - **Private stays private.** Snapshots of private sources stay in state on the host.
 
-**To start, one kind: `files`.** A read-only mount of a checkout on the host, versioned by its git
-commit, with queries that are path maps. Configured per installation, used per fleet:
+**To start, one kind: `files`, in a knowledge volume filled by the deploy.**
+- The deploy copies the declared paths from a checkout on the host into a Docker volume, and writes
+  `VERSION` with the checkout's commit. This is the pattern `deploy/mini/secrets.sh` uses.
+- The volume changes only at deploy, so a run's version is fixed and recorded, and a replay pins it.
+- No host folder is mounted into a worker (phase 2 decided volumes over host folders, after the
+  sshfs share took production down), and the worker image needs no git.
+
+Queries are path maps; a key must match a map entry exactly, with no globbing from text a model or a
+signal supplied. Configured per installation, used per fleet:
 
 ```yaml
 # config.yaml (this installation)
 knowledge:
   homelab-handbook:
     kind: files
-    root: /knowledge/agentic-ai-homelab     # read-only mount of the checkout
-    version: git                            # the checkout's HEAD commit
+    from: ~/agentic-ai-homelab              # the host checkout the deploy copies from
+    volume: flotilla-knowledge              # mounted read-only at /knowledge in the worker
     paths: [docs/recipes/**, docs/adr/**, infra/**/README.md]
     maps:
       by_service: { litellm: infra/litellm/README.md, glitchtip: infra/glitchtip/README.md }
@@ -434,14 +471,15 @@ it ships after the like-for-like move, proven by model replay (§9, step 6).
 ## 8. Core concept: evaluation
 
 **Definition.** Evaluation is how a change is proven before it ships. AGENTS.md rule 3 requires
-that a change which changes decisions is replayed first. There are three modes, because they prove
+that a change which changes decisions is replayed first. There are four modes, because they prove
 different things.
 
 | Mode | Drives the run with | Proves | Pass criterion |
 |---|---|---|---|
 | **code replay** | recorded inputs; the model stubbed or absent | the deterministic steps: classifiers, dedup, gates, filing | each gate's explicit criteria, with the "nothing else changes" invariant (`replay-proven-fix`) |
-| **exact replay** | recorded requests, replies and tool results; the recorded reply stands in for the model | the harness and the context builder: parsing, loop control, trimming, gates after the model | decisions identical; and, for a harness change meant to change nothing, requests byte-identical |
+| **exact replay** | recorded requests, replies, tool and gate lookups, and the run's `now`; the recorded reply stands in for the model | the harness and the context builder: parsing, loop control, trimming, gates after the model | decisions identical; and, for a change meant to change nothing, requests byte-identical except the telemetry `metadata` object (trace id, generation name), which is compared after normalising |
 | **model replay** | frozen tool results; the live model, k runs | anything that changes what the model sees or which model answers: playbook, fragments, layers, notes, limits, the model | the fleet's scorer bar (triage: `score.py`) |
+| **shadow comparison** | live inputs; two code versions side by side, the candidate in stage `shadow` with its own state | what no recording can: the wire, the endpoint, timing, live sources | decisions compared per subject over days; every difference explained (`shadow_compare.py`) |
 
 **Which change needs which mode:**
 
@@ -450,7 +488,14 @@ different things.
 | a code step, a gate, dedup, an output | code replay |
 | the harness code, the client, the context builder, meant to change nothing | exact replay |
 | a playbook or fragment, a context layer or budget, a limit, activating a note, a different model | model replay |
+| a tool's implementation (its query, window or trimming) | re-freeze the tool results with the new tool (`freeze.py --refreeze`), then model replay |
+| an alias remapped to another deployment in config | model replay; the run id is recorded in the deploy's ops event, since config has no commit message |
+| the client's transport, or anything that touches the wire | exact replay, then shadow comparison |
 | an `external` step | not replayable. Its gates (repro-first, the delta suite) and the operator's review of the diff are the proof |
+
+**What counts as a change.** Code, specs, playbooks and fragments, notes, limits, aliases and models
+are changes. Data is input: a handbook commit, new ledger rows, a new case. Input is evaluated at the
+version the corpus pins, not re-evaluated on every commit.
 
 **Rules that do not change:**
 - **A change ships only with its mode's evaluation.** The evaluation run's id is recorded with the
@@ -458,16 +503,20 @@ different things.
 - **Corpora with production data live in the private `fleet-eval-data` repo.** Labels use the
   scorer's format (triage: `ground_truth.disposition`, `correct_autonomous`, `work_type`).
 - **A replay that cannot reproduce its own recorded history proves nothing,** and fails.
-- **Every run records what exact replay needs** (§4). This starts before the move: `capture.py`
-  gains the per-turn messages and raw replies in agentic-ai-homelab first, since the live fleet runs
-  that code until the switch. A corpus then builds up while phase 2's shadow runs.
+- **Every run records what exact replay needs:**
+  - the per-turn messages and raw replies;
+  - every gate lookup, with its inputs and results (the edge gate's `restarts_near`, GitHub's open
+    state for dedup);
+  - the run's `now`.
+
+  This starts before the move (§9 step 1), so a corpus builds up from live runs.
 
 **Configured per fleet** (spec `evaluation:`):
 
 ```yaml
 evaluation:
   code_replays: signal-fleet/replays.sh
-  scorer: { run: signal-fleet/mvp/score.py, k: 3, bar: fleets/triage/eval/bar.yaml }
+  scorer: { run: signal-fleet/mvp/score.py, k: 3 }   # the bar is code in score.py today
   corpus: fleet-eval-data:projects/signal-fleet-replays
 ```
 
@@ -479,28 +528,44 @@ evaluation:
 
 Each step is evaluated in its mode, and the fleet session agrees each one before code.
 
-1. **Record what exact replay needs** (`capture.py`, in agentic-ai-homelab first, then ported).
-   - *Proof:* the capture tests, and one shadow cycle's records read back.
+**When:**
+- Step 1 starts now: it only adds recording, and it lands in agentic-ai-homelab first, since the
+  live fleet runs that code until phase 2's switch (2.8).
+- Steps 2 to 6 start after the switch, on flotilla.
+
+**The live proof after the switch:**
+- a second job, `triage/cycle-shadow`, runs the candidate image tag in stage `shadow` with its own
+  state volume;
+- `shadow_compare.py` compares it with the live `triage/cycle`;
+- this needs a second triage worker service in compose, pinned to the candidate tag. That is part
+  of step 2's work.
+
+1. **Record what exact replay needs** (`capture.py`): messages, replies, gate lookups, `now`.
+   - *Proof:* the capture tests, and one live cycle's records read back. Capture is already on
+     (§2).
 2. **Model client** under `triage.py`'s `_call`.
    - *Proof:* a golden-request test (the request body byte-identical to today's), and the error
-     classes against recorded failures (the `eval_triager_failure_replay.py` cases). Then phase
-     2.7's shadow comparison.
+     classes against recorded failures. `eval_triager_failure_replay.py` fakes `post_json`
+     (line 72); it is moved to fake the client's transport as part of this step. Then shadow
+     comparison.
 3. **Playbook and hints to files** (`fleets/triage/playbooks/triage.md`, `hints/*.md`).
    - *Proof:* the assembled system and user messages are byte-identical to today's for every case in
      the corpus, so `PROMPT_SHA` is unchanged.
-4. **The loop to the harness,** with `corrections.count_as_steps: true` and `reply_echo_chars: 600`.
-   The probes are registered tools, the gates registered gates, and the edge gate's live queries
-   recorded tool calls.
-   - *Proof:* exact replay over the corpus from step 1, decisions identical. Then the code replays.
+4. **The loop to the harness,** with the `quirks` set as today. The probes are registered tools,
+   the gates registered gates, and the edge gate's live queries recorded lookups.
+   - *Proof:* exact replay over the corpus from step 1, decisions identical. Then the code replays,
+     then shadow comparison.
 5. **The ledger client and dedup through the API.** `decision_keys` holds the four keys.
    `dispositions.tsv` and `filed.tsv` are imported with their original timestamps, marked
    `imported`, with recurrences as events. The mirror keeps writing the TSVs while the Hub and the
    fleet session's gates read them.
-   - *Proof:* the dedup and filing code replays, and the import's row counts against the TSVs.
+   - *Proof:* the dedup and filing code replays, moved from the TSV lookup to the lookup building
+     block over a local store, with GitHub's open state read from the recorded lookups; the
+     import's row counts against the TSVs; shadow comparison.
 6. **New behaviour, one at a time:**
    - the `memory` layer;
    - then the `knowledge` layer;
-   - then lifting today's quirks (full reply echo, corrections outside the step count).
+   - then removing the `quirks` and moving `case` and `tools` to the delimited form.
 
    - *Proof:* model replay, each against the scorer's bar.
 
@@ -512,11 +577,13 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 4. This is the fleets' memory, not a shared memory for every agent.
 5. This RFC is RFC-0002, and the SEO fleet becomes RFC-0003.
 6. Harness, context, memory and external knowledge are the core concepts, each configured per fleet;
-   triage is the first use case, and the concepts grow with the next fleets.
+   triage is the first use case, and the concepts grow with the next fleets. (Extended by 7.)
 7. Revise after the advisor's review, with evaluation as a fifth core concept (operator, 2026-11-08).
 
 ## 11. Open questions
 
+- **The sequencing in §9:** step 1 now; steps 2 to 6 after the switch, proven live by a second shadow
+  job on a candidate image. This needs the operator's confirmation.
 - **Triage's outcome checker:** which outcome is recorded (the issue closed, the signal recurred
   within 7 days, the operator's feedback), and how often it runs.
 - **The note review period:** 90 days is proposed.
@@ -527,7 +594,18 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 - **How vLLM and Ollama handle `json_schema`, parallel tool calls and fields they don't know:** not
   verified. Checked against the deployed versions before an alias is marked `native` or `schema`.
 
-## 12. Alternatives considered
+## 12. Docs amended on acceptance
+
+These say something this RFC changes (AGENTS.md rule 28):
+- `docs/architecture/components.md`: the agent loop row ("a malformed answer gets one retry");
+- `docs/architecture/run-lifecycle.md`, failure behaviour: the endpoint down, a malformed answer
+  twice;
+- `docs/architecture/data.md`: `dedup_key` becomes `decision_keys`; feedback as an event; `notes`;
+- RFC-0001 §5's spec sketch: `usd_per_day` is `day_usd` in the implemented spec;
+- `docs/testing.md`: the replay corpus row (fixed with this revision: 15 gates, not 18) and the
+  four evaluation modes.
+
+## 13. Alternatives considered
 
 - **Requiring LiteLLM.** Simpler, but anyone without it could not run flotilla, and it ties the
   public repo to one gateway. Rejected by the operator.
@@ -543,7 +621,7 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 - **Reading external knowledge live during the run.** Rejected: runs would depend on the source
   being up, and a replay could not see what the model saw.
 
-## 13. Discussion
+## 14. Discussion
 
 - **2026-11-08, revision 1:** drafted after the operator's review of the four concepts and their
   answers to five questions (§10).
@@ -574,3 +652,23 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 - **2026-11-08, checked live while revising:** LiteLLM's response carries
   `x-litellm-response-cost`, but its `model` field is the alias, so the deployment id is recorded to
   make fallbacks visible (§3).
+- **2026-11-08, advisor's second pass on revision 2.** Verdict: one short revision. Revision 3 changes:
+  - **The delimiter rule contradicted the byte-identical proofs.** It now applies to memory and
+    knowledge; `case` and `tools` keep triage's template until step 6.
+  - **Exact replay lacked inputs.** It now records gate lookups and `now`, and normalises the
+    telemetry metadata. Capture was confirmed on.
+  - **No live baseline after the switch.** Shadow comparison is now the fourth mode, with a second
+    shadow job on a candidate image.
+  - **The knowledge mount would have been live and a host folder.** It is now a volume filled by
+    the deploy.
+  - **Two loop quirks were missing.** They are now in a `quirks` block, marked temporary.
+  - **The change table:** it gains tool, alias and transport rows; data counts as input, not a
+    change.
+  - **The docs to amend** are now listed.
+  - **The `external` budget** no longer assumes LiteLLM.
+  - **The outage rule and aggregate dedup** now match `orchestrator.py`.
+  - **`dedup_key`** is replaced by `decision_keys`.
+  - **Budget names** match the implemented spec (`day_usd`, `day_tokens`).
+  - **Smaller fixes:** `interrupted` when flotillad is lost mid-run; spec validation of tools
+    against aliases; `step_timeout` set from the worst case; exact-match knowledge keys; the cost
+    body field first; the "JSON" word rule.
