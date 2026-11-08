@@ -65,9 +65,19 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Architecture:
+    - architecture/index.md
+    - Context: architecture/context.md
+    - Components: architecture/components.md
+    - A run, end to end: architecture/run-lifecycle.md
+    - Data: architecture/data.md
+    - Deployment: architecture/deployment.md
+  - Security: security.md
+  - Testing and validation: testing.md
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — Platform foundations: adr/ADR-0001-platform-foundations.md
+    - ADR-0002 — Run in Docker (proposed): adr/ADR-0002-run-in-docker.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

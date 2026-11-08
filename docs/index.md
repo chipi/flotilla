@@ -5,6 +5,8 @@ A plain, spec-driven fleet platform for small fleets of AI agents: a control pla
 ## Where to start
 
 - **First time here?** Read the README at the repo root.
+- **How is it built?** [Architecture](architecture/index.md), [Security](security.md),
+  [Testing and validation](testing.md).
 - **Looking for big decisions?** [Decisions (ADR)](adr/README.md).
 - **Looking for in-flight thinking?** [Proposals (RFC)](rfc/README.md).
 - **What's next?** [In progress](wip/README.md).
