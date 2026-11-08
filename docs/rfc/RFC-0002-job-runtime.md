@@ -543,9 +543,41 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 - this needs a second triage worker service in compose, pinned to the candidate tag. That is part
   of step 2's work.
 
-1. **Record what exact replay needs** (`capture.py`): messages, replies, gate lookups, `now`.
+1. **Record what exact replay needs** (`capture.py`), as agreed with the fleet session on
+   2026-11-08:
+   - **triage:** per-turn messages and raw replies; the exact request body as sent; the deployment
+     id (`x-litellm-model-id`); the edge gate's `restarts_near` inputs and results; `now`;
+   - **filing, per decision:**
+     - every GitHub call filing makes, in order, with method, path and response. Reads: issue
+       state, duplicate link, comments, label searches. Writes: create, comment, patch or reopen,
+       label;
+     - the keys it computed (`norm_key`, `group_key`, `alert_key`, repo);
+     - the ledger row it matched, with the dimension it matched on, and the row it wrote;
+     - its result (`FILED`, `COMMENTED`, `DEDUP`, `MUTED`, `ROLLUP` …);
+   - **the stale sweep, its own record per run:** its `now`, the occurrences and firing alerts it
+     read, its GitHub calls and its writes.
    - *Proof:* the capture tests, and one live cycle's records read back. Capture is already on
      (§2).
+
+**Compatibility with fleet-eval-data** (the fleet session's readers, 2026-11-08). Each step keeps
+these, or agrees the replacement with the fleet session before it lands:
+- **Capture files: new data only in new fields or new files.**
+  - No rename or removal of `signal`, `frozen_at`, `fleet_decision.disposition` or
+    `model_decision.disposition`.
+  - No change to the file-name form: the held-out split uses its UTC prefix.
+  - No rewriting of an existing capture file: the tuning manifest checks sha256.
+- **Step 2:** `triage.investigate(signal, probe_table=)` stays, and the transport stays patchable.
+  The eval adapter patches `post_json`, `_call` and `_gate`. A replacement is announced before it
+  lands.
+- **Step 4:** the filing replay drives `filing.file_or_update`, `filing.file_escalation` and
+  `stale.run_pass`, and patches their seams. If these move, the fleet session adds an adapter for
+  the new code and keeps the old one for history: each period's code is replayed as it ran.
+- **Step 5,** the step that breaks the most:
+  - the mirror's TSVs stay byte-compatible: the same columns in the same order, and `filed.tsv`
+    rewritten on change as today;
+  - the new dedup code has a seam that can point at a local store;
+  - the interface is agreed with the fleet session before code.
+- **Shadow jobs never write `~/signal-fleet` or the live volume.**
 2. **Model client** under `triage.py`'s `_call`.
    - *Proof:* a golden-request test (the request body byte-identical to today's), and the error
      classes against recorded failures. `eval_triager_failure_replay.py` fakes `post_json`
@@ -674,6 +706,10 @@ These said something this RFC changes (AGENTS.md rule 28), and were amended with
   - **Smaller fixes:** `interrupted` when flotillad is lost mid-run; spec validation of tools
     against aliases; `step_timeout` set from the worst case; exact-match knowledge keys; the cost
     body field first; the "JSON" word rule.
+- **2026-11-08, after acceptance, the fleet session's review of §8 and §9.** §9 step 1 gains:
+  - the request bytes and the deployment id;
+  - filing's and the stale sweep's own records;
+  - the compatibility list.
 - **2026-11-08, advisor's third pass on revision 3:** ready for the operator's acceptance. Four
   one-line edits made: `day_tokens` marked new; alias validation at load; the knowledge source path
   in the deploy's `.env`; a row for gateway-side re-routes.
