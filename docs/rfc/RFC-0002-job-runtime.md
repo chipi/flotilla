@@ -579,11 +579,11 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 6. Harness, context, memory and external knowledge are the core concepts, each configured per fleet;
    triage is the first use case, and the concepts grow with the next fleets. (Extended by 7.)
 7. Revise after the advisor's review, with evaluation as a fifth core concept (operator, 2026-11-08).
+8. The order in §9: step 1 now, in agentic-ai-homelab; steps 2 to 6 after the switch, proven live by
+   a second shadow job on a candidate image (operator, 2026-11-08).
 
 ## 11. Open questions
 
-- **The sequencing in §9:** step 1 now; steps 2 to 6 after the switch, proven live by a second shadow
-  job on a candidate image. This needs the operator's confirmation.
 - **Triage's outcome checker:** which outcome is recorded (the issue closed, the signal recurred
   within 7 days, the operator's feedback), and how often it runs.
 - **The note review period:** 90 days is proposed.
