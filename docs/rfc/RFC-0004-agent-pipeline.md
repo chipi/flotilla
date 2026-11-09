@@ -1,9 +1,7 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Draft, revision 6. Nothing is built from it until the operator accepts it. Revisions 1 to
-5 were reviewed by an independent advisor on 2026-11-09 (four passes, §15); revision 6 records the
-operator's decisions (§12), the guardrails against runaway behaviour, and the consolidation of the
-building blocks.
+**Status:** Draft, revision 7. Nothing is built from it until the operator accepts it. Reviewed by an
+independent advisor in five passes on 2026-11-09 (§15); revision 7 answers the fifth.
 **Date:** 2026-11-09
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
 knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§13).
@@ -63,7 +61,7 @@ flowchart LR
 
 | Stage | Runs where | Does |
 |---|---|---|
-| **Detect** | a worker, code | turns raw signals into cases; a signal on the same target as an open case, or inside an execution's verify window, is attached to that case (`caused_by`) and counts against its verification passing |
+| **Detect** | a worker, code (for triage today: its cycle) | turns raw signals into cases. A signal whose keys match an open case, or a case closed as dismissed within the recurrence window, is attached to it. A signal on the target of an execution inside its verify window is attached (`caused_by`) and counts against verification; after the window it is a new case. After a verified close, a recurrence is a new case linked `recurrence_of` (what the recurrence rule counts) |
 | **Diagnose** | a worker with read capabilities (triage's also has the low-risk writes) | decides: dismiss, report, hand over, escalate |
 | **Act** | an acting worker | re-checks the problem by code with fresh numbers, then plans from its capabilities, or closes the case as resolved itself |
 | **Policy** | flotillad, code | runs, asks the operator, or refuses (§5.1); it decides and records, and executes only flotilla's own controls (a pause, a hold) |
@@ -108,6 +106,7 @@ what the agent's output can do:
 | **Workers per role** | a job names its worker; each worker holds one role's credentials | one worker per fleet (ADR-0002) |
 | **Triggers** | time or an event on a case | `every`, on-item triggers and verify timers |
 | **Communication** | channels by purpose, each routed to a provider | the Home Assistant push, ad-hoc mail |
+| **Evaluation** | code replay, exact replay, model replay, shadow comparison | ADR-0004's evaluation, unchanged; the new code (policy, the transition table, dedup, checks) is code-replayable from recorded plans and case events |
 
 ### 3.1 Harness
 
@@ -125,7 +124,8 @@ what the agent's output can do:
 ### 3.2 Context
 
 Layers, each with a character budget and a visible cut marker: **playbook**, **case** (its timeline so
-far), **recall** (§3.3), **capability results**. Recall is wrapped as data with its source, version
+far, as structured event fields only: never a model's `reason` text, so an acting agent never reads the
+diagnosing agent's prose), **recall** (§3.3), **capability results**. Recall is wrapped as data with its source, version
 and trust. The exact text sent is stored.
 
 ### 3.3 Recall
@@ -134,9 +134,15 @@ One layer an agent consults, with two origins:
 
 | Origin | What | Trust | Lookup |
 |---|---|---|---|
-| **recorded by flotilla** | past cases and their outcomes, the operator's feedback, notes (active only once the operator activates them), past briefs | trusted (notes: only active ones) | **exact**, by key: this target's history, this kind's recurrences; structured fields only, never a model's earlier prose |
+| **recorded by flotilla** | past cases and their outcomes, the operator's feedback, notes (active only once the operator activates them) | trusted (notes: only active ones) | **exact**, by key only: this target's history, this kind's recurrences; structured fields only, never a model's earlier prose |
 | **plugged in** | each project's docs, runbooks and ADRs (git); vendor docs (HTTP); other MCP servers | per source and path, from config (§2.1) | search: path maps (a service to its runbook), full-text, semantic |
 
+- **ADR-0004's memory and knowledge rules apply to recall unchanged** except where this section amends
+  them: an agent's feedback is proposed until the operator confirms it; activating a note needs a model
+  replay; read-only is enforced by the credential; sources are declared, never discovered.
+- The search indexes (full-text, semantic) cover **plugged-in sources only**; recorded history is
+  reached by exact key. Past briefs are not recall: their opening is model prose, and their facts are
+  fleet data.
 - A **project** is a config entity: its names in signals, its issue repo, its recall sources. A case
   about a project gets that project's sources, among those its fleet's spec declares.
 - **Git sources** are refreshed on a schedule by a `knowledge-refresh` worker (git, egress to GitHub),
@@ -167,10 +173,15 @@ limits: {per_target_per_day: 2}
 ```
 
 - **Reads** are what an agent calls during its loop: metric, log and trace queries from templates,
-  GitHub reads, allowed URL fetch, recall search, case history. Policy ignores them; their size caps
-  and scopes still apply.
-- **Writes** go through policy (§5.1). Today's outputs are low-risk writes: an issue or comment on
-  GitHub, a comment on or the resolution of a GlitchTip issue, a Grafana annotation.
+  GitHub reads, allowed URL fetch, recall search, case history. Policy does not gate them, but the
+  harness derives a run's taint from which reads entered its context, and policy reads that flag.
+- **Writes** go through policy (§5.1), every one, including low-risk writes at auto. Today's outputs
+  are low-risk writes: an issue or comment on GitHub, a comment on or the resolution of a GlitchTip
+  issue, a Grafana annotation; triage's filing, which runs right after its gates today, moves behind the
+  policy call (phase 3 step 5).
+- **Two enforcement points keep one registry safe:** a spec that lists a write among a harness's loop
+  capabilities is refused at load, and a `plan` output accepts only writes; and a worker whose role
+  holds no write credential cannot execute a write, whatever the registry names.
 - **Decided later** (operator, 2026-11-09): model-written commands, both kinds. If scheduled, they
   come with the guardrails already worked out: (A) read-only investigation on a host service with an
   argv allowlist and a read-only database role, results into diagnosing contexts only; (B) one
@@ -179,7 +190,9 @@ limits: {per_target_per_day: 2}
 
 ### 3.5 Cases
 
-**Fields:** kind, typed target, the dedup key, urgency, the project, the current status and holder,
+**Fields:** kind, typed target, the **keys** (`(kind, value)` pairs: for triage, fingerprint, group,
+normalised and alert keys, looked up in that order; one of them canonical for "one open case per
+key"), urgency (orders the queue), the project, the current status and holder,
 and a timeline of events (detected, diagnosed, handed over, planned, approved, executed, checked,
 attached signals, the operator's feedback). Evidence is references to records, never prose.
 
@@ -194,31 +207,44 @@ stateDiagram-v2
     diagnosed --> escalated: unsure
     handed_over --> planned: acting job, after a code re-check
     handed_over --> closed: resolved itself
+    planned --> closed: shadow, plan recorded
     planned --> awaiting_approval: policy says propose
     planned --> executing: policy says auto
-    planned --> escalated: policy refuses
+    planned --> handed_over: deferred (lock, hold, stand-down, limits)
+    planned --> escalated: policy refuses (registry, autonomy)
     awaiting_approval --> executing: operator approves
     awaiting_approval --> escalated: operator rejects or it expires
     executing --> checking: actuator done
+    executing --> closed: precondition no longer true, resolved itself
     executing --> escalated: failed or unknown
     checking --> closed: verified
     checking --> escalated: not verified
+    handed_over --> escalated: the re-check contradicts the diagnosis
+    escalated --> handed_over: the operator reassigns it
     escalated --> closed: operator or an issue resolves it
     closed --> [*]
 ```
 
 - **A transition table** in flotillad (from, to, who may make it, the longest a case may stay) is
-  enforced on every write; a disallowed transition is refused and logged.
-- **Timers for stuck states:** a case in `handed_over` too long escalates; `executing` past its
-  deadline becomes `unknown` and escalates; `checking` past its window is not verified.
-- **Dedup:** the key is computed by code from the kind and the canonical target, and is authoritative;
-  one open case per key, so a storm is one case. The diagnosing model's suggestion of which open case
+  enforced on every status change; a disallowed transition is refused and logged. It governs status
+  only: **events may be appended to closed cases** (an outcome check days later, a recurrence of a
+  dismissed signal, a reopened GitHub issue).
+- **Timers for stuck states:** `detected` too long (the diagnosing worker is down) alerts;
+  `handed_over` too long escalates; `executing` past its deadline becomes `unknown`, escalates and
+  **holds the target** until the operator clears it; `checking` past its window is not verified.
+- **Approval is an event, not a wait:** the planning run ends at `awaiting_approval`; flotillad holds
+  the case and the per-target lock until the approval or its expiry; an approval starts a new execute
+  run (§7). An approval given after the problem went away ends as `resolved itself`.
+- **Dedup:** the keys are computed by code from the kind and the canonical target, and are
+  authoritative; one open case per canonical key, so a storm is one case. Detect matches a signal's keys
+  against open cases and against cases closed as dismissed within the recurrence window. The diagnosing model's suggestion of which open case
   a signal belongs to is recorded in shadow only; switching to it is a behaviour change (AGENTS.md
   rule 3) with a named criterion, and even then the model chooses only among cases code already
   considers candidates.
-- **Holders and leases:** a case is held by one job at a time; flotillad starts that job and hands it
-  the lease; an expired lease returns the case, unless an execution is open (then the check resumes,
-  the action never re-runs).
+- **Holders and leases:** a case is held by one job at a time (flotillad holds it while it awaits
+  approval); flotillad starts that job and hands it the lease, which the job renews while it runs; an
+  expired lease returns the case, unless an execution is open (then the check resumes, the action never
+  re-runs).
 - **The per-target lock:** from `planned` until checked, one case at a time touches a container, a
   mount, a file, across kinds and fleets. It covers flotilla only: the homelab's own scheduled jobs
   (the nightly backup, the weekly prune) are kept out by each capability's preconditions.
@@ -227,6 +253,9 @@ stateDiagram-v2
   bug is a `code_bug` case; triage still files the GitHub issue, where the operator sees bugs, as the
   case's mirror: one case per repo and issue number; a reopened issue is an event on the case; the
   outcome check syncs both ways (issue closed → case closed; PR merged → the issue closed).
+- **Compatibility:** RFC-0002 §9 step 5's promises to the fleet session still hold with cases in place
+  of its ledger tables: the multi-key lookup (`decision_keys`), the TSV history imported and marked
+  `imported`, the mirror's TSVs byte-compatible while its readers use them, and the filing seams.
 
 ### 3.6 Workers per role
 
@@ -350,26 +379,27 @@ sequenceDiagram
     participant A as Acting worker (agent + code)
     participant Op as Operator
     participant X as Actuator (host)
-    F->>A: event: case handed over, start the job, with the lease
+    F->>A: event: case handed over, start a planning run, with the lease
     A->>A: re-check with fresh numbers (code)
     A->>F: plan: backup.rerun_observability(mini)
     F->>F: policy: registry, autonomy, locks, limits, holds
     alt propose
-        F->>Op: approvals channel: Approve / Reject
-        Op->>F: approve (plan hash)
+        F->>Op: approvals channel: Approve / Reject (the planning run ends here)
+        Op->>F: approve (plan hash), maybe hours later
     end
-    F->>A: execute, execution id E
+    F->>A: event: start an execute run, execution id E
     A->>X: E, backup.rerun_observability(mini)
     X->>X: re-check scope and preconditions, run, log
-    X->>A: done / failed / unknown
+    X->>A: done / failed / unknown / precondition no longer true
     A->>F: E's result
     F->>F: timer: check after the window
-    F->>A: check E (code)
+    F->>A: event: start a check run for E (code)
     A->>F: verified / not verified
 ```
 
-Verify needs both the actuator's "done" and the target's state improving within the window. Every
-execution emits an ops event and a Grafana annotation.
+Verify needs both the actuator's "done" and the target's state improving within the window. An
+unknown result holds the target until the operator clears it. Every execution emits an ops event and a
+Grafana annotation.
 
 ## 8. The fleets, end to end
 
@@ -381,8 +411,8 @@ sequenceDiagram
     participant T as Triage worker
     participant F as flotillad (cases)
     participant G as GitHub, GlitchTip, Grafana
-    S->>F: detect: new case, or attached to an open one
-    F->>T: event: diagnose
+    S->>T: signals (the triage cycle: detect is code in the worker)
+    T->>F: new case, or attached to an open or dismissed one
     T->>T: probes, the project's recall, the target's history
     alt benign
         T->>F: closed: dismissed, with the corroborating probe
@@ -495,8 +525,13 @@ and a Grafana annotation; the `notifications` channel posts it to Slack.
 - **It depends on** the case tables, which take the place of phase 3 step 5's ledger tables in the
   store (today: runs, events, controls and spend only).
 - **Producing a record:** in shadow only, the monitor opens cases from a lower threshold (a backup older
-  than 20 h). The gate: 5 shadow plans that match what the operator would have done, each with its
-  target equal to the case's, then propose, then auto.
+  than 20 h), and the capability's precondition uses the same shadow threshold, so the re-check plans
+  instead of closing every case as resolved. The gate: 5 shadow plans that match what the operator
+  would have done, each with its target equal to the case's, then propose (with the 26 h threshold),
+  then auto.
+- **Prerequisites:** the actuator's ADR accepted before the first write; the `ops-act-host` worker image.
+- **Kept as code, not proven by v1:** the host incident rule and the per-target lock (one kind, one
+  write cannot exercise them), and loop bounding.
 - **What v1 does not prove:** loop bounding (`caused_by`, the hourly cap): a backup rerun fires no
   alerts. The first restart-class write (`memory_growth`) brings that proof with it.
 - **Not in v1:** triage as producer (phase 3 steps 2 to 6); the brief on flotilla (RFC-0001 phase 4);
@@ -529,7 +564,7 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
 | 15 | Checks | one timer, two windows: verify (minutes) and outcome (days) |
 | 16 | Config changes | only by PR |
 | 17 | Hand-overs | through cases only; triage keeps filing GitHub issues |
-| 18 | Dedup | the code key, authoritative; the model's suggestion recorded in shadow |
+| 18 | Dedup | the code keys (several per case), authoritative; the model's suggestion recorded in shadow |
 | 19 | Triggers | time or an event on a case |
 | 20 | Locks | per-target lock, `flotilla hold`, deploy stand-down |
 | 21 | `caused_by` | within the verify window |
@@ -553,12 +588,15 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
   anywhere".
 - **ADR-0003:** `jsonschema` and what it pulls, pinned by hash; the vector store; the Slack Socket Mode
   client; each approved when it is built.
+- **RFC-0001** §4 (its Decision, Proposal and Stage concepts) and §6.1 (the decisions table), both
+  superseded by cases.
 - **RFC-0001** §5 (specs stay validated by hand-written Go) and §8, **AGENTS.md rule 2**, and
   **deployment.md** ("Operator identity"): approvals also from the operator's pinned Slack user,
   within §3.8's limits.
 - **docs/architecture:** components.md (policy in flotillad, execution in workers, the trigger model),
   deployment.md (workers per role, the Home Assistant secret removed), context.md (Home Assistant
-  removed), data.md (cases, their transition table, executions, the per-target lock).
+  removed), data.md (cases with their keys in place of `decisions` and `decision_keys`, the transition
+  table, executions, the per-target lock).
 
 ## 14. Alternatives considered
 
@@ -602,3 +640,12 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
   lifecycle in place of an engine, and consolidated the blocks: cases, one capability registry,
   recall, one trigger model; the brief stays its own job. Slack approvals stay, wherever approvals are
   needed.
+- **Advisor pass 5 (on revision 6):** the consolidation is sound with fixes. Revision 7: the lifecycle
+  gains the shadow path, deferral distinct from escalation, approval as an event (no run waits),
+  stale approvals closing as resolved, events on closed cases with the two recurrence rules, the way
+  back from escalated and the re-check contradicting the diagnosis, and a stuck timer on `detected`;
+  cases carry several keys; recall drops past briefs and states ADR-0004's rules still apply; the case
+  layer shows structured fields only; the registry's two enforcement points; evaluation restored as a
+  block; "unknown holds the target", the post-window new-case rule, lease renewal, urgency and the
+  step 5 compatibility promises restored; detect placed in the worker; the v1 threshold mismatch fixed
+  and its prerequisites named; RFC-0001 §4 and §6.1 added to the docs to amend.
