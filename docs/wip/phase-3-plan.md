@@ -20,8 +20,16 @@ start after phase 2's switch ([phase-2-plan](phase-2-plan.md), 2.8).
 
 ## Not done
 
-- **The first `exact` capture read back on the mini:** waits on the first model-made decision after
-  08:06Z. The fleet session checks that `outcome_count.py` and the freezer still parse it.
+- ~~**The first `exact` capture read back on the mini.**~~ *Done 2026-11-09 (fleet session): the
+  first live decision after both deploys has `exact` with 4 turns, model_id on each, 55 KB, and still
+  parses for `outcome_count.py` and the freezer; its filing record replayed with "EXACT FILING
+  REPLAY: PASS". A shadow capture arrived in mirror-test at mode 600 in a 700 folder.*
+- **The first sweep records** (live and shadow): at the first cycle after 00:00Z, 2026-11-10.
+- **What shadow comparison can compare at the filing level** (fleet session, 2026-11-09): a shadow run
+  never files. With dry_run, a file decision goes to `queue_proposal` and an escalation only prints, so
+  no filing record starts. Exact filing replays come from the live fleet only. Comparing live and a
+  candidate at the filing level means live's `results/filing/` records against the candidate's
+  `queue/` proposals, decision by decision; `shadow_compare.py` compares dispositions today, not that.
 - **The DGX's vLLM** (directly, or as a LiteLLM alias): not checked. The DGX is in `prod` mode
   (`gpu-mode-swap.sh --mode-only`, 2026-11-09), so its vLLM is production serving; a contract check
   there waits on the operator's go. The fleet's LiteLLM key may not use the DGX model either.
