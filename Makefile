@@ -58,7 +58,7 @@ lint: ## gofmt check + go vet (both modules), byte-compile every Python file
 	@out="$$($(GOFMT) -l cmd internal fleetd)"; test -z "$$out" || { echo "lint FAIL: gofmt would change:"; echo "$$out"; exit 1; }
 	@$(GO) vet ./...
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
-	@python3 -m compileall -q signal-fleet worker deploy >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+	@python3 -m compileall -q signal-fleet worker deploy runtime >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@echo "lint PASS"
 
 .PHONY: test-unit
@@ -69,6 +69,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@python3 deploy/mini/test_mirror.py >/tmp/flotilla-test_mirror.log 2>&1 && echo "PASS deploy/mini/test_mirror.py" || { echo "FAIL deploy/mini/test_mirror.py"; tail -30 /tmp/flotilla-test_mirror.log; exit 1; }
 	@python3 deploy/mini/test_shadow_compare.py >/tmp/flotilla-test_shadow_compare.log 2>&1 && echo "PASS deploy/mini/test_shadow_compare.py" || { echo "FAIL deploy/mini/test_shadow_compare.py"; tail -30 /tmp/flotilla-test_shadow_compare.log; exit 1; }
 	@python3 deploy/mini/test_triage_hooks.py >/tmp/flotilla-test_triage_hooks.log 2>&1 && echo "PASS deploy/mini/test_triage_hooks.py" || { echo "FAIL deploy/mini/test_triage_hooks.py"; tail -30 /tmp/flotilla-test_triage_hooks.log; exit 1; }
+	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_model_client.py >/tmp/flotilla-test_model_client.log 2>&1 && echo "PASS runtime/test_model_client.py" || { echo "FAIL runtime/test_model_client.py"; tail -30 /tmp/flotilla-test_model_client.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py; do \
 	  HOME=$$h SF_OBSERV_DISABLED=1 python3 $$t >/tmp/flotilla-$$t.log 2>&1 && echo "PASS $$t" || { echo "FAIL $$t"; tail -20 /tmp/flotilla-$$t.log; rm -rf $$h; exit 1; }; \
 	done; rm -rf $$h
