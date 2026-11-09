@@ -61,7 +61,7 @@ flowchart LR
 
 | Stage | Runs where | Does |
 |---|---|---|
-| **Detect** | a worker, code (for triage today: its cycle) | turns raw signals into cases. A signal whose keys match an open case, or a case closed as dismissed within the recurrence window, is attached to it. A signal on the target of an execution inside its verify window is attached (`caused_by`) and counts against verification; after the window it is a new case. After any close other than dismissed (verified, resolved itself, a shadow plan recorded), a recurrence is a new case linked `recurrence_of` (what the recurrence rule counts) |
+| **Detect** | a worker, code (for triage today: its cycle) | turns raw signals into cases. A signal whose keys match an open case, or a case closed as dismissed within the recurrence window, is attached to it. A signal on the target of an execution inside its verify window is attached (`caused_by`) and counts against verification; after the window it is a new case. After any close other than dismissed (verified, resolved itself, a shadow plan recorded), a recurrence is a new case linked `recurrence_of`; the recurrence rule counts only recurrences after an **executed** fix (closed verified, or escalated as not verified or failed) |
 | **Diagnose** | a worker with read capabilities (triage's also has the low-risk writes) | decides: dismiss, report, hand over, escalate |
 | **Act** | an acting worker | re-checks the problem by code with fresh numbers, then plans from its capabilities, or closes the case as resolved itself |
 | **Policy** | flotillad, code | runs, asks the operator, or refuses (§5.1); it decides and records, and executes only flotilla's own controls (a pause, a hold) |
@@ -204,7 +204,6 @@ stateDiagram-v2
     [*] --> detected
     detected --> diagnosed: diagnose job
     detected --> handed_over: a code detector with a known kind
-    detected --> escalated: recurrence rule reached
     diagnosed --> closed: dismissed or reported
     diagnosed --> handed_over: needs a fix
     diagnosed --> escalated: unsure
@@ -239,7 +238,9 @@ stateDiagram-v2
   condition clears (the lock released, the hold or stand-down ended) or after a backoff. The
   `handed_over` stuck timer counts from the first hand-over, so a long hold surfaces as an escalation.
 - **The recurrence rule fires at hand-over, before any plan:** a case linked `recurrence_of` that
-  reaches the threshold (by default 3 in 7 days) goes to `escalated`, not to another fix.
+  reaches the threshold (by default 3 in 7 days) goes to `escalated`, not to another fix. It counts only
+  recurrences after an executed fix: closes as `shadow, plan recorded` or `resolved itself` link the new
+  case but do not count, so v1's daily shadow cases never trip it.
 - **Approval is an event, not a wait:** the planning run ends at `awaiting_approval`; flotillad holds
   the case and the per-target lock until the approval or its expiry; an approval starts a new execute
   run (§7). An approval given after the problem went away ends as `resolved itself`.
@@ -661,3 +662,7 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
   left: `detected → handed_over` for a code detector (v1's own path), a recurrence-rule escalation that
   fires at hand-over, the rule for closes other than dismissed, the lock taken by policy atomically,
   `pre_shadow` in the registry entry, deferral re-dispatch and its timer, and one merged v1 bullet.
+- **Advisor pass 7 (on revision 8):** every sixth-pass finding landed; one contradiction: shadow
+  closes counted toward the recurrence rule, which would escalate v1 on day 3. Fixed: only recurrences
+  after an executed fix count; the duplicate `detected → escalated` edge removed. The advisor's verdict:
+  ready to accept with this fix.
