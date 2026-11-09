@@ -46,6 +46,7 @@ services:
       NO_PROXY: worker-triage,worker-triage-candidate,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
     volumes:
       - ${FLOTILLA_CONFIG:?set FLOTILLA_CONFIG}/flotillad.yaml:/etc/flotilla/flotillad.yaml:ro
       - ${FLOTILLA_CONFIG}/callers.yaml:/etc/flotilla/callers.yaml:ro
@@ -121,6 +122,8 @@ services:
     mem_limit: 128m
     cpus: 0.5
     command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    environment:
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS:-}   # deploy.sh: a changed ACL recreates it
     volumes:
       - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-acl.yaml:/etc/smokescreen/acl.yaml:ro

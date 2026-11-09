@@ -95,6 +95,15 @@ say "$OUT" | sed 's/^/   /'
 grep -q "^CHECK PASS" <<<"$OUT" || die "flotillad -check failed for $TAG"
 
 say "== up"
+# A container whose mounted config changed must restart to read it: compose recreates a container
+# only when its own definition changes, never for a changed bind-mounted file. Each service's config
+# files are hashed into its environment, so a changed file is a changed definition (found 2026-11-09:
+# a models section added to flotillad.yaml reached -check, but not the running flotillad).
+cfghash() { for f in "$@"; do printf '%s\n' "$f"; cat "$f" 2>/dev/null; done | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-16; }
+CFG="$(envget FLOTILLA_CONFIG)"
+FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)")"
+FLOTILLA_CONFIG_HASH_EGRESS="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-acl.yaml")"
+export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
 triage_deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'
 ok=0

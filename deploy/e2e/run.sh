@@ -211,6 +211,15 @@ echo "$OUT" | grep -q 'worker triage-candidate: {"ok":true' && ok "flotillad rea
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
 [ "$NW" = "${P}_flotilla " ] && ok "the candidate is on the internal network only" || bad "candidate networks: '$NW'"
 
+echo "== a changed config recreates its service (deploy.sh's FLOTILLA_CONFIG_HASH_*)"
+started() { $D inspect "$1" --format '{{.State.StartedAt}}' 2>&1; }
+F0="$(started flotillad)"; E0="$(started flotilla-egress)"; W0="$(started flotilla-worker-triage)"
+FLOTILLA_CONFIG_HASH_FLOTILLAD=changed-in-e2e compose up -d >"$WORK/up2.log" 2>&1
+for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
+[ "$(started flotillad)" != "$F0" ] && ok "a new flotillad config hash recreates flotillad" || bad "flotillad not recreated: $(cat "$WORK/up2.log")"
+[ "$(started flotilla-egress)" = "$E0" ] && [ "$(started flotilla-worker-triage)" = "$W0" ] \
+  && ok "the proxy and the worker, whose config did not change, keep running" || bad "other services were recreated too"
+
 echo "== hardening"
 for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-egress; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')

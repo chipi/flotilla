@@ -42,7 +42,7 @@ FAKE_GATE = textwrap.dedent("""\
 
 FAKE_DOCKER = textwrap.dedent("""\
     #!/usr/bin/env bash
-    echo "docker $*" >> "$DOCKER_CALLS"
+    echo "docker $* | hash_flotillad=${FLOTILLA_CONFIG_HASH_FLOTILLAD:-} hash_egress=${FLOTILLA_CONFIG_HASH_EGRESS:-}" >> "$DOCKER_CALLS"
     case "$*" in
       *" run "*) echo "CHECK PASS";;
       *"flotilla status"*) echo '{"ok":true}';;
@@ -190,8 +190,13 @@ class DeployWiringTest(Base):
     def setUp(self):
         super().setUp()
         shutil.copy(DEPLOY, os.path.join(self.repo, "deploy", "mini", "deploy.sh"))
+        self.cfg = os.path.join(self.tmp, "config")
+        os.makedirs(self.cfg)
+        for name in ("flotillad.yaml", "callers.yaml", "cli.token", "worker-triage.token", "smokescreen.yaml", "egress-acl.yaml"):
+            with open(os.path.join(self.cfg, name), "w") as f:
+                f.write(name + " v1\n")
         with open(os.path.join(self.home, ".env"), "w") as f:
-            f.write(f"TRIAGE_DEPLOY_LOG={self.log}\nTRIAGE_FILING_GATE={self.gate}\n")
+            f.write(f"TRIAGE_DEPLOY_LOG={self.log}\nTRIAGE_FILING_GATE={self.gate}\nFLOTILLA_CONFIG={self.cfg}\n")
         # one earlier passing deploy of commit 0
         with open(os.path.join(self.home, "deployed.tsv"), "w") as f:
             f.write(f"2026-11-08T18:45:35Z\tsha-{self.commits[0][:7]}\t{self.commits[0]}\tpass\n")
@@ -226,6 +231,29 @@ class DeployWiringTest(Base):
                         env=dict(self.env, GATE_MODE="fail", SF_FILING_GATE_ACCEPT="intended"))
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(self.rows()[-1][1], "deploy")
+
+    def hashes(self):
+        p = os.path.join(self.tmp, "docker_calls")
+        ups = [l for l in open(p).read().splitlines() if " up -d " in l]
+        return ups[-1].split("| ")[1]
+
+    def test_a_changed_config_changes_the_service_hash(self):
+        """compose recreates a container only when its definition changes: the config's hash is in it."""
+        self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
+        first = self.hashes()
+        self.assertRegex(first, r"hash_flotillad=[0-9a-f]{16} hash_egress=[0-9a-f]{16}")
+        self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
+        self.assertEqual(self.hashes(), first, "same config, same hashes: nothing is recreated")
+        with open(os.path.join(self.cfg, "flotillad.yaml"), "a") as f:
+            f.write("models: {}\n")
+        self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
+        second = self.hashes()
+        self.assertNotEqual(second.split()[0], first.split()[0], "flotillad.yaml changed: flotillad's hash too")
+        self.assertEqual(second.split()[1], first.split()[1], "the proxy's config did not change")
+        with open(os.path.join(self.cfg, "egress-acl.yaml"), "a") as f:
+            f.write("# allow one more\n")
+        self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
+        self.assertNotEqual(self.hashes().split()[1], second.split()[1], "the ACL changed: the proxy's hash too")
 
     def test_rollback_skips_gate_and_logs_rollback(self):
         self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
