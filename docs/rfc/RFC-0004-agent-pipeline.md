@@ -12,20 +12,23 @@ knowledge, evaluation). This RFC extends it; it does not replace it.
   runbooks;
 - actions run on standard tooling.
 
-RFC-0003 is reserved for the SEO fleet itself.
+RFC-0003 is reserved for the digital marketing fleet's first use case, SEO.
 
-## 1. The use cases it must serve
+## 1. The fleets it must serve
 
-| # | Use case | Finds | Does |
+| Fleet | What it is | Finds | Does |
 |---|---|---|---|
-| U1 | **Triage** (live today) | alerts and errors worth a look | dismisses, files an issue, or hands over a fix |
-| U2 | **Daily brief** (live today, outside flotilla) | what needs the operator today | a page and a phone push |
-| U3 | **Ops review** (e.g. the daily Postgres review) | trends and risks in one system | a report, and hand-overs |
-| U4 | **Disk pressure** | a disk filling up | cleans what is safe to clean |
-| U5 | **Memory pressure / OOM loop** | a container leaking or OOM-killed in a loop | restarts it |
-| U6 | **Config fault** | a fault whose cause is a config value | proposes the change as a PR |
-| U7 | **SEO content** | a page that could rank better for a query | writes the change as a PR |
-| U8 | **Code bug** (the bugfix fleet) | a bug filed by triage | reproduces, fixes, opens a PR |
+| **Triage** (live today) | first look at every alert and error | what is noise, what is a bug, what is an operational fault | dismisses, files an issue, or hands the fault to Ops |
+| **Ops** | **the SRE team in action**, and the largest fleet: it watches the operational estate and fixes what it can | disk filling, OOM loops, config faults, stuck jobs, failed backups, expiring certificates, cost spikes, … (§5.2) | reviews, remediates, or escalates |
+| **Digital marketing** | the sites' reach and growth; SEO is its first use case, more will follow | pages that could rank better for a query (SEO) | writes the change as a PR |
+| **Bugfix** | code fixes | bugs filed by triage | reproduces, fixes, opens a PR |
+
+The daily brief is a job of the Ops fleet (`ops/daily-brief`, RFC-0001): the operator's morning view
+of what every fleet did.
+
+The Ops fleet is open-ended. Each new kind of fault is a new **item kind** with its playbook and
+catalogue actions, not a new fleet. It is expected to grow the most. The digital marketing fleet works
+the same way: SEO content is its first use case, and later ones are new item kinds in it.
 
 **Non-goals:** irreversible actions without the operator (deleting data, schema changes); agents
 that write their own prompts, memory or actions; model-written shell commands.
@@ -66,7 +69,8 @@ flowchart LR
 | **Verify** | code | the target's state after | passed or failed, recorded |
 | **Report** | the brief | the ledger | what was handled, what waits, what was escalated |
 
-Finding and fixing are **different fleets with different credentials**. The diagnosing agent reads
+Finding and fixing are **different jobs with different credentials**, in the same fleet or not
+(Ops diagnoses and remediates in separate jobs). The diagnosing agent reads
 untrusted text all day (error messages, issue bodies, web pages) and holds no write access. The
 acting agent holds write access and never sees that text: a work item carries typed fields only.
 
@@ -79,7 +83,7 @@ acting agent holds write access and never sees that text: a work item carries ty
 | **Memory** | what flotilla recorded: decisions, outcomes, operator feedback, notes | outcomes from acting fleets feed it |
 | **Knowledge** | reference material: what we write (notes, briefs) and what exists elsewhere (each project's docs, runbooks, ADRs) | sources are declared per project; plug-in kinds |
 | **Actions** | named operations a fleet may perform, from a catalogue, run by code | **new** |
-| **Work items** | ledger rows that hand a case from one fleet to the next | **new** |
+| **Work items** | ledger rows that hand a case from one job to the next | **new** |
 
 ### 3.1 Harness
 
@@ -125,7 +129,7 @@ Retrieval: path maps (a service to its runbook) and a `knowledge_search` tool.
 
 ### 3.5 Work items
 
-A ledger row from one fleet to another:
+A ledger row from one job to another (often across fleets: triage to Ops, triage to bugfix):
 
 | Field | Example |
 |---|---|
@@ -136,7 +140,7 @@ A ledger row from one fleet to another:
 | `status` | `open` → `claimed` (with a lease) → `planned` → `awaiting_approval` → `done` / `failed` / `escalated` / `stale` |
 | `links` | the decision that made it; the actions and outcome that closed it |
 
-The consumer fleet is started by flotillad when an item for it appears. Code bugs keep going to
+The consumer job is started by flotillad when an item for it appears. Code bugs keep going to
 GitHub issues, where the operator sees them; the bugfix fleet takes them from there.
 
 ## 4. Actions on standard tooling
@@ -212,9 +216,9 @@ stateDiagram-v2
 Only the operator promotes. The record behind a promotion: plans approved unchanged, verifications
 passed, outcomes measured. An action type that cannot be undone never goes beyond *propose*.
 
-## 5. The use cases, end to end
+## 5. The fleets, end to end
 
-### U1 Triage
+### 5.1 Triage
 
 ```mermaid
 sequenceDiagram
@@ -238,25 +242,31 @@ sequenceDiagram
 Blocks: harness (per item, decision), context (playbook, signal, history, project knowledge),
 memory, knowledge, work items. Acts only through issues and work items.
 
-### U2 Daily brief
+### 5.2 Ops: the SRE team
 
-```mermaid
-sequenceDiagram
-    participant C as Code (07:00)
-    participant B as Brief (once, prose)
-    participant L as Ledger
-    participant Op as Operator
-    C->>C: alerts in the window, containers, errors
-    L->>C: handled overnight, waiting for approval, escalated
-    C->>B: the facts
-    B->>B: writes the opening (numbers stay from code)
-    B->>Op: page + phone push, with approvals waiting
-```
+Three kinds of job, one fleet:
 
-Blocks: harness (once, prose), context, ledger reads. No actions. It is the operator's morning view
-of everything the acting fleets did.
+| Job | Shape | Example |
+|---|---|---|
+| **monitors and reviews** (diagnose) | once per run, prose report + findings | the daily Postgres review; a disk, memory or backup check |
+| **remediation** (act) | per work item, action plan | clean a disk, restart a container, rerun a backup |
+| **daily brief** (report) | once a day, prose | the morning view of every fleet |
 
-### U3 Ops review (e.g. Postgres, daily)
+Work items reach Ops from its own monitors and from triage. Each **item kind** is a playbook plus
+catalogue actions; the list grows as faults are met:
+
+| Item kind | Act | Verify | Autonomy ceiling |
+|---|---|---|---|
+| `disk_pressure` | prune build cache, dangling images, logs older than N in declared paths | free space back above the threshold | auto (regenerable only) |
+| `oom_loop` | restart a stateless container | healthy 5 min, memory down | auto |
+| `stuck_job` | stop it, rerun it | it completes | auto for named jobs |
+| `failed_backup` | rerun the backup | a fresh backup exists | auto |
+| `cert_expiry` | trigger renewal | new expiry date | auto |
+| `cost_spike` | lower a key's budget, pause a fleet | spend rate down | propose |
+| `config_fault` | a structured edit as a PR on the infra repo | the alert clears after the repo's own deploy | propose (always) |
+| *(next kinds)* | added with their playbook and actions | | earned per kind |
+
+#### Monitors and reviews
 
 ```mermaid
 sequenceDiagram
@@ -269,81 +279,68 @@ sequenceDiagram
     R->>R: drill in with query templates, runbooks
     R->>Op: report (prose + findings)
     opt a finding needs doing
-        R->>L: work item (e.g. stale_backup → rerun the backup)
+        R->>L: work item (e.g. failed_backup)
     end
 ```
 
-Blocks: harness (once, prose), context, memory (past findings and whether they were resolved),
-knowledge (the system's runbooks, alert rules), work items.
-
-### U4 Disk pressure
+#### Remediation: a host action (disk, OOM, stuck job, backup, …)
 
 ```mermaid
 sequenceDiagram
-    participant T as Diagnose
+    participant D as Diagnose (triage or an Ops monitor)
     participant L as Ledger
-    participant Rm as Remediate
+    participant Rm as Ops remediation
+    participant P as Policy
     participant X as Actuator
     participant V as Verify
-    T->>T: which mount, what grew (du on declared paths)
-    T->>L: work item disk_pressure(host, mount, top consumers)
+    D->>L: work item, e.g. disk_pressure(host, mount, top consumers)
     L->>Rm: start
-    Rm->>Rm: still above the threshold?
-    Rm->>X: prune build cache → prune dangling images → delete logs older than N in declared paths
+    Rm->>Rm: still a problem? (fresh data)
+    Rm->>P: plan from the kind's playbook
+    P->>X: auto, or after the operator's approval
     X->>V: done
-    V->>L: free space back above 20%? passed / failed
-    opt failed, or 3 times in 7 days
-        L->>L: escalate: issue with the top consumers
+    V->>L: passed / failed
+    opt failed, or the same kind and target 3 times in 7 days
+        L->>L: escalate: issue about the cause (a leak, a growing log)
     end
 ```
 
-Only regenerable things are in the catalogue for this kind. Nothing outside declared paths; nothing in
-use.
-
-### U5 Memory pressure / OOM loop
+#### Remediation: a config change
 
 ```mermaid
 sequenceDiagram
-    participant T as Diagnose
+    participant D as Diagnose
     participant L as Ledger
-    participant Rm as Remediate
-    participant X as Actuator
-    participant V as Verify
-    T->>L: work item oom_loop(host, container)
-    L->>Rm: start
-    Rm->>Rm: still looping? restartable (stateless)?
-    Rm->>X: docker.restart
-    X->>V: done
-    V->>L: healthy 5 min, memory back down? passed / failed
-    opt 3 restarts in 7 days
-        L->>L: escalate: a leak, issue on the project's repo
-    end
-```
-
-### U6 Config fault
-
-```mermaid
-sequenceDiagram
-    participant T as Diagnose
-    participant L as Ledger
-    participant Ch as Change
+    participant Rm as Ops remediation
     participant G as Gates + reviewer
     participant Op as Operator
-    participant D as Existing deploy
-    T->>L: work item config_fault(repo, file, key, evidence)
-    L->>Ch: start
-    Ch->>Ch: still failing? read the file, the runbook
-    Ch->>G: structured edit: key → value
+    participant Dp as The repo's deploy
+    D->>L: work item config_fault(repo, file, key, evidence)
+    L->>Rm: start
+    Rm->>Rm: still failing? read the file, the runbook
+    Rm->>G: structured edit: key → value
     G->>G: only that key changed, valid file, reviewer agrees
     G->>Op: PR with the evidence
-    Op->>D: merge → the repo's own deploy
-    D->>L: the alert cleared? outcome
+    Op->>Dp: merge
+    Dp->>L: the alert cleared? outcome
 ```
 
-Never automatic in v1: a config change goes through the repo, its CI and its deploy, so it has a
-review, a diff and a revert.
+#### Daily brief
 
-### U7 SEO content
+```mermaid
+sequenceDiagram
+    participant C as Code (07:00)
+    participant B as Brief (once, prose)
+    participant L as Ledger
+    participant Op as Operator
+    C->>C: alerts in the window, containers, errors
+    L->>C: handled overnight, waiting for approval, escalated
+    C->>B: the facts
+    B->>B: writes the opening (numbers stay from code)
+    B->>Op: the morning page, with approvals waiting
+```
+
+### 5.3 Digital marketing: SEO content (its first use case)
 
 ```mermaid
 sequenceDiagram
@@ -368,7 +365,7 @@ sequenceDiagram
 A *hurt* outcome opens a revert PR. Change types (title, meta description, a section, internal
 links) each earn their own autonomy; auto-merge is a later promotion, per change type.
 
-### U8 Code bug
+### 5.4 Bugfix
 
 ```mermaid
 sequenceDiagram
@@ -388,14 +385,14 @@ endpoint, and its diff is gated like any other change.
 
 ## 6. Review: do the building blocks still hold?
 
-| | U1 | U2 | U3 | U4 | U5 | U6 | U7 | U8 |
-|---|---|---|---|---|---|---|---|---|
-| Harness shape | per item | once | once | per item | per item | per item | per item | external |
-| Output type | decision | prose | prose | plan | plan | plan (edit) | decision → plan (edit) | diff |
-| Read tools | probes | — | query templates | du, metrics | metrics, logs | file read | Search Console, page | repo |
-| Memory | history | ledger | past findings | past items | past items | — | past outcomes | — |
-| Knowledge | project | — | runbooks | runbooks | project | project | site repo | project |
-| Writes | issue, item | page, push | report, item | actuator | actuator | PR | PR | PR |
+| | Triage | Ops review | Ops remediation (host) | Ops remediation (config) | Daily brief | Marketing: SEO | Bugfix |
+|---|---|---|---|---|---|---|---|
+| Harness shape | per item | once | per item | per item | once | per item | external |
+| Output type | decision | prose | plan | plan (edit) | prose | decision → plan (edit) | diff |
+| Read tools | probes | query templates | metrics, du, logs | file read | — | Search Console, page | repo |
+| Memory | history | past findings | past items | past items | ledger | past outcomes | — |
+| Knowledge | project | runbooks | runbooks | project | — | site repo | project |
+| Writes | issue, item | report, item | actuator | PR | page | PR | PR |
 
 What the review changed from ADR-0004 (the rough edges):
 
@@ -408,7 +405,7 @@ What the review changed from ADR-0004 (the rough edges):
    an ops monitor can both see the same full disk; one item, not two).
 5. **Outcomes arrive late** (SEO: weeks). An outcome job per acting fleet writes them back; memory
    reads them.
-6. **Query templates vs freedom.** U3's drill-in wants ad-hoc queries; ADR-0004 forbids
+6. **Query templates vs freedom.** Ops reviews' drill-in wants ad-hoc queries; ADR-0004 forbids
    model-written queries. Templates in v1; raw read-only queries only by a later decision.
 7. **One approval path for everything**: the CLI now. A way to reach the operator's phone (alerts,
    approvals at night) is a separate decision still to be designed. Home Assistant, which pushes
@@ -448,7 +445,7 @@ Each with a recommendation; the operator marks only what to change.
 17. A fixed playbook per item kind; the model picks parameters within it. **Recommended for v1.**
 18. Recurrence: 3 in 7 days escalates. **Recommended.**
 
-**Repo changes (U6, U7)**
+**Repo changes (Ops config, marketing)**
 19. Small change types as structured edits applied by code; larger ones by a coding harness with a
     diff-scope gate. **Recommended.**
 20. An independent reviewer agent (another model) for every change. **Recommended.**
