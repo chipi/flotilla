@@ -59,7 +59,11 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
 
@@ -84,6 +88,7 @@ nav:
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
     - RFC-0002 — The job runtime: rfc/RFC-0002-job-runtime.md
+    - RFC-0004 — The agent pipeline: rfc/RFC-0004-agent-pipeline.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md
