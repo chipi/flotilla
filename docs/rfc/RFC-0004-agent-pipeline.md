@@ -1,7 +1,7 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Draft, revision 3. Nothing is built from it until the operator accepts it. Revisions 1 and
-2 were reviewed by an independent advisor on 2026-11-09; revision 3 answers both reviews (§13).
+**Status:** Draft, revision 4: the operator's decisions recorded (§10). Nothing is built from it until
+the operator accepts it. Revisions 1 and 2 were reviewed by an independent advisor on 2026-11-09.
 **Date:** 2026-11-09
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
 knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§11).
@@ -29,7 +29,8 @@ Ops is open-ended: each new kind of fault is a new **item kind** (a playbook and
 not a new fleet. Digital marketing grows the same way.
 
 **Non-goals:** irreversible actions without the operator (deleting data, schema changes); agents
-that write their own prompts, memory or actions; model-written shell commands or queries.
+that write their own prompts, memory or actions; a model-written command that runs without the
+operator's approval (§4.6).
 
 ## 2. The pipeline
 
@@ -85,9 +86,11 @@ on what the agent's output can do:
 4. **Credentials per role:** each worker holds only its role's credentials. `ops-read` cannot write
    at all; triage holds only the low-risk writes (issues, comments, annotations); `ops-act-host` holds
    only the actuator key.
-5. **v1 tightens the acting side further:** a host action's re-check is code returning numbers (free
-   bytes, backup age, restart count), not an agent reading log text; knowledge comes only from the
-   operator's own repos.
+5. **Trust tiers for knowledge:** sources are declared trusted or untrusted in the installation's
+   config (for example, the operator's own repos are trusted). Untrusted content is always wrapped as
+   data, and a plan built on it never goes beyond propose.
+6. **v1 tightens the acting side further:** a host action's re-check is code returning numbers (free
+   bytes, backup age, restart count), not an agent reading log text.
 
 ## 3. The building blocks
 
@@ -100,6 +103,7 @@ on what the agent's output can do:
 | **Actions** | named operations from a catalogue, decided by policy, run by an actuator or GitHub | **new** |
 | **Work items** | ledger rows that hand a case from one job to the next | **new** |
 | **Workers per role** | a job names its worker; a fleet can have several | **changes** "one worker per fleet" |
+| **Communication** | channels by purpose (alerts, approvals, notifications), each routed to a provider | **new** |
 
 ### 3.1 Harness
 
@@ -129,19 +133,20 @@ A **project** is a config entity: its names in signals (labels, GitHub repos, Gl
 hosts), its issue repo, and its knowledge sources. A case about a project gets that project's
 sources, among those its fleet's spec declares (ADR-0004: declared, never discovered).
 
-- **v1, as ADR-0004 already says:** a knowledge volume filled at deploy from the operator's own repos
-  (each project's `docs/`, runbooks, ADRs; the homelab handbook), versioned by commit; path maps and
-  full-text search.
-- **Later, each by amending ADR-0004:** a scheduled refresh job (needs a worker with git and egress
-  to GitHub), third-party sources (HTTP docs, other MCP servers) as a lower trust tier, semantic
-  search.
+- **Sources:** git repos (refreshed on a schedule, versioned by commit), HTTP docs, and other MCP
+  servers. Live reads are allowed as recorded tool calls, so a run stays replayable (operator,
+  2026-11-09; this amends ADR-0004's snapshot-only rule).
+- **Trust:** each source is declared trusted or untrusted in the installation's config; the operator's
+  own repos are the example of trusted (§2.1).
+- **Search:** semantic search from v1, with an embedding model served locally (the DGX or Ollama),
+  plus path maps (a service to its runbook) and full-text search (operator, 2026-11-09).
 
 ### 3.5 Work items
 
 | Field | Rule |
 |---|---|
 | `kind`, `target` | typed: `disk_pressure` on host + mount; `code_bug` on repo + issue number; … |
-| `dedup key` | **computed by code** from `kind` + the canonical target; the model never emits one. One open item per key: a storm is one item |
+| `dedup key` | **computed by code** from `kind` + the canonical target; one open item per key: a storm is one item. The diagnosing model also suggests which open item a case belongs to; both are recorded, and the data decides which one is used (operator, 2026-11-09) |
 | `evidence` | references to records, never prose |
 | `urgency` | orders the queue |
 | `status` | `open` → `claimed` → `planned` → (`awaiting_approval`) → `executing` → `verifying` → `done` / `failed` / `unknown` / `resolved_itself` / `escalated` |
@@ -154,9 +159,9 @@ sources, among those its fleet's spec declares (ADR-0004: declared, never discov
 - **Staleness:** an item unclaimed for N hours escalates; a problem gone on re-check closes as
   `resolved_itself`, with the numbers.
 - **Caps:** at most N open items per kind and per host; an alert on queue age (RFC-0001 §6.2).
-- **Bugfix too:** triage hands a bug over as a `code_bug` item (repo and issue number). The GitHub
-  issue is where the operator sees it and is evidence; the item gives the chain its lease, dedup and
-  outcome (PR merged or closed).
+- **Hand-overs go through the ledger only** (operator, 2026-11-09), bugfix included: triage hands a
+  bug over as a `code_bug` item. Triage keeps filing the GitHub issue on the project's repo, where the
+  operator sees bugs; bugfix takes its work from the item, not the issue.
 
 ### 3.6 Workers per role
 
@@ -177,19 +182,37 @@ only its role's credentials:
 flotillad today runs jobs `every N` (`internal/sched`). The pipeline adds `on_item(kind)` (a consumer
 job starts when an item for it appears), and timers per execution for verification.
 
+### 3.8 Communication
+
+Fleets never talk to a provider. They send to a **channel**, and the installation's config routes
+each channel to a **provider** (operator, 2026-11-09):
+
+| Channel | Carries |
+|---|---|
+| `alerts` | something broke; an agent escalated |
+| `approvals` | a proposal waiting for the operator, with **Approve** and **Reject** |
+| `notifications` | what was done; reports; the brief |
+
+- **The first provider is Slack** (it already carries critical alerts). Others (email, a phone app)
+  come later; Home Assistant is not one of them.
+- **Approving in Slack:** flotilla keeps an outbound connection to Slack (Socket Mode), so nothing in
+  the homelab is exposed. A click is accepted only from the operator's Slack user and recorded in the
+  ledger with that user and the time. Action types marked high risk (for example, irreversible ones)
+  show their proposal in Slack but still need the CLI to approve.
+
 ## 4. Actions
 
 ### 4.1 The catalogue, on standard tooling
 
-An action wraps tooling that already runs, never a command the model writes:
+An action wraps tooling that already runs:
 
 ```yaml
-action: disk.prune_docker          # wraps infra/docker-maintenance/docker-prune.sh, run weekly today
+action: backup.rerun_observability   # launchctl kickstart system/com.homelab.db-backup (dumps + offsite upload)
 params: {host: enum(mini)}
-risk: medium
-reversible: regenerable            # yes | regenerable | no: build cache and unused images come back on the next build or pull
-pre: [free_space_below(15%), not_run_in(6h)]   # last run from the script's own metric, homelab_maintenance_last_run_timestamp{job="docker-prune"}, so the weekly launchd run counts
-verify: {free_space_above: 20%, within: 15m}   # needs the script's fstrim: without it the host's free space never moves
+risk: low
+reversible: yes                      # yes | regenerable | no: a rerun adds one backup; retention keeps the rest
+pre: [backup_age_above(26h), not_running]   # from homelab_backup_offsite_last_success_timestamp
+verify: {backup_newer_than_execution: true, within: 60m}
 limits: {per_target_per_day: 2}
 ```
 
@@ -202,7 +225,7 @@ queued proposal.
 For each planned action, in order; any "no" refuses (recorded with the reason):
 1. In the catalogue, parameters within its scope.
 2. **Job stage caps autonomy:** a job in `shadow` → every action is shadow; `propose` → at most
-   propose; `live` → the action type's earned level on that host (§4.4).
+   propose; `live` → the action type's earned level (§4.4).
 3. The per-target lock is free; per-target and per-host limits not reached (including a per-host
    cap on actions per hour).
 4. **Holds:** no fleet STOP, no deploy stand-down on that host, no operator hold
@@ -219,14 +242,14 @@ sequenceDiagram
     participant X as Actuator (host)
     F->>A: on_item: start the job, with the item's lease
     A->>A: re-check with fresh numbers (code)
-    A->>F: plan: disk.prune_docker(mini)
+    A->>F: plan: backup.rerun_observability(mini)
     F->>F: policy: catalogue, stage, lock, limits, holds
     alt propose
         F->>Op: approval waiting
         Op->>F: approve
     end
     F->>A: execute, execution id E
-    A->>X: E, disk.prune_docker(mini)
+    A->>X: E, backup.rerun_observability(mini)
     X->>X: re-check scope and preconditions, run, log
     X->>A: done / failed / unknown
     A->>F: execution E result
@@ -238,24 +261,25 @@ sequenceDiagram
 - **Every execution has an id.** The actuator is idempotent by that id: a retried call never runs the
   action twice.
 - **Unknown** (a timeout, a hung command): the target is held, the item escalates, and the action
-  type drops one autonomy level on that host.
+  type drops one autonomy level.
 - **Verify** needs both: the actuator reported done, and the target's state improved within the
   window. Something else freeing space does not count as the action working when the actuator failed.
 - **Every execution emits an ops event and a Grafana annotation**, so detect can link the alerts it
   causes to it (§2), and humans see it on dashboards.
 
-### 4.4 Earned autonomy, per action type and host
+### 4.4 Earned autonomy, per action type
 
 ```mermaid
 stateDiagram-v2
-    [*] --> shadow: new action type on a host
+    [*] --> shadow: new action type
     shadow --> propose: operator promotes
     propose --> auto: operator promotes, on its record
     auto --> propose: failed or unknown, or the operator
     propose --> shadow: rejected proposals, or the operator
 ```
 
-Only the operator promotes. The record: plans approved unchanged, verifications passed, outcomes. Each
+Only the operator promotes. Autonomy is per action type and applies on every machine the type may
+touch (operator, 2026-11-09). The record: plans approved unchanged, verifications passed, outcomes. Each
 action declares `reversible: yes | regenerable | no`. Only `no` (it cannot be undone, and what it
 removes does not come back) is capped at propose.
 
@@ -274,19 +298,32 @@ it is built. The constraints it must meet:
 - its own append-only log, shipped to VictoriaLogs, independent of the worker's record;
 - an explicit exception to ADR-0002's "no Docker socket anywhere", limited to this service.
 
-The operator's rule against agents running `docker image/system prune` needs an explicit exemption
-for this one entry, limited to the existing scheduled script. That is the operator's decision (§10).
+The operator's rule against agents running `docker image/system prune` stands: no exemption
+(operator, 2026-11-09). Docker pruning stays with the scheduled script and the operator.
+
+### 4.6 Model-written commands
+
+Two kinds, beside the catalogue (operator, 2026-11-09):
+
+- **A. Investigation sandbox (diagnosis):** the model writes read-only commands (`du`, `df`,
+  `docker stats`, a log search, a SQL `SELECT`, a PromQL or LogsQL query) that run in a throwaway
+  container with read-only access and no credentials beyond reading. It can look, not change. This is
+  also where raw read-only queries for Ops run.
+- **B. Proposed command (fixing, the escape hatch):** when no catalogue action fits, the model writes
+  the command it would run on a host. The operator sees it as a proposal, with a dry run where one
+  exists, and approves it by CLI; the actuator runs it. It never runs on auto. A command that keeps
+  coming back becomes a catalogue action.
 
 ## 5. Trust while the operator is away
 
 - **Auto** action types act within their limits; everything is in the ledger, the annotations and the
   morning brief.
-- **Propose** action types wait. Over a multi-day absence they wait days. Until a phone channel is
-  designed, a Grafana alert rule on flotilla's oldest-pending-approval age (a metric RFC-0001 §6.2 lists)
-  sends it through the existing email contact point; the operator approves by CLI.
+- **Propose** action types wait for the operator, who is told on the `approvals` channel (Slack)
+  and approves there or by CLI (§3.8).
 - **Loops are bounded:** detect links follow-on alerts to the execution; the per-target lock serialises;
-  the per-host hourly cap and the recurrence rule (the same kind and target 3 times in 7 days becomes
-  an issue about the cause) stop repetition; STOP and holds stop everything.
+  the per-host hourly cap and the recurrence rule (by default the same kind and target 3 times in 7
+  days becomes an issue about the cause; an item kind may set its own) stop repetition; STOP and holds
+  stop everything.
 
 ## 6. The fleets, end to end
 
@@ -326,7 +363,7 @@ Item kinds, illustrative (each fleet spec sets its own playbooks, limits and aut
 
 | Item kind | Act | Verify |
 |---|---|---|
-| `disk_pressure` | `disk.prune_docker` (the existing script); later: logs older than N in declared paths | free space above the threshold |
+| `disk_pressure` | logs older than N in declared paths (Docker pruning stays with the scheduled script and the operator: no exemption) | free space above the threshold |
 | `failed_backup` | rerun the backup job | a fresh backup (its dead-man metric) |
 | `stuck_job` | stop it, rerun it | it completes |
 | `memory_growth` | restart a container labelled restartable, whose memory grows without hitting its limit | memory back down, healthy |
@@ -457,77 +494,62 @@ catalogue.
 
 ## 8. v1: prove it with the least build
 
-**One chain, one host, one action.** A **code-only Ops monitor** (no model) reads the disk metric and
-raises a `disk_pressure` item. An `ops-act-host` job starts in **shadow** and plans the one catalogue
-action that wraps the existing script. Verify runs by timer on the metric that already exists. Each
-execution emits an ops event and a Grafana annotation. v1 is reported through `flotilla ledger`.
+**One chain, one host, one action.** A **code-only Ops monitor** (no model) reads the observability
+backup's age (`homelab_backup_offsite_last_success_timestamp`) and raises a `failed_backup` item. An
+`ops-act-host` job starts in **shadow** and plans the one catalogue action, `backup.rerun_observability`.
+Verify runs by timer on the same metric. Each execution emits an ops event and a Grafana annotation;
+the `notifications` channel (Slack) reports it.
 
 - **Platform pieces:** work items with leases and dedup, the per-target lock, `on_item`, execution ids
   and verification timers, policy in flotillad, `flotilla hold` and the deploy stand-down, the actuator
-  on the mini with that one entry.
+  on the mini with that one entry, the communication channels with Slack.
 - **It depends on** the ledger tables (`decisions`, items, executions) that phase 3 step 5 adds to the
   store: today it holds runs, events, controls and spend only. v1 comes after them.
-- **Producing a record:** the weekly prune keeps the disk alert rare. In shadow only, the monitor
-  raises items from a lower threshold (25% free), so plans accrue. The gate: 5 shadow plans that match
-  what the operator would have done, then propose, then auto, per action type and host.
-- **What v1 does not prove:** loop bounding (`caused_by`, the hourly cap). A prune fires no alerts.
-  The first restart-class action (`memory_growth`) brings those with it.
+- **Producing a record:** a failed backup is rare. In shadow only, the monitor raises items from a
+  lower threshold (a backup older than 20 h), so plans accrue. The gate: 5 shadow plans that match what
+  the operator would have done, then propose, then auto.
+- **What v1 does not prove:** loop bounding (`caused_by`, the hourly cap). A backup rerun fires no
+  alerts. The first restart-class action (`memory_growth`) brings those with it.
 - **Not in v1:** triage as producer (it moves onto the runtime in phase 3 steps 2 to 6); the daily
-  brief on flotilla (RFC-0001 phase 4); git, HTTP and MCP knowledge sources; the reviewer agent;
-  config-change PRs; cost_spike; the marketing fleet; the phone channel; actuators on the DGX and the
-  production VPS.
+  brief on flotilla (RFC-0001 phase 4); the model-written commands (§4.6); the reviewer agent;
+  config-change PRs; cost_spike; the marketing fleet; actuators on the DGX and the production VPS.
 
 ## 9. Not in this RFC
 
 The UI; each fleet's playbooks, thresholds and catalogue entries (fleet specs and fleet RFCs); the
 actuator's own ADR; the phone channel.
 
-## 10. Open decisions
+## 10. Decisions (operator, 2026-11-09)
 
-Each with a recommendation; the operator marks only what to change.
-
-**Pipeline and blocks**
-1. One harness with *per item* and *once* shapes. **Recommended.**
-2. Model-written queries: templates only. **Recommended.**
-3. Output validation: our own small validator. **Recommended.**
-4. Knowledge v1: ADR-0004's deploy-filled volume, own repos only; refresh jobs and third-party
-   sources later by amending ADR-0004. **Recommended.**
-5. *Project* as a config entity owning knowledge, repo and labels. **Recommended.**
-6. Search: full-text in v1. **Recommended.**
-7. Workers per role, not per fleet. **Recommended.**
-
-**Actions**
-8. Named catalogue actions only; today's outputs join the catalogue. **Recommended.**
-9. Policy lives in flotillad; execution in the acting worker. **Recommended.**
-10. Job stage caps per-action autonomy (§4.2). **Recommended.**
-11. Autonomy per action type **and host**; starts in shadow; only the operator promotes; failed or
-    unknown demotes. **Recommended.**
-12. The actuator on the mini as a host service, with its own ADR and the ADR-0002 exception.
-    **Recommended.**
-13. The exemption from the no-`prune` rule for the existing scheduled script only. **Operator's call.**
-14. Execution ids, idempotent actuator, `unknown` holds the target. **Recommended.**
-15. Verify by timer; outcomes by a daily job. **Recommended.**
-16. Config changes only by PR. **Recommended.**
-
-**The chain**
-17. Work items for all hand-overs, bugfix included; GitHub issues stay where the operator sees bugs.
-    **Recommended.**
-18. Dedup keys computed by code; one open item per key. **Recommended.**
-19. Push: flotillad starts the consumer on a new item. **Recommended.**
-20. The per-target lock across kinds and fleets; `flotilla hold`; deploy stand-down. **Recommended.**
-21. Detect links follow-on alerts to recent executions (`caused_by`). **Recommended.**
-22. Recurrence: 3 in 7 days escalates. **Recommended.**
-23. A fixed playbook per item kind; the model picks parameters within it. **Recommended for v1.**
-
-**Away and approvals**
-24. Until a phone channel exists: a Grafana alert on the oldest pending approval's age, by the
-    existing email contact point; approval by CLI. **Recommended.**
-
-**Repo changes (later)**
-25. Structured edits applied by code for small change types; a coding harness with a diff-scope gate
-    for larger ones. **Recommended.**
-26. A reviewer agent for quality, not as a security control. **Recommended.**
-27. No auto-merge until a change type earns it. **Recommended.**
+| # | Decision | Chosen | Note |
+|---|---|---|---|
+| 1 | Harness run shapes | one harness, *per item* and *once* | as recommended |
+| 2 | Model-written queries | **raw read-only queries for Ops**, in the investigation sandbox (§4.6 A) | changes ADR-0004's non-goal |
+| 3 | Output validation | **the `jsonschema` package** | a new dependency (ADR-0003) |
+| 4 | Knowledge freshness | **live reads too** (recorded tool calls), with **trusted and untrusted sources** declared in config | amends ADR-0004 |
+| 5 | Project entity | yes | as recommended |
+| 6 | Search | **semantic from v1**, a local embedding model | |
+| 7 | Workers | per role | as recommended |
+| 8 | Actions | **the catalogue, plus model-written commands of two kinds** (§4.6): read-only investigation, and approval-only proposed commands | |
+| 9 | Policy and execution | flotillad decides, workers execute | as recommended |
+| 10 | Job stage and action autonomy | the job stage caps per-action autonomy | as recommended |
+| 11 | Autonomy scope | **per action type, on every machine** | |
+| 12 | Actuator | a host service, with its own ADR | as recommended |
+| 13 | The no-prune rule | **no exemption** | v1's action is a backup rerun |
+| 14 | Executions | ids, idempotent actuator, unknown holds the target | as recommended |
+| 15 | Verification | timer for verify, daily job for outcomes | as recommended |
+| 16 | Config changes | only by PR | as recommended |
+| 17 | Hand-overs | **the ledger only**; triage keeps filing GitHub issues for the operator | |
+| 18 | Dedup | **both**: the code-computed key and the model's suggestion, recorded; the data decides | |
+| 19 | Trigger | flotillad starts the consumer | as recommended |
+| 20 | Locks | per-target lock, `flotilla hold`, deploy stand-down | as recommended |
+| 21 | `caused_by` | linked within the verify window | as recommended |
+| 22 | Recurrence | **3 in 7 days by default; an item kind may override** | |
+| 23 | Choosing actions | **the model chooses from the catalogue** | |
+| 24 | Approvals while away | **communication channels** (§3.8), Slack first, approvals in Slack (high-risk types by CLI) | replaces the Grafana email |
+| 25 | Repo changes | structured edits for small change types, a coding agent for larger ones | as recommended |
+| 26 | Reviewer agent | yes, for quality | as recommended |
+| 27 | Auto-merge | not until a change type earns it | as recommended |
 
 ## 11. Docs amended on acceptance
 
@@ -538,6 +560,10 @@ Each with a recommendation; the operator marks only what to change.
   the ops worker.
 - `docs/architecture/context.md`: Home Assistant removed.
 - `docs/architecture/data.md`: work items, executions, the per-target lock.
+- ADR-0004 also: live knowledge reads with trust tiers; semantic search; model-written read-only
+  queries and proposed commands.
+- ADR-0003: `jsonschema`; the embedding model; the Slack client for Socket Mode (a dependency to
+  approve when it is built).
 
 ## 12. Alternatives considered
 
@@ -599,3 +625,10 @@ Each with a recommendation; the operator marks only what to change.
   - v1's producer is a code-only monitor; its dependencies on the ledger tables and the brief are
     stated; its record gate is 5 shadow plans; ops events and annotations are in; and what v1 does
     not prove is said.
+- **2026-11-09, revision 4:** the operator's 27 decisions recorded (§10). Changes from the
+  recommendations: raw read-only queries for Ops; `jsonschema`; live knowledge reads with trusted and
+  untrusted sources; semantic search from v1; model-written commands in two kinds (§4.6); autonomy per
+  action type on every machine; no exemption from the no-prune rule (v1's action is now a backup
+  rerun); hand-overs through the ledger only, with triage still filing issues; both dedup methods
+  recorded; a per-kind recurrence override; the model choosing from the catalogue; and a new block,
+  communication channels with Slack first, approvals in Slack.
