@@ -1,7 +1,7 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Draft, revision 2. Nothing is built from it until the operator accepts it. Revision 1
-was reviewed by an independent advisor on 2026-11-09; revision 2 answers that review (§13).
+**Status:** Draft, revision 3. Nothing is built from it until the operator accepts it. Revisions 1 and
+2 were reviewed by an independent advisor on 2026-11-09; revision 3 answers both reviews (§13).
 **Date:** 2026-11-09
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
 knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§11).
@@ -37,7 +37,7 @@ that write their own prompts, memory or actions; model-written shell commands or
 flowchart LR
     S[(Sources<br/>alerts, logs, metrics,<br/>Search Console, GitHub)] --> D[Detect<br/><i>code</i>]
     L[(Ledger<br/>decisions, work items,<br/>executions)] -. open items, recent executions .-> D
-    D --> G[Diagnose<br/><i>agent, read-only worker</i>]
+    D --> G[Diagnose<br/><i>agent, read-only tools</i>]
     K[(Knowledge)] -.-> G
     M[(Memory)] -.-> G
     G --> L
@@ -57,10 +57,10 @@ flowchart LR
 
 | Stage | Runs where | In | Out |
 |---|---|---|---|
-| **Detect** | a worker, code | raw signals, and the ledger's open items and recent executions | candidate cases; a signal on a target with an open item or a recent execution is linked to it (`caused_by`), never a new case |
-| **Diagnose** | a **read-only** worker, agent | one case and its context | a **decision**; a work item when something must be done |
+| **Detect** | a worker, code | raw signals, and the ledger's open items and recent executions | candidate cases; a signal on the same target as an open item, or within an execution's verify window, is linked to it (`caused_by`) and counts as evidence against the verification passing; after the window it is a new case |
+| **Diagnose** | a worker with read-only tools (triage's may also run low-risk catalogue writes) | one case and its context | a **decision**; a work item when something must be done |
 | **Act** | an **acting** worker, agent | one work item, plus a code re-check of the problem with fresh numbers | an **action plan** from the catalogue, or "resolved itself" |
-| **Policy** | **flotillad**, code | the plan | run, ask the operator, or refuse (§4.2); it decides and records, it never executes |
+| **Policy** | **flotillad**, code | the plan | run, ask the operator, or refuse (§4.2); it decides and records. It executes only flotilla's own controls (pause a fleet, a hold), which need no fleet credential |
 | **Execute** | the acting worker, code | the approved plan, with an execution id | the call to the actuator (host actions) or to GitHub (repo changes) |
 | **Verify** | flotillad's timer starts a code check in a worker | the execution | passed / failed / unknown, within minutes |
 | **Outcome** | a daily code job | executions and PRs | helped / no change / hurt, days or weeks later, into memory |
@@ -82,8 +82,9 @@ on what the agent's output can do:
 3. **Repo changes are structured edits applied by code**, and a diff-scope gate checks that only the
    declared fields or files changed. These deterministic gates are the security boundary. A reviewer
    agent judges quality; it reads the same context and is not a security control.
-4. **Credentials per role:** a read-only worker cannot act, an acting worker cannot read beyond its
-   role.
+4. **Credentials per role:** each worker holds only its role's credentials. `ops-read` cannot write
+   at all; triage holds only the low-risk writes (issues, comments, annotations); `ops-act-host` holds
+   only the actuator key.
 5. **v1 tightens the acting side further:** a host action's re-check is code returning numbers (free
    bytes, backup age, restart count), not an agent reading log text; knowledge comes only from the
    operator's own repos.
@@ -164,7 +165,7 @@ only its role's credentials:
 
 | Worker | Holds | Jobs |
 |---|---|---|
-| `triage` | read tokens for alerts, errors, GitHub | triage diagnose; filing |
+| `triage` | read tokens; the low-risk catalogue writes: GitHub issues and comments, GlitchTip comments and resolution, Grafana annotations | triage; filing; escalation issues for every fleet |
 | `ops-read` | read tokens, query templates | Ops monitors, reviews, the brief |
 | `ops-act-host` | the actuator key for each host it may act on | Ops remediation on hosts |
 | `ops-act-repo` (later) | a GitHub App with write on the infra repo | Ops config changes |
@@ -186,8 +187,8 @@ An action wraps tooling that already runs, never a command the model writes:
 action: disk.prune_docker          # wraps infra/docker-maintenance/docker-prune.sh, run weekly today
 params: {host: enum(mini)}
 risk: medium
-reversible: regenerable            # build cache and unused images come back on the next build/pull
-pre: [free_space_below(15%), not_run_in(6h)]
+reversible: regenerable            # yes | regenerable | no: build cache and unused images come back on the next build or pull
+pre: [free_space_below(15%), not_run_in(6h)]   # last run from the script's own metric, homelab_maintenance_last_run_timestamp{job="docker-prune"}, so the weekly launchd run counts
 verify: {free_space_above: 20%, within: 15m}   # needs the script's fstrim: without it the host's free space never moves
 limits: {per_target_per_day: 2}
 ```
@@ -216,7 +217,7 @@ sequenceDiagram
     participant F as flotillad (policy, ledger)
     participant Op as Operator
     participant X as Actuator (host)
-    A->>F: claim the item (lease)
+    F->>A: on_item: start the job, with the item's lease
     A->>A: re-check with fresh numbers (code)
     A->>F: plan: disk.prune_docker(mini)
     F->>F: policy: catalogue, stage, lock, limits, holds
@@ -254,8 +255,9 @@ stateDiagram-v2
     propose --> shadow: rejected proposals, or the operator
 ```
 
-Only the operator promotes. The record: plans approved unchanged, verifications passed, outcomes. An
-action type that cannot be undone never goes beyond propose.
+Only the operator promotes. The record: plans approved unchanged, verifications passed, outcomes. Each
+action declares `reversible: yes | regenerable | no`. Only `no` (it cannot be undone, and what it
+removes does not come back) is capped at propose.
 
 ### 4.5 The actuator
 
@@ -264,7 +266,8 @@ existing cleanup runs on the macOS host with `sudo` (`docker-prune.sh`). It gets
 it is built. The constraints it must meet:
 
 - a service on the host, as a dedicated user, with a sudoers allowlist of exact scripts;
-- a listener reachable only by the acting worker (tailnet ACL and its own key);
+- a listener on the host, reached from the acting worker's container through the host gateway and
+  allowed only in `ops-act-host`'s egress allowlist, with its own key;
 - the catalogue baked in at deploy: no entry can be added at runtime;
 - re-checks scope and preconditions itself; refuses to delete what is in use;
 - idempotent by execution id; returns done / failed / unknown;
@@ -279,8 +282,8 @@ for this one entry, limited to the existing scheduled script. That is the operat
 - **Auto** action types act within their limits; everything is in the ledger, the annotations and the
   morning brief.
 - **Propose** action types wait. Over a multi-day absence they wait days. Until a phone channel is
-  designed, an email (the alert email channel that exists) says that approvals are waiting; the
-  operator approves by CLI.
+  designed, a Grafana alert rule on flotilla's oldest-pending-approval age (a metric RFC-0001 §6.2 lists)
+  sends it through the existing email contact point; the operator approves by CLI.
 - **Loops are bounded:** detect links follow-on alerts to the execution; the per-target lock serialises;
   the per-host hourly cap and the recurrence rule (the same kind and target 3 times in 7 days becomes
   an issue about the cause) stop repetition; STOP and holds stop everything.
@@ -292,7 +295,7 @@ for this one entry, limited to the existing scheduled script. That is the operat
 ```mermaid
 sequenceDiagram
     participant S as Alerts, errors
-    participant T as Triage (read-only worker)
+    participant T as Triage (low-risk writes only)
     participant F as flotillad (ledger)
     participant G as GitHub, GlitchTip, Grafana
     S->>T: signals (detect: dedup, operational states, links to open items)
@@ -329,7 +332,7 @@ Item kinds, illustrative (each fleet spec sets its own playbooks, limits and aut
 | `memory_growth` | restart a container labelled restartable, whose memory grows without hitting its limit | memory back down, healthy |
 | `oom_loop` | none on the host: Docker already restarts it; the fix is its memory limit → `config_fault` | — |
 | `config_fault` | a structured edit as a PR on the infra repo; the repo's own deploy applies it | the alert clears |
-| `cost_spike` | pause the fleet (a flotilla control); a key's budget is LiteLLM config → `config_fault` | spend rate down |
+| `cost_spike` | pause the fleet (a flotilla control, applied by flotillad); a key's budget is LiteLLM config → `config_fault` | spend rate down |
 
 The `restartable` container label is a new contract on the infra repo's compose files; infra owns it.
 
@@ -369,7 +372,8 @@ sequenceDiagram
     F->>Rm: verify E after 15 min (timer)
     Rm->>F: passed / failed
     opt failed, unknown, or 3 times in 7 days
-        F->>Rm: escalate: file an issue about the cause (catalogue: github.issue)
+        F->>F: item escalated (a ledger status)
+        Note over F: the triage worker's filing job files the issue about the cause
     end
 ```
 
@@ -453,17 +457,25 @@ catalogue.
 
 ## 8. v1: prove it with the least build
 
-**One chain, one host, one action.** Triage or an Ops monitor raises a `disk_pressure` or
-`failed_backup` item. An `ops-act-host` job starts in **shadow**, with one catalogue action wrapping
-the existing script. Verify runs by timer on the metric that already exists. The brief reports it.
+**One chain, one host, one action.** A **code-only Ops monitor** (no model) reads the disk metric and
+raises a `disk_pressure` item. An `ops-act-host` job starts in **shadow** and plans the one catalogue
+action that wraps the existing script. Verify runs by timer on the metric that already exists. Each
+execution emits an ops event and a Grafana annotation. v1 is reported through `flotilla ledger`.
 
 - **Platform pieces:** work items with leases and dedup, the per-target lock, `on_item`, execution ids
-  and verification timers, policy in flotillad, the actuator on the mini with that one entry.
-- **Knowledge:** ADR-0004's deploy-filled volume, own repos only.
-- **Not in v1:** git, HTTP and MCP knowledge sources; the reviewer agent; config-change PRs;
-  cost_spike; the marketing fleet; the phone channel; actuators on the DGX and the production VPS.
-- **Gate to promote:** two weeks of shadow plans that match what the operator would have done, then
-  propose, then auto, per action type and host.
+  and verification timers, policy in flotillad, `flotilla hold` and the deploy stand-down, the actuator
+  on the mini with that one entry.
+- **It depends on** the ledger tables (`decisions`, items, executions) that phase 3 step 5 adds to the
+  store: today it holds runs, events, controls and spend only. v1 comes after them.
+- **Producing a record:** the weekly prune keeps the disk alert rare. In shadow only, the monitor
+  raises items from a lower threshold (25% free), so plans accrue. The gate: 5 shadow plans that match
+  what the operator would have done, then propose, then auto, per action type and host.
+- **What v1 does not prove:** loop bounding (`caused_by`, the hourly cap). A prune fires no alerts.
+  The first restart-class action (`memory_growth`) brings those with it.
+- **Not in v1:** triage as producer (it moves onto the runtime in phase 3 steps 2 to 6); the daily
+  brief on flotilla (RFC-0001 phase 4); git, HTTP and MCP knowledge sources; the reviewer agent;
+  config-change PRs; cost_spike; the marketing fleet; the phone channel; actuators on the DGX and the
+  production VPS.
 
 ## 9. Not in this RFC
 
@@ -508,7 +520,8 @@ Each with a recommendation; the operator marks only what to change.
 23. A fixed playbook per item kind; the model picks parameters within it. **Recommended for v1.**
 
 **Away and approvals**
-24. Until a phone channel exists: an email when approvals wait; approval by CLI. **Recommended.**
+24. Until a phone channel exists: a Grafana alert on the oldest pending approval's age, by the
+    existing email contact point; approval by CLI. **Recommended.**
 
 **Repo changes (later)**
 25. Structured edits applied by code for small change types; a coding harness with a diff-scope gate
@@ -570,3 +583,19 @@ Each with a recommendation; the operator marks only what to change.
     data.
   - **v1 narrowed** to one chain, one host, one action; alternatives considered added; docs to amend
     listed.
+- **2026-11-09, the advisor's second pass on revision 2:** all 15 findings landed; ready for the
+  operator's decisions once three fixes land. Revision 3 makes them and the smaller ones:
+  - triage is a worker with low-risk catalogue writes, not "read-only"; it also files escalation
+    issues for every fleet (the acting host worker holds only the actuator key);
+  - escalation is a ledger status, filed by triage's filing job;
+  - reversibility is `yes | regenerable | no`, and only `no` is capped at propose, so the v1 action can
+    reach auto;
+  - flotillad executes only flotilla's own controls;
+  - `caused_by` is bounded by the verify window;
+  - the waiting-approvals email is a Grafana rule on the pending-approval age, through the existing
+    contact point;
+  - the actuator is reached through the host gateway and the egress allowlist, not the tailnet;
+  - the prune's last run is read from the script's own metric;
+  - v1's producer is a code-only monitor; its dependencies on the ledger tables and the brief are
+    stated; its record gate is 5 shadow plans; ops events and annotations are in; and what v1 does
+    not prove is said.
