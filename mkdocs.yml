@@ -1,5 +1,5 @@
 site_name: flotilla
-site_description: "A plain, spec-driven fleet platform for small fleets of AI agents: a control plane, a ledger of every decision, and fleets that propose, never act alone."
+site_description: "A plain, spec-driven platform for small fleets of AI agents that can act, within limits the operator sets and can see."
 site_url: https://chipi.github.io/flotilla/
 site_author: Marko Dragoljevic
 

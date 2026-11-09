@@ -1,6 +1,6 @@
 # Installing flotilla on a host
 
-One compose stack (ADR-0002): `flotillad`, one worker per fleet (`worker-triage` today) and the egress
+One compose stack (ADR-0002): `flotillad`, one worker per role (`worker-triage` today) and the egress
 proxy (`egress`, Smokescreen). The repo holds the compose file and the images; everything about one
 installation lives on the host, outside git. Placeholders below are in `<angle brackets>`.
 

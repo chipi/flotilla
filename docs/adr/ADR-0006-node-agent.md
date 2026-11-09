@@ -149,6 +149,9 @@ capability with its own rules.
 **Neutral:**
 
 - ADR-0002's actuator exception becomes this agent; nothing in a container holds the Docker socket.
+- **Amends ADR-0005** (RFC-0004 §2, §3.6, §3.8, §4, §7): host executions go from flotillad, signed,
+  to the host agent, not from the acting worker; the connector, not flotillad, holds the provider's
+  credentials. The acting worker plans and runs the check; `ops-act-host` holds no host key.
 
 ## Alternatives considered
 

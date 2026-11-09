@@ -33,7 +33,8 @@ operator is away. RFC-0004 has the design, the fleets end to end, and the review
    platform caps, a circuit breaker, a host incident rule, `caused_by` linking, the recurrence rule,
    the autonomy freeze, a gateway re-route alert.
 8. **Communication channels** (alerts, approvals, notifications) routed to providers; Slack first,
-   with approvals in Slack within limits (low and medium risk, bound to the plan's hash).
+   with approvals in Slack within limits (low and medium risk, reversible or regenerable, bound to the
+   plan's hash).
 9. **No workflow engine.** Model-written commands are decided later.
 10. **v1:** one chain, one host, one write: a code monitor, a `failed_backup` case, the
     `backup.rerun_observability` write in shadow, a timer check.

@@ -40,6 +40,8 @@ reopened issue) may still be added to a closed case.
 
 ## An example: an overnight backup that failed
 
+From the reference installation (the v1 chain).
+
 1. **Detect.** A code-only Ops monitor sees the observability backup is older than 26 hours and opens
    a `failed_backup` case for the mini. Its keys are computed by code; an open case with the same key
    would have received the signal instead.
@@ -52,36 +54,42 @@ reopened issue) may still be added to a closed case.
    mini's ceiling, taint and the freeze; the lock is free, limits and holds clear.
    - In **shadow**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
-     the operator approves there or by CLI, bound to the plan's hash. The approval starts a new run.
+     the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first
+     capability promoted to propose). The approval starts a new run.
    - In **auto**: it goes straight on.
 5. **Execute.** flotillad signs the execution and sends it to the mini's host agent, which checks the
    signature, expiry, its own allowlist and ceiling, re-checks the precondition, and runs the exact
    command (`launchctl kickstart system/com.homelab.db-backup`), recording it in its own audit log.
-6. **Check.** After the window, a timer starts a code check: a backup newer than the execution. The
-   case closes as verified, or escalates. Days later an outcome may be added.
+6. **Check.** After the window, a timer starts a code check in the acting worker: a backup newer
+   than the execution. The case closes as verified, or escalates. Days later an outcome may be
+   added.
 7. **The morning.** The case, its execution, an annotation on the dashboards and a line in the brief
    show what was handled overnight.
 
-Triage runs the same lifecycle with a model in step 1 to 2 (diagnosing alerts and errors); a code bug
-becomes a `code_bug` case for the bugfix fleet, with its GitHub issue as the mirror.
+Triage runs the same lifecycle with a model at step 2, diagnosing alerts and errors, and the
+low-risk writes it is allowed today; a code bug becomes a `code_bug` case for the bugfix fleet, with
+its GitHub issue as the mirror.
 
 ## Runs and cases
 
-A **run** is one job execution; a case may span several (a diagnose run, a planning run, an execute
-run after an approval, a check run). No run waits: an approval or a due check is an event that
-starts the next run.
+A **run** is one job execution; a case may span several (a diagnose run, a planning run, a check
+run). No run waits: an approval makes flotillad sign and send the execution, and a due check is an
+event that starts the check run.
 
 ## Failure behaviour
 
 | Failure | Behaviour |
 | --- | --- |
 | The model endpoint rejects the key or billing (401, 402, 403) | the run ends `endpoint_down` with one aggregate signal, deduped across runs; no silent switch to another model |
-| A transient model error | the case is deferred to the next run, up to the job's limit, then escalated |
+| A transient model error | the next run retries the case, up to the job's limit, then escalates it |
 | A capability call errors | the error is the call's answer; after the step limit the case escalates |
 | Malformed answers until the step limit | the case escalates, with the raw answers in the run's record |
 | A worker crashes or hangs | the deadline kills the run; its lease expires; the case returns, or its check resumes if an execution was open (the action never re-runs) |
 | A host agent is unreachable | no execution is sent; an execution in flight becomes `unknown`, the target is held, the case escalates |
-| An execution's result is unknown | the target is held until the operator clears it; the capability drops one autonomy level |
+| An execution's result is unknown | the target is held until the operator clears it; an `auto` capability drops to propose |
 | flotillad restarts | runs in flight are `interrupted`; cases keep their status; timers resume |
 | Budget spent mid-run | the run stops after the case in hand; the rest are deferred |
 | Too many failures or new cases | the circuit breaker drops every auto capability to propose; the host incident rule pauses auto on that host |
+| A case sits too long in a state | `detected`: an alert; `handed_over`: escalates (counted from the first hand-over, so a long hold surfaces); `executing`: `unknown`, target held; `checking`: not verified |
+| A plan is deferred (lock, hold, stand-down, limit) | back to `handed_over`; dispatched again when the condition clears or after a backoff |
+| The same fix keeps coming back | after an executed fix, 3 recurrences in 7 days (a kind may raise it to 10, never turn it off) escalate at hand-over instead of another fix; a signal on the target inside an execution's verify window attaches as `caused_by` and counts against verification |

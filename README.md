@@ -4,7 +4,8 @@ A plain, spec-driven platform for small fleets of AI agents that can act, within
 operator sets and can see. It has a control plane that decides and records, workers that diagnose
 and plan, and host agents that execute only what is signed and allowed on their host.
 
-flotilla runs the agents of one homelab:
+flotilla is built for one homelab and written for any. It is meant to run (triage runs today, in
+shadow):
 
 - a **triage** fleet that reads alerts and errors and files what needs a fix;
 - an **Ops** fleet, the SRE team in action: briefs, reviews, and remediation (a failed backup, disk
@@ -43,6 +44,10 @@ make replay        # the triage fleet's replays; needs the private corpora (sign
 ```
 
 ## Shape
+
+The shape is the design (ADR-0001 to ADR-0006). Built so far: specs, triggers, the runner, the
+store (runs, events, controls, spend), the API and CLI, the model client and job tracing. Cases,
+policy, host agents, MCP and the UI are not built yet.
 
 - **flotillad** (Go): the control plane. Specs and the capability registry, triggers, runner,
   cases, policy and guardrails, approvals, the signer and the node gateway, channels, budgets, and

@@ -82,5 +82,10 @@ flowchart LR
 | **worker** | a long-running container that runs jobs for one role, with that role's credentials |
 | **host agent** | `flotilla-node` on a host: the **actuator** (runs host writes) and, where configured, a **connector** (talks to a communication provider) |
 | **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |
-| **project** | what cases are about (a codebase, a site, a service), with its labels, issue repo and recall sources |
+| **project** | what cases are about (a codebase, a site, a service), with its names in signals, issue repo and recall sources |
 | **playbook** | a job's instructions to the model, Markdown in git |
+| **actuator** | ADR-0005's name for the host agent's role that runs writes |
+| **node** | the host agent as the CLI and the API name it (`flotilla node`, `nodes`) |
+
+A job's stage caps every capability it plans: a `propose` job never runs anything at `auto`; a `live`
+job runs each capability at its own earned level.

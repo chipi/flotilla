@@ -5,7 +5,7 @@
 | Layer | Where | In git | Examples |
 | --- | --- | --- | --- |
 | **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | jobs, triggers, capabilities, case kinds, stages, budgets, playbooks |
-| **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the operator's private config repo | no (public repo) | model endpoints and aliases, projects and their recall sources, channels and providers, each host's allowed writes and autonomy ceiling |
+| **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the installation's private config, reviewed like code | no (public repo) | model endpoints and aliases, projects and their recall sources, channels and providers, each host's allowed writes and autonomy ceiling |
 | **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, recall indexes, run records |
 
 The public repo ships examples with placeholder values. Nothing that identifies an installation is in
@@ -14,6 +14,9 @@ git.
 ## The control-plane database (SQLite)
 
 One file, owned by flotillad. Workers and host agents never open it; they report through the API.
+
+Built today: `runs`, `events`, `controls`, `spend`. The rest is the ADR-0005 and ADR-0006 design; v1
+brings the case tables.
 
 | Table | Holds |
 | --- | --- |
@@ -28,7 +31,7 @@ One file, owned by flotillad. Workers and host agents never open it; they report
 | `notes` | short lessons with a scope; active only once the operator activates them |
 | `nodes` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
 | `controls` | pause, STOP, stage, hold, freeze, with who changed them |
-| `budgets` | per fleet and job: spend and tokens per day |
+| `spend` | per fleet and job: spend and tokens per day |
 | `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, job) |
 
 Nothing is deleted or rewritten. A status change is an event; the case row carries the current

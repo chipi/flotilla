@@ -11,6 +11,10 @@ model behaviour that is measured.
 
 ## 1. The test pyramid
 
+The target. **Today:** Go unit tests, the runtime's and the triage fleet's Python tests, and the
+e2e stack (`deploy/e2e/run.sh`); the case, policy, host-agent and Slack tests come with what they
+test.
+
 | Level | What | Examples | Where it runs |
 | --- | --- | --- | --- |
 | **Unit** (most tests) | one component, no network, no model | triggers (budget, STOP, stage), spec and registry validation, the case transition table, case keys and dedup, policy decisions (autonomy, locks, limits, holds, taint), the guardrails, capability scope checks, the harness driven by a **scripted fake model**, the model client against a fake endpoint, config loading; in `flotilla-node`: signature, expiry, replay, allowlist and ceiling checks, idempotency, the audit chain | every push (`ci-fast`) |
@@ -33,17 +37,13 @@ model behaviour that is measured.
 Before any real fleet moves over, the platform proves itself with a **canary fleet** shipped in
 this repo. It is synthetic, deterministic and harmless:
 
-- **`canary/heartbeat`** runs every 10 minutes and exercises every building block:
-  - a source (synthetic facts) and a detector;
-  - an agent step against a **real local model** with one read-only tool and a fixed question whose
-    answer can be checked;
-  - a case, its timeline and a planned no-op write that waits for approval;
-  - metrics, logs and traces.
-- **What it proves:**
+- **`platform/heartbeat`** runs every 10 minutes:
   - the scheduler fires and the worker runs;
-  - the model endpoint works with tool calls;
-  - cases, approvals and telemetry work end to end;
-  - the stale alert fires when it stops.
+  - egress is enforced both ways: an allowed host answers, a host off the list is refused;
+  - optionally one model call through the model client (`HEARTBEAT_MODEL_ALIAS`);
+  - metrics, logs and traces arrive, and the stale alert fires when it stops.
+- **Added with ADR-0005's v1:** a case with a planned no-op write that waits for approval, so cases,
+  policy and approvals are exercised end to end.
 - **It keeps running in production** as the platform's own heartbeat. If the canary is stale or
   failing, the platform is broken, whatever the real fleets say.
 - **Acceptance for phase 2** of the migration:
@@ -59,8 +59,8 @@ this repo. It is synthetic, deterministic and harmless:
 | **Evaluation modes** | which proof does a change need? | four modes: code replay, exact replay, model replay and shadow comparison, with a table of which change needs which ([ADR-0004](adr/ADR-0004-job-runtime.md), RFC-0002 §8) |
 | **Shadow comparison** | does the new platform decide like the old one? | during migration, the fleet runs in `shadow` on flotilla beside the existing implementation for N days; decisions are compared per subject; differences are explained before switching |
 | **Stage ladder** | is a job ready to act? | `shadow` → `propose` → `live`, each step on evidence: shadow agreement, then the operator's approval rate in `propose` |
-| **Autonomy ladder** | may a write capability run without asking? | per capability, on every host: a gate of shadow plans the operator judged right, then approved executions that verified; promoted only by the operator, dropped a level by any `unknown` result ([ADR-0005](adr/ADR-0005-agent-pipeline.md)) |
-| **Decision quality, live** | is it still making good decisions? | from cases: approval and rejection rate, the reasons for rejections, duplicates caught by gates, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |
+| **Autonomy ladder** | may a write capability run without asking? | per capability, on every host: a gate of shadow plans the operator judged right, then approved executions that verified; promoted only by the operator, a failed or unknown result drops an `auto` capability to propose ([ADR-0005](adr/ADR-0005-agent-pipeline.md)) |
+| **Decision quality, live** | is it still making good decisions? | from cases: approval and rejection rate, the reasons for rejections, duplicates caught by the triage fleet's code checks before filing, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |
 | **Drift** | did something change underneath? | the mix of decisions per week against the last weeks; model, playbook and spec versions are in every row, so a shift can be traced to a change |
 | **Model and prompt evaluation** | is a different model or playbook better? | evaluated offline on the replay corpus (with eval-harness), never by switching production and watching |
 | **Health** | is it running? | per job: freshness (last success), run success rate, duration, cost against budget; dashboards and alerts in the homelab stack |
@@ -76,12 +76,13 @@ A fleet without one cannot move past `shadow`.
 
 ## CI tiers
 
+The target. **Today:** `ci-fast` is lint (gofmt, go vet, Python compile) and the unit tests, on
+every push; `make ci` adds the e2e stack, the Markdown lint and the strict docs build; images build
+in their own workflow; the secrets scan is a pre-commit hook.
+
 | Tier | Runs | Contains |
 | --- | --- | --- |
 | `ci-fast` | every push and PR | lint (gofmt, go vet, ruff), unit, contract, security tests, spec schema validation, secrets scan |
 | `ci` | PRs to main and main | `ci-fast` plus integration, the docs build (strict), vulnerability scans, image builds |
 | release | before deploy | `ci` plus end to end in the dev Docker engine |
 | private replay | on the host, before switching a fleet's code | the fleet's replay corpus with real recorded data (from the private eval repo) |
-
-Until phase 1 brings code, the Makefile's gates say "no code yet" and pass. Phase 1 replaces them
-with this.

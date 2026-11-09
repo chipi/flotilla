@@ -42,7 +42,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents, proposed).
 | T2 | **Exfiltration** | No general web or HTTP capability. Each worker reaches only its allowlisted hosts through the egress proxy. | registry, egress proxy |
 | T3 | **An agent approves** | MCP has no approve tool; jobs cannot approve. Approval is the operator's: UI, CLI, or the pinned Slack user within limits. Every change records its actor. | flotillad API, events |
 | T4 | **Silent cloud egress** | Each job names its model aliases; a local-only alias has no cloud fallback; the model client refuses a model outside the job's list. | model client, endpoint config |
-| T5 | **A secret leaks** (repo, logs, traces, prompts) | Secrets in mode-600 files on the hosts, mounted per role, never in git. Secrets scan in pre-commit and CI. Logs and traces redact known patterns. Credentials never enter a model's context. | CI, logging, model client |
+| T5 | **A secret leaks** (repo, logs, traces, prompts) | Secrets in mode-600 files on the hosts, mounted per role, never in git. Secrets scan in pre-commit (gitleaks). The triage fleet scrubs its recorded captures (`scrub.py`). Credentials never enter a model's context. | CI, logging, model client |
 | T6 | **One role's credentials used by another** | One worker per role, each mounting only its own secrets. flotillad holds no fleet credentials; host agents hold none but the connector's. | deployment |
 | T7 | **A behaviour change sneaks in** | Specs, playbooks, the capability registry and host allowlists change only by a reviewed commit and a deploy. Changes that alter decisions are replayed first. Autonomy is promoted only by the operator. | registry, CI, replay gate |
 | T8 | **Supply chain** | Stdlib first. Dependencies pinned (Python by hash) and each one approved. Images from pinned bases, by digest. `flotilla-node` releases signed in CI and verified before install or upgrade. Vulnerability scans in CI. | CI, `flotilla node` |
@@ -52,9 +52,12 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents, proposed).
 | T12 | **Denial of wallet** | Budgets per job and fleet checked before and during runs; endpoint key budgets as a second limit; turn, call and token limits per harness step. | Triggers, Runner, harness |
 | T13 | **A forged or replayed execution** | Every execution is signed (Ed25519) and bound to host, capability, parameters, plan hash, expiry and nonce. The host agent refuses a bad signature, another host, an expired or already-seen id. | Signer, host agent |
 | T14 | **A compromised flotillad signs harmful executions** | Each host agent enforces its own reviewed allowlist (exact command templates, parameter checks) and autonomy ceiling, whatever is signed. Commands run without a shell, as a dedicated user, with a generated sudoers limited to the templates. Its audit log shows what ran. | host agent, sudoers |
-| T15 | **A rogue or compromised host agent** | Enrolment by a one-time token; short-lived certificates; revocation (`flotilla node remove`). An agent can only report on its own host's executions. A result that does not match is `unknown`: the target is held and the capability drops a level. | node gateway, policy |
-| T16 | **A taken-over Slack account approves** | Slack approval only from the pinned workspace and user, only for low and medium risk, bound to the plan's hash and a nonce, with a daily cap. High risk needs the UI or CLI. | Approvals, connector |
+| T15 | **A rogue or compromised host agent** | Enrolment by a one-time token; short-lived certificates; revocation (`flotilla node remove`). An agent can only report on its own host's executions. The host's hash-chained log and flotillad's record are compared; a mismatch raises an alert. | node gateway, policy |
+| T16 | **A taken-over Slack account approves** | Slack approval only from the pinned workspace and user, only for low and medium risk that is reversible or regenerable, bound to the plan's hash and a nonce, with a daily cap. High-risk or irreversible writes need the CLI. | Approvals, connector |
 | T17 | **Runaway autonomy** (many actions, fast) | Per-host and platform caps on executions; the circuit breaker drops every auto capability to propose; the host incident rule pauses auto on a host; `flotilla autonomy freeze`; the recurrence rule escalates a fix that keeps coming back. | Guardrails |
+
+**Accepted trade-off** ([ADR-0006](adr/ADR-0006-node-agent.md), decided 4): on a host whose agent has
+both roles, a breach of that process exposes the host's allowed writes and the Slack tokens together.
 
 ## Rules for contributors (also in AGENTS.md)
 
@@ -81,6 +84,11 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 [Deployment → Defaults](architecture/deployment.md#defaults).
 
 ## Not covered yet
+
+- **ADR-0005's pipeline is accepted and not built** (cases, policy, taint, guardrails, channels,
+  approvals); v1 brings the first of it. Until then T1 is covered by the triage fleet's own code
+  checks and its shadow stage, and T10 by the append-only `events` table.
+- **Redaction** of flotillad's logs and job traces is not built.
 
 - **Host agents are proposed, not built.** T13 to T15 are design until ADR-0006 is accepted and its
   security e2e passes.

@@ -1,6 +1,6 @@
 # Components
 
-Three programs, each with one job:
+Three programs of our own, each with one job, plus the egress proxy:
 
 - **flotillad** (Go), the control plane: decides and records;
 - **the job runtime** (Python), inside workers: diagnoses and plans;
@@ -8,6 +8,9 @@ Three programs, each with one job:
 
 flotillad never runs fleet code and holds no fleet credentials; the job runtime never decides what it
 may do; the host agent never runs anything it was not sent, signed, and allowed by its own host.
+
+The host-agent path is [ADR-0006](../adr/ADR-0006-node-agent.md), proposed; ADR-0005 as accepted has
+the acting worker call the actuator. These pages follow ADR-0006.
 
 ## flotillad (Go)
 
@@ -17,9 +20,9 @@ may do; the host agent never runs anything it was not sent, signed, and allowed 
 | **Triggers** | starts jobs on **time** (every, cron) or on an **event** on a case (handed over to a kind, a check due); checks STOP, pause and budget first |
 | **Runner** | asks a worker to start a run with its spec, run id, trace id, deadline and environment (`FLOTILLA_MODELS`, the trace parent); enforces the timeout; records cost |
 | **Cases** | one record per problem with its keys, status, holder, lease and timeline ([Data](data.md)); a **transition table** enforced on every status change; timers for stuck states; the per-target lock |
-| **Policy** | decides each planned write: the registry's checks, autonomy (lowest of the job's stage, the capability's earned level, the host's ceiling, taint, the freeze), locks, limits, holds; then executes, asks the operator, or refuses. It executes only flotilla's own controls itself |
+| **Policy** | decides each planned write. It checks, in order: the registry; autonomy (the lowest of the job's stage, the capability's level, the host's ceiling, taint, the freeze); locks and limits; holds. Then it runs the write, asks the operator, or refuses. It executes only flotilla's own controls itself |
 | **Guardrails** | per-host and platform caps on executions, the circuit breaker, the host incident rule, the autonomy freeze, the recurrence rule |
-| **Approvals** | proposals waiting on the `approvals` channel; an approval (UI, CLI, or the operator's pinned Slack user within limits) is bound to the plan's hash and starts an execute run |
+| **Approvals** | proposals waiting on the `approvals` channel; an approval (UI, CLI, or the operator's pinned Slack user within limits) is bound to the plan's hash and starts the execution |
 | **Node gateway** | the endpoint host agents connect to (mutual TLS); the certificate authority's intermediate issues and renews their certificates; revocation; `flotilla node list` |
 | **Signer** | signs every execution with flotillad's Ed25519 key: execution id, case, host, capability, parameters, plan hash, approval, expiry, nonce |
 | **Channels** | routes `alerts`, `approvals` and `notifications` to the provider's connector |
