@@ -20,7 +20,7 @@ RFC-0003 is reserved for the digital marketing fleet's first use case, SEO.
 |---|---|---|---|
 | **Triage** (live today) | first look at every alert and error | what is noise, what is a bug, what is an operational fault | dismisses, files an issue, or hands the fault to Ops |
 | **Ops** | **the SRE team in action**, and the largest fleet: it watches the operational estate and fixes what it can | disk filling, OOM loops, config faults, stuck jobs, failed backups, expiring certificates, cost spikes, … (§5.2) | reviews, remediates, or escalates |
-| **Digital marketing** | the sites' reach and growth; SEO is its first use case, more will follow | pages that could rank better for a query (SEO) | writes the change as a PR |
+| **Digital marketing** | the sites' reach and growth; more use cases will follow | pages that could rank better (SEO); which posts bring visitors who convert (attribution) | SEO: a PR; attribution: a report |
 | **Bugfix** | code fixes | bugs filed by triage | reproduces, fixes, opens a PR |
 
 The daily brief is a job of the Ops fleet (`ops/daily-brief`, RFC-0001): the operator's morning view
@@ -340,7 +340,9 @@ sequenceDiagram
     B->>Op: the morning page, with approvals waiting
 ```
 
-### 5.3 Digital marketing: SEO content (its first use case)
+### 5.3 Digital marketing
+
+#### SEO content (the first use case)
 
 ```mermaid
 sequenceDiagram
@@ -365,6 +367,37 @@ sequenceDiagram
 A *hurt* outcome opens a revert PR. Change types (title, meta description, a section, internal
 links) each earn their own autonomy; auto-merge is a later promotion, per change type.
 
+#### Traffic attribution (the second use case)
+
+Which posts bring visitors, and whether those visitors do something: for Orrery's social media, and
+for the operator's LinkedIn and Medium posts linking to humancopilot.eu.
+
+```mermaid
+sequenceDiagram
+    participant P as Post register
+    participant C as Code (daily)
+    participant An as Analyse (once, prose)
+    participant L as Ledger
+    participant B as Daily / weekly brief
+    P->>C: posts: platform, date, link, campaign tag
+    C->>C: visits by referrer and campaign, the conversions that followed (Umami)
+    C->>C: match visits to posts, each post's curve, spikes from an unknown referrer
+    C->>An: the numbers per post and platform
+    An->>An: what worked (platform, topic, timing), compared with earlier posts
+    An->>L: findings (per post, per platform)
+    L->>B: report: top posts, conversions per post, new referrers
+```
+
+- **Sources:**
+  - Umami: referrers, campaign tags (`utm_*`) and conversion events. humancopilot.eu already sends
+    `cta-book-call`, `cta-email` and `outbound`.
+  - A **post register**: what was published, where, when, and the link. Medium has a feed; LinkedIn
+    and the social platforms need the operator's entry, or links tagged with `utm_campaign` so the
+    visits name the post themselves.
+- **Memory:** each post's results, so a new post is compared with earlier ones. The visit counts are
+  fleet data.
+- **Writes:** a report only. No actions in v1. A later item kind could suggest a follow-up post.
+
 ### 5.4 Bugfix
 
 ```mermaid
@@ -385,14 +418,14 @@ endpoint, and its diff is gated like any other change.
 
 ## 6. Review: do the building blocks still hold?
 
-| | Triage | Ops review | Ops remediation (host) | Ops remediation (config) | Daily brief | Marketing: SEO | Bugfix |
-|---|---|---|---|---|---|---|---|
-| Harness shape | per item | once | per item | per item | once | per item | external |
-| Output type | decision | prose | plan | plan (edit) | prose | decision → plan (edit) | diff |
-| Read tools | probes | query templates | metrics, du, logs | file read | — | Search Console, page | repo |
-| Memory | history | past findings | past items | past items | ledger | past outcomes | — |
-| Knowledge | project | runbooks | runbooks | project | — | site repo | project |
-| Writes | issue, item | report, item | actuator | PR | page | PR | PR |
+| | Triage | Ops review | Ops remediation (host) | Ops remediation (config) | Daily brief | Marketing: SEO | Marketing: attribution | Bugfix |
+|---|---|---|---|---|---|---|---|---|
+| Harness shape | per item | once | per item | per item | once | per item | once | external |
+| Output type | decision | prose | plan | plan (edit) | prose | decision → plan (edit) | prose + findings | diff |
+| Read tools | probes | query templates | metrics, du, logs | file read | — | Search Console, page | Umami queries, post content | repo |
+| Memory | history | past findings | past items | past items | ledger | past outcomes | past posts' results | — |
+| Knowledge | project | runbooks | runbooks | project | — | site repo | the site's pages | project |
+| Writes | issue, item | report, item | actuator | PR | page | PR | report | PR |
 
 What the review changed from ADR-0004 (the rough edges):
 
