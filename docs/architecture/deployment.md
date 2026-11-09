@@ -2,7 +2,7 @@
 
 **Status:** the control plane in Docker is accepted in [ADR-0002](../adr/ADR-0002-run-in-docker.md)
 (2026-11-08); workers per role in [ADR-0005](../adr/ADR-0005-agent-pipeline.md); host agents are
-proposed in [ADR-0006](../adr/ADR-0006-node-agent.md).
+in [ADR-0006](../adr/ADR-0006-node-agent.md) (2026-11-09).
 
 A flotilla installation has two parts:
 
@@ -47,7 +47,7 @@ its jobs may plan.
 | --- | --- | --- |
 | `triage` | alerting and error tracking read, issue filing, the triage model key | the triage fleet |
 | `ops-read` | read-only metrics, logs, traces; read-only database queries | Ops diagnosis, briefs, reviews |
-| `ops-act-host` | none for hosts: the only role whose jobs may plan host writes; flotillad signs them, host agents execute (ADR-0006, proposed) | Ops remediation jobs |
+| `ops-act-host` | none for hosts: the only role whose jobs may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation jobs |
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
 | `marketing` | Search Console, web analytics read | the digital marketing fleet |
 | `bugfix` | a GitHub App for branches and PRs; git and build toolchains | the bugfix fleet |

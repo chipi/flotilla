@@ -9,8 +9,8 @@ Three programs of our own, each with one job, plus the egress proxy:
 flotillad never runs fleet code and holds no fleet credentials; the job runtime never decides what it
 may do; the host agent never runs anything it was not sent, signed, and allowed by its own host.
 
-The host-agent path is [ADR-0006](../adr/ADR-0006-node-agent.md), proposed; ADR-0005 as accepted has
-the acting worker call the actuator. These pages follow ADR-0006.
+The host-agent path is [ADR-0006](../adr/ADR-0006-node-agent.md), which amends ADR-0005: flotillad
+signs host writes and sends them to the host agent; the acting worker plans and checks.
 
 ## flotillad (Go)
 
@@ -48,7 +48,7 @@ credentials and toolchain (`triage`, `ops-read`, `ops-act-host`, …). Each run 
 ## The host agent: `flotilla-node` (Go)
 
 One static binary per platform, installed per host as a service under a dedicated user
-([ADR-0006](../adr/ADR-0006-node-agent.md), proposed).
+([ADR-0006](../adr/ADR-0006-node-agent.md)).
 
 | Role | Responsibility |
 | --- | --- |

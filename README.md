@@ -33,7 +33,7 @@ the job runtime (model client, recording for exact replay) is being built. The d
 - [ADR-0004](docs/adr/ADR-0004-job-runtime.md): the job runtime;
 - [ADR-0005](docs/adr/ADR-0005-agent-pipeline.md): the agent pipeline (cases, capabilities, policy,
   recall, approvals);
-- [ADR-0006](docs/adr/ADR-0006-node-agent.md) (proposed): the host agent.
+- [ADR-0006](docs/adr/ADR-0006-node-agent.md): the host agent.
 
 The existing fleets' code (`fleetd/`, `signal-fleet/`, `bugfix-fleet/`) was imported from
 [agentic-ai-homelab](https://github.com/chipi/agentic-ai-homelab) with its history.

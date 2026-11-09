@@ -1,6 +1,8 @@
 # ADR-0005 — The agent pipeline: cases, capabilities, recall, policy and the actuator
 
-**Status:** Accepted
+**Status:** Accepted; amended by [ADR-0006](ADR-0006-node-agent.md) (host writes go from flotillad,
+signed, to host agents; the connector holds the provider's credentials)
+
 **Date:** 2026-11-09
 **Decided by:** the operator, on [RFC-0004](../rfc/RFC-0004-agent-pipeline.md) (revision 8, after
 seven passes by an independent reviewer)

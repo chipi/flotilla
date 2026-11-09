@@ -4,7 +4,7 @@ How flotilla is built. The decisions are in the ADRs: [ADR-0001](../adr/ADR-0001
 (foundations), [ADR-0002](../adr/ADR-0002-run-in-docker.md) (Docker),
 [ADR-0004](../adr/ADR-0004-job-runtime.md) (the job runtime),
 [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (the agent pipeline) and
-[ADR-0006](../adr/ADR-0006-node-agent.md) (host agents, proposed). The reasoning is in the RFCs they
+[ADR-0006](../adr/ADR-0006-node-agent.md) (host agents). The reasoning is in the RFCs they
 came from.
 
 These pages describe flotilla in general. Where a fact belongs to one installation, it is marked as

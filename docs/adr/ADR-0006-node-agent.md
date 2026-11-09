@@ -1,7 +1,7 @@
 # ADR-0006 — The flotilla node agent: host actions and connectors, on any host
 
-**Status:** Proposed (2026-11-09); its open questions answered by the operator the same day, revised
-on an advisor review the same day. Nothing is built from it until the operator accepts it.
+**Status:** Accepted (operator, 2026-11-09), after its open questions were answered and an advisor
+review's changes applied the same day.
 **Date:** 2026-11-09 **Builds on:** [ADR-0005](ADR-0005-agent-pipeline.md) (writes run through an
 actuator, designed in its own ADR), [ADR-0002](ADR-0002-run-in-docker.md) (deploys over SSH).
 

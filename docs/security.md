@@ -4,7 +4,7 @@ Security is designed in from the start, not added later. flotilla runs language 
 data, with credentials and host agents that can change real things, and it lives in a public repo.
 This page is the threat model and the controls; each control names where it is enforced. The
 decisions behind them are [ADR-0005](adr/ADR-0005-agent-pipeline.md) (the pipeline, policy and
-approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents, proposed).
+approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents).
 
 ## What we protect
 
@@ -93,7 +93,7 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
   checks and its shadow stage, and T10 by the append-only `events` table.
 - **Redaction** of flotillad's logs and job traces is not built.
 
-- **Host agents are proposed, not built.** T13 to T15 are design until ADR-0006 is accepted and its
+- **Host agents are accepted, not built.** T13 to T15 are design until the agent is built and its
   security e2e passes.
 - **Image signing:** planned before any fleet reaches `live`, not built.
 - **The coding harness** used by the bugfix fleet runs code from the repos it fixes; its security
