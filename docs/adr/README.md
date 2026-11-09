@@ -48,3 +48,4 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0003 — Dependencies, spec format and base images](ADR-0003-dependencies-and-images.md) (Accepted, 2026-11-08)
 - [ADR-0004 — The job runtime: five core concepts](ADR-0004-job-runtime.md) (Accepted, 2026-11-08)
 - [ADR-0005 — The agent pipeline](ADR-0005-agent-pipeline.md) (Accepted, 2026-11-09)
+- [ADR-0006 — The flotilla node agent](ADR-0006-node-agent.md) (Proposed, 2026-11-09)

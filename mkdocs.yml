@@ -85,6 +85,7 @@ nav:
     - ADR-0003 — Dependencies and images: adr/ADR-0003-dependencies-and-images.md
     - ADR-0004 — The job runtime: adr/ADR-0004-job-runtime.md
     - ADR-0005 — The agent pipeline: adr/ADR-0005-agent-pipeline.md
+    - ADR-0006 — The node agent: adr/ADR-0006-node-agent.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
