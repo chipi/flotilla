@@ -67,7 +67,7 @@ def read_env_file(path):
 
 def build_env(request_env, environ=None):
     environ = os.environ if environ is None else environ
-    env = {k: environ[k] for k in ("PATH", "HOME", "LANG") if k in environ}
+    env = {k: environ[k] for k in ("PATH", "HOME", "LANG", "FLOTILLA_VERSION", "FLOTILLA_WORKER") if k in environ}
     for path in filter(None, environ.get("FLOTILLA_ENV_FILES", "").split(":")):
         env.update(read_env_file(path))
     for k, v in environ.items():

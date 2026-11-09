@@ -48,7 +48,8 @@ flag, and never overwritten after:
 ~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
 ```
 
-`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`, `disabled_jobs`):
+`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`, `disabled_jobs`,
+`models`):
 
 ```yaml
 listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
@@ -63,7 +64,24 @@ callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
 disabled_jobs: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a job whose worker is missing
+models:                                 # optional (ADR-0004): the aliases jobs name; every run gets it as FLOTILLA_MODELS
+  endpoints:
+    gateway:
+      base_url: http://litellm:4000/v1   # any OpenAI-compatible endpoint; through the egress proxy
+      kind: litellm                      # litellm adds Langfuse trace metadata; openai for anything else
+      key_env: OPENROUTER_API_KEY        # a variable in the fleet's secrets file (or key_file: a path in the worker)
+      defaults: {tools: native, json: object, cost: reported}
+  aliases:
+    triage-default: {endpoint: gateway, model: fleet-triage-pro}
+    local-dgx: {endpoint: gateway, model: <model name>, tools: none, cost: zero}
+  prices: {}                             # per alias, for cost: table (input_per_mtok, output_per_mtok)
 ```
+
+`-check` validates `models` with the same rules the Python client applies (shared fixtures:
+`runtime/testdata/models-*.json`) and prints the number of aliases. In `worker-triage.env`,
+`JOB_HEARTBEAT_MODEL_ALIAS=<alias>` makes the heartbeat call that alias once per run through the model
+client, traced: the platform's live check of the models section, the key, the endpoint through the proxy
+and the job's spans. Unset, the heartbeat makes no model call.
 
 `config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
 

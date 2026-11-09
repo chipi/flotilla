@@ -7,7 +7,9 @@
 # Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
 # is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a
 # stage; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
-# worker (profile candidate) is healthy on its own state volume and its job cannot leave shadow.
+# worker (profile candidate) is healthy on its own state volume and its job cannot leave shadow; the
+# heartbeat's model step calls the LiteLLM stand-in through the model client, with the models section
+# from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported.
 # Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -74,11 +76,17 @@ workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
   triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage.token}
 disabled_jobs: [triage/cycle, triage/cycle-shadow]
+models:
+  endpoints:
+    gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
+  aliases:
+    e2e-model: {endpoint: gateway, model: fleet-triage-flash}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
 JOB_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
 JOB_HEARTBEAT_DENIED_URL=http://forbidden:8080/
+JOB_HEARTBEAT_MODEL_ALIAS=e2e-model
 EOF
 cat > "$WORK/config/smokescreen.yaml" <<EOF
 ip: 0.0.0.0
@@ -106,7 +114,7 @@ stub forbidden e2e-backend
 ok "stand-ins up"
 
 echo "== secrets and seeded state (deploy/mini/secrets.sh, as a deploy runs it)"
-printf 'SEED_SECRET=must-not-be-copied\n' > "$WORK/config/fleet.env"
+printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/fleet.env"   # a random stand-in key, made per run
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/STOP"
 # the mini's folder also holds backups of the secrets file: they must stay out too
@@ -138,6 +146,22 @@ $D logs flotilla-egress 2>&1 | grep -q "forbidden" && ok "the proxy logged the r
 [ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
 cli status | grep -E "^platform/heartbeat" | grep -q -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
 
+echo "== the model client (runtime/), from the heartbeat's model step"
+L="$($D logs flotilla-worker-triage 2>&1)"
+echo "$L" | grep -q 'ok   model   e2e-model: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
+  && ok "a model call through the client: alias, deployment id, reported cost, traced" \
+  || bad "no model step line: $(echo "$L" | grep -o 'model   e2e-model[^"]*' | head -2)"
+$D logs e2e-litellm 2>&1 | grep -q "CHAT auth=bearer model=fleet-triage-flash" && ok "the endpoint got the key from the fleet's secrets file and the alias's model" \
+  || bad "the LiteLLM stand-in saw no authorised chat call"
+T="$($D exec flotilla-worker-triage python3 /opt/flotilla/runtime/test_telemetry.py 2>&1)"
+# with the SDK, the no-SDK test is the one that skips; the SDK test must have run and passed
+if echo "$T" | grep -q "test_model_call_span_under_the_run .* ok$" && echo "$T" | tail -1 | grep -q "^OK"; then
+  ok "runtime/test_telemetry.py in the image: the model call's span under the run's trace"
+else
+  bad "telemetry test in the image: $(echo "$T" | tail -4 | tr '\n' ' ')"
+fi
+$D exec flotilla-worker-triage python3 -m pip check >/dev/null 2>&1 && ok "the image's Python packages are consistent (pip check)" || bad "pip check failed in the worker image"
+
 echo "== telemetry"
 sleep 8
 $D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_run{environment="e2e",job="platform/heartbeat",service="flotillad",stage="live",status="ok"' \
@@ -145,6 +169,8 @@ $D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_run{environment="e2e
 $D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_up' && ok "flotilla_up pushed" || bad "no flotilla_up"
 $D logs e2e-victoriatraces 2>&1 | grep -q "POST /insert/opentelemetry/v1/traces" && ok "traces reached VictoriaTraces through the proxy" \
   || bad "no traces at the VictoriaTraces stand-in"
+$D logs e2e-victoriatraces 2>&1 | grep -q "SPAN model.chat" && ok "the job's model.chat span reached VictoriaTraces through the proxy" \
+  || bad "no model.chat span at the VictoriaTraces stand-in"
 
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla stage platform/heartbeat shadow 2>&1)"

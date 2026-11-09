@@ -20,7 +20,7 @@ import model_client as mc  # noqa: E402
 
 CONFIG = {
     "endpoints": {
-        "gateway": {"base_url": "http://litellm:4000/v1/", "key_file": "/k", "kind": "litellm",
+        "gateway": {"base_url": "http://litellm:4000/v1/", "key_env": "OPENROUTER_API_KEY", "kind": "litellm",
                     "defaults": {"tools": "native", "json": "object", "cost": "reported"}},
         "plain": {"base_url": "http://vllm:8000/v1", "defaults": {"tools": "json", "json": "none", "cost": "table"}},
     },
@@ -54,9 +54,10 @@ def ok(content='{"action":"decide"}', usage=None, headers=None, tool_calls=None,
                                            "usage": usage if usage is not None else {"prompt_tokens": 10, "completion_tokens": 5}})
 
 
-def client(*answers):
+def client(*answers, tracer=None, environ=None):
     t = Transport(*answers)
-    return mc.Client(mc.load(CONFIG), transport=t, read_key=lambda p: "sk-test" if p else "", clock=iter(range(100)).__next__), t
+    env = {"OPENROUTER_API_KEY": "sk-test"} if environ is None else environ
+    return mc.Client(mc.load(CONFIG), transport=t, environ=env, clock=iter(range(100)).__next__, tracer=tracer), t
 
 
 class Load(unittest.TestCase):
@@ -76,6 +77,23 @@ class Load(unittest.TestCase):
         }.items():
             with self.subTest(name), self.assertRaises(mc.ConfigError):
                 mc.load(bad)
+
+
+class SharedFixtures(unittest.TestCase):
+    """runtime/testdata/models-*.json: the rules flotillad's internal/models applies too (Go tests read them)."""
+
+    def test_valid(self):
+        with open(os.path.join(HERE, "testdata", "models-valid.json")) as f:
+            a = mc.load(json.load(f))
+        self.assertEqual(sorted(a), ["local-dgx", "plain-model", "triage-default"])
+
+    def test_invalid(self):
+        with open(os.path.join(HERE, "testdata", "models-invalid.json")) as f:
+            cases = json.load(f)
+        self.assertGreaterEqual(len(cases), 10)
+        for name, cfg in cases.items():
+            with self.subTest(name), self.assertRaises(mc.ConfigError):
+                mc.load(cfg)
 
 
 class Golden(unittest.TestCase):
@@ -119,7 +137,7 @@ class Golden(unittest.TestCase):
                                                 "defaults": {"json": "object", "cost": "reported", "tools": "json"}}},
                            "aliases": {"a": {"endpoint": "or", "model": "fleet-triage-pro"}}})
         tr = Transport(ok())
-        mc.Client(aliases, transport=tr).chat("a", self.MESSAGES, trace_id="abc123", generation_name="triage-turn-1")
+        mc.Client(aliases, transport=tr, tracer=None).chat("a", self.MESSAGES, trace_id="abc123", generation_name="triage-turn-1")
         self.assertEqual(tr.sent[0]["data"], t["data"])
 
 
@@ -190,6 +208,157 @@ class Chat(unittest.TestCase):
         c, tr = client(ok())
         c.chat("plain-model", [])
         self.assertNotIn("Authorization", tr.sent[0]["headers"])
+
+
+class Span:
+    def __init__(self, name, attributes):
+        self.name, self.attrs, self.exc, self.status = name, dict(attributes), None, None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def set_attribute(self, k, v):
+        self.attrs[k] = v
+
+    def record_exception(self, e):
+        self.exc = e
+
+    def set_status(self, s):
+        self.status = s
+
+
+class Tracer:
+    def __init__(self):
+        self.spans = []
+
+    def start_as_current_span(self, name, attributes=None):
+        s = Span(name, attributes or {})
+        self.spans.append(s)
+        return s
+
+
+class Production(unittest.TestCase):
+    """The gaps closed after the first version (operator, 2026-11-09: production-ready, not a sketch)."""
+
+    def test_key_from_env_or_file_and_typed_errors(self):
+        c, tr = client(ok(), environ={})
+        with self.assertRaises(mc.ConfigError) as cm:
+            c.chat("triage-default", [])
+        self.assertIn("OPENROUTER_API_KEY is not set", str(cm.exception))
+        self.assertEqual(tr.sent, [], "nothing sent without the key")
+        d = tempfile.mkdtemp()
+        cfg = {"endpoints": {"e": {"base_url": "http://x/v1", "key_file": os.path.join(d, "k")}},
+               "aliases": {"a": {"endpoint": "e", "model": "m"}}}
+        tr = Transport(ok())
+        c = mc.Client(mc.load(cfg), transport=tr, tracer=None)
+        with self.assertRaises(mc.ConfigError):
+            c.chat("a", [])                                     # the file is missing
+        with open(os.path.join(d, "k"), "w") as f:
+            f.write("sk-file\n")
+        c.chat("a", [])
+        self.assertEqual(tr.sent[0]["headers"]["Authorization"], "Bearer sk-file")
+        with self.assertRaises(mc.ConfigError):
+            mc.load({"endpoints": {"e": {"base_url": "u", "key_file": "f", "key_env": "V"}},
+                     "aliases": {"a": {"endpoint": "e", "model": "m"}}})
+
+    def test_unknown_alias(self):
+        c, _ = client()
+        with self.assertRaises(mc.ConfigError) as cm:
+            c.chat("nope", [])
+        self.assertIn("configured: local-dgx, no-cost, plain-model, triage-default", str(cm.exception))
+
+    def test_generation_params_only_when_set(self):
+        c, tr = client(ok(), ok())
+        c.chat("triage-default", [])
+        self.assertEqual(list(json.loads(tr.sent[0]["data"])), ["model", "messages", "response_format", "temperature"])
+        c.chat("triage-default", [], max_tokens=800, seed=7, stop=["\n\n"])
+        b = json.loads(tr.sent[1]["data"])
+        self.assertEqual((b["max_tokens"], b["seed"], b["stop"]), (800, 7, ["\n\n"]))
+
+    def test_usage_missing_is_flagged_and_never_priced(self):
+        c, _ = client(ok(usage={}), ok(usage={}))
+        r = c.chat("plain-model", [])
+        self.assertFalse(r["usage_reported"])
+        self.assertEqual((r["cost_usd"], r["cost_source"]), (None, "unknown"), "no tokens: no table price, not zero")
+        self.assertTrue(c.chat("triage-default", []) is not None)
+
+    def test_fallback_only_as_declared(self):
+        c, _ = client((503, {}, "busy"), ok())
+        r = c.chat_policy({"model": "triage-default", "fallback": ["plain-model"]}, [])
+        self.assertTrue(r["fallback"])
+        self.assertEqual((r["alias"], r["attempts"][0]["alias"], r["attempts"][0]["error"]),
+                         ("plain-model", "triage-default", "Transient"))
+        c, tr = client((401, {}, "no"), ok())
+        with self.assertRaises(mc.AuthOrBilling) as cm:
+            c.chat_policy({"model": "triage-default", "fallback": ["plain-model"]}, [])
+        self.assertEqual(len(tr.sent), 1, "a rejected key is not a reason to fall back unless the policy says auth")
+        self.assertEqual(cm.exception.record["attempts"][0]["error"], "AuthOrBilling")
+        c, _ = client(ok())
+        r = c.chat_policy({"model": "triage-default"}, [])
+        self.assertEqual((r["fallback"], r["attempts"]), (False, []))
+        with self.assertRaises(mc.ConfigError):
+            client()[0].chat_policy({"model": "triage-default", "fallback_on": ["always"]}, [])
+
+    def test_last_fallback_failure_raises(self):
+        c, _ = client((503, {}, "busy"), (503, {}, "busy"))
+        with self.assertRaises(mc.Transient) as cm:
+            c.chat_policy({"model": "triage-default", "fallback": ["plain-model"]}, [])
+        self.assertEqual([a["alias"] for a in cm.exception.record["attempts"]], ["triage-default", "plain-model"])
+
+    def test_span_per_call(self):
+        tracer = Tracer()
+        c, _ = client(ok(usage={"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.01},
+                         headers={"x-litellm-model-id": "dep-1"}), (503, {}, "busy"), tracer=tracer)
+        c.chat("triage-default", [])
+        with self.assertRaises(mc.Transient):
+            c.chat("triage-default", [])
+        ok_span, bad = tracer.spans
+        self.assertEqual(ok_span.name, "model.chat")
+        self.assertEqual((ok_span.attrs["gen_ai.request.model"], ok_span.attrs["gen_ai.usage.input_tokens"],
+                          ok_span.attrs["flotilla.model.deployment_id"], ok_span.attrs["flotilla.model.cost_usd"]),
+                         ("fleet-triage-pro", 10, "dep-1", 0.01))
+        self.assertIsNone(ok_span.exc)
+        self.assertEqual((bad.attrs["error.type"], bad.attrs["http.response.status_code"]), ("Transient", 503))
+        self.assertIsInstance(bad.exc, mc.Transient)
+        self.assertNotIn("sk-test", json.dumps(ok_span.attrs, default=str))
+
+    def test_from_env(self):
+        c = mc.from_env({"FLOTILLA_MODELS": json.dumps(CONFIG), "OPENROUTER_API_KEY": "sk-test"}, tracer=None)
+        self.assertIn("triage-default", c.aliases)
+        for env in ({}, {"FLOTILLA_MODELS": "{nope"}):
+            with self.assertRaises(mc.ConfigError):
+                mc.from_env(env)
+
+    def test_oversized_response_and_proxy_env(self):
+        # the real transport against a local server: a response over the cap is refused, not read into memory
+        import http.server
+        import threading
+        big = b"x" * (mc.MAX_RESPONSE_BYTES + 10)
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(big)))
+                self.end_headers()
+                self.wfile.write(big)
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            cfg = {"endpoints": {"e": {"base_url": f"http://127.0.0.1:{srv.server_port}/v1"}},
+                   "aliases": {"a": {"endpoint": "e", "model": "m"}}}
+            with mock.patch.dict(os.environ, {"NO_PROXY": "127.0.0.1"}):
+                with self.assertRaises(mc.Transient) as cm:
+                    mc.Client(mc.load(cfg), tracer=None).chat("a", [])
+            self.assertIn("over", cm.exception.record["error"])
+        finally:
+            srv.shutdown()
 
 
 if __name__ == "__main__":

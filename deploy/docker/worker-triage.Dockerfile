@@ -1,10 +1,15 @@
-# The triage fleet's worker: the worker service, the heartbeat, and the triage fleet's code (stdlib
-# Python, no packages installed). Build context: the repo root.
+# The triage fleet's worker: the worker service, the heartbeat, the job runtime (runtime/) and the triage
+# fleet's code. Python packages: only worker-requirements.txt (the OpenTelemetry SDK, ADR-0003), pinned by
+# hash. Build context: the repo root.
 #   docker build -f deploy/docker/worker-triage.Dockerfile --build-arg VERSION=sha-<7> -t flotilla-worker-triage:sha-<7> .
 FROM python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker \
  && install -d -o 10001 -g 10001 /home/worker/signal-fleet   # the state volume takes this owner
+COPY deploy/docker/worker-requirements.txt /tmp/worker-requirements.txt
+RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/worker-requirements.txt \
+ && python3 -m pip check && rm /tmp/worker-requirements.txt
 COPY worker /opt/flotilla/worker
+COPY runtime /opt/flotilla/runtime
 COPY signal-fleet/mvp /opt/flotilla/signal-fleet/mvp
 ARG VERSION=dev
 ENV FLOTILLA_VERSION=${VERSION} \

@@ -8,11 +8,17 @@ off the list is refused by it.
 
 Both come from the installation (JOB_HEARTBEAT_* in the worker's environment). The proxy is the
 standard HTTP_PROXY / HTTPS_PROXY, which urllib honours.
+
+  HEARTBEAT_MODEL_ALIAS  optional: one tiny call through the model client (runtime/model_client.py) to
+                         this alias from FLOTILLA_MODELS, traced (runtime/telemetry.py). It proves the
+                         models section, the key, the endpoint through the proxy and the job's spans.
 """
 import os
 import sys
 import urllib.error
 import urllib.request
+
+sys.path.insert(0, os.path.join(os.environ.get("FLOTILLA_CODE_ROOT", "/opt/flotilla"), "runtime"))
 
 
 def probe(url, timeout=10):
@@ -51,8 +57,29 @@ def main():
     else:
         print(f"FAIL denied  {denied}: HTTP {code}: egress is NOT enforced")
         ok = False
+    alias = os.environ.get("HEARTBEAT_MODEL_ALIAS")
+    if alias:
+        ok = model_step(alias) and ok
     print("HEARTBEAT PASS" if ok else "HEARTBEAT FAIL")
     return 0 if ok else 1
+
+
+def model_step(alias):
+    import model_client
+    import telemetry
+    session = telemetry.setup()
+    try:
+        r = model_client.from_env().chat(alias, [{"role": "user", "content": "Reply with the JSON {\"ok\": true}."}],
+                                         max_tokens=16, timeout=30)
+        print(f"ok   model   {alias}: model={r.get('model')} deployment={r.get('model_id')} "
+              f"cost={r.get('cost_usd')} ({r.get('cost_source')}) usage_reported={r.get('usage_reported')} "
+              f"traced={session.active or session.why}")
+        return True
+    except (model_client.ModelError, model_client.ConfigError) as e:
+        print(f"FAIL model   {alias}: {type(e).__name__}: {e}")
+        return False
+    finally:
+        session.shutdown()
 
 
 if __name__ == "__main__":

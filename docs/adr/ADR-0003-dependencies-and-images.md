@@ -15,9 +15,10 @@ base images for the containers.
 | Need | Choice | Why |
 |---|---|---|
 | SQLite | `modernc.org/sqlite` | pure Go: no C toolchain, builds into a static binary on a distroless image |
-| Spec and config format | YAML, `gopkg.in/yaml.v3`, strict (unknown fields are errors) | specs are written by people; comments help. The Python side does not read specs in phase 2, so no PyYAML yet |
+| Spec and config format | YAML, `gopkg.in/yaml.v3`, strict (unknown fields are errors) | specs are written by people; comments help. The Python side reads no YAML: flotillad validates the `models` section and hands it to every run as JSON in `FLOTILLA_MODELS` (operator, 2026-11-09), so no PyYAML |
 | Errors | `github.com/getsentry/sentry-go` (operator, 2026-11-08): flotillad's own ERROR log records to GlitchTip, one issue per message | the Sentry protocol GlitchTip speaks; no own protocol code |
 | Traces | the OpenTelemetry Go SDK and its OTLP/HTTP exporter | the standard; correct propagation and batching. To VictoriaTraces' `/insert/opentelemetry/v1/traces` |
+| Traces from jobs | the OpenTelemetry Python SDK and its OTLP/HTTP exporter in the worker image (operator, 2026-11-09): `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` 1.45.2, 16 packages with their dependencies (`deploy/docker/worker-requirements.txt`), every one pinned with its wheel's sha256 and installed `--require-hashes --no-deps` | the model client's span per call, under the run's trace (TRACEPARENT from flotillad); the same standard as flotillad. A hand-written OTLP encoder was the alternative, rejected: protocol code we would own |
 | Images | build: `golang:1.26`; run: `gcr.io/distroless/static-debian12:nonroot` (flotillad, Smokescreen); workers: `python:3.12-slim` | official, small, non-root; glibc for later Python wheels (DuckDB, Parquet). All pinned by digest in the Dockerfiles |
 | Egress proxy | Smokescreen, built from a pinned commit (ADR-0002) | |
 

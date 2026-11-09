@@ -49,14 +49,20 @@ func Tracing(ctx context.Context, endpoint, env, version string) (func(context.C
 	return tp.Shutdown, nil
 }
 
-// Pusher pushes samples to VictoriaMetrics' /api/v1/import/prometheus. A failed push is logged and
-// dropped: telemetry never stops a run.
+// Pusher pushes samples to VictoriaMetrics' /api/v1/import/prometheus. A failed push (a connection
+// error, a 5xx, a 429) is retried after 2 s and 5 s, then logged and dropped: telemetry never stops a
+// run. Seen on the mini (2026-11-08/09): the proxy's name does not resolve while a deploy recreates it,
+// and the proxy or VictoriaMetrics answers 500/502 now and then; without a retry those samples were
+// lost (a run's flotilla_run among them).
 type Pusher struct {
 	URL     string // VictoriaMetrics base; "" disables
 	Env     string
 	Version string
 	Log     *slog.Logger
 	HTTP    *http.Client
+	// the waits between attempts; nil: 2 s, then 5 s
+	Backoff []time.Duration
+	Sleep   func(time.Duration)
 }
 
 func (p *Pusher) push(lines []string) {
@@ -67,14 +73,33 @@ func (p *Pusher) push(lines []string) {
 	if c == nil {
 		c = &http.Client{Timeout: 8 * time.Second}
 	}
-	resp, err := c.Post(p.URL+"/api/v1/import/prometheus", "text/plain", bytes.NewBufferString(strings.Join(lines, "\n")+"\n"))
-	if err != nil {
-		p.Log.Warn("metric push failed", "err", err)
-		return
+	waits, sleep := p.Backoff, p.Sleep
+	if waits == nil {
+		waits = []time.Duration{2 * time.Second, 5 * time.Second}
 	}
-	resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		p.Log.Warn("metric push failed", "status", resp.StatusCode)
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	body := strings.Join(lines, "\n") + "\n"
+	for attempt := 0; ; attempt++ {
+		resp, err := c.Post(p.URL+"/api/v1/import/prometheus", "text/plain", bytes.NewBufferString(body))
+		status := 0
+		if err == nil {
+			status = resp.StatusCode
+			resp.Body.Close()
+			if status/100 == 2 {
+				return
+			}
+			if status/100 == 4 && status != 429 {
+				p.Log.Warn("metric push refused", "status", status) // a bad sample: retrying cannot help
+				return
+			}
+		}
+		if attempt >= len(waits) {
+			p.Log.Warn("metric push failed", "err", err, "status", status, "attempts", attempt+1)
+			return
+		}
+		sleep(waits[attempt])
 	}
 }
 

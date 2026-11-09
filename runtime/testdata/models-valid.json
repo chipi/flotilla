@@ -1,0 +1,13 @@
+{
+  "endpoints": {
+    "gateway": {"base_url": "http://litellm:4000/v1", "kind": "litellm", "key_env": "OPENROUTER_API_KEY",
+                "defaults": {"tools": "native", "json": "object", "cost": "reported"}},
+    "plain": {"base_url": "http://vllm:8000/v1", "defaults": {"tools": "json", "cost": "table"}}
+  },
+  "aliases": {
+    "triage-default": {"endpoint": "gateway", "model": "fleet-triage-pro"},
+    "local-dgx": {"endpoint": "gateway", "model": "NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4", "tools": "none", "cost": "zero"},
+    "plain-model": {"endpoint": "plain", "model": "qwen"}
+  },
+  "prices": {"plain-model": {"input_per_mtok": 0.14, "output_per_mtok": 0.28}}
+}

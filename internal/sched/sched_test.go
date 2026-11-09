@@ -100,6 +100,21 @@ func TestControlAboveMaxStageNotObeyed(t *testing.T) {
 	}
 }
 
+func TestRunGetsTheModelsSection(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if _, ok := fr.got[0].Env["FLOTILLA_MODELS"]; ok {
+		t.Fatal("FLOTILLA_MODELS set without a models section")
+	}
+	s.ModelsJSON = `{"endpoints":{},"aliases":{}}`
+	s.OTLPTracesURL, s.Environment = "http://victoriatraces:10428/insert/opentelemetry/v1/traces", "operations"
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	e := fr.got[1].Env
+	if e["FLOTILLA_MODELS"] != s.ModelsJSON || e["FLOTILLA_OTLP_TRACES_URL"] != s.OTLPTracesURL || e["FLOTILLA_ENVIRONMENT"] != "operations" {
+		t.Fatalf("run env: %v", e)
+	}
+}
+
 func TestSkips(t *testing.T) {
 	for name, c := range map[string]struct{ subject, key, want string }{
 		"fleet stopped": {"triage", KeyStop, "STOPped"},

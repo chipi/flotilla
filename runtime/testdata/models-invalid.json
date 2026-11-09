@@ -1,0 +1,13 @@
+{
+  "an alias on an unknown endpoint": {"endpoints": {}, "aliases": {"a": {"endpoint": "nope", "model": "m"}}},
+  "an alias without a model": {"endpoints": {"e": {"base_url": "http://x"}}, "aliases": {"a": {"endpoint": "e"}}},
+  "an endpoint without base_url": {"endpoints": {"e": {"kind": "openai"}}, "aliases": {}},
+  "an unknown endpoint kind": {"endpoints": {"e": {"base_url": "http://x", "kind": "anthropic"}}, "aliases": {}},
+  "both key_env and key_file": {"endpoints": {"e": {"base_url": "http://x", "key_env": "K", "key_file": "/k"}}, "aliases": {}},
+  "an unknown tools capability": {"endpoints": {"e": {"base_url": "http://x"}}, "aliases": {"a": {"endpoint": "e", "model": "m", "tools": "maybe"}}},
+  "an unknown cost": {"endpoints": {"e": {"base_url": "http://x", "defaults": {"cost": "cheap"}}}, "aliases": {"a": {"endpoint": "e", "model": "m"}}},
+  "cost table without a price": {"endpoints": {"e": {"base_url": "http://x"}}, "aliases": {"a": {"endpoint": "e", "model": "m", "cost": "table"}}},
+  "a negative price": {"endpoints": {"e": {"base_url": "http://x"}}, "aliases": {"a": {"endpoint": "e", "model": "m", "cost": "table"}},
+                       "prices": {"a": {"input_per_mtok": -1, "output_per_mtok": 1}}},
+  "an unknown alias field": {"endpoints": {"e": {"base_url": "http://x"}}, "aliases": {"a": {"endpoint": "e", "model": "m", "fallback": "b"}}}
+}

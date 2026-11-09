@@ -1,7 +1,10 @@
 """A stand-in for a service the e2e stack reads or writes (VictoriaMetrics, VictoriaTraces, LiteLLM).
 Answers every request with 200 (204 for writes) and prints one line per request to stdout, so the
-e2e script can read what reached it from `docker logs`.
+e2e script can read what reached it from `docker logs`. As LiteLLM it also answers a chat completion
+the way LiteLLM does (usage.cost, the deployment id header); as VictoriaTraces it says which span
+names a trace export carries (the names are plain strings inside the protobuf).
 """
+import json
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -24,6 +27,24 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(n) if n else b""
         print(f"{NAME} POST {self.path} {len(body)}b", flush=True)
+        if self.path.endswith("/chat/completions"):
+            auth = self.headers.get("Authorization", "")
+            print(f"{NAME} CHAT auth={'bearer' if auth.startswith('Bearer ') and len(auth) > 7 else 'none'} "
+                  f"model={json.loads(body).get('model')}", flush=True)
+            out = json.dumps({"choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}],
+                              "model": json.loads(body).get("model"),
+                              "usage": {"prompt_tokens": 12, "completion_tokens": 4, "cost": 0.0000021}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("x-litellm-model-id", "e2e-deployment")
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+            return
+        if self.path.startswith("/insert/opentelemetry"):
+            for name in (b"model.chat", b"flotilla-platform"):
+                if name in body:
+                    print(f"{NAME} SPAN {name.decode()}", flush=True)
         if self.path.startswith("/api/v1/import/prometheus"):
             for line in body.decode("utf-8", "replace").splitlines():
                 print(f"{NAME} SAMPLE {line}", flush=True)

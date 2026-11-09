@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -48,6 +49,9 @@ type Config struct {
 	// jobs this installation does not run, whatever their spec says (e.g. an e2e stack that has no
 	// real services for them). A listed id that no spec has is an error, so a typo cannot hide.
 	DisabledJobs []string `yaml:"disabled_jobs"`
+	// the model aliases jobs may name and their OpenAI-compatible endpoints (ADR-0004); every run gets
+	// it as JSON in FLOTILLA_MODELS. Optional: without it, a job that needs a model fails its run.
+	Models *models.Config `yaml:"models"`
 }
 
 type WorkerConfig struct {
@@ -79,6 +83,11 @@ func loadConfig(path string) (*Config, error) {
 	for name, w := range c.Workers {
 		if w.URL == "" || w.TokenFile == "" {
 			errs = append(errs, fmt.Errorf("worker %s: url and token_file are required", name))
+		}
+	}
+	if c.Models != nil {
+		if err := c.Models.Validate(); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	if len(errs) > 0 {
@@ -161,7 +170,11 @@ func main() {
 		for _, j := range jobs {
 			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s stage=%-7s spec=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Stage, j.Hash)
 		}
-		fmt.Printf("CHECK PASS: %d jobs, %d callers, %d workers\n", len(jobs), len(callers), len(clients))
+		n := 0
+		if cfg.Models != nil {
+			n = len(cfg.Models.Aliases)
+		}
+		fmt.Printf("CHECK PASS: %d jobs, %d callers, %d workers, %d model aliases\n", len(jobs), len(callers), len(clients), n)
 		return
 	}
 
@@ -213,7 +226,15 @@ func main() {
 	_ = st.Event(ctx, "flotillad", "flotillad", "start", version, fmt.Sprintf("%d jobs", len(jobs)))
 
 	push := &telemetry.Pusher{URL: cfg.VMURL, Env: cfg.Environment, Version: version, Log: log}
-	s := &sched.Scheduler{Store: st, Jobs: jobs, Workers: runners, Metrics: push, Location: loc, Log: log}
+	modelsJSON := ""
+	if cfg.Models != nil {
+		if modelsJSON, err = cfg.Models.JSON(); err != nil {
+			log.Error("models: cannot encode", "err", err)
+			os.Exit(2)
+		}
+	}
+	s := &sched.Scheduler{Store: st, Jobs: jobs, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
+		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second,
 		Handler: (&api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log}).Handler()}
 	go func() {

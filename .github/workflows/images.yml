@@ -12,6 +12,7 @@ on:
       - go.sum
       - fleets/**
       - worker/**
+      - runtime/**
       - signal-fleet/mvp/**
       - deploy/**   # deploy.sh takes the compose file from the image tag's commit: a compose change needs images too
       - .github/workflows/images.yml

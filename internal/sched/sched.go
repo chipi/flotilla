@@ -52,6 +52,12 @@ type Scheduler struct {
 	Location *time.Location
 	Log      *slog.Logger
 	Now      func() time.Time
+	// the installation's validated models section, as JSON: every run gets it in FLOTILLA_MODELS
+	ModelsJSON string
+	// where a job sends its own spans (flotillad's otlp_traces_url) and the environment label: every run
+	// gets them as FLOTILLA_OTLP_TRACES_URL and FLOTILLA_ENVIRONMENT (runtime/telemetry.py)
+	OTLPTracesURL string
+	Environment   string
 
 	mu      sync.Mutex
 	running map[string]string // job id -> run id
@@ -187,6 +193,15 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	}
 	if tp := carrier.Get("traceparent"); tp != "" {
 		env["TRACEPARENT"] = tp
+	}
+	if s.ModelsJSON != "" {
+		env["FLOTILLA_MODELS"] = s.ModelsJSON
+	}
+	if s.OTLPTracesURL != "" {
+		env["FLOTILLA_OTLP_TRACES_URL"] = s.OTLPTracesURL
+	}
+	if s.Environment != "" {
+		env["FLOTILLA_ENVIRONMENT"] = s.Environment
 	}
 	s.Log.Info("run start", "job", id, "run_id", runID, "stage", stage, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
 	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Job: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
