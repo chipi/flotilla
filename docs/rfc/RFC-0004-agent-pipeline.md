@@ -1,7 +1,7 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Draft, revision 7. Nothing is built from it until the operator accepts it. Reviewed by an
-independent advisor in five passes on 2026-11-09 (§15); revision 7 answers the fifth.
+**Status:** Draft, revision 8. Nothing is built from it until the operator accepts it. Reviewed by an
+independent advisor in six passes on 2026-11-09 (§15); revision 8 answers the sixth.
 **Date:** 2026-11-09
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
 knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§13).
@@ -61,7 +61,7 @@ flowchart LR
 
 | Stage | Runs where | Does |
 |---|---|---|
-| **Detect** | a worker, code (for triage today: its cycle) | turns raw signals into cases. A signal whose keys match an open case, or a case closed as dismissed within the recurrence window, is attached to it. A signal on the target of an execution inside its verify window is attached (`caused_by`) and counts against verification; after the window it is a new case. After a verified close, a recurrence is a new case linked `recurrence_of` (what the recurrence rule counts) |
+| **Detect** | a worker, code (for triage today: its cycle) | turns raw signals into cases. A signal whose keys match an open case, or a case closed as dismissed within the recurrence window, is attached to it. A signal on the target of an execution inside its verify window is attached (`caused_by`) and counts against verification; after the window it is a new case. After any close other than dismissed (verified, resolved itself, a shadow plan recorded), a recurrence is a new case linked `recurrence_of` (what the recurrence rule counts) |
 | **Diagnose** | a worker with read capabilities (triage's also has the low-risk writes) | decides: dismiss, report, hand over, escalate |
 | **Act** | an acting worker | re-checks the problem by code with fresh numbers, then plans from its capabilities, or closes the case as resolved itself |
 | **Policy** | flotillad, code | runs, asks the operator, or refuses (§5.1); it decides and records, and executes only flotilla's own controls (a pause, a hold) |
@@ -168,6 +168,7 @@ params: {host: enum(mini)}
 risk: low
 reversible: regenerable                   # yes | regenerable | no: the offsite release is one per day, uploaded with --clobber
 pre: [backup_age_above(26h), not_running] # age: homelab_backup_offsite_last_success_timestamp; running: launchctl print (the script has no lock)
+pre_shadow: [backup_age_above(20h), not_running]   # the shadow threshold, so v1's shadow cases are planned (§10)
 check: {verify: {backup_newer_than_execution: true, within: 60m}}
 limits: {per_target_per_day: 2}
 ```
@@ -202,6 +203,8 @@ attached signals, the operator's feedback). Evidence is references to records, n
 stateDiagram-v2
     [*] --> detected
     detected --> diagnosed: diagnose job
+    detected --> handed_over: a code detector with a known kind
+    detected --> escalated: recurrence rule reached
     diagnosed --> closed: dismissed or reported
     diagnosed --> handed_over: needs a fix
     diagnosed --> escalated: unsure
@@ -219,7 +222,7 @@ stateDiagram-v2
     executing --> escalated: failed or unknown
     checking --> closed: verified
     checking --> escalated: not verified
-    handed_over --> escalated: the re-check contradicts the diagnosis
+    handed_over --> escalated: the re-check contradicts the diagnosis, or the recurrence rule is reached
     escalated --> handed_over: the operator reassigns it
     escalated --> closed: operator or an issue resolves it
     closed --> [*]
@@ -232,6 +235,11 @@ stateDiagram-v2
 - **Timers for stuck states:** `detected` too long (the diagnosing worker is down) alerts;
   `handed_over` too long escalates; `executing` past its deadline becomes `unknown`, escalates and
   **holds the target** until the operator clears it; `checking` past its window is not verified.
+- **Deferral:** a deferred case returns to `handed_over` and is dispatched again when the blocking
+  condition clears (the lock released, the hold or stand-down ended) or after a backoff. The
+  `handed_over` stuck timer counts from the first hand-over, so a long hold surfaces as an escalation.
+- **The recurrence rule fires at hand-over, before any plan:** a case linked `recurrence_of` that
+  reaches the threshold (by default 3 in 7 days) goes to `escalated`, not to another fix.
 - **Approval is an event, not a wait:** the planning run ends at `awaiting_approval`; flotillad holds
   the case and the per-target lock until the approval or its expiry; an approval starts a new execute
   run (§7). An approval given after the problem went away ends as `resolved itself`.
@@ -245,8 +253,9 @@ stateDiagram-v2
   approval); flotillad starts that job and hands it the lease, which the job renews while it runs; an
   expired lease returns the case, unless an execution is open (then the check resumes, the action never
   re-runs).
-- **The per-target lock:** from `planned` until checked, one case at a time touches a container, a
-  mount, a file, across kinds and fleets. It covers flotilla only: the homelab's own scheduled jobs
+- **The per-target lock:** taken by policy, atomically, when it admits a plan (auto or propose), and
+  held until the case is checked; a deferred plan never takes it. One case at a time touches a
+  container, a mount, a file, across kinds and fleets. It covers flotilla only: the homelab's own scheduled jobs
   (the nightly backup, the weekly prune) are kept out by each capability's preconditions.
 - **Caps:** at most N open cases per kind and per host; an alert on case age.
 - **Hand-overs are the case moving between jobs** (operator, 2026-11-09: through the ledger only). A
@@ -525,15 +534,14 @@ and a Grafana annotation; the `notifications` channel posts it to Slack.
 - **It depends on** the case tables, which take the place of phase 3 step 5's ledger tables in the
   store (today: runs, events, controls and spend only).
 - **Producing a record:** in shadow only, the monitor opens cases from a lower threshold (a backup older
-  than 20 h), and the capability's precondition uses the same shadow threshold, so the re-check plans
+  than 20 h), and the capability's `pre_shadow` uses the same threshold, so the re-check plans
   instead of closing every case as resolved. The gate: 5 shadow plans that match what the operator
   would have done, each with its target equal to the case's, then propose (with the 26 h threshold),
   then auto.
 - **Prerequisites:** the actuator's ADR accepted before the first write; the `ops-act-host` worker image.
-- **Kept as code, not proven by v1:** the host incident rule and the per-target lock (one kind, one
-  write cannot exercise them), and loop bounding.
-- **What v1 does not prove:** loop bounding (`caused_by`, the hourly cap): a backup rerun fires no
-  alerts. The first restart-class write (`memory_growth`) brings that proof with it.
+- **Kept as code, not proven by v1:** the host incident rule, the per-target lock (one kind and one
+  write cannot exercise them), and loop bounding (`caused_by`, the hourly cap: a backup rerun fires no
+  alerts; the first restart-class write, `memory_growth`, brings that proof with it).
 - **Not in v1:** triage as producer (phase 3 steps 2 to 6); the brief on flotilla (RFC-0001 phase 4);
   recall (no model in v1 reads any); the reviewer agent; config-change PRs; `cost_spike`; the marketing
   fleet; actuators on the DGX and the production VPS.
@@ -649,3 +657,7 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
   block; "unknown holds the target", the post-window new-case rule, lease renewal, urgency and the
   step 5 compatibility promises restored; detect placed in the worker; the v1 threshold mismatch fixed
   and its prerequisites named; RFC-0001 §4 and §6.1 added to the docs to amend.
+- **Advisor pass 6 (on revision 7):** every fifth-pass finding landed. Revision 8 adds what it found
+  left: `detected → handed_over` for a code detector (v1's own path), a recurrence-rule escalation that
+  fires at hand-over, the rule for closes other than dismissed, the lock taken by policy atomically,
+  `pre_shadow` in the registry entry, deferral re-dispatch and its timer, and one merged v1 bullet.
