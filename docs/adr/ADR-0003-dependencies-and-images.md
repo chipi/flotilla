@@ -1,6 +1,8 @@
 # ADR-0003 — Dependencies, spec format and base images for flotillad
 
-**Status:** Accepted (operator, 2026-11-08)
+**Status:** Accepted (operator, 2026-11-08). *Pending additions from [ADR-0005](ADR-0005-agent-pipeline.md)
+(2026-11-09), each approved when it is built: `jsonschema` and what it pulls, pinned by hash; a vector
+store for semantic search; a Slack Socket Mode client.*
 **Date:** 2026-11-08
 
 ## Context

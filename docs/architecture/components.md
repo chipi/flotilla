@@ -14,7 +14,8 @@ to do.
 | **Registry** | loads `fleets/<fleet>/*.yaml`, validates them against the JSON Schema, keeps the loaded version of each spec, and refuses a spec that does not validate. Specs are reloaded on deploy, never edited at runtime. |
 | **Scheduler** | fires triggers: `every`, `cron`, events (a Grafana alert webhook, a deploy event, a manual run). It checks the job's STOP flag, pause state and daily budget before every run. Grown from fleetd. |
 | **Runner** | asks the fleet's worker to start a run, with the job spec, a run id, a trace id and the job's identity. It enforces the timeout, and records the start, end, status and cost. |
-| **Ledger** | the append-only table of decisions (see [Data](data.md)). Only the runner (on a job's behalf) and the operator write to it. Every change records its actor. |
+| **Ledger** | the cases (ADR-0005): one record per problem with its lifecycle and timeline (see [Data](data.md)). Only the runner (on a job's behalf) and the operator write to it. Every change records its actor. |
+| **Policy** | decides each planned write: run, ask the operator, or refuse (ADR-0005). It executes only flotilla's own controls; writes run in the acting worker. |
 | **Approval queue** | proposals waiting for the operator. It applies an approved proposal by asking the fleet's worker to run the output, so the control plane holds no fleet credentials. |
 | **Budgets and stages** | per job and per fleet: spend per day, runs per day, current stage. What a stage allows is enforced here, not by the job. |
 | **API** | HTTP+JSON on the tailnet. One API behind every interface. |

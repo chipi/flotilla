@@ -104,6 +104,10 @@ cloud-hosted part, and adopting a third-party agent framework.
 
 ## 4. Concepts
 
+*Amended by [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (2026-11-09): Decision, Proposal and the ledger's
+decisions table are superseded by cases (RFC-0004 §3.5); a job's stage now caps per-capability
+autonomy.*
+
 | Term | Meaning |
 |---|---|
 | **Fleet** | a group of jobs with one purpose and one owner: `triage`, `bugfix`, `seo`, `ops` |
@@ -150,7 +154,8 @@ budget: { day_usd: 2, timeout: 20m }   # usd_per_day in the first draft; day_usd
 
 The same format carries the daily brief (`ops/daily-brief`: collect from five sources, an agent step
 with no tools, outputs as a page and a push) and, later, the SEO jobs. A JSON Schema validates every
-spec at load and in CI.
+spec at load and in CI. *(Amended by ADR-0005: specs are validated by hand-written Go in flotillad;
+`jsonschema` validates model output on the Python side.)*
 
 ## 6. Architecture
 
@@ -283,7 +288,8 @@ Go, means rewriting the triage fleet. Neither buys enough to justify the rewrite
 - **Identities:** the operator (UI, CLI on the mini, signed in); jobs (one identity per fleet); agents
   through MCP (one per caller). The ledger records the identity on every change.
 - **Approvals:**
-  - Approving an outward action is operator-only: in the UI or the CLI, never through MCP.
+  - Approving an outward action is operator-only: in the UI or the CLI, never through MCP; and, per
+    ADR-0005, from the operator's pinned Slack user within RFC-0004 §3.8's limits.
   - What a job may do without approval at each stage is declared in its spec and enforced by the
     runner, not by the job.
 - **Tools** are read-only unless a spec declares an output. Outputs (GitHub, push, files) are the only

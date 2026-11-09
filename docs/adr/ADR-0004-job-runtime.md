@@ -1,6 +1,10 @@
 # ADR-0004 — The job runtime: five core concepts
 
-**Status:** Accepted
+**Status:** Accepted. *Amended by [ADR-0005](ADR-0005-agent-pipeline.md) (2026-11-09): recall
+replaces memory and external knowledge (live reads allowed as recorded calls, with trusted and
+untrusted sources and per-run taint, amending "read from a snapshot, never live"; semantic search);
+one capability registry replaces tools and outputs; cases replace the ledger's decisions and
+proposals; model-written queries are decided later.*
 **Date:** 2026-11-08
 **Decided by:** the operator, on [RFC-0002](../rfc/RFC-0002-job-runtime.md) (revision 3, after
 three passes by an independent reviewer)

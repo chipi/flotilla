@@ -15,7 +15,7 @@ operator account.
  │        │ local network (flotilla internal)                                                     │
  │        ├── worker-triage     secrets: Grafana read, GlitchTip read/write, GitHub (issues),       │
  │        │                     LiteLLM key fleet-triage                                            │
- │        ├── worker-ops        secrets: Grafana read, Home Assistant notify, LiteLLM key ops       │
+ │        ├── worker-ops        secrets: Grafana read, LiteLLM key ops                               │
  │        ├── worker-seo        secrets: Search Console read, Umami read, LiteLLM key seo           │
  │        │                     volume: seo data (Parquet)                                          │
  │        └── worker-bugfix     secrets: GitHub App (branches, PRs), LiteLLM key bugfix             │
@@ -73,7 +73,7 @@ commit to this page, with the reason.
 | **Egress** | Deny by default. Workers sit on an `internal` Docker network with no route out. The only way out is one egress proxy, [Smokescreen](https://github.com/stripe/smokescreen) (MIT, approved as a dependency by the
 operator 2026-11-08), built from a pinned commit. Each worker has its own allowlist of `host:port`, generated from the tools and outputs its fleet's specs declare and kept in config. A denied connection is logged and counted, and any denial raises an alert. flotillad reaches only the observability stack. |
 | **Reaching the UI, API and MCP** | A caddy-tailscale node of its own, like the homelab's other services (homelab ADR-0006), with one tailnet ACL grant per port. Never a public interface. |
-| **Operator identity** | The UI trusts the tailnet identity caddy-tailscale passes on, and only the operator's identity may approve. The CLI uses an operator token from a mode-600 file in the operator's home. |
+| **Operator identity** | The UI trusts the tailnet identity caddy-tailscale passes on, and only the operator's identity may approve. The CLI uses an operator token from a mode-600 file in the operator's home. Approvals also come from the operator's pinned Slack user, within ADR-0005's limits. |
 | **Agent identity (MCP)** | A token per caller, minted by the operator with the CLI, scoped `read` or `read+act`. No scope can approve. |
 | **Bugfix worker** | Builds and tests inside its own container, with its toolchain baked into the image. No Docker inside it, so repos whose tests need Docker are out of scope for now. Each run's worktree is on a scratch volume and deleted when the run ends. |
 | **Images** | `ghcr.io/chipi/flotilla-<role>`, public (they hold no secrets or config), built in CI, tagged `sha-<7>`, deployed by digest. Signing (cosign) is added before any fleet reaches `live`. |

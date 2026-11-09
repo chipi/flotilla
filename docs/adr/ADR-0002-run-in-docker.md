@@ -1,6 +1,9 @@
 # ADR-0002 — Run flotilla in Docker, one worker per fleet
 
-**Status:** Accepted (operator, 2026-11-08)
+**Status:** Accepted (operator, 2026-11-08). *Amended by [ADR-0005](ADR-0005-agent-pipeline.md)
+(2026-11-09): workers are per role, not one per fleet (a fleet may have several, each holding only its
+role's credentials); the host actuator is the one exception to "no Docker socket", limited to that
+service and designed in its own ADR.*
 **Date:** 2026-11-08
 
 ## Context

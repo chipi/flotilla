@@ -1,7 +1,7 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Draft, revision 8. Nothing is built from it until the operator accepts it. Reviewed by an
-independent advisor in six passes on 2026-11-09 (§15); revision 8 answers the sixth.
+**Status:** Accepted → [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (operator, 2026-11-09), revision 8.
+Reviewed by an independent advisor in seven passes on 2026-11-09 (§15).
 **Date:** 2026-11-09
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
 knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§13).

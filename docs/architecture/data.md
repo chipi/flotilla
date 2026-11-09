@@ -27,6 +27,11 @@ One file, owned by flotillad. Workers never open it; they report through the API
 
 ## The ledger (`decisions`)
 
+*Amended by [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (2026-11-09): the ledger's decisions and
+proposals become **cases** (RFC-0004 §3.5): keys `(kind, value)` in place of one `dedup_key`, a
+lifecycle with a transition table, executions, and the per-target lock. The fields below carry over to
+the case and its timeline.*
+
 | Field | Meaning |
 |---|---|
 | `id`, `fleet`, `job`, `run_id` | where it came from |

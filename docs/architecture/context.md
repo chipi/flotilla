@@ -27,7 +27,6 @@ sources. It uses the ones that exist and is careful about what it may change.
 | GitHub | out | issues, comments, labels, branches, PRs | a GitHub App or tokens per fleet, scoped to the repos in config |
 | Google Search Console, Bing Webmaster | in (read) | the SEO fleet | read-only scopes |
 | Umami | in (read) | usage for SEO and ops | read-only |
-| Home Assistant | out | the daily brief's push | one notify service |
 
 Everything is reached over the tailnet or on the host. flotilla's own API, UI and MCP listen on the
 tailnet only.

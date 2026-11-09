@@ -52,7 +52,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
    - Real-data test corpora live in the private `fleet-eval-data` repo.
 2. **An agent is never the operator.**
    - Approving an outward action (an issue, a PR, a push, a published change) is operator-only, in
-     the UI or the CLI. Never through MCP, never by a job.
+     the UI or the CLI, or from the operator's pinned Slack user within ADR-0005's limits (low and
+     medium risk, bound to the plan's hash). Never through MCP, never by a job.
    - Every state change in the ledger records its actor.
 3. **Behaviour changes are reviewed and replayed.** A change to a playbook, gate, detector or spec
    that changes decisions is replayed against recorded past cases before it ships (the operator's
