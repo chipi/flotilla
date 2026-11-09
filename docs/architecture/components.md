@@ -24,7 +24,7 @@ the acting worker call the actuator. These pages follow ADR-0006.
 | **Guardrails** | per-host and platform caps on executions, the circuit breaker, the host incident rule, the autonomy freeze, the recurrence rule |
 | **Approvals** | proposals waiting on the `approvals` channel; an approval (UI, CLI, or the operator's pinned Slack user within limits) is bound to the plan's hash and starts the execution |
 | **Node gateway** | the endpoint host agents connect to (mutual TLS); the certificate authority's intermediate issues and renews their certificates; revocation; `flotilla node list` |
-| **Signer** | signs every execution with flotillad's Ed25519 key: execution id, case, host, capability, parameters, plan hash, approval, expiry, nonce |
+| **Signer** | signs every execution with flotillad's Ed25519 key: execution id, case, node id, capability, parameters, plan hash, approval, signed and expiry times; the signature covers the exact bytes sent |
 | **Channels** | routes `alerts`, `approvals` and `notifications` to the provider's connector |
 | **Budgets and stages** | per job and fleet: spend and tokens per day; stage and autonomy controls, with who changed them |
 | **API, CLI, UI, MCP** | one API behind all of them. The UI's main screen is the case timeline. MCP has no approve tool |
@@ -52,8 +52,8 @@ One static binary per platform, installed per host as a service under a dedicate
 
 | Role | Responsibility |
 | --- | --- |
-| **Actuator** | runs an execution only if its signature verifies, it is unexpired and never seen, the host is this host, the capability is in this host's allowlist with valid parameters, and an `auto` execution is within this host's ceiling; checks preconditions locally; runs the exact command template (never a shell); idempotent by execution id (SQLite); a hash-chained audit log shipped off the host |
-| **Connector** | holds a provider's credentials (Slack); posts what flotillad sends to a channel; relays approval clicks (with the plan hash and nonce) back to flotillad |
+| **Actuator** | runs an execution only if its signature verifies, it is unexpired and never seen, the node id is this agent's, the capability is in this host's allowlist with valid parameters and within its rate limit, and an `auto` execution is within this host's ceiling; checks preconditions locally; runs the exact command template (never a shell); records `started` before it runs (SQLite); a hash-chained audit log, collected off the host |
+| **Connector** | holds a provider's credentials (Slack); posts what flotillad sends to a channel; relays approval clicks (with the plan hash and nonce) back to flotillad; outbound only in v1 |
 
 ## Interfaces
 

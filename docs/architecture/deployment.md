@@ -60,18 +60,20 @@ its jobs may plan.
 
 ## Host agents
 
-- **Installed by the operator:** `flotilla node install <host>` over SSH with the operator's
-  key. It copies the signed release binary for the host's platform, creates the dedicated user,
-  writes the service unit (systemd or launchd) and the host's allowlist, generates the sudoers file
-  (checked with `visudo -c`), and enrols the agent with a one-time token.
-- **Upgrades are pushed:** `flotilla node upgrade`, verifying the release signature. `flotilla node
-  list` shows each agent's version, certificate expiry, allowlist hash and last contact. `flotilla
-  node remove` revokes the certificate and uninstalls.
+- **Installed by the operator:** `flotilla node install <host>` over SSH with the operator's key. It
+  copies the binary for the host's platform (v1: built by the operator from a tagged commit; signed
+  CI releases before the second host), creates the dedicated user, writes the service unit (systemd
+  or launchd) and the host's allowlist, generates the sudoers file (checked with `visudo -c`), and
+  enrols the agent with a one-time token.
+- **Upgrades are pushed:** `flotilla node upgrade`, one host at a time. `flotilla node list` shows
+  each agent's version, last contact, clock offset, certificate expiry and allowlist hash. `flotilla
+  node revoke` cuts an agent off in flotillad alone; `remove` also uninstalls.
 - **Connects out:** the agent opens one connection to flotillad's node endpoint; nothing on the host
   listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
   network); mutual TLS is required on any of them.
-- **The host's allowlist** (exact command templates per capability and the host's autonomy ceiling)
-  lives in the installation's private config, is reviewed like code, and is installed with the agent.
+- **The host's allowlist** (exact command templates per capability, each with a rate limit, and the
+  host's autonomy ceiling) lives in the installation's private config, is reviewed like code, and is
+  installed with the agent.
 
 ## Keys and custody
 
@@ -80,12 +82,14 @@ its jobs may plan.
 | Root CA | offline, with the operator | signs the intermediate; never on a host |
 | Intermediate CA | flotillad's secrets volume | issues short-lived certificates to host agents |
 | Execution signing key (Ed25519) | flotillad's secrets volume | signs every execution; host agents hold the public key |
-| Release signing key | CI only | signs `flotilla-node` releases |
+| Release signing key | CI's secret store, from the second host (v1: the operator builds from a tagged commit) | signs `flotilla-node` releases |
 | Host agent certificate | each host agent | its identity to flotillad; short-lived, renewed |
 | Provider credentials (Slack) | the host agent with the connector role | Socket Mode connection |
 | Fleet credentials | each role's worker, mode-600 files | that role's reads and repo writes |
 
-Rotation and revocation are documented procedures, with the install procedure (ADR-0006, decided 2).
+Revocation needs no access to the host (`flotilla node revoke`). The rotation procedures (the
+execution key with a two-key window, the intermediate CA, a host's certificate) are written before
+the first write at propose (ADR-0006 §11).
 
 ## Hardening, every container
 

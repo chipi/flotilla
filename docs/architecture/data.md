@@ -57,7 +57,8 @@ The database stores references (dataset and version), never copies.
 ## On each host
 
 A host agent keeps a small SQLite store: every execution id it has seen and its result (so a repeat
-runs nothing), and its hash-chained audit log, which is also shipped off the host.
+runs nothing), and its hash-chained audit log, collected off the host by the host's log collector;
+flotillad keeps the log's latest chain head per node.
 
 ## Retention and backup
 
