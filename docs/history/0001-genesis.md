@@ -17,6 +17,7 @@ The evaluation, in agentic-ai-homelab's
 [`docs/wip/agent-platform-evaluation.md`](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/agent-platform-evaluation.md),
 kept three things apart: the problem, the constraints the homelab already lives by, and the
 candidate solutions. It found:
+
 - **Hermes:** unsupported on the Intel Mac mini, cloud web search by default, self-editing skills,
   and several 2026 CVEs.
 - **OpenClaw:** a better fit for scheduled, gated, local work, with a much heavier CVE stream.

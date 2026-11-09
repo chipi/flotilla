@@ -15,7 +15,7 @@ base images for the containers.
 ## Decision
 
 | Need | Choice | Why |
-|---|---|---|
+| --- | --- | --- |
 | SQLite | `modernc.org/sqlite` | pure Go: no C toolchain, builds into a static binary on a distroless image |
 | Spec and config format | YAML, `gopkg.in/yaml.v3`, strict (unknown fields are errors) | specs are written by people; comments help. The Python side reads no YAML: flotillad validates the `models` section and hands it to every run as JSON in `FLOTILLA_MODELS` (operator, 2026-11-09), so no PyYAML |
 | Errors | `github.com/getsentry/sentry-go` (operator, 2026-11-08): flotillad's own ERROR log records to GlitchTip, one issue per message | the Sentry protocol GlitchTip speaks; no own protocol code |

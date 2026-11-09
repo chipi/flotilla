@@ -14,6 +14,7 @@ is generally true), or state the deviation here with the *reason*.
 flotilla is a plain, spec-driven platform for small fleets of AI agents. It is built from scratch
 to learn how agent systems work from the inside, while running real work for one homelab. Its
 fleets:
+
 - **triage:** alerts and errors;
 - **bugfix:** drafts code fixes;
 - **ops:** daily brief and operational reviews;
@@ -28,7 +29,7 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 ## Stack
 
 | Layer | Choice | Reason |
-|---|---|---|
+| --- | --- | --- |
 | Control plane | Go, stdlib-first (`flotillad`, CLI, MCP server, server-rendered UI in one binary) | grows from fleetd; single binary (ADR-0001) |
 | Job runtime | Python (stdlib-first) | the triage fleet is Python; SEO data work (Parquet, DuckDB) (ADR-0001) |
 | State | SQLite on the host (runs, ledger, approvals, budgets); Parquet for analytical fleet data | one file, transactional, easy to back up |
@@ -75,7 +76,7 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 ## Code layout (phase 1)
 
 | Path | What | Runs from |
-|---|---|---|
+| --- | --- | --- |
 | `fleetd/` | the Go scheduler and the bugfix chain; becomes `flotillad` in phase 2 | still agentic-ai-homelab's copy on the mini |
 | `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests, `deploy/` the homelab deploy hooks, `replays.sh` the replay gates | still agentic-ai-homelab's copy on the mini |
 | `bugfix-fleet/` | the bugfix fleet: bake-off harness scripts (used by `fleetd chain`) and a TypeScript MVP (no CI, RFC-0001 §11) | still agentic-ai-homelab's copy on the mini |

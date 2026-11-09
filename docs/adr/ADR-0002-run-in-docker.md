@@ -10,6 +10,7 @@ service and designed in its own ADR.*
 
 ADR-0001 puts flotilla on the homelab mini, as the `claude` account. Today the fleets run as host
 processes:
+
 - fleetd as a LaunchDaemon under the operator's account;
 - the triage fleet as `python3` from the git checkout, with the mini's system Python 3.9;
 - the brief as a launchd Node job.
@@ -20,6 +21,7 @@ should run in Docker.
 ## Decision
 
 Run flotilla in Docker on the mini, like the homelab's other services:
+
 - **flotillad** in one container, with the state volume and no fleet secrets;
 - **one long-running worker container per fleet**, holding only that fleet's secrets and toolchain;
   each run is a process inside its fleet's worker;
@@ -29,6 +31,7 @@ Run flotilla in Docker on the mini, like the homelab's other services:
 
 **Which engine, and who deploys** (operator's conditions, 2026-11-08: "run like any other Docker
 thing we have", and agents must be able to redeploy it):
+
 - flotilla is one more compose stack in the mini's production engine (the homelab's ADR-0009),
   next to the observability backend, GlitchTip and the others: a compose file in the flotilla
   checkout under the operator account, brought up with `docker compose up -d` there.
@@ -46,6 +49,7 @@ The defaults for everything the deployment leaves open are in
 ## Consequences
 
 **Positive:**
+
 - **Isolation:** a run cannot read the host, the operator's files, or another fleet's credentials.
 - **A known runtime:** pinned Python and Go per image, not the host's Python 3.9.
 - **Same operation as the other homelab services:** compose, logs through Alloy, deploy events,
@@ -53,6 +57,7 @@ The defaults for everything the deployment leaves open are in
 - **Resource limits** per fleet.
 
 **Negative:**
+
 - More moving parts: images, a registry, compose files, an egress proxy.
 - The bugfix fleet's worker needs a full toolchain.
 - Debugging goes through `docker exec` and logs, not a shell in the checkout.
@@ -60,6 +65,7 @@ The defaults for everything the deployment leaves open are in
   the `claude` account on the mini cannot deploy it.
 
 **Neutral:**
+
 - The migration's phase 2 (flotillad running the triage fleet unchanged) runs the existing code
   inside a worker image, instead of from the checkout.
 

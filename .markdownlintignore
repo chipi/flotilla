@@ -1,0 +1,8 @@
+# Imported fleet code, frozen until it is ported (AGENTS.md). Remove these lines and run
+# `make docs-lint-fix` once the freeze ends and the code moves here (698 findings on 2026-11-09).
+bugfix-fleet/
+signal-fleet/
+fleetd/
+site/
+.venv/
+node_modules/

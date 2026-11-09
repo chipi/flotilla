@@ -29,6 +29,7 @@ parallel decision log.
 ## When to write a new session entry
 
 If your session:
+
 - Adds a new pillar or restructures the project
 - Makes 3+ decisions worth logging
 - Changes scope or direction

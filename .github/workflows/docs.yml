@@ -17,6 +17,9 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - '**/*.md'
+      - '.markdownlint.json'
+      - '.markdownlintignore'
       - 'requirements-docs.txt'
       - '.github/workflows/docs.yml'
       - 'Makefile'
@@ -24,6 +27,9 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - '**/*.md'
+      - '.markdownlint.json'
+      - '.markdownlintignore'
       - 'requirements-docs.txt'
       - '.github/workflows/docs.yml'
       - 'Makefile'
@@ -55,6 +61,9 @@ jobs:
 
       - name: Install docs deps
         run: pip install -r requirements-docs.txt
+
+      - name: Lint Markdown
+        run: make docs-lint
 
       - name: Build site (strict)
         run: mkdocs build --strict --clean

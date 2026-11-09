@@ -65,18 +65,21 @@ the design, with what triage does today read from the code.
 ## Consequences
 
 **Positive:**
+
 - A new fleet configures the same five concepts instead of writing its own loop, client or memory.
 - Every behaviour change has a named way to be proven.
 - No path lets model- or agent-written text steer later decisions without the operator.
 - Running without LiteLLM is possible.
 
 **Negative:**
+
 - More recording per run: messages, replies, lookups, time.
 - A second shadow worker is needed after the switch.
 - Temporary `quirks` settings exist until triage's like-for-like move is done.
 - Notes need a model replay to activate, which is slower than switching them on.
 
 **Neutral:**
+
 - AGENTS.md rule 5 and ADR-0001 §9 now say "an OpenAI-compatible endpoint; LiteLLM is the reference
   deployment".
 - The SEO fleet's proposal is RFC-0003.
@@ -84,6 +87,7 @@ the design, with what triage does today read from the code.
 ## Alternatives considered
 
 RFC-0002 §13:
+
 - requiring LiteLLM;
 - a framework's loop and memory;
 - memory the model writes itself;

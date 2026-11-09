@@ -3,7 +3,7 @@
 ## Three layers, kept apart
 
 | Layer | Where | In git | Examples |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | jobs, triggers, capabilities, case kinds, stages, budgets, playbooks |
 | **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the operator's private config repo | no (public repo) | model endpoints and aliases, projects and their recall sources, channels and providers, each host's allowed writes and autonomy ceiling |
 | **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, recall indexes, run records |
@@ -16,7 +16,7 @@ git.
 One file, owned by flotillad. Workers and host agents never open it; they report through the API.
 
 | Table | Holds |
-|---|---|
+| --- | --- |
 | `specs` | each loaded spec version: fleet, job, content hash, loaded at, git commit |
 | `runs` | run id, job, spec version, trigger, start, end, status, cost, tokens, models, trace id |
 | `cases` | one row per problem: kind, typed target, project, status, holder, lease, urgency, opened and closed at |
@@ -41,7 +41,7 @@ writing the TSVs while their readers use them ([RFC-0002](../rfc/RFC-0002-job-ru
 ## Recall
 
 | Origin | Where | Lookup |
-|---|---|---|
+| --- | --- | --- |
 | Recorded by flotilla | the database above (cases, outcomes, feedback, active notes) | exact, by key; structured fields only |
 | Plugged in | git sources refreshed into a volume, versioned by commit; HTTP and MCP sources read live | path maps, full-text and semantic indexes in a volume, one per trust tier; each chunk with its source, path, version and trust |
 

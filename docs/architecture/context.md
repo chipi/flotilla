@@ -1,12 +1,12 @@
 # Context
 
-flotilla runs small fleets of AI agents for one operator. It owns no models, no observability stack and
-no data sources: it uses the ones that exist, and it is careful about what it may change.
+flotilla runs small fleets of AI agents for one operator. It owns no models, no observability stack
+and no data sources: it uses the ones that exist, and it is careful about what it may change.
 
 ## Who uses it
 
 | Actor | Through | May |
-|---|---|---|
+| --- | --- | --- |
 | **The operator** | the UI, the CLI; Slack for approvals | everything: approve, promote autonomy, change stages and budgets, hold, freeze, stop |
 | **Agents** (other assistants and sessions) | MCP, with a per-caller token | read status, cases and findings; trigger or dry-run a job; pause; propose notes and feedback. **Never approve.** |
 | **Jobs** (the fleets' own runs) | the API, with their worker's identity | open and update cases, plan writes, report results; act only as policy allows |
@@ -15,7 +15,7 @@ no data sources: it uses the ones that exist, and it is careful about what it ma
 ## What it talks to
 
 | System | Direction | Why | How |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A model endpoint | out | every model call | any OpenAI-compatible API, through one model client; aliases per job ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
 | Signal sources (alerting, metrics, logs, traces, error tracking) | in (read) | detection and diagnosis | read capabilities with read-only credentials |
 | Code hosting (GitHub) | in and out | issues, comments, PRs; repo docs as recall | per-role credentials; repos in config |
@@ -42,7 +42,7 @@ network the installation chooses; the host agents' endpoint requires mutual TLS 
 The homelab flotilla was built for:
 
 | What | Where |
-|---|---|
+| --- | --- |
 | Control plane (flotillad, workers, egress proxy) | Docker on the Mac mini |
 | Hosts with agents | the Mac mini (first), the DGX, the production VPS (later) |
 | Model endpoint | a LiteLLM gateway; local models on the X3 (Ollama) and the DGX (vLLM), cloud models through it |

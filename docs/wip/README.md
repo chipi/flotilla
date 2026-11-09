@@ -4,7 +4,7 @@ This directory holds work-in-progress notes: plans, drafts, analyses,
 prioritized task lists. Promotion targets:
 
 | Promote to | When |
-|---|---|
+| --- | --- |
 | `docs/adr/` | The decision is structural and final |
 | `docs/rfc/` | The decision needs a proposal-and-review process before adoption |
 | A reference doc | The content is stable enough to be a reference |

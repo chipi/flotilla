@@ -1,6 +1,7 @@
 # Components
 
 Three programs, each with one job:
+
 - **flotillad** (Go), the control plane: decides and records;
 - **the job runtime** (Python), inside workers: diagnoses and plans;
 - **`flotilla-node`** (Go), the host agent: executes what is signed and allowed on its host.
@@ -11,7 +12,7 @@ may do; the host agent never runs anything it was not sent, signed, and allowed 
 ## flotillad (Go)
 
 | Component | Responsibility |
-|---|---|
+| --- | --- |
 | **Registry** | loads `fleets/<fleet>/*.yaml` and the capability registry; refuses a spec that does not validate, or that offers a write capability inside an agent's loop |
 | **Triggers** | starts jobs on **time** (every, cron) or on an **event** on a case (handed over to a kind, a check due); checks STOP, pause and budget first |
 | **Runner** | asks a worker to start a run with its spec, run id, trace id, deadline and environment (`FLOTILLA_MODELS`, the trace parent); enforces the timeout; records cost |
@@ -32,7 +33,7 @@ A **worker** is a long-running container that runs jobs for **one role**, holdin
 credentials and toolchain (`triage`, `ops-read`, `ops-act-host`, …). Each run is a process in it.
 
 | Runtime component | Responsibility |
-|---|---|
+| --- | --- |
 | **Harness** | the one loop for a model step: context in, read capabilities offered, an answer of the step's output type (decision, prose, plan), validated (`jsonschema`); limits on turns, calls, tokens, time, cost; everything recorded for replay |
 | **Context builder** | layers with budgets: playbook, the case (structured events only), recall, capability results; untrusted content wrapped as data; the run's **taint** derived from what entered it |
 | **Recall client** | exact lookups of flotilla's records by key; search over plugged-in sources (path maps, full-text, semantic), by trust tier |
@@ -47,14 +48,14 @@ One static binary per platform, installed per host as a service under a dedicate
 ([ADR-0006](../adr/ADR-0006-node-agent.md), proposed).
 
 | Role | Responsibility |
-|---|---|
+| --- | --- |
 | **Actuator** | runs an execution only if its signature verifies, it is unexpired and never seen, the host is this host, the capability is in this host's allowlist with valid parameters, and an `auto` execution is within this host's ceiling; checks preconditions locally; runs the exact command template (never a shell); idempotent by execution id (SQLite); a hash-chained audit log shipped off the host |
 | **Connector** | holds a provider's credentials (Slack); posts what flotillad sends to a channel; relays approval clicks (with the plan hash and nonce) back to flotillad |
 
 ## Interfaces
 
 | From → to | What | Contract |
-|---|---|---|
+| --- | --- | --- |
 | flotillad → worker | start run, cancel run | versioned JSON |
 | worker → flotillad | case events, plans, results, run end | versioned JSON over the API |
 | host agent → flotillad | connect (mutual TLS), results, relayed approvals | versioned protocol over one outbound connection |

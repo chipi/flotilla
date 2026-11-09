@@ -12,7 +12,7 @@ the **reference installation**: the homelab flotilla was built for (a Mac mini r
 plane, a DGX and a production VPS as other hosts).
 
 | Page | What it answers |
-|---|---|
+| --- | --- |
 | [Context](context.md) | Who uses flotilla, and what it talks to |
 | [Components](components.md) | What flotillad, the workers, the job runtime and the host agents are made of |
 | [A case, end to end](run-lifecycle.md) | What happens from a signal to a verified, recorded result |
@@ -68,7 +68,7 @@ flowchart LR
 ## Vocabulary
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | **fleet** | a group of jobs with one purpose: triage, Ops (the SRE team in action), digital marketing, bugfix |
 | **job** | a declared unit of work: its worker, trigger, steps, capabilities, stage, budget |
 | **run** | one execution of a job |

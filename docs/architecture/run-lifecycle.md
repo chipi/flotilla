@@ -45,8 +45,8 @@ reopened issue) may still be added to a closed case.
    would have received the signal instead.
 2. **Hand-over.** A code detector knows the kind, so the case goes straight to `handed_over`, and the
    event starts the Ops remediation job in the `ops-act-host` worker, which takes the case's lease.
-3. **Re-check and plan.** The job re-checks by code (backup age, whether the job is running). Still a
-   problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
+3. **Re-check and plan.** The job re-checks by code (backup age, whether the job is running). Still
+   a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
 4. **Policy.** flotillad checks the plan: the capability exists, is declared for `failed_backup`, its
    target is the case's; autonomy is the lowest of the job's stage, the capability's earned level, the
    mini's ceiling, taint and the freeze; the lock is free, limits and holds clear.
@@ -67,14 +67,14 @@ becomes a `code_bug` case for the bugfix fleet, with its GitHub issue as the mir
 
 ## Runs and cases
 
-A **run** is one job execution; a case may span several (a diagnose run, a planning run, an execute run
-after an approval, a check run). No run waits: an approval or a due check is an event that starts the
-next run.
+A **run** is one job execution; a case may span several (a diagnose run, a planning run, an execute
+run after an approval, a check run). No run waits: an approval or a due check is an event that
+starts the next run.
 
 ## Failure behaviour
 
 | Failure | Behaviour |
-|---|---|
+| --- | --- |
 | The model endpoint rejects the key or billing (401, 402, 403) | the run ends `endpoint_down` with one aggregate signal, deduped across runs; no silent switch to another model |
 | A transient model error | the case is deferred to the next run, up to the job's limit, then escalated |
 | A capability call errors | the error is the call's answer; after the step limit the case escalates |

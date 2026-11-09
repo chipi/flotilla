@@ -12,7 +12,7 @@ model behaviour that is measured.
 ## 1. The test pyramid
 
 | Level | What | Examples | Where it runs |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Unit** (most tests) | one component, no network, no model | triggers (budget, STOP, stage), spec and registry validation, the case transition table, case keys and dedup, policy decisions (autonomy, locks, limits, holds, taint), the guardrails, capability scope checks, the harness driven by a **scripted fake model**, the model client against a fake endpoint, config loading; in `flotilla-node`: signature, expiry, replay, allowlist and ceiling checks, idempotency, the audit chain | every push (`ci-fast`) |
 | **Contract** | the agreements between parts | the spec JSON Schema (every spec in `fleets/` validates), the flotillad ↔ worker messages, the public API against its OpenAPI document, MCP tool schemas, each harness step's output schema, the capability registry, the node protocol and the signed execution envelope, the model configuration (`FLOTILLA_MODELS`, shared fixtures in Go and Python), the model client against real endpoints (`runtime/contract_check.py`) | every push |
 | **Security** | the threat model's controls | injection fixtures never lead to an executed write and taint caps them at propose; capabilities refuse out-of-scope requests; MCP has no way to approve; a local-only job refuses a cloud model; secrets never appear in logs or traces; the host agent refuses forged, replayed, expired, out-of-allowlist and above-ceiling executions; a Slack approval from another user, for high risk or for a changed plan is refused | every push |
@@ -21,6 +21,7 @@ model behaviour that is measured.
 | **Live smoke** | the deployed system on the mini | the canary fleet (below) runs on schedule; `flotilla status` is healthy; the deploy-verify check passes | after every deploy, then continuously |
 
 **Rules:**
+
 - **A bug gets a failing test first.**
 - **No real model in the pyramid.** Model behaviour is measured in fleet validation (section 3),
   never asserted in unit tests.
@@ -53,7 +54,7 @@ this repo. It is synthetic, deterministic and harmless:
 ## 3. Validating each fleet as it runs
 
 | Check | What it answers | How |
-|---|---|---|
+| --- | --- | --- |
 | **Replay corpus** | does a change alter decisions on known cases? | recorded inputs with the expected decisions (the triage fleet already has 15 such gates, `signal-fleet/replays.sh`). Every change to a playbook, gate, detector or spec replays them; any changed decision fails unless accepted with a reason. |
 | **Evaluation modes** | which proof does a change need? | four modes: code replay, exact replay, model replay and shadow comparison, with a table of which change needs which ([ADR-0004](adr/ADR-0004-job-runtime.md), RFC-0002 §8) |
 | **Shadow comparison** | does the new platform decide like the old one? | during migration, the fleet runs in `shadow` on flotilla beside the existing implementation for N days; decisions are compared per subject; differences are explained before switching |
@@ -65,6 +66,7 @@ this repo. It is synthetic, deterministic and harmless:
 | **Health** | is it running? | per job: freshness (last success), run success rate, duration, cost against budget; dashboards and alerts in the homelab stack |
 
 Each fleet's spec states its **validation contract**:
+
 - its replay corpus;
 - its quality metrics and alert levels;
 - its freshness;
@@ -75,7 +77,7 @@ A fleet without one cannot move past `shadow`.
 ## CI tiers
 
 | Tier | Runs | Contains |
-|---|---|---|
+| --- | --- | --- |
 | `ci-fast` | every push and PR | lint (gofmt, go vet, ruff), unit, contract, security tests, spec schema validation, secrets scan |
 | `ci` | PRs to main and main | `ci-fast` plus integration, the docs build (strict), vulnerability scans, image builds |
 | release | before deploy | `ci` plus end to end in the dev Docker engine |

@@ -6,7 +6,7 @@ installation lives on the host, outside git. Placeholders below are in `<angle b
 
 ## Layout (`~/flotilla` on the host)
 
-```
+```text
 ~/flotilla/
   repo/                     git clone https://github.com/chipi/flotilla.git repo
   .env                      the installation (compose and the deploy scripts read it)
@@ -138,13 +138,15 @@ default:
 
 ## The candidate worker: shadow comparison of a candidate image
 
-ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs as a
-second worker beside the live one, with its own state, and the job `triage/cycle-shadow`, capped at
-`shadow` by its spec (`max_stage`), runs the same command on it. flotillad refuses any stage above the
-cap, even the operator's, and the scheduler never runs it above the cap whatever a control says.
+ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs
+as a second worker beside the live one, with its own state, and the job `triage/cycle-shadow`,
+capped at `shadow` by its spec (`max_stage`), runs the same command on it. flotillad refuses any
+stage above the cap, even the operator's, and the scheduler never runs it above the cap whatever a
+control says.
 
 1. Seed its state from the live state, once per comparison (a fresh volume name each time):
-   `~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-candidate-<date> ~/signal-fleet`
+   `~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state
+   flotilla-triage-state-candidate-<date> ~/signal-fleet`
 2. `.env`: `COMPOSE_PROFILES=candidate`, `FLOTILLA_CANDIDATE_TAG=sha-<candidate>`,
    `TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-triage-state-candidate-<date>`.
 3. `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081", token_file:

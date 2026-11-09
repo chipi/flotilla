@@ -5,6 +5,7 @@
 proposed in [ADR-0006](../adr/ADR-0006-node-agent.md).
 
 A flotilla installation has two parts:
+
 - **the control plane:** flotillad, the workers and the egress proxy, as one Compose stack on one
   host;
 - **host agents:** `flotilla-node` on each host flotilla may change, installed from the control
@@ -42,7 +43,7 @@ flowchart TB
 One worker per **role**, not per fleet: a role is a set of credentials and a toolchain.
 
 | Role | Credentials | Runs |
-|---|---|---|
+| --- | --- | --- |
 | `triage` | alerting and error tracking read, issue filing, the triage model key | the triage fleet |
 | `ops-read` | read-only metrics, logs, traces; read-only database queries | Ops diagnosis, briefs, reviews |
 | `ops-act-host` | none for hosts: it plans, flotillad signs, host agents execute | Ops remediation jobs |
@@ -73,7 +74,7 @@ One worker per **role**, not per fleet: a role is a set of credentials and a too
 ## Keys and custody
 
 | Key | Where | Used for |
-|---|---|---|
+| --- | --- | --- |
 | Root CA | offline, with the operator | signs the intermediate; never on a host |
 | Intermediate CA | flotillad | issues short-lived certificates to host agents |
 | Execution signing key (Ed25519) | flotillad | signs every execution; host agents hold the public key |
@@ -100,7 +101,8 @@ One worker per **role**, not per fleet: a role is a set of credentials and a too
   the image, so a spec change is a deploy. A changed config file recreates the service that reads it
   (a config hash in the service's environment).
 - **Rollback:** the previous tag; for a host agent, the previous binary.
-- **Observability:** every deploy writes a deploy event, so deploy checks and alert stand-downs see it.
+- **Observability:** every deploy writes a deploy event, so deploy checks and alert stand-downs see
+  it.
 - **State:** the database lives on a volume and survives restarts. Schema migrations run at
   flotillad start-up, forward-only, with a backup taken first.
 
@@ -116,7 +118,7 @@ Set 2026-11-08 at the operator's request ("take reasonable defaults"). Each one 
 commit to this page, with the reason.
 
 | Topic | Default |
-|---|---|
+| --- | --- |
 | **Egress** | Deny by default. Workers sit on an `internal` Docker network with no route out. The only way out is one egress proxy, [Smokescreen](https://github.com/stripe/smokescreen) (MIT, approved as a dependency by the operator 2026-11-08), built from a pinned commit. Each worker has its own allowlist of `host:port`, kept in config. A denied connection is logged and counted, and any denial raises an alert. flotillad reaches only the observability stack. |
 | **Reaching the UI, API and MCP** | Only on the network the installation chooses, never on a public interface. |
 | **Operator identity** | The UI trusts the identity the installation's front proxy passes on, and only the operator's identity may approve. The CLI uses an operator token from a mode-600 file in the operator's home. Approvals also come from the operator's pinned Slack user, within ADR-0005's limits. |
@@ -130,7 +132,7 @@ commit to this page, with the reason.
 ## Reference installation
 
 | What | Where |
-|---|---|
+| --- | --- |
 | Control plane | the homelab Mac mini (Intel, macOS), in the production colima VM beside the homelab's other services, deployed by the operator account with `deploy/mini/deploy.sh` |
 | Running today | `flotillad`, `worker-triage` (shadow), `worker-triage-candidate` (Compose profile `candidate`), `egress` |
 | Model endpoint | the homelab's LiteLLM gateway, reached through the egress proxy |

@@ -9,7 +9,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents, proposed).
 ## What we protect
 
 | Asset | Why it matters |
-|---|---|
+| --- | --- |
 | **Fleet credentials:** GitHub Apps, model keys, analytics, error tracking, observability reads | they can change repos, read private data, spend money |
 | **The hosts flotilla may change** | a wrong restart or rerun is an outage |
 | **The certificate authority and the signing keys** | whoever holds them can enrol a host agent or sign an execution |
@@ -23,7 +23,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents, proposed).
 ## Who could cause harm
 
 | Actor | How |
-|---|---|
+| --- | --- |
 | **Untrusted content authors** | text the models read: alert annotations, error messages, issue bodies, PR comments, web pages, untrusted recall sources. The main threat: **prompt injection**. |
 | **A misbehaving model** | wrong, overconfident or manipulated answers; plans outside its case |
 | **Another agent through MCP** | well-meaning but wrong, or itself injected |
@@ -37,7 +37,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents, proposed).
 ## Threats and controls
 
 | # | Threat | Controls | Enforced by |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | T1 | **Prompt injection leads to a harmful action** | Agents call only read capabilities; writes are only planned. Policy in flotillad decides every planned write by code: the registry (capability declared for the case's kind, target is the case's), autonomy, locks, limits. A run that read untrusted content is **tainted** and its plans are capped at propose. Untrusted text is wrapped as data. | registry, harness, policy |
 | T2 | **Exfiltration** | No general web or HTTP capability. Each worker reaches only its allowlisted hosts through the egress proxy. | registry, egress proxy |
 | T3 | **An agent approves** | MCP has no approve tool; jobs cannot approve. Approval is the operator's: UI, CLI, or the pinned Slack user within limits. Every change records its actor. | flotillad API, events |

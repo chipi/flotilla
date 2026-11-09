@@ -5,6 +5,7 @@ operator sets and can see. It has a control plane that decides and records, work
 and plan, and host agents that execute only what is signed and allowed on their host.
 
 flotilla runs the agents of one homelab:
+
 - a **triage** fleet that reads alerts and errors and files what needs a fix;
 - an **Ops** fleet, the SRE team in action: briefs, reviews, and remediation (a failed backup, disk
   pressure, a service in an OOM loop) as cases;
@@ -24,6 +25,7 @@ Projects like Hermes Agent and OpenClaw are inspiration, not dependencies.
 
 **Phase 3.** The triage fleet runs on flotillad in shadow beside its old implementation (phase 2);
 the job runtime (model client, recording for exact replay) is being built. The design:
+
 - [RFC-0001](docs/rfc/RFC-0001-fleet-platform.md): the platform, with
   [ADR-0001](docs/adr/ADR-0001-platform-foundations.md) and
   [ADR-0002](docs/adr/ADR-0002-run-in-docker.md);

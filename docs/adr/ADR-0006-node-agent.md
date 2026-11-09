@@ -1,11 +1,10 @@
 # ADR-0006 — The flotilla node agent: host actions and connectors, on any host
 
-**Status:** Proposed (2026-11-09); its open questions answered by the operator the same day.
-Nothing is built from it until the operator accepts it.
-**Date:** 2026-11-09
-**Builds on:** [ADR-0005](ADR-0005-agent-pipeline.md) (writes run through an actuator, designed in its
-own ADR), [ADR-0002](ADR-0002-run-in-docker.md) (deploys over SSH; the actuator is the one exception to
-"no Docker socket").
+**Status:** Proposed (2026-11-09); its open questions answered by the operator the same day. Nothing
+is built from it until the operator accepts it. **Date:** 2026-11-09 **Builds on:**
+[ADR-0005](ADR-0005-agent-pipeline.md) (writes run through an actuator, designed in its own ADR),
+[ADR-0002](ADR-0002-run-in-docker.md) (deploys over SSH; the actuator is the one exception to "no
+Docker socket").
 
 ## Context
 
@@ -28,6 +27,7 @@ probe was faulty), which the outbound design below makes irrelevant.
 
 A single static binary per platform (macOS and Linux, amd64 and arm64), sharing its protocol and
 signing code with flotillad. Roles, enabled by the host's config:
+
 - **actuator:** runs the host's allowed writes;
 - **connector:** talks to a communication provider (Slack first) on flotillad's behalf, with that
   provider's credentials, so flotillad holds none (decided 4: on the mini, the same instance as the
@@ -38,8 +38,8 @@ signing code with flotillad. Roles, enabled by the host's config:
 The agent dials flotillad and keeps one long-lived connection (TLS, a websocket); flotillad sends
 work down it. No host opens an inbound port, so the Docker VM on the mini, a VPS firewall and the
 DGX's network make no difference. flotillad exposes one endpoint for agents, behind mutual TLS; how
-it is reached is the installation's choice (decided 1). A lost connection means no executions: flotillad marks the host
-unreachable, and an execution in flight becomes `unknown` (ADR-0005).
+it is reached is the installation's choice (decided 1). A lost connection means no executions:
+flotillad marks the host unreachable, and an execution in flight becomes `unknown` (ADR-0005).
 
 ### 3. Identity
 
@@ -54,6 +54,7 @@ unreachable, and an execution in flight becomes `unknown` (ADR-0005).
 flotillad signs every execution request with an Ed25519 key only it holds: execution id, case id,
 host, capability, parameters, the plan's hash, how it was approved (`auto` or the operator), an expiry
 and a nonce. The agent runs it only if:
+
 - the signature verifies;
 - it is not expired, and its execution id was never seen (replay);
 - the host is this host;
@@ -66,6 +67,7 @@ A compromised flotillad still cannot make an agent run anything its host does no
 
 Each host has a reviewed config in git (the operator's private config repo), installed with the
 agent and changed only by a reviewed deploy:
+
 - the capabilities this host allows, each mapped to an **exact command template** with typed,
   validated parameters (enums, patterns, checks such as "the container carries the `restartable`
   label");
@@ -103,10 +105,10 @@ capability with its own rules.
 
 - **Releases** are built by CI for each platform and signed with a key CI alone holds; the agent's
   installer verifies the signature before anything runs.
-- **Install, upgrade, remove** from one place: `flotilla node install|upgrade|remove <host>`, run by the
-  operator over SSH (the keys and the practice ADR-0002 already uses). Install copies the verified
-  binary, creates the user, installs the service (launchd or systemd) and the sudoers lines, writes the
-  host's config and enrols it.
+- **Install, upgrade, remove** from one place: `flotilla node install|upgrade|remove <host>`, run by
+  the operator over SSH (the keys and the practice ADR-0002 already uses). Install copies the
+  verified binary, creates the user, installs the service (launchd or systemd) and the sudoers
+  lines, writes the host's config and enrols it.
 - **Upgrades are pushed** this way in v1: explicit, one host at a time. Self-update (the agent fetches
   signed releases itself) comes later, when there are more hosts; it depends on the release key being
   separate from flotillad.
@@ -131,18 +133,21 @@ capability with its own rules.
 ## Consequences
 
 **Positive:**
+
 - One way to add a host: install the agent, write its allowlist. The same on the mini, the DGX and the
   VPS, and for anyone else running flotilla.
 - No inbound ports on hosts; the reachability problems of each network disappear.
 - A compromised control plane is limited to each host's allowlist.
 
 **Negative:**
+
 - New code with the most privilege in the system; it needs its own tests, review and a security-minded
   e2e before its first write.
 - New moving parts: a certificate authority, two signing keys, an agent endpoint on flotillad.
 - One new dependency: a websocket library for Go (ADR-0003, approved when built).
 
 **Neutral:**
+
 - ADR-0002's actuator exception becomes this agent; nothing in a container holds the Docker socket.
 
 ## Alternatives considered

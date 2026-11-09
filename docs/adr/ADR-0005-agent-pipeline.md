@@ -43,18 +43,21 @@ RFC-0004 §12 lists all 31 decisions.
 ## Consequences
 
 **Positive:**
+
 - One pipeline and one set of rules for every fleet; a new fault is a case kind, not a new design.
-- Every action is bounded by code (registry, policy, actuator), earns its autonomy, and is recorded on
-  its case.
+- Every action is bounded by code (registry, policy, actuator), earns its autonomy, and is recorded
+  on its case.
 - One record per problem: `flotilla case show <id>` is the whole story, and the UI's main screen.
 
 **Negative:**
+
 - New privileged component (the actuator) and new dependencies (`jsonschema`, a vector store, a Slack
   Socket Mode client), each approved when built.
 - More workers to run.
 - Approvals in Slack make the operator's Slack account an approval key, within limits.
 
 **Neutral:**
+
 - ADR-0002, ADR-0003, ADR-0004, RFC-0001 and AGENTS.md rule 2 are amended (RFC-0004 §13).
 
 ## Alternatives considered

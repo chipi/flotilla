@@ -7,6 +7,7 @@
 ## Context
 
 The homelab runs agents in four places, built separately:
+
 - fleetd (Go);
 - the triage fleet (Python);
 - the bugfix fleet (Go chain plus bash and Python leaves);
@@ -50,12 +51,14 @@ inventory and the design.
 ## Consequences
 
 **Positive:**
+
 - One implementation of each shared piece.
 - Fleets become configuration.
 - Every decision is queryable and auditable.
 - The operator learns the machinery by building it.
 
 **Negative:**
+
 - Two languages (Go and Python) at a process boundary.
 - We maintain the agent loop and the UI ourselves.
 - The migration must keep the live triage fleet running throughout.

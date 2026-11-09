@@ -93,7 +93,7 @@ ci-fast: lint test-unit ## What every push must pass (fast feedback, <2min ideal
 	@echo "ci-fast PASS"
 
 .PHONY: ci
-ci: ci-fast test-integration docs-build ## What every merge must pass (full gate)
+ci: ci-fast test-integration docs-lint docs-build ## What every merge must pass (full gate)
 	@echo "ci PASS"
 
 # ---- Docs site (MkDocs Material) ---------------------------------------------
@@ -116,8 +116,20 @@ docs-build: docs-install ## Build static site into ./site (strict — fails on b
 	$(MKDOCS) build --strict --clean
 	@echo "docs built → ./site"
 
+# markdownlint-cli, pinned; a local install of the same version is used when present.
+MARKDOWNLINT ?= $(shell markdownlint --version 2>/dev/null | grep -qx 0.50.0 && echo markdownlint || echo npx --yes markdownlint-cli@0.50.0)
+
+.PHONY: docs-lint
+docs-lint: ## Lint every Markdown file (.markdownlint.json; .markdownlintignore skips imported fleet code)
+	@env -u NODE_OPTIONS $(MARKDOWNLINT) . && echo "docs-lint PASS" || { echo "docs-lint FAIL (make docs-lint-fix fixes most)"; exit 1; }
+
+.PHONY: docs-lint-fix
+docs-lint-fix: ## Apply markdownlint's own fixes; long lines are left to fix by hand
+	@env -u NODE_OPTIONS $(MARKDOWNLINT) --fix . || true
+	@$(MAKE) --no-print-directory docs-lint
+
 .PHONY: docs-validate
-docs-validate: docs-build ## Alias for docs-build (strict catches the issues)
+docs-validate: docs-lint docs-build ## Markdown lint plus the strict build
 	@echo "docs validate OK"
 
 .PHONY: docs-clean

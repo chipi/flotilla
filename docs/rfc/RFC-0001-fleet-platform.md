@@ -4,7 +4,9 @@
 §10 on 2026-11-08. Drafted in agentic-ai-homelab and moved here as flotilla's first RFC.
 **Date:** 2026-11-08
 **Inputs:**
-- [agent-platform-evaluation.md](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/agent-platform-evaluation.md) (agentic-ai-homelab);
+
+- [agent-platform-evaluation.md](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/agent-platform-evaluation.md)
+  (agentic-ai-homelab);
 - a read-only inventory of fleetd, the triage fleet, the bugfix fleet and the daily brief
   (2026-11-08; file and line citations kept in the session notes, summarised in §2);
 - the operator's decisions of 2026-11-08 (§1).
@@ -12,6 +14,7 @@
 ## 1. Context and goals
 
 The homelab already runs agents in four places, built at different times in different ways:
+
 - the **triage fleet** (Fleet 2, live, every 10 minutes);
 - the **bugfix fleet** (Fleet 1, a hand-run chain plus a dormant TypeScript MVP);
 - the **daily brief** (07:00);
@@ -34,13 +37,14 @@ sixth. The operator decided, 2026-11-08:
   2. add the SEO fleet;
   3. remove all fleet code from agentic-ai-homelab.
 
-**Non-goals for this RFC:** the SEO fleet itself (RFC-0003; first numbered RFC-0002, renumbered 2026-11-08), multi-user or multi-tenant use, any
-cloud-hosted part, and adopting a third-party agent framework.
+**Non-goals for this RFC:** the SEO fleet itself (RFC-0003; first numbered RFC-0002, renumbered
+2026-11-08), multi-user or multi-tenant use, any cloud-hosted part, and adopting a third-party agent
+framework.
 
 ## 2. What exists today (inventory summary)
 
 | | fleetd | triage fleet | bugfix fleet | daily brief |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Language | Go, stdlib only, ~1,000 LOC + tests | Python, stdlib only, ~8,200 LOC | Go chain (in fleetd) + bash/Python leaves; TS MVP (~1,700 LOC) mostly unused | Node, no deps, ~190 LOC + Hub libs |
 | Trigger | LaunchDaemon, KeepAlive; a ticker per fleet | fleetd, every 10 min | by hand (`make chain`); fleetd entry disabled | launchd 07:00 (not fleetd) |
 | Prompt lives in | — | code (`triage.py`), hashed as `PROMPT_SHA` | `agents/*.md` and inline in Go | inline in code |
@@ -54,6 +58,7 @@ cloud-hosted part, and adopting a third-party agent framework.
 | Alerts | `fleetd-cycle-failing`, `fleetd-silent` | `glitchtip-sync-failing` | `bugfix-mass-stuck` | `hub-briefing-missing` |
 
 **Implemented more than once:**
+
 - the LLM client: 6 ways;
 - cost accounting: 3;
 - Langfuse: 4;
@@ -66,6 +71,7 @@ cloud-hosted part, and adopting a third-party agent framework.
 - labels and stage: 3 sources of truth.
 
 **Coupling that blocks a clean move:**
+
 - `signal-fleet/deploy/deploy.sh` is the mini's deploy for the **whole** homelab checkout. It pulls,
   runs fleet replays as a gate, and rolls everything back on failure.
 - The Hub reads the triage fleet's credentials file, ledgers and queue (`hub-sources.js`,
@@ -109,7 +115,7 @@ decisions table are superseded by cases (RFC-0004 §3.5); a job's stage now caps
 autonomy.*
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | **Fleet** | a group of jobs with one purpose and one owner: `triage`, `bugfix`, `seo`, `ops` |
 | **Job** | one declared unit of work in a fleet: trigger, inputs, steps, output |
 | **Run** | one execution of a job: start, end, status, cost, model, version of the spec |
@@ -126,7 +132,7 @@ autonomy.*
 Three layers, kept apart:
 
 | Layer | Where | Example |
-|---|---|---|
+| --- | --- | --- |
 | **Spec** (what a fleet is) | the repo, `fleets/<fleet>/*.yaml`, plus playbooks next to them | jobs, triggers, steps, tools, gates, outputs, stage, budget |
 | **Config** (this installation) | on the host, `~/.config/flotilla/config.yaml` plus secrets files (mode 600) | LiteLLM URL and keys, Grafana and GlitchTip URLs, GitHub App, repo maps, site lists, notification targets |
 | **State** (what happened) | on the host, `~/.local/share/flotilla/` | the control-plane database, fleet data (for example Parquet), run artefacts |
@@ -159,7 +165,7 @@ spec at load and in CI. *(Amended by ADR-0005: specs are validated by hand-writt
 
 ## 6. Architecture
 
-```
+```text
             UI (small web app)      CLI (flotilla …)      MCP server
                     \                    |                   /
                      +------ control-plane API (HTTP) ------+
@@ -181,6 +187,7 @@ spec at load and in CI. *(Amended by ADR-0005: specs are validated by hand-writt
 
 **Control plane, `flotillad`.** It grows from fleetd, which already owns scheduling, budgets, stage,
 STOP, process-group timeouts and metrics.
+
 - **Registry:** reads the specs and validates them against the schema.
 - **Scheduler:** fires triggers (`every`, `cron`, events: a Grafana alert, a deploy, a manual run).
 - **Runner:** starts each run as a separate process (`flotilla-run`). A crashed or hung job cannot
@@ -198,6 +205,7 @@ checks scope (which site, which repo, which time range) and caps the result size
 Every step is traced to Langfuse with the spec and playbook versions.
 
 **Interfaces:**
+
 - **CLI:** `flotilla status`, `flotilla run <job> [--dry-run]`, `flotilla pause <fleet>`,
   `flotilla ledger <query>`, `flotilla approve <id>` (operator only).
 - **UI:** fleets and jobs, run history, the ledger, the approval queue (approve or reject with a
@@ -208,6 +216,7 @@ Every step is traced to Langfuse with the spec and playbook versions.
   - It cannot approve. It runs over the tailnet, with an identity per caller.
 
 **State store.** SQLite (one file, transactional, easy to back up) for:
+
 - runs;
 - decisions (the ledger);
 - proposals and approvals;
@@ -222,7 +231,7 @@ files. The control plane stores references to it, not copies.
 One table of decisions, the same shape for every fleet:
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `id`, `fleet`, `job`, `run_id` | where it came from |
 | `subject` | what it is about: an alert fingerprint, a GitHub issue, a page URL, a day |
 | `dedup_key` | the key that makes a repeat recognisable (fingerprint, group key, finding key) |
@@ -242,7 +251,7 @@ brings no stack of its own; it uses the same conventions so the existing dashboa
 skills see it without special cases.
 
 | Signal | What flotilla emits | Where it lands |
-|---|---|---|
+| --- | --- | --- |
 | **Metrics** | one family per platform with stable labels (`fleet`, `job`, `stage`, `outcome`, `model`, plus `service="flotilla"`, `environment`, `instance`). It replaces `fleetd_*`, `signal_fleet_*`, `bugfix_fleet_*` and `hub_briefing_*`. Covers runs by outcome, run duration, steps and tool calls, gate verdicts, decisions by kind, queue depth and oldest pending age, spend and tokens per fleet and model, budget left, and `flotilla_job_last_success_timestamp`. | VictoriaMetrics |
 | **Logs** | structured JSON lines with `service`, `fleet`, `job`, `run_id`, `trace_id`, `event`; one line per run start and end, per decision, per approval; no secrets, no full prompts | VictoriaLogs (through Alloy, like other services) |
 | **Traces** | OpenTelemetry spans: run → step → tool call / LLM call / gate / output, with the run's `trace_id` in its logs and ledger rows | VictoriaTraces (OTLP to Alloy) |
@@ -256,6 +265,7 @@ The ledger is not an observability signal. It is the platform's record of decisi
 signals above point into it (`run_id`, `trace_id`).
 
 The existing skills learn flotilla as a project:
+
 - `o11y-review` gets a `flotilla` profile;
 - `deploy-verify` checks it after a release;
 - `triage-fleet-review` reads its ledger through the API instead of TSV files over ssh.
@@ -363,8 +373,8 @@ Each phase leaves everything working. The triage fleet never stops.
 3. **The UI:** served by the Go binary, with no separate frontend build. **Accepted.**
 4. **The daily brief:** **local models only**; the cloud fallback is dropped.
 5. **The reference corpora with production payloads:** **moved to the private `fleet-eval-data`
-   repo**, not into flotilla. agentic-ai-homelab's public history is **not scrubbed** (operator, 2026-11-08: "These are not
-   super sensitive information").
+   repo**, not into flotilla. agentic-ai-homelab's public history is **not scrubbed** (operator,
+   2026-11-08: "These are not super sensitive information").
 6. **License:** **MIT.**
 7. **Docs site:** like every other project here, MkDocs Material built strict and published to
    GitHub Pages.

@@ -23,7 +23,7 @@ fleet in `shadow` beside fleetd first, then takes over.
 ## Steps
 
 | # | Step | Done when |
-|---|---|---|
+| --- | --- | --- |
 | 2.1 | **flotillad** (Go, from fleetd): the spec registry (a job spec wraps today's command), the scheduler with STOP, pause, stage and budget, the store (runs, events, controls), the API and the CLI. Runs go to a worker; flotillad holds no fleet secrets. | unit tests; `flotilla status` and `flotilla run` work against a local worker |
 | 2.2 | **Worker** (Python, stdlib): a small HTTP service inside each fleet's container. It runs the job's command with that fleet's secrets and reports the result. | integration test: flotillad + worker + a stub cycle |
 | 2.3 | **Images and compose**: `flotillad`, `worker-triage`, the egress proxy. Hardened as ADR-0002 says. Built in CI, tagged `sha-<7>`. | e2e in the dev engine with stub services |
@@ -38,7 +38,7 @@ The bugfix fleet stays on fleetd (it is disabled there today) until phase 6.
 ## Progress (2026-11-08)
 
 | Step | State | Evidence |
-|---|---|---|
+| --- | --- | --- |
 | 2.1 flotillad | done | `make ci-fast`: ci-fast PASS (unit tests for spec, store, sched, api, worker client, telemetry) |
 | 2.2 worker | done | 12 worker tests OK; two mutants (inherited environment, leader-only kill) fail them |
 | 2.3 images, compose | done | images `sha-75a7491` on ghcr; `deploy/e2e/run.sh`: E2E PASS, 26 checks |
@@ -49,6 +49,7 @@ The bugfix fleet stays on fleetd (it is disabled there today) until phase 6.
 | 2.8 switch | not started | needs the comparison, the fleet session's scripts, and where the live state lives (below) |
 
 **Decided on the way:**
+
 - **State and secrets are Docker volumes, not host folders.** Every stack on the mini mounts host
   folders read-only, and the VM shares `/Users` over sshfs on the lima SSH connection whose failures
   took production down before. `deploy/mini/secrets.sh` copies the secrets into volumes.
@@ -58,6 +59,7 @@ The bugfix fleet stays on fleetd (it is disabled there today) until phase 6.
 **The state mirror (agreed with the fleet session, 2026-11-08; to build before 2.8).** After the
 switch the live state is a volume; the Hub and the fleet session's weekly freeze, weekly check and
 filing gate keep reading `~/signal-fleet` on the host, kept current by a host-side mirror:
+
 - a launchd job under the operator account, every 2 min; it copies only when no triage run is in
   flight and the last run ended after its stamp (so never mid-write);
 - it copies `results/` (dispositions.tsv, filed.tsv, probes/ with capture names unchanged), `queue/`
@@ -100,11 +102,16 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
    windows, the fleet session asks for the map then.*
 4. flotilla's deploy appends `results/deploys.tsv` with `flotilla` in the 7th field, a rollback too
    (the header stays as it is; the fleet session reads the field by position). *Built:
-   `deploy/mini/triage_hooks.sh`, called by `deploy.sh`; the log is `TRIAGE_DEPLOY_LOG`, mirror-test's
-   until the switch, since the live fleet still runs homelab code.*
-4a. flotilla's deploy runs the filing gate as homelab's `gates.sh` does:
-   `SF_CHECKOUT=~/flotilla/repo python3 ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py PREV NOW`,
-   PREV and NOW flotilla commits. A FAIL rolls back unless `SF_FILING_GATE_ACCEPT` names a reason.
+   `deploy/mini/triage_hooks.sh`, called by `deploy.sh`; the log is `TRIAGE_DEPLOY_LOG`,
+   mirror-test's until the switch, since the live fleet still runs homelab code.*
+4a. flotilla's deploy runs the filing gate as homelab's `gates.sh` does, with PREV and NOW
+   flotilla commits:
+
+   ```bash
+   SF_CHECKOUT=~/flotilla/repo python3 ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py PREV NOW
+   ```
+
+   A FAIL rolls back unless `SF_FILING_GATE_ACCEPT` names a reason.
    *Built: it runs before the pull, so a refused deploy changes nothing (the checkout goes back to
    the deployed commit); a rollback skips it. `deploy/mini/test_triage_hooks.py`: 13 tests, four
    mutants killed.*
@@ -122,7 +129,8 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
 
 ## Decisions taken
 
-- **Specs and config are YAML**, the SQLite driver, the trace exporter and the base images: [ADR-0003](../adr/ADR-0003-dependencies-and-images.md) (operator, 2026-11-08).
+- **Specs and config are YAML**, the SQLite driver, the trace exporter and the base images:
+  [ADR-0003](../adr/ADR-0003-dependencies-and-images.md) (operator, 2026-11-08).
 
 ## Not covered here
 

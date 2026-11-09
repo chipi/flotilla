@@ -1,11 +1,11 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Accepted → [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (operator, 2026-11-09), revision 8.
-Reviewed by an independent advisor in seven passes on 2026-11-09 (§15).
-**Date:** 2026-11-09
-**Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
-knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§13).
+**Status:** Accepted → [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (operator, 2026-11-09),
+revision 8. Reviewed by an independent advisor in seven passes on 2026-11-09 (§15). **Date:**
+2026-11-09 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory,
+external knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§13).
 **Inputs:** the operator, 2026-11-09:
+
 - the core pieces must serve every fleet to come, not only triage;
 - fleets must **act**, not only report, and be trustworthy while the operator is away;
 - the job that finds a problem need not be the job that fixes it: a chain through the ledger;
@@ -20,23 +20,23 @@ RFC-0003 is reserved for the digital marketing fleet's first use case, SEO.
 ## 1. The fleets it must serve
 
 | Fleet | What it is | Finds | Does |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Triage** (live today) | first look at every alert and error | what is noise, what is a bug, what is an operational fault | dismisses; hands a bug to bugfix and a fault to Ops |
 | **Ops** | **the SRE team in action**, and the largest fleet: it watches the operational estate and fixes what it can | failed backups, disk filling, stuck jobs, memory growth, config faults, … (§8.2) | reviews, remediates, escalates; writes the daily brief |
 | **Digital marketing** | the sites' reach and growth; more use cases will follow | pages that could rank better (SEO); which posts bring visitors who convert (attribution) | SEO: a PR; attribution: a report |
 | **Bugfix** | code fixes | bugs handed over by triage | reproduces, fixes, opens a PR |
 
-Ops is open-ended: each new kind of fault is a new **case kind** (a playbook and capabilities), not a
-new fleet. Digital marketing grows the same way.
+Ops is open-ended: each new kind of fault is a new **case kind** (a playbook and capabilities), not
+a new fleet. Digital marketing grows the same way.
 
 **Non-goals:** irreversible actions without the operator (deleting data, schema changes); agents
 that write their own prompts, memory or capabilities; a workflow engine (§14).
 
 ## 2. The pipeline
 
-Every problem flotilla handles is a **case**. A case is detected, diagnosed, handed to the job that can
-fix it, planned, approved where needed, executed, checked, and closed, and every step is recorded on
-it. One case, one timeline: `flotilla case show <id>`.
+Every problem flotilla handles is a **case**. A case is detected, diagnosed, handed to the job that
+can fix it, planned, approved where needed, executed, checked, and closed, and every step is
+recorded on it. One case, one timeline: `flotilla case show <id>`.
 
 ```mermaid
 flowchart LR
@@ -60,7 +60,7 @@ flowchart LR
 ```
 
 | Stage | Runs where | Does |
-|---|---|---|
+| --- | --- | --- |
 | **Detect** | a worker, code (for triage today: its cycle) | turns raw signals into cases. A signal whose keys match an open case, or a case closed as dismissed within the recurrence window, is attached to it. A signal on the target of an execution inside its verify window is attached (`caused_by`) and counts against verification; after the window it is a new case. After any close other than dismissed (verified, resolved itself, a shadow plan recorded), a recurrence is a new case linked `recurrence_of`; the recurrence rule counts only recurrences after an **executed** fix (closed verified, or escalated as not verified or failed) |
 | **Diagnose** | a worker with read capabilities (triage's also has the low-risk writes) | decides: dismiss, report, hand over, escalate |
 | **Act** | an acting worker | re-checks the problem by code with fresh numbers, then plans from its capabilities, or closes the case as resolved itself |
@@ -97,7 +97,7 @@ what the agent's output can do:
 ## 3. The building blocks
 
 | Block | What it is | Replaces |
-|---|---|---|
+| --- | --- | --- |
 | **Harness** | the one loop that runs a model step | ADR-0004's harness, with run shapes and output types |
 | **Context** | what the model reads, built by code in layers | ADR-0004's context, with one recall layer |
 | **Recall** | everything an agent can look up: what flotilla recorded and what is plugged in | ADR-0004's memory **and** external knowledge |
@@ -123,17 +123,17 @@ what the agent's output can do:
 
 ### 3.2 Context
 
-Layers, each with a character budget and a visible cut marker: **playbook**, **case** (its timeline so
-far, as structured event fields only: never a model's `reason` text, so an acting agent never reads the
-diagnosing agent's prose), **recall** (§3.3), **capability results**. Recall is wrapped as data with its source, version
-and trust. The exact text sent is stored.
+Layers, each with a character budget and a visible cut marker: **playbook**, **case** (its timeline
+so far, as structured event fields only: never a model's `reason` text, so an acting agent never
+reads the diagnosing agent's prose), **recall** (§3.3), **capability results**. Recall is wrapped as
+data with its source, version and trust. The exact text sent is stored.
 
 ### 3.3 Recall
 
 One layer an agent consults, with two origins:
 
 | Origin | What | Trust | Lookup |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **recorded by flotilla** | past cases and their outcomes, the operator's feedback, notes (active only once the operator activates them) | trusted (notes: only active ones) | **exact**, by key only: this target's history, this kind's recurrences; structured fields only, never a model's earlier prose |
 | **plugged in** | each project's docs, runbooks and ADRs (git); vendor docs (HTTP); other MCP servers | per source and path, from config (§2.1) | search: path maps (a service to its runbook), full-text, semantic |
 
@@ -145,16 +145,16 @@ One layer an agent consults, with two origins:
   fleet data.
 - A **project** is a config entity: its names in signals, its issue repo, its recall sources. A case
   about a project gets that project's sources, among those its fleet's spec declares.
-- **Git sources** are refreshed on a schedule by a `knowledge-refresh` worker (git, egress to GitHub),
-  versioned by commit. **Live reads** (HTTP, MCP) are recorded capability calls, frozen with the run for
-  model replay; MCP sources call only the tools the config lists, with the server's own read-only
-  credential.
-- **Semantic search:** embeddings through the model client's `/embeddings` call from a locally served
-  model (not checked yet: that the DGX or Ollama serves one today); the index records the model and its
-  version; one index per trust tier, trusted chunks first; a query is a recorded capability call
-  returning chunk ids and the index version.
-- **Measurements are fleet data, not recall:** disk use, Search Console rows, the marketing fleet's post
-  register. Read through capabilities.
+- **Git sources** are refreshed on a schedule by a `knowledge-refresh` worker (git, egress to
+  GitHub), versioned by commit. **Live reads** (HTTP, MCP) are recorded capability calls, frozen
+  with the run for model replay; MCP sources call only the tools the config lists, with the server's
+  own read-only credential.
+- **Semantic search:** embeddings through the model client's `/embeddings` call from a locally
+  served model (not checked yet: that the DGX or Ollama serves one today); the index records the
+  model and its version; one index per trust tier, trusted chunks first; a query is a recorded
+  capability call returning chunk ids and the index version.
+- **Measurements are fleet data, not recall:** disk use, Search Console rows, the marketing fleet's
+  post register. Read through capabilities.
 
 ### 3.4 Capabilities
 
@@ -178,8 +178,8 @@ limits: {per_target_per_day: 2}
   harness derives a run's taint from which reads entered its context, and policy reads that flag.
 - **Writes** go through policy (§5.1), every one, including low-risk writes at auto. Today's outputs
   are low-risk writes: an issue or comment on GitHub, a comment on or the resolution of a GlitchTip
-  issue, a Grafana annotation; triage's filing, which runs right after its gates today, moves behind the
-  policy call (phase 3 step 5).
+  issue, a Grafana annotation; triage's filing, which runs right after its gates today, moves behind
+  the policy call (phase 3 step 5).
 - **Two enforcement points keep one registry safe:** a spec that lists a write among a harness's loop
   capabilities is refused at load, and a `plan` output accepts only writes; and a worker whose role
   holds no write credential cannot execute a write, whatever the registry names.
@@ -238,26 +238,27 @@ stateDiagram-v2
   condition clears (the lock released, the hold or stand-down ended) or after a backoff. The
   `handed_over` stuck timer counts from the first hand-over, so a long hold surfaces as an escalation.
 - **The recurrence rule fires at hand-over, before any plan:** a case linked `recurrence_of` that
-  reaches the threshold (by default 3 in 7 days) goes to `escalated`, not to another fix. It counts only
-  recurrences after an executed fix: closes as `shadow, plan recorded` or `resolved itself` link the new
-  case but do not count, so v1's daily shadow cases never trip it.
+  reaches the threshold (by default 3 in 7 days) goes to `escalated`, not to another fix. It counts
+  only recurrences after an executed fix: closes as `shadow, plan recorded` or `resolved itself`
+  link the new case but do not count, so v1's daily shadow cases never trip it.
 - **Approval is an event, not a wait:** the planning run ends at `awaiting_approval`; flotillad holds
   the case and the per-target lock until the approval or its expiry; an approval starts a new execute
   run (§7). An approval given after the problem went away ends as `resolved itself`.
 - **Dedup:** the keys are computed by code from the kind and the canonical target, and are
-  authoritative; one open case per canonical key, so a storm is one case. Detect matches a signal's keys
-  against open cases and against cases closed as dismissed within the recurrence window. The diagnosing model's suggestion of which open case
-  a signal belongs to is recorded in shadow only; switching to it is a behaviour change (AGENTS.md
-  rule 3) with a named criterion, and even then the model chooses only among cases code already
-  considers candidates.
+  authoritative; one open case per canonical key, so a storm is one case. Detect matches a signal's
+  keys against open cases and against cases closed as dismissed within the recurrence window. The
+  diagnosing model's suggestion of which open case a signal belongs to is recorded in shadow only;
+  switching to it is a behaviour change (AGENTS.md rule 3) with a named criterion, and even then the
+  model chooses only among cases code already considers candidates.
 - **Holders and leases:** a case is held by one job at a time (flotillad holds it while it awaits
   approval); flotillad starts that job and hands it the lease, which the job renews while it runs; an
   expired lease returns the case, unless an execution is open (then the check resumes, the action never
   re-runs).
 - **The per-target lock:** taken by policy, atomically, when it admits a plan (auto or propose), and
   held until the case is checked; a deferred plan never takes it. One case at a time touches a
-  container, a mount, a file, across kinds and fleets. It covers flotilla only: the homelab's own scheduled jobs
-  (the nightly backup, the weekly prune) are kept out by each capability's preconditions.
+  container, a mount, a file, across kinds and fleets. It covers flotilla only: the homelab's own
+  scheduled jobs (the nightly backup, the weekly prune) are kept out by each capability's
+  preconditions.
 - **Caps:** at most N open cases per kind and per host; an alert on case age.
 - **Hand-overs are the case moving between jobs** (operator, 2026-11-09: through the ledger only). A
   bug is a `code_bug` case; triage still files the GitHub issue, where the operator sees bugs, as the
@@ -270,7 +271,7 @@ stateDiagram-v2
 ### 3.6 Workers per role
 
 | Worker | Holds | Jobs |
-|---|---|---|
+| --- | --- | --- |
 | `triage` | read tokens; the low-risk writes (GitHub issues and comments, GlitchTip comments and resolution, Grafana annotations) | triage; escalation issues for every fleet |
 | `ops-read` | read tokens, query templates | Ops monitors, reviews, the brief |
 | `ops-act-host` | the actuator key for each host it may act on | Ops remediation on hosts |
@@ -288,7 +289,7 @@ its kind, a check due). A check is an event a timer raises: verify after minutes
 Fleets send to a **channel**; the installation's config routes each channel to a **provider**:
 
 | Channel | Carries |
-|---|---|
+| --- | --- |
 | `alerts` | an agent escalated (platform health stays with the Grafana rules, so nothing arrives twice) |
 | `approvals` | a proposal waiting, with **Approve** and **Reject** |
 | `notifications` | what was done; reports |
@@ -330,9 +331,10 @@ running `docker image/system prune` stands, with no exemption.
 ### 5.1 Policy (flotillad)
 
 For each planned write, in order; any "no" refuses, with the reason recorded:
-1. **The registry:** the capability exists, its parameters are in scope, it is declared `for_kinds` the
-   case's kind, its target equals the case's target (the model cannot retarget), and the plan cites
-   the re-check numbers that exist in the record.
+
+1. **The registry:** the capability exists, its parameters are in scope, it is declared `for_kinds`
+   the case's kind, its target equals the case's target (the model cannot retarget), and the plan
+   cites the re-check numbers that exist in the record.
 2. **Autonomy, lowest wins:** the job's stage (`shadow` → shadow; `propose` → at most propose; `live`
    → the earned level); the capability's earned level (§5.2); the target host's ceiling; a tainted run
    → at most propose; the autonomy freeze → at most propose.
@@ -364,7 +366,7 @@ stateDiagram-v2
 ### 5.3 Guardrails against runaway behaviour
 
 | Risk | What stops it |
-|---|---|
+| --- | --- |
 | **Loops** (a fix fires an alert that becomes a new fix) | `caused_by` attaches follow-on signals to the execution; the per-target lock; per-host actions per hour; recurrence: by default the same kind and target 3 times in 7 days escalates to an issue about the cause, a kind may override up to 10 in 7 days, never disabled, by a reviewed spec change; failed or unknown demotes the capability |
 | **Cascades across hosts** | a **platform-wide cap** on executions per hour; a **circuit breaker**: N failed or unknown executions in an hour drop every auto capability to propose |
 | **Storms** | one open case per key; caps on open cases per kind and host; a **host incident rule**: more than N new cases on one host in M minutes pauses auto on that host and escalates |
@@ -408,8 +410,8 @@ sequenceDiagram
 ```
 
 Verify needs both the actuator's "done" and the target's state improving within the window. An
-unknown result holds the target until the operator clears it. Every execution emits an ops event and a
-Grafana annotation.
+unknown result holds the target until the operator clears it. Every execution emits an ops event and
+a Grafana annotation.
 
 ## 8. The fleets, end to end
 
@@ -440,7 +442,7 @@ sequenceDiagram
 ### 8.2 Ops: the SRE team
 
 | Job | Worker | Shape |
-|---|---|---|
+| --- | --- | --- |
 | monitors and reviews (e.g. the daily Postgres review) | `ops-read` | once per run: report + findings + new cases |
 | remediation on hosts | `ops-act-host` | per case: plan |
 | config changes | `ops-act-repo` | per case: structured edit as a PR |
@@ -449,7 +451,7 @@ sequenceDiagram
 Case kinds, illustrative (each fleet spec sets its own playbooks, limits and autonomy):
 
 | Case kind | Write capability | Check |
-|---|---|---|
+| --- | --- | --- |
 | `failed_backup` | `backup.rerun_observability` | a fresh backup |
 | `disk_pressure` | delete logs older than N in declared paths (Docker pruning stays with the scheduled script) | free space above the threshold |
 | `stuck_job` | stop it, rerun it | it completes |
@@ -488,7 +490,7 @@ apply it, and the check is the alert clearing.
 The pipeline mapping only; each use case's own design is its RFC (RFC-0003 for SEO).
 
 | Use case | Detect | Diagnose / act | Writes | Check |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **SEO content** | Search Console: rank 8-15 with rising impressions and low clicks; drops | analyst diagnoses; a writer job makes a structured edit within the change type's scope | PR on the site's repo | the site builds; outcome at 14 and 28 days against unchanged pages; a "hurt" opens a revert PR |
 | **Traffic attribution** | Umami referrers and campaign tags, matched to the post register; conversions where the site sends them (humancopilot.eu: `cta-book-call`, `cta-email`, `outbound`) | analyst compares posts by platform, topic, timing | a report in the brief | — |
 
@@ -513,7 +515,7 @@ fleet's own key; its inputs and outputs are recorded; it reads the issue body as
 ## 9. Review: do the building blocks hold?
 
 | | Triage | Ops review | Ops remediation | Ops config | Brief | SEO | Attribution | Bugfix |
-|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Worker | triage | ops-read | ops-act-host | ops-act-repo | ops-read | marketing | marketing | bugfix |
 | Harness shape | per case | once | per case | per case | once | per case | once | external |
 | Output | decision | prose | plan | plan (edit) | prose | decision → plan (edit) | prose | diff |
@@ -541,8 +543,8 @@ and a Grafana annotation; the `notifications` channel posts it to Slack.
   then auto.
 - **Prerequisites:** the actuator's ADR accepted before the first write; the `ops-act-host` worker image.
 - **Kept as code, not proven by v1:** the host incident rule, the per-target lock (one kind and one
-  write cannot exercise them), and loop bounding (`caused_by`, the hourly cap: a backup rerun fires no
-  alerts; the first restart-class write, `memory_growth`, brings that proof with it).
+  write cannot exercise them), and loop bounding (`caused_by`, the hourly cap: a backup rerun fires
+  no alerts; the first restart-class write, `memory_growth`, brings that proof with it).
 - **Not in v1:** triage as producer (phase 3 steps 2 to 6); the brief on flotilla (RFC-0001 phase 4);
   recall (no model in v1 reads any); the reviewer agent; config-change PRs; `cost_spike`; the marketing
   fleet; actuators on the DGX and the production VPS.
@@ -555,7 +557,7 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
 ## 12. Decisions (operator, 2026-11-09)
 
 | # | Decision | Chosen |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Harness run shapes | one harness, *per case* and *once* |
 | 2 | Model-written queries | raw read-only queries for Ops, through the investigation tool: **decided later** with it |
 | 3 | Output validation | the `jsonschema` package |
@@ -618,11 +620,11 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
 - **flotillad executes writes itself.** The control plane would hold every fleet's credentials.
   Rejected.
 - **Autonomy per job only (the stage).** Too coarse. Kept as the cap.
-- **A workflow engine (Temporal, Airflow) or a DAG runtime.** Temporal adds a cluster, a database and an
-  SDK, and would hold the state the cases should hold; Airflow is poor at waiting hours for a human. The
-  case lifecycle with a transition table gives the same guarantees in flotillad. Revisit only if a job
-  needs fan-out and fan-in with retries inside it; then a declared step graph in the job spec, still no
-  engine.
+- **A workflow engine (Temporal, Airflow) or a DAG runtime.** Temporal adds a cluster, a database
+  and an SDK, and would hold the state the cases should hold; Airflow is poor at waiting hours for a
+  human. The case lifecycle with a transition table gives the same guarantees in flotillad. Revisit
+  only if a job needs fan-out and fan-in with retries inside it; then a declared step graph in the
+  job spec, still no engine.
 - **Separate memory and knowledge blocks; separate tools and actions; separate decisions, items and
   executions.** Each pair shares its rules; kept apart, every rule would be written twice. Merged.
 - **The brief as a digest of the channels.** Rejected by the operator: the brief will grow beyond what
@@ -649,15 +651,16 @@ thresholds and capabilities; the actuator's own ADR; model-written commands (dec
   lifecycle in place of an engine, and consolidated the blocks: cases, one capability registry,
   recall, one trigger model; the brief stays its own job. Slack approvals stay, wherever approvals are
   needed.
-- **Advisor pass 5 (on revision 6):** the consolidation is sound with fixes. Revision 7: the lifecycle
-  gains the shadow path, deferral distinct from escalation, approval as an event (no run waits),
-  stale approvals closing as resolved, events on closed cases with the two recurrence rules, the way
-  back from escalated and the re-check contradicting the diagnosis, and a stuck timer on `detected`;
-  cases carry several keys; recall drops past briefs and states ADR-0004's rules still apply; the case
-  layer shows structured fields only; the registry's two enforcement points; evaluation restored as a
-  block; "unknown holds the target", the post-window new-case rule, lease renewal, urgency and the
-  step 5 compatibility promises restored; detect placed in the worker; the v1 threshold mismatch fixed
-  and its prerequisites named; RFC-0001 §4 and §6.1 added to the docs to amend.
+- **Advisor pass 5 (on revision 6):** the consolidation is sound with fixes. Revision 7: the
+  lifecycle gains the shadow path, deferral distinct from escalation, approval as an event (no run
+  waits), stale approvals closing as resolved, events on closed cases with the two recurrence rules,
+  the way back from escalated and the re-check contradicting the diagnosis, and a stuck timer on
+  `detected`; cases carry several keys; recall drops past briefs and states ADR-0004's rules still
+  apply; the case layer shows structured fields only; the registry's two enforcement points;
+  evaluation restored as a block; "unknown holds the target", the post-window new-case rule, lease
+  renewal, urgency and the step 5 compatibility promises restored; detect placed in the worker; the
+  v1 threshold mismatch fixed and its prerequisites named; RFC-0001 §4 and §6.1 added to the docs to
+  amend.
 - **Advisor pass 6 (on revision 7):** every fifth-pass finding landed. Revision 8 adds what it found
   left: `detected → handed_over` for a code detector (v1's own path), a recurrence-rule escalation that
   fires at hand-over, the rule for closes other than dismissed, the lock taken by policy atomically,
