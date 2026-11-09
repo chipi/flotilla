@@ -1,16 +1,18 @@
 # RFC-0004 — The agent pipeline: from signal to verified action
 
-**Status:** Draft for discussion. Nothing is built from it until the operator accepts it.
+**Status:** Draft, revision 2. Nothing is built from it until the operator accepts it. Revision 1
+was reviewed by an independent advisor on 2026-11-09; revision 2 answers that review (§13).
 **Date:** 2026-11-09
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (harness, context, memory, external
-knowledge, evaluation). This RFC extends it; it does not replace it.
+knowledge, evaluation). This RFC extends it and names the ADRs it would amend (§11).
 **Inputs:** the operator, 2026-11-09:
 - the core pieces must serve every fleet to come, not only triage;
 - fleets must **act**, not only report, and be trustworthy while the operator is away;
-- the fleet that finds a problem need not be the fleet that fixes it: a chain through the ledger;
+- the job that finds a problem need not be the job that fixes it: a chain through the ledger;
 - knowledge is both what flotilla builds and what already exists: each project's own docs and
   runbooks;
-- actions run on standard tooling.
+- actions run on standard tooling;
+- Home Assistant is not part of flotilla (a temporary phone-push hack only).
 
 RFC-0003 is reserved for the digital marketing fleet's first use case, SEO.
 
@@ -18,253 +20,318 @@ RFC-0003 is reserved for the digital marketing fleet's first use case, SEO.
 
 | Fleet | What it is | Finds | Does |
 |---|---|---|---|
-| **Triage** (live today) | first look at every alert and error | what is noise, what is a bug, what is an operational fault | dismisses, files an issue, or hands the fault to Ops |
-| **Ops** | **the SRE team in action**, and the largest fleet: it watches the operational estate and fixes what it can | disk filling, OOM loops, config faults, stuck jobs, failed backups, expiring certificates, cost spikes, … (§5.2) | reviews, remediates, or escalates |
+| **Triage** (live today) | first look at every alert and error | what is noise, what is a bug, what is an operational fault | dismisses; hands a bug to bugfix and a fault to Ops |
+| **Ops** | **the SRE team in action**, and the largest fleet: it watches the operational estate and fixes what it can | disk filling, failed backups, stuck jobs, memory growth, config faults, … (§6.2) | reviews, remediates, escalates; writes the daily brief |
 | **Digital marketing** | the sites' reach and growth; more use cases will follow | pages that could rank better (SEO); which posts bring visitors who convert (attribution) | SEO: a PR; attribution: a report |
-| **Bugfix** | code fixes | bugs filed by triage | reproduces, fixes, opens a PR |
+| **Bugfix** | code fixes | bugs handed over by triage | reproduces, fixes, opens a PR |
 
-The daily brief is a job of the Ops fleet (`ops/daily-brief`, RFC-0001): the operator's morning view
-of what every fleet did.
-
-The Ops fleet is open-ended. Each new kind of fault is a new **item kind** with its playbook and
-catalogue actions, not a new fleet. It is expected to grow the most. The digital marketing fleet works
-the same way: SEO content is its first use case, and later ones are new item kinds in it.
+Ops is open-ended: each new kind of fault is a new **item kind** (a playbook and catalogue actions),
+not a new fleet. Digital marketing grows the same way.
 
 **Non-goals:** irreversible actions without the operator (deleting data, schema changes); agents
-that write their own prompts, memory or actions; model-written shell commands.
+that write their own prompts, memory or actions; model-written shell commands or queries.
 
 ## 2. The pipeline
-
-Every use case is a path through the same stages.
 
 ```mermaid
 flowchart LR
     S[(Sources<br/>alerts, logs, metrics,<br/>Search Console, GitHub)] --> D[Detect<br/><i>code</i>]
-    D --> G[Diagnose<br/><i>agent, read-only</i>]
-    K[(Knowledge<br/>ours + each project's<br/>docs and runbooks)] -.-> G
-    M[(Memory<br/>past decisions,<br/>outcomes, notes)] -.-> G
-    G --> L[(Ledger<br/>decisions and<br/>work items)]
-    L --> A[Act<br/><i>agent, picks from<br/>the catalogue</i>]
-    A --> P{Policy<br/><i>code</i>}
-    P -- auto --> X[Execute<br/><i>actuator or PR</i>]
+    L[(Ledger<br/>decisions, work items,<br/>executions)] -. open items, recent executions .-> D
+    D --> G[Diagnose<br/><i>agent, read-only worker</i>]
+    K[(Knowledge)] -.-> G
+    M[(Memory)] -.-> G
+    G --> L
+    L -- on_item trigger --> A[Act<br/><i>agent, acting worker:<br/>re-check, then plan</i>]
+    A --> P{Policy<br/><i>flotillad, code</i>}
+    P -- auto --> X[Execute<br/><i>acting worker:<br/>actuator or PR</i>]
     P -- propose --> O([Operator<br/>approves])
     O --> X
-    P -- refuse --> E[Escalate]
-    X --> V[Verify<br/><i>code</i>]
+    P -- refuse --> L
+    X --> L
+    L -- timer --> V[Verify<br/><i>code</i>]
     V --> L
-    V -- failed --> E
-    E --> L
-    L --> R[Report<br/>daily brief]
-    L -.-> M
+    L -- days later --> Oc[Outcome<br/><i>code</i>]
+    Oc --> M
+    L --> R[Report<br/><i>daily brief</i>]
 ```
 
-| Stage | Who | In | Out |
+| Stage | Runs where | In | Out |
 |---|---|---|---|
-| **Detect** | code | raw signals | candidate cases (deduped, classified) |
-| **Diagnose** | agent, read-only tools | one case, its context | a **decision**: dismiss, report, file an issue, hand over, escalate |
-| **Ledger** | flotillad | decisions | decisions, and **work items** for the next fleet |
-| **Act** | agent | one work item | an **action plan** from the catalogue |
-| **Policy** | code | the plan | run now, ask the operator, or refuse |
-| **Execute** | an actuator (host actions) or a PR (repo changes) | the approved plan | what was done |
-| **Verify** | code | the target's state after | passed or failed, recorded |
-| **Report** | the brief | the ledger | what was handled, what waits, what was escalated |
+| **Detect** | a worker, code | raw signals, and the ledger's open items and recent executions | candidate cases; a signal on a target with an open item or a recent execution is linked to it (`caused_by`), never a new case |
+| **Diagnose** | a **read-only** worker, agent | one case and its context | a **decision**; a work item when something must be done |
+| **Act** | an **acting** worker, agent | one work item, plus a code re-check of the problem with fresh numbers | an **action plan** from the catalogue, or "resolved itself" |
+| **Policy** | **flotillad**, code | the plan | run, ask the operator, or refuse (§4.2); it decides and records, it never executes |
+| **Execute** | the acting worker, code | the approved plan, with an execution id | the call to the actuator (host actions) or to GitHub (repo changes) |
+| **Verify** | flotillad's timer starts a code check in a worker | the execution | passed / failed / unknown, within minutes |
+| **Outcome** | a daily code job | executions and PRs | helped / no change / hurt, days or weeks later, into memory |
+| **Report** | the Ops fleet's brief | the ledger | what was handled, what waits, what was escalated |
 
-Finding and fixing are **different jobs with different credentials**, in the same fleet or not
-(Ops diagnoses and remediates in separate jobs). The diagnosing agent reads
-untrusted text all day (error messages, issue bodies, web pages) and holds no write access. The
-acting agent holds write access and never sees that text: a work item carries typed fields only.
+flotillad holds no fleet credentials (components.md): it decides, records and schedules. Workers
+hold the credentials, **one worker per role**, not per fleet (§3.6).
+
+### 2.1 What actually keeps an action safe
+
+Untrusted text (error messages, logs, issue bodies, web pages, third-party docs) reaches both the
+diagnosing and the acting agent. The design does not rely on an agent not being influenced. It relies
+on what the agent's output can do:
+
+1. **The output is a plan, not a command.** An acting agent can only name catalogue actions with
+   typed parameters; code validates them against the catalogue's scope.
+2. **Policy and the actuator decide independently of any model:** the policy step in flotillad, then
+   the actuator on the host, each re-check scope, limits and preconditions.
+3. **Repo changes are structured edits applied by code**, and a diff-scope gate checks that only the
+   declared fields or files changed. These deterministic gates are the security boundary. A reviewer
+   agent judges quality; it reads the same context and is not a security control.
+4. **Credentials per role:** a read-only worker cannot act, an acting worker cannot read beyond its
+   role.
+5. **v1 tightens the acting side further:** a host action's re-check is code returning numbers (free
+   bytes, backup age, restart count), not an agent reading log text; knowledge comes only from the
+   operator's own repos.
 
 ## 3. The building blocks
 
 | Block | What it is | Change from ADR-0004 |
 |---|---|---|
-| **Harness** | the one loop that runs a model step: context in, read-only tools, an answer that matches the step's output type, gates after, everything recorded | two run shapes (per item, once) and three output types (decision, prose, action plan) |
-| **Context** | code builds what the model reads, in layers with budgets | the knowledge layer is per **project** |
-| **Memory** | what flotilla recorded: decisions, outcomes, operator feedback, notes | outcomes from acting fleets feed it |
-| **Knowledge** | reference material: what we write (notes, briefs) and what exists elsewhere (each project's docs, runbooks, ADRs) | sources are declared per project; plug-in kinds |
-| **Actions** | named operations a fleet may perform, from a catalogue, run by code | **new** |
+| **Harness** | the one loop that runs a model step: context in, read-only tools, an answer of the step's output type, gates after, everything recorded | run shapes and output types |
+| **Context** | code builds what the model reads, in layers with budgets | knowledge per project |
+| **Memory** | decisions, outcomes, operator feedback, notes | outcomes from acting fleets feed it |
+| **Knowledge** | reference material, ours and each project's | sources declared per project |
+| **Actions** | named operations from a catalogue, decided by policy, run by an actuator or GitHub | **new** |
 | **Work items** | ledger rows that hand a case from one job to the next | **new** |
+| **Workers per role** | a job names its worker; a fleet can have several | **changes** "one worker per fleet" |
 
 ### 3.1 Harness
 
-- **Two run shapes:** *per item* (a list of cases, each with its own limits and record: triage, SEO,
-  remediation) and *once* (the daily brief, a review).
-- **Three output types:**
-  - *decision*: typed fields (triage's disposition, an SEO finding);
-  - *prose*: text plus a few typed fields (the brief's opening, a review's report);
-  - *action plan*: entries from the action catalogue with their parameters (only acting fleets).
-- **Tools are read-only**, named, typed, scoped and size-capped. Shared tools: metric, log and trace
-  queries from templates; GitHub reads; allowed URL fetch; knowledge search; memory lookup. A fleet
-  adds its own.
-- **Limits:** model turns, tool calls, tokens, wall time and cost, per case and per run.
-- **Recording:** every request, reply, tool call and result, and the run's time (the format the
-  triage capture writes today), so any run can be replayed exactly.
+- **Two run shapes:** *per item* (a list of cases, each with its own limits and record) and *once*.
+- **Three output types:** *decision* (typed fields), *prose* (text plus typed fields), *action plan*
+  (catalogue entries with parameters).
+- **Tools are read-only**, named, typed, scoped and size-capped: metric, log and trace queries from
+  templates, GitHub reads, allowed URL fetch, knowledge search, memory lookup, plus each fleet's own.
+- **Limits** per case and per run: model turns, tool calls, tokens, wall time, cost.
+- **Recording:** every request, reply, tool call and result, and the run's time.
 
 ### 3.2 Context
 
-Layers, each with a character budget and a visible cut marker: **playbook** (the fleet's
-instructions), **case** (the item), **memory** (structured fields only, never a model's earlier
-prose), **knowledge** (the case's project's sources), **tool results**. Memory and knowledge are
-wrapped as data, with their source and version. The exact text sent is stored.
+Layers with character budgets and visible cut markers: playbook, case, memory (structured fields
+only), knowledge (the case's project's sources), tool results. Memory and knowledge are wrapped as
+data with their source and version. The exact text sent is stored.
 
 ### 3.3 Memory
 
-In flotillad: decisions with their dedup keys, outcomes, feedback, notes (active only once the
-operator activates them). A job gets a subject's history as structured fields. Measurements (disk
-use, connection counts, Search Console rows) are fleet data, not memory.
+In flotillad: decisions with dedup keys, outcomes, feedback, notes (active only once the operator
+activates them). Measurements are fleet data, not memory: disk use, connection counts, Search Console
+rows, and the marketing fleet's **post register** (what was published, where, when).
 
 ### 3.4 Knowledge
 
-A **project** is a config entity: its names in signals (labels, GlitchTip projects, hosts), its
-issue repo, and its **knowledge sources**. A case about a project gets that project's sources.
+A **project** is a config entity: its names in signals (labels, GitHub repos, GlitchTip projects,
+hosts), its issue repo, and its knowledge sources. A case about a project gets that project's
+sources, among those its fleet's spec declares (ADR-0004: declared, never discovered).
 
-| Kind | Example | How it is read |
-|---|---|---|
-| ours | notes, past briefs | from flotillad |
-| git | a project's `docs/`, runbooks, ADRs; the homelab handbook | a refresh job pulls each repo on a schedule, records the commit, builds a full-text index |
-| http (later) | vendor docs | fetched by the refresh job |
-| mcp (later) | a project's own MCP server | a read-only tool call, recorded like every tool call |
-
-Retrieval: path maps (a service to its runbook) and a `knowledge_search` tool.
+- **v1, as ADR-0004 already says:** a knowledge volume filled at deploy from the operator's own repos
+  (each project's `docs/`, runbooks, ADRs; the homelab handbook), versioned by commit; path maps and
+  full-text search.
+- **Later, each by amending ADR-0004:** a scheduled refresh job (needs a worker with git and egress
+  to GitHub), third-party sources (HTTP docs, other MCP servers) as a lower trust tier, semantic
+  search.
 
 ### 3.5 Work items
 
-A ledger row from one job to another (often across fleets: triage to Ops, triage to bugfix):
-
-| Field | Example |
+| Field | Rule |
 |---|---|
-| `kind` | `disk_pressure`, `oom_loop`, `config_fault`, `content_opportunity`, `code_bug` |
-| `target` | host + mount; container; repo + file; site + page |
-| `evidence` | references to the diagnosis's records, never its prose |
-| `urgency`, `dedup keys` | one item per problem, however many alerts |
-| `status` | `open` → `claimed` (with a lease) → `planned` → `awaiting_approval` → `done` / `failed` / `escalated` / `stale` |
-| `links` | the decision that made it; the actions and outcome that closed it |
+| `kind`, `target` | typed: `disk_pressure` on host + mount; `code_bug` on repo + issue number; … |
+| `dedup key` | **computed by code** from `kind` + the canonical target; the model never emits one. One open item per key: a storm is one item |
+| `evidence` | references to records, never prose |
+| `urgency` | orders the queue |
+| `status` | `open` → `claimed` → `planned` → (`awaiting_approval`) → `executing` → `verifying` → `done` / `failed` / `unknown` / `resolved_itself` / `escalated` |
+| `lease` | taken by the runner when flotillad starts the consumer job (push); renewed while the job runs; an expired lease returns the item to `open`, unless an execution is open (then verification resumes, the action never re-runs) |
+| `links` | the decision that made it; executions; the outcome; `caused_by` signals |
 
-The consumer job is started by flotillad when an item for it appears. Code bugs keep going to
-GitHub issues, where the operator sees them; the bugfix fleet takes them from there.
+**Rules:**
+- **A per-target lock** from `claimed` to the end of verification, across kinds and fleets: one
+  thing at a time touches a container, a mount, a file.
+- **Staleness:** an item unclaimed for N hours escalates; a problem gone on re-check closes as
+  `resolved_itself`, with the numbers.
+- **Caps:** at most N open items per kind and per host; an alert on queue age (RFC-0001 §6.2).
+- **Bugfix too:** triage hands a bug over as a `code_bug` item (repo and issue number). The GitHub
+  issue is where the operator sees it and is evidence; the item gives the chain its lease, dedup and
+  outcome (PR merged or closed).
 
-## 4. Actions on standard tooling
+### 3.6 Workers per role
 
-An action is a named, typed operation implemented with tools we already run (the Docker CLI,
-`systemctl`, `git` and `gh`, existing scripts such as the backup jobs), never a command the model
-writes.
+A job's spec names its worker (`fleets/triage/cycle-shadow.yaml` already does). Each worker holds
+only its role's credentials:
 
-### 4.1 An action in the catalogue
+| Worker | Holds | Jobs |
+|---|---|---|
+| `triage` | read tokens for alerts, errors, GitHub | triage diagnose; filing |
+| `ops-read` | read tokens, query templates | Ops monitors, reviews, the brief |
+| `ops-act-host` | the actuator key for each host it may act on | Ops remediation on hosts |
+| `ops-act-repo` (later) | a GitHub App with write on the infra repo | Ops config changes |
+| `marketing-read`, `marketing-act` (later) | Search Console, Umami; write on the site repos | the marketing fleet |
+| `bugfix` | the coding harness, write on the fleets' repos | bugfix |
+
+### 3.7 Triggers
+
+flotillad today runs jobs `every N` (`internal/sched`). The pipeline adds `on_item(kind)` (a consumer
+job starts when an item for it appears), and timers per execution for verification.
+
+## 4. Actions
+
+### 4.1 The catalogue, on standard tooling
+
+An action wraps tooling that already runs, never a command the model writes:
 
 ```yaml
-action: docker.restart
-params: {host: enum(mini, dgx), container: string}
-scope: containers labelled flotilla.restartable=true      # never a database
+action: disk.prune_docker          # wraps infra/docker-maintenance/docker-prune.sh, run weekly today
+params: {host: enum(mini)}
 risk: medium
-reversible: true                                          # a restart undoes nothing it cannot redo
-pre: [container_is_running, not_restarted_in(30m)]
-verify: {healthy_for: 5m, within: 10m}
-limits: {per_target_per_day: 3, at_once_per_host: 1}
-runs: actuator.docker_restart                             # code on the host, not the model's text
+reversible: regenerable            # build cache and unused images come back on the next build/pull
+pre: [free_space_below(15%), not_run_in(6h)]
+verify: {free_space_above: 20%, within: 15m}   # needs the script's fstrim: without it the host's free space never moves
+limits: {per_target_per_day: 2}
 ```
 
-### 4.2 From plan to verified result
+Outputs that exist today join the catalogue at its low-risk end, under the same policy: an issue or
+comment on GitHub, a comment on or the resolution of a GlitchTip issue, a Grafana annotation, a
+queued proposal.
+
+### 4.2 Policy (flotillad)
+
+For each planned action, in order; any "no" refuses (recorded with the reason):
+1. In the catalogue, parameters within its scope.
+2. **Job stage caps autonomy:** a job in `shadow` → every action is shadow; `propose` → at most
+   propose; `live` → the action type's earned level on that host (§4.4).
+3. The per-target lock is free; per-target and per-host limits not reached (including a per-host
+   cap on actions per hour).
+4. **Holds:** no fleet STOP, no deploy stand-down on that host, no operator hold
+   (`flotilla hold <host|target> <duration>`, for when the operator is working on it).
+5. Then: run now (auto), or `awaiting_approval` with the exact plan (propose).
+
+### 4.3 Execution and verification
 
 ```mermaid
 sequenceDiagram
-    participant A as Acting agent
-    participant P as Policy (code)
+    participant A as Acting worker (agent + code)
+    participant F as flotillad (policy, ledger)
     participant Op as Operator
     participant X as Actuator (host)
-    participant V as Verify (code)
-    participant L as Ledger
-    A->>L: claim work item (lease)
-    A->>A: re-check the problem with fresh data
-    A->>P: plan: docker.restart(mini, player-api)
-    P->>P: in catalogue? in scope? limits? autonomy level? freeze?
-    alt auto
-        P->>X: run
-    else propose
-        P->>L: awaiting_approval, with the exact plan
-        Op->>L: approve (CLI, later phone)
-        L->>X: run
-    else refuse
-        P->>L: escalated, with the reason
+    A->>F: claim the item (lease)
+    A->>A: re-check with fresh numbers (code)
+    A->>F: plan: disk.prune_docker(mini)
+    F->>F: policy: catalogue, stage, lock, limits, holds
+    alt propose
+        F->>Op: approval waiting
+        Op->>F: approve
     end
-    X->>X: re-check scope and preconditions, run, capture output
-    X->>V: done
-    V->>V: target healthy within the window?
-    V->>L: outcome: passed or failed, with evidence
+    F->>A: execute, execution id E
+    A->>X: E, disk.prune_docker(mini)
+    X->>X: re-check scope and preconditions, run, log
+    X->>A: done / failed / unknown
+    A->>F: execution E result
+    F->>F: timer: verify after the window
+    F->>A: verify E (code)
+    A->>F: passed / failed
 ```
 
-### 4.3 The actuator
+- **Every execution has an id.** The actuator is idempotent by that id: a retried call never runs the
+  action twice.
+- **Unknown** (a timeout, a hung command): the target is held, the item escalates, and the action
+  type drops one autonomy level on that host.
+- **Verify** needs both: the actuator reported done, and the target's state improved within the
+  window. Something else freeing space does not count as the action working when the actuator failed.
+- **Every execution emits an ops event and a Grafana annotation**, so detect can link the alerts it
+  causes to it (§2), and humans see it on dashboards.
 
-One small service per host. It accepts only catalogue action names with validated parameters, over
-its own key that can do nothing else. It re-checks scope and preconditions itself (a second line of
-defence), refuses to delete anything that is in use, and returns what it did. The flotilla worker
-never holds a shell or the Docker socket.
-
-### 4.4 Earned autonomy, per action type
+### 4.4 Earned autonomy, per action type and host
 
 ```mermaid
 stateDiagram-v2
-    [*] --> shadow: new action type
+    [*] --> shadow: new action type on a host
     shadow --> propose: operator promotes
-    propose --> auto: operator promotes,<br/>on its record
-    auto --> propose: a failed verification,<br/>or the operator
-    propose --> shadow: the operator
-    note right of shadow: logs what it would have done
-    note right of propose: waits for the operator
-    note right of auto: runs within its limits
+    propose --> auto: operator promotes, on its record
+    auto --> propose: failed or unknown, or the operator
+    propose --> shadow: rejected proposals, or the operator
 ```
 
-Only the operator promotes. The record behind a promotion: plans approved unchanged, verifications
-passed, outcomes measured. An action type that cannot be undone never goes beyond *propose*.
+Only the operator promotes. The record: plans approved unchanged, verifications passed, outcomes. An
+action type that cannot be undone never goes beyond propose.
 
-## 5. The fleets, end to end
+### 4.5 The actuator
 
-### 5.1 Triage
+The most privileged component: on the mini, Docker actions need root in the Docker VM, and the
+existing cleanup runs on the macOS host with `sudo` (`docker-prune.sh`). It gets its own ADR before
+it is built. The constraints it must meet:
+
+- a service on the host, as a dedicated user, with a sudoers allowlist of exact scripts;
+- a listener reachable only by the acting worker (tailnet ACL and its own key);
+- the catalogue baked in at deploy: no entry can be added at runtime;
+- re-checks scope and preconditions itself; refuses to delete what is in use;
+- idempotent by execution id; returns done / failed / unknown;
+- its own append-only log, shipped to VictoriaLogs, independent of the worker's record;
+- an explicit exception to ADR-0002's "no Docker socket anywhere", limited to this service.
+
+The operator's rule against agents running `docker image/system prune` needs an explicit exemption
+for this one entry, limited to the existing scheduled script. That is the operator's decision (§10).
+
+## 5. Trust while the operator is away
+
+- **Auto** action types act within their limits; everything is in the ledger, the annotations and the
+  morning brief.
+- **Propose** action types wait. Over a multi-day absence they wait days. Until a phone channel is
+  designed, an email (the alert email channel that exists) says that approvals are waiting; the
+  operator approves by CLI.
+- **Loops are bounded:** detect links follow-on alerts to the execution; the per-target lock serialises;
+  the per-host hourly cap and the recurrence rule (the same kind and target 3 times in 7 days becomes
+  an issue about the cause) stop repetition; STOP and holds stop everything.
+
+## 6. The fleets, end to end
+
+### 6.1 Triage
 
 ```mermaid
 sequenceDiagram
     participant S as Alerts, errors
-    participant T as Triage (diagnose)
-    participant L as Ledger
-    participant G as GitHub
-    S->>T: new signals (detect: dedup, operational states)
+    participant T as Triage (read-only worker)
+    participant F as flotillad (ledger)
+    participant G as GitHub, GlitchTip, Grafana
+    S->>T: signals (detect: dedup, operational states, links to open items)
     T->>T: probes, the project's knowledge, the signal's history
     alt benign
-        T->>L: dismiss, with the corroborating probe
+        T->>F: dismiss, with the corroborating probe
     else code bug
-        T->>G: issue on the project's repo
+        T->>G: issue on the project's repo (catalogue: github.issue)
+        T->>F: code_bug item (repo, issue)
     else operational fault
-        T->>L: work item (disk_pressure, oom_loop, config_fault…)
+        T->>F: work item for Ops
     else unsure
-        T->>L: escalate to the operator
+        T->>F: escalate
     end
+    T->>G: GlitchTip comment or resolve, Grafana annotation (catalogue, low risk)
 ```
 
-Blocks: harness (per item, decision), context (playbook, signal, history, project knowledge),
-memory, knowledge, work items. Acts only through issues and work items.
+### 6.2 Ops: the SRE team
 
-### 5.2 Ops: the SRE team
-
-Three kinds of job, one fleet:
-
-| Job | Shape | Example |
+| Job | Worker | Shape |
 |---|---|---|
-| **monitors and reviews** (diagnose) | once per run, prose report + findings | the daily Postgres review; a disk, memory or backup check |
-| **remediation** (act) | per work item, action plan | clean a disk, restart a container, rerun a backup |
-| **daily brief** (report) | once a day, prose | the morning view of every fleet |
+| monitors and reviews (e.g. the daily Postgres review) | `ops-read` | once per run: report + findings + work items |
+| remediation on hosts | `ops-act-host` | per item: action plan |
+| config changes (later) | `ops-act-repo` | per item: structured edit as a PR |
+| daily brief | `ops-read` | once a day: prose |
 
-Work items reach Ops from its own monitors and from triage. Each **item kind** is a playbook plus
-catalogue actions; the list grows as faults are met:
+Item kinds, illustrative (each fleet spec sets its own playbooks, limits and autonomy):
 
-| Item kind | Act | Verify | Autonomy ceiling |
-|---|---|---|---|
-| `disk_pressure` | prune build cache, dangling images, logs older than N in declared paths | free space back above the threshold | auto (regenerable only) |
-| `oom_loop` | restart a stateless container | healthy 5 min, memory down | auto |
-| `stuck_job` | stop it, rerun it | it completes | auto for named jobs |
-| `failed_backup` | rerun the backup | a fresh backup exists | auto |
-| `cert_expiry` | trigger renewal | new expiry date | auto |
-| `cost_spike` | lower a key's budget, pause a fleet | spend rate down | propose |
-| `config_fault` | a structured edit as a PR on the infra repo | the alert clears after the repo's own deploy | propose (always) |
-| *(next kinds)* | added with their playbook and actions | | earned per kind |
+| Item kind | Act | Verify |
+|---|---|---|
+| `disk_pressure` | `disk.prune_docker` (the existing script); later: logs older than N in declared paths | free space above the threshold |
+| `failed_backup` | rerun the backup job | a fresh backup (its dead-man metric) |
+| `stuck_job` | stop it, rerun it | it completes |
+| `memory_growth` | restart a container labelled restartable, whose memory grows without hitting its limit | memory back down, healthy |
+| `oom_loop` | none on the host: Docker already restarts it; the fix is its memory limit → `config_fault` | — |
+| `config_fault` | a structured edit as a PR on the infra repo; the repo's own deploy applies it | the alert clears |
+| `cost_spike` | pause the fleet (a flotilla control); a key's budget is LiteLLM config → `config_fault` | spend rate down |
+
+The `restartable` container label is a new contract on the infra repo's compose files; infra owns it.
 
 #### Monitors and reviews
 
@@ -272,226 +339,234 @@ catalogue actions; the list grows as faults are met:
 sequenceDiagram
     participant C as Code
     participant R as Review (once)
-    participant L as Ledger
+    participant F as flotillad (ledger)
     participant Op as Operator
     C->>C: fixed queries: up, restarts, connections, deadlocks, backup age, logs
-    C->>R: the numbers, last reviews' findings
+    C->>R: the numbers, the last reviews' findings
     R->>R: drill in with query templates, runbooks
     R->>Op: report (prose + findings)
     opt a finding needs doing
-        R->>L: work item (e.g. failed_backup)
+        R->>F: work item (e.g. failed_backup)
     end
 ```
 
-#### Remediation: a host action (disk, OOM, stuck job, backup, …)
+#### Remediation on a host
 
 ```mermaid
 sequenceDiagram
     participant D as Diagnose (triage or an Ops monitor)
-    participant L as Ledger
-    participant Rm as Ops remediation
-    participant P as Policy
+    participant F as flotillad (ledger, policy)
+    participant Rm as Ops remediation (acting worker)
     participant X as Actuator
-    participant V as Verify
-    D->>L: work item, e.g. disk_pressure(host, mount, top consumers)
-    L->>Rm: start
-    Rm->>Rm: still a problem? (fresh data)
-    Rm->>P: plan from the kind's playbook
-    P->>X: auto, or after the operator's approval
-    X->>V: done
-    V->>L: passed / failed
-    opt failed, or the same kind and target 3 times in 7 days
-        L->>L: escalate: issue about the cause (a leak, a growing log)
+    D->>F: work item disk_pressure(mini, /)
+    F->>Rm: on_item: start, lease
+    Rm->>Rm: free space still below the threshold? (code)
+    Rm->>F: plan from the kind's playbook
+    F->>F: policy
+    F->>Rm: execute, id E
+    Rm->>X: E
+    X->>Rm: done
+    F->>Rm: verify E after 15 min (timer)
+    Rm->>F: passed / failed
+    opt failed, unknown, or 3 times in 7 days
+        F->>Rm: escalate: file an issue about the cause (catalogue: github.issue)
     end
 ```
 
-#### Remediation: a config change
+#### A config change
 
 ```mermaid
 sequenceDiagram
     participant D as Diagnose
-    participant L as Ledger
-    participant Rm as Ops remediation
-    participant G as Gates + reviewer
+    participant F as flotillad (ledger, policy)
+    participant Ch as Ops config job (ops-act-repo)
     participant Op as Operator
     participant Dp as The repo's deploy
-    D->>L: work item config_fault(repo, file, key, evidence)
-    L->>Rm: start
-    Rm->>Rm: still failing? read the file, the runbook
-    Rm->>G: structured edit: key → value
-    G->>G: only that key changed, valid file, reviewer agrees
-    G->>Op: PR with the evidence
+    D->>F: work item config_fault(repo, file, key, evidence)
+    F->>Ch: on_item: start
+    Ch->>Ch: still failing? read the file, the runbook
+    Ch->>Ch: structured edit key to value, applied by code
+    Ch->>Ch: gates: only that key changed, valid file (security), reviewer (quality)
+    Ch->>Op: PR with the evidence
     Op->>Dp: merge
-    Dp->>L: the alert cleared? outcome
+    Dp->>F: the alert cleared? outcome
 ```
+
+A config change is always a PR: a review, a diff and a revert.
 
 #### Daily brief
 
 ```mermaid
 sequenceDiagram
     participant C as Code (07:00)
+    participant F as flotillad (ledger API)
     participant B as Brief (once, prose)
-    participant L as Ledger
     participant Op as Operator
     C->>C: alerts in the window, containers, errors
-    L->>C: handled overnight, waiting for approval, escalated
+    C->>F: read: handled overnight, waiting for approval, escalated (all fleets)
+    F->>C: the items and executions
     C->>B: the facts
     B->>B: writes the opening (numbers stay from code)
-    B->>Op: the morning page, with approvals waiting
+    B->>Op: the morning page
 ```
 
-### 5.3 Digital marketing
+### 6.3 Digital marketing
 
-#### SEO content (the first use case)
+The pipeline mapping only; each use case's own design is its RFC (RFC-0003 for SEO).
+
+| Use case | Detect | Diagnose / act | Writes | Verify / outcome |
+|---|---|---|---|---|
+| **SEO content** | Search Console: rank 8-15 with rising impressions and low clicks; drops | analyst writes a finding; a writer job makes a structured edit within the change type's scope | PR on the site's repo | the site builds; outcome at 14 and 28 days against unchanged pages; a "hurt" opens a revert PR |
+| **Traffic attribution** | Umami referrers and campaign tags, matched to the post register; conversions where the site sends them (humancopilot.eu: `cta-book-call`, `cta-email`, `outbound`) | analyst compares posts by platform, topic, timing | a report in the brief | — |
+
+### 6.4 Bugfix
 
 ```mermaid
 sequenceDiagram
-    participant C as Code (daily)
-    participant An as Analyse
-    participant L as Ledger
-    participant W as Write
-    participant G as Gates + reviewer
-    participant Op as Operator
-    participant O as Outcome (+14, +28 days)
-    C->>An: opportunities (rank 8-15, rising impressions, low clicks)
-    An->>L: finding: page, queries, numbers, change type
-    L->>W: start
-    W->>W: still an opportunity? the site's repo, style guide
-    W->>G: change within the change type's scope
-    G->>G: only allowed fields, lengths, no stuffing, builds, reviewer agrees
-    G->>Op: PR on the site's repo
-    Op->>Op: review, merge
-    O->>L: helped / no change / hurt (vs unchanged pages)
-```
-
-A *hurt* outcome opens a revert PR. Change types (title, meta description, a section, internal
-links) each earn their own autonomy; auto-merge is a later promotion, per change type.
-
-#### Traffic attribution (the second use case)
-
-Which posts bring visitors, and whether those visitors do something: for Orrery's social media, and
-for the operator's LinkedIn and Medium posts linking to humancopilot.eu.
-
-```mermaid
-sequenceDiagram
-    participant P as Post register
-    participant C as Code (daily)
-    participant An as Analyse (once, prose)
-    participant L as Ledger
-    participant B as Daily / weekly brief
-    P->>C: posts: platform, date, link, campaign tag
-    C->>C: visits by referrer and campaign, the conversions that followed (Umami)
-    C->>C: match visits to posts, each post's curve, spikes from an unknown referrer
-    C->>An: the numbers per post and platform
-    An->>An: what worked (platform, topic, timing), compared with earlier posts
-    An->>L: findings (per post, per platform)
-    L->>B: report: top posts, conversions per post, new referrers
-```
-
-- **Sources:**
-  - Umami: referrers, campaign tags (`utm_*`) and conversion events. humancopilot.eu already sends
-    `cta-book-call`, `cta-email` and `outbound`.
-  - A **post register**: what was published, where, when, and the link. Medium has a feed; LinkedIn
-    and the social platforms need the operator's entry, or links tagged with `utm_campaign` so the
-    visits name the post themselves.
-- **Memory:** each post's results, so a new post is compared with earlier ones. The visit counts are
-  fleet data.
-- **Writes:** a report only. No actions in v1. A later item kind could suggest a follow-up post.
-
-### 5.4 Bugfix
-
-```mermaid
-sequenceDiagram
-    participant G as GitHub issue (from triage)
+    participant F as flotillad (ledger)
     participant B as Bugfix (coding harness, sandbox)
-    participant Ck as Gates + reviewer
     participant Op as Operator
-    G->>B: the issue
+    F->>B: on_item code_bug(repo, issue)
     B->>B: a failing test that reproduces it, first
     B->>B: the fix: the test passes, the rest still pass
-    B->>Ck: diff
-    Ck->>Op: PR with the reproduction
+    B->>B: gates: diff within the declared scope, the suite
+    B->>Op: PR with the reproduction
+    Op->>F: merged or closed (outcome)
 ```
 
-The coding harness is an `external` step (ADR-0004): its model calls go through the model client's
-endpoint, and its diff is gated like any other change.
+The coding harness is an `external` step (ADR-0004): it points at the same model endpoint under the
+fleet's own key; its inputs and outputs are recorded.
 
-## 6. Review: do the building blocks still hold?
+## 7. Review: do the building blocks still hold?
 
-| | Triage | Ops review | Ops remediation (host) | Ops remediation (config) | Daily brief | Marketing: SEO | Marketing: attribution | Bugfix |
+| | Triage | Ops review | Ops remediation (host) | Ops config | Daily brief | SEO | Attribution | Bugfix |
 |---|---|---|---|---|---|---|---|---|
+| Worker | triage | ops-read | ops-act-host | ops-act-repo | ops-read | marketing | marketing-read | bugfix |
 | Harness shape | per item | once | per item | per item | once | per item | once | external |
-| Output type | decision | prose | plan | plan (edit) | prose | decision → plan (edit) | prose + findings | diff |
-| Read tools | probes | query templates | metrics, du, logs | file read | — | Search Console, page | Umami queries, post content | repo |
-| Memory | history | past findings | past items | past items | ledger | past outcomes | past posts' results | — |
-| Knowledge | project | runbooks | runbooks | project | — | site repo | the site's pages | project |
-| Writes | issue, item | report, item | actuator | PR | page | PR | report | PR |
+| Output | decision | prose | plan | plan (edit) | prose | decision → plan (edit) | prose + findings | diff |
+| Reads untrusted text | yes | yes | v1: no (numbers only) | yes (file, runbook) | yes | yes (pages) | yes | yes (issue) |
+| What bounds it | gates; catalogue | — | catalogue, policy, actuator | diff-scope gate, PR | — | diff-scope gate, PR | — | diff-scope gate, PR |
 
-What the review changed from ADR-0004 (the rough edges):
+What changed from ADR-0004: run shapes and output types; knowledge per project; actions and work
+items as blocks; workers per role; the outputs that exist today become the low-risk end of the
+catalogue.
 
-1. **The harness needs run shapes and output types**, not only triage's per-signal decision.
-2. **Knowledge belongs to projects, not fleets**, and is mostly plugged in from repos that exist
-   already.
-3. **Actions are a block of their own.** ADR-0004's "outputs" (an issue, a PR) are the low-risk
-   end of the same catalogue, under the same policy and autonomy ladder.
-4. **The ledger is also a hand-over queue**: leases, staleness and dedup across producers (triage and
-   an ops monitor can both see the same full disk; one item, not two).
-5. **Outcomes arrive late** (SEO: weeks). An outcome job per acting fleet writes them back; memory
-   reads them.
-6. **Query templates vs freedom.** Ops reviews' drill-in wants ad-hoc queries; ADR-0004 forbids
-   model-written queries. Templates in v1; raw read-only queries only by a later decision.
-7. **One approval path for everything**: the CLI now. A way to reach the operator's phone (alerts,
-   approvals at night) is a separate decision still to be designed. Home Assistant, which pushes
-   alerts today, is a temporary hack outside flotilla and not part of this design (operator,
-   2026-11-09).
-8. **Recurrence is a signal**: the same item kind on the same target 3 times in 7 days becomes an
-   issue about the cause.
+## 8. v1: prove it with the least build
 
-## 7. Open decisions
+**One chain, one host, one action.** Triage or an Ops monitor raises a `disk_pressure` or
+`failed_backup` item. An `ops-act-host` job starts in **shadow**, with one catalogue action wrapping
+the existing script. Verify runs by timer on the metric that already exists. The brief reports it.
+
+- **Platform pieces:** work items with leases and dedup, the per-target lock, `on_item`, execution ids
+  and verification timers, policy in flotillad, the actuator on the mini with that one entry.
+- **Knowledge:** ADR-0004's deploy-filled volume, own repos only.
+- **Not in v1:** git, HTTP and MCP knowledge sources; the reviewer agent; config-change PRs;
+  cost_spike; the marketing fleet; the phone channel; actuators on the DGX and the production VPS.
+- **Gate to promote:** two weeks of shadow plans that match what the operator would have done, then
+  propose, then auto, per action type and host.
+
+## 9. Not in this RFC
+
+The UI; each fleet's playbooks, thresholds and catalogue entries (fleet specs and fleet RFCs); the
+actuator's own ADR; the phone channel.
+
+## 10. Open decisions
 
 Each with a recommendation; the operator marks only what to change.
 
-**Harness, context, knowledge**
+**Pipeline and blocks**
 1. One harness with *per item* and *once* shapes. **Recommended.**
-2. Model-written queries: templates only in v1. **Recommended.**
-3. Output validation: our own small validator (types, required fields, enums). **Recommended**
-   (no new dependency).
-4. Knowledge freshness: scheduled snapshots for repos; live reads allowed as recorded tool calls.
-   **Recommended.**
-5. *Project* as a config entity owning its knowledge, repo and labels. **Recommended.**
-6. Search: full-text in v1, semantic later. **Recommended.**
+2. Model-written queries: templates only. **Recommended.**
+3. Output validation: our own small validator. **Recommended.**
+4. Knowledge v1: ADR-0004's deploy-filled volume, own repos only; refresh jobs and third-party
+   sources later by amending ADR-0004. **Recommended.**
+5. *Project* as a config entity owning knowledge, repo and labels. **Recommended.**
+6. Search: full-text in v1. **Recommended.**
+7. Workers per role, not per fleet. **Recommended.**
 
 **Actions**
-7. Named catalogue actions only. **Recommended.**
-8. Every action type starts in shadow; the operator promotes on its record. **Recommended.**
-9. A per-host actuator with an allowlist; workers get no shell. **Recommended.**
-10. Config changes only by PR through the repo's own pipeline. **Recommended.**
-11. First host: the mini. **Recommended.**
-12. Night approvals: proposals wait for the morning in v1, until the phone channel is designed.
+8. Named catalogue actions only; today's outputs join the catalogue. **Recommended.**
+9. Policy lives in flotillad; execution in the acting worker. **Recommended.**
+10. Job stage caps per-action autonomy (§4.2). **Recommended.**
+11. Autonomy per action type **and host**; starts in shadow; only the operator promotes; failed or
+    unknown demotes. **Recommended.**
+12. The actuator on the mini as a host service, with its own ADR and the ADR-0002 exception.
     **Recommended.**
+13. The exemption from the no-`prune` rule for the existing scheduled script only. **Operator's call.**
+14. Execution ids, idempotent actuator, `unknown` holds the target. **Recommended.**
+15. Verify by timer; outcomes by a daily job. **Recommended.**
+16. Config changes only by PR. **Recommended.**
 
 **The chain**
-13. Work items in the ledger for machine work; GitHub issues for code work. **Recommended.**
-14. Only typed fields cross from finder to actor. **Recommended.**
-15. flotillad starts the consumer when an item appears. **Recommended.**
-16. The actor always re-checks with fresh data. **Recommended.**
-17. A fixed playbook per item kind; the model picks parameters within it. **Recommended for v1.**
-18. Recurrence: 3 in 7 days escalates. **Recommended.**
+17. Work items for all hand-overs, bugfix included; GitHub issues stay where the operator sees bugs.
+    **Recommended.**
+18. Dedup keys computed by code; one open item per key. **Recommended.**
+19. Push: flotillad starts the consumer on a new item. **Recommended.**
+20. The per-target lock across kinds and fleets; `flotilla hold`; deploy stand-down. **Recommended.**
+21. Detect links follow-on alerts to recent executions (`caused_by`). **Recommended.**
+22. Recurrence: 3 in 7 days escalates. **Recommended.**
+23. A fixed playbook per item kind; the model picks parameters within it. **Recommended for v1.**
 
-**Repo changes (Ops config, marketing)**
-19. Small change types as structured edits applied by code; larger ones by a coding harness with a
-    diff-scope gate. **Recommended.**
-20. An independent reviewer agent (another model) for every change. **Recommended.**
-21. Auto-merge: not in v1. **Recommended.**
-22. SEO outcome at 14 and 28 days against unchanged pages. **Recommended.**
+**Away and approvals**
+24. Until a phone channel exists: an email when approvals wait; approval by CLI. **Recommended.**
 
-## 8. Not in this RFC
+**Repo changes (later)**
+25. Structured edits applied by code for small change types; a coding harness with a diff-scope gate
+    for larger ones. **Recommended.**
+26. A reviewer agent for quality, not as a security control. **Recommended.**
+27. No auto-merge until a change type earns it. **Recommended.**
 
-- The order of building, and what v1 contains: proposed after these decisions.
-- The UI.
-- Actuators on the DGX and the production VPS (after the mini's record).
-- Each fleet's playbooks, thresholds and catalogue entries (each fleet's own RFC or spec).
+## 11. Docs amended on acceptance
 
-## 9. Discussion
+- ADR-0004: actions and work items as blocks; workers per role; outputs into the catalogue.
+- ADR-0002: the actuator's exception to "no Docker socket anywhere".
+- `docs/architecture/components.md`: policy in flotillad, execution in workers; `on_item` triggers.
+- `docs/architecture/deployment.md`: workers per role; the Home Assistant notify secret removed from
+  the ops worker.
+- `docs/architecture/context.md`: Home Assistant removed.
+- `docs/architecture/data.md`: work items, executions, the per-target lock.
 
-- 2026-11-09: drafted from the operator's use cases and the discussion that day; not yet reviewed.
+## 12. Alternatives considered
+
+- **One agent that diagnoses and acts.** Simpler, but one model would hold both untrusted input and
+  write credentials. Rejected.
+- **The model writes commands, in a sandbox.** Nothing can check them before they run. Rejected.
+- **GitHub issues as the only hand-over queue.** Visible to the operator, but no leases, locks or
+  dedup across producers, and every hand-over would be public in the operator's repos. Kept for bugs
+  only, as evidence.
+- **flotillad executes actions itself.** One fewer hop, but the control plane would hold every
+  fleet's credentials. Rejected (components.md).
+- **Autonomy per job only (the stage).** Too coarse: one Ops job holds safe and risky action types.
+  Kept as the cap, with per-type autonomy under it.
+- **A third-party agent framework's action layer.** Not built for operator-gated, replayable
+  actions; the goal is to own the machinery (RFC-0001 §1).
+
+## 13. Discussion
+
+- **2026-11-09, revision 1:** drafted from the operator's use cases.
+- **2026-11-09, advisor review of revision 1:** right shape, not agreeable yet. Revision 2 changes:
+  - **"The acting agent never sees untrusted text" was false** (acting jobs read logs, files, pages,
+    issue bodies). §2.1 now states the real defences; v1 acting host jobs re-check by code.
+  - **The diagrams had the ledger executing and filing.** Policy is in flotillad, execution in the
+    acting worker, issues filed by worker code.
+  - **The credential split contradicted one worker per fleet.** Workers per role (§3.6).
+  - **The actuator** has its constraints (§4.5) and gets its own ADR; the ADR-0002 exception is named.
+  - **Two trust ladders:** the job stage caps per-action autonomy; autonomy is per type and host.
+  - **Loops, locks, holds:** `caused_by` linking, a per-target lock, `flotilla hold`, deploy
+    stand-down, a per-host cap.
+  - **Partial failure:** execution ids, an idempotent actuator, `unknown`, verify needing both the
+    actuator's report and the state.
+  - **Item kinds:** illustrative, the autonomy column removed; disk cleanup wraps the existing script
+    (with its `fstrim`); `oom_loop` is a config fault, `memory_growth` the restart case; `cost_spike`
+    split.
+  - **Knowledge:** back to ADR-0004's snapshot rule for v1; live and third-party sources later, by
+    amendment.
+  - **Triage's writes** listed in full (GlitchTip, annotations), as low-risk catalogue entries.
+  - **Work items:** code-computed dedup keys, push with leases, staleness, caps; bugfix through items.
+  - **Verify and outcome** separated (timer vs daily job).
+  - **Away:** said plainly; email until a phone channel exists.
+  - **The reviewer agent** is quality, not security.
+  - **Marketing** reduced to its pipeline mapping (RFC-0003 holds SEO); the post register is fleet
+    data.
+  - **v1 narrowed** to one chain, one host, one action; alternatives considered added; docs to amend
+    listed.
