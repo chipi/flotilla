@@ -73,7 +73,7 @@ nav:
     - architecture/index.md
     - Context: architecture/context.md
     - Components: architecture/components.md
-    - A run, end to end: architecture/run-lifecycle.md
+    - A case, end to end: architecture/run-lifecycle.md
     - Data: architecture/data.md
     - Deployment: architecture/deployment.md
   - Security: security.md

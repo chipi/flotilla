@@ -1,39 +1,86 @@
 # Deployment
 
-**Status:** accepted in [ADR-0002](../adr/ADR-0002-run-in-docker.md) (2026-11-08).
+**Status:** the control plane in Docker is accepted in [ADR-0002](../adr/ADR-0002-run-in-docker.md)
+(2026-11-08); workers per role in [ADR-0005](../adr/ADR-0005-agent-pipeline.md); host agents are
+proposed in [ADR-0006](../adr/ADR-0006-node-agent.md).
 
-flotilla runs on the homelab Mac mini: Intel, macOS 15.7, 64 GB once the memory upgrade is fitted.
-It runs in Docker, in the production colima VM with the homelab's other services, deployed by the
-operator account.
+A flotilla installation has two parts:
+- **the control plane:** flotillad, the workers and the egress proxy, as one Compose stack on one
+  host;
+- **host agents:** `flotilla-node` on each host flotilla may change, installed from the control
+  plane over SSH.
 
+```mermaid
+flowchart TB
+    subgraph CPH["Control plane host (Docker)"]
+        F[flotillad<br/>volume: state<br/>no fleet secrets, no Docker socket]
+        subgraph Internal["internal network, no route out"]
+            WT[worker-triage]
+            WR[worker-ops-read]
+            WA[worker-ops-act-host]
+            WO[workers for other roles]
+        end
+        E[egress proxy<br/>allowlist per worker]
+    end
+    subgraph H1["Host A"]
+        NA[flotilla-node<br/>actuator + connector<br/>dedicated user, SQLite store]
+    end
+    subgraph H2["Host B"]
+        NB[flotilla-node<br/>actuator]
+    end
+    Op([Operator workstation<br/>CLI, root CA offline])
+    F -- start runs --> WT & WR & WA & WO
+    WT & WR & WA & WO --> E
+    E --> Out[(model endpoint, sources)]
+    NA & NB -- outbound mTLS --> F
+    Op -- flotilla node install, over SSH --> NA & NB
+    NA --> Slack[(Slack, Socket Mode)]
 ```
- Mac mini (macOS) ── colima VM (Linux) ──────────────────────────────────────────────────────────┐
- │                                                                                                │
- │  flotillad            ── tailnet: API, UI, MCP (via the homelab's Caddy / tailnet node)        │
- │   volume: state (SQLite, events)                                                               │
- │   no fleet secrets, no Docker socket                                                           │
- │        │ local network (flotilla internal)                                                     │
- │        ├── worker-triage     secrets: Grafana read, GlitchTip read/write, GitHub (issues),       │
- │        │                     LiteLLM key fleet-triage                                            │
- │        ├── worker-ops        secrets: Grafana read, LiteLLM key ops                               │
- │        ├── worker-seo        secrets: Search Console read, Umami read, LiteLLM key seo           │
- │        │                     volume: seo data (Parquet)                                          │
- │        └── worker-bugfix     secrets: GitHub App (branches, PRs), LiteLLM key bugfix             │
- │                              toolchain: git, language toolchains, the coding harness            │
- │                                                                                                │
- │  existing: LiteLLM, VictoriaMetrics/Logs/Traces, Grafana, GlitchTip, Langfuse, Alloy, Caddy …  │
- └────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
 
-## Why one worker per fleet
+## Workers per role
 
-- **Credentials:** each fleet's secrets are mounted only into its own worker. A compromised SEO run
-  cannot reach the bugfix fleet's GitHub App.
-- **Toolchains:** the bugfix fleet needs git and build tools; the others do not.
-- **No Docker socket anywhere.** flotillad does not start containers per run. That would need the
-  Docker socket, which is root on the VM. Workers are long-running, and each run is a process inside
-  its fleet's worker.
-- **Resources:** each worker has its own memory and CPU limits.
+One worker per **role**, not per fleet: a role is a set of credentials and a toolchain.
+
+| Role | Credentials | Runs |
+|---|---|---|
+| `triage` | alerting and error tracking read, issue filing, the triage model key | the triage fleet |
+| `ops-read` | read-only metrics, logs, traces; read-only database queries | Ops diagnosis, briefs, reviews |
+| `ops-act-host` | none for hosts: it plans, flotillad signs, host agents execute | Ops remediation jobs |
+| `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
+| `marketing` | Search Console, web analytics read | the digital marketing fleet |
+| `bugfix` | a GitHub App for branches and PRs; git and build toolchains | the bugfix fleet |
+| `knowledge-refresh` | read access to recall sources | refreshing and indexing recall |
+
+- **No Docker socket anywhere.** Workers are long-running; each run is a process in its role's
+  worker.
+- **Each worker has its own memory and CPU limits** and its own egress allowlist.
+
+## Host agents
+
+- **Installed from the control plane:** `flotilla node install <host>` over SSH with the operator's
+  key. It copies the signed release binary for the host's platform, creates the dedicated user,
+  writes the service unit (systemd or launchd) and the host's allowlist, generates the sudoers file
+  (checked with `visudo -c`), and enrols the agent with a one-time token.
+- **Upgrades are pushed:** `flotilla node upgrade`, verifying the release signature; the previous
+  binary stays for rollback. `flotilla node list` shows each agent's version, certificate expiry,
+  allowlist hash and last contact. `flotilla node remove` revokes the certificate and uninstalls.
+- **Connects out:** the agent opens one connection to flotillad's node endpoint; nothing on the host
+  listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
+  network); mutual TLS is required on any of them.
+- **The host's allowlist** (exact command templates per capability and the host's autonomy ceiling)
+  lives in the installation's private config, is reviewed like code, and is installed with the agent.
+
+## Keys and custody
+
+| Key | Where | Used for |
+|---|---|---|
+| Root CA | offline, with the operator | signs the intermediate; never on a host |
+| Intermediate CA | flotillad | issues short-lived certificates to host agents |
+| Execution signing key (Ed25519) | flotillad | signs every execution; host agents hold the public key |
+| Release signing key | CI only | signs `flotilla-node` releases |
+| Host agent certificate | each host agent | its identity to flotillad; short-lived, renewed |
+| Provider credentials (Slack) | the host agent with the connector role | Socket Mode connection |
+| Fleet credentials | each role's worker, mode-600 files | that role's reads and repo writes |
 
 ## Hardening, every container
 
@@ -49,18 +96,18 @@ operator account.
 
 ## Deploy and rollback
 
-- **Deploy:** a new image tag for each container, then `docker compose up -d`. specs travel inside
-  the image, so a spec change is a deploy.
-- **Rollback:** the previous tag.
-- **Observability:** every deploy writes an `ops_event/v1` deploy event, so the homelab's deploy
-  checks and alert stand-downs see it.
+- **Deploy:** a new image tag for each container, then `docker compose up -d`. Specs travel inside
+  the image, so a spec change is a deploy. A changed config file recreates the service that reads it
+  (a config hash in the service's environment).
+- **Rollback:** the previous tag; for a host agent, the previous binary.
+- **Observability:** every deploy writes a deploy event, so deploy checks and alert stand-downs see it.
 - **State:** the database lives on a volume and survives restarts. Schema migrations run at
   flotillad start-up, forward-only, with a backup taken first.
 
 ## Development and tests
 
-- **Development:** the dev Docker engine (the homelab's ADR-0009), never the production VM.
-- **End-to-end tests:** the whole stack in the dev engine, with a stub LiteLLM and stub sources
+- **Development:** a separate Docker engine for development, never the production one.
+- **End-to-end tests:** the whole stack in that engine, with a stub model endpoint and stub sources
   (see [Testing](../testing.md)).
 
 ## Defaults
@@ -70,13 +117,23 @@ commit to this page, with the reason.
 
 | Topic | Default |
 |---|---|
-| **Egress** | Deny by default. Workers sit on an `internal` Docker network with no route out. The only way out is one egress proxy, [Smokescreen](https://github.com/stripe/smokescreen) (MIT, approved as a dependency by the
-operator 2026-11-08), built from a pinned commit. Each worker has its own allowlist of `host:port`, generated from the tools and outputs its fleet's specs declare and kept in config. A denied connection is logged and counted, and any denial raises an alert. flotillad reaches only the observability stack. |
-| **Reaching the UI, API and MCP** | A caddy-tailscale node of its own, like the homelab's other services (homelab ADR-0006), with one tailnet ACL grant per port. Never a public interface. |
-| **Operator identity** | The UI trusts the tailnet identity caddy-tailscale passes on, and only the operator's identity may approve. The CLI uses an operator token from a mode-600 file in the operator's home. Approvals also come from the operator's pinned Slack user, within ADR-0005's limits. |
+| **Egress** | Deny by default. Workers sit on an `internal` Docker network with no route out. The only way out is one egress proxy, [Smokescreen](https://github.com/stripe/smokescreen) (MIT, approved as a dependency by the operator 2026-11-08), built from a pinned commit. Each worker has its own allowlist of `host:port`, kept in config. A denied connection is logged and counted, and any denial raises an alert. flotillad reaches only the observability stack. |
+| **Reaching the UI, API and MCP** | Only on the network the installation chooses, never on a public interface. |
+| **Operator identity** | The UI trusts the identity the installation's front proxy passes on, and only the operator's identity may approve. The CLI uses an operator token from a mode-600 file in the operator's home. Approvals also come from the operator's pinned Slack user, within ADR-0005's limits. |
 | **Agent identity (MCP)** | A token per caller, minted by the operator with the CLI, scoped `read` or `read+act`. No scope can approve. |
 | **Bugfix worker** | Builds and tests inside its own container, with its toolchain baked into the image. No Docker inside it, so repos whose tests need Docker are out of scope for now. Each run's worktree is on a scratch volume and deleted when the run ends. |
 | **Images** | `ghcr.io/chipi/flotilla-<role>`, public (they hold no secrets or config), built in CI, tagged `sha-<7>`, deployed by digest. Signing (cosign) is added before any fleet reaches `live`. |
-| **Credentials** | A GitHub App per fleet instead of personal tokens (installation tokens expire within an hour). A LiteLLM key per fleet with a budget, minted with the homelab's `mint-credential` skill. Other credentials are rotated every 90 days and at once on any suspicion. Each one has a row in the homelab handbook's credentials table. |
-| **Resource limits** | flotillad 256 MiB and 0.5 CPU; the triage, ops and SEO workers 1 GiB and 1 CPU each; the bugfix worker 4 GiB and 2 CPUs. These are limits, not reservations, and are revised from measurements after phase 2. |
-| **State backup** | A nightly SQLite `.backup` into the mini's offsite backup, with a "backup older than 26 h" alert like the homelab's other backups, and a restore test before phase 3. |
+| **Credentials** | A GitHub App per role instead of personal tokens (installation tokens expire within an hour). A model key per role with a budget where the endpoint supports it. Other credentials are rotated every 90 days and at once on any suspicion. |
+| **Resource limits** | flotillad 256 MiB and 0.5 CPU; the egress proxy 128 MiB; the triage, ops and marketing workers 1 GiB and 1 CPU each; the bugfix worker 4 GiB and 2 CPUs. Limits, not reservations, revised from measurements. |
+| **State backup** | A nightly SQLite `.backup` into the host's offsite backup, with a "backup older than 26 h" alert, and a tested restore. |
+
+## Reference installation
+
+| What | Where |
+|---|---|
+| Control plane | the homelab Mac mini (Intel, macOS), in the production colima VM beside the homelab's other services, deployed by the operator account with `deploy/mini/deploy.sh` |
+| Running today | `flotillad`, `worker-triage` (shadow), `worker-triage-candidate` (Compose profile `candidate`), `egress` |
+| Model endpoint | the homelab's LiteLLM gateway, reached through the egress proxy |
+| Network | a tailnet; the UI, API and MCP behind a caddy-tailscale node of their own |
+| Host agents | the mini first (v1: `backup.rerun_observability`, in shadow), then the DGX and the production VPS |
+| Credentials | each one has a row in the homelab handbook's credentials table, minted with its `mint-credential` skill |

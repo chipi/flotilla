@@ -1,59 +1,62 @@
 # Components
 
-Two programs, split at a process boundary:
-- **flotillad**, the control plane, in Go;
-- **the job runtime**, in Python.
+Three programs, each with one job:
+- **flotillad** (Go), the control plane: decides and records;
+- **the job runtime** (Python), inside workers: diagnoses and plans;
+- **`flotilla-node`** (Go), the host agent: executes what is signed and allowed on its host.
 
-flotillad never runs fleet code inside itself, and the job runtime never decides what it is allowed
-to do.
+flotillad never runs fleet code and holds no fleet credentials; the job runtime never decides what it
+may do; the host agent never runs anything it was not sent, signed, and allowed by its own host.
 
 ## flotillad (Go)
 
 | Component | Responsibility |
 |---|---|
-| **Registry** | loads `fleets/<fleet>/*.yaml`, validates them against the JSON Schema, keeps the loaded version of each spec, and refuses a spec that does not validate. Specs are reloaded on deploy, never edited at runtime. |
-| **Scheduler** | fires triggers: `every`, `cron`, events (a Grafana alert webhook, a deploy event, a manual run). It checks the job's STOP flag, pause state and daily budget before every run. Grown from fleetd. |
-| **Runner** | asks the fleet's worker to start a run, with the job spec, a run id, a trace id and the job's identity. It enforces the timeout, and records the start, end, status and cost. |
-| **Ledger** | the cases (ADR-0005): one record per problem with its lifecycle and timeline (see [Data](data.md)). Only the runner (on a job's behalf) and the operator write to it. Every change records its actor. |
-| **Policy** | decides each planned write: run, ask the operator, or refuse (ADR-0005). It executes only flotilla's own controls; writes run in the acting worker. |
-| **Approval queue** | proposals waiting for the operator. It applies an approved proposal by asking the fleet's worker to run the output, so the control plane holds no fleet credentials. |
-| **Budgets and stages** | per job and per fleet: spend per day, runs per day, current stage. What a stage allows is enforced here, not by the job. |
-| **API** | HTTP+JSON on the tailnet. One API behind every interface. |
-| **CLI** | `flotilla status / run / dry-run / pause / stop / stage / ledger / approve / reject`. The same binary. |
-| **UI** | server-rendered pages from the same binary: fleets and jobs, runs, the ledger, the approval queue, controls. No separate frontend build. |
-| **MCP server** | read tools (status, runs, ledger, findings, queue) and action tools (dry-run, trigger, pause, note, propose). It has no approve tool. Each caller has its own identity. |
-| **Telemetry** | its own metrics, structured logs, OpenTelemetry traces, and GlitchTip errors. |
+| **Registry** | loads `fleets/<fleet>/*.yaml` and the capability registry; refuses a spec that does not validate, or that offers a write capability inside an agent's loop |
+| **Triggers** | starts jobs on **time** (every, cron) or on an **event** on a case (handed over to a kind, a check due); checks STOP, pause and budget first |
+| **Runner** | asks a worker to start a run with its spec, run id, trace id, deadline and environment (`FLOTILLA_MODELS`, the trace parent); enforces the timeout; records cost |
+| **Cases** | one record per problem with its keys, status, holder, lease and timeline ([Data](data.md)); a **transition table** enforced on every status change; timers for stuck states; the per-target lock |
+| **Policy** | decides each planned write: the registry's checks, autonomy (lowest of the job's stage, the capability's earned level, the host's ceiling, taint, the freeze), locks, limits, holds; then executes, asks the operator, or refuses. It executes only flotilla's own controls itself |
+| **Guardrails** | per-host and platform caps on executions, the circuit breaker, the host incident rule, the autonomy freeze, the recurrence rule |
+| **Approvals** | proposals waiting on the `approvals` channel; an approval (UI, CLI, or the operator's pinned Slack user within limits) is bound to the plan's hash and starts an execute run |
+| **Node gateway** | the endpoint host agents connect to (mutual TLS); the certificate authority's intermediate issues and renews their certificates; revocation; `flotilla node list` |
+| **Signer** | signs every execution with flotillad's Ed25519 key: execution id, case, host, capability, parameters, plan hash, approval, expiry, nonce |
+| **Channels** | routes `alerts`, `approvals` and `notifications` to the provider's connector |
+| **Budgets and stages** | per job and fleet: spend and tokens per day; stage and autonomy controls, with who changed them |
+| **API, CLI, UI, MCP** | one API behind all of them. The UI's main screen is the case timeline. MCP has no approve tool |
+| **Telemetry** | metrics (retried pushes), structured logs, OpenTelemetry traces, errors |
 
-## The job runtime (Python)
+## Workers and the job runtime (Python)
 
-A library, plus the `flotilla-run` entry point that a fleet worker executes for each run.
+A **worker** is a long-running container that runs jobs for **one role**, holding only that role's
+credentials and toolchain (`triage`, `ops-read`, `ops-act-host`, …). Each run is a process in it.
 
-| Component | Responsibility |
+| Runtime component | Responsibility |
 |---|---|
-| **Sources** | collect facts (alerts, errors, metrics, Search Console rows, crawl snapshots) into the run's working data. No model involved. |
-| **Detectors** | deterministic checks that turn facts into candidates (a regression, an opportunity, an alert worth triage). |
-| **Agent loop** | for each candidate: the playbook as system prompt, the evidence and prior decisions as context, the job's declared tools offered to the model. It answers each tool call through the tool registry. It stops at its limits (`max_steps`, `max_tool_calls`, timeouts) or on an answer that matches the output schema; a malformed or empty answer is retried within the step limit ([ADR-0004](../adr/ADR-0004-job-runtime.md)). |
-| **Tool registry** | the read-only functions a model may call. Each checks its scope (site, repo, time range, size cap) and returns provenance with the data. |
-| **Gates** | deterministic checks on the model's answer: evidence cited and real, not a duplicate, in scope, plus the fleet's own gates. A gate failure records the decision as `gated`, not dropped silently. |
-| **Outputs** | the only write paths: a GitHub issue, comment, PR or label; a finding file; a page; a push. Each checks scope against config and runs only when the stage allows it or after approval. |
-| **LLM client** | one client for every call, to any OpenAI-compatible endpoint (LiteLLM is the reference deployment), under the job's model policy. It records model, tokens, cost and latency, and traces every call ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §3). Built: `runtime/model_client.py`; not wired into a fleet until RFC-0002 §9 step 2. |
-| **Ledger client** | reports decisions to flotillad. It never writes the database directly. |
-| **Config loader** | reads `~/.config/flotilla/config.yaml` and the secrets files it names. One set of names, no drift. |
+| **Harness** | the one loop for a model step: context in, read capabilities offered, an answer of the step's output type (decision, prose, plan), validated (`jsonschema`); limits on turns, calls, tokens, time, cost; everything recorded for replay |
+| **Context builder** | layers with budgets: playbook, the case (structured events only), recall, capability results; untrusted content wrapped as data; the run's **taint** derived from what entered it |
+| **Recall client** | exact lookups of flotilla's records by key; search over plugged-in sources (path maps, full-text, semantic), by trust tier |
+| **Capability calls** | read capabilities, scoped and size-capped, recorded; write capabilities only as entries of a plan |
+| **Model client** | any OpenAI-compatible endpoint; aliases with capabilities; cost from the endpoint, a price table, or unknown (never zero); typed errors; a span per call |
+| **Case client** | opens, updates and hands over cases through flotillad's API; never writes the database |
+| **Executor** | carries out an approved plan's repo writes (issues, PRs) with the role's credentials; host writes go from flotillad, signed, to the host agent |
 
-## Fleet workers
+## The host agent: `flotilla-node` (Go)
 
-A **fleet worker** is the job runtime packaged with what one fleet needs:
-- its building blocks;
-- its secrets, and only its own;
-- its toolchain (for the bugfix fleet: git, the language toolchains, the coding harness).
+One static binary per platform, installed per host as a service under a dedicated user
+([ADR-0006](../adr/ADR-0006-node-agent.md), proposed).
 
-flotillad talks to each worker over a local API. The deployment view is in
-[Deployment](deployment.md).
+| Role | Responsibility |
+|---|---|
+| **Actuator** | runs an execution only if its signature verifies, it is unexpired and never seen, the host is this host, the capability is in this host's allowlist with valid parameters, and an `auto` execution is within this host's ceiling; checks preconditions locally; runs the exact command template (never a shell); idempotent by execution id (SQLite); a hash-chained audit log shipped off the host |
+| **Connector** | holds a provider's credentials (Slack); posts what flotillad sends to a channel; relays approval clicks (with the plan hash and nonce) back to flotillad |
 
-## Interfaces between the two
+## Interfaces
 
 | From → to | What | Contract |
 |---|---|---|
-| flotillad → worker | start run (job id, spec version, run id, trace id, deadline), cancel run, apply approved output | versioned JSON schema |
-| worker → flotillad | run started, decision, proposal, run ended (status, cost, tokens) | versioned JSON schema |
-| any client → flotillad | the public API (CLI, UI, MCP, the Hub) | OpenAPI document, versioned |
+| flotillad → worker | start run, cancel run | versioned JSON |
+| worker → flotillad | case events, plans, results, run end | versioned JSON over the API |
+| host agent → flotillad | connect (mutual TLS), results, relayed approvals | versioned protocol over one outbound connection |
+| flotillad → host agent | signed executions, messages for a channel | signed envelopes |
+| any client → flotillad | the public API (CLI, UI, MCP) | OpenAPI document, versioned |

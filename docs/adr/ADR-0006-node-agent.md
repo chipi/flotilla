@@ -1,6 +1,7 @@
 # ADR-0006 — The flotilla node agent: host actions and connectors, on any host
 
-**Status:** Proposed (2026-11-09). Nothing is built from it until the operator accepts it.
+**Status:** Proposed (2026-11-09); its open questions answered by the operator the same day.
+Nothing is built from it until the operator accepts it.
 **Date:** 2026-11-09
 **Builds on:** [ADR-0005](ADR-0005-agent-pipeline.md) (writes run through an actuator, designed in its
 own ADR), [ADR-0002](ADR-0002-run-in-docker.md) (deploys over SSH; the actuator is the one exception to
@@ -28,15 +29,16 @@ probe was faulty), which the outbound design below makes irrelevant.
 A single static binary per platform (macOS and Linux, amd64 and arm64), sharing its protocol and
 signing code with flotillad. Roles, enabled by the host's config:
 - **actuator:** runs the host's allowed writes;
-- **connector** (later): talks to a communication provider (Slack first) on flotillad's behalf, with
-  that provider's credentials, so flotillad holds none.
+- **connector:** talks to a communication provider (Slack first) on flotillad's behalf, with that
+  provider's credentials, so flotillad holds none (decided 4: on the mini, the same instance as the
+  actuator).
 
 ### 2. It connects out
 
 The agent dials flotillad and keeps one long-lived connection (TLS, a websocket); flotillad sends
 work down it. No host opens an inbound port, so the Docker VM on the mini, a VPS firewall and the
-DGX's network make no difference. flotillad exposes one endpoint for agents on the tailnet, behind
-mutual TLS (open question 1). A lost connection means no executions: flotillad marks the host
+DGX's network make no difference. flotillad exposes one endpoint for agents, behind mutual TLS; how
+it is reached is the installation's choice (decided 1). A lost connection means no executions: flotillad marks the host
 unreachable, and an execution in flight becomes `unknown` (ADR-0005).
 
 ### 3. Identity
@@ -158,13 +160,20 @@ capability with its own rules.
 - **Self-update from v1:** convenient, but only safe with release signing fully separate; pushed upgrades
   first.
 
-## Open questions
+## Decided (operator, 2026-11-09)
 
-1. **flotillad's agent endpoint on the tailnet:** how it is published (today flotillad publishes no
-   ports): a Caddy route with mutual TLS terminated in flotillad, or a dedicated tailnet listener.
-2. **Where the CA and the two signing keys live,** and how they are rotated (the operator's offline
-   copy, as for the backup encryption key?).
-3. **The signing format:** Go's standard Ed25519 with our own small envelope (no dependency), or an
-   existing tool (minisign, cosign) for releases.
-4. **The connector role:** whether the Slack connector runs on the mini's agent or as its own service.
-5. **The agent's local store:** SQLite (a dependency already in flotillad) or an append-only file.
+1. **The agent endpoint is generic:** flotillad listens on one configurable port and requires mutual
+   TLS from every agent. How agents reach it is the installation's choice (a tailnet, a VPN, a private
+   network, the internet): mutual TLS is the protection, so nothing assumes Tailscale. This homelab
+   publishes it on its tailnet only.
+2. **Keys split by duty:** the CA's root offline with the operator (as the backup decryption key is),
+   an intermediate CA in flotillad's secrets volume; the execution-signing key in flotillad's secrets
+   volume; the release-signing key only in CI (a repository secret). Rotation and revocation are
+   documented procedures.
+3. **Signing:** Ed25519 from Go's standard library, with our own small canonical envelope, shared by
+   flotillad and the agent, and tested hard (no dependency).
+4. **The Slack connector is a role of the host agent on the mini, one instance with both roles.**
+   Accepted trade-off: the process that holds host-action rights also holds the Slack tokens; a breach
+   of that process exposes both. A second instance under its own user remains the fix if that changes.
+5. **The local store is SQLite,** with the pure-Go driver flotillad already uses: recording an
+   execution id and running it cannot half-happen.

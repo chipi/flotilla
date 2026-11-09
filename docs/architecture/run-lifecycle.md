@@ -1,108 +1,87 @@
-# A run, end to end
+# A case, end to end
 
-What happens from a trigger to a measured outcome. The example is the SEO fleet's weekly regression
-job; the triage fleet has the same shape with an alert as the subject.
+Every problem flotilla handles is a **case**: detected, diagnosed, handed to the job that can fix it,
+planned, approved where needed, executed, checked and closed, with every step on its timeline
+(`flotilla case show <id>`). The full design is [RFC-0004](../rfc/RFC-0004-agent-pipeline.md) §3.5;
+the decision is [ADR-0005](../adr/ADR-0005-agent-pipeline.md).
 
+## The lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> detected
+    detected --> diagnosed: diagnose job
+    detected --> handed_over: a code detector with a known kind
+    diagnosed --> closed: dismissed or reported
+    diagnosed --> handed_over: needs a fix
+    diagnosed --> escalated: unsure
+    handed_over --> planned: acting job, after a code re-check
+    handed_over --> closed: resolved itself
+    handed_over --> escalated: the re-check contradicts the diagnosis, or the recurrence rule is reached
+    planned --> closed: shadow, plan recorded
+    planned --> awaiting_approval: policy says propose
+    planned --> executing: policy says auto
+    planned --> handed_over: deferred (lock, hold, stand-down, limits)
+    planned --> escalated: policy refuses (registry, autonomy)
+    awaiting_approval --> executing: operator approves
+    awaiting_approval --> escalated: operator rejects or it expires
+    executing --> checking: done
+    executing --> closed: precondition no longer true, resolved itself
+    executing --> escalated: failed or unknown
+    checking --> closed: verified
+    checking --> escalated: not verified
+    escalated --> handed_over: the operator reassigns it
+    escalated --> closed: operator or an issue resolves it
+    closed --> [*]
 ```
-trigger ─► checks ─► start ─► collect ─► detect ─► for each candidate: agent loop ─► gates ─► decision
-                                                                                              │
-             outcome measured later ◄─ output runs ◄─ approved by the operator ◄─ proposal ◄──┘
-```
 
-## 1. Trigger
+The transition table in flotillad enforces these; events (an outcome days later, a recurrence, a
+reopened issue) may still be added to a closed case.
 
-The scheduler fires `seo/orrery-regressions` on its cron (Mondays 07:00). Before starting, it
-checks:
-- the job is not paused and its fleet has no STOP flag;
-- today's budget is not spent;
-- no run of this job is still going (one at a time per job unless the spec allows more).
+## An example: an overnight backup that failed
 
-A failed check is recorded as a skipped run with its reason, so it is visible, not silent.
+1. **Detect.** A code-only Ops monitor sees the observability backup is older than 26 hours and opens
+   a `failed_backup` case for the mini. Its keys are computed by code; an open case with the same key
+   would have received the signal instead.
+2. **Hand-over.** A code detector knows the kind, so the case goes straight to `handed_over`, and the
+   event starts the Ops remediation job in the `ops-act-host` worker, which takes the case's lease.
+3. **Re-check and plan.** The job re-checks by code (backup age, whether the job is running). Still a
+   problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
+4. **Policy.** flotillad checks the plan: the capability exists, is declared for `failed_backup`, its
+   target is the case's; autonomy is the lowest of the job's stage, the capability's earned level, the
+   mini's ceiling, taint and the freeze; the lock is free, limits and holds clear.
+   - In **shadow**: the plan is recorded and the case closes.
+   - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
+     the operator approves there or by CLI, bound to the plan's hash. The approval starts a new run.
+   - In **auto**: it goes straight on.
+5. **Execute.** flotillad signs the execution and sends it to the mini's host agent, which checks the
+   signature, expiry, its own allowlist and ceiling, re-checks the precondition, and runs the exact
+   command (`launchctl kickstart system/com.homelab.db-backup`), recording it in its own audit log.
+6. **Check.** After the window, a timer starts a code check: a backup newer than the execution. The
+   case closes as verified, or escalates. Days later an outcome may be added.
+7. **The morning.** The case, its execution, an annotation on the dashboards and a line in the brief
+   show what was handled overnight.
 
-## 2. Start
+Triage runs the same lifecycle with a model in step 1 to 2 (diagnosing alerts and errors); a code bug
+becomes a `code_bug` case for the bugfix fleet, with its GitHub issue as the mirror.
 
-flotillad creates the run:
-- a run id and a trace id;
-- the spec version and the job identity.
+## Runs and cases
 
-It asks the SEO fleet's worker to start it, with a deadline.
-
-## 3. Collect and detect
-
-The worker runs the job's `collect` steps. They read the latest Search Console data (written daily
-by a separate collector job), the crawl snapshot and Umami's page numbers. Then the `detect` steps
-run: SQL over the data, producing candidates such as "page X: clicks −27% over 28 days, position
-6.1 → 8.4". No model has been involved yet.
-
-## 4. Agent loop, per candidate
-
-1. **Context:**
-   - the playbook (`playbooks/seo-regression.md`) as the system prompt;
-   - the site profile;
-   - the candidate's evidence;
-   - the prior decisions about this page from the ledger, including any the operator rejected and why.
-2. **Offer the declared tools** (`seo.page_history`, `seo.queries_for_page`, `seo.crawl_changes`,
-   `findings.existing`).
-3. **The model asks; the tool registry answers.** It checks scope (this site, this time range), caps
-   the size, and attaches provenance.
-4. **It stops** when the model answers in the output schema, or at `max_steps`. A malformed answer
-   gets one retry.
-
-Every call is traced.
-
-## 5. Gates
-
-Deterministic checks on the answer:
-- every claim cites evidence the tools actually returned;
-- not a duplicate of an open finding (`dedup_key`);
-- in scope;
-- plus the fleet's own gates.
-
-A failed gate records the decision with status `gated` and the reason. It is never dropped silently.
-
-## 6. Decision and proposal
-
-The worker reports the decision to flotillad, which writes it to the ledger: subject, evidence
-references, model, playbook and spec versions, cost, and actor = the job.
-
-If the decision wants an outward action, here "open an issue in the Orrery repo with this proposed
-change", it becomes a **proposal**:
-- **`shadow`:** recorded, nothing else.
-- **`propose`:** queued for the operator, unless the spec allows this exact output at this stage
-  (the triage fleet's issue filing is allowed in `propose` today).
-- **`live`:** it runs within the spec's declared limits.
-
-## 7. Approval
-
-The operator sees the proposal in the UI's queue, with its evidence, and approves or rejects it,
-with a reason. Agents can see the queue through MCP but cannot approve. The ledger records the
-operator as the actor.
-
-## 8. Output
-
-flotillad asks the fleet's worker to apply the approved output. The worker has the credentials;
-the control plane does not. The output checks its scope again (the repo is in the fleet's repo map)
-and records the result (issue number, PR URL) on the decision.
-
-## 9. Outcome
-
-Later, a separate job measures what happened: the issue closed, the PR merged, the page's clicks
-four weeks after the change. It writes the outcome onto the decision. The next run's context
-includes it, which is how the fleet learns without rewriting itself.
-
-## 10. End
-
-The run reports its status (succeeded, failed, timed out, partially gated), its cost and its
-tokens. flotillad updates the job's freshness metric. A job that has not succeeded within its
-declared freshness raises its stale alert.
+A **run** is one job execution; a case may span several (a diagnose run, a planning run, an execute run
+after an approval, a check run). No run waits: an approval or a due check is an event that starts the
+next run.
 
 ## Failure behaviour
 
 | Failure | Behaviour |
 |---|---|
-| The model endpoint is down | a rejected key or billing error (401, 403, 402), or at least two deferred cases and none decided: the run ends `endpoint_down` with one aggregate signal, deduped across runs; a transient error defers the case to the next run, up to the job's `defer_limit`, then escalates. Never a silent switch to another model ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
-| A tool errors | the error is given to the model as the tool's answer; after `max_steps` the candidate is recorded as `incomplete` |
-| Malformed answers until the step limit | the candidate is recorded as `invalid_output` with the raw answers in the run's record |
-| The worker crashes or hangs | the deadline kills the run; its decisions so far stay in the ledger, marked with the run's failed status |
-| flotillad restarts | the scheduler resumes; a run that was in flight is marked `interrupted`; missed triggers run once at start-up, or not at all, as the spec declares |
-| Budget spent mid-run | the run finishes the candidate in hand and stops; the remaining candidates are recorded as `deferred` |
+| The model endpoint rejects the key or billing (401, 402, 403) | the run ends `endpoint_down` with one aggregate signal, deduped across runs; no silent switch to another model |
+| A transient model error | the case is deferred to the next run, up to the job's limit, then escalated |
+| A capability call errors | the error is the call's answer; after the step limit the case escalates |
+| Malformed answers until the step limit | the case escalates, with the raw answers in the run's record |
+| A worker crashes or hangs | the deadline kills the run; its lease expires; the case returns, or its check resumes if an execution was open (the action never re-runs) |
+| A host agent is unreachable | no execution is sent; an execution in flight becomes `unknown`, the target is held, the case escalates |
+| An execution's result is unknown | the target is held until the operator clears it; the capability drops one autonomy level |
+| flotillad restarts | runs in flight are `interrupted`; cases keep their status; timers resume |
+| Budget spent mid-run | the run stops after the case in hand; the rest are deferred |
+| Too many failures or new cases | the circuit breaker drops every auto capability to propose; the host incident rule pauses auto on that host |

@@ -1,48 +1,86 @@
 # Architecture
 
-How flotilla is built, at four levels of detail. The decisions behind it are in
-[ADR-0001](../adr/ADR-0001-platform-foundations.md), and the reasoning is in
-[RFC-0001](../rfc/RFC-0001-fleet-platform.md).
+How flotilla is built. The decisions are in the ADRs: [ADR-0001](../adr/ADR-0001-platform-foundations.md)
+(foundations), [ADR-0002](../adr/ADR-0002-run-in-docker.md) (Docker),
+[ADR-0004](../adr/ADR-0004-job-runtime.md) (the job runtime),
+[ADR-0005](../adr/ADR-0005-agent-pipeline.md) (the agent pipeline) and
+[ADR-0006](../adr/ADR-0006-node-agent.md) (host agents, proposed). The reasoning is in the RFCs they
+came from.
+
+These pages describe flotilla in general. Where a fact belongs to one installation, it is marked as
+the **reference installation**: the homelab flotilla was built for (a Mac mini running the control
+plane, a DGX and a production VPS as other hosts).
 
 | Page | What it answers |
 |---|---|
-| [Context](context.md) | What flotilla talks to, and who uses it |
-| [Components](components.md) | What the control plane and the job runtime are made of |
-| [A run, end to end](run-lifecycle.md) | What happens from a trigger to a decision, an approval and an outcome |
-| [Data](data.md) | What is stored where: specs, config, state, the ledger |
-| [Deployment](deployment.md) | How it runs on the homelab mini (Docker, proposed in [ADR-0002](../adr/ADR-0002-run-in-docker.md)) |
-| [Security](../security.md) | The threat model and the controls; designed in from the start |
-| [Testing and validation](../testing.md) | The test pyramid, validating the platform on its own, validating each fleet as it runs |
+| [Context](context.md) | Who uses flotilla, and what it talks to |
+| [Components](components.md) | What flotillad, the workers, the job runtime and the host agents are made of |
+| [A case, end to end](run-lifecycle.md) | What happens from a signal to a verified, recorded result |
+| [Data](data.md) | What is stored where: specs, config, state, cases, recall |
+| [Deployment](deployment.md) | How it is deployed: the control plane, the workers, the host agents, the keys |
+| [Security](../security.md) | The threat model and the controls |
+| [Testing and validation](../testing.md) | How the code, the platform and each fleet are proven |
 
 ## In one picture
 
+```mermaid
+flowchart LR
+    subgraph People["People and agents"]
+        Op([Operator])
+        Ag([Other agents via MCP])
+    end
+    subgraph CP["Control plane host"]
+        F[flotillad<br/>specs, cases, policy,<br/>scheduler, signing, API]
+        W1[Worker: triage]
+        W2[Worker: ops-read]
+        W3[Worker: ops-act-host]
+        W4[Worker: other roles]
+        E[Egress proxy]
+    end
+    subgraph Hosts["Hosts"]
+        N1[Host agent<br/>actuator + connector]
+        N2[Host agent<br/>actuator]
+    end
+    Src[(Sources<br/>alerts, metrics, logs,<br/>errors, GitHub, Search Console)]
+    LLM[(Model endpoint<br/>OpenAI-compatible)]
+    Slack[(Slack)]
+    Obs[(Observability stack)]
+    Op -- UI, CLI --> F
+    Ag -- MCP --> F
+    F -- start runs --> W1 & W2 & W3 & W4
+    W1 & W2 & W3 & W4 -- cases, plans, results --> F
+    W1 & W2 & W3 & W4 --> E
+    E --> Src & LLM
+    N1 & N2 -- connect out, mTLS --> F
+    F -- signed executions --> N1 & N2
+    N1 -- connector --> Slack
+    Slack -- approvals --> N1
+    F --> Obs
 ```
- operator ──► UI / CLI ─┐                             ┌─► LiteLLM ─► local models (X3, DGX)
- agents ────► MCP ──────┤                             │
-                        ▼                             │
-                 ┌─────────────┐   starts runs   ┌────┴─────────┐   reads    ┌────────────────────┐
-                 │  flotillad  │ ──────────────► │ fleet worker │ ─────────► │ sources: Grafana,  │
-                 │ (Go)        │ ◄────────────── │ (Python job  │            │ VictoriaMetrics,   │
-                 │ specs, runs │  decisions,     │  runtime)    │            │ GlitchTip, GitHub, │
-                 │ ledger,     │  events         └────┬─────────┘            │ Search Console,    │
-                 │ approvals   │                      │ writes (only        │ Umami …            │
-                 └─────┬───────┘                      │ via outputs)        └────────────────────┘
-                       │                              ▼
-                       │                       GitHub issues/PRs, pages, pushes
-                       ▼                       (when the stage allows, or approved)
-     metrics, logs, traces, errors ─► the homelab observability stack
-```
+
+- **flotillad** decides and records; it holds no fleet credentials and runs no fleet code.
+- **Workers** run jobs (one worker per role, each with only that role's credentials); jobs diagnose,
+  plan and report, and reach the outside only through the egress proxy.
+- **Host agents** run on the machines flotilla may change; they connect out to flotillad and run only
+  signed executions their host's own allowlist permits. One may also be the connector to a
+  communication provider.
 
 ## Vocabulary
 
 | Term | Meaning |
 |---|---|
-| fleet | a group of jobs with one purpose: `triage`, `bugfix`, `seo`, `ops` |
-| job | a declared unit of work: trigger, steps, output, stage, budget |
-| run | one execution of a job |
-| step | `collect`, `detect`, `agent`, `gate`, `output` |
-| building block | named code a step uses: a source, detector, tool, gate, output |
-| playbook | the agent step's instructions, a Markdown file in git |
-| decision | what a run concluded about one subject, with evidence: one ledger row |
-| proposal | a decision that wants an outward action |
-| stage | `shadow`, `propose`, `live`: how much a job may do without approval |
+| **fleet** | a group of jobs with one purpose: triage, Ops (the SRE team in action), digital marketing, bugfix |
+| **job** | a declared unit of work: its worker, trigger, steps, capabilities, stage, budget |
+| **run** | one execution of a job |
+| **case** | one problem flotilla handles, with its lifecycle and its whole timeline ([A case, end to end](run-lifecycle.md)) |
+| **case kind** | a type of problem (`failed_backup`, `code_bug`, …): its playbook and allowed capabilities |
+| **capability** | a named, typed, scoped operation in one registry: a **read** (an agent may call it) or a **write** (an agent may only plan it) |
+| **recall** | everything an agent may look up: what flotilla recorded (exact, by key) and plugged-in sources (repos, docs, MCP servers), each trusted or untrusted |
+| **policy** | flotillad's code that decides each planned write: run, ask the operator, or refuse |
+| **stage** | `shadow`, `propose`, `live`: a job's ceiling on how much it may do on its own |
+| **autonomy** | a write capability's earned level (shadow, propose, auto), promoted only by the operator |
+| **worker** | a long-running container that runs jobs for one role, with that role's credentials |
+| **host agent** | `flotilla-node` on a host: the **actuator** (runs host writes) and, where configured, a **connector** (talks to a communication provider) |
+| **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |
+| **project** | what cases are about (a codebase, a site, a service), with its labels, issue repo and recall sources |
+| **playbook** | a job's instructions to the model, Markdown in git |

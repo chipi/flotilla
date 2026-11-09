@@ -1,6 +1,8 @@
 # flotilla
 
-A plain, spec-driven fleet platform for small fleets of AI agents: a control plane, a ledger of every decision, and fleets that propose, never act alone.
+A plain, spec-driven platform for small fleets of AI agents that can act, within limits the operator
+sets and can see: a control plane that decides and records, workers that diagnose and plan, and host
+agents that execute only what is signed and allowed on their host.
 
 ## Where to start
 

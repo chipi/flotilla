@@ -13,11 +13,11 @@ model behaviour that is measured.
 
 | Level | What | Examples | Where it runs |
 |---|---|---|---|
-| **Unit** (most tests) | one component, no network, no model | scheduler (triggers, budget, STOP, stage), spec validation, the ledger's status transitions, tool scope checks, gates, the agent loop driven by a **scripted fake model**, output scope checks, config loading | every push (`ci-fast`) |
-| **Contract** | the agreements between parts | the spec JSON Schema (every spec in `fleets/` validates), the flotillad ↔ worker messages, the public API against its OpenAPI document, MCP tool schemas, each agent step's output schema | every push |
-| **Security** | the threat model's controls | injection fixtures never produce an output; tools refuse out-of-scope requests; MCP has no way to approve; a local-only job refuses a cloud model; secrets never appear in logs or traces | every push |
-| **Integration** | flotillad and a worker together, real SQLite | a run from trigger to ledger with a **stub LiteLLM** returning recorded responses and stub sources (fixture alerts, fixture Search Console rows); approval applies an output to a **stub GitHub** | every push to main and PR (`ci`) |
-| **End to end** | the deployment itself | the compose stack (flotillad plus workers) in the dev Docker engine with stub LiteLLM, stub sources and stub GitHub; drive it through the CLI and the API; check metrics and logs come out | before every release |
+| **Unit** (most tests) | one component, no network, no model | triggers (budget, STOP, stage), spec and registry validation, the case transition table, case keys and dedup, policy decisions (autonomy, locks, limits, holds, taint), the guardrails, capability scope checks, the harness driven by a **scripted fake model**, the model client against a fake endpoint, config loading; in `flotilla-node`: signature, expiry, replay, allowlist and ceiling checks, idempotency, the audit chain | every push (`ci-fast`) |
+| **Contract** | the agreements between parts | the spec JSON Schema (every spec in `fleets/` validates), the flotillad ↔ worker messages, the public API against its OpenAPI document, MCP tool schemas, each harness step's output schema, the capability registry, the node protocol and the signed execution envelope, the model configuration (`FLOTILLA_MODELS`, shared fixtures in Go and Python), the model client against real endpoints (`runtime/contract_check.py`) | every push |
+| **Security** | the threat model's controls | injection fixtures never lead to an executed write and taint caps them at propose; capabilities refuse out-of-scope requests; MCP has no way to approve; a local-only job refuses a cloud model; secrets never appear in logs or traces; the host agent refuses forged, replayed, expired, out-of-allowlist and above-ceiling executions; a Slack approval from another user, for high risk or for a changed plan is refused | every push |
+| **Integration** | flotillad and a worker together, real SQLite | a case from trigger to closed with a **stub model endpoint** returning recorded responses and stub sources (fixture alerts, fixture Search Console rows); an approval starts the execute run; repo writes go to a **stub GitHub**, host writes to a host agent running a no-op allowlist | every push to main and PR (`ci`) |
+| **End to end** | the deployment itself | the compose stack (flotillad, workers, egress proxy) and a host agent in a container, in the dev Docker engine, with a stub model endpoint, stub sources, stub GitHub and a stub provider; drive it through the CLI and the API; check metrics, logs and traces come out (`deploy/e2e/run.sh`) | before every release |
 | **Live smoke** | the deployed system on the mini | the canary fleet (below) runs on schedule; `flotilla status` is healthy; the deploy-verify check passes | after every deploy, then continuously |
 
 **Rules:**
@@ -36,19 +36,18 @@ this repo. It is synthetic, deterministic and harmless:
   - a source (synthetic facts) and a detector;
   - an agent step against a **real local model** with one read-only tool and a fixed question whose
     answer can be checked;
-  - a gate, and a decision in the ledger;
-  - a proposal that waits in the queue (it targets a no-op output);
+  - a case, its timeline and a planned no-op write that waits for approval;
   - metrics, logs and traces.
 - **What it proves:**
   - the scheduler fires and the worker runs;
   - the model endpoint works with tool calls;
-  - the ledger, approvals and telemetry work end to end;
+  - cases, approvals and telemetry work end to end;
   - the stale alert fires when it stops.
 - **It keeps running in production** as the platform's own heartbeat. If the canary is stale or
   failing, the platform is broken, whatever the real fleets say.
 - **Acceptance for phase 2** of the migration:
   - the canary runs green for a week;
-  - every failure mode in [A run, end to end](architecture/run-lifecycle.md#failure-behaviour) is
+  - every failure mode in [A case, end to end](architecture/run-lifecycle.md#failure-behaviour) is
     triggered once on purpose and behaves as documented.
 
 ## 3. Validating each fleet as it runs
@@ -58,8 +57,9 @@ this repo. It is synthetic, deterministic and harmless:
 | **Replay corpus** | does a change alter decisions on known cases? | recorded inputs with the expected decisions (the triage fleet already has 15 such gates, `signal-fleet/replays.sh`). Every change to a playbook, gate, detector or spec replays them; any changed decision fails unless accepted with a reason. |
 | **Evaluation modes** | which proof does a change need? | four modes: code replay, exact replay, model replay and shadow comparison, with a table of which change needs which ([ADR-0004](adr/ADR-0004-job-runtime.md), RFC-0002 §8) |
 | **Shadow comparison** | does the new platform decide like the old one? | during migration, the fleet runs in `shadow` on flotilla beside the existing implementation for N days; decisions are compared per subject; differences are explained before switching |
-| **Stage ladder** | is it ready to act? | `shadow` → `propose` → `live`, each step on evidence: shadow agreement, then the operator's approval rate in `propose` |
-| **Decision quality, live** | is it still making good decisions? | from the ledger: approval and rejection rate, the reasons for rejections, duplicates caught by gates, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |
+| **Stage ladder** | is a job ready to act? | `shadow` → `propose` → `live`, each step on evidence: shadow agreement, then the operator's approval rate in `propose` |
+| **Autonomy ladder** | may a write capability run without asking? | per capability, on every host: a gate of shadow plans the operator judged right, then approved executions that verified; promoted only by the operator, dropped a level by any `unknown` result ([ADR-0005](adr/ADR-0005-agent-pipeline.md)) |
+| **Decision quality, live** | is it still making good decisions? | from cases: approval and rejection rate, the reasons for rejections, duplicates caught by gates, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |
 | **Drift** | did something change underneath? | the mix of decisions per week against the last weeks; model, playbook and spec versions are in every row, so a shift can be traced to a change |
 | **Model and prompt evaluation** | is a different model or playbook better? | evaluated offline on the replay corpus (with eval-harness), never by switching production and watching |
 | **Health** | is it running? | per job: freshness (last success), run success rate, duration, cost against budget; dashboards and alerts in the homelab stack |

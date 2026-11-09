@@ -4,72 +4,63 @@
 
 | Layer | Where | In git | Examples |
 |---|---|---|---|
-| **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, `fleets/<fleet>/playbooks/*.md`, `schemas/` | yes (public) | jobs, triggers, steps, tools, gates, outputs, stages, budgets, playbooks |
-| **Config**: this installation | `~/.config/flotilla/config.yaml` plus secrets files (mode 600) on the host | no | endpoints, repo maps, site lists, notification targets, key file paths |
-| **State**: what happened | `~/.local/share/flotilla/` on the host (a Docker volume) | no | the control-plane database, fleet data, run artefacts |
+| **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | jobs, triggers, capabilities, case kinds, stages, budgets, playbooks |
+| **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the operator's private config repo | no (public repo) | model endpoints and aliases, projects and their recall sources, channels and providers, each host's allowed writes and autonomy ceiling |
+| **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, recall indexes, run records |
 
-The repo ships `config.example.yaml` with placeholder values. Nothing that identifies the
-installation (host names, tailnet addresses, user paths, real repos) is in git.
+The public repo ships examples with placeholder values. Nothing that identifies an installation is in
+git.
 
 ## The control-plane database (SQLite)
 
-One file, owned by flotillad. Workers never open it; they report through the API.
+One file, owned by flotillad. Workers and host agents never open it; they report through the API.
 
 | Table | Holds |
 |---|---|
 | `specs` | each loaded spec version: fleet, job, content hash, loaded at, git commit |
-| `runs` | run id, job, spec version, trigger, actor, start, end, status, cost, tokens, model(s), trace id |
-| `decisions` | **the ledger** (below) |
-| `proposals` | the outward action a decision wants: kind, target, payload reference, status, approver, approved at, result |
-| `events` | an append-only audit log of every state change: who, what, when, from where (UI, CLI, MCP, job) |
-| `budgets` | per fleet and job: limits and spend per day |
-| `controls` | pause, STOP, stage per fleet and job, with who changed them |
+| `runs` | run id, job, spec version, trigger, start, end, status, cost, tokens, models, trace id |
+| `cases` | one row per problem: kind, typed target, project, status, holder, lease, urgency, opened and closed at |
+| `case_keys` | `(case, kind, value)`: as many keys as the kind's dedup needs; one canonical key per open case |
+| `case_events` | the timeline, append-only: detected, diagnosed, handed over, planned, approved, executed, checked, attached signals (`caused_by`, `recurrence_of`), feedback, outcomes; each with its actor, run and evidence references |
+| `executions` | execution id, case, host, capability, parameters, plan hash, how approved, signed at, result (done, failed, unknown, precondition false), check result |
+| `locks` | the per-target lock: target, case, taken at |
+| `autonomy` | per write capability: level, who promoted or demoted it and why; per host: its ceiling |
+| `notes` | short lessons with a scope; active only once the operator activates them |
+| `nodes` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
+| `controls` | pause, STOP, stage, hold, freeze, with who changed them |
+| `budgets` | per fleet and job: spend and tokens per day |
+| `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, job) |
 
-## The ledger (`decisions`)
+Nothing is deleted or rewritten. A status change is an event; the case row carries the current
+status. The transition table decides which status changes are allowed.
 
-*Amended by [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (2026-11-09): the ledger's decisions and
-proposals become **cases** (RFC-0004 §3.5): keys `(kind, value)` in place of one `dedup_key`, a
-lifecycle with a transition table, executions, and the per-target lock. The fields below carry over to
-the case and its timeline.*
+**History from the existing fleets:** the triage fleet's ledgers (`dispositions.tsv`, `filed.tsv`)
+are imported as cases with their keys, marked `imported`, keeping their timestamps; the mirror keeps
+writing the TSVs while their readers use them ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §9).
 
-| Field | Meaning |
-|---|---|
-| `id`, `fleet`, `job`, `run_id` | where it came from |
-| `subject` | what it is about: an alert fingerprint, an issue, a page URL, a day |
-| keys | what makes a repeat recognisable: rows in `decision_keys(decision_id, kind, value)`, as many as the fleet's dedup needs, looked up in the order its spec declares |
-| `decision` | the conclusion: file, dismiss, escalate, propose-fix, finding, brief-section … |
-| `evidence` | references to what the tools returned: source, query, dataset version, time range |
-| `model`, `playbook_version`, `spec_version` | what produced it |
-| `cost_usd`, `tokens` | what it cost |
-| `status` | `recorded`, `gated`, `pending`, `approved`, `rejected`, `done`, `superseded`, `incomplete`, `invalid_output`, `deferred` |
-| `actor` | the job, the operator, or an agent (with session) for each status change |
-| `outcome`, `outcome_at` | what happened afterwards, filled in by a later job |
-| `trace_id` | the run's trace, to open the full investigation |
+## Recall
 
-Rows are never deleted or rewritten. A status change is a new event, and the row carries the
-current status. A recurrence of the same subject is an event on its decision, not a new decision.
-Operator feedback on a decision is an event of kind `feedback`; an agent's feedback is `proposed`
-until the operator confirms it.
-
-**Notes** (`notes` table): short lessons with a scope (fleet, job, subject pattern), who proposed
-and activated them, a review-by date and what they supersede. Only active notes reach a model; see
-[ADR-0004](../adr/ADR-0004-job-runtime.md). History imported from the existing fleets (the triage fleet's `dispositions.tsv`
-and `filed.tsv`) keeps its original timestamps and is marked `imported`.
+| Origin | Where | Lookup |
+|---|---|---|
+| Recorded by flotilla | the database above (cases, outcomes, feedback, active notes) | exact, by key; structured fields only |
+| Plugged in | git sources refreshed into a volume, versioned by commit; HTTP and MCP sources read live | path maps, full-text and semantic indexes in a volume, one per trust tier; each chunk with its source, path, version and trust |
 
 ## Fleet data
 
-Analytical data a fleet collects stays in files the fleet owns, under the state directory:
-- Parquet partitions for Search Console history;
-- crawl snapshots;
-- frozen corpora for replays.
+What a fleet collects stays in files the fleet owns, under the state directory: Search Console
+history (Parquet), crawl snapshots, the marketing fleet's post register, frozen corpora for replays.
+The database stores references (dataset and version), never copies.
 
-The database stores references to it (dataset and version), never copies.
+## On each host
+
+A host agent keeps a small SQLite store: every execution id it has seen and its result (so a repeat
+runs nothing), and its hash-chained audit log, which is also shipped off the host.
 
 ## Retention and backup
 
-- **Kept forever:** the database and the ledger. It is small: one row per decision.
-- **Fleet data:** each fleet's spec declares its retention (Search Console history: forever, since
-  Google keeps only 16 months).
-- **Run artefacts** (raw tool outputs kept for debugging): 30 days.
-- **Backup:** the state directory joins the host's offsite backup. A restore is tested like the
-  homelab's other restores.
+- **Kept forever:** the database (cases, executions, events). It is small.
+- **Fleet data:** each fleet declares its retention.
+- **Run records** (raw requests and replies for replay): as each fleet's evaluation needs; 30 days by
+  default.
+- **Backup:** the state volumes join the host's offsite backup; a restore is tested like the other
+  restores. The CA's root key is not on any host (see [Deployment](deployment.md)).
