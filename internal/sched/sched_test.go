@@ -90,6 +90,16 @@ func TestStageControlOverridesSpec(t *testing.T) {
 	}
 }
 
+func TestControlAboveMaxStageNotObeyed(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.Jobs[0].MaxStage = spec.StageShadow
+	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyStage, "live", "operator", "api")
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if fr.got[0].Env["FLEETD_STAGE"] != "shadow" {
+		t.Fatalf("a shadow-capped job ran at %s", fr.got[0].Env["FLEETD_STAGE"])
+	}
+}
+
 func TestSkips(t *testing.T) {
 	for name, c := range map[string]struct{ subject, key, want string }{
 		"fleet stopped": {"triage", KeyStop, "STOPped"},

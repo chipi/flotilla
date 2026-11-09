@@ -17,6 +17,10 @@
 #                  GlitchTip, Langfuse) and reaches them by container name, never through the
 #                  host's port forwards.
 # Nothing is published on the host. The CLI runs inside flotillad: docker exec flotillad flotilla status
+#
+# The candidate worker (profile `candidate`, off unless COMPOSE_PROFILES=candidate): a second triage
+# worker running the image tag under test (FLOTILLA_CANDIDATE_TAG) with its own state volume, for the
+# job triage/cycle-shadow, which its spec caps at shadow (ADR-0004: shadow comparison).
 name: flotilla
 
 x-hardening: &hardening
@@ -39,7 +43,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
     volumes:
@@ -83,6 +87,33 @@ services:
       start_interval: 1s
     networks: [flotilla]
 
+  worker-triage-candidate:
+    <<: *hardening
+    profiles: [candidate]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-triage:${FLOTILLA_CANDIDATE_TAG:-${FLOTILLA_TAG}}
+    container_name: flotilla-worker-triage-candidate
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs: ["/tmp:size=64m"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]
+    environment:
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_ENV_FILES: /run/flotilla/fleet.env
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      JOB_HTTP_PROXY: http://egress:4750
+      JOB_HTTPS_PROXY: http://egress:4750
+    volumes:
+      - worker-triage-secrets:/run/flotilla:ro           # the same fleet secrets; shadow never writes outward
+      - triage-candidate-state:/home/worker/signal-fleet  # never the live state
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 1s
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -109,6 +140,10 @@ volumes:
     external: true
   triage-state:
     name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}
+    external: true
+  # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
+  triage-candidate-state:
+    name: ${TRIAGE_CANDIDATE_STATE_VOLUME:-flotilla-triage-state-candidate}
     external: true
 
 networks:

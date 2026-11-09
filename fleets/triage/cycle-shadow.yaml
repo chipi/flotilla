@@ -1,0 +1,21 @@
+fleet: triage
+job: cycle-shadow
+description: >-
+  The live triage cycle's command run by a candidate version, beside the live job, for shadow
+  comparison (ADR-0004, RFC-0002 §8 and §9): the worker `triage-candidate` runs the image tag under
+  test with its own state volume. Capped at shadow: it never acts, whatever a stage control says.
+  An installation without a candidate worker lists it in disabled_jobs.
+enabled: true
+worker: triage-candidate
+trigger:
+  every: 10m
+run:
+  command: python3 orchestrator.py --cycle --limit 10 --no-dry-run
+  workdir: signal-fleet/mvp
+  timeout: 20m
+  spend_file: signal-fleet/results/.last_cycle_spend
+stage: shadow
+max_stage: shadow
+budget:
+  day_usd: 2.0
+freshness: 35m

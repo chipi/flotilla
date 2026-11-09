@@ -287,6 +287,10 @@ func (s *Server) stage(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeJSON(w, 400, map[string]string{"error": "stage must be shadow, propose or live"})
 		return
 	}
+	if !j.Allows(body.Stage) {
+		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("%s is capped at %s by its spec (max_stage)", j.ID(), j.MaxStage)})
+		return
+	}
 	if err := s.Store.SetControl(r.Context(), j.ID(), sched.KeyStage, body.Stage, c.Name, "api"); err != nil {
 		writeErr(w, err)
 		return

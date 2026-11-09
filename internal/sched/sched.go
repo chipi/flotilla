@@ -236,11 +236,16 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	return &out, nil
 }
 
-// Stage is the job's effective stage: the control if set, else the spec's default.
+// Stage is the job's effective stage: the control if set, else the spec's default. A control above
+// the spec's max_stage (set before the cap existed, or written to the store by hand) is not obeyed:
+// the job runs at its cap.
 func (s *Scheduler) Stage(ctx context.Context, j *spec.Job) (string, error) {
 	v, err := s.Store.Control(ctx, j.ID(), KeyStage)
 	if err != nil || v == "" {
 		return j.Stage, err
+	}
+	if !j.Allows(v) {
+		return j.MaxStage, nil
 	}
 	return v, nil
 }

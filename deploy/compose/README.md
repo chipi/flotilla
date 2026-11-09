@@ -62,6 +62,7 @@ errors_dsn_file: /run/flotilla/errors.env     # optional: secrets.sh copies FLOT
 callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
+disabled_jobs: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a job whose worker is missing
 ```
 
 `config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
@@ -116,6 +117,27 @@ default:
   action: enforce
   allowed_domains: [victoriametrics, victorialogs, victoriatraces, grafana, litellm, <glitchtip web container>, langfuse-web, api.github.com]
 ```
+
+## The candidate worker: shadow comparison of a candidate image
+
+ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs as a
+second worker beside the live one, with its own state, and the job `triage/cycle-shadow`, capped at
+`shadow` by its spec (`max_stage`), runs the same command on it. flotillad refuses any stage above the
+cap, even the operator's, and the scheduler never runs it above the cap whatever a control says.
+
+1. Seed its state from the live state, once per comparison (a fresh volume name each time):
+   `~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-candidate-<date> ~/signal-fleet`
+2. `.env`: `COMPOSE_PROFILES=candidate`, `FLOTILLA_CANDIDATE_TAG=sha-<candidate>`,
+   `TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-triage-state-candidate-<date>`.
+3. `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081", token_file:
+   /run/flotilla/worker-triage.token}` under `workers`, and take `triage/cycle-shadow` out of `disabled_jobs`.
+4. Deploy (the live tag, unchanged). Compare with
+   `deploy/mini/shadow-compare.sh --volume flotilla-triage-state-candidate-<date> --since <seed time>`.
+5. To end it: put `triage/cycle-shadow` back in `disabled_jobs`, drop `COMPOSE_PROFILES`, deploy. The
+   candidate's volume stays until removed by hand.
+
+The candidate shares the triage worker's secrets volume and the proxy's allowlist: in shadow the fleet
+makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there.
 
 ## Deploy, roll back, operate
 

@@ -56,6 +56,8 @@ func TestRejects(t *testing.T) {
 		"negative budget":       {"triage/cycle.yaml", strings.Replace(good, "day_usd: 2", "day_usd: -1", 1), "must not be negative"},
 		"no command":            {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
 		"no description":        {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
+		"bad max_stage":         {"triage/cycle.yaml", good + "max_stage: yolo\n", `max_stage "yolo"`},
+		"stage above its cap":   {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: propose", 1) + "max_stage: shadow\n", "above max_stage shadow"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

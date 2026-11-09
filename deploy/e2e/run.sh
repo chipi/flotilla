@@ -6,7 +6,8 @@
 #
 # Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
 # is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a
-# stage; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token.
+# stage; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
+# worker (profile candidate) is healthy on its own state volume and its job cannot leave shadow.
 # Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -20,16 +21,17 @@ fails=0
 ok() { echo "PASS $*"; }
 bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG=$TAG FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
+E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
+  COMPOSE_PROFILES=candidate TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse
-  DOCKER_CONTEXT=${DOCKER_CONTEXT_DEV:-dev})
+  DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"; }
 
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -70,7 +72,8 @@ otlp_traces_url: http://victoriatraces:8080/insert/opentelemetry/v1/traces
 callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
-disabled_jobs: [triage/cycle]
+  triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage.token}
+disabled_jobs: [triage/cycle, triage/cycle-shadow]
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
@@ -110,7 +113,8 @@ cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/ST
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env.bak-20261027"
 cp "$WORK/config/fleet.env" "$WORK/seed/results/fleet.env.bak-presync"
 if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG >"$WORK/secrets.log" 2>&1 \
-   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1; then
+   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1 \
+   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-candidate-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1; then
   ok "secrets and state seeded ($(grep -c ' <- ' "$WORK/secrets.log") secret files)"
 else
   cat "$WORK/secrets.log"; bad "secrets.sh"
@@ -165,8 +169,24 @@ case "$S" in *.env*|*STOP*) bad "seeding copied an env file (secrets or a backup
 $D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /home/worker/signal-fleet/w' 2>/dev/null \
   && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
 
+echo "== the candidate worker (shadow comparison of a candidate image)"
+for i in $(seq 1 30); do
+  [ "$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2
+done
+H="$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Status}}' 2>&1)"
+[ "$H" = healthy ] && ok "the candidate worker is healthy" || bad "candidate worker health: $H"
+CS="$($D inspect flotilla-worker-triage-candidate --format '{{range .Mounts}}{{if eq .Destination "/home/worker/signal-fleet"}}{{.Name}}{{end}}{{end}}' 2>&1)"
+[ "$CS" = flotilla-e2e-triage-candidate-state ] && ok "the candidate has its own state volume ($CS)" || bad "candidate state volume: '$CS'"
+OUT="$(cli stage triage/cycle-shadow propose 2>&1)"
+echo "$OUT" | grep -q "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
+  || bad "stage on the capped job: $OUT"
+OUT="$(cli status 2>&1)"
+echo "$OUT" | grep -q 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"
+NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+[ "$NW" = "${P}_flotilla " ] && ok "the candidate is on the internal network only" || bad "candidate networks: '$NW'"
+
 echo "== hardening"
-for c in flotillad flotilla-worker-triage flotilla-egress; do
+for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-egress; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
   case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
 done

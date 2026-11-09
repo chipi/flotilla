@@ -31,6 +31,13 @@ const (
 
 var stages = map[string]bool{StageShadow: true, StagePropose: true, StageLive: true}
 
+var stageRank = map[string]int{StageShadow: 0, StagePropose: 1, StageLive: 2}
+
+// Allows reports whether stage s is within the job's cap (max_stage; no cap when it is empty).
+func (j *Job) Allows(s string) bool {
+	return j.MaxStage == "" || stageRank[s] <= stageRank[j.MaxStage]
+}
+
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 
 type Job struct {
@@ -42,6 +49,7 @@ type Job struct {
 	Trigger     Trigger `yaml:"trigger"`
 	Run         Run     `yaml:"run"`
 	Stage       string  `yaml:"stage"`
+	MaxStage    string  `yaml:"max_stage"` // optional: the highest stage the job may ever run at
 	Budget      Budget  `yaml:"budget"`
 	Freshness   string  `yaml:"freshness"`
 
@@ -153,6 +161,11 @@ func (j *Job) validate() error {
 	}
 	if !stages[j.Stage] {
 		bad("stage %q: one of shadow, propose, live", j.Stage)
+	}
+	if j.MaxStage != "" && !stages[j.MaxStage] {
+		bad("max_stage %q: one of shadow, propose, live", j.MaxStage)
+	} else if stages[j.Stage] && !j.Allows(j.Stage) {
+		bad("stage %s is above max_stage %s", j.Stage, j.MaxStage)
 	}
 	if j.Budget.DayUSD < 0 {
 		bad("budget.day_usd %.2f: must not be negative", j.Budget.DayUSD)

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +34,11 @@ const (
 
 func server(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
+	return serverWith(t, func(*spec.Job) {})
+}
+
+func serverWith(t *testing.T, mod func(*spec.Job)) (*httptest.Server, *store.Store) {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "a.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +46,7 @@ func server(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Cleanup(func() { st.Close() })
 	j := &spec.Job{Fleet: "triage", Job: "cycle", Description: "d", Enabled: true, Worker: "triage", Stage: "shadow",
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
+	mod(j)
 	s := &sched.Scheduler{Store: st, Jobs: []*spec.Job{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
 	srv := &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test",
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
@@ -127,6 +134,22 @@ func TestOperatorStage(t *testing.T) {
 	job := out["jobs"].([]any)[0].(map[string]any)
 	if job["stage"] != "propose" || job["spec_stage"] != "shadow" {
 		t.Fatalf("status shows the effective and the spec stage: %v", job)
+	}
+}
+
+func TestStageCappedBySpec(t *testing.T) {
+	ts, st := serverWith(t, func(j *spec.Job) { j.MaxStage = spec.StageShadow })
+	for _, s := range []string{"propose", "live"} {
+		c, out := call(t, ts, "POST", "/v1/jobs/triage/cycle/stage", opTok, `{"stage":"`+s+`"}`)
+		if c != 400 || !strings.Contains(fmt.Sprint(out["error"]), "capped at shadow") {
+			t.Fatalf("%s on a shadow-capped job: %d %v", s, c, out)
+		}
+	}
+	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyStage); v != "" {
+		t.Fatalf("a refused stage left a control: %q", v)
+	}
+	if c, _ := call(t, ts, "POST", "/v1/jobs/triage/cycle/stage", opTok, `{"stage":"shadow"}`); c != 200 {
+		t.Fatalf("shadow on a shadow-capped job: %d", c)
 	}
 }
 
