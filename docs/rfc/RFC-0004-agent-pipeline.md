@@ -609,8 +609,8 @@ actuator's own ADR; the phone channel.
 
 ## 11. Docs amended on acceptance
 
-- ADR-0004: actions and work items as blocks; workers per role; outputs into the catalogue.
-- ADR-0002: the actuator's exception to "no Docker socket anywhere".
+- ADR-0004: actions and work items as blocks; outputs into the catalogue.
+- ADR-0002: workers per role, not one per fleet (its decision "one long-running worker container per fleet"); the actuator's exception to "no Docker socket anywhere".
 - `docs/architecture/components.md`: policy in flotillad, execution in workers; `on_item` triggers.
 - `docs/architecture/deployment.md`: workers per role; the Home Assistant notify secret removed from
   the ops worker.
