@@ -15,15 +15,16 @@ start after phase 2's switch ([phase-2-plan](phase-2-plan.md), 2.8).
 | Model config from flotillad (operator's choice, 2026-11-09) | built | `models:` in flotillad.yaml, validated by `internal/models` (Go) and `model_client.load` (Python) with the same rules, tested on the same fixtures; every run gets it as `FLOTILLA_MODELS`, with `FLOTILLA_OTLP_TRACES_URL` and `FLOTILLA_ENVIRONMENT` |
 | Job tracing (the OTel Python SDK, operator's yes 2026-11-09) | built | `runtime/telemetry.py`; the SDK pinned by hash in the worker image (`deploy/docker/worker-requirements.txt`, ADR-0003); `runtime/test_telemetry.py` passes in the image (spans parented on TRACEPARENT) |
 | The heartbeat's model step | built | `JOB_HEARTBEAT_MODEL_ALIAS`; e2e: a call through the client to the LiteLLM stand-in with the key from the fleet's secrets file, through the proxy, and its `model.chat` span at the VictoriaTraces stand-in |
+| The client against real endpoints | done for two | `runtime/contract_check.py` (json_object, native tools, max_tokens, an unknown model; cost as claimed), 2026-11-09: the mini's LiteLLM (`fleet-triage-flash`, cost reported by the body, deployment id set) CONTRACT PASS; the X3's Ollama directly (qwen3 30b, no key, cost zero) CONTRACT PASS. Found: LiteLLM answers an alias the key may not use with 403, so it is AuthOrBilling (fails closed); the error now carries the endpoint's words |
 | flotillad's metric pushes (found while testing this: a phase 2 defect) | fixed | pushes were never retried: on the mini they failed during every deploy (`lookup egress`) and on 500/502 now and then (VictoriaLogs, 2026-11-08/09). Now retried after 2 s and 5 s; 4 Go tests, 3 mutants killed |
 
 ## Not done
 
 - **The first `exact` capture read back on the mini:** waits on the first model-made decision after
   08:06Z. The fleet session checks that `outcome_count.py` and the freezer still parse it.
-- **The model client against real endpoints:** e2e uses a stand-in. Not yet run against the mini's
-  LiteLLM (a cloud alias and a local DGX alias), nor vLLM or Ollama directly: whether each honours
-  `json_object`, native tool calls and usage the way the capabilities say is unverified.
+- **The DGX's vLLM** (directly, or as a LiteLLM alias): not checked. The DGX is in `prod` mode
+  (`gpu-mode-swap.sh --mode-only`, 2026-11-09), so its vLLM is production serving; a contract check
+  there waits on the operator's go. The fleet's LiteLLM key may not use the DGX model either.
 - **The mini's `models` section and the heartbeat's model step there:** not configured; needs the
   operator's go (a model call every 10 minutes).
 - **The deployment-id-to-model map** (`x-litellm-model-id` is a hash) and an alert when an alias's

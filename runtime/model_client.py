@@ -284,7 +284,7 @@ class Client:
             rec["error"] = text[:300]
             cls = (AuthOrBilling if status in (401, 402, 403) else
                    Transient if status == 429 or status >= 500 else RequestRejected)
-            raise cls(f"{a.name}: HTTP {status}", rec)
+            raise cls(f"{a.name}: HTTP {status}: {text[:200]}", rec)   # the endpoint's words: a 403 can mean "this key may not use this model"
         try:
             resp = json.loads(text)
             msg = (resp.get("choices") or [{}])[0].get("message") or {}
