@@ -51,7 +51,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents).
 | T11 | **Exposure on the network** | API, UI and MCP only on the installation's chosen network. The node endpoint requires mutual TLS. Nothing on a host listens for flotilla. | network, node gateway |
 | T12 | **Denial of wallet** | Budgets per routine and fleet checked before and during runs; endpoint key budgets as a second limit; turn, call and token limits per harness step. | Triggers, Runner, harness |
 | T13 | **A forged or replayed execution** | Every execution is signed (Ed25519) over the exact bytes sent and bound to node id, capability, parameters, plan hash and a 10-minute expiry. The host agent refuses a bad signature, another node, an expired envelope, and a seen id whose envelope differs (an identical resend returns the recorded result). | Signer, host agent |
-| T14 | **A compromised flotillad signs harmful executions** | Each host agent enforces its own reviewed allowlist (exact command templates, parameter checks), rate limits and autonomy ceiling, whatever is signed. The allowlist, binary and sudoers are root-owned, so the agent cannot widen them; privileged parameters are enums, one sudoers line each, no wildcards. Commands run without a shell, as a dedicated user, with a generated sudoers limited to the templates. Its audit log shows what ran. | host agent, sudoers |
+| T14 | **A compromised flotillad signs harmful executions** | Each host agent enforces its own reviewed allowlist (exact command templates, parameter checks), rate limits and autonomy cap, whatever is signed. The allowlist, binary and sudoers are root-owned, so the agent cannot widen them; privileged parameters are enums, one sudoers line each, no wildcards. Commands run without a shell, as a dedicated user, with a generated sudoers limited to the templates. Its audit log shows what ran. | host agent, sudoers |
 | T15 | **A rogue or compromised host agent** | Enrolment by a single-use token bound to the node name, valid 15 minutes; short-lived certificates; revocation in flotillad alone (`flotilla node revoke`). An agent can only report on its own host's executions. The host's hash-chained log and flotillad's record are compared; a mismatch raises an alert. | node gateway, policy |
 | T16 | **A taken-over Slack account approves** | Slack approval only from the pinned workspace and user, only for low and medium risk that is reversible or regenerable, bound to the plan's hash and a nonce, with a daily cap. High-risk or irreversible writes need the CLI. | Approvals, connector |
 | T17 | **Runaway autonomy** (many actions, fast) | Per-host and platform caps on executions; the circuit breaker drops every auto capability to propose; the host incident rule pauses auto on a host; `flotilla autonomy freeze`; the recurrence rule escalates a fix that keeps coming back. | Guardrails |
@@ -68,8 +68,8 @@ outbound only.
 - A new capability is a read unless it is declared a write, with risk, reversibility, preconditions
   and a check.
 - A new dependency needs an explicit yes.
-- Anything that grants more (a broader scope, a new write for a kind, a higher ceiling) needs a note
-  in the commit saying why.
+- Anything that grants more (a broader scope, a new write for a kind, a higher autonomy cap) needs a
+  note in the commit saying why.
 
 ## Verification
 
@@ -79,7 +79,7 @@ outbound only.
   - MCP refuses an approve call;
   - a local-only routine refuses a cloud model;
   - the host agent refuses a bad signature, another host, an expired or replayed execution, a
-    capability or parameter outside its allowlist, and an `auto` above its ceiling;
+    capability or parameter outside its allowlist, and an `auto` above its autonomy cap;
   - a Slack approval from another user, for high risk, or for a changed plan is refused.
 - **A threat-model review** with every new fleet, capability kind or host.
 
@@ -90,12 +90,12 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 
 - **ADR-0005's pipeline is accepted and not built** (cases, policy, taint, guardrails, channels,
   approvals); v1 brings the first of it. Until then T1 is covered by the triage fleet's own code
-  checks and its shadow stage, and T10 by the append-only `events` table.
+  checks and its `shadow` autonomy, and T10 by the append-only `events` table.
 - **Redaction** of flotillad's logs and routine traces is not built.
 
 - **Host agents are accepted, not built.** T13 to T15 are design until the agent is built and its
   security e2e passes.
-- **Image signing:** planned before any fleet reaches `live`, not built.
+- **Image signing:** planned before any routine reaches `auto`, not built.
 - **The coding harness** used by the bugfix fleet runs code from the repos it fixes; its security
   review is due before that fleet acts.
 - **Model-written commands** (an investigation sandbox) are not part of the design; they get their

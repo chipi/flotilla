@@ -72,7 +72,7 @@ its routines may plan.
   listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
   network); mutual TLS is required on any of them.
 - **The host's allowlist** (exact command templates per capability, each with a rate limit, and the
-  host's autonomy ceiling) lives in the installation's private config, is reviewed like code, and is
+  host's autonomy cap) lives in the installation's private config, is reviewed like code, and is
   installed with the agent.
 
 ## Keys and custody
@@ -132,7 +132,7 @@ commit to this page, with the reason.
 | **Operator identity** | The UI trusts the identity the installation's front proxy passes on, and only the operator's identity may approve. The CLI uses an operator token from a mode-600 file in the operator's home (today: `docker exec` into flotillad with the operator's token passed per call). Approvals also come from the operator's pinned Slack user, within ADR-0005's limits. |
 | **Agent identity (MCP)** | A token per caller, minted by the operator with the CLI, scoped `read` or `read+act`. No scope can approve. |
 | **Bugfix worker** | Builds and tests inside its own container, with its toolchain baked into the image. No Docker inside it, so repos whose tests need Docker are out of scope for now. Each run's worktree is on a scratch volume and deleted when the run ends. |
-| **Images** | `ghcr.io/chipi/flotilla-<role>`, public (they hold no secrets or config), built in CI, tagged `sha-<7>`, deployed by digest. Signing (cosign) is added before any fleet reaches `live`. |
+| **Images** | `ghcr.io/chipi/flotilla-<role>`, public (they hold no secrets or config), built in CI, tagged `sha-<7>`, deployed by digest. Signing (cosign) is added before any routine reaches `auto`. |
 | **Credentials** | A GitHub App per role instead of personal tokens (installation tokens expire within an hour). A model key per role with a budget where the endpoint supports it. Other credentials are rotated every 90 days and at once on any suspicion. |
 | **Resource limits** | flotillad 256 MiB and 0.5 CPU; the egress proxy 128 MiB; the triage, ops and marketing workers 1 GiB and 1 CPU each; the bugfix worker 4 GiB and 2 CPUs. Limits, not reservations, revised from measurements. |
 | **State backup** | flotillad writes one copy of the store per day (`VACUUM INTO`) into the state volume, 7 kept. Copying it off the host, a "backup older than 26 h" alert and a tested restore are up to the installation. |

@@ -20,13 +20,13 @@ signs host writes and sends them to the host agent; the acting worker plans and 
 | **Triggers** | starts routines on **time** (every, cron) or on an **event** on a case (handed over to a kind, a check due); checks STOP, pause and budget first |
 | **Runner** | asks a worker to start a run with its spec, run id, trace id, deadline and environment (`FLOTILLA_MODELS`, the trace parent); enforces the timeout; records cost |
 | **Cases** | one record per problem with its keys, status, holder, lease and timeline ([Data](data.md)); a **transition table** enforced on every status change; timers for stuck states; the per-target lock |
-| **Policy** | decides each planned write. It checks, in order: the registry; autonomy (the lowest of the routine's stage, the capability's level, the host's ceiling, taint, the freeze); locks and limits; holds. Then it runs the write, asks the operator, or refuses. It executes only flotilla's own controls itself |
+| **Policy** | decides each planned write. It checks, in order: the registry; autonomy (the lowest of the routine's autonomy, the capability's autonomy, the host's autonomy cap, taint, the freeze); locks and limits; holds. Then it runs the write, asks the operator, or refuses. It executes only flotilla's own controls itself |
 | **Guardrails** | per-host and platform caps on executions, the circuit breaker, the host incident rule, the autonomy freeze, the recurrence rule |
 | **Approvals** | proposals waiting on the `approvals` channel; an approval (UI, CLI, or the operator's pinned Slack user within limits) is bound to the plan's hash and starts the execution |
 | **Node gateway** | the endpoint host agents connect to (mutual TLS); the certificate authority's intermediate issues and renews their certificates; revocation; `flotilla node list` |
 | **Signer** | signs every execution with flotillad's Ed25519 key: execution id, case, node id, capability, parameters, plan hash, approval, signed and expiry times; the signature covers the exact bytes sent |
 | **Channels** | routes `alerts`, `approvals` and `notifications` to the provider's connector |
-| **Budgets and stages** | per routine and fleet: spend and tokens per day; stage and autonomy controls, with who changed them |
+| **Budgets and autonomy** | per routine and fleet: spend and tokens per day; autonomy controls, with who changed them |
 | **API, CLI, UI, MCP** | one API behind all of them. The UI's main screen is the case timeline. MCP has no approve tool |
 | **Telemetry** | metrics (retried pushes), structured logs, OpenTelemetry traces, errors |
 
@@ -52,7 +52,7 @@ One static binary per platform, installed per host as a service under a dedicate
 
 | Role | Responsibility |
 | --- | --- |
-| **Actuator** | runs an execution only if its signature verifies, it is unexpired and never seen, the node id is this agent's, the capability is in this host's allowlist with valid parameters and within its rate limit, and an `auto` execution is within this host's ceiling; checks preconditions locally; runs the exact command template (never a shell); records `started` before it runs (SQLite); a hash-chained audit log, collected off the host |
+| **Actuator** | runs an execution only if its signature verifies, it is unexpired and never seen, the node id is this agent's, the capability is in this host's allowlist with valid parameters and within its rate limit, and an `auto` execution is within this host's autonomy cap; checks preconditions locally; runs the exact command template (never a shell); records `started` before it runs (SQLite); a hash-chained audit log, collected off the host |
 | **Connector** | holds a provider's credentials (Slack); posts what flotillad sends to a channel; relays approval clicks (with the plan hash and nonce) back to flotillad; outbound only in v1 |
 
 ## Interfaces

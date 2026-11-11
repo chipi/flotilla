@@ -51,15 +51,16 @@ From the reference installation (the v1 chain).
 3. **Re-check and plan.** The routine re-checks by code (backup age, whether the backup job is
    running). Still a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
 4. **Policy.** flotillad checks the plan: the capability exists, is declared for `failed_backup`,
-   its target is the case's; autonomy is the lowest of the routine's stage, the capability's earned
-   level, the mini's ceiling, taint and the freeze; the lock is free, limits and holds clear.
+   its target is the case's; autonomy is the lowest of the routine's, the capability's earned
+   autonomy, the mini's autonomy cap, taint and the freeze; the lock is free, limits and holds
+   clear.
    - In **shadow**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
      the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first
      capability promoted to propose). The approval starts a new run.
    - In **auto**: it goes straight on.
 5. **Execute.** flotillad signs the execution and sends it to the mini's host agent, which checks the
-   signature, expiry, its own allowlist and ceiling, re-checks the precondition, and runs the exact
+   signature, expiry, its own allowlist and autonomy cap, re-checks the precondition, and runs the exact
    command (`launchctl kickstart system/com.homelab.db-backup`), recording it in its own audit log.
 6. **Check.** After the window, a timer starts a code check in the acting worker: a backup newer
    than the execution. The case closes as verified, or escalates. Days later an outcome may be

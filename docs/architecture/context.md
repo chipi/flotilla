@@ -7,7 +7,7 @@ and no data sources: it uses the ones that exist, and it is careful about what i
 
 | Actor | Through | May |
 | --- | --- | --- |
-| **The operator** | the UI, the CLI; Slack for approvals | everything: approve, promote autonomy, change stages and budgets, hold, freeze, stop |
+| **The operator** | the UI, the CLI; Slack for approvals | everything: approve, promote or lower autonomy, change budgets, hold, freeze, stop |
 | **Agents** (other assistants and sessions) | MCP, with a per-caller token | read status, cases and findings; trigger or dry-run a routine; pause; propose notes and feedback. **Never approve.** |
 | **Routines** (the fleets' own runs) | the API, with their worker's identity | open and update cases, plan writes, report results; act only as policy allows |
 | **Host agents** | an outbound connection with a client certificate | receive signed executions their host allows; report results; relay a provider's messages and approval clicks |

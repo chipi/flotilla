@@ -87,6 +87,7 @@ nav:
     - ADR-0005 — The agent pipeline: adr/ADR-0005-agent-pipeline.md
     - ADR-0006 — The node agent: adr/ADR-0006-node-agent.md
     - ADR-0007 — Routine replaces job: adr/ADR-0007-routine.md
+    - ADR-0008 — One autonomy scale: adr/ADR-0008-autonomy.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
