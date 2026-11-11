@@ -76,6 +76,11 @@ services:
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
       ROUTINE_HTTP_PROXY: http://egress:4750
       ROUTINE_HTTPS_PROXY: http://egress:4750
+      # the ledger on flotillad's workers' listener (RFC-0002 §9 step 5), not through the proxy
+      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
+      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
+      ROUTINE_NO_PROXY: flotillad
+      ROUTINE_SF_LEDGER_BACKEND: ${TRIAGE_LEDGER_BACKEND:-tsv}   # api once its namespace is imported (RFC-0002 §9 step 5)
     volumes:
       - worker-triage-secrets:/run/flotilla:ro
       - triage-state:/home/worker/signal-fleet
@@ -103,6 +108,11 @@ services:
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
       ROUTINE_HTTP_PROXY: http://egress:4750
       ROUTINE_HTTPS_PROXY: http://egress:4750
+      # the ledger on flotillad's workers' listener (RFC-0002 §9 step 5), not through the proxy
+      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
+      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
+      ROUTINE_NO_PROXY: flotillad
+      ROUTINE_SF_LEDGER_BACKEND: ${TRIAGE_CANDIDATE_LEDGER_BACKEND:-tsv}   # api once its namespace is imported
       # over worker-triage.env, which is the live fleet's: the candidate's series, inbox and traces carry
       # their own name (the Hub and dashboards count triage-fleet), and it mirrors nothing into GlitchTip
       ROUTINE_SF_SERVICE: triage-fleet-candidate
