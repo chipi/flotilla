@@ -35,7 +35,20 @@ import (
 const (
 	RoleAgent    = "agent"
 	RoleOperator = "operator"
+	// RoleWorker is a worker's routine reading and writing its fleet's ledger (RFC-0002 §9 step 5), and
+	// nothing else. Its callers are not in the callers file: flotillad makes one per worker from the token
+	// it already holds for that worker (WorkerCallers).
+	RoleWorker = "worker"
 )
+
+// WorkerCallers are the ledger's callers: one per worker, by the token flotillad shares with it.
+func WorkerCallers(tokens map[string]string) []Caller {
+	var out []Caller
+	for name, tok := range tokens {
+		out = append(out, Caller{Name: "worker:" + name, Role: RoleWorker, TokenSHA256: HashToken(tok)})
+	}
+	return out
+}
 
 type Caller struct {
 	Name        string `yaml:"name"`
@@ -109,7 +122,28 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(RoleOperator, s.autonomy))
 	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(RoleAgent, s.control(sched.KeyStop, "1", false)))
 	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(RoleOperator, s.control(sched.KeyStop, "0", false)))
+	s.ledgerRoutes(m)
 	return m
+}
+
+// WorkerHandler serves the workers' listener (flotillad's worker_listen): the ledger and /healthz, and
+// nothing else, so the full API can stay on loopback while a worker's routine reaches its ledger.
+func (s *Server) WorkerHandler() http.Handler {
+	m := http.NewServeMux()
+	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"ok": true, "version": s.Version})
+	})
+	s.ledgerRoutes(m)
+	return m
+}
+
+func (s *Server) ledgerRoutes(m *http.ServeMux) {
+	m.Handle("GET /v1/ledger/filings", s.auth(RoleWorker, s.ledgerFilings))
+	m.Handle("POST /v1/ledger/filings", s.auth(RoleWorker, s.ledgerWriteFiling))
+	m.Handle("GET /v1/ledger/entries", s.auth(RoleWorker, s.ledgerEntries))
+	m.Handle("POST /v1/ledger/entries", s.auth(RoleWorker, s.ledgerAppendEntry))
+	m.Handle("GET /v1/ledger/counts", s.auth(RoleWorker, s.ledgerCounts))
+	m.Handle("POST /v1/ledger/import", s.auth(RoleWorker, s.ledgerImport))
 }
 
 func (s *Server) auth(need string, h func(http.ResponseWriter, *http.Request, Caller)) http.Handler {
@@ -133,6 +167,11 @@ func (s *Server) auth(need string, h func(http.ResponseWriter, *http.Request, Ca
 		if need == RoleOperator && who.Role != RoleOperator {
 			s.Log.Warn("refused: operator-only", "caller", who.Name, "path", r.URL.Path)
 			writeJSON(w, 403, map[string]string{"error": "only the operator may do this; an agent never can"})
+			return
+		}
+		if (need == RoleWorker) != (who.Role == RoleWorker) { // a worker reaches the ledger and only the ledger
+			s.Log.Warn("refused: wrong role", "caller", who.Name, "path", r.URL.Path)
+			writeJSON(w, 403, map[string]string{"error": "the ledger is a worker's; a worker reaches nothing else"})
 			return
 		}
 		h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, *who)), *who)

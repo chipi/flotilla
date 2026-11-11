@@ -36,7 +36,10 @@ var version = "dev"
 
 // Config is one installation: where things are. Nothing here is in the public repo's specs.
 type Config struct {
-	Listen        string `yaml:"listen"`
+	Listen string `yaml:"listen"`
+	// Optional: where workers' routines reach their ledger (RFC-0002 §9 step 5). It serves the ledger
+	// routes and nothing else, so `listen` can stay on loopback.
+	WorkerListen  string `yaml:"worker_listen"`
 	SpecsDir      string `yaml:"specs_dir"`
 	StateDir      string `yaml:"state_dir"`
 	Environment   string `yaml:"environment"`
@@ -144,6 +147,7 @@ func main() {
 	}
 	clients := map[string]*worker.Client{}
 	runners := map[string]sched.Runner{}
+	workerTokens := map[string]string{}
 	for name, w := range cfg.Workers {
 		tok, err := readToken(w.TokenFile)
 		if err != nil {
@@ -152,7 +156,9 @@ func main() {
 		}
 		clients[name] = worker.New(w.URL, tok)
 		runners[name] = clients[name]
+		workerTokens[name] = tok
 	}
+	callers = append(callers, api.WorkerCallers(workerTokens)...) // the ledger's callers (RFC-0002 §9 step 5)
 	for _, id := range cfg.DisabledRoutines {
 		found := false
 		for _, j := range routines {
@@ -240,8 +246,8 @@ func main() {
 	}
 	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
-	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second,
-		Handler: (&api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log}).Handler()}
+	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log}
+	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second, Handler: apiSrv.Handler()}
 	go func() {
 		log.Info("flotillad listening", "addr", cfg.Listen, "routines", len(routines))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -249,6 +255,17 @@ func main() {
 			stop()
 		}
 	}()
+	var wsrv *http.Server
+	if cfg.WorkerListen != "" {
+		wsrv = &http.Server{Addr: cfg.WorkerListen, ReadHeaderTimeout: 10 * time.Second, Handler: apiSrv.WorkerHandler()}
+		go func() {
+			log.Info("flotillad listening for workers (the ledger)", "addr", cfg.WorkerListen)
+			if err := wsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("worker listen", "err", err)
+				stop()
+			}
+		}()
+	}
 	hbDone := make(chan struct{})
 	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, log) }()
 
@@ -260,6 +277,9 @@ func main() {
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
+	if wsrv != nil {
+		_ = wsrv.Shutdown(sctx)
+	}
 	_ = st.Event(context.Background(), "flotillad", "flotillad", "stop", version, "")
 	log.Info("flotillad exit")
 }

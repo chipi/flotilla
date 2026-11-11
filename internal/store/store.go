@@ -66,6 +66,41 @@ var schema = []string{
 	UPDATE runs SET autonomy = 'auto' WHERE autonomy = 'live';
 	UPDATE controls SET key = 'autonomy' WHERE key = 'stage';
 	UPDATE controls SET value = 'auto' WHERE key = 'autonomy' AND value = 'live';`,
+	// RFC-0002 §9 step 5: the fleets' ledger (ledger.go). A namespace per ledger (a routine's: live and a
+	// candidate never share one). Filings are the dedup memory (the triage fleet's filed.tsv): every write
+	// is a new row and the newest row of a fingerprint is the current one, so nothing is rewritten; its
+	// keys are rows of ledger_keys. Entries are the decision ledger (dispositions.tsv): decisions and
+	// recurrences in one sequence, each row kept whole as the fleet wrote it.
+	`CREATE TABLE ledger_filings (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		namespace TEXT NOT NULL,
+		fingerprint TEXT NOT NULL,
+		row TEXT NOT NULL,
+		imported INTEGER NOT NULL DEFAULT 0,
+		run_id TEXT NOT NULL DEFAULT '',
+		written_at TEXT NOT NULL
+	);
+	CREATE INDEX ledger_filings_fp ON ledger_filings(namespace, fingerprint, seq);
+	CREATE TABLE ledger_keys (
+		filing_seq INTEGER NOT NULL REFERENCES ledger_filings(seq),
+		namespace TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		value TEXT NOT NULL
+	);
+	CREATE INDEX ledger_keys_kv ON ledger_keys(namespace, kind, value);
+	CREATE TABLE ledger_entries (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		namespace TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		occurrence_id TEXT NOT NULL DEFAULT '',
+		fingerprint TEXT NOT NULL DEFAULT '',
+		row TEXT NOT NULL,
+		imported INTEGER NOT NULL DEFAULT 0,
+		run_id TEXT NOT NULL DEFAULT '',
+		written_at TEXT NOT NULL
+	);
+	CREATE INDEX ledger_entries_occ ON ledger_entries(namespace, occurrence_id, seq);
+	CREATE INDEX ledger_entries_fp ON ledger_entries(namespace, fingerprint, seq);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.
