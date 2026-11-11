@@ -1,10 +1,10 @@
 # RFC-0005 — Skills in the harness
 
-**Status:** Draft (2026-11-11), for the operator's review. Nothing is built from it until it is
-accepted.
-**Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the harness and context),
-[ADR-0005](../adr/ADR-0005-agent-pipeline.md) (cases, policy), [ADR-0010](../adr/ADR-0010-memory-and-knowledge.md)
-(memory and knowledge), [ADR-0011](../adr/ADR-0011-tools-and-actions.md) (tools and actions).
+**Status:** Draft (2026-11-11); its open questions decided by the operator the same day. Nothing is
+built from it until it is accepted. **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the
+harness and context), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (cases, policy),
+[ADR-0010](../adr/ADR-0010-memory-and-knowledge.md) (memory and knowledge),
+[ADR-0011](../adr/ADR-0011-tools-and-actions.md) (tools and actions).
 
 ## 1. Why
 
@@ -43,14 +43,18 @@ blip from an outage"). The class hints become skills loaded by rule (§4).
 Skills are instructions and code: they come only from **trusted, versioned git sources**, like
 playbooks, never from untrusted knowledge.
 
-| Source | Example |
-| --- | --- |
-| flotilla's repo, `skills/` | generic know-how any fleet may use |
-| a fleet's own, `fleets/<fleet>/skills/` | triage's class hints |
-| an installation's trusted repo (config) | the operator's own skills repo, at a pinned commit |
+Three layers, like specs, so every deploy has one exact set of skills and a rollback restores the
+previous set (decided 2):
 
-The `knowledge-refresh` worker refreshes them like other git knowledge; each load records the source
-and commit. An untrusted source cannot provide a skill: the loader refuses it.
+| Layer | Where | Ships how | Version |
+| --- | --- | --- | --- |
+| **flotilla's default skills** | flotilla's repo, `skills/` | inside the image, with every deploy | the image tag |
+| **a fleet's skills** | `fleets/<fleet>/skills/` (triage's class hints) | inside the image, like the specs | the image tag |
+| **the installation's skills** | a repo and path in the installation's config, with a commit (the operator's skills repo) | the deploy fetches that commit into a read-only volume before the stack starts; flotillad refuses to start when it is missing | the pinned commit, in the deploy log |
+
+Nothing follows a branch: changing the installation's skills is a commit bump in config and a deploy,
+and rolls back like one. Each load records the layer, source and commit. A source not listed here,
+and any untrusted knowledge source, cannot provide a skill: the loader refuses it.
 
 ## 4. Which skills a routine gets, and how they load
 
@@ -142,14 +146,13 @@ The loader (trusted sources, commit and hash), the spec field, both loading mode
 users: triage's class hints moved to rule-loaded skills (RFC-0002 §9 step 3 already moves them to
 files), which must replay byte-identical to today's prompt. No script becomes a tool in v1.
 
-## 11. Open questions for the operator
+## 11. Decided (operator, 2026-11-11)
 
-1. **Playbooks as skills?** A playbook could itself be a `SKILL.md` always loaded. Proposal: no, keep
-   the playbook as the routine's own text; one more concept is not worth the uniformity.
-2. **The operator's skills repo as a trusted source:** which repo and path, and should flotilla pin
-   a commit per deploy or follow `main`? Proposal: pin per deploy, like specs.
-3. **Write to skills:** should an agent ever propose a new or changed skill (like notes)? Proposal:
-   not in v1; later, as a pull request the operator reviews, never live.
+1. **Playbooks stay the routine's own text,** not skills.
+2. **Skills are pinned per deploy,** in three layers (§3): flotilla's defaults and the fleets' skills
+   ship in the image; the installation's skills repo is pinned by commit in config and fetched by the
+   deploy. Which repo and path the homelab uses is set when the first installation skill is adopted.
+3. **Agents do not write skills in v1.** Later, at most as a pull request the operator reviews.
 
 ## 12. Alternatives considered
 
