@@ -87,6 +87,8 @@ cat > "$WORK/config/worker-triage.env" <<EOF
 ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
 ROUTINE_HEARTBEAT_DENIED_URL=http://forbidden:8080/
 ROUTINE_HEARTBEAT_MODEL_ALIAS=e2e-model
+ROUTINE_SF_SERVICE=triage-fleet
+ROUTINE_SF_GLITCHTIP_SYNC=1
 EOF
 cat > "$WORK/config/smokescreen.yaml" <<EOF
 ip: 0.0.0.0
@@ -215,6 +217,9 @@ H="$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Statu
 [ "$H" = healthy ] && ok "the candidate worker is healthy" || bad "candidate worker health: $H"
 CS="$($D inspect flotilla-worker-triage-candidate --format '{{range .Mounts}}{{if eq .Destination "/home/worker/signal-fleet"}}{{.Name}}{{end}}{{end}}' 2>&1)"
 [ "$CS" = flotilla-e2e-triage-candidate-state ] && ok "the candidate has its own state volume ($CS)" || bad "candidate state volume: '$CS'"
+CE="$($D inspect flotilla-worker-triage-candidate --format '{{range .Config.Env}}{{println .}}{{end}}' 2>&1 | grep -E '^ROUTINE_SF_(SERVICE|GLITCHTIP_SYNC)=' | sort | tr '\n' ' ')"
+[ "$CE" = "ROUTINE_SF_GLITCHTIP_SYNC=0 ROUTINE_SF_SERVICE=triage-fleet-candidate " ] \
+  && ok "the candidate keeps its own name and no GlitchTip sync over the live fleet's env file" || bad "candidate env: '$CE'"
 OUT="$(cli autonomy triage/cycle-shadow propose 2>&1)"
 echo "$OUT" | grep -q "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
   || bad "autonomy on the capped routine: $OUT"

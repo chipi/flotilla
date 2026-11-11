@@ -103,6 +103,10 @@ services:
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
       ROUTINE_HTTP_PROXY: http://egress:4750
       ROUTINE_HTTPS_PROXY: http://egress:4750
+      # over worker-triage.env, which is the live fleet's: the candidate's series, inbox and traces carry
+      # their own name (the Hub and dashboards count triage-fleet), and it mirrors nothing into GlitchTip
+      ROUTINE_SF_SERVICE: triage-fleet-candidate
+      ROUTINE_SF_GLITCHTIP_SYNC: "0"
     volumes:
       - worker-triage-secrets:/run/flotilla:ro           # the same fleet secrets; shadow never writes outward
       - triage-candidate-state:/home/worker/signal-fleet  # never the live state

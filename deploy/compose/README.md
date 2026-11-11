@@ -102,7 +102,7 @@ docker exec -e FLOTILLA_TOKEN="$(cat <operator token file>)" flotillad flotilla 
 `config/worker-triage.env`: the triage fleet reads its services by these URLs, all through the proxy.
 
 ```sh
-ROUTINE_SF_SERVICE=triage-fleet                 # triage-fleet-shadow while it runs beside fleetd
+ROUTINE_SF_SERVICE=triage-fleet                 # the candidate worker overrides it (triage-fleet-candidate)
 ROUTINE_SF_VM_URL=http://victoriametrics:8428
 ROUTINE_SF_VL_URL=http://victorialogs:9428
 ROUTINE_SF_VT_URL=http://victoriatraces:10428
@@ -157,7 +157,10 @@ a control says.
    deploy. The candidate's volume stays until removed by hand.
 
 The candidate shares the triage worker's secrets volume and the proxy's allowlist: in shadow the fleet
-makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there.
+makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there. It reads the
+live worker's `worker-triage.env`, but the compose file sets `ROUTINE_SF_SERVICE=triage-fleet-candidate`
+and `ROUTINE_SF_GLITCHTIP_SYNC=0` over it, so its metrics, inbox and traces never count as the live
+fleet's.
 
 ## Deploy, roll back, operate
 
