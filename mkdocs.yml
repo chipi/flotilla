@@ -96,6 +96,7 @@ nav:
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
     - RFC-0002 — The job runtime: rfc/RFC-0002-job-runtime.md
     - RFC-0004 — The agent pipeline: rfc/RFC-0004-agent-pipeline.md
+    - RFC-0005 — Skills in the harness: rfc/RFC-0005-skills.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md
