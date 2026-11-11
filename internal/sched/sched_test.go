@@ -37,8 +37,10 @@ type fakeMetrics struct {
 	ok   int
 }
 
-func (m *fakeMetrics) Run(job, status, stage string, d, s float64) { m.runs = append(m.runs, status) }
-func (m *fakeMetrics) LastSuccess(job string, at time.Time)        { m.ok++ }
+func (m *fakeMetrics) Run(routine, status, stage string, d, s float64) {
+	m.runs = append(m.runs, status)
+}
+func (m *fakeMetrics) LastSuccess(routine string, at time.Time) { m.ok++ }
 
 func setup(t *testing.T, budget float64) (*Scheduler, *fakeRunner, *fakeMetrics) {
 	t.Helper()
@@ -50,10 +52,10 @@ func setup(t *testing.T, budget float64) (*Scheduler, *fakeRunner, *fakeMetrics)
 	zero := 0
 	fr := &fakeRunner{res: &worker.Result{Status: "ok", ExitCode: &zero, DurationS: 1.5, SpendUSD: 0.4}}
 	fm := &fakeMetrics{}
-	j := &spec.Job{Fleet: "triage", Job: "cycle", Description: "d", Enabled: true, Worker: "triage",
+	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage",
 		Run: spec.Run{Command: "python3 x.py", Workdir: "signal-fleet/mvp", SpendFile: "s"}, Stage: spec.StageShadow,
 		Budget: spec.Budget{DayUSD: budget}, Every: 10 * time.Minute, Limit: 20 * time.Minute, Fresh: 35 * time.Minute, Hash: "abc"}
-	return &Scheduler{Store: st, Jobs: []*spec.Job{j}, Workers: map[string]Runner{"triage": fr}, Metrics: fm}, fr, fm
+	return &Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]Runner{"triage": fr}, Metrics: fm}, fr, fm
 }
 
 func TestRunPassesTheContract(t *testing.T) {
@@ -92,11 +94,11 @@ func TestStageControlOverridesSpec(t *testing.T) {
 
 func TestControlAboveMaxStageNotObeyed(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	s.Jobs[0].MaxStage = spec.StageShadow
+	s.Routines[0].MaxStage = spec.StageShadow
 	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyStage, "live", "operator", "api")
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if fr.got[0].Env["FLEETD_STAGE"] != "shadow" {
-		t.Fatalf("a shadow-capped job ran at %s", fr.got[0].Env["FLEETD_STAGE"])
+		t.Fatalf("a shadow-capped routine ran at %s", fr.got[0].Env["FLEETD_STAGE"])
 	}
 }
 
@@ -117,8 +119,8 @@ func TestRunGetsTheModelsSection(t *testing.T) {
 
 func TestSkips(t *testing.T) {
 	for name, c := range map[string]struct{ subject, key, want string }{
-		"fleet stopped": {"triage", KeyStop, "STOPped"},
-		"job paused":    {"triage/cycle", KeyPaused, "paused"},
+		"fleet stopped":  {"triage", KeyStop, "STOPped"},
+		"routine paused": {"triage/cycle", KeyPaused, "paused"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, fr, fm := setup(t, 2)
@@ -182,7 +184,7 @@ func TestOneRunPerJob(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	if _, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator"); !errors.Is(err, ErrRunning) {
-		t.Fatalf("a second start of a running job: %v", err)
+		t.Fatalf("a second start of a running routine: %v", err)
 	}
 	close(fr.block)
 	<-done
@@ -204,6 +206,6 @@ func TestFailedRunKeepsOutputTail(t *testing.T) {
 func TestUnknownJob(t *testing.T) {
 	s, _, _ := setup(t, 2)
 	if _, err := s.RunNow(context.Background(), "nope/x", "manual", "op"); err == nil {
-		t.Fatal("unknown job")
+		t.Fatal("unknown routine")
 	}
 }

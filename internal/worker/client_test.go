@@ -19,7 +19,7 @@ func TestRun(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := New(ts.URL, "secret")
-	res, err := c.Run(context.Background(), Request{RunID: "r", Job: "j/a", Command: "true", TimeoutS: 5,
+	res, err := c.Run(context.Background(), Request{RunID: "r", Routine: "j/a", Command: "true", TimeoutS: 5,
 		Env: map[string]string{"TRACEPARENT": "00-abc-def-01"}})
 	if err != nil || res.Status != "ok" || *res.ExitCode != 0 || res.SpendUSD != 0.1 {
 		t.Fatalf("%+v %v", res, err)
@@ -45,7 +45,7 @@ func TestRunRejects(t *testing.T) {
 				w.Write([]byte(c.body))
 			}))
 			defer ts.Close()
-			_, err := New(ts.URL, "s").Run(context.Background(), Request{RunID: "r", Job: "j/a", Command: "true", TimeoutS: 1})
+			_, err := New(ts.URL, "s").Run(context.Background(), Request{RunID: "r", Routine: "j/a", Command: "true", TimeoutS: 1})
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("want %q, got %v", c.want, err)
 			}

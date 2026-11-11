@@ -7,7 +7,7 @@
 # Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
 # is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a
 # stage; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
-# worker (profile candidate) is healthy on its own state volume and its job cannot leave shadow; the
+# worker (profile candidate) is healthy on its own state volume and its routine cannot leave shadow; the
 # heartbeat's model step calls the LiteLLM stand-in through the model client, with the models section
 # from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported.
 # Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
@@ -75,7 +75,7 @@ callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
   triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage.token}
-disabled_jobs: [triage/cycle, triage/cycle-shadow]
+disabled_routines: [triage/cycle, triage/cycle-shadow]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -84,9 +84,9 @@ models:
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
-JOB_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
-JOB_HEARTBEAT_DENIED_URL=http://forbidden:8080/
-JOB_HEARTBEAT_MODEL_ALIAS=e2e-model
+ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
+ROUTINE_HEARTBEAT_DENIED_URL=http://forbidden:8080/
+ROUTINE_HEARTBEAT_MODEL_ALIAS=e2e-model
 EOF
 cat > "$WORK/config/smokescreen.yaml" <<EOF
 ip: 0.0.0.0
@@ -164,12 +164,12 @@ $D exec flotilla-worker-triage python3 -m pip check >/dev/null 2>&1 && ok "the i
 
 echo "== telemetry"
 sleep 8
-$D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_run{environment="e2e",job="platform/heartbeat",service="flotillad",stage="live",status="ok"' \
+$D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_run{environment="e2e",routine="platform/heartbeat",service="flotillad",stage="live",status="ok"' \
   && ok "flotilla_run reached VictoriaMetrics through the proxy" || bad "no flotilla_run sample at the VictoriaMetrics stand-in"
 $D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_up' && ok "flotilla_up pushed" || bad "no flotilla_up"
 $D logs e2e-victoriatraces 2>&1 | grep -q "POST /insert/opentelemetry/v1/traces" && ok "traces reached VictoriaTraces through the proxy" \
   || bad "no traces at the VictoriaTraces stand-in"
-$D logs e2e-victoriatraces 2>&1 | grep -q "SPAN model.chat" && ok "the job's model.chat span reached VictoriaTraces through the proxy" \
+$D logs e2e-victoriatraces 2>&1 | grep -q "SPAN model.chat" && ok "the routine's model.chat span reached VictoriaTraces through the proxy" \
   || bad "no model.chat span at the VictoriaTraces stand-in"
 
 echo "== controls and auth"
@@ -205,7 +205,7 @@ CS="$($D inspect flotilla-worker-triage-candidate --format '{{range .Mounts}}{{i
 [ "$CS" = flotilla-e2e-triage-candidate-state ] && ok "the candidate has its own state volume ($CS)" || bad "candidate state volume: '$CS'"
 OUT="$(cli stage triage/cycle-shadow propose 2>&1)"
 echo "$OUT" | grep -q "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
-  || bad "stage on the capped job: $OUT"
+  || bad "stage on the capped routine: $OUT"
 OUT="$(cli status 2>&1)"
 echo "$OUT" | grep -q 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"

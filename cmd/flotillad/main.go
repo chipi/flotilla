@@ -46,11 +46,11 @@ type Config struct {
 	ErrorsDSNFile string                  `yaml:"errors_dsn_file"`
 	CallersFile   string                  `yaml:"callers_file"`
 	Workers       map[string]WorkerConfig `yaml:"workers"`
-	// jobs this installation does not run, whatever their spec says (e.g. an e2e stack that has no
+	// routines this installation does not run, whatever their spec says (e.g. an e2e stack that has no
 	// real services for them). A listed id that no spec has is an error, so a typo cannot hide.
-	DisabledJobs []string `yaml:"disabled_jobs"`
-	// the model aliases jobs may name and their OpenAI-compatible endpoints (ADR-0004); every run gets
-	// it as JSON in FLOTILLA_MODELS. Optional: without it, a job that needs a model fails its run.
+	DisabledRoutines []string `yaml:"disabled_routines"`
+	// the model aliases routines may name and their OpenAI-compatible endpoints (ADR-0004); every run gets
+	// it as JSON in FLOTILLA_MODELS. Optional: without it, a routine that needs a model fails its run.
 	Models *models.Config `yaml:"models"`
 }
 
@@ -120,7 +120,7 @@ func main() {
 		os.Exit(2)
 	}
 	log := telemetry.Logger(cfg.Environment, version)
-	jobs, err := spec.Load(cfg.SpecsDir)
+	routines, err := spec.Load(cfg.SpecsDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "specs:", err)
 		os.Exit(2)
@@ -148,33 +148,33 @@ func main() {
 		clients[name] = worker.New(w.URL, tok)
 		runners[name] = clients[name]
 	}
-	for _, id := range cfg.DisabledJobs {
+	for _, id := range cfg.DisabledRoutines {
 		found := false
-		for _, j := range jobs {
+		for _, j := range routines {
 			if j.ID() == id {
 				j.Enabled, found = false, true
 			}
 		}
 		if !found {
-			fmt.Fprintf(os.Stderr, "config: disabled_jobs names %s, which no spec defines\n", id)
+			fmt.Fprintf(os.Stderr, "config: disabled_routines names %s, which no spec defines\n", id)
 			os.Exit(2)
 		}
 	}
-	for _, j := range jobs {
+	for _, j := range routines {
 		if _, ok := runners[j.Worker]; j.Enabled && !ok {
 			fmt.Fprintf(os.Stderr, "specs: %s needs worker %q, which the config does not have\n", j.ID(), j.Worker)
 			os.Exit(2)
 		}
 	}
 	if *check {
-		for _, j := range jobs {
+		for _, j := range routines {
 			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s stage=%-7s spec=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Stage, j.Hash)
 		}
 		n := 0
 		if cfg.Models != nil {
 			n = len(cfg.Models.Aliases)
 		}
-		fmt.Printf("CHECK PASS: %d jobs, %d callers, %d workers, %d model aliases\n", len(jobs), len(callers), len(clients), n)
+		fmt.Printf("CHECK PASS: %d routines, %d callers, %d workers, %d model aliases\n", len(routines), len(callers), len(clients), n)
 		return
 	}
 
@@ -223,7 +223,7 @@ func main() {
 	} else if n > 0 {
 		log.Warn("runs left running by the previous flotillad marked interrupted", "count", n)
 	}
-	_ = st.Event(ctx, "flotillad", "flotillad", "start", version, fmt.Sprintf("%d jobs", len(jobs)))
+	_ = st.Event(ctx, "flotillad", "flotillad", "start", version, fmt.Sprintf("%d routines", len(routines)))
 
 	push := &telemetry.Pusher{URL: cfg.VMURL, Env: cfg.Environment, Version: version, Log: log}
 	modelsJSON := ""
@@ -233,12 +233,12 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	s := &sched.Scheduler{Store: st, Jobs: jobs, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
+	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second,
 		Handler: (&api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log}).Handler()}
 	go func() {
-		log.Info("flotillad listening", "addr", cfg.Listen, "jobs", len(jobs))
+		log.Info("flotillad listening", "addr", cfg.Listen, "routines", len(routines))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("listen", "err", err)
 			stop()
@@ -254,14 +254,14 @@ func main() {
 	log.Info("flotillad exit")
 }
 
-// heartbeat pushes flotilla_up and each job's freshness and last success every minute, and takes
+// heartbeat pushes flotilla_up and each routine's freshness and last success every minute, and takes
 // one backup of the store per day (state_dir/backup/flotilla-<day>.db, the last 7 kept).
 func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store, stateDir string, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
 		push.Up()
-		for _, j := range s.Jobs {
+		for _, j := range s.Routines {
 			if !j.Enabled {
 				continue
 			}

@@ -1,7 +1,7 @@
 """The one model client (ADR-0004, RFC-0002 §3): any OpenAI-compatible Chat Completions endpoint.
 
 LiteLLM is the reference deployment, not a requirement. Specs name aliases; the installation's config
-(flotillad.yaml `models:`, validated by flotillad and handed to the job as JSON in FLOTILLA_MODELS)
+(flotillad.yaml `models:`, validated by flotillad and handed to the routine as JSON in FLOTILLA_MODELS)
 maps each alias to an endpoint and a model, with the alias's capabilities:
 
   endpoints:
@@ -13,7 +13,7 @@ maps each alias to an endpoint and a model, with the alias's capabilities:
   prices:          # for aliases with cost: table, per million tokens
     some-alias: {input_per_mtok: 0.14, output_per_mtok: 0.28}
 
-The key is named, never stored here: `key_env` (a variable in the job's environment, which the worker
+The key is named, never stored here: `key_env` (a variable in the routine's environment, which the worker
 fills from the fleet's secrets file) or `key_file`. An endpoint with neither sends no Authorization.
 
 Capabilities (an alias overrides its endpoint's defaults):
@@ -28,7 +28,7 @@ Every call returns a record of what an exact replay needs: the request exactly a
 usage (and whether the endpoint reported it), cost and its source, the model the response names and, on
 LiteLLM, the deployment that answered (x-litellm-model-id). Errors are typed (AuthOrBilling, Transient,
 RequestRejected, EmptyCompletion; ConfigError for the installation's mistakes), so the harness can fail
-closed or defer as triage does today. chat_policy() adds a job's declared fallback; the client never
+closed or defer as triage does today. chat_policy() adds a routine's declared fallback; the client never
 falls back on its own. Each call is an OpenTelemetry span when the SDK is configured (the worker image
 has it); without it, nothing is emitted and nothing breaks. Stdlib otherwise. No streaming (a non-goal).
 
@@ -194,7 +194,7 @@ class Client:
         if a.key_env:
             v = self.environ.get(a.key_env, "").strip()
             if not v:
-                raise ConfigError(f"endpoint {a.endpoint}: {a.key_env} is not set in the job's environment")
+                raise ConfigError(f"endpoint {a.endpoint}: {a.key_env} is not set in the routine's environment")
             return v
         if a.key_file:
             try:
@@ -244,7 +244,7 @@ class Client:
             return rec
 
     def chat_policy(self, policy, messages, **kw):
-        """A job's model policy: {"model": alias, "fallback": [alias, ...], "fallback_on": ["transient", "empty"]}.
+        """A routine's model policy: {"model": alias, "fallback": [alias, ...], "fallback_on": ["transient", "empty"]}.
         Tries the model, then each fallback in order, only on the error kinds named (default: transient). The
         record says which alias answered and what failed before it (`attempts`)."""
         on = set(policy.get("fallback_on") or ["transient"])

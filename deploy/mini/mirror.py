@@ -21,7 +21,7 @@ Writes, besides the copies:
   results/cycles.tsv     run_id, start_utc, end_utc, status, stage: one row per triage run
 
 Into the live fleet folder (~/signal-fleet) only after the switch: it refuses unless MIRROR_LIVE=1 is
-in FLOTILLA_HOME/.env, fleetd's STOP flag is in that folder, and the triage job is not in shadow.
+in FLOTILLA_HOME/.env, fleetd's STOP flag is in that folder, and the triage routine is not in shadow.
 Ends with one line: MIRROR PASS / SKIP (why) / RACED / FAIL.
 """
 import argparse
@@ -36,7 +36,7 @@ import time
 
 H = os.environ.get("FLOTILLA_HOME", os.path.expanduser("~/flotilla"))
 LIVE = os.path.realpath(os.path.expanduser("~/signal-fleet"))
-JOB = "triage/cycle"
+ROUTINE = "triage/cycle"
 TREES = ("results", "queue", "export")
 SYNCED = ("queue", "export")          # deletions follow the volume here; results/ only gains
 # written on the host, not by the fleet: the deploy log (homelab's deploy hooks, then flotilla's
@@ -63,13 +63,13 @@ def docker(*args, stdin=None):
 
 
 def state():
-    """flotillad's view: is the job running, and its runs (newest first)."""
+    """flotillad's view: is the routine running, and its runs (newest first)."""
     st = json.loads(docker("exec", "flotillad", "/usr/local/bin/flotilla", "status", "-json").stdout)
-    runs = json.loads(docker("exec", "flotillad", "/usr/local/bin/flotilla", "runs", JOB, "-n", "200", "-json").stdout)["runs"]
-    job = next((j for j in st["jobs"] if j["id"] == JOB), None)
-    if job is None:
-        raise RuntimeError(f"flotillad has no job {JOB}")
-    return {"running": bool(job.get("running")), "stage": job["stage"], "runs": runs or []}
+    runs = json.loads(docker("exec", "flotillad", "/usr/local/bin/flotilla", "runs", ROUTINE, "-n", "200", "-json").stdout)["runs"]
+    routine = next((j for j in st["routines"] if j["id"] == ROUTINE), None)
+    if routine is None:
+        raise RuntimeError(f"flotillad has no routine {ROUTINE}")
+    return {"running": bool(routine.get("running")), "stage": routine["stage"], "runs": runs or []}
 
 
 def copy_out(volume, image, dest_tmp):
@@ -161,7 +161,7 @@ def mirror(dest, volume, image, cfg, get_state=state, do_copy=copy_out, log=prin
         if not os.path.exists(os.path.join(dest, "STOP")):
             why.append("fleetd's STOP flag is not in " + dest + " (fleetd would still be writing it)")
         if s1["stage"] == "shadow":
-            why.append("the triage job is still in shadow")
+            why.append("the triage routine is still in shadow")
         if why:
             log("MIRROR FAIL: refusing to write the live fleet folder: " + "; ".join(why))
             return 1

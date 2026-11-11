@@ -57,6 +57,10 @@ var schema = []string{
 		usd REAL NOT NULL,
 		PRIMARY KEY (day, subject)
 	);`,
+	// ADR-0007: "routine" replaces "job".
+	`ALTER TABLE runs RENAME COLUMN job TO routine;
+	DROP INDEX runs_job_started;
+	CREATE INDEX runs_routine_started ON runs(routine, started_at);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.
@@ -76,7 +80,7 @@ type Store struct {
 
 type Run struct {
 	ID        string   `json:"id"`
-	Job       string   `json:"job"`
+	Routine   string   `json:"routine"`
 	SpecHash  string   `json:"spec_hash"`
 	Trigger   string   `json:"trigger"`
 	Actor     string   `json:"actor"`
@@ -231,9 +235,9 @@ func (s *Store) Controls(ctx context.Context) ([]Control, error) {
 }
 
 func (s *Store) StartRun(ctx context.Context, r Run) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, job, spec_hash, trigger, actor, stage, started_at, status, trace_id, detail)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, stage, started_at, status, trace_id, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Job, r.SpecHash, r.Trigger, r.Actor, r.Stage, r.StartedAt, r.Status, r.TraceID, r.Detail)
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Stage, r.StartedAt, r.Status, r.TraceID, r.Detail)
 	return err
 }
 
@@ -255,9 +259,9 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, exitCode *int,
 func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 	now := s.now().Format(ts)
 	r.StartedAt, r.Status = now, StatusSkipped
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, job, spec_hash, trigger, actor, stage, started_at, ended_at, status, trace_id, detail)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, stage, started_at, ended_at, status, trace_id, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Job, r.SpecHash, r.Trigger, r.Actor, r.Stage, now, now, r.Status, r.TraceID, r.Detail)
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Stage, now, now, r.Status, r.TraceID, r.Detail)
 	return err
 }
 
@@ -271,13 +275,13 @@ func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
-func (s *Store) Runs(ctx context.Context, job string, limit int) ([]Run, error) {
-	q := `SELECT id, job, spec_hash, trigger, actor, stage, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail
+func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, error) {
+	q := `SELECT id, routine, spec_hash, trigger, actor, stage, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail
 		FROM runs`
 	var args []any
-	if job != "" {
-		q += ` WHERE job = ?`
-		args = append(args, job)
+	if routine != "" {
+		q += ` WHERE routine = ?`
+		args = append(args, routine)
 	}
 	q += ` ORDER BY started_at DESC LIMIT ?`
 	args = append(args, limit)
@@ -289,7 +293,7 @@ func (s *Store) Runs(ctx context.Context, job string, limit int) ([]Run, error) 
 	var out []Run
 	for rows.Next() {
 		var r Run
-		if err := rows.Scan(&r.ID, &r.Job, &r.SpecHash, &r.Trigger, &r.Actor, &r.Stage, &r.StartedAt, &r.EndedAt,
+		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Stage, &r.StartedAt, &r.EndedAt,
 			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail); err != nil {
 			return nil, err
 		}
@@ -298,10 +302,10 @@ func (s *Store) Runs(ctx context.Context, job string, limit int) ([]Run, error) 
 	return out, rows.Err()
 }
 
-// LastSuccess is the end time of the job's newest ok run, zero when it has none.
-func (s *Store) LastSuccess(ctx context.Context, job string) (time.Time, error) {
+// LastSuccess is the end time of the routine's newest ok run, zero when it has none.
+func (s *Store) LastSuccess(ctx context.Context, routine string) (time.Time, error) {
 	var at sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT MAX(ended_at) FROM runs WHERE job = ? AND status = ?`, job, StatusOK).Scan(&at); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(ended_at) FROM runs WHERE routine = ? AND status = ?`, routine, StatusOK).Scan(&at); err != nil {
 		return time.Time{}, err
 	}
 	if !at.Valid {
@@ -310,7 +314,7 @@ func (s *Store) LastSuccess(ctx context.Context, job string) (time.Time, error) 
 	return time.Parse(ts, at.String)
 }
 
-// AddSpend adds to a subject's (a job id's) spend for a local day ("2006-01-02") and returns the new total.
+// AddSpend adds to a subject's (a routine id's) spend for a local day ("2006-01-02") and returns the new total.
 func (s *Store) AddSpend(ctx context.Context, day, subject string, usd float64) (float64, error) {
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO spend (day, subject, usd) VALUES (?, ?, ?)
 		ON CONFLICT(day, subject) DO UPDATE SET usd = usd + excluded.usd`, day, subject, usd); err != nil {

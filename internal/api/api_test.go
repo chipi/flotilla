@@ -34,20 +34,20 @@ const (
 
 func server(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
-	return serverWith(t, func(*spec.Job) {})
+	return serverWith(t, func(*spec.Routine) {})
 }
 
-func serverWith(t *testing.T, mod func(*spec.Job)) (*httptest.Server, *store.Store) {
+func serverWith(t *testing.T, mod func(*spec.Routine)) (*httptest.Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "a.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	j := &spec.Job{Fleet: "triage", Job: "cycle", Description: "d", Enabled: true, Worker: "triage", Stage: "shadow",
+	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage", Stage: "shadow",
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
 	mod(j)
-	s := &sched.Scheduler{Store: st, Jobs: []*spec.Job{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
+	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
 	srv := &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test",
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		Callers: []Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-homelab", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}}}
@@ -92,8 +92,8 @@ func TestAuth(t *testing.T) {
 func TestAgentCannotDoOperatorThings(t *testing.T) {
 	ts, st := server(t)
 	for _, p := range []struct{ path, body string }{
-		{"/v1/jobs/triage/cycle/stage", `{"stage":"live"}`},
-		{"/v1/jobs/triage/cycle/resume", ""},
+		{"/v1/routines/triage/cycle/stage", `{"stage":"live"}`},
+		{"/v1/routines/triage/cycle/resume", ""},
 		{"/v1/fleets/triage/start", ""},
 	} {
 		if c, _ := call(t, ts, "POST", p.path, agentTok, p.body); c != 403 {
@@ -110,7 +110,7 @@ func TestAgentCanMakeThingsSafer(t *testing.T) {
 	if c, _ := call(t, ts, "POST", "/v1/fleets/triage/stop", agentTok, ""); c != 200 {
 		t.Fatalf("stop: %d", c)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/jobs/triage/cycle/pause", agentTok, ""); c != 200 {
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/pause", agentTok, ""); c != 200 {
 		t.Fatalf("pause: %d", c)
 	}
 	ev, _ := st.Events(context.Background(), 10)
@@ -121,42 +121,42 @@ func TestAgentCanMakeThingsSafer(t *testing.T) {
 
 func TestOperatorStage(t *testing.T) {
 	ts, st := server(t)
-	if c, _ := call(t, ts, "POST", "/v1/jobs/triage/cycle/stage", opTok, `{"stage":"yolo"}`); c != 400 {
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/stage", opTok, `{"stage":"yolo"}`); c != 400 {
 		t.Fatalf("bad stage: %d", c)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/jobs/triage/cycle/stage", opTok, `{"stage":"propose"}`); c != 200 {
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/stage", opTok, `{"stage":"propose"}`); c != 200 {
 		t.Fatalf("stage: %d", c)
 	}
 	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyStage); v != "propose" {
 		t.Fatalf("stage now %q", v)
 	}
 	_, out := call(t, ts, "GET", "/v1/status", opTok, "")
-	job := out["jobs"].([]any)[0].(map[string]any)
-	if job["stage"] != "propose" || job["spec_stage"] != "shadow" {
-		t.Fatalf("status shows the effective and the spec stage: %v", job)
+	routine := out["routines"].([]any)[0].(map[string]any)
+	if routine["stage"] != "propose" || routine["spec_stage"] != "shadow" {
+		t.Fatalf("status shows the effective and the spec stage: %v", routine)
 	}
 }
 
 func TestStageCappedBySpec(t *testing.T) {
-	ts, st := serverWith(t, func(j *spec.Job) { j.MaxStage = spec.StageShadow })
+	ts, st := serverWith(t, func(j *spec.Routine) { j.MaxStage = spec.StageShadow })
 	for _, s := range []string{"propose", "live"} {
-		c, out := call(t, ts, "POST", "/v1/jobs/triage/cycle/stage", opTok, `{"stage":"`+s+`"}`)
+		c, out := call(t, ts, "POST", "/v1/routines/triage/cycle/stage", opTok, `{"stage":"`+s+`"}`)
 		if c != 400 || !strings.Contains(fmt.Sprint(out["error"]), "capped at shadow") {
-			t.Fatalf("%s on a shadow-capped job: %d %v", s, c, out)
+			t.Fatalf("%s on a shadow-capped routine: %d %v", s, c, out)
 		}
 	}
 	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyStage); v != "" {
 		t.Fatalf("a refused stage left a control: %q", v)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/jobs/triage/cycle/stage", opTok, `{"stage":"shadow"}`); c != 200 {
-		t.Fatalf("shadow on a shadow-capped job: %d", c)
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/stage", opTok, `{"stage":"shadow"}`); c != 200 {
+		t.Fatalf("shadow on a shadow-capped routine: %d", c)
 	}
 }
 
 func TestUnknownSubjects(t *testing.T) {
 	ts, _ := server(t)
-	if c, _ := call(t, ts, "POST", "/v1/jobs/nope/x/pause", opTok, ""); c != 404 {
-		t.Fatalf("unknown job: %d", c)
+	if c, _ := call(t, ts, "POST", "/v1/routines/nope/x/pause", opTok, ""); c != 404 {
+		t.Fatalf("unknown routine: %d", c)
 	}
 	if c, _ := call(t, ts, "POST", "/v1/fleets/nope/stop", opTok, ""); c != 404 {
 		t.Fatalf("unknown fleet: %d", c)
@@ -165,7 +165,7 @@ func TestUnknownSubjects(t *testing.T) {
 
 func TestManualRun(t *testing.T) {
 	ts, st := server(t)
-	if c, _ := call(t, ts, "POST", "/v1/jobs/triage/cycle/run", agentTok, ""); c != 202 {
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/run", agentTok, ""); c != 202 {
 		t.Fatalf("run: %d", c)
 	}
 	for i := 0; i < 200; i++ {

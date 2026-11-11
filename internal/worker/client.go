@@ -16,7 +16,7 @@ import (
 // Request is one run, as flotillad hands it to a worker.
 type Request struct {
 	RunID     string            `json:"run_id"`
-	Job       string            `json:"job"`
+	Routine   string            `json:"routine"`
 	Command   string            `json:"command"`
 	Workdir   string            `json:"workdir"`
 	TimeoutS  float64           `json:"timeout_s"`

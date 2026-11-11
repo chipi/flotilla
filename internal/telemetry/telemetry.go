@@ -121,28 +121,28 @@ func (p *Pusher) sample(name string, labels map[string]string, v float64) string
 }
 
 // Run records one run: flotilla_run (1 per run; count with count_over_time), its duration, and the
-// job's spend so far today. A skipped run has no duration or spend to report.
-func (p *Pusher) Run(job, status, stage string, durationS, spendDayUSD float64) {
-	lines := []string{p.sample("flotilla_run", map[string]string{"job": job, "status": status, "stage": stage, "version": p.Version}, 1)}
+// routine's spend so far today. A skipped run has no duration or spend to report.
+func (p *Pusher) Run(routine, status, stage string, durationS, spendDayUSD float64) {
+	lines := []string{p.sample("flotilla_run", map[string]string{"routine": routine, "status": status, "stage": stage, "version": p.Version}, 1)}
 	if status != "skipped" {
 		lines = append(lines,
-			p.sample("flotilla_run_seconds", map[string]string{"job": job, "stage": stage}, durationS),
-			p.sample("flotilla_spend_day_usd", map[string]string{"job": job}, spendDayUSD))
+			p.sample("flotilla_run_seconds", map[string]string{"routine": routine, "stage": stage}, durationS),
+			p.sample("flotilla_spend_day_usd", map[string]string{"routine": routine}, spendDayUSD))
 	}
 	p.push(lines)
 }
 
-// LastSuccess pushes the time of a job's last ok run; the stale alert compares it with now.
-func (p *Pusher) LastSuccess(job string, at time.Time) {
+// LastSuccess pushes the time of a routine's last ok run; the stale alert compares it with now.
+func (p *Pusher) LastSuccess(routine string, at time.Time) {
 	if at.IsZero() {
 		return
 	}
-	p.push([]string{p.sample("flotilla_job_last_success_timestamp_seconds", map[string]string{"job": job}, float64(at.Unix()))})
+	p.push([]string{p.sample("flotilla_routine_last_success_timestamp_seconds", map[string]string{"routine": routine}, float64(at.Unix()))})
 }
 
-// Freshness pushes each job's declared freshness, so the stale alert needs no per-job threshold.
-func (p *Pusher) Freshness(job string, d time.Duration) {
-	p.push([]string{p.sample("flotilla_job_freshness_seconds", map[string]string{"job": job}, d.Seconds())})
+// Freshness pushes each routine's declared freshness, so the stale alert needs no per-routine threshold.
+func (p *Pusher) Freshness(routine string, d time.Duration) {
+	p.push([]string{p.sample("flotilla_routine_freshness_seconds", map[string]string{"routine": routine}, d.Seconds())})
 }
 
 // Up says flotillad is alive (pushed every minute).

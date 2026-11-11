@@ -1,21 +1,21 @@
-"""flotilla worker: runs a fleet's jobs inside that fleet's container, for flotillad only.
+"""flotilla worker: runs a fleet's routines inside that fleet's container, for flotillad only.
 
 The worker holds the fleet's secrets (its env files) and its code; flotillad holds neither. flotillad
 says what to run and when; the worker runs it and reports. Python stdlib only.
 
-  POST /v1/runs   {run_id, job, command, workdir, timeout_s, spend_file, env}  -> the result, when done
+  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, env}  -> the result, when done
   GET  /healthz   {ok, worker, version, running}
   GET  /livez     {ok} without a token: the container healthcheck
 
 Every request needs `Authorization: Bearer <the worker token>`; nothing else on the network can
-start a run. One run per job at a time (a second start of a running job is 409).
+start a run. One run per routine at a time (a second start of a running routine is 409).
 
 A run's environment is built, never inherited: the worker's own environment (which holds its token)
-does not reach the job.
+does not reach the routine.
   1. PATH, HOME, LANG;
   2. every KEY=VAL of the env files in FLOTILLA_ENV_FILES (colon-separated, read per run, so a
      rotated secret is picked up without a restart);
-  3. every JOB_<KEY> of the worker's environment, as <KEY> (this installation's overrides, e.g. the
+  3. every ROUTINE_<KEY> of the worker's environment, as <KEY> (this installation's overrides, e.g. the
      service URLs inside the container network);
   4. the request's env (FLEETD_STAGE, FLEETD_CYCLE_ID, FLEETD_BUDGET_LEFT, TRACEPARENT).
 """
@@ -70,9 +70,10 @@ def build_env(request_env, environ=None):
     env = {k: environ[k] for k in ("PATH", "HOME", "LANG", "FLOTILLA_VERSION", "FLOTILLA_WORKER") if k in environ}
     for path in filter(None, environ.get("FLOTILLA_ENV_FILES", "").split(":")):
         env.update(read_env_file(path))
+    prefix = "ROUTINE_"
     for k, v in environ.items():
-        if k.startswith("JOB_") and len(k) > 4:
-            env[k[4:]] = v
+        if k.startswith(prefix) and len(k) > len(prefix):
+            env[k[len(prefix):]] = v
     env.update({k: str(v) for k, v in (request_env or {}).items()})
     return env
 
@@ -87,7 +88,7 @@ def resolve(base, rel):
 
 
 def read_spend(path):
-    """Consume the job's spend report (USD, one number), as fleetd did: read, then truncate."""
+    """Consume the routine's spend report (USD, one number), as fleetd did: read, then truncate."""
     if not path:
         return 0.0
     try:
@@ -113,7 +114,7 @@ def run_job(req, environ=None):
     def pump():
         for line in iter(proc.stdout.readline, b""):
             chunks.append(line)
-            log("run output", run_id=req["run_id"], job=req["job"], line=line.decode("utf-8", "replace").rstrip())
+            log("run output", run_id=req["run_id"], routine=req["routine"], line=line.decode("utf-8", "replace").rstrip())
 
     reader = threading.Thread(target=pump, daemon=True)
     reader.start()
@@ -147,7 +148,7 @@ def _kill_group(proc):
     proc.wait()
 
 
-REQUIRED = {"run_id": str, "job": str, "command": str, "timeout_s": (int, float)}
+REQUIRED = {"run_id": str, "routine": str, "command": str, "timeout_s": (int, float)}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -200,19 +201,19 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": str(e)})
         with _lock:
-            if req["job"] in _running:
-                return self._send(409, {"error": f"{req['job']} is already running ({_running[req['job']]})"})
-            _running[req["job"]] = req["run_id"]
-        log("run start", run_id=req["run_id"], job=req["job"])
+            if req["routine"] in _running:
+                return self._send(409, {"error": f"{req['routine']} is already running ({_running[req['routine']]})"})
+            _running[req["routine"]] = req["run_id"]
+        log("run start", run_id=req["run_id"], routine=req["routine"])
         try:
             res = run_job(req)
         except Exception as e:  # noqa: BLE001 — report, never crash the server
-            log("run failed to start", level="error", run_id=req["run_id"], job=req["job"], error=str(e))
+            log("run failed to start", level="error", run_id=req["run_id"], routine=req["routine"], error=str(e))
             res = {"status": "error", "exit_code": None, "duration_s": 0, "spend_usd": 0, "output_tail": str(e)}
         finally:
             with _lock:
-                _running.pop(req["job"], None)
-        log("run end", run_id=req["run_id"], job=req["job"], status=res["status"], exit_code=res["exit_code"],
+                _running.pop(req["routine"], None)
+        log("run end", run_id=req["run_id"], routine=req["routine"], status=res["status"], exit_code=res["exit_code"],
             duration_s=res["duration_s"], spend_usd=res["spend_usd"],
             level="info" if res["status"] == "ok" else "warning")
         self._send(200, res)

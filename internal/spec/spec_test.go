@@ -8,7 +8,7 @@ import (
 )
 
 const good = `fleet: triage
-job: cycle
+routine: cycle
 description: one pass
 enabled: true
 worker: triage
@@ -33,11 +33,11 @@ func write(t *testing.T, dir, rel, body string) {
 func TestLoadGood(t *testing.T) {
 	d := t.TempDir()
 	write(t, d, "triage/cycle.yaml", good)
-	jobs, err := Load(d)
+	routines, err := Load(d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := jobs[0]
+	j := routines[0]
 	if j.ID() != "triage/cycle" || j.Every.String() != "10m0s" || j.Limit.String() != "20m0s" || len(j.Hash) != 12 {
 		t.Fatalf("got %+v", j)
 	}
@@ -45,19 +45,19 @@ func TestLoadGood(t *testing.T) {
 
 func TestRejects(t *testing.T) {
 	cases := map[string]struct{ rel, body, want string }{
-		"unknown field":         {"triage/cycle.yaml", good + "retries: 3\n", "field retries not found"},
-		"fleet not its folder":  {"other/cycle.yaml", good, `fleet "triage", but the file is under other/`},
-		"job not its file name": {"triage/pass.yaml", good, `job "cycle", but the file is pass.yaml`},
-		"bad stage":             {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: yolo", 1), "stage \"yolo\""},
-		"bad interval":          {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: soon", 1), "trigger.every"},
-		"interval too short":    {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: 5s", 1), "at least 1m0s"},
-		"timeout too long":      {"triage/cycle.yaml", strings.Replace(good, "timeout: 20m", "timeout: 2h", 1), "more than three intervals"},
-		"always stale":          {"triage/cycle.yaml", strings.Replace(good, "freshness: 35m", "freshness: 5m", 1), "always look stale"},
-		"negative budget":       {"triage/cycle.yaml", strings.Replace(good, "day_usd: 2", "day_usd: -1", 1), "must not be negative"},
-		"no command":            {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
-		"no description":        {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
-		"bad max_stage":         {"triage/cycle.yaml", good + "max_stage: yolo\n", `max_stage "yolo"`},
-		"stage above its cap":   {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: propose", 1) + "max_stage: shadow\n", "above max_stage shadow"},
+		"unknown field":             {"triage/cycle.yaml", good + "retries: 3\n", "field retries not found"},
+		"fleet not its folder":      {"other/cycle.yaml", good, `fleet "triage", but the file is under other/`},
+		"routine not its file name": {"triage/pass.yaml", good, `routine "cycle", but the file is pass.yaml`},
+		"bad stage":                 {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: yolo", 1), "stage \"yolo\""},
+		"bad interval":              {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: soon", 1), "trigger.every"},
+		"interval too short":        {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: 5s", 1), "at least 1m0s"},
+		"timeout too long":          {"triage/cycle.yaml", strings.Replace(good, "timeout: 20m", "timeout: 2h", 1), "more than three intervals"},
+		"always stale":              {"triage/cycle.yaml", strings.Replace(good, "freshness: 35m", "freshness: 5m", 1), "always look stale"},
+		"negative budget":           {"triage/cycle.yaml", strings.Replace(good, "day_usd: 2", "day_usd: -1", 1), "must not be negative"},
+		"no command":                {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
+		"no description":            {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
+		"bad max_stage":             {"triage/cycle.yaml", good + "max_stage: yolo\n", `max_stage "yolo"`},
+		"stage above its cap":       {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: propose", 1) + "max_stage: shadow\n", "above max_stage shadow"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -76,24 +76,24 @@ func TestOneBadSpecFailsTheLoad(t *testing.T) {
 	write(t, d, "triage/cycle.yaml", good)
 	write(t, d, "triage/broken.yaml", "fleet: triage\njob: broken\n")
 	if _, err := Load(d); err == nil {
-		t.Fatal("a bad spec must fail the whole load, not drop that job")
+		t.Fatal("a bad spec must fail the whole load, not drop that routine")
 	}
 }
 
 func TestEmptyDir(t *testing.T) {
-	if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "no job specs") {
+	if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "no routine specs") {
 		t.Fatalf("got %v", err)
 	}
 }
 
 // The specs shipped in this repo must load: a broken one is a broken deploy.
 func TestRepoSpecs(t *testing.T) {
-	jobs, err := Load(filepath.Join("..", "..", "fleets"))
+	routines, err := Load(filepath.Join("..", "..", "fleets"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := map[string]*Job{}
-	for _, j := range jobs {
+	ids := map[string]*Routine{}
+	for _, j := range routines {
 		ids[j.ID()] = j
 	}
 	tri, ok := ids["triage/cycle"]

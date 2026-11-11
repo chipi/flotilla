@@ -1,11 +1,11 @@
 // flotilla — the command line for flotillad's API.
 //
 //	flotilla status
-//	flotilla runs [fleet/job] [-n 20]
+//	flotilla runs [fleet/routine] [-n 20]
 //	flotilla events [-n 50]
-//	flotilla run fleet/job
-//	flotilla pause|resume fleet/job
-//	flotilla stage fleet/job shadow|propose|live      (operator only)
+//	flotilla run fleet/routine
+//	flotilla pause|resume fleet/routine
+//	flotilla stage fleet/routine shadow|propose|live      (operator only)
 //	flotilla stop|start fleet                          (start: operator only)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
 //
@@ -64,7 +64,7 @@ func main() {
 			case "runs":
 				q := "/v1/runs?limit=" + n
 				if len(args) > 0 {
-					q += "&job=" + args[0]
+					q += "&routine=" + args[0]
 				}
 				os.Stdout.Write(do("GET", q, nil))
 			default:
@@ -77,14 +77,14 @@ func main() {
 	switch cmd {
 	case "status":
 		var out struct {
-			Version string `json:"version"`
-			Jobs    []map[string]any
-			Workers map[string]any
+			Version  string `json:"version"`
+			Routines []map[string]any
+			Workers  map[string]any
 		}
 		get("/v1/status", &out)
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 		fmt.Fprintf(w, "flotillad %s\nJOB\tSTAGE\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
-		for _, j := range out.Jobs {
+		for _, j := range out.Routines {
 			state := []string{}
 			if j["enabled"] != true {
 				state = append(state, "disabled")
@@ -109,7 +109,7 @@ func main() {
 	case "runs":
 		q := "/v1/runs?limit=" + n
 		if len(args) > 0 {
-			q += "&job=" + args[0]
+			q += "&routine=" + args[0]
 		}
 		var out struct{ Runs []map[string]any }
 		get(q, &out)
@@ -120,7 +120,7 @@ func main() {
 			if len(d) > 80 {
 				d = d[len(d)-80:]
 			}
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v/%v\t%s\n", r["started_at"], r["job"], r["status"], r["stage"],
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v/%v\t%s\n", r["started_at"], r["routine"], r["status"], r["stage"],
 				orDash(r["duration_s"]), r["spend_usd"], r["trigger"], r["actor"], strings.ReplaceAll(d, "\n", " "))
 		}
 		w.Flush()
@@ -131,11 +131,11 @@ func main() {
 			fmt.Printf("%v  %-16v %-14v %-22v %v %v\n", e["at"], e["actor"], e["kind"], e["subject"], e["via"], e["detail"])
 		}
 	case "run", "pause", "resume":
-		need(args, 1, cmd+" fleet/job")
-		post("/v1/jobs/"+args[0]+"/"+cmd, nil)
+		need(args, 1, cmd+" fleet/routine")
+		post("/v1/routines/"+args[0]+"/"+cmd, nil)
 	case "stage":
-		need(args, 2, "stage fleet/job shadow|propose|live")
-		post("/v1/jobs/"+args[0]+"/stage", map[string]string{"stage": args[1]})
+		need(args, 2, "stage fleet/routine shadow|propose|live")
+		post("/v1/routines/"+args[0]+"/stage", map[string]string{"stage": args[1]})
 	case "stop", "start":
 		need(args, 1, cmd+" fleet")
 		post("/v1/fleets/"+args[0]+"/"+cmd, nil)
@@ -145,7 +145,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [job] [-n N] | events [-n N] | run|pause|resume JOB | stage JOB STAGE | stop|start FLEET | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause|resume ROUTINE | stage ROUTINE STAGE | stop|start FLEET | hash-token")
 	os.Exit(2)
 }
 

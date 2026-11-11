@@ -13,19 +13,19 @@
 # Networks:
 #   flotilla       internal: no route out. flotillad, the worker and the proxy talk here.
 #   out            the proxy's way to the internet (api.github.com).
-#   the services'  the proxy joins the networks of the services jobs read (VictoriaMetrics, LiteLLM,
+#   the services'  the proxy joins the networks of the services routines read (VictoriaMetrics, LiteLLM,
 #                  GlitchTip, Langfuse) and reaches them by container name, never through the
 #                  host's port forwards.
 # Nothing is published on the host. The CLI runs inside flotillad: docker exec flotillad flotilla status
 #
 # The candidate worker (profile `candidate`, off unless COMPOSE_PROFILES=candidate): a second triage
 # worker running the image tag under test (FLOTILLA_CANDIDATE_TAG) with its own state volume, for the
-# job triage/cycle-shadow, which its spec caps at shadow (ADR-0004: shadow comparison).
+# routine triage/cycle-shadow, which its spec caps at shadow (ADR-0004: shadow comparison).
 name: flotilla
 
 x-hardening: &hardening
   read_only: true
-  init: true   # PID 1 reaps orphans: a job's grandchildren must not pile up as zombies
+  init: true   # PID 1 reaps orphans: a routine's grandchildren must not pile up as zombies
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   restart: unless-stopped
@@ -69,13 +69,13 @@ services:
     mem_limit: 1g
     cpus: 1.0
     tmpfs: ["/tmp:size=64m"]
-    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]   # JOB_* overrides only; no secrets in it
+    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]   # ROUTINE_* overrides only; no secrets in it
     environment:
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
       FLOTILLA_ENV_FILES: /run/flotilla/fleet.env
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
-      JOB_HTTP_PROXY: http://egress:4750
-      JOB_HTTPS_PROXY: http://egress:4750
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
     volumes:
       - worker-triage-secrets:/run/flotilla:ro
       - triage-state:/home/worker/signal-fleet
@@ -101,8 +101,8 @@ services:
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
       FLOTILLA_ENV_FILES: /run/flotilla/fleet.env
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
-      JOB_HTTP_PROXY: http://egress:4750
-      JOB_HTTPS_PROXY: http://egress:4750
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
     volumes:
       - worker-triage-secrets:/run/flotilla:ro           # the same fleet secrets; shadow never writes outward
       - triage-candidate-state:/home/worker/signal-fleet  # never the live state

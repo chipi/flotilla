@@ -1,6 +1,6 @@
-// Package spec loads and validates job specs: fleets/<fleet>/<job>.yaml.
+// Package spec loads and validates routine specs: fleets/<fleet>/<routine>.yaml.
 //
-// A spec says what a job is: when it runs, which worker runs it, what it runs, how long it may take,
+// A spec says what a routine is: when it runs, which worker runs it, what it runs, how long it may take,
 // what it may spend, and its default stage. It holds nothing about one installation (hosts, paths,
 // secrets); those are the worker's and flotillad's config.
 package spec
@@ -21,8 +21,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Stages, least to most trusted. What each allows is the job's business in phase 2: the stage is
-// passed to the job as FLEETD_STAGE, as fleetd did, and the triage fleet enforces it.
+// Stages, least to most trusted. What each allows is the routine's business in phase 2: the stage is
+// passed to the routine as FLEETD_STAGE, as fleetd did, and the triage fleet enforces it.
 const (
 	StageShadow  = "shadow"
 	StagePropose = "propose"
@@ -33,23 +33,23 @@ var stages = map[string]bool{StageShadow: true, StagePropose: true, StageLive: t
 
 var stageRank = map[string]int{StageShadow: 0, StagePropose: 1, StageLive: 2}
 
-// Allows reports whether stage s is within the job's cap (max_stage; no cap when it is empty).
-func (j *Job) Allows(s string) bool {
+// Allows reports whether stage s is within the routine's cap (max_stage; no cap when it is empty).
+func (j *Routine) Allows(s string) bool {
 	return j.MaxStage == "" || stageRank[s] <= stageRank[j.MaxStage]
 }
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 
-type Job struct {
+type Routine struct {
 	Fleet       string  `yaml:"fleet"`
-	Job         string  `yaml:"job"`
+	Routine     string  `yaml:"routine"`
 	Description string  `yaml:"description"`
 	Enabled     bool    `yaml:"enabled"`
 	Worker      string  `yaml:"worker"`
 	Trigger     Trigger `yaml:"trigger"`
 	Run         Run     `yaml:"run"`
 	Stage       string  `yaml:"stage"`
-	MaxStage    string  `yaml:"max_stage"` // optional: the highest stage the job may ever run at
+	MaxStage    string  `yaml:"max_stage"` // optional: the highest stage the routine may ever run at
 	Budget      Budget  `yaml:"budget"`
 	Freshness   string  `yaml:"freshness"`
 
@@ -76,18 +76,18 @@ type Budget struct {
 	DayUSD float64 `yaml:"day_usd"`
 }
 
-// ID is fleet/job, the key everything else uses.
-func (j *Job) ID() string { return j.Fleet + "/" + j.Job }
+// ID is fleet/routine, the key everything else uses.
+func (j *Routine) ID() string { return j.Fleet + "/" + j.Routine }
 
-// Load reads every fleets/<fleet>/<job>.yaml under dir. Any invalid spec fails the whole load, so a
-// bad spec stops a deploy instead of silently dropping a job.
-func Load(dir string) ([]*Job, error) {
+// Load reads every fleets/<fleet>/<routine>.yaml under dir. Any invalid spec fails the whole load, so a
+// bad spec stops a deploy instead of silently dropping a routine.
+func Load(dir string) ([]*Routine, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "*", "*.yaml"))
 	if err != nil {
 		return nil, err
 	}
 	sort.Strings(paths)
-	var jobs []*Job
+	var routines []*Routine
 	seen := map[string]string{}
 	var errs []error
 	for _, p := range paths {
@@ -100,8 +100,8 @@ func Load(dir string) ([]*Job, error) {
 			errs = append(errs, fmt.Errorf("%s: fleet %q, but the file is under %s/", p, j.Fleet, want))
 			continue
 		}
-		if want := strings.TrimSuffix(filepath.Base(p), ".yaml"); j.Job != want {
-			errs = append(errs, fmt.Errorf("%s: job %q, but the file is %s.yaml", p, j.Job, want))
+		if want := strings.TrimSuffix(filepath.Base(p), ".yaml"); j.Routine != want {
+			errs = append(errs, fmt.Errorf("%s: routine %q, but the file is %s.yaml", p, j.Routine, want))
 			continue
 		}
 		if prev, dup := seen[j.ID()]; dup {
@@ -109,27 +109,27 @@ func Load(dir string) ([]*Job, error) {
 			continue
 		}
 		seen[j.ID()] = p
-		jobs = append(jobs, j)
+		routines = append(routines, j)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	if len(jobs) == 0 {
-		return nil, fmt.Errorf("no job specs under %s", dir)
+	if len(routines) == 0 {
+		return nil, fmt.Errorf("no routine specs under %s", dir)
 	}
-	return jobs, nil
+	return routines, nil
 }
 
 // LoadFile parses and validates one spec. Unknown fields are errors: a typo must not become a
 // silently ignored setting.
-func LoadFile(path string) (*Job, error) {
+func LoadFile(path string) (*Routine, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
-	var j Job
+	var j Routine
 	if err := dec.Decode(&j); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -141,14 +141,14 @@ func LoadFile(path string) (*Job, error) {
 	return &j, nil
 }
 
-func (j *Job) validate() error {
+func (j *Routine) validate() error {
 	var errs []error
 	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
 	if !nameRe.MatchString(j.Fleet) {
 		bad("fleet %q: lower-case letters, digits and dashes", j.Fleet)
 	}
-	if !nameRe.MatchString(j.Job) {
-		bad("job %q: lower-case letters, digits and dashes", j.Job)
+	if !nameRe.MatchString(j.Routine) {
+		bad("routine %q: lower-case letters, digits and dashes", j.Routine)
 	}
 	if strings.TrimSpace(j.Description) == "" {
 		bad("description is required")
@@ -188,7 +188,7 @@ func (j *Job) validate() error {
 		bad("run.timeout %s is more than three intervals (%s)", j.Limit, j.Every)
 	}
 	if j.Every > 0 && j.Fresh > 0 && j.Fresh < j.Every {
-		bad("freshness %s is shorter than the interval %s: the job would always look stale", j.Fresh, j.Every)
+		bad("freshness %s is shorter than the interval %s: the routine would always look stale", j.Fresh, j.Every)
 	}
 	return errors.Join(errs...)
 }

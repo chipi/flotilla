@@ -1,4 +1,4 @@
-"""The platform heartbeat (fleets/platform/heartbeat.yaml): proves a worker can run a job and that
+"""The platform heartbeat (fleets/platform/heartbeat.yaml): proves a worker can run a routine and that
 egress is enforced, both ways. Exit 0 only when an allowed host answers through the proxy AND a host
 off the list is refused by it.
 
@@ -6,12 +6,12 @@ off the list is refused by it.
   HEARTBEAT_DENIED_URL   a host that exists and would answer, but is off the allowlist: the proxy
                          must refuse it (HTTP 407/403 from the proxy)
 
-Both come from the installation (JOB_HEARTBEAT_* in the worker's environment). The proxy is the
+Both come from the installation (ROUTINE_HEARTBEAT_* in the worker's environment). The proxy is the
 standard HTTP_PROXY / HTTPS_PROXY, which urllib honours.
 
   HEARTBEAT_MODEL_ALIAS  optional: one tiny call through the model client (runtime/model_client.py) to
                          this alias from FLOTILLA_MODELS, traced (runtime/telemetry.py). It proves the
-                         models section, the key, the endpoint through the proxy and the job's spans.
+                         models section, the key, the endpoint through the proxy and the routine's spans.
 """
 import os
 import sys
@@ -37,7 +37,7 @@ def main():
         print("FAIL: HEARTBEAT_ALLOWED_URL and HEARTBEAT_DENIED_URL must both be set")
         return 2
     if not (os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")):
-        print("FAIL: no HTTP_PROXY: this job checks the proxy, and would check nothing without one")
+        print("FAIL: no HTTP_PROXY: this routine checks the proxy, and would check nothing without one")
         return 2
     ok = True
     code, why = probe(allowed)

@@ -24,18 +24,18 @@ class TestEnv(unittest.TestCase):
         with open(f, "w") as fh:
             fh.write("# comment\nGITHUB_TOKEN=gh-secret\nexport SF_HOST=homelab\nQUOTED=\"q\"\n")
         environ = {"PATH": "/usr/bin", "HOME": "/home/w", "FLOTILLA_WORKER_TOKEN": "worker-secret",
-                   "FLOTILLA_ENV_FILES": f, "JOB_SF_HOST": "victoriametrics", "OTHER": "x"}
+                   "FLOTILLA_ENV_FILES": f, "ROUTINE_SF_HOST": "victoriametrics", "OTHER": "x"}
         env = fw.build_env({"FLEETD_STAGE": "shadow"}, environ)
-        self.assertNotIn("FLOTILLA_WORKER_TOKEN", env, "the worker's token must never reach a job")
+        self.assertNotIn("FLOTILLA_WORKER_TOKEN", env, "the worker's token must never reach a routine")
         self.assertNotIn("OTHER", env)
         self.assertEqual(env["GITHUB_TOKEN"], "gh-secret")
-        self.assertEqual(env["SF_HOST"], "victoriametrics", "JOB_ overrides the env file")
+        self.assertEqual(env["SF_HOST"], "victoriametrics", "ROUTINE_ overrides the env file")
         self.assertEqual(env["QUOTED"], "q")
         self.assertEqual(env["FLEETD_STAGE"], "shadow")
         self.assertEqual(env["HOME"], "/home/w")
 
     def test_request_wins(self):
-        env = fw.build_env({"FLEETD_STAGE": "shadow"}, {"JOB_FLEETD_STAGE": "live"})
+        env = fw.build_env({"FLEETD_STAGE": "shadow"}, {"ROUTINE_FLEETD_STAGE": "live"})
         self.assertEqual(env["FLEETD_STAGE"], "shadow", "flotillad decides the stage, not the installation")
 
 
@@ -61,7 +61,7 @@ class TestRunJob(unittest.TestCase):
         self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
 
     def req(self, command, timeout=10, spend_file=""):
-        return {"run_id": "r1", "job": "t/j", "command": command, "workdir": ".", "timeout_s": timeout,
+        return {"run_id": "r1", "routine": "t/j", "command": command, "workdir": ".", "timeout_s": timeout,
                 "spend_file": spend_file, "env": {"FLEETD_STAGE": "shadow"}}
 
     def test_ok_and_env(self):
@@ -84,7 +84,7 @@ class TestRunJob(unittest.TestCase):
         self.assertEqual(res["status"], "timeout")
         self.assertLess(time.monotonic() - t0, fw.KILL_GRACE_S + 5)
         time.sleep(3.5)
-        self.assertFalse(os.path.exists(marker), "a child of the timed-out job survived")
+        self.assertFalse(os.path.exists(marker), "a child of the timed-out routine survived")
 
     def test_spend_read_and_truncated(self):
         os.makedirs(os.path.join(self.home, "r"))
@@ -132,18 +132,18 @@ class TestHTTP(unittest.TestCase):
         self.assertEqual((code, body["ok"]), (200, True))
 
     def test_bad_requests(self):
-        self.assertEqual(self.call("/v1/runs", {"job": "x"})[0], 400)
-        self.assertEqual(self.call("/v1/runs", {"run_id": "r", "job": "x", "command": "true", "timeout_s": 0})[0], 400)
-        self.assertEqual(self.call("/v1/runs", {"run_id": "r", "job": "x", "command": "true", "timeout_s": 5,
+        self.assertEqual(self.call("/v1/runs", {"routine": "x"})[0], 400)
+        self.assertEqual(self.call("/v1/runs", {"run_id": "r", "routine": "x", "command": "true", "timeout_s": 0})[0], 400)
+        self.assertEqual(self.call("/v1/runs", {"run_id": "r", "routine": "x", "command": "true", "timeout_s": 5,
                                                 "workdir": "../.."})[0], 400)
 
     def test_run_and_one_at_a_time(self):
         out = {}
         t = threading.Thread(target=lambda: out.update(r=self.call("/v1/runs", {
-            "run_id": "a", "job": "t/slow", "command": "sleep 2", "timeout_s": 10})))
+            "run_id": "a", "routine": "t/slow", "command": "sleep 2", "timeout_s": 10})))
         t.start()
         time.sleep(0.5)
-        code, body = self.call("/v1/runs", {"run_id": "b", "job": "t/slow", "command": "true", "timeout_s": 10})
+        code, body = self.call("/v1/runs", {"run_id": "b", "routine": "t/slow", "command": "true", "timeout_s": 10})
         self.assertEqual(code, 409, body)
         t.join()
         self.assertEqual(out["r"][0], 200)

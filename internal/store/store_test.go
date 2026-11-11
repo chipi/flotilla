@@ -30,6 +30,34 @@ func TestMigrateTwice(t *testing.T) {
 	s2.Close()
 }
 
+// A database written before ADR-0007 keeps its runs: step 2 renames the column, it does not copy.
+func TestMigratesJobColumnToRoutine(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL); INSERT INTO schema_version (n) VALUES (1);`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(schema[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO runs (id, job, spec_hash, trigger, actor, stage, started_at, status) VALUES ('r1', 'triage/cycle', 'h', 'schedule', 'flotillad', 'shadow', '2026-11-10T00:00:00Z', 'ok')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("migrating a step-1 database: %v", err)
+	}
+	defer s.Close()
+	runs, err := s.Runs(context.Background(), "triage/cycle", 10)
+	if err != nil || len(runs) != 1 || runs[0].Routine != "triage/cycle" {
+		t.Fatalf("the old run must survive under routine, got %+v %v", runs, err)
+	}
+}
+
 func TestRefusesNewerSchema(t *testing.T) {
 	s, p := open(t)
 	if _, err := s.db.Exec(`INSERT INTO schema_version (n) VALUES (99)`); err != nil {
@@ -65,7 +93,7 @@ func TestControlRecordsWho(t *testing.T) {
 func TestRunLifecycle(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
-	r := Run{ID: "r1", Job: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Stage: "shadow",
+	r := Run{ID: "r1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Stage: "shadow",
 		StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning}
 	if err := s.StartRun(ctx, r); err != nil {
 		t.Fatal(err)
@@ -85,15 +113,15 @@ func TestRunLifecycle(t *testing.T) {
 	if last.IsZero() {
 		t.Fatal("last success not found")
 	}
-	if l, _ := s.LastSuccess(ctx, "other/job"); !l.IsZero() {
-		t.Fatal("a job with no runs has no last success")
+	if l, _ := s.LastSuccess(ctx, "other/routine"); !l.IsZero() {
+		t.Fatal("a routine with no runs has no last success")
 	}
 }
 
 func TestInterrupted(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
-	_ = s.StartRun(ctx, Run{ID: "r1", Job: "j/a", SpecHash: "h", Trigger: "schedule", Actor: "x", Stage: "shadow",
+	_ = s.StartRun(ctx, Run{ID: "r1", Routine: "j/a", SpecHash: "h", Trigger: "schedule", Actor: "x", Stage: "shadow",
 		StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning})
 	n, err := s.MarkInterrupted(ctx)
 	if err != nil || n != 1 {

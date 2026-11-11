@@ -15,9 +15,9 @@ installation lives on the host, outside git. Placeholders below are in `<angle b
     callers.yaml            who may call the API, by token hash
     cli.token               the token the CLI inside flotillad uses (an agent token: see below)
     worker-triage.token     flotillad <-> worker, 32+ random characters
-    worker-triage.env       the installation's overrides for jobs (JOB_*); no secrets
+    worker-triage.env       the installation's overrides for routines (ROUTINE_*); no secrets
     smokescreen.yaml        the proxy: listen address, which private ranges it may reach
-    egress-acl.yaml         the proxy: which host names jobs may reach
+    egress-acl.yaml         the proxy: which host names routines may reach
   deployed.tsv              written by deploy/mini/deploy.sh
 ```
 
@@ -48,7 +48,7 @@ flag, and never overwritten after:
 ~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
 ```
 
-`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`, `disabled_jobs`,
+`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`, `disabled_routines`,
 `models`):
 
 ```yaml
@@ -63,8 +63,8 @@ errors_dsn_file: /run/flotilla/errors.env     # optional: secrets.sh copies FLOT
 callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
-disabled_jobs: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a job whose worker is missing
-models:                                 # optional (ADR-0004): the aliases jobs name; every run gets it as FLOTILLA_MODELS
+disabled_routines: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a routine whose worker is missing
+models:                                 # optional (ADR-0004): the aliases routines name; every run gets it as FLOTILLA_MODELS
   endpoints:
     gateway:
       base_url: http://litellm:4000/v1   # any OpenAI-compatible endpoint; through the egress proxy
@@ -79,9 +79,9 @@ models:                                 # optional (ADR-0004): the aliases jobs 
 
 `-check` validates `models` with the same rules the Python client applies (shared fixtures:
 `runtime/testdata/models-*.json`) and prints the number of aliases. In `worker-triage.env`,
-`JOB_HEARTBEAT_MODEL_ALIAS=<alias>` makes the heartbeat call that alias once per run through the model
-client, traced: the platform's live check of the models section, the key, the endpoint through the proxy
-and the job's spans. Unset, the heartbeat makes no model call.
+`ROUTINE_HEARTBEAT_MODEL_ALIAS=<alias>` makes the heartbeat call that alias once per run through the
+model client, traced: the platform's live check of the models section, the key, the endpoint through
+the proxy and the routine's spans. Unset, the heartbeat makes no model call.
 
 `config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
 
@@ -91,7 +91,7 @@ callers:
   - {name: <agent name>, role: agent, token_sha256: <64 hex>}
 ```
 
-The **operator's** token stays with the operator: stage changes, resuming a job and starting a
+The **operator's** token stays with the operator: stage changes, resuming a routine and starting a
 STOPped fleet need it, and no agent ever holds it (AGENTS.md rule 2). The CLI inside the container
 (`cli.token`) uses an **agent** token; the operator passes theirs per call:
 
@@ -102,16 +102,16 @@ docker exec -e FLOTILLA_TOKEN="$(cat <operator token file>)" flotillad flotilla 
 `config/worker-triage.env`: the triage fleet reads its services by these URLs, all through the proxy.
 
 ```sh
-JOB_SF_SERVICE=triage-fleet                 # triage-fleet-shadow while it runs beside fleetd
-JOB_SF_VM_URL=http://victoriametrics:8428
-JOB_SF_VL_URL=http://victorialogs:9428
-JOB_SF_VT_URL=http://victoriatraces:10428
-JOB_SF_GRAFANA_URL=http://grafana:3000
-JOB_SF_GLITCHTIP_URL=http://<glitchtip web container>:8080
-JOB_SF_OPENROUTER_URL=http://litellm:4000/v1/chat/completions
-JOB_LANGFUSE_HOST=http://langfuse-web:3000
-JOB_HEARTBEAT_ALLOWED_URL=http://litellm:4000/health/liveliness
-JOB_HEARTBEAT_DENIED_URL=http://example.com/
+ROUTINE_SF_SERVICE=triage-fleet                 # triage-fleet-shadow while it runs beside fleetd
+ROUTINE_SF_VM_URL=http://victoriametrics:8428
+ROUTINE_SF_VL_URL=http://victorialogs:9428
+ROUTINE_SF_VT_URL=http://victoriatraces:10428
+ROUTINE_SF_GRAFANA_URL=http://grafana:3000
+ROUTINE_SF_GLITCHTIP_URL=http://<glitchtip web container>:8080
+ROUTINE_SF_OPENROUTER_URL=http://litellm:4000/v1/chat/completions
+ROUTINE_LANGFUSE_HOST=http://langfuse-web:3000
+ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:4000/health/liveliness
+ROUTINE_HEARTBEAT_DENIED_URL=http://example.com/
 ```
 
 `config/smokescreen.yaml`: private addresses are refused unless a range is allowed; allow only the
@@ -139,7 +139,7 @@ default:
 ## The candidate worker: shadow comparison of a candidate image
 
 ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs
-as a second worker beside the live one, with its own state, and the job `triage/cycle-shadow`,
+as a second worker beside the live one, with its own state, and the routine `triage/cycle-shadow`,
 capped at `shadow` by its spec (`max_stage`), runs the same command on it. flotillad refuses any
 stage above the cap, even the operator's, and the scheduler never runs it above the cap whatever a
 control says.
@@ -150,11 +150,11 @@ control says.
 2. `.env`: `COMPOSE_PROFILES=candidate`, `FLOTILLA_CANDIDATE_TAG=sha-<candidate>`,
    `TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-triage-state-candidate-<date>`.
 3. `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081", token_file:
-   /run/flotilla/worker-triage.token}` under `workers`, and take `triage/cycle-shadow` out of `disabled_jobs`.
+   /run/flotilla/worker-triage.token}` under `workers`, and take `triage/cycle-shadow` out of `disabled_routines`.
 4. Deploy (the live tag, unchanged). Compare with
    `deploy/mini/shadow-compare.sh --volume flotilla-triage-state-candidate-<date> --since <seed time>`.
-5. To end it: put `triage/cycle-shadow` back in `disabled_jobs`, drop `COMPOSE_PROFILES`, deploy. The
-   candidate's volume stays until removed by hand.
+5. To end it: put `triage/cycle-shadow` back in `disabled_routines`, drop `COMPOSE_PROFILES`,
+   deploy. The candidate's volume stays until removed by hand.
 
 The candidate shares the triage worker's secrets volume and the proxy's allowlist: in shadow the fleet
 makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there.

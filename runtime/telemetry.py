@@ -1,12 +1,12 @@
-"""Tracing for a job's own process (ADR-0003, ADR-0004): the model client's spans, under the run's trace.
+"""Tracing for a routine's own process (ADR-0003, ADR-0004): the model client's spans, under the run's trace.
 
-flotillad starts every run inside a span and hands the job TRACEPARENT, FLOTILLA_OTLP_TRACES_URL (its own
-otlp_traces_url, reached through the egress proxy), FLOTILLA_ENVIRONMENT and FLOTILLA_JOB. setup() makes
-the OpenTelemetry SDK export to that URL, with the run's span as the parent, so a job's model calls show
+flotillad starts every run inside a span and hands the routine TRACEPARENT, FLOTILLA_OTLP_TRACES_URL (its own
+otlp_traces_url, reached through the egress proxy), FLOTILLA_ENVIRONMENT and FLOTILLA_ROUTINE. setup() makes
+the OpenTelemetry SDK export to that URL, with the run's span as the parent, so a routine's model calls show
 up under the run in VictoriaTraces. Without the SDK (a laptop) or without a URL it does nothing: the
-job runs the same and only the spans are missing.
+routine runs the same and only the spans are missing.
 
-    session = telemetry.setup()      # once, at the start of the job
+    session = telemetry.setup()      # once, at the start of the routine
     ...                              # model_client.Client() picks the tracer up
     session.shutdown()               # flushes; also registered at exit
 """
@@ -52,12 +52,12 @@ def setup(environ=None, exporter=None):
     if exporter is None:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         exporter = OTLPSpanExporter(endpoint=url, timeout=5)
-    job = environ.get("FLOTILLA_JOB", "")
+    routine = environ.get("FLOTILLA_ROUTINE", "")
     provider = TracerProvider(resource=Resource.create({
-        "service.name": "flotilla-" + (job.split("/")[0] or "job"),
+        "service.name": "flotilla-" + (routine.split("/")[0] or "routine"),
         "service.version": environ.get("FLOTILLA_VERSION", "dev"),
         "deployment.environment": environ.get("FLOTILLA_ENVIRONMENT", ""),
-        "flotilla.job": job, "flotilla.run_id": environ.get("FLOTILLA_RUN_ID", "")}))
+        "flotilla.routine": routine, "flotilla.run_id": environ.get("FLOTILLA_RUN_ID", "")}))
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     token = None

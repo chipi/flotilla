@@ -1,4 +1,4 @@
-"""python3 runtime/test_telemetry.py: the job's tracing (runtime/telemetry.py).
+"""python3 runtime/test_telemetry.py: the routine's tracing (runtime/telemetry.py).
 
 Without the OpenTelemetry SDK (a laptop, CI) only the no-op paths run and the SDK tests are skipped,
 saying so. With it (the worker image: deploy/e2e/run.sh runs this file there) they run in full: the
@@ -43,7 +43,7 @@ class NoOp(unittest.TestCase):
 class WithSDK(unittest.TestCase):
     def test_model_call_span_under_the_run(self):
         exp = InMemorySpanExporter()
-        env = {"FLOTILLA_JOB": "platform/heartbeat", "FLOTILLA_ENVIRONMENT": "e2e", "FLOTILLA_RUN_ID": "r1",
+        env = {"FLOTILLA_ROUTINE": "platform/heartbeat", "FLOTILLA_ENVIRONMENT": "e2e", "FLOTILLA_RUN_ID": "r1",
                "TRACEPARENT": f"00-{TRACE_ID}-{PARENT}-01"}
         s = telemetry.setup(env, exporter=exp)
         self.assertTrue(s.active)

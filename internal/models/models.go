@@ -1,9 +1,9 @@
-// Package models validates the installation's `models` section (flotillad.yaml) and hands it to jobs.
+// Package models validates the installation's `models` section (flotillad.yaml) and hands it to routines.
 //
 // The section maps model aliases (what specs name) to OpenAI-compatible endpoints (ADR-0004, RFC-0002
 // §3). flotillad validates it at load, and every run gets it as JSON in FLOTILLA_MODELS; the Python
 // runtime's model client (runtime/model_client.py) reads it from there and applies the same rules, so a
-// bad section fails flotillad's -check before any job sees it. Both sides are tested against the same
+// bad section fails flotillad's -check before any routine sees it. Both sides are tested against the same
 // fixtures (runtime/testdata/models-*.json). Keys are named (key_env, key_file), never held here.
 package models
 

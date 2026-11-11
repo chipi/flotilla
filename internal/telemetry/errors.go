@@ -11,8 +11,8 @@ import (
 	"github.com/getsentry/sentry-go"
 )
 
-// Errors sends flotillad's own ERROR log records to GlitchTip (Sentry protocol). A job's failed run
-// is the job's business (the stale alert and the run record carry it), so only records flotillad
+// Errors sends flotillad's own ERROR log records to GlitchTip (Sentry protocol). A routine's failed run
+// is the routine's business (the stale alert and the run record carry it), so only records flotillad
 // logs at ERROR are sent: its store, its listener, its config. dsnFile empty = off.
 //
 // One issue per message: the fingerprint is the log message alone, never its values (homelab

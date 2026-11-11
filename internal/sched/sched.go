@@ -1,4 +1,4 @@
-// Package sched decides when a job runs and runs it through its worker: fleetd's loop, with the
+// Package sched decides when a routine runs and runs it through its worker: fleetd's loop, with the
 // controls, run records and budget in the store instead of flag files and a JSON state file.
 package sched
 
@@ -30,12 +30,12 @@ type Runner interface {
 
 // Metrics receives one sample per run; telemetry pushes them to VictoriaMetrics.
 type Metrics interface {
-	Run(job, status, stage string, durationS, spendDayUSD float64)
-	LastSuccess(job string, at time.Time)
+	Run(routine, status, stage string, durationS, spendDayUSD float64)
+	LastSuccess(routine string, at time.Time)
 }
 
-// Control keys. A fleet's "stop" skips every job of the fleet; a job's "paused" skips that job; a
-// job's "stage" overrides the spec's default.
+// Control keys. A fleet's "stop" skips every routine of the fleet; a routine's "paused" skips that routine; a
+// routine's "stage" overrides the spec's default.
 const (
 	KeyStop   = "stop"
 	KeyPaused = "paused"
@@ -46,7 +46,7 @@ var ErrRunning = errors.New("already running")
 
 type Scheduler struct {
 	Store    *store.Store
-	Jobs     []*spec.Job
+	Routines []*spec.Routine
 	Workers  map[string]Runner
 	Metrics  Metrics
 	Location *time.Location
@@ -54,13 +54,13 @@ type Scheduler struct {
 	Now      func() time.Time
 	// the installation's validated models section, as JSON: every run gets it in FLOTILLA_MODELS
 	ModelsJSON string
-	// where a job sends its own spans (flotillad's otlp_traces_url) and the environment label: every run
+	// where a routine sends its own spans (flotillad's otlp_traces_url) and the environment label: every run
 	// gets them as FLOTILLA_OTLP_TRACES_URL and FLOTILLA_ENVIRONMENT (runtime/telemetry.py)
 	OTLPTracesURL string
 	Environment   string
 
 	mu      sync.Mutex
-	running map[string]string // job id -> run id
+	running map[string]string // routine id -> run id
 }
 
 func (s *Scheduler) init() {
@@ -80,9 +80,9 @@ func (s *Scheduler) init() {
 	}
 }
 
-// Job returns the loaded spec for "fleet/job".
-func (s *Scheduler) Job(id string) *spec.Job {
-	for _, j := range s.Jobs {
+// Routine returns the loaded spec for "fleet/routine".
+func (s *Scheduler) Routine(id string) *spec.Routine {
+	for _, j := range s.Routines {
 		if j.ID() == id {
 			return j
 		}
@@ -90,28 +90,28 @@ func (s *Scheduler) Job(id string) *spec.Job {
 	return nil
 }
 
-// Loop runs every enabled job on its trigger until ctx ends: once at start, then every interval.
+// Loop runs every enabled routine on its trigger until ctx ends: once at start, then every interval.
 func (s *Scheduler) Loop(ctx context.Context) {
 	s.init()
 	var wg sync.WaitGroup
-	for _, j := range s.Jobs {
+	for _, j := range s.Routines {
 		if !j.Enabled {
-			s.Log.Info("job disabled in its spec", "job", j.ID())
+			s.Log.Info("routine disabled in its spec", "routine", j.ID())
 			continue
 		}
 		if _, ok := s.Workers[j.Worker]; !ok {
-			s.Log.Error("job's worker is not configured: job not started", "job", j.ID(), "worker", j.Worker)
+			s.Log.Error("routine's worker is not configured: routine not started", "routine", j.ID(), "worker", j.Worker)
 			continue
 		}
 		wg.Add(1)
-		go func(j *spec.Job) {
+		go func(j *spec.Routine) {
 			defer wg.Done()
-			s.Log.Info("job loop started", "job", j.ID(), "every", j.Every.String(), "worker", j.Worker)
+			s.Log.Info("routine loop started", "routine", j.ID(), "every", j.Every.String(), "worker", j.Worker)
 			t := time.NewTicker(j.Every)
 			defer t.Stop()
 			for {
 				if _, err := s.RunNow(ctx, j.ID(), "schedule", "flotillad"); err != nil && !errors.Is(err, ErrRunning) {
-					s.Log.Error("run failed", "job", j.ID(), "err", err)
+					s.Log.Error("run failed", "routine", j.ID(), "err", err)
 				}
 				select {
 				case <-ctx.Done():
@@ -124,17 +124,17 @@ func (s *Scheduler) Loop(ctx context.Context) {
 	wg.Wait()
 }
 
-// RunNow runs one job now and waits for it. trigger says why ("schedule", "manual"), actor who.
+// RunNow runs one routine now and waits for it. trigger says why ("schedule", "manual"), actor who.
 // A skipped run (STOP, paused, budget) is recorded with its reason and returned without error.
 func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*store.Run, error) {
 	s.init()
-	j := s.Job(id)
+	j := s.Routine(id)
 	if j == nil {
-		return nil, fmt.Errorf("no job %s", id)
+		return nil, fmt.Errorf("no routine %s", id)
 	}
 	runner, ok := s.Workers[j.Worker]
 	if !ok {
-		return nil, fmt.Errorf("job %s: worker %s is not configured", id, j.Worker)
+		return nil, fmt.Errorf("routine %s: worker %s is not configured", id, j.Worker)
 	}
 	runID := newRunID(j, s.Now())
 	s.mu.Lock()
@@ -150,7 +150,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	if err != nil {
 		return nil, err
 	}
-	rec := store.Run{ID: runID, Job: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Stage: stage}
+	rec := store.Run{ID: runID, Routine: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Stage: stage}
 	if reason, err := s.skipReason(ctx, j); err != nil {
 		return nil, err
 	} else if reason != "" {
@@ -159,7 +159,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 		if err := s.Store.SkippedRun(ctx, rec); err != nil {
 			return nil, err
 		}
-		s.Log.Info("run skipped", "job", id, "run_id", runID, "reason", reason)
+		s.Log.Info("run skipped", "routine", id, "run_id", runID, "reason", reason)
 		s.metric(j, store.StatusSkipped, stage, 0)
 		return &rec, nil
 	}
@@ -171,7 +171,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	}
 	tracer := otel.Tracer("flotillad")
 	ctx, span := tracer.Start(ctx, "run "+id, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
-		attribute.String("flotilla.job", id), attribute.String("flotilla.run_id", runID),
+		attribute.String("flotilla.routine", id), attribute.String("flotilla.run_id", runID),
 		attribute.String("flotilla.stage", stage), attribute.String("flotilla.trigger", trigger),
 		attribute.String("flotilla.worker", j.Worker), attribute.String("flotilla.spec_hash", j.Hash)))
 	defer span.End()
@@ -189,7 +189,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 		"FLEETD_CYCLE_ID":    runID,
 		"FLEETD_BUDGET_LEFT": fmt.Sprintf("%.4f", j.Budget.DayUSD-spent),
 		"FLOTILLA_RUN_ID":    runID,
-		"FLOTILLA_JOB":       id,
+		"FLOTILLA_ROUTINE":   id,
 	}
 	if tp := carrier.Get("traceparent"); tp != "" {
 		env["TRACEPARENT"] = tp
@@ -203,8 +203,8 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	if s.Environment != "" {
 		env["FLOTILLA_ENVIRONMENT"] = s.Environment
 	}
-	s.Log.Info("run start", "job", id, "run_id", runID, "stage", stage, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
-	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Job: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
+	s.Log.Info("run start", "routine", id, "run_id", runID, "stage", stage, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
+	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Routine: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
 		TimeoutS: j.Limit.Seconds(), SpendFile: j.Run.SpendFile, Env: env})
 
 	status, detail, spend, dur := store.StatusError, "", 0.0, 0.0
@@ -237,7 +237,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	if status != store.StatusOK {
 		lvl = slog.LevelWarn
 	}
-	s.Log.Log(ctx, lvl, "run end", "job", id, "run_id", runID, "status", status, "duration_s", dur, "spend_usd", spend,
+	s.Log.Log(ctx, lvl, "run end", "routine", id, "run_id", runID, "status", status, "duration_s", dur, "spend_usd", spend,
 		"spend_day_usd", total, "detail", detail)
 	if s.Metrics != nil {
 		s.Metrics.Run(id, status, stage, dur, total)
@@ -251,10 +251,10 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	return &out, nil
 }
 
-// Stage is the job's effective stage: the control if set, else the spec's default. A control above
+// Stage is the routine's effective stage: the control if set, else the spec's default. A control above
 // the spec's max_stage (set before the cap existed, or written to the store by hand) is not obeyed:
-// the job runs at its cap.
-func (s *Scheduler) Stage(ctx context.Context, j *spec.Job) (string, error) {
+// the routine runs at its cap.
+func (s *Scheduler) Stage(ctx context.Context, j *spec.Routine) (string, error) {
 	v, err := s.Store.Control(ctx, j.ID(), KeyStage)
 	if err != nil || v == "" {
 		return j.Stage, err
@@ -265,7 +265,7 @@ func (s *Scheduler) Stage(ctx context.Context, j *spec.Job) (string, error) {
 	return v, nil
 }
 
-func (s *Scheduler) skipReason(ctx context.Context, j *spec.Job) (string, error) {
+func (s *Scheduler) skipReason(ctx context.Context, j *spec.Routine) (string, error) {
 	if v, err := s.Store.Control(ctx, j.Fleet, KeyStop); err != nil {
 		return "", err
 	} else if v == "1" {
@@ -274,7 +274,7 @@ func (s *Scheduler) skipReason(ctx context.Context, j *spec.Job) (string, error)
 	if v, err := s.Store.Control(ctx, j.ID(), KeyPaused); err != nil {
 		return "", err
 	} else if v == "1" {
-		return "job is paused", nil
+		return "routine is paused", nil
 	}
 	if j.Budget.DayUSD > 0 {
 		day := s.Now().In(s.Location).Format("2006-01-02")
@@ -289,13 +289,13 @@ func (s *Scheduler) skipReason(ctx context.Context, j *spec.Job) (string, error)
 	return "", nil
 }
 
-func (s *Scheduler) metric(j *spec.Job, status, stage string, dur float64) {
+func (s *Scheduler) metric(j *spec.Routine, status, stage string, dur float64) {
 	if s.Metrics != nil {
 		s.Metrics.Run(j.ID(), status, stage, dur, 0)
 	}
 }
 
-// Running lists the jobs with a run in flight.
+// Running lists the routines with a run in flight.
 func (s *Scheduler) Running() map[string]string {
 	s.init()
 	s.mu.Lock()
@@ -307,10 +307,10 @@ func (s *Scheduler) Running() map[string]string {
 	return out
 }
 
-func newRunID(j *spec.Job, now time.Time) string {
+func newRunID(j *spec.Routine, now time.Time) string {
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)
-	return fmt.Sprintf("%s-%s-%s-%s", j.Fleet, j.Job, now.UTC().Format("20060102T150405"), hex.EncodeToString(b))
+	return fmt.Sprintf("%s-%s-%s-%s", j.Fleet, j.Routine, now.UTC().Format("20060102T150405"), hex.EncodeToString(b))
 }
 
 func tail(s string, n int) string {

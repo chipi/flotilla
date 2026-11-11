@@ -1,8 +1,8 @@
 // Package api is flotillad's HTTP API, the one surface the CLI (and later the UI and MCP) use.
 //
 // Every request but /healthz carries a caller's bearer token. A caller has a role:
-//   - agent: read, start a run, pause a job, STOP a fleet (making things safer is never gated);
-//   - operator: also resume a job, start a STOPped fleet, change a stage.
+//   - agent: read, start a run, pause a routine, STOP a fleet (making things safer is never gated);
+//   - operator: also resume a routine, start a STOPped fleet, change a stage.
 //
 // An agent can never do what only the operator may (AGENTS.md rule 2). Every change is recorded in the
 // event log with the caller's name.
@@ -103,10 +103,10 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("GET /v1/status", s.auth(RoleAgent, s.status))
 	m.Handle("GET /v1/runs", s.auth(RoleAgent, s.runs))
 	m.Handle("GET /v1/events", s.auth(RoleAgent, s.events))
-	m.Handle("POST /v1/jobs/{fleet}/{job}/run", s.auth(RoleAgent, s.run))
-	m.Handle("POST /v1/jobs/{fleet}/{job}/pause", s.auth(RoleAgent, s.control(sched.KeyPaused, "1", true)))
-	m.Handle("POST /v1/jobs/{fleet}/{job}/resume", s.auth(RoleOperator, s.control(sched.KeyPaused, "0", true)))
-	m.Handle("POST /v1/jobs/{fleet}/{job}/stage", s.auth(RoleOperator, s.stage))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(RoleAgent, s.run))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(RoleAgent, s.control(sched.KeyPaused, "1", true)))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(RoleOperator, s.control(sched.KeyPaused, "0", true)))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/stage", s.auth(RoleOperator, s.stage))
 	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(RoleAgent, s.control(sched.KeyStop, "1", false)))
 	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(RoleOperator, s.control(sched.KeyStop, "0", false)))
 	return m
@@ -139,7 +139,7 @@ func (s *Server) auth(need string, h func(http.ResponseWriter, *http.Request, Ca
 	})
 }
 
-type jobStatus struct {
+type routineStatus struct {
 	ID          string  `json:"id"`
 	Description string  `json:"description"`
 	Enabled     bool    `json:"enabled"`
@@ -162,8 +162,8 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 	running := s.Sched.Running()
 	now := s.Sched.Now()
 	day := now.In(s.Sched.Location).Format("2006-01-02")
-	var jobs []jobStatus
-	for _, j := range s.Sched.Jobs {
+	var routines []routineStatus
+	for _, j := range s.Sched.Routines {
 		st, err := s.Sched.Stage(ctx, j)
 		if err != nil {
 			writeErr(w, err)
@@ -173,14 +173,14 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 		stopped, _ := s.Store.Control(ctx, j.Fleet, sched.KeyStop)
 		last, _ := s.Store.LastSuccess(ctx, j.ID())
 		spent, _ := s.Store.Spend(ctx, day, j.ID())
-		js := jobStatus{ID: j.ID(), Description: j.Description, Enabled: j.Enabled, Worker: j.Worker, Every: j.Every.String(),
+		js := routineStatus{ID: j.ID(), Description: j.Description, Enabled: j.Enabled, Worker: j.Worker, Every: j.Every.String(),
 			Stage: st, SpecStage: j.Stage, SpecHash: j.Hash, Paused: paused == "1", Stopped: stopped == "1",
 			Running: running[j.ID()], SpendToday: spent, BudgetDay: j.Budget.DayUSD,
 			Stale: j.Enabled && (last.IsZero() || now.Sub(last) > j.Fresh)}
 		if !last.IsZero() {
 			js.LastSuccess = last.Format(time.RFC3339)
 		}
-		jobs = append(jobs, js)
+		routines = append(routines, js)
 	}
 	workers := map[string]any{}
 	for name, c := range s.Workers {
@@ -190,7 +190,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 			workers[name] = h
 		}
 	}
-	writeJSON(w, 200, map[string]any{"version": s.Version, "jobs": jobs, "workers": workers})
+	writeJSON(w, 200, map[string]any{"version": s.Version, "routines": routines, "workers": workers})
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request, _ Caller) {
@@ -198,7 +198,7 @@ func (s *Server) runs(w http.ResponseWriter, r *http.Request, _ Caller) {
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
 		limit = v
 	}
-	runs, err := s.Store.Runs(r.Context(), r.URL.Query().Get("job"), limit)
+	runs, err := s.Store.Runs(r.Context(), r.URL.Query().Get("routine"), limit)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -219,17 +219,17 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, _ Caller) {
 	writeJSON(w, 200, map[string]any{"events": ev})
 }
 
-func (s *Server) job(w http.ResponseWriter, r *http.Request) *spec.Job {
-	j := s.Sched.Job(r.PathValue("fleet") + "/" + r.PathValue("job"))
+func (s *Server) routine(w http.ResponseWriter, r *http.Request) *spec.Routine {
+	j := s.Sched.Routine(r.PathValue("fleet") + "/" + r.PathValue("routine"))
 	if j == nil {
-		writeJSON(w, 404, map[string]string{"error": "no such job"})
+		writeJSON(w, 404, map[string]string{"error": "no such routine"})
 	}
 	return j
 }
 
 // run starts a run in the background and answers at once with the run id the CLI can follow.
 func (s *Server) run(w http.ResponseWriter, r *http.Request, c Caller) {
-	j := s.job(w, r)
+	j := s.routine(w, r)
 	if j == nil {
 		return
 	}
@@ -241,7 +241,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, c Caller) {
 	go func() {
 		ctx := context.WithoutCancel(r.Context())
 		if _, err := s.Sched.RunNow(ctx, j.ID(), "manual", c.Name); err != nil {
-			s.Log.Error("manual run failed", "job", j.ID(), "caller", c.Name, "err", err)
+			s.Log.Error("manual run failed", "routine", j.ID(), "caller", c.Name, "err", err)
 		}
 	}()
 	writeJSON(w, 202, map[string]string{"started": j.ID(), "by": c.Name})
@@ -251,7 +251,7 @@ func (s *Server) control(key, value string, perJob bool) func(http.ResponseWrite
 	return func(w http.ResponseWriter, r *http.Request, c Caller) {
 		subject := r.PathValue("fleet")
 		if perJob {
-			j := s.job(w, r)
+			j := s.routine(w, r)
 			if j == nil {
 				return
 			}
@@ -270,7 +270,7 @@ func (s *Server) control(key, value string, perJob bool) func(http.ResponseWrite
 }
 
 func (s *Server) stage(w http.ResponseWriter, r *http.Request, c Caller) {
-	j := s.job(w, r)
+	j := s.routine(w, r)
 	if j == nil {
 		return
 	}
@@ -295,12 +295,12 @@ func (s *Server) stage(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeErr(w, err)
 		return
 	}
-	s.Log.Info("stage set", "job", j.ID(), "stage", body.Stage, "caller", c.Name)
-	writeJSON(w, 200, map[string]string{"job": j.ID(), "stage": body.Stage, "by": c.Name})
+	s.Log.Info("stage set", "routine", j.ID(), "stage", body.Stage, "caller", c.Name)
+	writeJSON(w, 200, map[string]string{"routine": j.ID(), "stage": body.Stage, "by": c.Name})
 }
 
 func (s *Server) hasFleet(f string) bool {
-	for _, j := range s.Sched.Jobs {
+	for _, j := range s.Sched.Routines {
 		if j.Fleet == f {
 			return true
 		}

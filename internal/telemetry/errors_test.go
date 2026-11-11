@@ -35,8 +35,8 @@ func TestErrorsReachGlitchTipWithAFixedFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := slog.New(ErrorHandler{slog.NewJSONHandler(io.Discard, nil)})
-	log.Info("run start", "job", "x")                              // not sent
-	log.Warn("run end", "status", "error")                         // not sent: a job's failure is the job's
+	log.Info("run start", "routine", "x")                          // not sent
+	log.Warn("run end", "status", "error")                         // not sent: a routine's failure is the routine's
 	log.Error("store", "err", "unable to open database file (14)") // sent
 	flush()
 	sentry.Flush(2 * time.Second)

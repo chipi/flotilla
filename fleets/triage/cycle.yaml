@@ -1,8 +1,8 @@
 fleet: triage
-job: cycle
+routine: cycle
 description: >-
   One triage pass over Grafana alerts and GlitchTip errors (signal-fleet/mvp/orchestrator.py),
-  unchanged from fleetd's cycle. Phase 2 wraps today's command; phase 3 moves it onto the job
+  unchanged from fleetd's cycle. Phase 2 wraps today's command; phase 3 moves it onto the routine
   runtime.
 enabled: true
 worker: triage
