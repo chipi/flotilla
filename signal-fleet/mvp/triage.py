@@ -302,11 +302,11 @@ _ENDPOINT_PATH = "/chat/completions"
 
 
 def _client():
-    """The model client and the alias for this call. With FLOTILLA_MODELS (flotillad's models section) the
-    alias named by TRIAGE_MODEL comes from it; without it (the mini until it has one, eval runs, history
-    replays) one alias is built from today's settings, so the request is the same bytes as before."""
-    if os.environ.get("FLOTILLA_MODELS"):
-        return model_client.from_env(transport=_post_json_transport), config.TRIAGE_MODEL
+    """The model client and the alias for this call, always built from triage's own settings
+    (SF_OPENROUTER_URL, OPENROUTER_API_KEY, SF_TRIAGE_MODEL), so the request is the same bytes as before.
+    FLOTILLA_MODELS (flotillad's models section) is not read here: its aliases are named differently
+    (the mini's triage-pro is model fleet-triage-pro), and choosing triage's model from it is a later
+    behaviour change, not this move."""
     url = config.OPENROUTER_URL
     if not url.endswith(_ENDPOINT_PATH):
         raise model_client.ConfigError(f"SF_OPENROUTER_URL {url} does not end in {_ENDPOINT_PATH}")

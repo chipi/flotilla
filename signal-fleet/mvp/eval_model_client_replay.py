@@ -34,7 +34,13 @@ import urllib.error
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
-os.environ.pop("FLOTILLA_MODELS", None)
+# every run on flotilla gets the installation's models section; the mini's names its aliases triage-pro
+# and triage-flash (models fleet-triage-pro, -flash). It must change nothing about triage's call.
+os.environ["FLOTILLA_MODELS"] = json.dumps({
+    "endpoints": {"gateway": {"base_url": "http://litellm:4000/v1", "kind": "litellm", "key_env": "OPENROUTER_API_KEY",
+                              "defaults": {"tools": "native", "json": "object", "cost": "reported"}}},
+    "aliases": {"triage-flash": {"endpoint": "gateway", "model": "fleet-triage-flash"},
+                "triage-pro": {"endpoint": "gateway", "model": "fleet-triage-pro"}}})
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -108,7 +114,9 @@ def history(old, new, dirs):
                 o_out, o_sent, o_turns = run_call(old, body["messages"], trace_id, t.get("step"), answer)
                 n_out, n_sent, n_turns = run_call(new, body["messages"], trace_id, t.get("step"), answer)
                 name = f"{os.path.basename(path)} step {t.get('step')}"
-                if n_sent[0]["data"] != t["request"]:
+                if not n_sent:
+                    bad.append(f"{name}: the new code sent nothing ({n_out[1]})")
+                elif n_sent[0]["data"] != t["request"]:
                     bad.append(f"{name}: request differs from the recorded one")
                 if (o_sent, o_out) != (n_sent, n_out):
                     bad.append(f"{name}: wire or return differs from the old code")
