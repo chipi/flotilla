@@ -24,7 +24,14 @@ start after phase 2's switch ([phase-2-plan](phase-2-plan.md), 2.8).
   first live decision after both deploys has `exact` with 4 turns, model_id on each, 55 KB, and still
   parses for `outcome_count.py` and the freezer; its filing record replayed with "EXACT FILING
   REPLAY: PASS". A shadow capture arrived in mirror-test at mode 600 in a 700 folder.*
-- **The first sweep records** (live and shadow): at the first cycle after 00:00Z, 2026-11-10.
+- ~~**The first sweep records** (live and shadow): at the first cycle after 00:00Z, 2026-11-10.~~
+  *Done: the shadow's `results/sweeps/` has 20261110T000550Z and 20261111T000111Z (2026-11-11).*
+- **Triage on the runtime sees every new signal, not the top 10** (operator, 2026-11-11: closed in
+  the new approach, the old fleet is not fixed). Today a cycle reads the 10 most recently seen
+  unresolved GlitchTip issues; in the burst of 2026-11-11 15:21–16:22 the live fleet never decided
+  13 of 37 new issues (phase-2-plan, switch item 1). The runtime's monitor reads every issue first
+  seen or seen again since its last read (paged, with a stored position), and a burst larger than a
+  cycle can triage is queued for the next cycles, not dropped. Proven by replaying that burst.
 - **What shadow comparison can compare at the filing level** (fleet session, 2026-11-09): a shadow
   run never files. With dry_run, a file decision goes to `queue_proposal` and an escalation only
   prints, so no filing record starts. Exact filing replays come from the live fleet only. Comparing
@@ -38,7 +45,7 @@ start after phase 2's switch ([phase-2-plan](phase-2-plan.md), 2.8).
   operator's go (a model call every 10 minutes).
 - **The deployment-id-to-model map** (`x-litellm-model-id` is a hash) and an alert when an alias's
   deployment changes (a re-route inside LiteLLM): not built.
-- **VictoriaLogs shows flotillad's lines as "missing _msg field":** its JSON message key is `msg`; the
-  Alloy pipeline on the mini does not map it. Searching works by field (`msg:"..."`); the message column
-  does not. Not fixed.
+- ~~**VictoriaLogs shows flotillad's lines as "missing _msg field":** its JSON message key is `msg`;
+  the Alloy pipeline on the mini does not map it.~~ *Fixed 2026-11-11 in the installation's Alloy
+  config: a JSON line from flotillad, a worker or the egress proxy gets `_msg` from `msg`.*
 - **Steps 2 to 6:** after the switch.
