@@ -1,5 +1,5 @@
 // Package store is flotillad's state: runs, an append-only event log, controls (pause, STOP,
-// stage) and day spend, in one SQLite file. Only flotillad opens it; workers report through the API.
+// autonomy) and day spend, in one SQLite file. Only flotillad opens it; workers report through the API.
 //
 // The decisions ledger arrives in phase 3; phase 2 records runs.
 package store
@@ -61,6 +61,11 @@ var schema = []string{
 	`ALTER TABLE runs RENAME COLUMN job TO routine;
 	DROP INDEX runs_job_started;
 	CREATE INDEX runs_routine_started ON runs(routine, started_at);`,
+	// ADR-0008: one autonomy scale; a routine's "stage" is its autonomy, and "live" is "auto".
+	`ALTER TABLE runs RENAME COLUMN stage TO autonomy;
+	UPDATE runs SET autonomy = 'auto' WHERE autonomy = 'live';
+	UPDATE controls SET key = 'autonomy' WHERE key = 'stage';
+	UPDATE controls SET value = 'auto' WHERE key = 'autonomy' AND value = 'live';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.
@@ -84,7 +89,7 @@ type Run struct {
 	SpecHash  string   `json:"spec_hash"`
 	Trigger   string   `json:"trigger"`
 	Actor     string   `json:"actor"`
-	Stage     string   `json:"stage"`
+	Autonomy  string   `json:"autonomy"`
 	StartedAt string   `json:"started_at"`
 	EndedAt   *string  `json:"ended_at"`
 	Status    string   `json:"status"`
@@ -235,9 +240,9 @@ func (s *Store) Controls(ctx context.Context) ([]Control, error) {
 }
 
 func (s *Store) StartRun(ctx context.Context, r Run) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, stage, started_at, status, trace_id, detail)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, status, trace_id, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Stage, r.StartedAt, r.Status, r.TraceID, r.Detail)
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.StartedAt, r.Status, r.TraceID, r.Detail)
 	return err
 }
 
@@ -259,9 +264,9 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, exitCode *int,
 func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 	now := s.now().Format(ts)
 	r.StartedAt, r.Status = now, StatusSkipped
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, stage, started_at, ended_at, status, trace_id, detail)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, trace_id, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Stage, now, now, r.Status, r.TraceID, r.Detail)
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, now, now, r.Status, r.TraceID, r.Detail)
 	return err
 }
 
@@ -276,7 +281,7 @@ func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, error) {
-	q := `SELECT id, routine, spec_hash, trigger, actor, stage, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail
+	q := `SELECT id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail
 		FROM runs`
 	var args []any
 	if routine != "" {
@@ -293,7 +298,7 @@ func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, err
 	var out []Run
 	for rows.Next() {
 		var r Run
-		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Stage, &r.StartedAt, &r.EndedAt,
+		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
 			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail); err != nil {
 			return nil, err
 		}

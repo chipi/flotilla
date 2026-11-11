@@ -91,12 +91,12 @@ callers:
   - {name: <agent name>, role: agent, token_sha256: <64 hex>}
 ```
 
-The **operator's** token stays with the operator: stage changes, resuming a routine and starting a
-STOPped fleet need it, and no agent ever holds it (AGENTS.md rule 2). The CLI inside the container
+The **operator's** token stays with the operator: autonomy changes, resuming a routine and starting
+a STOPped fleet need it, and no agent ever holds it (AGENTS.md rule 2). The CLI inside the container
 (`cli.token`) uses an **agent** token; the operator passes theirs per call:
 
 ```sh
-docker exec -e FLOTILLA_TOKEN="$(cat <operator token file>)" flotillad flotilla stage triage/cycle propose
+docker exec -e FLOTILLA_TOKEN="$(cat <operator token file>)" flotillad flotilla autonomy triage/cycle propose
 ```
 
 `config/worker-triage.env`: the triage fleet reads its services by these URLs, all through the proxy.
@@ -140,9 +140,9 @@ default:
 
 ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs
 as a second worker beside the live one, with its own state, and the routine `triage/cycle-shadow`,
-capped at `shadow` by its spec (`max_stage`), runs the same command on it. flotillad refuses any
-stage above the cap, even the operator's, and the scheduler never runs it above the cap whatever a
-control says.
+capped at `shadow` by its spec (`max_autonomy`), runs the same command on it. flotillad refuses any
+autonomy above the cap, even the operator's, and the scheduler never runs it above the cap whatever
+a control says.
 
 1. Seed its state from the live state, once per comparison (a fresh volume name each time):
    `~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state

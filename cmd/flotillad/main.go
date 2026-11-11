@@ -168,7 +168,7 @@ func main() {
 	}
 	if *check {
 		for _, j := range routines {
-			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s stage=%-7s spec=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Stage, j.Hash)
+			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s autonomy=%-7s spec=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Autonomy, j.Hash)
 		}
 		n := 0
 		if cfg.Models != nil {

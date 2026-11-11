@@ -2,7 +2,7 @@
 //
 // Every request but /healthz carries a caller's bearer token. A caller has a role:
 //   - agent: read, start a run, pause a routine, STOP a fleet (making things safer is never gated);
-//   - operator: also resume a routine, start a STOPped fleet, change a stage.
+//   - operator: also resume a routine, start a STOPped fleet, change a autonomy.
 //
 // An agent can never do what only the operator may (AGENTS.md rule 2). Every change is recorded in the
 // event log with the caller's name.
@@ -106,7 +106,7 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(RoleAgent, s.run))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(RoleAgent, s.control(sched.KeyPaused, "1", true)))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(RoleOperator, s.control(sched.KeyPaused, "0", true)))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/stage", s.auth(RoleOperator, s.stage))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(RoleOperator, s.autonomy))
 	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(RoleAgent, s.control(sched.KeyStop, "1", false)))
 	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(RoleOperator, s.control(sched.KeyStop, "0", false)))
 	return m
@@ -140,21 +140,21 @@ func (s *Server) auth(need string, h func(http.ResponseWriter, *http.Request, Ca
 }
 
 type routineStatus struct {
-	ID          string  `json:"id"`
-	Description string  `json:"description"`
-	Enabled     bool    `json:"enabled"`
-	Worker      string  `json:"worker"`
-	Every       string  `json:"every"`
-	Stage       string  `json:"stage"`
-	SpecStage   string  `json:"spec_stage"`
-	SpecHash    string  `json:"spec_hash"`
-	Paused      bool    `json:"paused"`
-	Stopped     bool    `json:"fleet_stopped"`
-	Running     string  `json:"running,omitempty"`
-	LastSuccess string  `json:"last_success,omitempty"`
-	Stale       bool    `json:"stale"`
-	SpendToday  float64 `json:"spend_today_usd"`
-	BudgetDay   float64 `json:"budget_day_usd"`
+	ID           string  `json:"id"`
+	Description  string  `json:"description"`
+	Enabled      bool    `json:"enabled"`
+	Worker       string  `json:"worker"`
+	Every        string  `json:"every"`
+	Autonomy     string  `json:"autonomy"`
+	SpecAutonomy string  `json:"spec_autonomy"`
+	SpecHash     string  `json:"spec_hash"`
+	Paused       bool    `json:"paused"`
+	Stopped      bool    `json:"fleet_stopped"`
+	Running      string  `json:"running,omitempty"`
+	LastSuccess  string  `json:"last_success,omitempty"`
+	Stale        bool    `json:"stale"`
+	SpendToday   float64 `json:"spend_today_usd"`
+	BudgetDay    float64 `json:"budget_day_usd"`
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
@@ -164,7 +164,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 	day := now.In(s.Sched.Location).Format("2006-01-02")
 	var routines []routineStatus
 	for _, j := range s.Sched.Routines {
-		st, err := s.Sched.Stage(ctx, j)
+		st, err := s.Sched.Autonomy(ctx, j)
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -174,7 +174,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 		last, _ := s.Store.LastSuccess(ctx, j.ID())
 		spent, _ := s.Store.Spend(ctx, day, j.ID())
 		js := routineStatus{ID: j.ID(), Description: j.Description, Enabled: j.Enabled, Worker: j.Worker, Every: j.Every.String(),
-			Stage: st, SpecStage: j.Stage, SpecHash: j.Hash, Paused: paused == "1", Stopped: stopped == "1",
+			Autonomy: st, SpecAutonomy: j.Autonomy, SpecHash: j.Hash, Paused: paused == "1", Stopped: stopped == "1",
 			Running: running[j.ID()], SpendToday: spent, BudgetDay: j.Budget.DayUSD,
 			Stale: j.Enabled && (last.IsZero() || now.Sub(last) > j.Fresh)}
 		if !last.IsZero() {
@@ -269,34 +269,34 @@ func (s *Server) control(key, value string, perJob bool) func(http.ResponseWrite
 	}
 }
 
-func (s *Server) stage(w http.ResponseWriter, r *http.Request, c Caller) {
+func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 	j := s.routine(w, r)
 	if j == nil {
 		return
 	}
 	var body struct {
-		Stage string `json:"stage"`
+		Autonomy string `json:"autonomy"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]string{"error": "body: {\"stage\": \"shadow|propose|live\"}"})
+		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"shadow|propose|auto\"}"})
 		return
 	}
-	switch body.Stage {
-	case spec.StageShadow, spec.StagePropose, spec.StageLive:
+	switch body.Autonomy {
+	case spec.AutonomyShadow, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
-		writeJSON(w, 400, map[string]string{"error": "stage must be shadow, propose or live"})
+		writeJSON(w, 400, map[string]string{"error": "autonomy must be shadow, propose or auto"})
 		return
 	}
-	if !j.Allows(body.Stage) {
-		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("%s is capped at %s by its spec (max_stage)", j.ID(), j.MaxStage)})
+	if !j.Allows(body.Autonomy) {
+		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("%s is capped at %s by its spec (max_autonomy)", j.ID(), j.MaxAutonomy)})
 		return
 	}
-	if err := s.Store.SetControl(r.Context(), j.ID(), sched.KeyStage, body.Stage, c.Name, "api"); err != nil {
+	if err := s.Store.SetControl(r.Context(), j.ID(), sched.KeyAutonomy, body.Autonomy, c.Name, "api"); err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Log.Info("stage set", "routine", j.ID(), "stage", body.Stage, "caller", c.Name)
-	writeJSON(w, 200, map[string]string{"routine": j.ID(), "stage": body.Stage, "by": c.Name})
+	s.Log.Info("autonomy set", "routine", j.ID(), "autonomy", body.Autonomy, "caller", c.Name)
+	writeJSON(w, 200, map[string]string{"routine": j.ID(), "autonomy": body.Autonomy, "by": c.Name})
 }
 
 func (s *Server) hasFleet(f string) bool {

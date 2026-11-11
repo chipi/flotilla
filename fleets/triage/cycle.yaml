@@ -14,8 +14,8 @@ run:
   timeout: 20m
   spend_file: signal-fleet/results/.last_cycle_spend
 # shadow takes no outward action (orchestrator.py forces a dry run). The installation raises it to
-# propose with `flotilla stage triage/cycle propose` at the switch; the spec stays the safe default.
-stage: shadow
+# propose with `flotilla autonomy triage/cycle propose` at the switch; the spec stays the safe default.
+autonomy: shadow
 budget:
   day_usd: 2.0
 freshness: 35m

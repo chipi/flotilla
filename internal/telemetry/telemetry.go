@@ -122,11 +122,11 @@ func (p *Pusher) sample(name string, labels map[string]string, v float64) string
 
 // Run records one run: flotilla_run (1 per run; count with count_over_time), its duration, and the
 // routine's spend so far today. A skipped run has no duration or spend to report.
-func (p *Pusher) Run(routine, status, stage string, durationS, spendDayUSD float64) {
-	lines := []string{p.sample("flotilla_run", map[string]string{"routine": routine, "status": status, "stage": stage, "version": p.Version}, 1)}
+func (p *Pusher) Run(routine, status, autonomy string, durationS, spendDayUSD float64) {
+	lines := []string{p.sample("flotilla_run", map[string]string{"routine": routine, "status": status, "autonomy": autonomy, "version": p.Version}, 1)}
 	if status != "skipped" {
 		lines = append(lines,
-			p.sample("flotilla_run_seconds", map[string]string{"routine": routine, "stage": stage}, durationS),
+			p.sample("flotilla_run_seconds", map[string]string{"routine": routine, "autonomy": autonomy}, durationS),
 			p.sample("flotilla_spend_day_usd", map[string]string{"routine": routine}, spendDayUSD))
 	}
 	p.push(lines)

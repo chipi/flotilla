@@ -12,7 +12,7 @@ run:
   command: python3 /opt/flotilla/worker/heartbeat.py
   workdir: .
   timeout: 1m
-stage: live
+autonomy: auto
 budget:
   day_usd: 0
 freshness: 25m

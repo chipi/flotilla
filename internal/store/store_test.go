@@ -31,7 +31,8 @@ func TestMigrateTwice(t *testing.T) {
 }
 
 // A database written before ADR-0007 keeps its runs: step 2 renames the column, it does not copy.
-func TestMigratesJobColumnToRoutine(t *testing.T) {
+// ...and step 3 (ADR-0008) turns its stage into autonomy, "live" into "auto", in runs and controls.
+func TestMigratesStepOneDatabase(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "old.db")
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
@@ -43,7 +44,9 @@ func TestMigratesJobColumnToRoutine(t *testing.T) {
 	if _, err := db.Exec(schema[0]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO runs (id, job, spec_hash, trigger, actor, stage, started_at, status) VALUES ('r1', 'triage/cycle', 'h', 'schedule', 'flotillad', 'shadow', '2026-11-10T00:00:00Z', 'ok')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO runs (id, job, spec_hash, trigger, actor, stage, started_at, status) VALUES ('r1', 'triage/cycle', 'h', 'schedule', 'flotillad', 'live', '2026-11-10T00:00:00Z', 'ok');
+		INSERT INTO controls (subject, key, value, actor, at) VALUES ('platform/heartbeat', 'stage', 'live', 'operator', '2026-11-10T00:00:00Z'),
+		  ('triage/cycle', 'stage', 'shadow', 'operator', '2026-11-10T00:00:00Z')`); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
@@ -53,8 +56,16 @@ func TestMigratesJobColumnToRoutine(t *testing.T) {
 	}
 	defer s.Close()
 	runs, err := s.Runs(context.Background(), "triage/cycle", 10)
-	if err != nil || len(runs) != 1 || runs[0].Routine != "triage/cycle" {
-		t.Fatalf("the old run must survive under routine, got %+v %v", runs, err)
+	if err != nil || len(runs) != 1 || runs[0].Routine != "triage/cycle" || runs[0].Autonomy != "auto" {
+		t.Fatalf("the old run must survive under routine, with autonomy auto, got %+v %v", runs, err)
+	}
+	for subject, want := range map[string]string{"platform/heartbeat": "auto", "triage/cycle": "shadow"} {
+		if v, err := s.Control(context.Background(), subject, "autonomy"); err != nil || v != want {
+			t.Fatalf("%s: the stage control must become autonomy %q, got %q %v", subject, want, v, err)
+		}
+		if v, _ := s.Control(context.Background(), subject, "stage"); v != "" {
+			t.Fatalf("%s: the old stage control must be gone, got %q", subject, v)
+		}
 	}
 }
 
@@ -93,7 +104,7 @@ func TestControlRecordsWho(t *testing.T) {
 func TestRunLifecycle(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
-	r := Run{ID: "r1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Stage: "shadow",
+	r := Run{ID: "r1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Autonomy: "shadow",
 		StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning}
 	if err := s.StartRun(ctx, r); err != nil {
 		t.Fatal(err)
@@ -121,7 +132,7 @@ func TestRunLifecycle(t *testing.T) {
 func TestInterrupted(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
-	_ = s.StartRun(ctx, Run{ID: "r1", Routine: "j/a", SpecHash: "h", Trigger: "schedule", Actor: "x", Stage: "shadow",
+	_ = s.StartRun(ctx, Run{ID: "r1", Routine: "j/a", SpecHash: "h", Trigger: "schedule", Actor: "x", Autonomy: "shadow",
 		StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning})
 	n, err := s.MarkInterrupted(ctx)
 	if err != nil || n != 1 {

@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mirror as m  # noqa: E402
 
 
-def run(i, start, end, status="ok", stage="propose"):
-    return {"id": f"triage-cycle-{i}", "started_at": start, "ended_at": end, "status": status, "stage": stage}
+def run(i, start, end, status="ok", autonomy="propose"):
+    return {"id": f"triage-cycle-{i}", "started_at": start, "ended_at": end, "status": status, "autonomy": autonomy}
 
 
 class T(unittest.TestCase):
@@ -27,7 +27,7 @@ class T(unittest.TestCase):
         open(os.path.join(self.dest, "frozen", "mine"), "w").write("the freeze's own")
         open(os.path.join(self.dest, "fleet-gateway.env"), "w").write("HOST SECRET")
         os.makedirs(os.path.join(self.dest, "results")); open(os.path.join(self.dest, "results", "deploys.tsv"), "w").write("HOST DEPLOY LOG")
-        self.states = [{"running": False, "stage": "propose",
+        self.states = [{"running": False, "autonomy": "propose",
                         "runs": [run(2, "2026-11-08T20:00:00Z", "2026-11-08T20:01:00Z"), run(1, "2026-11-08T19:50:00Z", "2026-11-08T19:51:00Z")]}]
         self.logs = []
 
@@ -48,6 +48,10 @@ class T(unittest.TestCase):
         seq = list(states or self.states)
         get = lambda: seq.pop(0) if len(seq) > 1 else seq[0]
         return m.mirror(dest or self.dest, "v", "img", cfg or {}, get_state=get, do_copy=self.copy, log=self.logs.append)
+
+    def test_cycles_tsv_keeps_fleetds_word(self):
+        # ADR-0008: autonomy auto is written as fleetd's "live" in cycles.tsv; the rest unchanged
+        self.assertEqual([m.fleetd_stage(a) for a in ("shadow", "propose", "auto")], ["shadow", "propose", "live"])
 
     def test_copies_three_trees_only(self):
         self.assertEqual(self.go(), 0, self.logs)
@@ -107,7 +111,7 @@ class T(unittest.TestCase):
             self.assertIn("MIRROR_LIVE=1", self.logs[-1])
             self.assertIn("STOP flag", self.logs[-1])
             open(os.path.join(self.dest, "STOP"), "w").close()
-            self.assertEqual(self.go([dict(self.states[0], stage="shadow")], cfg={"MIRROR_LIVE": "1"}), 1)
+            self.assertEqual(self.go([dict(self.states[0], autonomy="shadow")], cfg={"MIRROR_LIVE": "1"}), 1)
             self.assertIn("still in shadow", self.logs[-1])
             self.assertEqual(self.go(cfg={"MIRROR_LIVE": "1"}), 0)
             self.assertTrue(self.logs[-1].startswith("MIRROR PASS"))

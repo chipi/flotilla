@@ -3,7 +3,7 @@ routine: cycle-shadow
 description: >-
   The live triage cycle's command run by a candidate version, beside the live routine, for shadow
   comparison (ADR-0004, RFC-0002 §8 and §9): the worker `triage-candidate` runs the image tag under
-  test with its own state volume. Capped at shadow: it never acts, whatever a stage control says.
+  test with its own state volume. Capped at shadow: it never acts, whatever an autonomy control says.
   An installation without a candidate worker lists it in disabled_routines.
 enabled: true
 worker: triage-candidate
@@ -14,8 +14,8 @@ run:
   workdir: signal-fleet/mvp
   timeout: 20m
   spend_file: signal-fleet/results/.last_cycle_spend
-stage: shadow
-max_stage: shadow
+autonomy: shadow
+max_autonomy: shadow
 budget:
   day_usd: 2.0
 freshness: 35m

@@ -30,16 +30,16 @@ type Runner interface {
 
 // Metrics receives one sample per run; telemetry pushes them to VictoriaMetrics.
 type Metrics interface {
-	Run(routine, status, stage string, durationS, spendDayUSD float64)
+	Run(routine, status, autonomy string, durationS, spendDayUSD float64)
 	LastSuccess(routine string, at time.Time)
 }
 
 // Control keys. A fleet's "stop" skips every routine of the fleet; a routine's "paused" skips that routine; a
-// routine's "stage" overrides the spec's default.
+// routine's "autonomy" overrides the spec's default.
 const (
-	KeyStop   = "stop"
-	KeyPaused = "paused"
-	KeyStage  = "stage"
+	KeyStop     = "stop"
+	KeyPaused   = "paused"
+	KeyAutonomy = "autonomy"
 )
 
 var ErrRunning = errors.New("already running")
@@ -146,11 +146,11 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.running, id); s.mu.Unlock() }()
 
-	stage, err := s.Stage(ctx, j)
+	autonomy, err := s.Autonomy(ctx, j)
 	if err != nil {
 		return nil, err
 	}
-	rec := store.Run{ID: runID, Routine: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Stage: stage}
+	rec := store.Run{ID: runID, Routine: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Autonomy: autonomy}
 	if reason, err := s.skipReason(ctx, j); err != nil {
 		return nil, err
 	} else if reason != "" {
@@ -160,7 +160,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 			return nil, err
 		}
 		s.Log.Info("run skipped", "routine", id, "run_id", runID, "reason", reason)
-		s.metric(j, store.StatusSkipped, stage, 0)
+		s.metric(j, store.StatusSkipped, autonomy, 0)
 		return &rec, nil
 	}
 
@@ -172,7 +172,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	tracer := otel.Tracer("flotillad")
 	ctx, span := tracer.Start(ctx, "run "+id, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
 		attribute.String("flotilla.routine", id), attribute.String("flotilla.run_id", runID),
-		attribute.String("flotilla.stage", stage), attribute.String("flotilla.trigger", trigger),
+		attribute.String("flotilla.autonomy", autonomy), attribute.String("flotilla.trigger", trigger),
 		attribute.String("flotilla.worker", j.Worker), attribute.String("flotilla.spec_hash", j.Hash)))
 	defer span.End()
 	carrier := propagation.MapCarrier{}
@@ -185,7 +185,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 		return nil, err
 	}
 	env := map[string]string{
-		"FLEETD_STAGE":       stage,
+		"FLEETD_STAGE":       spec.FleetdStage(autonomy),
 		"FLEETD_CYCLE_ID":    runID,
 		"FLEETD_BUDGET_LEFT": fmt.Sprintf("%.4f", j.Budget.DayUSD-spent),
 		"FLOTILLA_RUN_ID":    runID,
@@ -203,7 +203,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	if s.Environment != "" {
 		env["FLOTILLA_ENVIRONMENT"] = s.Environment
 	}
-	s.Log.Info("run start", "routine", id, "run_id", runID, "stage", stage, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
+	s.Log.Info("run start", "routine", id, "run_id", runID, "autonomy", autonomy, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
 	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Routine: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
 		TimeoutS: j.Limit.Seconds(), SpendFile: j.Run.SpendFile, Env: env})
 
@@ -240,7 +240,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	s.Log.Log(ctx, lvl, "run end", "routine", id, "run_id", runID, "status", status, "duration_s", dur, "spend_usd", spend,
 		"spend_day_usd", total, "detail", detail)
 	if s.Metrics != nil {
-		s.Metrics.Run(id, status, stage, dur, total)
+		s.Metrics.Run(id, status, autonomy, dur, total)
 		if status == store.StatusOK {
 			s.Metrics.LastSuccess(id, s.Now())
 		}
@@ -251,16 +251,16 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	return &out, nil
 }
 
-// Stage is the routine's effective stage: the control if set, else the spec's default. A control above
-// the spec's max_stage (set before the cap existed, or written to the store by hand) is not obeyed:
+// Autonomy is the routine's effective autonomy: the control if set, else the spec's default. A control above
+// the spec's max_autonomy (set before the cap existed, or written to the store by hand) is not obeyed:
 // the routine runs at its cap.
-func (s *Scheduler) Stage(ctx context.Context, j *spec.Routine) (string, error) {
-	v, err := s.Store.Control(ctx, j.ID(), KeyStage)
+func (s *Scheduler) Autonomy(ctx context.Context, j *spec.Routine) (string, error) {
+	v, err := s.Store.Control(ctx, j.ID(), KeyAutonomy)
 	if err != nil || v == "" {
-		return j.Stage, err
+		return j.Autonomy, err
 	}
 	if !j.Allows(v) {
-		return j.MaxStage, nil
+		return j.MaxAutonomy, nil
 	}
 	return v, nil
 }
@@ -289,9 +289,9 @@ func (s *Scheduler) skipReason(ctx context.Context, j *spec.Routine) (string, er
 	return "", nil
 }
 
-func (s *Scheduler) metric(j *spec.Routine, status, stage string, dur float64) {
+func (s *Scheduler) metric(j *spec.Routine, status, autonomy string, dur float64) {
 	if s.Metrics != nil {
-		s.Metrics.Run(j.ID(), status, stage, dur, 0)
+		s.Metrics.Run(j.ID(), status, autonomy, dur, 0)
 	}
 }
 

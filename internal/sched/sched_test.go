@@ -37,7 +37,7 @@ type fakeMetrics struct {
 	ok   int
 }
 
-func (m *fakeMetrics) Run(routine, status, stage string, d, s float64) {
+func (m *fakeMetrics) Run(routine, status, autonomy string, d, s float64) {
 	m.runs = append(m.runs, status)
 }
 func (m *fakeMetrics) LastSuccess(routine string, at time.Time) { m.ok++ }
@@ -53,7 +53,7 @@ func setup(t *testing.T, budget float64) (*Scheduler, *fakeRunner, *fakeMetrics)
 	fr := &fakeRunner{res: &worker.Result{Status: "ok", ExitCode: &zero, DurationS: 1.5, SpendUSD: 0.4}}
 	fm := &fakeMetrics{}
 	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage",
-		Run: spec.Run{Command: "python3 x.py", Workdir: "signal-fleet/mvp", SpendFile: "s"}, Stage: spec.StageShadow,
+		Run: spec.Run{Command: "python3 x.py", Workdir: "signal-fleet/mvp", SpendFile: "s"}, Autonomy: spec.AutonomyShadow,
 		Budget: spec.Budget{DayUSD: budget}, Every: 10 * time.Minute, Limit: 20 * time.Minute, Fresh: 35 * time.Minute, Hash: "abc"}
 	return &Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]Runner{"triage": fr}, Metrics: fm}, fr, fm
 }
@@ -85,17 +85,17 @@ func TestRunPassesTheContract(t *testing.T) {
 
 func TestStageControlOverridesSpec(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyStage, "propose", "operator", "api")
+	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyAutonomy, "propose", "operator", "api")
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if fr.got[0].Env["FLEETD_STAGE"] != "propose" {
-		t.Fatalf("stage: %s", fr.got[0].Env["FLEETD_STAGE"])
+		t.Fatalf("autonomy: %s", fr.got[0].Env["FLEETD_STAGE"])
 	}
 }
 
-func TestControlAboveMaxStageNotObeyed(t *testing.T) {
+func TestControlAboveMaxAutonomyNotObeyed(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	s.Routines[0].MaxStage = spec.StageShadow
-	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyStage, "live", "operator", "api")
+	s.Routines[0].MaxAutonomy = spec.AutonomyShadow
+	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyAutonomy, "auto", "operator", "api")
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if fr.got[0].Env["FLEETD_STAGE"] != "shadow" {
 		t.Fatalf("a shadow-capped routine ran at %s", fr.got[0].Env["FLEETD_STAGE"])

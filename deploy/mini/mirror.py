@@ -18,7 +18,8 @@ and must not become readable by the host's other accounts.
 
 Writes, besides the copies:
   results/.mirror_stamp  {"end": <UTC end of the last run included>, "run_id": ..., "copied_at": ...}
-  results/cycles.tsv     run_id, start_utc, end_utc, status, stage: one row per triage run
+  results/cycles.tsv     run_id, start_utc, end_utc, status, stage: one row per triage run (fleetd's
+                         format: the stage column says live for autonomy auto)
 
 Into the live fleet folder (~/signal-fleet) only after the switch: it refuses unless MIRROR_LIVE=1 is
 in FLOTILLA_HOME/.env, fleetd's STOP flag is in that folder, and the triage routine is not in shadow.
@@ -35,6 +36,12 @@ import tempfile
 import time
 
 H = os.environ.get("FLOTILLA_HOME", os.path.expanduser("~/flotilla"))
+
+def fleetd_stage(autonomy):
+    """fleetd's word for a run's autonomy in cycles.tsv (ADR-0008: auto was live)."""
+    return "live" if autonomy == "auto" else autonomy
+
+
 LIVE = os.path.realpath(os.path.expanduser("~/signal-fleet"))
 ROUTINE = "triage/cycle"
 TREES = ("results", "queue", "export")
@@ -69,7 +76,7 @@ def state():
     routine = next((j for j in st["routines"] if j["id"] == ROUTINE), None)
     if routine is None:
         raise RuntimeError(f"flotillad has no routine {ROUTINE}")
-    return {"running": bool(routine.get("running")), "stage": routine["stage"], "runs": runs or []}
+    return {"running": bool(routine.get("running")), "autonomy": routine["autonomy"], "runs": runs or []}
 
 
 def copy_out(volume, image, dest_tmp):
@@ -148,7 +155,7 @@ def install(src_root, dest):
 def cycles_rows(runs, after):
     rows = sorted((r for r in runs if r.get("status") in DONE and r.get("ended_at") and r["ended_at"] > after),
                   key=lambda r: r["ended_at"])
-    return "".join(f"{r['id']}\t{r['started_at']}\t{r['ended_at']}\t{r['status']}\t{r['stage']}\n" for r in rows)
+    return "".join(f"{r['id']}\t{r['started_at']}\t{r['ended_at']}\t{r['status']}\t{fleetd_stage(r['autonomy'])}\n" for r in rows)
 
 
 def mirror(dest, volume, image, cfg, get_state=state, do_copy=copy_out, log=print):
@@ -160,7 +167,7 @@ def mirror(dest, volume, image, cfg, get_state=state, do_copy=copy_out, log=prin
             why.append("MIRROR_LIVE=1 is not set in .env")
         if not os.path.exists(os.path.join(dest, "STOP")):
             why.append("fleetd's STOP flag is not in " + dest + " (fleetd would still be writing it)")
-        if s1["stage"] == "shadow":
+        if s1["autonomy"] == "shadow":
             why.append("the triage routine is still in shadow")
         if why:
             log("MIRROR FAIL: refusing to write the live fleet folder: " + "; ".join(why))

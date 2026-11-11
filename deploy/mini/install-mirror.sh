@@ -2,7 +2,7 @@
 # Install (or remove) the state mirror as a system LaunchDaemon on the mini, running as the operator
 # account every 120 s, like the homelab's other jobs (com.homelab.hub-status). Where it writes is
 # MIRROR_DEST in FLOTILLA_HOME/.env (a test folder until the switch; ~/signal-fleet only after it,
-# and mirror.py refuses that without MIRROR_LIVE=1, fleetd's STOP flag and a non-shadow stage).
+# and mirror.py refuses that without MIRROR_LIVE=1, fleetd's STOP flag and a non-shadow autonomy).
 #   install-mirror.sh            install or update, then run once and show the result
 #   install-mirror.sh --remove   stop and remove it
 set -euo pipefail

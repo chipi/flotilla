@@ -1,7 +1,7 @@
 // Package spec loads and validates routine specs: fleets/<fleet>/<routine>.yaml.
 //
 // A spec says what a routine is: when it runs, which worker runs it, what it runs, how long it may take,
-// what it may spend, and its default stage. It holds nothing about one installation (hosts, paths,
+// what it may spend, and its default autonomy. It holds nothing about one installation (hosts, paths,
 // secrets); those are the worker's and flotillad's config.
 package spec
 
@@ -21,21 +21,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Stages, least to most trusted. What each allows is the routine's business in phase 2: the stage is
-// passed to the routine as FLEETD_STAGE, as fleetd did, and the triage fleet enforces it.
+// Autonomy levels, a lifecycle (ADR-0008): shadow, then propose, then auto. What each allows is the
+// routine's business in phase 2: the autonomy is passed to the routine as FLEETD_STAGE, as fleetd did,
+// and the triage fleet enforces it.
 const (
-	StageShadow  = "shadow"
-	StagePropose = "propose"
-	StageLive    = "live"
+	AutonomyShadow  = "shadow"
+	AutonomyPropose = "propose"
+	AutonomyAuto    = "auto"
 )
 
-var stages = map[string]bool{StageShadow: true, StagePropose: true, StageLive: true}
+var levels = map[string]bool{AutonomyShadow: true, AutonomyPropose: true, AutonomyAuto: true}
 
-var stageRank = map[string]int{StageShadow: 0, StagePropose: 1, StageLive: 2}
+var levelRank = map[string]int{AutonomyShadow: 0, AutonomyPropose: 1, AutonomyAuto: 2}
 
-// Allows reports whether stage s is within the routine's cap (max_stage; no cap when it is empty).
+// FleetdStage is the FLEETD_STAGE value the triage fleet's frozen code reads: its top step is still
+// "live" (ADR-0008 keeps that contract until the code is ported).
+func FleetdStage(autonomy string) string {
+	if autonomy == AutonomyAuto {
+		return "live"
+	}
+	return autonomy
+}
+
+// Allows reports whether autonomy s is within the routine's cap (max_autonomy; no cap when it is empty).
 func (j *Routine) Allows(s string) bool {
-	return j.MaxStage == "" || stageRank[s] <= stageRank[j.MaxStage]
+	return j.MaxAutonomy == "" || levelRank[s] <= levelRank[j.MaxAutonomy]
 }
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
@@ -48,8 +58,8 @@ type Routine struct {
 	Worker      string  `yaml:"worker"`
 	Trigger     Trigger `yaml:"trigger"`
 	Run         Run     `yaml:"run"`
-	Stage       string  `yaml:"stage"`
-	MaxStage    string  `yaml:"max_stage"` // optional: the highest stage the routine may ever run at
+	Autonomy    string  `yaml:"autonomy"`
+	MaxAutonomy string  `yaml:"max_autonomy"` // optional: the highest autonomy the routine may ever run at
 	Budget      Budget  `yaml:"budget"`
 	Freshness   string  `yaml:"freshness"`
 
@@ -159,13 +169,13 @@ func (j *Routine) validate() error {
 	if strings.TrimSpace(j.Run.Command) == "" {
 		bad("run.command is required")
 	}
-	if !stages[j.Stage] {
-		bad("stage %q: one of shadow, propose, live", j.Stage)
+	if !levels[j.Autonomy] {
+		bad("autonomy %q: one of shadow, propose, auto", j.Autonomy)
 	}
-	if j.MaxStage != "" && !stages[j.MaxStage] {
-		bad("max_stage %q: one of shadow, propose, live", j.MaxStage)
-	} else if stages[j.Stage] && !j.Allows(j.Stage) {
-		bad("stage %s is above max_stage %s", j.Stage, j.MaxStage)
+	if j.MaxAutonomy != "" && !levels[j.MaxAutonomy] {
+		bad("max_autonomy %q: one of shadow, propose, auto", j.MaxAutonomy)
+	} else if levels[j.Autonomy] && !j.Allows(j.Autonomy) {
+		bad("autonomy %s is above max_autonomy %s", j.Autonomy, j.MaxAutonomy)
 	}
 	if j.Budget.DayUSD < 0 {
 		bad("budget.day_usd %.2f: must not be negative", j.Budget.DayUSD)

@@ -14,7 +14,7 @@ enabled: true
 worker: triage
 trigger: {every: 10m}
 run: {command: "python3 x.py", workdir: signal-fleet/mvp, timeout: 20m}
-stage: shadow
+autonomy: shadow
 budget: {day_usd: 2}
 freshness: 35m
 `
@@ -48,7 +48,7 @@ func TestRejects(t *testing.T) {
 		"unknown field":             {"triage/cycle.yaml", good + "retries: 3\n", "field retries not found"},
 		"fleet not its folder":      {"other/cycle.yaml", good, `fleet "triage", but the file is under other/`},
 		"routine not its file name": {"triage/pass.yaml", good, `routine "cycle", but the file is pass.yaml`},
-		"bad stage":                 {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: yolo", 1), "stage \"yolo\""},
+		"bad autonomy":              {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: yolo", 1), "autonomy \"yolo\""},
 		"bad interval":              {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: soon", 1), "trigger.every"},
 		"interval too short":        {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: 5s", 1), "at least 1m0s"},
 		"timeout too long":          {"triage/cycle.yaml", strings.Replace(good, "timeout: 20m", "timeout: 2h", 1), "more than three intervals"},
@@ -56,8 +56,8 @@ func TestRejects(t *testing.T) {
 		"negative budget":           {"triage/cycle.yaml", strings.Replace(good, "day_usd: 2", "day_usd: -1", 1), "must not be negative"},
 		"no command":                {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
 		"no description":            {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
-		"bad max_stage":             {"triage/cycle.yaml", good + "max_stage: yolo\n", `max_stage "yolo"`},
-		"stage above its cap":       {"triage/cycle.yaml", strings.Replace(good, "stage: shadow", "stage: propose", 1) + "max_stage: shadow\n", "above max_stage shadow"},
+		"bad max_autonomy":          {"triage/cycle.yaml", good + "max_autonomy: yolo\n", `max_autonomy "yolo"`},
+		"autonomy above its cap":    {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: propose", 1) + "max_autonomy: shadow\n", "above max_autonomy shadow"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -100,8 +100,8 @@ func TestRepoSpecs(t *testing.T) {
 	if !ok {
 		t.Fatal("triage/cycle missing")
 	}
-	if tri.Stage != StageShadow {
-		t.Fatalf("triage/cycle must default to shadow (the switch raises it with a control), got %s", tri.Stage)
+	if tri.Autonomy != AutonomyShadow {
+		t.Fatalf("triage/cycle must default to shadow (the switch raises it with a control), got %s", tri.Autonomy)
 	}
 	if _, ok := ids["platform/heartbeat"]; !ok {
 		t.Fatal("platform/heartbeat missing")

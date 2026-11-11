@@ -5,7 +5,7 @@
 //	flotilla events [-n 50]
 //	flotilla run fleet/routine
 //	flotilla pause|resume fleet/routine
-//	flotilla stage fleet/routine shadow|propose|live      (operator only)
+//	flotilla autonomy fleet/routine shadow|propose|auto      (operator only)
 //	flotilla stop|start fleet                          (start: operator only)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
 //
@@ -83,7 +83,7 @@ func main() {
 		}
 		get("/v1/status", &out)
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintf(w, "flotillad %s\nROUTINE\tSTAGE\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
+		fmt.Fprintf(w, "flotillad %s\nROUTINE\tAUTONOMY\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
 		for _, j := range out.Routines {
 			state := []string{}
 			if j["enabled"] != true {
@@ -98,7 +98,7 @@ func main() {
 			if r, _ := j["running"].(string); r != "" {
 				state = append(state, "running "+r)
 			}
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t$%.4f/$%.2f\t%s\n", j["id"], j["stage"], j["every"], orDash(j["last_success"]),
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t$%.4f/$%.2f\t%s\n", j["id"], j["autonomy"], j["every"], orDash(j["last_success"]),
 				j["stale"], j["spend_today_usd"], j["budget_day_usd"], strings.Join(state, ","))
 		}
 		w.Flush()
@@ -114,13 +114,13 @@ func main() {
 		var out struct{ Runs []map[string]any }
 		get(q, &out)
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintln(w, "STARTED\tROUTINE\tSTATUS\tSTAGE\tSECONDS\tSPEND\tTRIGGER\tDETAIL")
+		fmt.Fprintln(w, "STARTED\tROUTINE\tSTATUS\tAUTONOMY\tSECONDS\tSPEND\tTRIGGER\tDETAIL")
 		for _, r := range out.Runs {
 			d, _ := r["detail"].(string)
 			if len(d) > 80 {
 				d = d[len(d)-80:]
 			}
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v/%v\t%s\n", r["started_at"], r["routine"], r["status"], r["stage"],
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v/%v\t%s\n", r["started_at"], r["routine"], r["status"], r["autonomy"],
 				orDash(r["duration_s"]), r["spend_usd"], r["trigger"], r["actor"], strings.ReplaceAll(d, "\n", " "))
 		}
 		w.Flush()
@@ -133,9 +133,9 @@ func main() {
 	case "run", "pause", "resume":
 		need(args, 1, cmd+" fleet/routine")
 		post("/v1/routines/"+args[0]+"/"+cmd, nil)
-	case "stage":
-		need(args, 2, "stage fleet/routine shadow|propose|live")
-		post("/v1/routines/"+args[0]+"/stage", map[string]string{"stage": args[1]})
+	case "autonomy":
+		need(args, 2, "autonomy fleet/routine shadow|propose|auto")
+		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": args[1]})
 	case "stop", "start":
 		need(args, 1, cmd+" fleet")
 		post("/v1/fleets/"+args[0]+"/"+cmd, nil)
@@ -145,7 +145,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause|resume ROUTINE | stage ROUTINE STAGE | stop|start FLEET | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause|resume ROUTINE | autonomy ROUTINE STAGE | stop|start FLEET | hash-token")
 	os.Exit(2)
 }
 

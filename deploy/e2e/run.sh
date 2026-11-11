@@ -5,8 +5,8 @@
 #   KEEP=1 deploy/e2e/run.sh     leave it up to look around (tear down: deploy/e2e/run.sh down)
 #
 # Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
-# is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a
-# stage; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
+# is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a routine's
+# autonomy; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
 # worker (profile candidate) is healthy on its own state volume and its routine cannot leave shadow; the
 # heartbeat's model step calls the LiteLLM stand-in through the model client, with the models section
 # from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported.
@@ -163,18 +163,20 @@ fi
 $D exec flotilla-worker-triage python3 -m pip check >/dev/null 2>&1 && ok "the image's Python packages are consistent (pip check)" || bad "pip check failed in the worker image"
 
 echo "== telemetry"
-sleep 8
-$D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_run{environment="e2e",routine="platform/heartbeat",service="flotillad",stage="live",status="ok"' \
+# pushes and span exports are asynchronous: wait for each line up to 30 s (a fixed 8 s sleep lost the
+# model.chat span once on 2026-11-11), the check itself unchanged
+seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep -q "$2" && return 0; sleep 1; done; return 1; }
+seen e2e-victoriametrics 'SAMPLE flotilla_run{autonomy="auto",environment="e2e",routine="platform/heartbeat",service="flotillad",status="ok"' \
   && ok "flotilla_run reached VictoriaMetrics through the proxy" || bad "no flotilla_run sample at the VictoriaMetrics stand-in"
-$D logs e2e-victoriametrics 2>&1 | grep -q 'SAMPLE flotilla_up' && ok "flotilla_up pushed" || bad "no flotilla_up"
-$D logs e2e-victoriatraces 2>&1 | grep -q "POST /insert/opentelemetry/v1/traces" && ok "traces reached VictoriaTraces through the proxy" \
+seen e2e-victoriametrics 'SAMPLE flotilla_up' && ok "flotilla_up pushed" || bad "no flotilla_up"
+seen e2e-victoriatraces "POST /insert/opentelemetry/v1/traces" && ok "traces reached VictoriaTraces through the proxy" \
   || bad "no traces at the VictoriaTraces stand-in"
-$D logs e2e-victoriatraces 2>&1 | grep -q "SPAN model.chat" && ok "the routine's model.chat span reached VictoriaTraces through the proxy" \
+seen e2e-victoriatraces "SPAN model.chat" && ok "the routine's model.chat span reached VictoriaTraces through the proxy" \
   || bad "no model.chat span at the VictoriaTraces stand-in"
 
 echo "== controls and auth"
-OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla stage platform/heartbeat shadow 2>&1)"
-echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot change a stage ($OUT)" || bad "agent stage change: $OUT"
+OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"
+echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot change a routine's autonomy ($OUT)" || bad "agent autonomy change: $OUT"
 cli stop platform >/dev/null && cli run platform/heartbeat >/dev/null
 sleep 3
 cli runs platform/heartbeat -n 1 | grep -q " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
@@ -203,9 +205,9 @@ H="$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Statu
 [ "$H" = healthy ] && ok "the candidate worker is healthy" || bad "candidate worker health: $H"
 CS="$($D inspect flotilla-worker-triage-candidate --format '{{range .Mounts}}{{if eq .Destination "/home/worker/signal-fleet"}}{{.Name}}{{end}}{{end}}' 2>&1)"
 [ "$CS" = flotilla-e2e-triage-candidate-state ] && ok "the candidate has its own state volume ($CS)" || bad "candidate state volume: '$CS'"
-OUT="$(cli stage triage/cycle-shadow propose 2>&1)"
+OUT="$(cli autonomy triage/cycle-shadow propose 2>&1)"
 echo "$OUT" | grep -q "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
-  || bad "stage on the capped routine: $OUT"
+  || bad "autonomy on the capped routine: $OUT"
 OUT="$(cli status 2>&1)"
 echo "$OUT" | grep -q 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
