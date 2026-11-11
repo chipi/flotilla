@@ -244,9 +244,14 @@ func main() {
 			stop()
 		}
 	}()
-	go heartbeat(ctx, push, s, st, cfg.StateDir, log)
+	hbDone := make(chan struct{})
+	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, log) }()
 
 	s.Loop(ctx)
+	// The heartbeat must finish before the deferred st.Close: a backup cut off by the close logged
+	// "sql: database is closed" (2026-11-11, a flotillad whose loop ended at once).
+	stop()
+	<-hbDone
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
@@ -289,7 +294,17 @@ func backup(ctx context.Context, st *store.Store, stateDir, day string, log *slo
 		log.Error("backup", "err", err)
 		return
 	}
-	if err := st.Backup(ctx, path); err != nil {
+	// Written under a temporary name and renamed when complete: a backup cut off part way must not
+	// leave a file under the day's name, which would count as today's backup.
+	tmp := path + ".partial"
+	_ = os.Remove(tmp)
+	if err := st.Backup(ctx, tmp); err != nil {
+		_ = os.Remove(tmp)
+		log.Error("backup", "err", err)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
 		log.Error("backup", "err", err)
 		return
 	}
