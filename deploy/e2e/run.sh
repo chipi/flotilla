@@ -155,7 +155,9 @@ RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 $D logs flotilla-worker-triage 2>&1 | grep -q '"line": "HEARTBEAT PASS"' && ok "the heartbeat saw allowed-in and denied-out" \
   || bad "no HEARTBEAT PASS in the worker's log"
-$D logs flotilla-egress 2>&1 | grep -q "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"
+# the proxy writes its log line just after it refuses: wait for it rather than read once (a race, 2026-11-11)
+seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep -q "$2" && return 0; sleep 1; done; return 1; }
+seen flotilla-egress "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"
 [ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
 cli status | grep -E "^platform/heartbeat" | grep -q -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
 
@@ -178,7 +180,6 @@ $D exec flotilla-worker-triage python3 -m pip check >/dev/null 2>&1 && ok "the i
 echo "== telemetry"
 # pushes and span exports are asynchronous: wait for each line up to 30 s (a fixed 8 s sleep lost the
 # model.chat span once on 2026-11-11), the check itself unchanged
-seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep -q "$2" && return 0; sleep 1; done; return 1; }
 seen e2e-victoriametrics 'SAMPLE flotilla_run{autonomy="auto",environment="e2e",routine="platform/heartbeat",service="flotillad",status="ok"' \
   && ok "flotilla_run reached VictoriaMetrics through the proxy" || bad "no flotilla_run sample at the VictoriaMetrics stand-in"
 seen e2e-victoriametrics 'SAMPLE flotilla_up' && ok "flotilla_up pushed" || bad "no flotilla_up"
