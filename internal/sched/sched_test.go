@@ -117,6 +117,19 @@ func TestRunGetsTheModelsSection(t *testing.T) {
 	}
 }
 
+func TestRunGetsItsSkillRules(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if _, ok := fr.got[0].Env["FLOTILLA_SKILLS"]; ok {
+		t.Fatal("FLOTILLA_SKILLS set for a routine without rules")
+	}
+	s.Routines[0].Skills.Rule = []spec.SkillRule{{When: map[string]string{"class": "a"}, Load: []string{"hint-a"}}}
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if got := fr.got[1].Env["FLOTILLA_SKILLS"]; got != `{"rule":[{"when":{"class":"a"},"load":["hint-a"]}]}` {
+		t.Fatalf("FLOTILLA_SKILLS: %q", got)
+	}
+}
+
 func TestSkips(t *testing.T) {
 	for name, c := range map[string]struct{ subject, key, want string }{
 		"fleet stopped":  {"triage", KeyStop, "STOPped"},

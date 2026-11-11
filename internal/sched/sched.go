@@ -197,6 +197,9 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	if s.ModelsJSON != "" {
 		env["FLOTILLA_MODELS"] = s.ModelsJSON
 	}
+	if sk := j.SkillsJSON(); sk != "" {
+		env["FLOTILLA_SKILLS"] = sk // the spec's skills.rule (ADR-0012), matched by the routine's code
+	}
 	if s.OTLPTracesURL != "" {
 		env["FLOTILLA_OTLP_TRACES_URL"] = s.OTLPTracesURL
 	}

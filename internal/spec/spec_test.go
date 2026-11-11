@@ -58,6 +58,12 @@ func TestRejects(t *testing.T) {
 		"no description":            {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
 		"bad max_autonomy":          {"triage/cycle.yaml", good + "max_autonomy: yolo\n", `max_autonomy "yolo"`},
 		"autonomy above its cap":    {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: propose", 1) + "max_autonomy: shadow\n", "above max_autonomy shadow"},
+		"skills on demand":          {"triage/cycle.yaml", good + "skills: {on_demand: [x]}\n", "comes with RFC-0002 §9 step 4"},
+		"skill rule without when":   {"triage/cycle.yaml", good + "skills: {rule: [{load: [x]}]}\n", "non-empty when and load"},
+		"skill rule without load":   {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}}]}\n", "non-empty when and load"},
+		"bad skill name":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}, load: [Bad_Name]}]}\n", `skill name "Bad_Name"`},
+		"bad case field":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {Class: a}, load: [x]}]}\n", `field "Class"`},
+		"unknown skills field":      {"triage/cycle.yaml", good + "skills: {rules: []}\n", "field rules not found"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -68,6 +74,27 @@ func TestRejects(t *testing.T) {
 				t.Fatalf("want error containing %q, got %v", c.want, err)
 			}
 		})
+	}
+}
+
+func TestSkillsJSON(t *testing.T) {
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", good+"skills:\n  rule:\n    - {when: {class: a}, load: [s-a, s-b]}\n    - {when: {class: b}, load: [s-a]}\n")
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := routines[0]
+	if got := j.SkillsJSON(); got != `{"rule":[{"when":{"class":"a"},"load":["s-a","s-b"]},{"when":{"class":"b"},"load":["s-a"]}]}` {
+		t.Fatalf("SkillsJSON: %s", got)
+	}
+	if got := strings.Join(j.SkillNames(), ","); got != "s-a,s-b" {
+		t.Fatalf("SkillNames: %s", got)
+	}
+	write(t, d, "triage/cycle.yaml", good)
+	routines, _ = Load(d)
+	if routines[0].SkillsJSON() != "" {
+		t.Fatal("no rules: no FLOTILLA_SKILLS")
 	}
 }
 

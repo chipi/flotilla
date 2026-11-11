@@ -6,3 +6,6 @@ fleetd/
 site/
 .venv/
 node_modules/
+# Playbooks and skills are prompt text: the bytes are the contract (a wrapped line is a behaviour change)
+fleets/*/playbooks/
+fleets/*/skills/

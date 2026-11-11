@@ -32,13 +32,22 @@ from http_util import post_json
 # here, /opt/flotilla/runtime in the worker image. An extract of signal-fleet/ must carry it beside.
 try:
     import model_client
+    import skills
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
     try:
         import model_client
+        import skills
     except ImportError as e:
-        raise ImportError("triage needs flotilla's runtime/model_client.py beside signal-fleet/ "
-                          "(../../runtime from signal-fleet/mvp)") from e
+        raise ImportError("triage needs flotilla's runtime/model_client.py and runtime/skills.py beside "
+                          "signal-fleet/ (../../runtime from signal-fleet/mvp)") from e
+
+# The playbook and the class hints (RFC-0002 §9 step 3) live in fleets/triage/, beside signal-fleet/:
+# FLOTILLA_CODE_ROOT in the worker image, ../../ from here in a checkout or an extract.
+_CODE_ROOT = os.environ.get("FLOTILLA_CODE_ROOT") or os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+_FLEET = "triage"
+_FLEET_DIR = os.path.join(_CODE_ROOT, "fleets", _FLEET)
 
 # With capture on (SF_CAPTURE_PROBES=1), what an exact replay needs is recorded per decision
 # (ADR-0004 / RFC-0002 §9 step 1): every model call's request body as sent, its raw reply, usage
@@ -51,7 +60,7 @@ _EXACT = None
 def _exact_start():
     global _EXACT
     _EXACT = ({"now": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-               "turns": [], "lookups": []} if config.CAPTURE_PROBES else None)
+               "turns": [], "lookups": [], "skills": []} if config.CAPTURE_PROBES else None)
 
 
 def _exact_add(kind, item):
@@ -177,36 +186,15 @@ SIGNAL_CLASS_MARKERS = [
                 re.I), "recoverable"),
 ]
 
-# defeasible hints — each ends by handing the decision back so the class stays a
-# BIAS, not a gate (the anchor-override fixture verifies the LLM can overrule it).
-_CLASS_HINT = {
-    "external-transient": (
-        "PRE-CLASSIFICATION HINT (deterministic, advisory): this looks like an EXTERNAL "
-        "TRANSIENT — a named third-party dependency timed out or was briefly unavailable. "
-        "If so it is NOT a code invariant: file as work_type=config-enhancement "
-        "(retry-with-backoff, then WARN + degrade on exhaustion). BUT if the evidence "
-        "shows OUR code mishandles the failure, file work_type=bug. You decide."),
-    "external": (
-        "PRE-CLASSIFICATION HINT (deterministic, advisory): this looks like an UPSTREAM "
-        "REJECTION — the provider refused on its own policy/safety, not our defect. If so, "
-        "work_type=config-enhancement (catch → skip/fallback that item + WARN). File "
-        "work_type=bug only if our code should have handled it and does not. You decide."),
-    "environment": (
-        "PRE-CLASSIFICATION HINT (deterministic, advisory): this looks like an ENVIRONMENT/"
-        "INFRA condition (permissions, disk, missing mount) — a container/image fix, "
-        "work_type=config-enhancement, NOT a code invariant. File work_type=bug only if "
-        "the code itself is at fault. You decide."),
-    "recoverable": (
-        "PRE-CLASSIFICATION HINT (deterministic, advisory): this looks RECOVERABLE — the "
-        "pipeline already handled/degraded through it and still logged ERROR. It is WARN-"
-        "level, low-priority: file work_type=config-enhancement (track the degradation) "
-        "rather than work_type=bug. File work_type=bug only if the recovery itself is "
-        "broken. You decide."),
-}
+# The class hints are skills (fleets/triage/skills/hint-<class>/SKILL.md, ADR-0012), loaded by the
+# routine's rules (spec skills.rule, FLOTILLA_SKILLS; default-rules.json without flotillad). Each is
+# defeasible: it ends by handing the decision back, so the class stays a BIAS, not a gate (the
+# anchor-override fixture verifies the LLM can overrule it).
+_DEFAULT_RULES = os.path.join(_FLEET_DIR, "skills", "default-rules.json")
 
 
 def signal_class(signal):
-    """Deterministic secondary class or None. A HINT to the triager (see _CLASS_HINT),
+    """Deterministic secondary class or None. A HINT to the triager (a skill, see _signal_intro),
     NEVER a disposition gate. Runs conceptually AFTER operational_class."""
     hay = " ".join(str(signal.get(k, "")) for k in ("alertname", "summary")) + \
         " " + json.dumps(signal.get("labels", {}))
@@ -215,64 +203,19 @@ def signal_class(signal):
             return cls
     return None
 
-_SYSTEM = """You are the triager for an autonomous observability signal fleet. Your JOB
-is to DISPOSE of each signal so a human does NOT have to look at it. You INVESTIGATE
-with up to %d probes, then COMMIT to ONE terminal disposition. Request probes BY NAME.
+def _read_playbook():
+    path = os.path.join(_FLEET_DIR, "playbooks", "triage.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        raise RuntimeError(f"triage's playbook is missing: {path} ({e.strerror})") from e
+    return text[:-1] if text.endswith("\n") else text   # the file ends in one newline; the prompt does not
 
-ESCALATION IS THE EXPENSIVE EXCEPTION. Every escalate lands on the operator's desk and
-spends their attention — the one resource this fleet exists to protect. You should
-escalate at most ~1 IN 20 signals. If you escalate more, you are failing the job.
-Escalate ONLY when, after probing, you genuinely cannot tell whether the signal is a
-real problem or benign — NOT merely because intent is unstated. COMMIT to a decision.
 
-How to decide (investigation earns WHAT / WHERE / HOW-OFTEN):
-
-• FILE — a real problem. This is CHEAP and PREFERRED over escalate: filing hands the
-  work to the downstream fix-fleet, not to the operator. Anything error-shaped is
-  file-able — an unhandled error / exception / null-deref / failed load is ITSELF a
-  code-invariant violation ("code must not throw uncaught"), a citable
-  intent_source=code-invariant. You do NOT need an external spec to file a genuine
-  error. work_type: bug for code defects, config-enhancement for config/infra issues.
-  SPECIAL CASE — telemetry/infra pipeline errors (export timeouts, retry exhaustion,
-  queue drops, batch failures): file as config-enhancement EVEN IF the burst has
-  subsided. A burst of pipeline failures means a mis-tuned component and possibly
-  silent data loss; "it stopped erroring" is NOT "it is healthy".
-
-• DISMISS — the signal is benign / expected / known client-noise. You MUST name the
-  probe result that shows benign in dismissal_evidence (an independent probe, or an
-  occurrence_history that is genuinely benign — low count, low level, resolved). Do
-  not dismiss a real error just because it is rare. The app failing to load ITS
-  OWN CODE (a failed dynamic import or module script, a service-worker register or
-  update failure) is NOT a transient: it is a real problem the app must handle —
-  FILE it (work_type=bug), even at a low count. The one class where a plain browser
-  error is usually dismissable: CLIENT-SIDE NETWORK TRANSIENTS (a CSS preload or a
-  plain fetch that failed) with a benign occurrence pattern (low count, no user
-  spread, no recurrence) — dismiss those citing that occurrence evidence. NEVER
-  dismiss a signal that carries a test/synthetic marker — that is cleanup, not
-  dismiss.
-
-• CLEANUP — test / synthetic / noise you can point to a concrete marker for
-  (test hooks, "delete me", validation/smoke events). If you can quote the marker,
-  cleanup is ALWAYS preferred over dismiss: cleanup removes the noise at the source;
-  dismiss leaves it standing to fire again.
-
-• ESCALATE — LAST RESORT, ~1/20. Genuine category ambiguity you could not resolve by
-  probing. Carry a specific question for the human.
-
-Prefer FILE for anything that looks like a real problem; DISMISS (with evidence) or
-CLEANUP (with a marker) for benign or junk. Escalate is the residue, not a default.
-Write all text in ENGLISH.
-
-Each turn return exactly ONE FLAT JSON object — a probe:
-  {"action":"probe","probe":"<name>","probe_args":{...},"why":"..."}
-or a terminal decision:
-  {"action":"decide","disposition":"file","reason":"...","certainty":"low|med|high","file":{"work_type":"bug|config-enhancement","title":"...","symptom":"...","area":"...","evidence":["..."],"acceptance":[{"criterion":"...","intent_source":"reporter|spec|repo-data|code-invariant|baseline|operator-rule|slo"}]}}
-  {"action":"decide","disposition":"dismiss","reason":"...","dismissal_evidence":"the independent probe result proving benign","immediate_recommendation":"... or null","certainty":"..."}
-  {"action":"decide","disposition":"cleanup","reason":"...","marker":"the exact test/noise marker text you saw","certainty":"..."}
-  {"action":"decide","disposition":"escalate","reason":"...","question":"the specific question a human must answer","certainty":"..."}
-
-PROBE MENU:
-%s"""
+# The playbook (fleets/triage/playbooks/triage.md): the routine's own instructions, with two
+# placeholders, the probe count and the probe menu.
+_SYSTEM = _read_playbook()
 
 
 def _sys():
@@ -289,7 +232,10 @@ def _signal_intro(signal):
     # SF_NO_CLASS_HINT suppresses the hint — used ONLY for the eval A/B to reproduce
     # pre-#3/#2 behavior on the identical fixtures. Never set in production.
     if cls and not os.environ.get("SF_NO_CLASS_HINT"):
-        intro += "\n\n" + _CLASS_HINT[cls]
+        for name in skills.match(skills.rules_from_env(_DEFAULT_RULES), {"class": cls}):
+            s = skills.load(name, _FLEET, _CODE_ROOT)
+            _exact_add("skills", {k: s[k] for k in ("name", "layer", "version", "sha256")})
+            intro += "\n\n" + s["text"]
     return intro
 
 

@@ -19,3 +19,16 @@ autonomy: shadow
 budget:
   day_usd: 2.0
 freshness: 35m
+# The class hints (ADR-0012): triage's code classes the signal, a rule loads its hint, rendered after
+# the SIGNAL JSON. fleets/triage/skills/default-rules.json is the same list for runs without flotillad
+# (a Go test keeps them equal).
+skills:
+  rule:
+    - when: {class: external-transient}
+      load: [hint-external-transient]
+    - when: {class: external}
+      load: [hint-external]
+    - when: {class: environment}
+      load: [hint-environment]
+    - when: {class: recoverable}
+      load: [hint-recoverable]

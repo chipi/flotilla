@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -62,6 +63,7 @@ type Routine struct {
 	MaxAutonomy string  `yaml:"max_autonomy"` // optional: the highest autonomy the routine may ever run at
 	Budget      Budget  `yaml:"budget"`
 	Freshness   string  `yaml:"freshness"`
+	Skills      Skills  `yaml:"skills"` // ADR-0012: the skills the routine may load; default none
 
 	// filled by Load
 	Path  string        `yaml:"-"`
@@ -73,6 +75,46 @@ type Routine struct {
 
 type Trigger struct {
 	Every string `yaml:"every"`
+}
+
+// Skills (ADR-0012, RFC-0005 §4): rules the routine's code matches against its case's structured fields;
+// every rule that matches loads its skills, in spec order. On-demand loading comes with RFC-0002 §9 step 4.
+type Skills struct {
+	Rule     []SkillRule `yaml:"rule"`
+	OnDemand []string    `yaml:"on_demand"`
+}
+
+type SkillRule struct {
+	When map[string]string `yaml:"when" json:"when"`
+	Load []string          `yaml:"load" json:"load"`
+}
+
+var (
+	skillNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	caseFieldRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+)
+
+// SkillNames lists every skill the spec names, each once, in spec order.
+func (j *Routine) SkillNames() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range j.Skills.Rule {
+		for _, n := range r.Load {
+			if !seen[n] {
+				seen[n], out = true, append(out, n)
+			}
+		}
+	}
+	return out
+}
+
+// SkillsJSON is what a run gets in FLOTILLA_SKILLS ({"rule": [...]}), or "" when the routine has no rules.
+func (j *Routine) SkillsJSON() string {
+	if len(j.Skills.Rule) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(map[string]any{"rule": j.Skills.Rule})
+	return string(b)
 }
 
 type Run struct {
@@ -179,6 +221,24 @@ func (j *Routine) validate() error {
 	}
 	if j.Budget.DayUSD < 0 {
 		bad("budget.day_usd %.2f: must not be negative", j.Budget.DayUSD)
+	}
+	for i, r := range j.Skills.Rule {
+		if len(r.When) == 0 || len(r.Load) == 0 {
+			bad("skills.rule[%d]: needs a non-empty when and load", i)
+		}
+		for k, v := range r.When {
+			if !caseFieldRe.MatchString(k) || v == "" {
+				bad("skills.rule[%d].when: field %q (lower-case, digits, _) with a non-empty value", i, k)
+			}
+		}
+		for _, n := range r.Load {
+			if !skillNameRe.MatchString(n) {
+				bad("skills.rule[%d].load: skill name %q: lower-case letters, digits and dashes", i, n)
+			}
+		}
+	}
+	if len(j.Skills.OnDemand) > 0 {
+		bad("skills.on_demand: on-demand loading comes with RFC-0002 §9 step 4, not yet supported")
 	}
 	dur := func(field, s string, min time.Duration) time.Duration {
 		d, err := time.ParseDuration(s)

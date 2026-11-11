@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/worker-require
 COPY worker /opt/flotilla/worker
 COPY runtime /opt/flotilla/runtime
 COPY signal-fleet/mvp /opt/flotilla/signal-fleet/mvp
+# the specs, playbooks and fleet skills: the same bytes flotillad's -check saw (ADR-0012)
+COPY fleets /opt/flotilla/fleets
 ARG VERSION=dev
 ENV FLOTILLA_VERSION=${VERSION} \
     FLOTILLA_WORKER=triage \

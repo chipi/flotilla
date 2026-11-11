@@ -24,6 +24,7 @@ import (
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/sched"
+	"github.com/chipi/flotilla/internal/skills"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/telemetry"
@@ -123,6 +124,10 @@ func main() {
 	routines, err := spec.Load(cfg.SpecsDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "specs:", err)
+		os.Exit(2)
+	}
+	if err := skills.Check(cfg.SpecsDir, routines); err != nil {
+		fmt.Fprintln(os.Stderr, "skills:", err)
 		os.Exit(2)
 	}
 	callers, err := api.LoadCallers(cfg.CallersFile)

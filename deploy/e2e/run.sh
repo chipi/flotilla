@@ -208,6 +208,10 @@ case "$S" in *.env*|*STOP*) bad "seeding copied an env file (secrets or a backup
   *fingerprint*) ok "the seeded state has the ledgers and no env file (secrets or their backups) or STOP" ;; *) bad "seeded state: $S" ;; esac
 $D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /home/worker/signal-fleet/w' 2>/dev/null \
   && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
+SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OBSERV_DISABLED=1 flotilla-worker-triage \
+  python3 -c 'import triage; print(triage.PROMPT_SHA, triage._signal_intro({"alertname": "x", "summary": "No space left on device"}).count("PRE-CLASSIFICATION HINT"))' 2>&1 | tail -1)"
+[ "$SK" = "219b34bf 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 219b34bf, the hint loads)" \
+  || bad "triage in the worker image: '$SK'"
 
 echo "== the candidate worker (shadow comparison of a candidate image)"
 for i in $(seq 1 30); do
