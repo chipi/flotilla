@@ -1,21 +1,22 @@
 # A case, end to end
 
-Every problem flotilla handles is a **case**: detected, diagnosed, handed to the job that can fix it,
-planned, approved where needed, executed, checked and closed, with every step on its timeline
-(`flotilla case show <id>`). The full design is [RFC-0004](../rfc/RFC-0004-agent-pipeline.md) §3.5;
-the decision is [ADR-0005](../adr/ADR-0005-agent-pipeline.md).
+Every problem flotilla handles is a **case**: detected, diagnosed, handed to the routine that can
+fix it, planned, approved where needed, executed, checked and closed, with every step on its
+timeline (`flotilla case show <id>`). The full design is
+[RFC-0004](../rfc/RFC-0004-agent-pipeline.md) §3.5; the decision is
+[ADR-0005](../adr/ADR-0005-agent-pipeline.md).
 
 ## The lifecycle
 
 ```mermaid
 stateDiagram-v2
     [*] --> detected
-    detected --> diagnosed: diagnose job
+    detected --> diagnosed: diagnose routine
     detected --> handed_over: a code detector with a known kind
     diagnosed --> closed: dismissed or reported
     diagnosed --> handed_over: needs a fix
     diagnosed --> escalated: unsure
-    handed_over --> planned: acting job, after a code re-check
+    handed_over --> planned: acting routine, after a code re-check
     handed_over --> closed: resolved itself
     handed_over --> escalated: the re-check contradicts the diagnosis, or the recurrence rule is reached
     planned --> closed: shadow, plan recorded
@@ -46,12 +47,12 @@ From the reference installation (the v1 chain).
    a `failed_backup` case for the mini. Its keys are computed by code; an open case with the same key
    would have received the signal instead.
 2. **Hand-over.** A code detector knows the kind, so the case goes straight to `handed_over`, and the
-   event starts the Ops remediation job in the `ops-act-host` worker, which takes the case's lease.
-3. **Re-check and plan.** The job re-checks by code (backup age, whether the job is running). Still
-   a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
-4. **Policy.** flotillad checks the plan: the capability exists, is declared for `failed_backup`, its
-   target is the case's; autonomy is the lowest of the job's stage, the capability's earned level, the
-   mini's ceiling, taint and the freeze; the lock is free, limits and holds clear.
+   event starts the Ops remediation routine in the `ops-act-host` worker, which takes the case's lease.
+3. **Re-check and plan.** The routine re-checks by code (backup age, whether the backup job is
+   running). Still a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
+4. **Policy.** flotillad checks the plan: the capability exists, is declared for `failed_backup`,
+   its target is the case's; autonomy is the lowest of the routine's stage, the capability's earned
+   level, the mini's ceiling, taint and the freeze; the lock is free, limits and holds clear.
    - In **shadow**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
      the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first
@@ -72,7 +73,7 @@ its GitHub issue as the mirror.
 
 ## Runs and cases
 
-A **run** is one job execution; a case may span several (a diagnose run, a planning run, a check
+A **run** is one routine execution; a case may span several (a diagnose run, a planning run, a check
 run). No run waits: an approval makes flotillad sign and send the execution, and a due check is an
 event that starts the check run.
 
@@ -81,7 +82,7 @@ event that starts the check run.
 | Failure | Behaviour |
 | --- | --- |
 | The model endpoint rejects the key or billing (401, 402, 403) | the run ends `endpoint_down` with one aggregate signal, deduped across runs; no silent switch to another model |
-| A transient model error | the next run retries the case, up to the job's limit, then escalates it |
+| A transient model error | the next run retries the case, up to the routine's limit, then escalates it |
 | A capability call errors | the error is the call's answer; after the step limit the case escalates |
 | Malformed answers until the step limit | the case escalates, with the raw answers in the run's record |
 | A worker crashes or hangs | the deadline kills the run; its lease expires; the case returns, or its check resumes if an execution was open (the action never re-runs) |

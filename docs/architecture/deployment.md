@@ -41,13 +41,13 @@ flowchart TB
 ## Workers per role
 
 One worker per **role**, not per fleet: a role is a set of credentials, a toolchain, and the writes
-its jobs may plan.
+its routines may plan.
 
 | Role | Credentials | Runs |
 | --- | --- | --- |
 | `triage` | alerting and error tracking read, issue filing, the triage model key | the triage fleet |
 | `ops-read` | read-only metrics, logs, traces; read-only database queries | Ops diagnosis, briefs, reviews |
-| `ops-act-host` | none for hosts: the only role whose jobs may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation jobs |
+| `ops-act-host` | none for hosts: the only role whose routines may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation routines |
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
 | `marketing` | Search Console, web analytics read | the digital marketing fleet |
 | `bugfix` | a GitHub App for branches and PRs; git and build toolchains | the bugfix fleet |
@@ -135,7 +135,7 @@ commit to this page, with the reason.
 | **Images** | `ghcr.io/chipi/flotilla-<role>`, public (they hold no secrets or config), built in CI, tagged `sha-<7>`, deployed by digest. Signing (cosign) is added before any fleet reaches `live`. |
 | **Credentials** | A GitHub App per role instead of personal tokens (installation tokens expire within an hour). A model key per role with a budget where the endpoint supports it. Other credentials are rotated every 90 days and at once on any suspicion. |
 | **Resource limits** | flotillad 256 MiB and 0.5 CPU; the egress proxy 128 MiB; the triage, ops and marketing workers 1 GiB and 1 CPU each; the bugfix worker 4 GiB and 2 CPUs. Limits, not reservations, revised from measurements. |
-| **State backup** | flotillad writes one copy of the store per day (`VACUUM INTO`) into the state volume, 7 kept. Copying it off the host, a "backup older than 26 h" alert and a tested restore are the installation's job. |
+| **State backup** | flotillad writes one copy of the store per day (`VACUUM INTO`) into the state volume, 7 kept. Copying it off the host, a "backup older than 26 h" alert and a tested restore are up to the installation. |
 
 ## Reference installation
 

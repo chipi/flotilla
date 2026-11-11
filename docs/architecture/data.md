@@ -4,7 +4,7 @@
 
 | Layer | Where | In git | Examples |
 | --- | --- | --- | --- |
-| **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | jobs, triggers, capabilities, case kinds, stages, budgets, playbooks |
+| **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | routines, triggers, capabilities, case kinds, stages, budgets, playbooks |
 | **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the installation's private config, reviewed like code | no (public repo) | model endpoints and aliases, projects and their recall sources, channels and providers, each host's allowed writes and autonomy ceiling |
 | **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, recall indexes, run records |
 
@@ -20,8 +20,8 @@ brings the case tables.
 
 | Table | Holds |
 | --- | --- |
-| `specs` | each loaded spec version: fleet, job, content hash, loaded at, git commit |
-| `runs` | run id, job, spec version, trigger, start, end, status, cost, tokens, models, trace id |
+| `specs` | each loaded spec version: fleet, routine, content hash, loaded at, git commit |
+| `runs` | run id, routine, spec version, trigger, start, end, status, cost, tokens, models, trace id |
 | `cases` | one row per problem: kind, typed target, project, status, holder, lease, urgency, opened and closed at |
 | `case_keys` | `(case, kind, value)`: as many keys as the kind's dedup needs; one canonical key per open case |
 | `case_events` | the timeline, append-only: detected, diagnosed, handed over, planned, approved, executed, checked, attached signals (`caused_by`, `recurrence_of`), feedback, outcomes; each with its actor, run and evidence references |
@@ -31,8 +31,8 @@ brings the case tables.
 | `notes` | short lessons with a scope; active only once the operator activates them |
 | `nodes` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
 | `controls` | pause, STOP, stage, hold, freeze, with who changed them |
-| `spend` | per fleet and job: spend and tokens per day |
-| `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, job) |
+| `spend` | per fleet and routine: spend and tokens per day |
+| `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, routine) |
 
 Nothing is deleted or rewritten. A status change is an event; the case row carries the current
 status. The transition table decides which status changes are allowed.

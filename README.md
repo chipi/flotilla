@@ -13,7 +13,7 @@ shadow):
 - a **digital marketing** fleet: search performance first, then which posts bring visits;
 - a **bugfix** fleet that drafts fixes as PRs.
 
-Every problem is a **case**: detected, diagnosed, handed to the job that can fix it, planned,
+Every problem is a **case**: detected, diagnosed, handed to the routine that can fix it, planned,
 decided by policy (run, ask the operator, or refuse), executed, checked and closed, with its whole
 timeline kept. Agents read through named capabilities and only plan writes; how much may happen
 without asking is earned per capability and promoted only by the operator. Approvals come from the
@@ -25,12 +25,12 @@ Projects like Hermes Agent and OpenClaw are inspiration, not dependencies.
 ## Status
 
 **Phase 3.** The triage fleet runs on flotillad in shadow beside its old implementation (phase 2);
-the job runtime (model client, recording for exact replay) is being built. The design:
+the runtime (model client, recording for exact replay) is being built. The design:
 
 - [RFC-0001](docs/rfc/RFC-0001-fleet-platform.md): the platform, with
   [ADR-0001](docs/adr/ADR-0001-platform-foundations.md) and
   [ADR-0002](docs/adr/ADR-0002-run-in-docker.md);
-- [ADR-0004](docs/adr/ADR-0004-job-runtime.md): the job runtime;
+- [ADR-0004](docs/adr/ADR-0004-job-runtime.md): the runtime;
 - [ADR-0005](docs/adr/ADR-0005-agent-pipeline.md): the agent pipeline (cases, capabilities, policy,
   recall, approvals);
 - [ADR-0006](docs/adr/ADR-0006-node-agent.md): the host agent.
@@ -46,13 +46,13 @@ make replay        # the triage fleet's replays; needs the private corpora (sign
 ## Shape
 
 The shape is the design (ADR-0001 to ADR-0006). Built so far: specs, triggers, the runner, the
-store (runs, events, controls, spend), the API and CLI, the model client and job tracing. Cases,
+store (runs, events, controls, spend), the API and CLI, the model client and tracing of runs. Cases,
 policy, host agents, MCP and the UI are not built yet.
 
 - **flotillad** (Go): the control plane. Specs and the capability registry, triggers, runner,
   cases, policy and guardrails, approvals, the signer and the node gateway, channels, budgets, and
   one API behind a CLI, an MCP server and a small web UI. It holds no fleet credentials.
-- **Workers** (Python job runtime), one per role: the harness, context, recall, capability calls,
+- **Workers** (the Python runtime), one per role: the harness, context, recall, capability calls,
   the model client. Each holds only its role's credentials and reaches out through an egress proxy.
 - **`flotilla-node`** (Go), on each host flotilla may change: connects out over mutual TLS, runs
   signed executions its host's allowlist permits, and can be the connector to Slack.

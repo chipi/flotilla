@@ -8,15 +8,15 @@ and no data sources: it uses the ones that exist, and it is careful about what i
 | Actor | Through | May |
 | --- | --- | --- |
 | **The operator** | the UI, the CLI; Slack for approvals | everything: approve, promote autonomy, change stages and budgets, hold, freeze, stop |
-| **Agents** (other assistants and sessions) | MCP, with a per-caller token | read status, cases and findings; trigger or dry-run a job; pause; propose notes and feedback. **Never approve.** |
-| **Jobs** (the fleets' own runs) | the API, with their worker's identity | open and update cases, plan writes, report results; act only as policy allows |
+| **Agents** (other assistants and sessions) | MCP, with a per-caller token | read status, cases and findings; trigger or dry-run a routine; pause; propose notes and feedback. **Never approve.** |
+| **Routines** (the fleets' own runs) | the API, with their worker's identity | open and update cases, plan writes, report results; act only as policy allows |
 | **Host agents** | an outbound connection with a client certificate | receive signed executions their host allows; report results; relay a provider's messages and approval clicks |
 
 ## What it talks to
 
 | System | Direction | Why | How |
 | --- | --- | --- | --- |
-| A model endpoint | out | every model call | any OpenAI-compatible API, through one model client; aliases per job ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
+| A model endpoint | out | every model call | any OpenAI-compatible API, through one model client; aliases per routine ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
 | Signal sources (alerting, metrics, logs, traces, error tracking) | in (read) | detection and diagnosis | read capabilities with read-only credentials |
 | Code hosting (GitHub) | in and out | issues, comments, PRs; repo docs as recall | per-role credentials; repos in config |
 | Web analytics, Search Console | in (read) | the digital marketing fleet | read-only scopes |

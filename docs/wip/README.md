@@ -14,7 +14,7 @@ prioritized task lists. Promotion targets:
 ## Open notes
 
 - [Phase 2 plan](phase-2-plan.md): flotillad runs the triage fleet (→ a history entry when phase 2 ends).
-- [Phase 3 plan](phase-3-plan.md): the job runtime, and triage onto it (ADR-0004).
+- [Phase 3 plan](phase-3-plan.md): the runtime, and triage onto it (ADR-0004).
 
 WIP notes that haven't been touched in a quarter should be either promoted
 or deleted. Stale plans rot, and stale plans that look "official" rot worst.

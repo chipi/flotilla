@@ -20,7 +20,7 @@ fleets:
 - **ops:** daily brief and operational reviews;
 - **seo:** search reach of the operator's sites.
 
-A small control plane (`flotillad`) runs declared jobs, keeps a ledger of every decision, and holds
+A small control plane (`flotillad`) runs declared routines, keeps a ledger of every decision, and holds
 anything outward for the operator's approval. Design: [RFC-0001](docs/rfc/RFC-0001-fleet-platform.md),
 decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 
@@ -31,9 +31,9 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | Layer | Choice | Reason |
 | --- | --- | --- |
 | Control plane | Go, stdlib-first (`flotillad`, CLI, MCP server, server-rendered UI in one binary) | grows from fleetd; single binary (ADR-0001) |
-| Job runtime | Python (stdlib-first) | the triage fleet is Python; SEO data work (Parquet, DuckDB) (ADR-0001) |
+| Runtime | Python (stdlib-first) | the triage fleet is Python; SEO data work (Parquet, DuckDB) (ADR-0001) |
 | State | SQLite on the host (runs, ledger, approvals, budgets); Parquet for analytical fleet data | one file, transactional, easy to back up |
-| Models | any OpenAI-compatible endpoint through one model client; LiteLLM is the reference deployment; local first; per-job model policy | ADR-0001 §9, RFC-0002 §3 |
+| Models | any OpenAI-compatible endpoint through one model client; LiteLLM is the reference deployment; local first; per-routine model policy | ADR-0001 §9, RFC-0002 §3 |
 | Test framework | `go test` (fleetd); the triage fleet's own stdlib test scripts (`test_units.py`, `test_capture.py`, `test_scrub.py`) and replays (`make replay`) | as imported from the homelab, phase 1 |
 | Linter / formatter | gofmt + go vet (fleetd); Python byte-compile (ruff not yet: it would be a new dependency) | phase 1 |
 | CI runner | GitHub Actions | matches `chipi` standard |
@@ -54,20 +54,20 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 2. **An agent is never the operator.**
    - Approving an outward action (an issue, a PR, a push, a published change) is operator-only, in
      the UI or the CLI, or from the operator's pinned Slack user within ADR-0005's limits (low and
-     medium risk, bound to the plan's hash). Never through MCP, never by a job.
+     medium risk, bound to the plan's hash). Never through MCP, never by a routine.
    - Every state change in the ledger records its actor.
 3. **Behaviour changes are reviewed and replayed.** A change to a playbook, gate, detector or spec
    that changes decisions is replayed against recorded past cases before it ships (the operator's
    `replay-proven-fix` practice). Nothing rewrites its own playbooks or specs at runtime.
 4. **Gates are code.** What leaves the platform is decided by deterministic checks after the model.
 5. **Every model call goes through the one model client,** to an OpenAI-compatible endpoint, under
-   the job's declared model policy (RFC-0002 §3). LiteLLM is the reference deployment, not a
+   the routine's declared model policy (RFC-0002 §3). LiteLLM is the reference deployment, not a
    requirement. No undeclared fallback. An `external` step (a coding harness) points at the same
    endpoint, and the runtime records its inputs and outputs.
 6. **Observable like every homelab service.**
    - Metrics, logs, traces, LLM traces, errors, ops events, dashboards and alerts on the homelab's
      conventions (RFC-0001 §6.2).
-   - Every job has a freshness metric and a stale alert.
+   - Every routine has a freshness metric and a stale alert.
 7. **The live triage fleet never stops** during the migration (RFC-0001 §9): shadow-compare, then
    switch.
 
@@ -114,7 +114,7 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 ## Named ADR anchors
 
 - [ADR-0001 — Platform foundations](docs/adr/ADR-0001-platform-foundations.md): read first.
-- [ADR-0004 — The job runtime](docs/adr/ADR-0004-job-runtime.md): the five core concepts (harness,
+- [ADR-0004 — The runtime](docs/adr/ADR-0004-job-runtime.md): the five core concepts (harness,
   context, memory, external knowledge, evaluation); read before any runtime or fleet work.
 
 ---
