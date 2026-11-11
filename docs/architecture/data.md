@@ -29,7 +29,7 @@ brings the case tables.
 | `locks` | the per-target lock: target, case, taken at |
 | `autonomy` | per write capability: level, who promoted or demoted it and why; per host: its autonomy cap |
 | `notes` | short lessons with a scope; active only once the operator activates them |
-| `nodes` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
+| `hosts` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
 | `controls` | pause, STOP, autonomy, hold, freeze, with who changed them |
 | `spend` | per fleet and routine: spend and tokens per day |
 | `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, routine) |
@@ -58,7 +58,7 @@ The database stores references (dataset and version), never copies.
 
 A host agent keeps a small SQLite store: every execution id it has seen and its result (so a repeat
 runs nothing), and its hash-chained audit log, collected off the host by the host's log collector;
-flotillad keeps the log's latest chain head per node.
+flotillad keeps the log's latest chain head per host.
 
 ## Retention and backup
 

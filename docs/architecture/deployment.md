@@ -8,8 +8,8 @@ A flotilla installation has two parts:
 
 - **the control plane:** flotillad, the workers and the egress proxy, as one Compose stack on one
   host;
-- **host agents:** `flotilla-node` on each host flotilla may change, installed by the operator with
-  the `flotilla node` CLI over SSH.
+- **host agents:** `flotilla-host` on each host flotilla may change, installed by the operator with
+  the `flotilla host` CLI over SSH.
 
 ```mermaid
 flowchart TB
@@ -24,17 +24,17 @@ flowchart TB
         E[egress proxy<br/>allowlist per worker]
     end
     subgraph H1["Host A"]
-        NA[flotilla-node<br/>actuator + connector<br/>dedicated user, SQLite store]
+        NA[flotilla-host<br/>actions + connector<br/>dedicated user, SQLite store]
     end
     subgraph H2["Host B"]
-        NB[flotilla-node<br/>actuator]
+        NB[flotilla-host<br/>actions]
     end
     Op([Operator workstation<br/>CLI, root CA offline])
     F -- start runs --> WT & WR & WA & WO
     WT & WR & WA & WO --> E
     E --> Out[(model endpoint, sources)]
     NA & NB -- outbound mTLS --> F
-    Op -- flotilla node install, over SSH --> NA & NB
+    Op -- flotilla host install, over SSH --> NA & NB
     NA --> Slack[(Slack, Socket Mode)]
 ```
 
@@ -60,15 +60,15 @@ its routines may plan.
 
 ## Host agents
 
-- **Installed by the operator:** `flotilla node install <host>` over SSH with the operator's key. It
+- **Installed by the operator:** `flotilla host install <host>` over SSH with the operator's key. It
   copies the binary for the host's platform (v1: built by the operator from a tagged commit; signed
   CI releases before the second host), creates the dedicated user, writes the service unit (systemd
   or launchd) and the host's allowlist, generates the sudoers file (checked with `visudo -c`), and
   enrols the agent with a one-time token.
-- **Upgrades are pushed:** `flotilla node upgrade`, one host at a time. `flotilla node list` shows
+- **Upgrades are pushed:** `flotilla host upgrade`, one host at a time. `flotilla host list` shows
   each agent's version, last contact, clock offset, certificate expiry and allowlist hash. `flotilla
-  node revoke` cuts an agent off in flotillad alone; `remove` also uninstalls.
-- **Connects out:** the agent opens one connection to flotillad's node endpoint; nothing on the host
+  host revoke` cuts an agent off in flotillad alone; `remove` also uninstalls.
+- **Connects out:** the agent opens one connection to flotillad's host endpoint; nothing on the host
   listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
   network); mutual TLS is required on any of them.
 - **The host's allowlist** (exact command templates per capability, each with a rate limit, and the
@@ -82,12 +82,12 @@ its routines may plan.
 | Root CA | offline, with the operator | signs the intermediate; never on a host |
 | Intermediate CA | flotillad's secrets volume | issues short-lived certificates to host agents |
 | Execution signing key (Ed25519) | flotillad's secrets volume | signs every execution; host agents hold the public key |
-| Release signing key | CI's secret store, from the second host (v1: the operator builds from a tagged commit) | signs `flotilla-node` releases |
+| Release signing key | CI's secret store, from the second host (v1: the operator builds from a tagged commit) | signs `flotilla-host` releases |
 | Host agent certificate | each host agent | its identity to flotillad; short-lived, renewed |
 | Provider credentials (Slack) | the host agent with the connector role | Socket Mode connection |
 | Fleet credentials | each role's worker, mode-600 files | that role's reads and repo writes |
 
-Revocation needs no access to the host (`flotilla node revoke`). The rotation procedures (the
+Revocation needs no access to the host (`flotilla host revoke`). The rotation procedures (the
 execution key with a two-key window, the intermediate CA, a host's certificate) are written before
 the first write at propose (ADR-0006 §11).
 
@@ -108,7 +108,7 @@ the first write at propose (ADR-0006 §11).
 - **Deploy:** a new image tag for each container, then `docker compose up -d`. Specs travel inside
   the image, so a spec change is a deploy. A changed config file recreates the service that reads it
   (a config hash in the service's environment).
-- **Rollback:** the previous tag; for a host agent, `flotilla node upgrade` to the previous release.
+- **Rollback:** the previous tag; for a host agent, `flotilla host upgrade` to the previous release.
 - **Observability:** every deploy writes a deploy event, so deploy checks and alert stand-downs see
   it.
 - **State:** the database lives on a volume and survives restarts. Schema steps run at start-up in

@@ -50,11 +50,11 @@ store (runs, events, controls, spend), the API and CLI, the model client and tra
 policy, host agents, MCP and the UI are not built yet.
 
 - **flotillad** (Go): the control plane. Specs and the capability registry, triggers, runner,
-  cases, policy and guardrails, approvals, the signer and the node gateway, channels, budgets, and
+  cases, policy and guardrails, approvals, the signer and the host gateway, channels, budgets, and
   one API behind a CLI, an MCP server and a small web UI. It holds no fleet credentials.
 - **Workers** (the Python runtime), one per role: the harness, context, recall, capability calls,
   the model client. Each holds only its role's credentials and reaches out through an egress proxy.
-- **`flotilla-node`** (Go), on each host flotilla may change: connects out over mutual TLS, runs
+- **`flotilla-host`** (Go), on each host flotilla may change: connects out over mutual TLS, runs
   signed executions its host's allowlist permits, and can be the connector to Slack.
 - **Specs** (`fleets/<fleet>/*.yaml`) and **playbooks** (Markdown) in git. Config, secrets, cases
   and fleet data stay on the hosts.

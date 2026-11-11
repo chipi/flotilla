@@ -54,3 +54,5 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0006 — The flotilla node agent](ADR-0006-node-agent.md) (Accepted, 2026-11-09)
 - [ADR-0007 — "Routine" replaces "job"](ADR-0007-routine.md) (Accepted, 2026-11-11)
 - [ADR-0008 — One autonomy scale: shadow, propose, auto](ADR-0008-autonomy.md) (Accepted, 2026-11-11)
+- [ADR-0009 — Host agent names: workers think, host agents act](ADR-0009-host-agent-names.md)
+  (Accepted, 2026-11-11)

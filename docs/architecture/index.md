@@ -38,8 +38,8 @@ flowchart LR
         E[Egress proxy]
     end
     subgraph Hosts["Hosts"]
-        N1[Host agent<br/>actuator + connector]
-        N2[Host agent<br/>actuator]
+        N1[Host agent<br/>actions + connector]
+        N2[Host agent<br/>actions]
     end
     Src[(Sources<br/>alerts, metrics, logs,<br/>errors, GitHub, Search Console)]
     LLM[(Model endpoint<br/>OpenAI-compatible)]
@@ -79,12 +79,10 @@ flowchart LR
 | **policy** | flotillad's code that decides each planned write: run, ask the operator, or refuse |
 | **autonomy** | how far something may go without asking, as a lifecycle: `shadow` (plans recorded, nothing done), then `propose` (asks the operator), then `auto` (acts). Capped by the routine, earned by each write capability, capped by the host; promoted only by the operator ([ADR-0008](../adr/ADR-0008-autonomy.md)) |
 | **worker** | a long-running container that runs routines for one role, with that role's credentials |
-| **host agent** | `flotilla-node` on a host: the **actuator** (runs host writes) and, where configured, a **connector** (talks to a communication provider) |
+| **host agent** | the program flotilla installs on a host (`flotilla-host`; managed with `flotilla host …`). Its roles: **`actions`** (runs the host's allowed writes) and, where configured, **connector** (talks to a communication provider). Workers think, host agents act ([ADR-0009](../adr/ADR-0009-host-agent-names.md)) |
 | **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |
 | **project** | what cases are about (a codebase, a site, a service), with its names in signals, issue repo and recall sources |
 | **playbook** | a routine's instructions to the model, Markdown in git |
-| **actuator** | ADR-0005's name for the host agent's role that runs writes |
-| **node** | the host agent as the CLI and the API name it (`flotilla node`, `nodes`) |
 
 What happens is the lowest of three: the routine's autonomy, the capability's and the host's
 autonomy cap. A `propose` routine never runs anything at `auto`; an `auto` routine runs each
