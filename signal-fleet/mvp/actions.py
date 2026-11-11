@@ -60,10 +60,15 @@ def ledger_append(signal, disp, followup=""):
            str(signal.get("labels", {}).get("count", "")),
            os.environ.get("FLEETD_CYCLE_ID", ""),
            os.environ.get("FLEETD_STAGE", "")]
+    cells = [_cell(x) for x in row]
+    if os.environ.get("SF_LEDGER_BACKEND", "tsv") == "api":   # RFC-0002 §9 step 5: the store first, then the TSV
+        import filing
+        kind = "recurrence" if disp["disposition"] == "recurrence" else "decision"
+        filing._ledger_client().append_entry(kind, dict(zip(LEDGER_COLS, cells)))
     with open(config.LEDGER, "a") as f:
         if new:
             f.write("\t".join(LEDGER_COLS) + "\n")
-        f.write("\t".join(_cell(x) for x in row) + "\n")
+        f.write("\t".join(cells) + "\n")
 
 
 def last_for_fingerprint(fp):

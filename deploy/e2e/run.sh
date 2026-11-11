@@ -65,6 +65,7 @@ callers:
 EOF
 cat > "$WORK/config/flotillad.yaml" <<EOF
 listen: 127.0.0.1:8484
+worker_listen: 0.0.0.0:8485
 specs_dir: /opt/flotilla/fleets
 state_dir: /var/lib/flotilla
 environment: e2e
@@ -212,6 +213,19 @@ SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OB
   python3 -c 'import triage; print(triage.PROMPT_SHA, triage._signal_intro({"alertname": "x", "summary": "No space left on device"}).count("PRE-CLASSIFICATION HINT"))' 2>&1 | tail -1)"
 [ "$SK" = "219b34bf 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 219b34bf, the hint loads)" \
   || bad "triage in the worker image: '$SK'"
+
+echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's workers' listener"
+LR="$($D exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485 \
+  -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad -e SF_OBSERV_DISABLED=1 \
+  flotilla-worker-triage python3 eval_ledger_backend_replay.py --synthetic 300 2>&1)"
+echo "$LR" | grep -q "LEDGER BACKEND REPLAY: PASS" \
+  && ok "dedup through the ledger equals filed.tsv: $(echo "$LR" | grep '^lookup:' | cut -c1-90)" \
+  || bad "ledger replay: $(echo "$LR" | tail -4 | tr '\n' ' ')"
+WL="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
+try:
+    urllib.request.urlopen("http://flotillad:8485/v1/status", timeout=5); print("served")
+except urllib.error.HTTPError as e: print(e.code)' 2>&1 | tail -1)"
+[ "$WL" = 404 ] && ok "the workers' listener does not serve the full API (/v1/status: 404)" || bad "workers' listener /v1/status: $WL"
 
 echo "== the candidate worker (shadow comparison of a candidate image)"
 for i in $(seq 1 30); do

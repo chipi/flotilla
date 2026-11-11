@@ -40,6 +40,46 @@ FILED = os.path.expanduser(os.environ.get("SF_FILED_LEDGER",
 FILED_COLS = ["fingerprint", "repo", "issue", "group_key", "filed_at",
               "last_comment_day", "norm_key", "alert_key"]
 
+
+# ── the ledger's backend (RFC-0002 §9 step 5) ────────────────────────────────
+# SF_LEDGER_BACKEND, read at each call: "tsv" (the default; the fleet session's replays and gates set it)
+# reads filed.tsv; "api" reads flotillad's ledger (runtime/ledger.py, the routine's namespace). Writes go
+# to both while the TSVs are the readers' contract: ledger_upsert writes the store, then rewrites
+# filed.tsv exactly as before. The maintenance tools (backfill_alert_keys, retire_glitchtip_project)
+# edit filed.tsv only: run them with the tsv backend and re-import the namespace after.
+def _backend():
+    b = os.environ.get("SF_LEDGER_BACKEND", "tsv")
+    if b not in ("tsv", "api"):
+        raise RuntimeError(f"SF_LEDGER_BACKEND={b!r}: tsv or api")
+    return b
+
+
+_LEDGER_CLIENT = None
+
+
+def _ledger_module():
+    try:
+        import ledger
+    except ImportError:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
+        import ledger
+    return ledger
+
+
+def _ledger_client():
+    global _LEDGER_CLIENT
+    if _LEDGER_CLIENT is None:
+        ledger = _ledger_module()
+        # ledger calls are recorded in their own list, never among the filing record's GitHub calls
+        client = ledger.from_env(record=callrec.append)
+        c = client.counts()
+        if not (c["filings"] or c["decisions"] or c["recurrences"]):
+            # a namespace never imported reads as "nothing ever filed": dedup would open duplicates
+            raise ledger.LedgerUnavailable(f"ledger {client.ns} is empty: import it first (ledger_sync.py import)")
+        _LEDGER_CLIENT = client
+    return _LEDGER_CLIENT
+
 # ── #9 alert-level dedup key ─────────────────────────────────────────────────
 # The fingerprint and norm_key dimensions miss the same alert when (a) Grafana mints
 # a new fingerprint because the rule's labels changed (#48 → #72, 2026-09-22), or
@@ -350,7 +390,17 @@ def sanitize_issue(signal, issue):
 
 
 # ── filed-ledger ─────────────────────────────────────────────────────────
-def _ledger_rows():
+def _ledger_rows(keys=None):
+    """The filed rows, in ledger order. With the api backend and `keys` (kind -> value), only the rows whose
+    keys match any of them: every row ledger_lookup could pick, so its choice is the same as over all rows.
+    A store row has every FILED_COLS column, as filed.tsv has once _ledger_write has rewritten it (the
+    import refuses a file that still has short rows)."""
+    if _backend() == "api":
+        return [{c: r.get(c, "") for c in FILED_COLS} for r in _ledger_client().filings(keys)]
+    return _tsv_rows()
+
+
+def _tsv_rows():
     if not os.path.exists(FILED):
         return []
     with open(FILED) as f:
@@ -377,7 +427,8 @@ def ledger_lookup(fingerprint, group_key="", norm_key="", alert_key="", is_open=
     dedups on fingerprint only), and first-match returns the OLDEST — after one
     regression cycle that resolves to a stale closed issue (review R3). Empty keys
     never match (a keyless row must not match every other keyless row)."""
-    rows = _ledger_rows()
+    rows = _ledger_rows({"fingerprint": fingerprint, "group_key": group_key, "norm_key": norm_key,
+                         "alert_key": alert_key})
 
     def newest(pred):
         hit = None
@@ -440,7 +491,7 @@ def backfill_alert_keys(dispositions_path, dry_run=False, rekey=False):
     with open(dispositions_path) as f:
         for d in csv.DictReader(f, delimiter="\t"):
             names.setdefault(d.get("fingerprint", ""), (d.get("source", ""), d.get("alertname", "")))
-    rows, done, missing = _ledger_rows(), 0, 0
+    rows, done, missing = _tsv_rows(), 0, 0   # filed.tsv only (a TSV maintenance tool)
     for r in rows:
         if r.get("alert_key") and not (rekey and not r["alert_key"].startswith(ALERT_KEY_VERSION + ":")):
             continue
@@ -472,7 +523,7 @@ def retire_glitchtip_project(project, filed_before, dry_run=False):
     Matches `glitchtip:<PROJECT>-<counter>` exactly (not `<PROJECT>-VPS-3`, a
     different project) filed strictly before `filed_before` (ISO)."""
     pat = re.compile(r"^glitchtip:" + re.escape(project.upper()) + r"-([0-9A-Z]+)$")
-    rows, retired = _ledger_rows(), []
+    rows, retired = _tsv_rows(), []   # filed.tsv only (a TSV maintenance tool)
     for r in rows:
         m = pat.match(r.get("fingerprint", ""))
         if m and r.get("filed_at", "") < filed_before:
@@ -503,7 +554,9 @@ def reused_short_id(row, first_seen):
 
 def ledger_upsert(entry):
     callrec.append("written", entry)
-    rows = [r for r in _ledger_rows() if r["fingerprint"] != entry["fingerprint"]]
+    if _backend() == "api":   # the store first: a refused write stops here, before the TSV changes
+        _ledger_client().write_filing({c: str(entry.get(c, "")) for c in FILED_COLS})   # as _ledger_write writes it
+    rows = [r for r in _tsv_rows() if r["fingerprint"] != entry["fingerprint"]]
     rows.append(entry)
     _ledger_write(rows)
 
@@ -590,16 +643,22 @@ def duplicate_of(repo, number):
     return dup["repository"]["nameWithOwner"], dup["number"]
 
 
+def _rollup_row(roll_gk):
+    """The newest filed row of a rollup bucket, or None."""
+    existing = None
+    for r in _ledger_rows({"group_key": roll_gk}):
+        if r.get("group_key") == roll_gk:
+            existing = r                      # newest wins
+    return existing
+
+
 def _file_rollup(signal, issue, repo, fp, nk):
     """Fold a low-signal event onto ONE per-bucket rollup issue (#4). Finds an open
     rollup for the bucket via the ledger; comments the occurrence, else opens it.
     Maps this fp/norm_key to the rollup so the event's own recurrences land here."""
     bucket = rollup_bucket(signal)
     roll_gk = f"{ROLLUP_PREFIX}{bucket}"
-    existing = None
-    for r in _ledger_rows():
-        if r.get("group_key") == roll_gk:
-            existing = r                      # newest wins
+    existing = _rollup_row(roll_gk)
     occ = f"- {_today()}: `{signal.get('alertname', '')[:160]}` (fp `{fp}`)"
     if existing:
         st = issue_state(existing["repo"], existing["issue"])

@@ -53,6 +53,7 @@ flag, and never overwritten after:
 
 ```yaml
 listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
+worker_listen: 0.0.0.0:8485            # optional: the ledger only, for the workers' routines (RFC-0002 §9 step 5)
 specs_dir: /opt/flotilla/fleets         # in the image
 state_dir: /var/lib/flotilla
 environment: operations
@@ -161,6 +162,30 @@ makes no outward change (orchestrator.py forces a dry run), and the cap keeps it
 live worker's `worker-triage.env`, but the compose file sets `ROUTINE_SF_SERVICE=triage-fleet-candidate`
 and `ROUTINE_SF_GLITCHTIP_SYNC=0` over it, so its metrics, inbox and traces never count as the live
 fleet's.
+
+## The ledger in flotillad (RFC-0002 §9 step 5)
+
+A routine's ledger is its namespace in flotillad's store (`triage/cycle`, `triage/cycle-shadow`); workers
+reach it on `worker_listen`, which serves the ledger and nothing else. The backend is chosen per
+service in `.env`: `TRIAGE_LEDGER_BACKEND` (the live worker) and `TRIAGE_CANDIDATE_LEDGER_BACKEND`
+(the candidate), each `tsv` by default. With `api`, dedup reads the store; both TSVs are still written
+exactly as before (the readers' contract), and an empty namespace is refused rather than read as
+"nothing ever filed".
+
+To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
+
+1. Pause the routine (`flotilla pause <routine id>`) and let a run in flight end: between the import
+   and the switch the TSVs must not move on without the store.
+2. Import its namespace from its own state, once (counts only are printed):
+   `docker exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485
+   -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad
+   -e FLOTILLA_ROUTINE=<routine id> <worker container> python3 ledger_sync.py import`
+3. Check the store renders both TSVs byte for byte: the same with `check`.
+4. Set the service's backend to `api`, deploy (the live tag, unchanged), and resume the routine (the
+   operator's token).
+
+`filing.backfill_alert_keys` and `filing.retire_glitchtip_project` edit filed.tsv only; after one,
+re-import the namespace (a new namespace, or the routine's after an operator removes it).
 
 ## Deploy, roll back, operate
 
