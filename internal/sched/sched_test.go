@@ -130,6 +130,20 @@ func TestRunGetsItsSkillRules(t *testing.T) {
 	}
 }
 
+func TestRunGetsItsHarness(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if _, ok := fr.got[0].Env["FLOTILLA_HARNESS"]; ok {
+		t.Fatal("FLOTILLA_HARNESS set for a routine without a harness")
+	}
+	s.Routines[0].Harness = &spec.Harness{Protocol: "json", Tools: []string{"t"}, Gates: []string{"g"},
+		Limits: spec.HarnessLimits{MaxToolCalls: 3, MaxSteps: 4, ToolCallsPerTurn: 1}}
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if got := fr.got[1].Env["FLOTILLA_HARNESS"]; !strings.Contains(got, `"protocol":"json","tools":["t"],"gates":["g"]`) {
+		t.Fatalf("FLOTILLA_HARNESS: %q", got)
+	}
+}
+
 func TestSkips(t *testing.T) {
 	for name, c := range map[string]struct{ subject, key, want string }{
 		"fleet stopped":  {"triage", KeyStop, "STOPped"},

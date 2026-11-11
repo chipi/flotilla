@@ -52,18 +52,19 @@ func (j *Routine) Allows(s string) bool {
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 
 type Routine struct {
-	Fleet       string  `yaml:"fleet"`
-	Routine     string  `yaml:"routine"`
-	Description string  `yaml:"description"`
-	Enabled     bool    `yaml:"enabled"`
-	Worker      string  `yaml:"worker"`
-	Trigger     Trigger `yaml:"trigger"`
-	Run         Run     `yaml:"run"`
-	Autonomy    string  `yaml:"autonomy"`
-	MaxAutonomy string  `yaml:"max_autonomy"` // optional: the highest autonomy the routine may ever run at
-	Budget      Budget  `yaml:"budget"`
-	Freshness   string  `yaml:"freshness"`
-	Skills      Skills  `yaml:"skills"` // ADR-0012: the skills the routine may load; default none
+	Fleet       string   `yaml:"fleet"`
+	Routine     string   `yaml:"routine"`
+	Description string   `yaml:"description"`
+	Enabled     bool     `yaml:"enabled"`
+	Worker      string   `yaml:"worker"`
+	Trigger     Trigger  `yaml:"trigger"`
+	Run         Run      `yaml:"run"`
+	Autonomy    string   `yaml:"autonomy"`
+	MaxAutonomy string   `yaml:"max_autonomy"` // optional: the highest autonomy the routine may ever run at
+	Budget      Budget   `yaml:"budget"`
+	Freshness   string   `yaml:"freshness"`
+	Skills      Skills   `yaml:"skills"`  // ADR-0012: the skills the routine may load; default none
+	Harness     *Harness `yaml:"harness"` // RFC-0002 §4: the routine's model-driven step, when it has one
 
 	// filled by Load
 	Path  string        `yaml:"-"`
@@ -93,6 +94,41 @@ var (
 	skillNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 	caseFieldRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
 )
+
+// Harness (RFC-0002 §4) configures the routine's model-driven step: its protocol, the tools offered, the
+// gates its decision passes, its limits, and the quirks that keep the first fleet's loop like for like
+// until RFC-0002 §9 step 6 removes them one by one.
+type Harness struct {
+	Protocol string        `yaml:"protocol" json:"protocol"`
+	Tools    []string      `yaml:"tools" json:"tools"`
+	Gates    []string      `yaml:"gates" json:"gates"`
+	Limits   HarnessLimits `yaml:"limits" json:"limits"`
+	Quirks   HarnessQuirks `yaml:"quirks" json:"quirks"`
+}
+
+type HarnessLimits struct {
+	MaxToolCalls     int `yaml:"max_tool_calls" json:"max_tool_calls"`
+	MaxSteps         int `yaml:"max_steps" json:"max_steps"`
+	ToolCallsPerTurn int `yaml:"tool_calls_per_turn" json:"tool_calls_per_turn"`
+}
+
+type HarnessQuirks struct {
+	BadJSONUsesTurn   bool `yaml:"bad_json_uses_turn" json:"bad_json_uses_turn"`
+	EmptyRetry        bool `yaml:"empty_retry" json:"empty_retry"`
+	FinalDecisionCall bool `yaml:"final_decision_call" json:"final_decision_call"`
+	ReplyEchoChars    int  `yaml:"reply_echo_chars" json:"reply_echo_chars"`
+	DecisionEchoChars int  `yaml:"decision_echo_chars" json:"decision_echo_chars"`
+	ResultChars       int  `yaml:"result_chars" json:"result_chars"`
+}
+
+// HarnessJSON is what a run gets in FLOTILLA_HARNESS, or "" when the routine has no harness step.
+func (j *Routine) HarnessJSON() string {
+	if j.Harness == nil {
+		return ""
+	}
+	b, _ := json.Marshal(j.Harness)
+	return string(b)
+}
 
 // SkillNames lists every skill the spec names, each once, in spec order.
 func (j *Routine) SkillNames() []string {
@@ -239,6 +275,31 @@ func (j *Routine) validate() error {
 	}
 	if len(j.Skills.OnDemand) > 0 {
 		bad("skills.on_demand: on-demand loading comes with RFC-0002 §9 step 4, not yet supported")
+	}
+	if h := j.Harness; h != nil {
+		if h.Protocol != "json" {
+			bad("harness.protocol %q: json (native tool calls come later)", h.Protocol)
+		}
+		if len(h.Tools) == 0 || len(h.Gates) == 0 {
+			bad("harness: tools and gates are required")
+		}
+		for _, n := range append(append([]string{}, h.Tools...), h.Gates...) {
+			if !caseFieldRe.MatchString(n) {
+				bad("harness: tool or gate name %q (lower-case, digits, _)", n)
+			}
+		}
+		l := h.Limits
+		if l.MaxToolCalls < 1 || l.MaxSteps != l.MaxToolCalls+1 || l.ToolCallsPerTurn != 1 {
+			bad("harness.limits: max_tool_calls >= 1, max_steps = max_tool_calls + 1, tool_calls_per_turn 1 (got %d, %d, %d)",
+				l.MaxToolCalls, l.MaxSteps, l.ToolCallsPerTurn)
+		}
+		q := h.Quirks
+		if !q.BadJSONUsesTurn || !q.EmptyRetry || !q.FinalDecisionCall {
+			bad("harness.quirks: bad_json_uses_turn, empty_retry and final_decision_call are true until RFC-0002 §9 step 6")
+		}
+		if q.ReplyEchoChars < 1 || q.DecisionEchoChars < 1 || q.ResultChars < 1 {
+			bad("harness.quirks: reply_echo_chars, decision_echo_chars and result_chars must be positive")
+		}
 	}
 	dur := func(field, s string, min time.Duration) time.Duration {
 		d, err := time.ParseDuration(s)

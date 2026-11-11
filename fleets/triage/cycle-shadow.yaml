@@ -32,3 +32,18 @@ skills:
       load: [hint-environment]
     - when: {class: recoverable}
       load: [hint-recoverable]
+# The model-driven step (RFC-0002 §4). fleets/triage/harness-default.json is the same for runs
+# without flotillad (a Go test keeps them equal). The quirks keep today's loop like for like; RFC-0002
+# §9 step 6 removes them one at a time, each by model replay.
+harness:
+  protocol: json
+  tools: [event_detail, occurrence_history, service_logs, metric, trace, source_state]
+  gates: [intent, cleanup, dismiss_corroborated, edge]
+  limits: {max_tool_calls: 3, max_steps: 4, tool_calls_per_turn: 1}
+  quirks:
+    bad_json_uses_turn: true
+    empty_retry: true
+    final_decision_call: true
+    reply_echo_chars: 600
+    decision_echo_chars: 400
+    result_chars: 1800

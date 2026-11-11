@@ -31,15 +31,17 @@ from http_util import post_json
 # The model client (RFC-0002 §9 step 2) lives at flotilla's runtime/model_client.py: ../../runtime from
 # here, /opt/flotilla/runtime in the worker image. An extract of signal-fleet/ must carry it beside.
 try:
+    import harness
     import model_client
     import skills
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
     try:
+        import harness
         import model_client
         import skills
     except ImportError as e:
-        raise ImportError("triage needs flotilla's runtime/model_client.py and runtime/skills.py beside "
+        raise ImportError("triage needs flotilla's runtime/ (harness.py, model_client.py, skills.py) beside "
                           "signal-fleet/ (../../runtime from signal-fleet/mvp)") from e
 
 # The playbook and the class hints (RFC-0002 §9 step 3) live in fleets/triage/, beside signal-fleet/:
@@ -446,12 +448,59 @@ def _edge_gate(d, signal, data=None):
     return d, "downgraded (restart nearby)"
 
 
+# The registered gates (RFC-0002 §4), each with its short name in the gates string. They run here, in
+# the routine's configured order, and nowhere else: the fleet session's evaluation wraps _gate to see the
+# model's own decision before any gate changes it, and its gate replay calls _gate directly.
+_GATES = {
+    "intent": ("i", lambda d, signal, trace, edge_data: _intent_gate(d)),
+    "cleanup": ("c", lambda d, signal, trace, edge_data: _cleanup_gate(d, signal)),
+    "dismiss_corroborated": ("d", lambda d, signal, trace, edge_data: _dismiss_gate(d, trace)),
+    "edge": ("e", lambda d, signal, trace, edge_data: _edge_gate(d, signal, edge_data)),
+}
+
+
 def _gate(d, signal, trace, edge_data=None):
-    d, ig = _intent_gate(d)
-    d, cg = _cleanup_gate(d, signal)
-    d, dg = _dismiss_gate(d, trace)
-    d, eg = _edge_gate(d, signal, edge_data)
-    return d, f"i:{ig}/c:{cg}/d:{dg}/e:{eg}"
+    parts = []
+    for name in _harness_cfg()["gates"]:
+        short, fn = _GATES[name]
+        d, res = fn(d, signal, trace, edge_data)
+        parts.append(f"{short}:{res}")
+    return d, "/".join(parts)
+
+
+_HARNESS_DEFAULT = os.path.join(_FLEET_DIR, "harness-default.json")
+_HARNESS_DEFAULT_CFG = None
+
+
+def _harness_cfg():
+    """The routine's harness configuration: FLOTILLA_HARNESS (flotillad, from the spec's `harness:`) or,
+    without it (eval runs), fleets/triage/harness-default.json, which a Go test keeps equal to the spec."""
+    global _HARNESS_DEFAULT_CFG
+    raw = os.environ.get("FLOTILLA_HARNESS")
+    if raw:
+        cfg = json.loads(raw)
+    else:
+        if _HARNESS_DEFAULT_CFG is None:
+            with open(_HARNESS_DEFAULT, encoding="utf-8") as f:
+                _HARNESS_DEFAULT_CFG = json.load(f)
+        cfg = _HARNESS_DEFAULT_CFG
+    if cfg.get("protocol") != "json":
+        raise RuntimeError(f"triage harness: protocol {cfg.get('protocol')!r}; triage speaks json")
+    if set(cfg.get("tools") or []) != set(probes.PROBES):
+        raise RuntimeError("triage harness: tools must be the probe menu's (the playbook lists them all)")
+    unknown = [g for g in cfg.get("gates") or [] if g not in _GATES]
+    if unknown or not cfg.get("gates"):
+        raise RuntimeError(f"triage harness: gates {unknown or 'none'} not registered")
+    if cfg["limits"]["max_tool_calls"] != MAX_PROBES:
+        raise RuntimeError(f"triage harness: max_tool_calls {cfg['limits']['max_tool_calls']} is not "
+                           f"MAX_PROBES {MAX_PROBES}, the count the playbook names")
+    return cfg
+
+
+def _mark_quirk(name):
+    """The quirk a turn hit, on that turn's record (step 6 counts the turns each quirk touches)."""
+    if _EXACT is not None and _EXACT["turns"]:
+        _EXACT["turns"][-1]["quirk"] = name
 
 
 def _finish(signal, disp, trace, gates, usage, t0, trace_id=None):
@@ -481,78 +530,32 @@ def investigate(signal, max_probes=None, probe_table=None):
                 {"role": "user", "content": _signal_intro(signal)}]
     # usage accumulates across ALL turns — reconciliation vs LiteLLM metering
     # (2026-07-30) showed last-turn-only recording undercounted tokens ~4x
-    trace, usage, t0 = [], {"prompt_tokens": 0, "completion_tokens": 0}, time.time()
+    t0 = time.time()
     trace_id = observ.new_trace_id()   # one Langfuse trace: the fleet's + every gateway call
-    last_empty = False
-    for step in range(n + 1):
-        try:
-            raw, turn_usage = _call(messages, trace_id=trace_id, step=step)
-            if isinstance(turn_usage, dict):
-                for k in ("prompt_tokens", "completion_tokens"):
-                    usage[k] += turn_usage.get(k) or 0
-        except SystemExit:
-            raise
-        except TriagerDown:
-            raise   # persistent auth outage — fail CLOSED at the orchestrator, not per-signal
-        except Exception as e:  # transport (one-off flake) — retry next cycle, never escalate
-            raise TriageDeferred(f"triager call failed: {e}") from e
-        if not isinstance(raw, str) or not raw.strip():
-            # contentless completion = provider flake (measured 2026-07-24:
-            # billing/provider issues present as empty responses) — retry the
-            # same turn; do NOT feed None into the parse-feedback path
-            print(f"    [triage] empty completion at step {step+1} — retrying turn")
-            last_empty = True
-            continue
-        last_empty = False
-        try:
-            out = _parse(raw)
-        except Exception as e:
-            messages.append({"role": "assistant", "content": raw[:600]})
-            messages.append({"role": "user", "content": f"Invalid JSON ({e}). Return ONE valid JSON object only."})
-            continue
-        if out.get("action") == "probe" and step < n:
-            name, args = out.get("probe"), out.get("probe_args") or {}
-            result = probes.run_probe(signal, name, args, table=probe_table)
-            trace.append({"probe": name, "args": args, "result": result})
-            print(f"    probe[{step+1}] {name} -> {_trim(result, 90)}")
-            messages.append({"role": "assistant", "content": raw[:600]})
-            messages.append({"role": "user", "content": f"PROBE {name} result:\n{_trim(result)}"})
-            continue
-        # decide: the disposition object IS `out` (flat; "disposition" is a string)
-        disp = {k: v for k, v in out.items() if k != "action"}
-        if not isinstance(disp.get("disposition"), str):
-            messages.append({"role": "assistant", "content": raw[:400]})
-            messages.append({"role": "user", "content":
-                             ("Probe budget exhausted. " if step >= n else "")
-                             + 'Return a FLAT decision: {"action":"decide","disposition":'
-                               '"dismiss|cleanup|file|escalate", ...}.'})
-            if step < n:
-                continue
-            try:
-                out2 = _parse(_call(messages, trace_id=trace_id, step=step + 1)[0])
-                disp = {k: v for k, v in out2.items() if k != "action"}
-            except Exception:
-                disp = {}
-        if not isinstance(disp.get("disposition"), str):
-            disp = {"disposition": "escalate", "reason": "no terminal decision",
-                    "question": "triager did not reach a disposition"}
-        # The gates rewrite the decision in place (the intent gate drops the acceptance criteria): keep
-        # what the model decided, so a gate change can be measured on captured decisions without re-running
-        # the model. Kept for capture only; nothing that decides reads it.
-        pre_gate = copy.deepcopy(disp)
-        d, gates = _gate(disp, signal, trace)
-        out = _finish(signal, d, trace, gates, usage, t0, trace_id=trace_id)
-        out["_pre_gate"] = pre_gate
-        return out
-    # Out of turns without a decision (F7). An empty last reply is the provider flake above:
-    # defer, so the orchestrator counts it and escalates after DEFER_LIMIT cycles. A reply
-    # that never parsed is the model's own failure: the same escalation as an unusable one.
-    if last_empty:
-        raise TriageDeferred("empty completion on the last turn")
-    disp = {"disposition": "escalate", "reason": "no terminal decision",
-            "question": "triager did not reach a disposition"}
-    d, gates = _gate(disp, signal, trace)
-    return _finish(signal, d, trace, gates, usage, t0, trace_id=trace_id)
+    cfg = _harness_cfg()
+    if n != cfg["limits"]["max_tool_calls"]:
+        cfg = dict(cfg, limits=dict(cfg["limits"], max_tool_calls=n, max_steps=n + 1))
+    # _call and the probes are looked up here at call time: the fleet session's evaluation patches them
+    res = harness.run_json_step(
+        messages,
+        call=lambda m, step: _call(m, trace_id=trace_id, step=step),
+        tool=lambda name, args: probes.run_probe(signal, name, args, table=probe_table),
+        cfg=cfg,
+        errors={"fatal": (SystemExit, TriagerDown), "defer": TriageDeferred, "defer_prefix": "triager call failed: "},
+        on_quirk=_mark_quirk)
+    if not res.in_loop:
+        # Out of turns without a decision (F7): the same escalation as an unusable reply. (An empty
+        # last reply deferred inside the harness, so the orchestrator escalates after DEFER_LIMIT cycles.)
+        d, gates = _gate(res.decision, signal, res.trace)
+        return _finish(signal, d, res.trace, gates, res.usage, t0, trace_id=trace_id)
+    # The gates rewrite the decision in place (the intent gate drops the acceptance criteria): keep
+    # what the model decided, so a gate change can be measured on captured decisions without re-running
+    # the model. Kept for capture only; nothing that decides reads it.
+    pre_gate = copy.deepcopy(res.decision)
+    d, gates = _gate(res.decision, signal, res.trace)
+    out = _finish(signal, d, res.trace, gates, res.usage, t0, trace_id=trace_id)
+    out["_pre_gate"] = pre_gate
+    return out
 
 
 # back-compat: orchestrator calls triage.triage(signal, evidence); investigation

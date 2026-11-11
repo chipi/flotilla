@@ -1,8 +1,10 @@
 package spec
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -132,5 +134,63 @@ func TestRepoSpecs(t *testing.T) {
 	}
 	if _, ok := ids["platform/heartbeat"]; !ok {
 		t.Fatal("platform/heartbeat missing")
+	}
+	// harness-default.json is what triage applies without flotillad (eval runs): the specs' harness
+	raw, err := os.ReadFile(filepath.Join("..", "..", "fleets", "triage", "harness-default.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var def, got map[string]any
+	if err := json.Unmarshal(raw, &def); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"triage/cycle", "triage/cycle-shadow"} {
+		if err := json.Unmarshal([]byte(ids[id].HarnessJSON()), &got); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if !reflect.DeepEqual(got, def) {
+			t.Errorf("%s: harness differs from harness-default.json:\n spec    %v\n default %v", id, got, def)
+		}
+	}
+}
+
+func TestHarness(t *testing.T) {
+	h := `harness:
+  protocol: json
+  tools: [a, b]
+  gates: [g]
+  limits: {max_tool_calls: 3, max_steps: 4, tool_calls_per_turn: 1}
+  quirks: {bad_json_uses_turn: true, empty_retry: true, final_decision_call: true, reply_echo_chars: 600, decision_echo_chars: 400, result_chars: 1800}
+`
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", good+h)
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(routines[0].HarnessJSON(), `"limits":{"max_tool_calls":3,"max_steps":4,"tool_calls_per_turn":1}`) {
+		t.Fatalf("HarnessJSON: %s", routines[0].HarnessJSON())
+	}
+	for name, c := range map[string]struct{ from, to, want string }{
+		"protocol":           {"protocol: json", "protocol: native", `harness.protocol "native"`},
+		"steps not calls+1":  {"max_steps: 4", "max_steps: 5", "max_steps = max_tool_calls + 1"},
+		"two tools per turn": {"tool_calls_per_turn: 1", "tool_calls_per_turn: 2", "tool_calls_per_turn 1"},
+		"quirk off":          {"empty_retry: true", "empty_retry: false", "until RFC-0002 §9 step 6"},
+		"no gates":           {"gates: [g]", "gates: []", "tools and gates are required"},
+		"zero echo":          {"reply_echo_chars: 600", "reply_echo_chars: 0", "must be positive"},
+		"unknown field":      {"protocol: json", "protocol: json\n  model: x", "field model not found"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dd := t.TempDir()
+			write(t, dd, "triage/cycle.yaml", good+strings.Replace(h, c.from, c.to, 1))
+			if _, err := Load(dd); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want an error with %q, got %v", c.want, err)
+			}
+		})
+	}
+	write(t, d, "triage/cycle.yaml", good)
+	routines, _ = Load(d)
+	if routines[0].HarnessJSON() != "" {
+		t.Fatal("no harness: no FLOTILLA_HARNESS")
 	}
 }

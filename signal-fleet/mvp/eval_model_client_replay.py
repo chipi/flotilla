@@ -113,7 +113,7 @@ def history(old, new, dirs):
                 n += 1
                 o_out, o_sent, o_turns = run_call(old, body["messages"], trace_id, t.get("step"), answer)
                 n_out, n_sent, n_turns = run_call(new, body["messages"], trace_id, t.get("step"), answer)
-                name = f"{os.path.basename(path)} step {t.get('step')}"
+                name = f"turn #{n} (step {t.get('step')})"   # an index, never the file name: it names a held-out item
                 if not n_sent:
                     bad.append(f"{name}: the new code sent nothing ({n_out[1]})")
                 elif n_sent[0]["data"] != t["request"]:

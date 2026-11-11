@@ -1,0 +1,14 @@
+{
+  "protocol": "json",
+  "tools": ["event_detail", "occurrence_history", "service_logs", "metric", "trace", "source_state"],
+  "gates": ["intent", "cleanup", "dismiss_corroborated", "edge"],
+  "limits": {"max_tool_calls": 3, "max_steps": 4, "tool_calls_per_turn": 1},
+  "quirks": {
+    "bad_json_uses_turn": true,
+    "empty_retry": true,
+    "final_decision_call": true,
+    "reply_echo_chars": 600,
+    "decision_echo_chars": 400,
+    "result_chars": 1800
+  }
+}

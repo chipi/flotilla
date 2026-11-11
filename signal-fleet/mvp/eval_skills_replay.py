@@ -85,7 +85,7 @@ def history(new, dirs):
                    {"role": "user", "content": new._signal_intro(cap["signal"])}]
             if got != rec:
                 which = "system" if got[0] != rec[0] else "user"
-                bad.append(f"{os.path.basename(path)}: the {which} message differs from the recorded request")
+                bad.append(f"capture #{n}: the {which} message differs from the recorded request")   # an index, not a name
     return n, bad
 
 
