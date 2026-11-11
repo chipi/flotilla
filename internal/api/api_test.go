@@ -28,8 +28,9 @@ func (okRunner) Run(ctx context.Context, r worker.Request) (*worker.Result, erro
 }
 
 const (
-	opTok    = "operator-token-0123456789abcdef0123456789"
-	agentTok = "agent-token-0123456789abcdef0123456789abc"
+	opTok     = "operator-token-0123456789abcdef0123456789"
+	agentTok  = "agent-token-0123456789abcdef0123456789abc"
+	workerTok = "worker-token-0123456789abcdef0123456789ab"
 )
 
 func server(t *testing.T) (*httptest.Server, *store.Store) {
@@ -49,8 +50,9 @@ func serverWith(t *testing.T, mod func(*spec.Routine)) (*httptest.Server, *store
 	mod(j)
 	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
 	srv := &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test",
-		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
-		Callers: []Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-homelab", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}}}
+		Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		Callers: append([]Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-homelab", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}},
+			WorkerCallers(map[string]string{"triage": workerTok})...)}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, st
