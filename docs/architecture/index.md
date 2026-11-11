@@ -86,7 +86,8 @@ flowchart LR
 | **host agent** | the program flotilla installs on a host (`flotilla-host`; managed with `flotilla host …`). Its roles: **`actions`** (runs the host's allowed writes) and, where configured, **connector** (talks to a communication provider). Workers think, host agents act ([ADR-0009](../adr/ADR-0009-host-agent-names.md)) |
 | **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |
 | **project** | what cases are about (a codebase, a site, a service), with its names in signals, issue repo and knowledge sources |
-| **playbook** | a routine's instructions to the model, Markdown in git |
+| **playbook** | a routine's instructions to the model, Markdown in git, always in its context |
+| **skill** | a `SKILL.md` of reusable know-how from a trusted git source, pinned per deploy; loaded by rule or on demand ([ADR-0012](../adr/ADR-0012-skills.md)) |
 
 What happens is the lowest of three: the routine's autonomy, the action's and the host's autonomy
 cap. A `propose` routine never runs anything at `auto`; an `auto` routine runs each action at its

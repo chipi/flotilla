@@ -1,7 +1,6 @@
 # RFC-0005 — Skills in the harness
 
-**Status:** Draft, revision 3 (2026-11-11): the operator's decisions (§10) and two advisor reviews
-applied; the second cut what no v1 user needs. Nothing is built from it until it is accepted.
+**Status:** Accepted → [ADR-0012](../adr/ADR-0012-skills.md) (operator, 2026-11-11), revision 3.
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the harness and context),
 [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (cases, policy),
 [ADR-0010](../adr/ADR-0010-memory-and-knowledge.md) (memory and knowledge),

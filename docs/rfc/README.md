@@ -41,4 +41,4 @@ landed on an answer.
   evaluation](RFC-0002-job-runtime.md) (Accepted → ADR-0004, 2026-11-08)
 - [RFC-0004 — The agent pipeline: from signal to verified action](RFC-0004-agent-pipeline.md)
   (Accepted → ADR-0005, 2026-11-09)
-- [RFC-0005 — Skills in the harness](RFC-0005-skills.md) (Draft, 2026-11-11)
+- [RFC-0005 — Skills in the harness](RFC-0005-skills.md) (Accepted → ADR-0012, 2026-11-11)
