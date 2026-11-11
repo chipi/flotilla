@@ -92,25 +92,24 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
 1. A few days of shadow; `shadow-compare.sh` read and every differing decision explained.
    *Read 2026-11-11 (since 2026-11-08T18:45:35Z). Both sides used the same model alias and prompt
    (`fleet-triage-pro`, `mvp-1`, `219b34bf`). `shadow_compare.py` no longer counts a `recurrence` row
-   as a decision; before that fix B, J and L read as differences when both sides had decided alike.
-   Both decided 52: same 45, differ 7.*
-   - *Model judgement on single-event dev or staging errors: ORRERY-1O (live file, shadow dismiss),
-     PODCAST-PIPELINE-DEV-1G (dismiss / file), -P (file / dismiss), -R (cleanup / file), -U
-     (dismiss / cleanup). No direction: the shadow filed more in two cases and less in two.*
-   - *-F and -K, the pipeline's cost-cap refusals: live escalate, shadow file. Both put the case in
+   as a decision; before that fix three cases read as differences when both sides had decided alike.
+   Both decided 52: same 45, differ 7. Every decision here is on the held-out test side of the fleet's
+   evaluation, so this note gives counts and kinds only (fleet-eval-data triage-heldout SPLIT.md, rule
+   7).*
+   - *5 differences were model judgement on single-event dev or staging errors, with no direction:
+     the shadow filed more in two cases and less in two.*
+   - *2 were cost-cap refusals that one side escalated and the other filed; both put the case in
      front of the operator.*
    - *Live only 9, shadow only 3: when the cycles ran, not what they decided.*
-     - *Three Grafana alerts on 2026-11-08 between 19:23 and 20:22: the shadow was paused from 18:54
-       to 21:38.*
-     - *Two short alerts, each caught only by the side whose cycle fell inside it:
-       `mini-vm-egress-down` held one minute on 2026-11-10 (00:45, shadow only) and
-       `mini-vm-usernet-slots-full` two (2026-11-11 02:42–02:43, live only).*
-     - *GlitchTip D, E, G, H, I (live only) and C, N (shadow only): see the finding below.*
+     - *3 Grafana alerts while the shadow was paused (2026-11-08, 18:54 to 21:38).*
+     - *2 alerts that lasted one and two minutes, each caught only by the side whose cycle fell
+       inside it.*
+     - *7 GlitchTip issues: see the finding below.*
    - *Finding, the same in both copies: a cycle reads only the 10 most recently seen unresolved
-     GlitchTip issues (`--limit 10`, `sort=-last_seen`). In the burst of 2026-11-11 15:21–16:22
-     (37 new podcast-pipeline-dev issues), an issue pushed out of the top 10 before a cycle reached
-     it is never triaged unless it recurs. The live fleet never decided 13 of the 37 (C, M, N,
-     10–19), the shadow 16.*
+     GlitchTip issues (`--limit 10`, `sort=-last_seen`). In a burst of 37 new issues on 2026-11-11,
+     an issue pushed out of the top 10 before a cycle reached it was not triaged until it came back
+     into the top 10, if ever. The live fleet had not decided 13 of the 37 by the end of the burst,
+     the shadow 16.*
 2. ~~The fleet session reports its readers pass against `~/flotilla/mirror-test`.~~ *Done
    2026-11-08 (fleet session): weekly freeze named by `.mirror_stamp` and refusing a stalled mirror,
    weekly check and filing gate reading `cycles.tsv`, deploys.tsv's 7th field by position;

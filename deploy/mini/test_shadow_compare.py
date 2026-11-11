@@ -20,10 +20,10 @@ def ledger(rows):
 
 
 class T(unittest.TestCase):
-    def run_cmp(self, live, shadow):
+    def run_cmp(self, live, shadow, *extra):
         out = subprocess.run([sys.executable, os.path.join(HERE, "shadow_compare.py"), live, shadow,
-                              "--since", "2026-11-08T18:45:00Z", "--json"], capture_output=True, text=True, check=True)
-        return json.loads(out.stdout)
+                              "--since", "2026-11-08T18:45:00Z", *extra], capture_output=True, text=True, check=True)
+        return json.loads(out.stdout) if "--json" in extra else out.stdout
 
     def test_compare(self):
         seed = ("2026-11-08T10:00:00+00:00", "gt:OLD@1", "file", "seed row, the same in both")
@@ -33,24 +33,31 @@ class T(unittest.TestCase):
         shadow = ledger([seed, ("2026-11-08T19:00:05+00:00", "gt:A@1", "file", "s"),
                          ("2026-11-08T19:00:05+00:00", "gt:B@1", "file", "s says file"),
                          ("2026-11-08T19:20:00+00:00", "gt:D@1", "escalate", "only shadow")])
-        r = self.run_cmp(live, shadow)
+        r = self.run_cmp(live, shadow, "--json", "--names")
         self.assertEqual((r["both"], r["same"], r["differ"]), (2, 1, 1), "rows before --since are the seed")
         self.assertEqual(r["differences"][0]["occurrence"], "gt:B@1")
-        self.assertEqual((r["live_only"], r["shadow_only"]), (["gt:C@1"], ["gt:D@1"]))
+        self.assertEqual((r["live_only_ids"], r["shadow_only_ids"]), (["gt:C@1"], ["gt:D@1"]))
+        self.assertEqual((r["differ_pairs"], r["live_only"], r["shadow_only"]), ({"dismiss/file": 1}, 1, 1))
+
+        # the default names nothing: the held-out test side (SPLIT.md rule 7)
+        for out in (self.run_cmp(live, shadow), json.dumps(self.run_cmp(live, shadow, "--json"))):
+            for secret in ("gt:B@1", "gt:C@1", "gt:D@1", "s says file", "only live", "only shadow"):
+                self.assertNotIn(secret, out)
+        self.assertIn("same 1, differ 1 (live/shadow: dismiss/file 1)", self.run_cmp(live, shadow))
 
     def test_newest_row_per_occurrence(self):
         live = ledger([("2026-11-08T19:00:00+00:00", "gt:A@1", "dismiss", "first"),
                        ("2026-11-08T19:30:00+00:00", "gt:A@1", "file", "re-triaged")])
         shadow = ledger([("2026-11-08T19:01:00+00:00", "gt:A@1", "file", "s")])
-        r = self.run_cmp(live, shadow)
+        r = self.run_cmp(live, shadow, "--json")
         self.assertEqual((r["same"], r["differ"]), (1, 0))
 
     def test_recurrence_row_is_not_a_decision(self):
-        # PODCAST-PIPELINE-DEV-B, 2026-11-11: both filed; the shadow's later recurrence row read as "differ"
+        # both sides filed; one side's later recurrence row read as a difference before it was skipped
         live = ledger([("2026-11-11T15:36:18+00:00", "gt:B@1", "file", "l")])
         shadow = ledger([("2026-11-11T15:30:27+00:00", "gt:B@1", "file", "s"),
                          ("2026-11-11T16:19:17+00:00", "gt:B@1", "recurrence", "count 10 -> 16")])
-        r = self.run_cmp(live, shadow)
+        r = self.run_cmp(live, shadow, "--json")
         self.assertEqual((r["both"], r["same"], r["differ"]), (1, 1, 0))
 
 
