@@ -24,7 +24,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents).
 
 | Actor | How |
 | --- | --- |
-| **Untrusted content authors** | text the models read: alert annotations, error messages, issue bodies, PR comments, web pages, untrusted recall sources. The main threat: **prompt injection**. |
+| **Untrusted content authors** | text the models read: alert annotations, error messages, issue bodies, PR comments, web pages, untrusted knowledge sources. The main threat: **prompt injection**. |
 | **A misbehaving model** | wrong, overconfident or manipulated answers; plans outside its case |
 | **Another agent through MCP** | well-meaning but wrong, or itself injected |
 | **A compromised flotillad** | it holds the signing key: it could sign executions |

@@ -51,7 +51,7 @@ its routines may plan.
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
 | `marketing` | Search Console, web analytics read | the digital marketing fleet |
 | `bugfix` | a GitHub App for branches and PRs; git and build toolchains | the bugfix fleet |
-| `knowledge-refresh` | read access to recall sources | refreshing and indexing recall |
+| `knowledge-refresh` | read access to knowledge sources | refreshing and indexing knowledge |
 
 - **No Docker socket in any container.** The host agent reaches its host's Docker through the
   engine's own user (ADR-0006 §6). Workers are long-running; each run is a process in its role's

@@ -89,6 +89,7 @@ nav:
     - ADR-0007 — Routine replaces job: adr/ADR-0007-routine.md
     - ADR-0008 — One autonomy scale: adr/ADR-0008-autonomy.md
     - ADR-0009 — Host agent names: adr/ADR-0009-host-agent-names.md
+    - ADR-0010 — Memory and knowledge: adr/ADR-0010-memory-and-knowledge.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

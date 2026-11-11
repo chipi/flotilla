@@ -5,8 +5,8 @@
 | Layer | Where | In git | Examples |
 | --- | --- | --- | --- |
 | **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | routines, triggers, capabilities, case kinds, autonomy, budgets, playbooks |
-| **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the installation's private config, reviewed like code | no (public repo) | model endpoints and aliases, projects and their recall sources, channels and providers, each host's allowed writes and autonomy ceiling |
-| **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, recall indexes, run records |
+| **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the installation's private config, reviewed like code | no (public repo) | model endpoints and aliases, projects and their knowledge sources, channels and providers, each host's allowed writes and autonomy ceiling |
+| **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, knowledge indexes, run records |
 
 The public repo ships examples with placeholder values. Nothing that identifies an installation is in
 git.
@@ -41,12 +41,12 @@ status. The transition table decides which status changes are allowed.
 are imported as cases with their keys, marked `imported`, keeping their timestamps; the mirror keeps
 writing the TSVs while their readers use them ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §9).
 
-## Recall
+## Memory and knowledge
 
-| Origin | Where | Lookup |
+| | Where | Lookup |
 | --- | --- | --- |
-| Recorded by flotilla | the database above (cases, outcomes, feedback, active notes) | exact, by key; structured fields only |
-| Plugged in | git sources refreshed into a volume, versioned by commit; HTTP and MCP sources read live | path maps, full-text and semantic indexes in a volume, one per trust tier; each chunk with its source, path, version and trust |
+| **Memory**: recorded by flotilla | the database above (cases, outcomes, feedback, active notes) | exact, by key; structured fields only |
+| **Knowledge**: plugged in | git sources refreshed into a volume, versioned by commit; HTTP and MCP sources read live | path maps, full-text and semantic indexes in a volume, one per trust tier; each chunk with its source, path, version and trust |
 
 ## Fleet data
 

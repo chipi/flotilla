@@ -16,7 +16,7 @@ plane, a DGX and a production VPS as other hosts).
 | [Context](context.md) | Who uses flotilla, and what it talks to |
 | [Components](components.md) | What flotillad, the workers, the runtime and the host agents are made of |
 | [A case, end to end](run-lifecycle.md) | What happens from a signal to a verified, recorded result |
-| [Data](data.md) | What is stored where: specs, config, state, cases, recall |
+| [Data](data.md) | What is stored where: specs, config, state, cases, memory, knowledge |
 | [Deployment](deployment.md) | How it is deployed: the control plane, the workers, the host agents, the keys |
 | [Security](../security.md) | The threat model and the controls |
 | [Testing and validation](../testing.md) | How the code, the platform and each fleet are proven |
@@ -76,13 +76,14 @@ flowchart LR
 | **case** | one problem flotilla handles, with its lifecycle and its whole timeline ([A case, end to end](run-lifecycle.md)) |
 | **case kind** | a type of problem (`failed_backup`, `code_bug`, …): its playbook and allowed capabilities |
 | **capability** | a named, typed, scoped operation in one registry: a **read** (an agent may call it) or a **write** (an agent may only plan it) |
-| **recall** | everything an agent may look up: what flotilla recorded (exact, by key) and plugged-in sources (repos, docs, MCP servers), each trusted or untrusted |
+| **memory** | what flotilla recorded itself: cases, outcomes, feedback, activated notes; looked up exactly, by key ([ADR-0010](../adr/ADR-0010-memory-and-knowledge.md)) |
+| **knowledge** | what is plugged in from elsewhere: repos, docs, runbooks, MCP servers, trusted or untrusted per path; searched |
 | **policy** | flotillad's code that decides each planned write: run, ask the operator, or refuse |
 | **autonomy** | how far something may go without asking, as a lifecycle: `shadow` (plans recorded, nothing done), then `propose` (asks the operator), then `auto` (acts). Capped by the routine, earned by each write capability, capped by the host; promoted only by the operator ([ADR-0008](../adr/ADR-0008-autonomy.md)) |
 | **worker** | a long-running container that runs routines for one role, with that role's credentials |
 | **host agent** | the program flotilla installs on a host (`flotilla-host`; managed with `flotilla host …`). Its roles: **`actions`** (runs the host's allowed writes) and, where configured, **connector** (talks to a communication provider). Workers think, host agents act ([ADR-0009](../adr/ADR-0009-host-agent-names.md)) |
 | **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |
-| **project** | what cases are about (a codebase, a site, a service), with its names in signals, issue repo and recall sources |
+| **project** | what cases are about (a codebase, a site, a service), with its names in signals, issue repo and knowledge sources |
 | **playbook** | a routine's instructions to the model, Markdown in git |
 
 What happens is the lowest of three: the routine's autonomy, the capability's and the host's

@@ -18,9 +18,9 @@ and no data sources: it uses the ones that exist, and it is careful about what i
 | --- | --- | --- | --- |
 | A model endpoint | out | every model call | any OpenAI-compatible API, through one model client; aliases per routine ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
 | Signal sources (alerting, metrics, logs, traces, error tracking) | in (read) | detection and diagnosis | read capabilities with read-only credentials |
-| Code hosting (GitHub) | in and out | issues, comments, PRs; repo docs as recall | per-role credentials; repos in config |
+| Code hosting (GitHub) | in and out | issues, comments, PRs; repo docs as knowledge | per-role credentials; repos in config |
 | Web analytics, Search Console | in (read) | the digital marketing fleet | read-only scopes |
-| Recall sources | in (read) | each project's docs and runbooks; other MCP servers | declared per project, trusted or untrusted per path |
+| Knowledge sources | in (read) | each project's docs and runbooks; other MCP servers | declared per project, trusted or untrusted per path |
 | A communication provider (Slack first) | in and out | alerts, approvals, notifications | through a host agent's connector; flotillad holds no provider credentials |
 | The hosts flotilla may change | out | host writes (restart, rerun) | only through the host agent there, by signed execution |
 | An observability stack | out | flotilla's own metrics, logs, traces, errors, LLM traces | the installation's collectors |
