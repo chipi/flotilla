@@ -149,6 +149,16 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
    autonomy (`flotilla autonomy triage/cycle propose`, their token); watch one day of cycles, the Hub,
    deploy-verify and the fleet session's gates. Rollback: STOP flotilla's triage fleet, remove
    fleetd's STOP.
+   *Switched 2026-11-11 (operator's go): fleetd skipped its 18:33:30Z cycle on STOP; the volume
+   `flotilla-triage-state` seeded (13626 ledger rows, as on the host); `sha-9ea8a48` deployed;
+   the operator set `propose` at 18:42Z; the mirror wrote `~/signal-fleet` from 18:43:56Z; the
+   first propose cycle ran 18:45:43Z, ok in 92 s, nothing refused by the proxy but the
+   heartbeat's deliberate `example.com`. The list above missed `config/worker-triage.env`:
+   `ROUTINE_SF_SERVICE` back to `triage-fleet` (the Hub and dashboards read that name) and
+   `ROUTINE_SF_GLITCHTIP_SYNC=1`, as fleetd had it. The Hub's triage card reads flotilla's
+   `triage/cycle` metrics since (homelab `cb8c019`). `results/cycles.tsv` in `~/signal-fleet` is
+   new: its rows before 18:42Z are the shadow's runs, labelled `shadow`. Still to do: one day of
+   cycles watched, deploy-verify, the fleet session's gates.*
 
 ## Decisions taken
 
