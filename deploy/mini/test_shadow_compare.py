@@ -45,6 +45,14 @@ class T(unittest.TestCase):
         r = self.run_cmp(live, shadow)
         self.assertEqual((r["same"], r["differ"]), (1, 0))
 
+    def test_recurrence_row_is_not_a_decision(self):
+        # PODCAST-PIPELINE-DEV-B, 2026-11-11: both filed; the shadow's later recurrence row read as "differ"
+        live = ledger([("2026-11-11T15:36:18+00:00", "gt:B@1", "file", "l")])
+        shadow = ledger([("2026-11-11T15:30:27+00:00", "gt:B@1", "file", "s"),
+                         ("2026-11-11T16:19:17+00:00", "gt:B@1", "recurrence", "count 10 -> 16")])
+        r = self.run_cmp(live, shadow)
+        self.assertEqual((r["both"], r["same"], r["differ"]), (1, 1, 0))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

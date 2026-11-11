@@ -27,6 +27,8 @@ def rows(path, since):
         for r in csv.DictReader(f, delimiter="\t"):
             if (r.get("ts") or "") < since:
                 continue
+            if r.get("disposition") == "recurrence":
+                continue          # a count change on an occurrence already decided, not a decision
             key = r.get("occurrence_id") or r.get("fingerprint")
             out[key] = r          # the newest row per occurrence wins (file order)
     return out

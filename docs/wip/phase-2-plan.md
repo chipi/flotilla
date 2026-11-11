@@ -90,6 +90,27 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
 ## Before the switch (2.8), in order
 
 1. A few days of shadow; `shadow-compare.sh` read and every differing decision explained.
+   *Read 2026-11-11 (since 2026-11-08T18:45:35Z). Both sides used the same model alias and prompt
+   (`fleet-triage-pro`, `mvp-1`, `219b34bf`). `shadow_compare.py` no longer counts a `recurrence` row
+   as a decision; before that fix B, J and L read as differences when both sides had decided alike.
+   Both decided 52: same 45, differ 7.*
+   - *Model judgement on single-event dev or staging errors: ORRERY-1O (live file, shadow dismiss),
+     PODCAST-PIPELINE-DEV-1G (dismiss / file), -P (file / dismiss), -R (cleanup / file), -U
+     (dismiss / cleanup). No direction: the shadow filed more in two cases and less in two.*
+   - *-F and -K, the pipeline's cost-cap refusals: live escalate, shadow file. Both put the case in
+     front of the operator.*
+   - *Live only 9, shadow only 3: when the cycles ran, not what they decided.*
+     - *Three Grafana alerts on 2026-11-08 between 19:23 and 20:22: the shadow was paused from 18:54
+       to 21:38.*
+     - *Two short alerts, each caught only by the side whose cycle fell inside it:
+       `mini-vm-egress-down` held one minute on 2026-11-10 (00:45, shadow only) and
+       `mini-vm-usernet-slots-full` two (2026-11-11 02:42–02:43, live only).*
+     - *GlitchTip D, E, G, H, I (live only) and C, N (shadow only): see the finding below.*
+   - *Finding, the same in both copies: a cycle reads only the 10 most recently seen unresolved
+     GlitchTip issues (`--limit 10`, `sort=-last_seen`). In the burst of 2026-11-11 15:21–16:22
+     (37 new podcast-pipeline-dev issues), an issue pushed out of the top 10 before a cycle reached
+     it is never triaged unless it recurs. The live fleet never decided 13 of the 37 (C, M, N,
+     10–19), the shadow 16.*
 2. ~~The fleet session reports its readers pass against `~/flotilla/mirror-test`.~~ *Done
    2026-11-08 (fleet session): weekly freeze named by `.mirror_stamp` and refusing a stalled mirror,
    weekly check and filing gate reading `cycles.tsv`, deploys.tsv's 7th field by position;
@@ -117,15 +138,17 @@ fleet session's race), never `frozen/`, env files or `results/deploys.tsv`. Runn
    mutants killed.*
 4b. The stale sweep's once-a-day marker survives runs: it is
    `/home/worker/signal-fleet/results/.stale_last_run` in the state volume (checked 2026-11-08 on the
-   shadow volume: present, `2026-11-08`, copied by the seed). Still to see: the first write by the
-   worker itself, after 00:00Z.
+   shadow volume: present, `2026-11-08`, copied by the seed). *Seen 2026-11-11: written by the
+   worker at 00:03:07Z (`2026-11-11`, owner `worker`); one sweep a day, about 75 GitHub calls
+   after 00:00Z on 11-09, 11-10 and 11-11 (the egress proxy's log). 11-09 has no sweep record
+   because its image predates sweep recording (`sha-d620594`, 08:23Z).*
 5. The operator's go for the switch. Then, in one window: STOP fleetd's triage
    (`~/signal-fleet/STOP`); seed the live state volume from `~/signal-fleet`; set
    `TRIAGE_STATE_VOLUME` to it, `MIRROR_DEST` to `~/signal-fleet`, `MIRROR_LIVE=1` and
-   `TRIAGE_DEPLOY_LOG` to `~/signal-fleet/results/deploys.tsv`; deploy; the
-   operator raises the stage (`flotilla stage triage/cycle propose`, their token); watch one day of
-   cycles, the Hub, deploy-verify and the fleet session's gates. Rollback: STOP flotilla's triage
-   fleet, remove fleetd's STOP.
+   `TRIAGE_DEPLOY_LOG` to `~/signal-fleet/results/deploys.tsv`; deploy; the operator raises the
+   autonomy (`flotilla autonomy triage/cycle propose`, their token); watch one day of cycles, the Hub,
+   deploy-verify and the fleet session's gates. Rollback: STOP flotilla's triage fleet, remove
+   fleetd's STOP.
 
 ## Decisions taken
 
