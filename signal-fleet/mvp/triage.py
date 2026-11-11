@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 
@@ -26,6 +27,18 @@ import http_util
 import observ
 import probes
 from http_util import post_json
+
+# The model client (RFC-0002 §9 step 2) lives at flotilla's runtime/model_client.py: ../../runtime from
+# here, /opt/flotilla/runtime in the worker image. An extract of signal-fleet/ must carry it beside.
+try:
+    import model_client
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
+    try:
+        import model_client
+    except ImportError as e:
+        raise ImportError("triage needs flotilla's runtime/model_client.py beside signal-fleet/ "
+                          "(../../runtime from signal-fleet/mvp)") from e
 
 # With capture on (SF_CAPTURE_PROBES=1), what an exact replay needs is recorded per decision
 # (ADR-0004 / RFC-0002 §9 step 1): every model call's request body as sent, its raw reply, usage
@@ -285,42 +298,85 @@ def _trim(v, n=1800):
     return s if len(s) <= n else s[:n] + f"\n…[truncated {len(s)-n} of {len(s)} chars]"
 
 
+_ENDPOINT_PATH = "/chat/completions"
+
+
+def _client():
+    """The model client and the alias for this call. With FLOTILLA_MODELS (flotillad's models section) the
+    alias named by TRIAGE_MODEL comes from it; without it (the mini until it has one, eval runs, history
+    replays) one alias is built from today's settings, so the request is the same bytes as before."""
+    if os.environ.get("FLOTILLA_MODELS"):
+        return model_client.from_env(transport=_post_json_transport), config.TRIAGE_MODEL
+    url = config.OPENROUTER_URL
+    if not url.endswith(_ENDPOINT_PATH):
+        raise model_client.ConfigError(f"SF_OPENROUTER_URL {url} does not end in {_ENDPOINT_PATH}")
+    cfg = {"endpoints": {"triager": {"base_url": url[:-len(_ENDPOINT_PATH)], "key_env": "OPENROUTER_API_KEY",
+                                     "kind": "litellm" if config.via_gateway() else "openai",
+                                     "defaults": {"json": "object", "tools": "json", "cost": "reported"}}},
+           "aliases": {config.TRIAGE_MODEL: {"endpoint": "triager", "model": config.TRIAGE_MODEL}}}
+    return (model_client.Client(model_client.load(cfg), transport=_post_json_transport,
+                                environ={"OPENROUTER_API_KEY": config.OPENROUTER_KEY}),
+            config.TRIAGE_MODEL)
+
+
+_LAST_RESPONSE = None   # the dict post_json returned for the call in progress: _call's return comes from it
+
+
+def _post_json_transport(url, data, headers, timeout):
+    """The client's transport over this module's post_json, looked up at call time, so a patched
+    triage.post_json (the fleet session's eval adapter, eval_triager_failure_replay) still sees the request
+    as a dict, the timeout as a keyword, and has its returned dict used as the response."""
+    global _LAST_RESPONSE
+    _LAST_RESPONSE = None
+    http_util.LAST_HEADERS = {}
+    try:
+        auth = {"Authorization": headers["Authorization"]} if "Authorization" in headers else {}
+        resp = post_json(url, json.loads(data), headers=auth, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        try:
+            text = e.read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 — a replayed HTTPError has no body
+            text = str(e.reason or "")
+        return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, text
+    _LAST_RESPONSE = resp
+    return 200, dict(http_util.LAST_HEADERS), json.dumps(resp)
+
+
 def _call(messages, trace_id=None, step=None):
     if not config.OPENROUTER_KEY:
         raise SystemExit("[triage] OPENROUTER_API_KEY not set")
-    body = {"model": config.TRIAGE_MODEL, "messages": messages,
-            "response_format": {"type": "json_object"}, "temperature": 0}
-    if trace_id and config.via_gateway():
-        # The gateway's Langfuse logger adds its generation (model, usage, cost) to this
-        # trace; `existing_trace_id` leaves the trace's name/input/output to the fleet.
-        body["metadata"] = {"existing_trace_id": trace_id,
-                            "generation_name": f"triage-turn-{(step or 0) + 1}"}
-    http_util.LAST_HEADERS = {}
-    t0 = time.time()
     try:
-        resp = post_json(config.OPENROUTER_URL, body,
-                         headers={"Authorization": f"Bearer {config.OPENROUTER_KEY}"}, timeout=90)
-    except Exception as e:  # noqa: BLE001 — recorded for an exact replay, then handled as before
-        _exact_add("turns", {"step": step, "request": json.dumps(body), "status": getattr(e, "code", None),
-                             "error": f"{type(e).__name__}: {e}"[:300], "latency_s": round(time.time() - t0, 3)})
-        if isinstance(e, urllib.error.HTTPError):
+        client, alias = _client()
+    except model_client.ConfigError as e:
+        raise TriagerDown(f"triager model config: {e}") from e   # persistent: fail closed
+    # The gateway's Langfuse logger adds its generation (model, usage, cost) to this trace;
+    # `existing_trace_id` leaves the trace's name/input/output to the fleet.
+    kw = {"trace_id": trace_id, "generation_name": f"triage-turn-{(step or 0) + 1}"} if trace_id else {}
+    try:
+        rec = client.chat(alias, messages, timeout=90, **kw)
+    except model_client.EmptyCompletion as e:
+        rec = e.record   # a 200 without content: triage retries the turn, as before
+    except model_client.ModelError as e:
+        r = e.record
+        _exact_add("turns", {"step": step, "request": r.get("request"), "status": r.get("status"),
+                             "error": r.get("error"), "latency_s": r.get("latency_s")})
+        if isinstance(e, model_client.AuthOrBilling):
             # 401/403 = the gateway rejected our key (wiped litellm virtual key is the
             # known cause) — PERSISTENT, every call will fail. Fail closed, don't escalate.
-            if e.code in (401, 403):
-                raise TriagerDown(f"HTTP {e.code} auth failure to the triager gateway "
+            if r.get("status") in (401, 403):
+                raise TriagerDown(f"HTTP {r['status']} auth failure to the triager gateway "
                                   f"({config.OPENROUTER_URL}) — litellm virtual key rejected "
                                   f"(recreate: infra/litellm/README.md)") from e
             # 402 = out of credit — as persistent as a rejected key, and the same per-signal
             # flood without this (11 escalation issues on 2026-08-13). Fail closed too.
-            if e.code == 402:
-                raise TriagerDown(f"HTTP 402 Payment Required from the triager gateway "
-                                  f"({config.OPENROUTER_URL}) — provider credit exhausted") from e
-        raise
-    _exact_add("turns", {"step": step, "request": json.dumps(body),
+            raise TriagerDown(f"HTTP 402 Payment Required from the triager gateway "
+                              f"({config.OPENROUTER_URL}) — provider credit exhausted") from e
+        raise   # investigate() turns it into TriageDeferred("triager call failed: …")
+    resp = _LAST_RESPONSE
+    _exact_add("turns", {"step": step, "request": rec.get("request"),
                          "reply": ((resp.get("choices") or [{}])[0].get("message") or {}).get("content"),
                          "usage": resp.get("usage"), "model": resp.get("model"),
-                         "model_id": http_util.LAST_HEADERS.get("x-litellm-model-id"),
-                         "latency_s": round(time.time() - t0, 3)})
+                         "model_id": rec.get("model_id"), "latency_s": rec.get("latency_s")})
     return resp["choices"][0]["message"]["content"], resp.get("usage", {})
 
 
