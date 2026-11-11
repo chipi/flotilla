@@ -83,7 +83,7 @@ func main() {
 		}
 		get("/v1/status", &out)
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintf(w, "flotillad %s\nJOB\tSTAGE\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
+		fmt.Fprintf(w, "flotillad %s\nROUTINE\tSTAGE\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
 		for _, j := range out.Routines {
 			state := []string{}
 			if j["enabled"] != true {
@@ -114,7 +114,7 @@ func main() {
 		var out struct{ Runs []map[string]any }
 		get(q, &out)
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintln(w, "STARTED\tJOB\tSTATUS\tSTAGE\tSECONDS\tSPEND\tTRIGGER\tDETAIL")
+		fmt.Fprintln(w, "STARTED\tROUTINE\tSTATUS\tSTAGE\tSECONDS\tSPEND\tTRIGGER\tDETAIL")
 		for _, r := range out.Runs {
 			d, _ := r["detail"].(string)
 			if len(d) > 80 {
