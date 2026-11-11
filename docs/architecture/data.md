@@ -4,7 +4,7 @@
 
 | Layer | Where | In git | Examples |
 | --- | --- | --- | --- |
-| **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the capability registry | yes (public) | routines, triggers, capabilities, case kinds, autonomy, budgets, playbooks |
+| **Spec**: what fleets are | `fleets/<fleet>/*.yaml`, playbooks, the registry of tools and actions | yes (public) | routines, triggers, tools and actions, case kinds, autonomy, budgets, playbooks |
 | **Config**: this installation | flotillad's config and the hosts' config, plus secrets files (mode 600), on the hosts; the hosts' allowlists in the installation's private config, reviewed like code | no (public repo) | model endpoints and aliases, projects and their knowledge sources, channels and providers, each host's allowed writes and autonomy ceiling |
 | **State**: what happened | Docker volumes on the control-plane host; each host agent's store | no | the control-plane database, fleet data, knowledge indexes, run records |
 
@@ -25,9 +25,9 @@ brings the case tables.
 | `cases` | one row per problem: kind, typed target, project, status, holder, lease, urgency, opened and closed at |
 | `case_keys` | `(case, kind, value)`: as many keys as the kind's dedup needs; one canonical key per open case |
 | `case_events` | the timeline, append-only: detected, diagnosed, handed over, planned, approved, executed, checked, attached signals (`caused_by`, `recurrence_of`), feedback, outcomes; each with its actor, run and evidence references |
-| `executions` | execution id, case, host, capability, parameters, plan hash, how approved, signed at, result (done, failed, unknown, precondition false), check result |
+| `executions` | execution id, case, host, action, parameters, plan hash, how approved, signed at, result (done, failed, unknown, precondition false), check result |
 | `locks` | the per-target lock: target, case, taken at |
-| `autonomy` | per write capability: level, who promoted or demoted it and why; per host: its autonomy cap |
+| `autonomy` | per action: level, who promoted or demoted it and why; per host: its autonomy cap |
 | `notes` | short lessons with a scope; active only once the operator activates them |
 | `hosts` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
 | `controls` | pause, STOP, autonomy, hold, freeze, with who changed them |

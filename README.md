@@ -15,9 +15,9 @@ shadow):
 
 Every problem is a **case**: detected, diagnosed, handed to the routine that can fix it, planned,
 decided by policy (run, ask the operator, or refuse), executed, checked and closed, with its whole
-timeline kept. Agents read through named capabilities and only plan writes; how much may happen
-without asking is earned per capability and promoted only by the operator. Approvals come from the
-UI, the CLI, or Slack within limits.
+timeline kept. Agents read through named tools and only plan actions; how much may happen without
+asking is earned per action and promoted only by the operator. Approvals come from the UI, the CLI,
+or Slack within limits.
 
 It is built from scratch on purpose, as a way to learn how agent systems work from the inside.
 Projects like Hermes Agent and OpenClaw are inspiration, not dependencies.
@@ -31,7 +31,7 @@ the runtime (model client, recording for exact replay) is being built. The desig
   [ADR-0001](docs/adr/ADR-0001-platform-foundations.md) and
   [ADR-0002](docs/adr/ADR-0002-run-in-docker.md);
 - [ADR-0004](docs/adr/ADR-0004-job-runtime.md): the runtime;
-- [ADR-0005](docs/adr/ADR-0005-agent-pipeline.md): the agent pipeline (cases, capabilities, policy,
+- [ADR-0005](docs/adr/ADR-0005-agent-pipeline.md): the agent pipeline (cases, tools and actions, policy,
   memory and knowledge, approvals);
 - [ADR-0006](docs/adr/ADR-0006-node-agent.md): the host agent.
 
@@ -49,11 +49,11 @@ The shape is the design (ADR-0001 to ADR-0006). Built so far: specs, triggers, t
 store (runs, events, controls, spend), the API and CLI, the model client and tracing of runs. Cases,
 policy, host agents, MCP and the UI are not built yet.
 
-- **flotillad** (Go): the control plane. Specs and the capability registry, triggers, runner,
+- **flotillad** (Go): the control plane. Specs and the registry of tools and actions, triggers, runner,
   cases, policy and guardrails, approvals, the signer and the host gateway, channels, budgets, and
   one API behind a CLI, an MCP server and a small web UI. It holds no fleet credentials.
 - **Workers** (the Python runtime), one per role: the harness, context, memory and knowledge,
-  capability calls, the model client. Each holds only its role's credentials and reaches out through
+  tool calls, the model client. Each holds only its role's credentials and reaches out through
   an egress proxy.
 - **`flotilla-host`** (Go), on each host flotilla may change: connects out over mutual TLS, runs
   signed executions its host's allowlist permits, and can be the connector to Slack.

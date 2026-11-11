@@ -17,7 +17,7 @@ and no data sources: it uses the ones that exist, and it is careful about what i
 | System | Direction | Why | How |
 | --- | --- | --- | --- |
 | A model endpoint | out | every model call | any OpenAI-compatible API, through one model client; aliases per routine ([ADR-0004](../adr/ADR-0004-job-runtime.md)) |
-| Signal sources (alerting, metrics, logs, traces, error tracking) | in (read) | detection and diagnosis | read capabilities with read-only credentials |
+| Signal sources (alerting, metrics, logs, traces, error tracking) | in (read) | detection and diagnosis | tools with read-only credentials |
 | Code hosting (GitHub) | in and out | issues, comments, PRs; repo docs as knowledge | per-role credentials; repos in config |
 | Web analytics, Search Console | in (read) | the digital marketing fleet | read-only scopes |
 | Knowledge sources | in (read) | each project's docs and runbooks; other MCP servers | declared per project, trusted or untrusted per path |
@@ -30,7 +30,7 @@ network the installation chooses; the host agents' endpoint requires mutual TLS 
 
 ## What it does not do
 
-- **Act without a bound:** every write is a named capability, decided by policy, executed under the
+- **Act without a bound:** every write is a named action, decided by policy, executed under the
   host's own allowlist, and recorded on its case. Model-written commands are not part of it (decided
   later, [ADR-0005](../adr/ADR-0005-agent-pipeline.md)).
 - **Hold credentials in the control plane:** workers and host agents hold them, each only its own.

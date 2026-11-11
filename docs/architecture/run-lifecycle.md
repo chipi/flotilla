@@ -50,14 +50,14 @@ From the reference installation (the v1 chain).
    event starts the Ops remediation routine in the `ops-act-host` worker, which takes the case's lease.
 3. **Re-check and plan.** The routine re-checks by code (backup age, whether the backup job is
    running). Still a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
-4. **Policy.** flotillad checks the plan: the capability exists, is declared for `failed_backup`,
-   its target is the case's; autonomy is the lowest of the routine's, the capability's earned
+4. **Policy.** flotillad checks the plan: the action exists, is declared for `failed_backup`,
+   its target is the case's; autonomy is the lowest of the routine's, the action's earned
    autonomy, the mini's autonomy cap, taint and the freeze; the lock is free, limits and holds
    clear.
    - In **shadow**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
      the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first
-     capability promoted to propose). The approval starts a new run.
+     action promoted to propose). The approval starts a new run.
    - In **auto**: it goes straight on.
 5. **Execute.** flotillad signs the execution and sends it to the mini's host agent, which checks the
    signature, expiry, its own allowlist and autonomy cap, re-checks the precondition, and runs the exact
@@ -84,14 +84,14 @@ event that starts the check run.
 | --- | --- |
 | The model endpoint rejects the key or billing (401, 402, 403) | the run ends `endpoint_down` with one aggregate signal, deduped across runs; no silent switch to another model |
 | A transient model error | the next run retries the case, up to the routine's limit, then escalates it |
-| A capability call errors | the error is the call's answer; after the step limit the case escalates |
+| A tool call errors | the error is the call's answer; after the step limit the case escalates |
 | Malformed answers until the step limit | the case escalates, with the raw answers in the run's record |
 | A worker crashes or hangs | the deadline kills the run; its lease expires; the case returns, or its check resumes if an execution was open (the action never re-runs) |
 | A host agent is unreachable | no execution is sent; an execution in flight becomes `unknown`, the target is held, the case escalates |
-| An execution's result is unknown | the target is held until the operator clears it; an `auto` capability drops to propose |
+| An execution's result is unknown | the target is held until the operator clears it; an `auto` action drops to propose |
 | flotillad restarts | runs in flight are `interrupted`; cases keep their status; timers resume |
 | Budget spent mid-run | the run stops after the case in hand; the rest are deferred |
-| Too many failures or new cases | the circuit breaker drops every auto capability to propose; the host incident rule pauses auto on that host |
+| Too many failures or new cases | the circuit breaker drops every auto action to propose; the host incident rule pauses auto on that host |
 | A case sits too long in a state | `detected`: an alert; `handed_over`: escalates (counted from the first hand-over, so a long hold surfaces); `executing`: `unknown`, target held; `checking`: not verified |
 | A plan is deferred (lock, hold, stand-down, limit) | back to `handed_over`; dispatched again when the condition clears or after a backoff |
 | The same fix keeps coming back | after an executed fix, 3 recurrences in 7 days (a kind may raise it to 10, never turn it off) escalate at hand-over instead of another fix; a signal on the target inside an execution's verify window attaches as `caused_by` and counts against verification |

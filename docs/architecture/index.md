@@ -70,22 +70,24 @@ flowchart LR
 | Term | Meaning |
 | --- | --- |
 | **fleet** | a group of routines with one purpose: triage, Ops (the SRE team in action), digital marketing, bugfix |
-| **routine** | a declared unit of work: its worker, trigger, steps, capabilities, autonomy, budget |
+| **routine** | a declared unit of work: its worker, trigger, steps, tools and actions, autonomy, budget |
 | **monitor** | a routine that watches a source and opens cases, by code (`ops/backup-age`) or with a model (triage); monitors detect |
 | **run** | one execution of a routine |
 | **case** | one problem flotilla handles, with its lifecycle and its whole timeline ([A case, end to end](run-lifecycle.md)) |
-| **case kind** | a type of problem (`failed_backup`, `code_bug`, …): its playbook and allowed capabilities |
-| **capability** | a named, typed, scoped operation in one registry: a **read** (an agent may call it) or a **write** (an agent may only plan it) |
+| **case kind** | a type of problem (`failed_backup`, `code_bug`, …): its playbook and allowed actions |
+| **tool** | a named, typed, scoped read an agent may call during its step ([ADR-0011](../adr/ADR-0011-tools-and-actions.md)) |
+| **action** | a named, typed, scoped write an agent may only plan; policy decides it, a host agent runs it |
+| **registry** | the one list of tools and actions, in git |
 | **memory** | what flotilla recorded itself: cases, outcomes, feedback, activated notes; looked up exactly, by key ([ADR-0010](../adr/ADR-0010-memory-and-knowledge.md)) |
 | **knowledge** | what is plugged in from elsewhere: repos, docs, runbooks, MCP servers, trusted or untrusted per path; searched |
 | **policy** | flotillad's code that decides each planned write: run, ask the operator, or refuse |
-| **autonomy** | how far something may go without asking, as a lifecycle: `shadow` (plans recorded, nothing done), then `propose` (asks the operator), then `auto` (acts). Capped by the routine, earned by each write capability, capped by the host; promoted only by the operator ([ADR-0008](../adr/ADR-0008-autonomy.md)) |
+| **autonomy** | how far something may go without asking, as a lifecycle: `shadow` (plans recorded, nothing done), then `propose` (asks the operator), then `auto` (acts). Capped by the routine, earned by each action, capped by the host; promoted only by the operator ([ADR-0008](../adr/ADR-0008-autonomy.md)) |
 | **worker** | a long-running container that runs routines for one role, with that role's credentials |
 | **host agent** | the program flotilla installs on a host (`flotilla-host`; managed with `flotilla host …`). Its roles: **`actions`** (runs the host's allowed writes) and, where configured, **connector** (talks to a communication provider). Workers think, host agents act ([ADR-0009](../adr/ADR-0009-host-agent-names.md)) |
 | **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |
 | **project** | what cases are about (a codebase, a site, a service), with its names in signals, issue repo and knowledge sources |
 | **playbook** | a routine's instructions to the model, Markdown in git |
 
-What happens is the lowest of three: the routine's autonomy, the capability's and the host's
-autonomy cap. A `propose` routine never runs anything at `auto`; an `auto` routine runs each
-capability at its own earned level.
+What happens is the lowest of three: the routine's autonomy, the action's and the host's autonomy
+cap. A `propose` routine never runs anything at `auto`; an `auto` routine runs each action at its
+own earned level.

@@ -71,7 +71,7 @@ its routines may plan.
 - **Connects out:** the agent opens one connection to flotillad's host endpoint; nothing on the host
   listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
   network); mutual TLS is required on any of them.
-- **The host's allowlist** (exact command templates per capability, each with a rate limit, and the
+- **The host's allowlist** (exact command templates per action, each with a rate limit, and the
   host's autonomy cap) lives in the installation's private config, is reviewed like code, and is
   installed with the agent.
 
