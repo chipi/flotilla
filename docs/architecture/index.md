@@ -71,6 +71,7 @@ flowchart LR
 | --- | --- |
 | **fleet** | a group of routines with one purpose: triage, Ops (the SRE team in action), digital marketing, bugfix |
 | **routine** | a declared unit of work: its worker, trigger, steps, capabilities, autonomy, budget |
+| **monitor** | a routine that watches a source and opens cases, by code (`ops/backup-age`) or with a model (triage); monitors detect |
 | **run** | one execution of a routine |
 | **case** | one problem flotilla handles, with its lifecycle and its whole timeline ([A case, end to end](run-lifecycle.md)) |
 | **case kind** | a type of problem (`failed_backup`, `code_bug`, …): its playbook and allowed capabilities |

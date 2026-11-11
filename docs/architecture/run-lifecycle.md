@@ -12,7 +12,7 @@ timeline (`flotilla case show <id>`). The full design is
 stateDiagram-v2
     [*] --> detected
     detected --> diagnosed: diagnose routine
-    detected --> handed_over: a code detector with a known kind
+    detected --> handed_over: a code monitor with a known kind
     diagnosed --> closed: dismissed or reported
     diagnosed --> handed_over: needs a fix
     diagnosed --> escalated: unsure
@@ -46,7 +46,7 @@ From the reference installation (the v1 chain).
 1. **Detect.** A code-only Ops monitor sees the observability backup is older than 26 hours and opens
    a `failed_backup` case for the mini. Its keys are computed by code; an open case with the same key
    would have received the signal instead.
-2. **Hand-over.** A code detector knows the kind, so the case goes straight to `handed_over`, and the
+2. **Hand-over.** A code monitor knows the kind, so the case goes straight to `handed_over`, and the
    event starts the Ops remediation routine in the `ops-act-host` worker, which takes the case's lease.
 3. **Re-check and plan.** The routine re-checks by code (backup age, whether the backup job is
    running). Still a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
