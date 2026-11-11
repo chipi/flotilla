@@ -122,7 +122,10 @@ const ts = time.RFC3339Nano
 
 // Open creates or migrates the database at path.
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	// temp_store(2): temporary tables and indexes in memory. flotillad's container has a read-only root
+	// and no writable temp directory, so a statement that spills (schema step 3's UPDATE over the mini's
+	// runs, 2026-11-11) failed with "disk I/O error (6410)". The store is small.
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=temp_store(2)")
 	if err != nil {
 		return nil, err
 	}

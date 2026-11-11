@@ -69,6 +69,19 @@ func TestMigratesStepOneDatabase(t *testing.T) {
 	}
 }
 
+// flotillad's container has a read-only root and no writable temp directory. On 2026-11-11 schema
+// step 3, an UPDATE over the mini's 835 runs, failed there with "disk I/O error (6410)", while every
+// test passed: outside the container SQLite falls back to /var/tmp, so no unit test can take the temp
+// directory away. Reproduced with the deployed image, read-only, on a copy of the mini's store; the
+// guard here is the setting that removes the need: temporary data in memory.
+func TestTempStoreInMemory(t *testing.T) {
+	s, _ := open(t)
+	var v int
+	if err := s.db.QueryRow(`PRAGMA temp_store`).Scan(&v); err != nil || v != 2 {
+		t.Fatalf("temp_store = %d (%v), want 2 (memory)", v, err)
+	}
+}
+
 func TestRefusesNewerSchema(t *testing.T) {
 	s, p := open(t)
 	if _, err := s.db.Exec(`INSERT INTO schema_version (n) VALUES (99)`); err != nil {
