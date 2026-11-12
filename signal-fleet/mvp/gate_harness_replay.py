@@ -23,6 +23,7 @@ Exit 0 when everything matches, 1 on a difference, 2 when no capture had recorde
 production data: run it on the host that has them; it prints counts, never content.
 """
 import argparse
+import contextlib
 import copy
 import glob
 import http.client
@@ -105,7 +106,9 @@ def drive(mod, signal, answers, table=None, lookups=None, max_probes=None):
     real_rn, guards.restarts_near = guards.restarts_near, restarts_near
     config.CAPTURE_PROBES = True
     try:
-        d = mod.investigate(dict(signal), max_probes=max_probes, probe_table=table)
+        # discarded: the probe loop prints each probe's result, and captures may be the held-out side
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            d = mod.investigate(dict(signal), max_probes=max_probes, probe_table=table)
         res = {k: d.get(k) for k in ("disposition", "reason", "question", "file", "dismissal_evidence",
                                      "marker", "certainty", "_pre_gate", "_probe_trace")}
         res["gates"] = (d.get("_meta") or {}).get("gates")

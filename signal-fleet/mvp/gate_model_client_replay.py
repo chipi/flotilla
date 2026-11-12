@@ -20,10 +20,12 @@ proves nothing). Captures hold production data: run it on the host that has them
 never content.
 """
 import argparse
+import contextlib
 import copy
 import glob
 import http.client
 import importlib.util
+import io
 import json
 import os
 import socket
@@ -84,7 +86,8 @@ def run_call(mod, messages, trace_id, step, answer):
     mod.config.CAPTURE_PROBES = True
     mod._exact_start()
     try:
-        out = ("return", mod._call(messages, trace_id=trace_id, step=step))
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            out = ("return", mod._call(messages, trace_id=trace_id, step=step))   # nothing of a capture shown
     except Exception as e:  # noqa: BLE001
         out = ("raise", type(e).__name__)
     turns = [{k: v for k, v in t.items() if k != "latency_s"} for t in (mod._EXACT or {}).get("turns", [])]

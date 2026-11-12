@@ -316,6 +316,27 @@ class Triage(unittest.TestCase):
         self.assertEqual(out["decision"]["disposition"], "escalate")      # no evidence cited: the dismiss gate
         self.assertIn("d:downgraded", out["result"])
 
+    def test_nothing_of_the_record_is_printed(self):
+        # the probe loop prints each probe's result; a record may be held-out data, so a replay shows none of it
+        import contextlib
+        import io
+        import gate_harness_replay as ghr
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with ra.World(now=NOW, github=GitHub()) as w:
+                ra.triage(w, ghr.SIG, model={"replies": self.as_turns(ghr.SCRIPTS["probe then decide"])},
+                          tools={"results": ghr.TABLE}, gates={"lookups": []})
+                ra.file(w, SIG, {"title": "t", "body": "b"}, "bug")
+                ra.gates(w, SIG, {"disposition": "dismiss", "reason": "r"}, gates={"lookups": []})
+            import triage
+            key, config.OPENROUTER_KEY = config.OPENROUTER_KEY, config.OPENROUTER_KEY or "replay"
+            real_post = triage.post_json
+            try:
+                ghr.drive(triage, ghr.SIG, ghr.SCRIPTS["probe then decide"], ghr.TABLE)
+            finally:
+                config.OPENROUTER_KEY, triage.post_json = key, real_post
+        self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
+
     def test_live_seams_are_refused_in_this_version(self):
         with ra.World(now=NOW, github=GitHub()) as w:
             with self.assertRaises(NotImplementedError):

@@ -15,11 +15,13 @@ the code reads back; the caller decides what time its reads stand at. Each call 
 
 Inside a call: the ledger is the world's temporary filed.tsv (the tsv backend, never flotillad's store), the clock
 is the world's `now`, GlitchTip notes and Grafana annotations do nothing, observability is off, and the decision's
-record is kept in memory, never written. One call at a time in a process: the code's module attributes are swapped
-for the call and restored after it, also on an exception.
+record is kept in memory, never written, and nothing the code prints is shown (a record may be held-out data).
+One call at a time in a process: the code's module attributes are swapped for the call and restored after it, also
+on an exception.
 """
 import contextlib
 import datetime
+import io
 import os
 import tempfile
 import threading
@@ -114,6 +116,14 @@ def _swapped(target, values, env=False):
 
 
 @contextlib.contextmanager
+def _quiet():
+    """Discard what the fleet's code prints while it runs over a record: the probe loop logs each probe's result and
+    the filing and sweep log their decisions, and a record may be the held-out side, which a replay never shows."""
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        yield
+
+
+@contextlib.contextmanager
 def _call(world, use_keys):
     """The decision's world, for the length of one call."""
     if not _BUSY.acquire(blocking=False):
@@ -136,6 +146,7 @@ def _call(world, use_keys):
                       "repo_for": lambda signal: k.get("repo") or real_repo_for(signal)})
     try:
         with contextlib.ExitStack() as stack:
+            stack.enter_context(_quiet())
             stack.enter_context(_swapped(os.environ, {"SF_LEDGER_BACKEND": "tsv", "SF_OBSERV_DISABLED": "1"},
                                          env=True))
             stack.enter_context(_swapped(config, {"CAPTURE_PROBES": True}))
@@ -227,7 +238,7 @@ def gates(world, signal, decision, trace=(), gates="live"):
     if not _BUSY.acquire(blocking=False):
         raise RuntimeError("replay_api runs one call at a time in a process: use processes for parallel replays")
     try:
-        with _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), \
+        with _quiet(), _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), \
                 _swapped(config, {"CAPTURE_PROBES": True}), _swapped(guards, attrs), \
                 _swapped(triage, {"_EXACT": None}):
             if hasattr(triage, "_exact_start"):   # fleet code from before the exact records has none: no lookups
@@ -319,7 +330,7 @@ def triage(world, signal, model, tools, gates="live", max_probes=None):
     if not _BUSY.acquire(blocking=False):
         raise RuntimeError("replay_api runs one call at a time in a process: use processes for parallel replays")
     try:
-        with _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), _swapped(config, cfg), \
+        with _quiet(), _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), _swapped(config, cfg), \
                 _swapped(t, t_attrs), _swapped(guards, g_attrs), \
                 _swapped(observ, {"new_trace_id": (lambda: tid)} if tid else {}):
             d = t.investigate(copy.deepcopy(signal), max_probes=max_probes, probe_table=tools["results"])
