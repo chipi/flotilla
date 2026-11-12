@@ -127,6 +127,6 @@ the returned record, so a model replay's output is itself a record under the inp
    evaluation project's adapter on the same corpus: the 2026-10-02 window (253 decisions, 34
    sweeps; the adapter reproduces it faithfully, 324 of 324), with the expected per-step outputs
    from the evaluation project.
-2. `ra.gates`, then `ra.triage` with recorded seams (exact replay), then live seams (model replay,
-   freezing).
+2. `ra.gates`, then `ra.triage` with recorded seams (exact replay) and a stub model, then live
+   seams (model replay, freezing; refused with `NotImplementedError` until then).
 3. The scorer moves out (ADR-0013), using `ra.triage`.

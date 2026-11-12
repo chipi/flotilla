@@ -241,5 +241,75 @@ class Gates(unittest.TestCase):
             ra.gates(w, SIG, {"disposition": "dismiss", "reason": "r"}, gates={"lookups": []})
 
 
+class Triage(unittest.TestCase):
+    """ra.triage with recorded seams against gate_harness_replay.drive (the exact replay flotilla already gates on)
+    over that replay's own scripted cases: the same outcome, gates string and requests sent."""
+
+    @staticmethod
+    def as_turns(answers):
+        import socket
+        turns = []
+        for a in answers:
+            if a is None:
+                turns.append({"reply": ""})
+            elif isinstance(a, dict):
+                turns.append({"reply": a["choices"][0]["message"]["content"], "usage": a.get("usage")})
+            else:
+                e = a()
+                if hasattr(e, "code"):
+                    turns.append({"status": e.code})
+                elif isinstance(e, socket.timeout):
+                    turns.append({})
+                else:
+                    return None   # not a recorded turn's form (a dropped connection)
+        return turns
+
+    def test_equal_to_the_exact_replay_on_every_script(self):
+        import gate_harness_replay as ghr
+        import triage
+        compared = 0
+        for name, answers in ghr.SCRIPTS.items():
+            turns = self.as_turns(answers)
+            if turns is None:
+                continue
+            with ra.World(now=NOW, github=GitHub()) as w:
+                try:
+                    out = ra.triage(w, ghr.SIG, model={"replies": turns}, tools={"results": ghr.TABLE},
+                                    gates={"lookups": []})
+                    got = ("decided", out["decision"]["disposition"], out["record"]["meta"].get("gates"),
+                           out["record"]["exact"]["requests"], out["model_decision"])
+                except Exception as e:  # noqa: BLE001 — the outcome's kind, as drive reports it
+                    got = (type(e).__name__,)
+            key, config.OPENROUTER_KEY = config.OPENROUTER_KEY, config.OPENROUTER_KEY or "replay"
+            real_post = triage.post_json
+            try:
+                want, sent = ghr.drive(triage, ghr.SIG, answers, ghr.TABLE)
+            finally:
+                config.OPENROUTER_KEY, triage.post_json = key, real_post   # drive leaves its stand-in behind
+            if want[0] == "decided":
+                want = ("decided", want[1]["disposition"], want[1]["gates"], sent, want[1]["_pre_gate"])
+            else:
+                want = (want[0],)
+            self.assertEqual(got, want, name)
+            compared += 1
+        self.assertGreaterEqual(compared, 15)
+
+    def test_a_stub_model_makes_no_call(self):
+        with ra.World(now=NOW, github=GitHub()) as w:
+            out = ra.triage(w, SIG, model={"stub": {"disposition": "dismiss", "reason": "r"}},
+                            tools={"results": {}}, gates={"lookups": []})
+        self.assertEqual(out["record"]["exact"]["requests"], [])
+        self.assertEqual(out["model_decision"]["disposition"], "dismiss")
+        self.assertEqual(out["decision"]["disposition"], "escalate")      # no evidence cited: the dismiss gate
+        self.assertIn("d:downgraded", out["result"])
+
+    def test_live_seams_are_refused_in_this_version(self):
+        with ra.World(now=NOW, github=GitHub()) as w:
+            with self.assertRaises(NotImplementedError):
+                ra.triage(w, SIG, model={"alias": "triage-pro"}, tools={"results": {}})
+            with self.assertRaises(NotImplementedError):
+                ra.triage(w, SIG, model={"stub": {"disposition": "dismiss"}}, tools="live")
+
+
 if __name__ == "__main__":
     unittest.main()

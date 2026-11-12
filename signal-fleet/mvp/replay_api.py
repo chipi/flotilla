@@ -7,6 +7,7 @@ recorded world, with nothing sent, so an evaluation project never patches this c
         out = ra.escalate(world, signal, decision)        # file_escalation
         out = ra.sweep(world, occurrences, firing)        # one stale sweep
         out = ra.gates(world, signal, decision, trace=trace, gates={"lookups": [...]})  # the gates alone
+        out = ra.triage(world, signal, model={"replies": turns}, tools={"results": table}, gates={"lookups": [...]})
 
 `gh(method, path, payload)` is the caller's: every GitHub call goes to it, writes included, and its answer is what
 the code reads back; the caller decides what time its reads stand at. Each call returns
@@ -238,3 +239,97 @@ def gates(world, signal, decision, trace=(), gates="live"):
         raise LookupMissing("the record holds no " + "; ".join(missing))
     return {"api": API_VERSION, "result": result, "writes": [], "ledger": world.ledger(),
             "record": {"lookups": lookups}, "decision": d, "model_decision": model_decision}
+
+
+def _reply(turn):
+    """One recorded turn ({"reply", "usage"} | {"status"} | neither: a timeout, as triage recorded it) or a plain
+    reply string, as the answer post_json gives."""
+    import socket
+    import urllib.error
+    if isinstance(turn, str):
+        return {"choices": [{"message": {"content": turn}}], "usage": {}, "model": "replay"}
+    if "reply" in turn:
+        if not turn["reply"]:
+            return {"choices": [{"message": {"content": ""}}], "usage": {}}
+        return {"choices": [{"message": {"content": turn["reply"]}}], "usage": turn.get("usage") or {},
+                "model": turn.get("model") or "replay"}
+    if turn.get("status"):
+        import io
+        return urllib.error.HTTPError("http://replay.invalid", int(turn["status"]), "replayed status", {},
+                                      io.BytesIO(b"{}"))
+    return socket.timeout("timed out")
+
+
+def triage(world, signal, model, tools, gates="live", max_probes=None):
+    """One triage step (triage.investigate: the probe loop, the decision, the gates) over a recorded world.
+
+    model:  {"replies": [turn, ...]} the recorded replies in order (a capture's exact.turns, or reply strings), with
+            optional "model" (the alias the requests named), "url" (the endpoint) and "trace_id", so the requests
+            come out as recorded; or {"stub": decision}: a fixed decision, no model call at all.
+    tools:  {"results": probe table} (a capture's `probes`): the probes answered from the record.
+    gates:  {"lookups": [...]} as for ra.gates, or "live".
+    Live models and live tools (model replay, freezing) are the next step and are refused here.
+    Returns the usual shape with "decision" (after the gates), "model_decision" (before them), and the record:
+    the turns, lookups and requests sent ("exact"), and the probe trace."""
+    import copy
+    import json
+    import guards
+    import observ
+    import triage as t
+    if not isinstance(tools, dict) or "results" not in tools:
+        raise NotImplementedError("live tools (freezing) are not in this version: pass {'results': probe table}")
+    if not isinstance(model, dict) or not ({"replies", "stub"} & set(model)):
+        raise NotImplementedError("live models (model replay) are not in this version: pass replies or a stub")
+    sent, missing = [], []
+    queue = [_reply(x) for x in model.get("replies") or []]
+
+    def post(url, body, headers=None, timeout=60):
+        sent.append(json.dumps(body))
+        a = queue.pop(0) if queue else {"choices": [{"message": {"content": ""}}], "usage": {}}
+        if isinstance(a, BaseException):
+            raise a
+        return copy.deepcopy(a)
+
+    t_attrs = {"post_json": post, "_EXACT": None}
+    if "stub" in model:
+        stub = json.dumps(dict(model["stub"], action="decide"))
+        t_attrs["_call"] = lambda messages, trace_id=None, step=None: (stub, {})
+    cfg = {"CAPTURE_PROBES": True}
+    if model.get("model"):
+        cfg["TRIAGE_MODEL"] = model["model"]
+    if model.get("url"):
+        cfg["OPENROUTER_URL"] = model["url"]
+    if not config.OPENROUTER_KEY:
+        cfg["OPENROUTER_KEY"] = "replay"   # never sent anywhere: post_json is the record's
+    g_attrs = {}
+    if gates != "live":
+        recorded = list((gates or {}).get("lookups") or [])
+
+        def restarts_near(instance, at, before_s=600, after_s=300, data=None):
+            for look in recorded:
+                if look.get("kind") == "restarts_near" and look.get("args") == {"instance": instance, "at": at}:
+                    if "error" in look:
+                        raise RuntimeError(look["error"])
+                    return list(look.get("result") or [])
+            missing.append(f"restarts_near for {instance} at {at!r}")
+            raise RuntimeError("no recorded lookup")
+        g_attrs["restarts_near"] = restarts_near
+    tid = model.get("trace_id")
+    if not _BUSY.acquire(blocking=False):
+        raise RuntimeError("replay_api runs one call at a time in a process: use processes for parallel replays")
+    try:
+        with _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), _swapped(config, cfg), \
+                _swapped(t, t_attrs), _swapped(guards, g_attrs), \
+                _swapped(observ, {"new_trace_id": (lambda: tid)} if tid else {}):
+            d = t.investigate(copy.deepcopy(signal), max_probes=max_probes, probe_table=tools["results"])
+    finally:
+        _BUSY.release()
+    if missing:
+        raise LookupMissing("the record holds no " + "; ".join(missing))
+    meta = d.get("_meta") or {}
+    decision = {k: v for k, v in d.items() if not k.startswith("_")}
+    return {"api": API_VERSION, "result": f"{decision.get('disposition')} ({meta.get('gates')})", "writes": [],
+            "ledger": world.ledger(),
+            "record": {"exact": dict(d.get("_exact") or {}, requests=sent), "probe_trace": d.get("_probe_trace"),
+                       "meta": meta},
+            "decision": decision, "model_decision": d.get("_pre_gate")}
