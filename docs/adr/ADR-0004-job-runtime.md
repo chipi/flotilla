@@ -52,7 +52,9 @@ the design, with what triage does today read from the code.
      - Read from a snapshot (a volume filled by the deploy), never live.
      - Separate from fleet data.
    - **Evaluation:** four modes (code replay, exact replay, model replay, shadow comparison), with
-     a table of which change needs which.
+     a table of which change needs which. Amended 2026-11-12 (RFC-0002 §8): code and exact replay
+     are development tests in flotilla; model replay's scoring and the judging part of the shadow
+     comparison live in the evaluation harness, on flotilla's records.
 3. **The order of phase 3:**
    - step 1, the recording exact replay needs, now in agentic-ai-homelab;
    - steps 2 to 6 after the phase 2 switch, each proven in its mode and live by a second shadow job

@@ -42,4 +42,5 @@ landed on an answer.
 - [RFC-0004 — The agent pipeline: from signal to verified action](RFC-0004-agent-pipeline.md)
   (Accepted → ADR-0005, 2026-11-09)
 - [RFC-0005 — Skills in the harness](RFC-0005-skills.md) (Accepted → ADR-0012, 2026-11-11)
-- [RFC-0006 — Fleet packs: flows as files, shared and promoted](RFC-0006-fleet-packs.md) (Draft, revision 2, 2026-11-12)
+- [RFC-0006 — Fleet packs: flows as files, shared and promoted](RFC-0006-fleet-packs.md)
+  (Draft, revision 3, 2026-11-12)

@@ -552,6 +552,28 @@ evaluation:
 - a scorer per fleet (SEO: findings against what the operator accepted; the daily brief: a rubric);
 - new corpus kinds.
 
+### Amendment, 2026-11-12: where evaluation lives
+
+The operator decided that evaluation in any form lives outside flotilla, in the evaluation harness
+and each fleet's evaluation project; flotilla provides the input. [RFC-0006](RFC-0006-fleet-packs.md)
+§8 draws the boundary and the input contract. For the four modes above:
+
+| Mode | Where it lives now |
+| --- | --- |
+| **code replay** | flotilla: a development test with fixed pass criteria. The scripts are renamed `gate_*` (they were `eval_*`). |
+| **exact replay** | flotilla: a development test, byte for byte. |
+| **model replay** | outside: the scored run over frozen tool results, the scorer (`score.py`) and its bar are evaluation. |
+| **shadow comparison** | split: the deploy check (does the candidate run, where it differs, in counts) stays in flotilla; judging which side is better moves out. |
+
+- **"A change ships only with its mode's evaluation" stands.** For model replay the proof is the
+  evaluation harness's report on flotilla's records, and its run id is recorded with the change.
+- **The spec's `evaluation:` block** (not implemented yet) names only flotilla's own gates
+  (`code_replays`); a scorer and corpus belong to the evaluation project's configuration, not to
+  the fleet spec.
+- **A versioned replay entry point** replaces patched internals: run one decision, sweep or step with
+  a record as its world and return its actions. Its interface is agreed with the triage fleet's
+  evaluation project before it is built; until then the seams agreed in §9 steps 2 to 5 stay frozen.
+
 ## 9. Moving triage onto the runtime
 
 Each step is evaluated in its mode, and the fleet session agrees each one before code.
@@ -645,6 +667,8 @@ these, or agrees the replacement with the fleet session before it lands:
 7. Revise after the advisor's review, with evaluation as a fifth core concept (operator, 2026-11-08).
 8. The order in §9: step 1 now, in agentic-ai-homelab; steps 2 to 6 after the switch, proven live by
    a second shadow job on a candidate image (operator, 2026-11-08).
+9. Evaluation in any form lives outside flotilla; development tests stay; a versioned replay entry
+   point; `eval_*` replays renamed `gate_*` (operator, 2026-11-12; §8's amendment).
 
 ## 11. Open questions
 
@@ -743,3 +767,6 @@ These said something this RFC changes (AGENTS.md rule 28), and were amended with
 - **2026-11-08, advisor's third pass on revision 3:** ready for the operator's acceptance. Four
   one-line edits made: `day_tokens` marked new; alias validation at load; the knowledge source path
   in the deploy's `.env`; a row for gateway-side re-routes.
+- **2026-11-12, amendment to §8:** the triage fleet's evaluation project proposed where each check
+  belongs (a development test passes or fails a code change; an evaluation judges quality); the
+  operator approved it with the replay entry point and the rename (§10 decision 9).

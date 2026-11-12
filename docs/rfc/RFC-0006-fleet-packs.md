@@ -1,6 +1,8 @@
 # RFC-0006 — Fleet packs: flows as files, shared between people and promoted between installations
 
-**Status:** Draft, revision 2 (2026-11-12): the operator's decisions on revision 1 applied (§12).
+**Status:** Draft, revision 3 (2026-11-12): the operator's decisions on revision 1 applied (§12);
+revision 3 draws the boundary between development tests and evaluation, and adds the replay entry
+point and the input contract (§8).
 Nothing is built from it until it is accepted.
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the runtime, steps and the harness),
 [ADR-0007](../adr/ADR-0007-routine.md) (routines), [ADR-0008](../adr/ADR-0008-autonomy.md) (autonomy),
@@ -212,17 +214,66 @@ No tier has a fixed name or count: dev → test → prod, or sandbox → prod, o
 
 Judging whether a change is better (a model, a playbook, a skill, a whole flow), against a baseline,
 is an **evaluation harness's** job, outside flotilla. flotilla does not compare installations or score
-behaviour. Its part is to make every run a good input:
+behaviour. Its part is to make every run a good input.
 
-- **Complete run records:** every model call as sent and answered, every lookup and tool result, the
-  gates' decisions, every drafted or sent output (the exact captures of RFC-0002 §9 step 1).
-- **Exactly what ran:** each record carries the pack, content hash, routine, overrides, model alias
-  and what it mapped to, the installation and whether it was capped.
-- **Export:** `flotilla records export` writes a period's records as files in one documented format,
-  the same for a capped and an acting installation, for the evaluation harness to read.
-- **Production data rules travel with the records:** records are written with the installation's
-  data rules (mode 600, scrubbing before anything leaves the host); what an evaluation may read is the
-  evaluation's own policy (for the triage fleet, its held-out split).
+### The test that sorts a check
+
+- **A development test** has its right answer fixed by the code's intent before it runs, judges a
+  **code change**, and passes or fails: "old and new give the same bytes" (a refactor), or "these
+  recorded cases now act as the fix says" (a replay-proven fix). No model, no labels, no
+  comparison of alternatives. It **stays in flotilla**, as a gate.
+- **An evaluation** judges **quality**: against outcome labels or gold answers, between variants,
+  models, prompts or periods, with a score, or with a model in the loop. It **lives outside flotilla**.
+
+| Place | Holds | Does not hold |
+| --- | --- | --- |
+| **flotilla** | the system; its recording (captures, filing and sweep records, run rows); the export; the replay entry point; development tests and deploy gates | scores, labels, gold answers, variants, held-out splits, production data in the tree (corpora come from a private path, `SF_EVAL_DATA` for triage) |
+| **a fleet's evaluation project** (for triage: the private `fleet-eval-data`) | that fleet's freezes, corpora, readers from flotilla's records to items, outcome rules and labels, its held-out split | generic evaluation machinery |
+| **the evaluation harness** | the generic machinery: datasets, runs, scoring, rounds, label import, splits | any one fleet's data or readers |
+
+Applied to what exists:
+
+- **The replays stay, renamed.** flotilla's `eval_*_replay` scripts are development tests (same bytes,
+  or expected actions on recorded cases). They become `gate_*`, so "eval" means one thing.
+- **The scorer moves out.** `score.py` and the model replay as a scored evaluation (RFC-0002 §8) are
+  evaluation. The exact replay of a model step, byte for byte, is a refactor test and stays.
+- **The shadow comparison splits.** Live against candidate as a deploy check (does the candidate run,
+  where does it differ, in counts) stays as a development test of a candidate image;
+  judging which side is better, by reading the differences against outcomes, moves out.
+
+### The replay entry point
+
+Running flotilla's own code over a record needs its internal seams (the clock, the GitHub
+client, the filing ledger, the model call, the gate lookups). Today an evaluation project patches
+them, and every change to those seams has needed an agreement. Instead, flotilla offers a small,
+**versioned replay entry point**: run this decision, sweep or step with this record as its whole world,
+and return the actions it would take, writing nothing. Evaluation projects and the evaluation harness
+call it and never patch internals. Its interface is agreed with the triage fleet's evaluation project
+before it is built; until then the seams agreed in RFC-0002 §9 steps 2 to 5 stay frozen.
+
+### The input contract
+
+What flotilla promises about its records, so an evaluation can rely on them:
+
+1. **Complete run records:** every model call as sent and answered, every lookup and tool result, the
+   gates' decisions, every drafted or sent output (the exact captures of RFC-0002 §9 step 1).
+2. **A schema version per record kind** (capture, filing record, sweep record, ledger rows), additive
+   within a version; renaming or removing a field is a new version, with a note.
+3. **Exactly what ran, on every record:** the commit, the pack and its content hash, the hash of
+   every file the decision depended on (a manifest flotilla emits, so no reader keeps that list by
+   hand), the routine, overrides, model alias and what it mapped to.
+4. **Stage and namespace on every record and run row:** live, shadow or candidate; the ledger
+   namespace; the installation and whether it was capped. A shadow row must never read as a live one.
+5. **Which code ran when:** the deploy log, per stage, with each change's tree, is part of the export.
+6. **Stable record ids,** so an evaluation can name a record it read without printing its content.
+   flotilla's own tools print indexes or counts, never the content of a record.
+7. **Records are never rewritten or deleted.** The export carries a sha256 manifest, so a frozen copy
+   can be verified.
+8. **Export:** `flotilla records export` writes a period's records as files in one documented format,
+   the same for a capped and an acting installation, scrubbed before anything leaves the host;
+   unscrubbed records stay on the host, mode 600.
+9. **flotilla does not know the held-out split.** Which records are an evaluation's test side is the
+   evaluation's decision, kept outside; nothing in flotilla needs it.
 
 ## 9. What must become declarative first
 
@@ -246,7 +297,9 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 3. Installation folders, slots, overrides with their warning, approval of a new or changed pack, and
    "changed routines start at shadow".
 4. The installation-wide autonomy cap.
-5. Record export in one format, and the promotion record.
+5. Record export in one format with the input contract (§8), and the promotion record.
+   The replay entry point and the `eval_*` → `gate_*` rename do not wait for packs: they go
+   first, as RFC-0002 amendments.
 6. The ops fleet as the first pack; the triage fleet once §9 is done.
 
 ## 11. Vocabulary
@@ -272,6 +325,11 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
    does not matter, and no mechanism assumes one: the content hash records what ran, the approved
    snapshot is what runs, and the operator's recorded approval (§6) stands in for a list of trusted
    sources.
+6. **The boundary of §8:** development tests stay in flotilla; evaluation in any form lives in the
+   evaluation harness and the fleet's evaluation project (the triage fleet's evaluation project
+   proposed it; the operator approved it).
+7. **A versioned replay entry point** in flotilla, in place of patched internals.
+8. **flotilla's `eval_*` replays are renamed `gate_*`.**
 
 ## 13. Alternatives considered
 
