@@ -1,13 +1,15 @@
 # RFC-0006 — Fleet packs: flows as files, shared between people and promoted between installations
 
-**Status:** Draft, revision 3 (2026-11-12): the operator's decisions on revision 1 applied (§12);
+**Status:** Draft, revision 4 (2026-11-12): the operator's decisions on revision 1 applied (§12);
 revision 3 draws the boundary between development tests and evaluation, and adds the replay entry
-point and the input contract (§8).
+point and the input contract (§8); revision 4 takes in the independent review of revision 3 (§15).
 Nothing is built from it until it is accepted.
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the runtime, steps and the harness),
 [ADR-0007](../adr/ADR-0007-routine.md) (routines), [ADR-0008](../adr/ADR-0008-autonomy.md) (autonomy),
 [ADR-0011](../adr/ADR-0011-tools-and-actions.md) (tools and actions),
 [ADR-0012](../adr/ADR-0012-skills.md) (skills), [RFC-0002](RFC-0002-job-runtime.md) §4 and §9.
+**Amends, on acceptance:** ADR-0012 decision 2 and RFC-0005 §3 (skill sources and layers, §5);
+ADR-0008 and ADR-0005 decision 4 (a fourth cap, the installation's, §7). §13 lists the docs.
 
 ## 1. Why
 
@@ -51,7 +53,7 @@ A **fleet pack** is a folder. It may hold a whole fleet or a single routine:
 **`FLEET.md` frontmatter:**
 
 ```yaml
-name: triage                 # the fleet's name in an installation; the folder's name
+name: triage                 # the fleet's name in an installation (the folder's name is not read)
 version: 1.4.0               # the author's label; flotilla records the content hash (§5)
 description: Triage alerts and errors into issues, dismissals and cleanups.
 requires:
@@ -70,8 +72,8 @@ spec as one in `fleets/<fleet>/` today.
 
 **Single routines.** An installation may take one routine from a pack, not the whole fleet (one
 better daily brief without the rest of its fleet). The routine brings the playbooks, skills and
-defaults it names; `-check` refuses it when it names something the pack holds only for another
-routine and the installation does not have.
+defaults it names; `-check` refuses a routine that names a playbook, skill or default the pack does
+not hold.
 
 ## 3. Text only, never code
 
@@ -82,8 +84,11 @@ installation's registered extension), exactly as ADR-0011 has it for actions. Th
 
 - `-check` refuses a pack that requires a tool, gate, action or capability the installation does not
   have, and names each one missing;
-- a pack's files are read, never executed; a `scripts/` folder is ignored, as for skills;
-- a pack cannot raise its own autonomy (§6) or widen a host's allowlist.
+- a pack's files are read, never executed. `-check` refuses a file outside the layout of §2 (a
+  `scripts/` folder included), a symbolic link and a file over a size cap, as the skill loader
+  refuses links and caps size today; so every file a pack holds is hashed and shown (§5, §6);
+- a pack cannot raise its own autonomy (§6), widen a host's allowlist or raise a budget above the
+  installation's cap (§7).
 
 So installing someone else's pack is reviewing text: prompts, thresholds and the order of building
 blocks, not a program.
@@ -91,27 +96,31 @@ blocks, not a program.
 ## 4. Installation facts stay out: slots
 
 Today the triage fleet's code holds facts about one installation: which GitHub repository gets which
-error project (`filing.REPO_MAP`), the host names in its gates, the GitLab-or-GitHub choice. A pack
-cannot carry those and still run elsewhere.
+error project (`filing.REPO_MAP`), the host names in its gates, and the issue tracker (GitHub only
+today; another tracker would be a slot). A pack cannot carry those and still run elsewhere.
 
 A pack declares **slots**, the facts it needs, by name and kind. The installation fills them in its
 config, next to its other facts (hosts, endpoints, credentials):
 
 ```yaml
 # flotillad.yaml (the installation's)
+installation: acme-test                  # this installation's name, on every record (§8); required with packs
 packs:
-  triage:
+  triage:                                # must equal the manifest's `name`, or -check refuses
     path: /opt/flotilla/packs/triage       # a folder; how it got there is the installation's business
     routines: [cycle]                      # optional: only these routines
     slots:
       repo_for_project: {podcast-pipeline: acme/podcast, orrery: acme/orrery}
       error_tracker: glitchtip
       alert_source: grafana
-    defaults: {quiet_days: 10}             # optional overrides of the pack's defaults (§6)
+    overrides: {quiet_days: 10}            # optional: the installation's values for the pack's defaults (§6)
 ```
 
 `-check` refuses a pack whose slots are not all filled, or filled with the wrong kind. A run gets its
-slots as its routines get their configuration today.
+slots and overrides as environment JSON (`FLOTILLA_SLOTS`, `FLOTILLA_DEFAULTS`), as it gets
+`FLOTILLA_SKILLS` and `FLOTILLA_HARNESS` today. A slot value is a fact, but decisions depend on it
+(where an issue is filed), so a changed slot value is shown and approved like an override (§6) and
+recorded with every run (§8).
 
 ### What travels and what stays
 
@@ -120,13 +129,14 @@ slots as its routines get their configuration today.
 | routine specs: steps, triggers, limits, skill rules | slots: repositories, projects, hosts |
 | playbooks and skills | endpoints, credentials, the egress allowlist |
 | the model **alias** each routine uses, and its harness settings | what each alias maps to: endpoint, model, key (flotillad's `models:`) |
-| defaults: thresholds, quiet days, budgets | overrides of those defaults, the autonomy cap and controls |
+| defaults: thresholds, quiet days, budgets | overrides of those defaults; the autonomy and budget caps; controls |
 | | the installation's history, ledgers and run records |
 
 So a model change has two forms. Moving a routine to another **alias** is a pack change: it travels
-like any other. Pointing an **alias** at another model is an installation change, repeated on the next
-installation's config, outside the pack. Software outside flotilla that a change needs (an endpoint,
-a model server) is out of scope; the promotion record names it as a precondition (§7).
+like any other (once the alias is in the routine spec; today triage reads it from its fleet's
+environment, §9). Pointing an **alias** at another model is an installation change, repeated on the
+next installation's config, outside the pack. Software outside flotilla that a change needs (an
+endpoint, a model server) is out of scope; the promotion record names it as a precondition (§7).
 
 ## 5. Where packs come from, and knowing exactly what ran
 
@@ -134,35 +144,51 @@ A pack is **a folder on the installation's file system**. flotilla assumes nothi
 there: copied by hand, unpacked from an archive, written by its operator, checked out from any
 version control. No mechanism here depends on one.
 
-| Layer | Where |
-| --- | --- |
-| **built in** | flotilla's repo, `fleets/<name>/`, inside the images |
-| **the installation's** | the folders named in the installation's config |
+| Layer | Where | Approved by |
+| --- | --- | --- |
+| **built in** | flotilla's repo, `fleets/<name>/`, inside the images | the deploy: its ops event carries each built-in pack's hash; §6's steps do not apply |
+| **the installation's** | the folders named in the installation's config | the operator, by hash (§6) |
 
-- A fleet's name is unique in an installation; no layer shadows another.
-- **The content hash is the version.** flotillad hashes every file of a pack (a manifest of path and
-  sha256, hashed in turn). A pack's identity anywhere, in any installation, is that hash; the author's
-  `version` is a label.
-- **Runs read the approved snapshot, never the folder.** On approval (§6) flotillad copies the pack's
-  files into its own state, keyed by the hash. A folder edited afterwards changes nothing that runs
-  until its new hash is shown and approved; a deleted folder stops nothing either.
+- A fleet's name is unique in an installation; no layer shadows another. Skill names stay unique
+  across every layer, packs included, and `-check` refuses a duplicate.
+- **Skills from packs.** ADR-0012 decision 2 allows skills only from versioned git, in three layers.
+  This RFC amends it: each installation pack is a skill layer of its own, and its content hash plus
+  the operator's recorded approval take the place of "pinned by commit". The built-in layers are
+  unchanged.
+- **The content hash is the version.** flotillad hashes every file of a pack: a manifest of sorted
+  relative paths and the sha256 of each file's content, hashed in turn. `-check`'s refusals (§3)
+  mean no file is left out of it. A pack's identity anywhere, in any installation, is that hash; the
+  author's `version` is a label.
+- **Runs read the approved snapshot, never the folder.** The pack folders are mounted read-only into
+  flotillad only, never into a worker (ADR-0002: a run cannot read the host). flotillad copies a
+  pack's files into its own state, keyed by the hash, when it shows a change (§6), and a run uses
+  only an approved snapshot. A worker fetches the files it needs by hash from flotillad's worker
+  API (`/v1/packs/<hash>/<path>`, worker role) and caches them; slots and overrides reach it as
+  environment JSON (§4). A folder edited afterwards changes nothing that runs until its new hash is
+  shown and approved; a deleted or missing folder stops nothing either (`-check` warns, the snapshot
+  runs).
 - **Every run records** the pack's name, layer and hash, and the hash of each file it read, so a
   record says exactly which flow decided what. Any other identifier the operator gives (a version
   control revision, a ticket) is stored beside the hash as a label, never instead of it.
-- A rollback goes back to the previous approved snapshot; snapshots are kept until removed by hand.
+- A rollback goes back to the previous approved snapshot. A snapshot that run records name is kept
+  and is exported with them (§8), so a recorded hash always resolves to its text; others are kept
+  until removed by hand.
 
 ## 6. Trust: installing and changing a pack is shown, approved, recorded, and starts at shadow
 
 Whoever can write a pack's folder can propose a change, so no change takes effect unseen:
 
-1. **A new pack, a changed pack, or a changed override** is detected by its hash. flotillad shows what
-   changed: the files, with their differences, and the defaults the installation overrides with their
-   values before and after. An override is called out as a **warning**, so a default never changes
-   silently.
-2. **The operator approves** it, with the operator's token. Until then the installation keeps running
-   the previous approved snapshot, or nothing for a new pack.
+1. **A new pack or a changed pack** is detected by its hash; **a changed override or slot value**
+   against the approved set. flotillad copies the folder into a **pending snapshot** keyed by its hash
+   and shows what changed from that snapshot: the files, with their differences, and the defaults
+   the installation overrides and the slot values, before and after. An override is called out as a
+   **warning**, so a default never changes silently.
+2. **The operator approves a hash,** with the operator's token (`flotilla pack approve <pack>
+   <hash>`). An approval naming a hash with no pending snapshot is refused, so what runs is exactly
+   what was shown, whatever the folder holds by then. Until then the installation keeps running the
+   previous approved snapshot, or nothing for a new pack.
 3. **The approval is an audit event:** who approved, when, the pack, the hash before and after, the
-   changed files and overrides. Refusals are recorded the same way.
+   changed files, overrides and slot values. Refusals are recorded the same way.
 4. **The changed routines run at `shadow`**, whatever their specs say, until the operator raises them.
    Autonomy is earned in each installation, routine by routine (ADR-0008); the author's settings are
    an upper bound, never a starting point.
@@ -175,9 +201,14 @@ list of trusted sources is needed, and none is implied.
 ### Non-impact mode
 
 An installation can be **capped**: `max_autonomy: shadow` in its config caps every routine of every
-pack, whatever a control says, as a routine's own `max_autonomy` caps it today. A capped installation:
+pack, whatever a control says, as a routine's own `max_autonomy` caps it today. It is a fourth cap
+beside ADR-0008's three (routine, capability, host) and joins ADR-0005's "lowest wins". Beside it,
+`max_day_usd` caps any routine's daily budget, so a pack's spec cannot raise spend. A capped
+installation:
 
-- runs every routine in shadow: outputs are drafted and recorded, never sent;
+- runs every routine in shadow: outputs are drafted and recorded, never sent. **Non-impact** means
+  no action on the systems the fleets act on (trackers, issues, error trackers). Model calls,
+  telemetry and metrics are not outputs; they carry the installation's name (§8, contract 4);
 - keeps its own store, ledgers and run records;
 - may read the same signals as the acting installation, or its own (dev data differs from test data;
   flotilla does not assume they are comparable).
@@ -189,9 +220,9 @@ image beside the live routine.
 ### Promotion is moving the same files
 
 1. The pack runs in a capped installation, which records everything the evaluation needs (§8).
-2. `flotilla pack record <pack>` writes a **promotion record**: the pack, its content hash and labels,
-   the routines, the installation it ran in and over what period, where its run records were
-   exported, the overrides it ran with, the preconditions outside the pack (an alias the next
+2. `flotilla pack promote-record <pack>` writes a **promotion record**: the pack, its content hash
+   and labels, the routines, the installation it ran in and over what period, where its run records
+   were exported, the overrides it ran with, the preconditions outside the pack (an alias the next
    installation must map, a service it needs), and a free reference to the evaluation's result (an
    evaluation harness report), filled by whoever judged it.
 3. The next installation receives the same folder, by any means, and the record. flotillad checks
@@ -202,11 +233,15 @@ No tier has a fixed name or count: dev → test → prod, or sandbox → prod, o
 
 ### What is needed for this, beyond packs
 
-- **The installation-wide autonomy cap** (above).
+- **The installation-wide autonomy and budget caps** (above), and the installation's name.
+- **The pack mount and the snapshot API** (§5): a read-only mount into flotillad, and the worker
+  API that serves approved snapshots by hash.
 - **Outputs only through actions.** A capped installation is non-impact only if nothing writes outward
   except through actions the cap holds. Today the triage fleet enforces shadow in its own code
   (`orchestrator.py` forces a dry run); with packs, every outward write must be an action decided by
-  policy (ADR-0005), so the cap holds whatever a pack's text says.
+  policy (ADR-0005), so the cap holds whatever a pack's text says. One write today is neither: the
+  triage fleet's inbox push (gauges and log lines to the metrics and log stores) runs in shadow
+  too; it becomes an action, or is labelled telemetry as above.
 - **Read access without write access.** A capped installation's credentials must be unable to write
   (viewer tokens, read-only database roles): non-impact by credential, not by care (RFC-0002 §4).
 
@@ -233,10 +268,15 @@ behaviour. Its part is to make every run a good input.
 
 Applied to what exists:
 
-- **The replays stay, renamed.** flotilla's `eval_*_replay` scripts are development tests (same bytes,
-  or expected actions on recorded cases). They become `gate_*`, so "eval" means one thing.
-- **The scorer moves out.** `score.py` and the model replay as a scored evaluation (RFC-0002 §8) are
-  evaluation. The exact replay of a model step, byte for byte, is a refactor test and stays.
+- **The replays stay, renamed.** flotilla's 19 `eval_*` scripts in `signal-fleet/mvp/` (the 15
+  `replays.sh` runs and the four same-bytes replays) are development tests (same bytes, or expected
+  actions on recorded cases). They become `gate_*`, so "eval" means one thing. `evaldata.py` and
+  `SF_EVAL_DATA` keep the word: they name the evaluation project's data.
+- **The scorer moves out, after the entry point.** `score.py` and the model replay as a scored
+  evaluation (RFC-0002 §8) are evaluation; they move once the replay entry point can run a model
+  replay (below). The exact replay of a model step, byte for byte, is a refactor test and stays.
+- **Freezing is recording.** `freeze.py` records live tool results for a model replay to use; it
+  stays in flotilla as a mode of the replay entry point.
 - **The shadow comparison splits.** Live against candidate as a deploy check (does the candidate run,
   where does it differ, in counts) stays as a development test of a candidate image;
   judging which side is better, by reading the differences against outcomes, moves out.
@@ -246,10 +286,20 @@ Applied to what exists:
 Running flotilla's own code over a record needs its internal seams (the clock, the GitHub
 client, the filing ledger, the model call, the gate lookups). Today an evaluation project patches
 them, and every change to those seams has needed an agreement. Instead, flotilla offers a small,
-**versioned replay entry point**: run this decision, sweep or step with this record as its whole world,
-and return the actions it would take, writing nothing. Evaluation projects and the evaluation harness
-call it and never patch internals. Its interface is agreed with the triage fleet's evaluation project
-before it is built; until then the seams agreed in RFC-0002 §9 steps 2 to 5 stay frozen.
+**versioned replay entry point**: run this decision, sweep or step over a record, writing nothing,
+and return the actions it would take together with a full record of the run, so a replay is itself
+a record under the input contract. Each seam is chosen per run:
+
+| Seam | Recorded | Live |
+| --- | --- | --- |
+| tools | the record's tool results (exact and model replay) | the installation's tools, read-only (freezing) |
+| model | the record's replies (exact replay) | an alias, k runs (model replay) |
+| gate lookups | the record's lookups | the installation's, read-only |
+| clock | the record's `now` | always recorded |
+
+Evaluation projects and the evaluation harness call it and never patch internals. Its interface is
+agreed with the triage fleet's evaluation project before it is built; until then the seams agreed
+in RFC-0002 §9 steps 2 to 5 stay frozen.
 
 ### The input contract
 
@@ -259,19 +309,24 @@ What flotilla promises about its records, so an evaluation can rely on them:
    gates' decisions, every drafted or sent output (the exact captures of RFC-0002 §9 step 1).
 2. **A schema version per record kind** (capture, filing record, sweep record, ledger rows), additive
    within a version; renaming or removing a field is a new version, with a note.
-3. **Exactly what ran, on every record:** the commit, the pack and its content hash, the hash of
-   every file the decision depended on (a manifest flotilla emits, so no reader keeps that list by
-   hand), the routine, overrides, model alias and what it mapped to.
+3. **Exactly what ran, on every record:** flotilla's commit (the image tag), the pack and its content
+   hash, the hash of every file the decision depended on (a manifest flotilla emits, so no reader
+   keeps that list by hand), the routine, overrides, slot values, model alias and what it mapped to.
 4. **Stage and namespace on every record and run row:** live, shadow or candidate; the ledger
-   namespace; the installation and whether it was capped. A shadow row must never read as a live one.
-5. **Which code ran when:** the deploy log, per stage, with each change's tree, is part of the export.
+   namespace; the installation's name and whether it was capped. A shadow row must never read as a
+   live one.
+5. **Which code ran when:** flotillad records each deploy as an ops event (image tag, built-in pack
+   hashes, per stage), and the export includes those events. A deploy script's own log stays the
+   installation's and is not promised.
 6. **Stable record ids,** so an evaluation can name a record it read without printing its content.
-   flotilla's own tools print indexes or counts, never the content of a record.
+   flotilla's export and comparison tools print ids and counts by default; printing a record's
+   content is an explicit flag or command (`case show`, `ledger show`, `--names`), so an evaluation
+   project can record each such read under its own rules.
 7. **Records are never rewritten or deleted.** The export carries a sha256 manifest, so a frozen copy
    can be verified.
 8. **Export:** `flotilla records export` writes a period's records as files in one documented format,
    the same for a capped and an acting installation, scrubbed before anything leaves the host;
-   unscrubbed records stay on the host, mode 600.
+   unscrubbed records stay on the host, mode 600. It includes the pack snapshots the records name.
 9. **flotilla does not know the held-out split.** Which records are an evaluation's test side is the
    evaluation's decision, kept outside; nothing in flotilla needs it.
 
@@ -281,11 +336,13 @@ The format can be designed now; the triage fleet becomes a real pack only after:
 
 1. **The routine as steps** (RFC-0002 §4): the orchestrator's sequence (sources, the operational gate,
    triage, dedup, filing, the stale sweep) as declared steps over registered building blocks, not a
-   Python program. Steps 2 to 5 of RFC-0002 §9 moved the model step and dedup this way; the rest
-   follows.
+   Python program. Steps 2 to 5 of RFC-0002 §9 are built for the model step and dedup; their
+   candidate runs are pending, and the rest follows.
 2. **Installation facts as slots:** `REPO_MAP` and `INSTANCE_REPO_MAP`, the edge gate's instance, the
    test-signal markers, the substrate projects.
 3. **Outputs as actions** (ADR-0005, ADR-0011), so the cap of §7 holds by construction.
+4. **The model alias in the routine spec** (`harness.model`, RFC-0002 §4), out of the fleet's
+   environment (`SF_TRIAGE_MODEL` today).
 
 Until then the triage fleet stays a built-in fleet in `fleets/triage/`, and packs start with fleets
 that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase 4).
@@ -296,10 +353,10 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 2. The manifest, the `requires` check, content hashing and recording, for the built-in fleets.
 3. Installation folders, slots, overrides with their warning, approval of a new or changed pack, and
    "changed routines start at shadow".
-4. The installation-wide autonomy cap.
+4. The installation-wide autonomy and budget caps, and the installation's name.
 5. Record export in one format with the input contract (§8), and the promotion record.
    The replay entry point and the `eval_*` → `gate_*` rename do not wait for packs: they go
-   first, as RFC-0002 amendments.
+   first, as RFC-0002 amendments. The scorer moves out after the entry point.
 6. The ops fleet as the first pack; the triage fleet once §9 is done.
 
 ## 11. Vocabulary
@@ -308,7 +365,7 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 | --- | --- |
 | **fleet pack** | a folder of text (manifest, routine specs, playbooks, skills, defaults) that defines a fleet or a single routine; shared by copying files |
 | **slot** | an installation fact a pack needs, declared by name and kind, filled in the installation's config |
-| **override** | an installation's value for one of a pack's defaults; shown with a warning and approved |
+| **override** | an installation's value for one of a pack's defaults (config key `overrides:`); shown with a warning and approved |
 | **capped installation** | an installation whose config caps every routine at `shadow`: non-impact mode |
 | **promotion record** | what moves with a pack to the next installation: its hash, where and how it ran, where its records are, its preconditions, a reference to the evaluation's result |
 
@@ -331,7 +388,17 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 7. **A versioned replay entry point** in flotilla, in place of patched internals.
 8. **flotilla's `eval_*` replays are renamed `gate_*`.**
 
-## 13. Alternatives considered
+## 13. Docs amended on acceptance
+
+- ADR-0012 decision 2 and RFC-0005 §3: a pack is a skill layer; its hash and the operator's
+  approval stand for "pinned by commit" (§5).
+- ADR-0008 ("three places cap it") and ADR-0005 decision 4 ("lowest wins"): the installation's cap
+  (§7).
+- `docs/architecture/deployment.md`: the read-only pack mount into flotillad; the installation's name.
+- `docs/architecture/components.md`: the snapshot API on the workers' listener.
+- RFC-0002 §8: the replay entry point's seams and `freeze.py` (§8 here).
+
+## 14. Alternatives considered
 
 - **Export and import commands with an archive format:** a second format beside folders; copying
   files already shares them.
@@ -344,3 +411,28 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 - **Evaluation inside flotilla** (comparing installations, scoring changes): ties flotilla to one way
   of judging and to installations whose data are comparable; an evaluation harness against a baseline
   does it better, from flotilla's records.
+
+## 15. Discussion
+
+- **2026-11-12, independent review of revision 3** (a separate read-only agent, which checked the
+  RFC's claims against the tree). It confirmed the code claims (the dry run forced in shadow, the
+  repository maps, the routine cap, the scripts and paths named) and found, and revision 4 changes:
+  - **Skills from a folder contradicted ADR-0012 decision 2.** A pack is now a skill layer of its
+    own, and the amended docs are listed (§13).
+  - **The replay entry point could not run a model replay,** the mode that moves out. Its seams are
+    now chosen per run (recorded or live), it returns a record of the run, `freeze.py` is one of its
+    modes, and the scorer moves only after it exists.
+  - **Workers had no way to read an approved snapshot.** The pack folders are mounted into flotillad
+    only, and workers fetch snapshots by hash from its worker API; slots and overrides arrive as
+    environment JSON.
+  - **Approval was not bound to a hash, and the built-in layer's path was unsaid.** A change is
+    copied into a pending snapshot when shown, the operator approves that hash, and for built-in
+    packs the deploy is the approval.
+  - **Smaller fixes:** the GitLab claim removed; slot values approved and recorded like overrides;
+    files outside the layout, links and oversized files refused, so every file is hashed;
+    snapshots that records name are kept and exported; the installation cap amends ADR-0008 and
+    ADR-0005; non-impact defined (model calls and telemetry are not outputs) and the inbox push
+    named; the deploy record comes from flotillad's ops events, not the deploy script's log;
+    printing a record's content is an explicit flag; the fleet's name comes from the manifest; an
+    installation name; a budget cap; the alias into the spec as a prerequisite; `overrides:` as the
+    config key; `promote-record` named apart from `records export`.

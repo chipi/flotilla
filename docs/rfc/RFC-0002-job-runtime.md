@@ -562,7 +562,7 @@ and each fleet's evaluation project; flotilla provides the input. [RFC-0006](RFC
 | --- | --- |
 | **code replay** | flotilla: a development test with fixed pass criteria. The scripts are renamed `gate_*` (they were `eval_*`). |
 | **exact replay** | flotilla: a development test, byte for byte. |
-| **model replay** | outside: the scored run over frozen tool results, the scorer (`score.py`) and its bar are evaluation. |
+| **model replay** | outside: the scored run over frozen tool results, the scorer (`score.py`) and its bar are evaluation. They move once the replay entry point can run a model replay; until then they stay where they are. Freezing (`freeze.py`) is recording and stays, as a mode of the entry point. |
 | **shadow comparison** | split: the deploy check (does the candidate run, where it differs, in counts) stays in flotilla; judging which side is better moves out. |
 
 - **"A change ships only with its mode's evaluation" stands.** For model replay the proof is the
@@ -570,9 +570,11 @@ and each fleet's evaluation project; flotilla provides the input. [RFC-0006](RFC
 - **The spec's `evaluation:` block** (not implemented yet) names only flotilla's own gates
   (`code_replays`); a scorer and corpus belong to the evaluation project's configuration, not to
   the fleet spec.
-- **A versioned replay entry point** replaces patched internals: run one decision, sweep or step with
-  a record as its world and return its actions. Its interface is agreed with the triage fleet's
-  evaluation project before it is built; until then the seams agreed in §9 steps 2 to 5 stay frozen.
+- **A versioned replay entry point** replaces patched internals: run one decision, sweep or step over
+  a record, with each seam (tools, model, gate lookups) recorded or live and the clock recorded,
+  and return its actions and a record of the run (RFC-0006 §8). Its interface is agreed with the
+  triage fleet's evaluation project before it is built; until then the seams agreed in §9 steps 2
+  to 5 stay frozen.
 
 ## 9. Moving triage onto the runtime
 
