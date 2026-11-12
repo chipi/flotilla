@@ -57,7 +57,7 @@ name: triage                 # the fleet's name in an installation (the folder's
 version: 1.4.0               # the author's label; flotilla records the content hash (§5)
 description: Triage alerts and errors into issues, dismissals and cleanups.
 requires:
-  tools: [event_detail, occurrence_history, service_logs, metric, trace]
+  tools: [event_detail, occurrence_history, service_logs, metric, trace, source_state]
   gates: [intent, cleanup, dismiss_corroborated, edge]
   actions: [github.file_issue, github.comment, glitchtip.resolve]
   models: {tools: json}      # the capability its harness needs (RFC-0002 §3)
