@@ -16,7 +16,7 @@ prioritized task lists. Promotion targets:
 - [Phase 2 plan](phase-2-plan.md): flotillad runs the triage fleet (→ a history entry when phase 2 ends).
 - [Phase 3 plan](phase-3-plan.md): the runtime, and triage onto it (ADR-0004).
 - [Replay entry point](replay-entry-point.md): the versioned module evaluation projects call instead
-  of patching internals (ADR-0013), for agreement.
+  of patching internals (ADR-0013), agreed.
 
 WIP notes that haven't been touched in a quarter should be either promoted
 or deleted. Stale plans rot, and stale plans that look "official" rot worst.
