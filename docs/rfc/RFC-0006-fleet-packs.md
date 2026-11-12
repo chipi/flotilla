@@ -1,8 +1,8 @@
 # RFC-0006 — Fleet packs: flows as files, shared between people and promoted between installations
 
-**Status:** Draft, revision 6 (2026-11-12): the operator's decisions on revision 1 applied (§12);
+**Status:** Draft, revision 7 (2026-11-12): the operator's decisions on revision 1 applied (§12);
 revision 3 draws the boundary between development tests and evaluation, and adds the replay entry
-point and the input contract (§8); revisions 4 to 6 take in three independent reviews (§15).
+point and the input contract (§8); revisions 4 to 7 take in four independent reviews (§15).
 Nothing is built from it until it is accepted.
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the runtime, steps and the harness),
 [ADR-0007](../adr/ADR-0007-routine.md) (routines), [ADR-0008](../adr/ADR-0008-autonomy.md) (autonomy),
@@ -81,7 +81,7 @@ so one layout and one hashing rule serve both layers.
 **Single routines.** An installation may take one routine from a pack, not the whole fleet (one
 better daily brief without the rest of its fleet). The routine brings the playbooks, skills and
 defaults it names; `-check` refuses a routine that names a playbook, skill or default that neither
-the pack nor flotilla's built-in default skills (`skills/`, RFC-0005 §3; empty today) hold.
+the pack nor flotilla's built-in default skills (`skills/`, RFC-0005 §3; absent today) hold.
 
 ## 3. Text only, never code
 
@@ -91,9 +91,10 @@ installation's registered extension), exactly as ADR-0011 has it for actions. Th
 "skills never grant anything", applied to whole flows:
 
 - `-check` refuses a pack that requires a tool, gate, action or capability the installation does not
-  have, and names each one missing. That needs a registry: today flotillad checks only the names'
-  syntax, and the tools and gates live in the worker's code. The check comes with RFC-0002 §9 step 4's
-  registered tools and gates (§10);
+  have, and names each one missing. That needs a registry in flotillad, which does not exist:
+  flotillad checks only the names' syntax, and RFC-0002 §9 step 4 registered the tools and gates in
+  the worker's code without giving flotillad a list of them. The check comes with the registry of
+  §10 step 4;
 - a pack's files are read, never executed. `-check` refuses a file outside the layout of §2 (a
   `scripts/` folder included), a symbolic link and a file over its kind's size cap (16 KiB for a
   skill, as the skill loader has today; one each for specs, playbooks and defaults), as the skill
@@ -184,10 +185,13 @@ version control. No mechanism here depends on one.
   `version` is a label.
 - **Runs read the approved snapshot, never the folder.** For the built-in layer the worker's image
   is the snapshot, and the image a worker runs need not be flotillad's: the candidate worker
-  (RFC-0002 §9) runs another tag on purpose. So the worker hashes what it reads, by the same rule,
-  and its record carries that pack hash and the per-file hashes (contract 3); flotillad's hash of
-  its own image goes in its `start` event. A run whose pack hash differs from flotillad's records
-  the difference: expected for the candidate job, an alert for any other. Installation pack folders
+  (RFC-0002 §9) runs another tag on purpose. So each reader hashes what it reads, by the same rule:
+  flotillad the spec it schedules from (and its whole built-in pack, in its `start` event), the
+  worker the playbooks, skills and defaults it reads. A run's file manifest (contract 3) is the
+  union of the two. The worker returns its pack hash with the run's result; flotillad writes both
+  hashes on the run row and records a difference: expected when the routine's `worker:` is the
+  candidate service, an alert otherwise. For a built-in pack, `FLOTILLA_PACK`'s pack hash is
+  flotillad's. Installation pack folders
   are mounted read-only into flotillad only, never into a worker (ADR-0002: a run cannot read the
   host). flotillad copies a pack's files into its own state, keyed by the pack hash, when it shows a
   change (§6), and a run uses only an approved snapshot: the worker fetches the files it needs from
@@ -196,20 +200,22 @@ version control. No mechanism here depends on one.
   hash is shown and approved; a deleted or missing folder stops nothing either (`-check` warns, the
   snapshot runs).
 - **The snapshot API** serves approved snapshots only (the current one and earlier approved ones),
-  never a pending one, and only paths listed in that snapshot's manifest, so no path leaves it. Any
-  worker-role caller may read it: a pack holds no secret (slots and credentials are config, §4).
+  never a pending one. The `<hash>` segment must be `sha256:` and 64 hex digits before any lookup,
+  and `<path>` a path listed in that snapshot's manifest, so no request leaves the snapshot. Any
+  worker-role caller may read it: a pack holds no secret (slots and credentials are config, §4). A
+  pack's total cap (below) is smaller than the worker's tmpfs (64 MiB today).
 - **Every run records** the pack's name, layer, pack hash and set hash, and the hash of each file it
-  read, so a
-  record says exactly which flow decided what. Any other identifier the operator gives (a version
-  control revision, a ticket) is stored beside the hash as a label, never instead of it.
+  read, so a record says exactly which flow decided what. Any other identifier the operator gives (a
+  version control revision, a ticket) is stored beside the hash as a label, never instead of it.
 - **Rollback:** `flotilla pack rollback <pack> [<set hash>]` returns to an approved set this
   installation approved before (the previous one by default) whose snapshot it still holds; any
   other hash is refused, and a set whose snapshot was pruned is refused with that reason. It is an
   audit event like an approval (§6.3). Autonomy is per routine, not per set, so each routine the
   rollback changes gets the autonomy recorded for it in the approval event that replaced that set,
   never more than it has now.
-- **Retention:** a snapshot that run records or an approved set name is kept and is exported with
-  them (§8), so a recorded hash always resolves to its text. Others are removed with
+- **Retention:** a snapshot that run records or the current approved set name is kept and is
+  exported with them (§8), so a recorded hash always resolves to its text. Others (a superseded
+  approved set no run used, a replaced pending one) are removed with
   `flotilla pack prune <pack hash>` (operator token, an audit event), which refuses a snapshot still
   named. A pack has at most one **pending** snapshot; a newer change replaces it. A pack's total size
   is capped, as each file's is (§3).
@@ -223,12 +229,16 @@ the pack except its `path` (the routines it takes, slot values, overrides). Its 
 `sha256:<hex>` over the pack hash's text (`sha256:<hex>`), a newline, and the JSON Canonicalization
 Scheme (RFC 8785) form of one object, `{"overrides": …, "routines": […], "slots": …}`. Values are
 typed by the manifest (a slot's kind, a default's type), so `10` given where a string is declared is
-refused by `-check`, never hashed two ways. A change to the files, the routines taken, a slot value
+refused by `-check`, never hashed two ways. `routines` is the sorted list of the routines taken
+(every routine the pack holds when `routines:` is absent); `overrides` and `slots` are `{}` when
+empty. A change to the files, the routines taken, a slot value
 or an override is a new set hash; a change to this rule is a new prefix.
 
 1. **Detection** runs at flotillad's start and on demand (`flotilla pack show <pack>`), never by
    polling. `-check` shows a difference and writes nothing (the deploy runs it beside the running
-   daemon). flotillad first copies the folder into its own state, then hashes the copy, so the
+   daemon). flotillad first copies the folder into its own state, applying §3's refusals as it
+   goes (a link is not followed; the copy stops at the first file over its cap or at the pack's
+   total cap, leaving nothing behind), then hashes the copy, so the
    pending snapshot (the copied files and the values) is exactly what its hash names, whatever is
    being written to the folder meanwhile. It is shown against the approved set: the files with their
    differences, the routines taken, the overrides and slot values before and after. An override is
@@ -239,7 +249,9 @@ or an override is a new set hash; a change to this rule is a new prefix.
    the approved set, not of the current config. Until then the installation keeps running the
    previous approved set, or nothing for a new pack.
 3. **The approval is an audit event:** who approved, when, the pack, the pack hash and set hash
-   before and after, the changed files, overrides and slot values. Refusals are recorded the same way.
+   before and after, the changed files, the approved set's full values (routines, slots,
+   overrides, not only the changed ones) and each routine's autonomy control at that moment; a
+   rollback (§5) reads both. Refusals are recorded the same way.
 4. **The changed routines run at `shadow`**, whatever their specs say, until the operator raises
    them. A routine is changed when anything it depends on differs from the approved set: a file it
    reads (its spec, playbooks, skills, defaults; a file two routines share changes both), or a slot
@@ -298,7 +310,9 @@ No tier has a fixed name or count: dev → test → prod, or sandbox → prod, o
   API that serves approved snapshots by hash.
 - **A second installation on one host:** the compose project's name, the container names and the
   default volume names parametrised per installation, as `FLOTILLA_VOLUME_PREFIX` already does for
-  the secrets volume. The external networks (the other stacks') stay shared.
+  the secrets volume. The external networks (the other stacks') stay shared. An installation's own
+  deploy scripts that name a container (`docker exec flotillad`) follow; they are its, not
+  flotilla's.
 - **Outputs only through actions.** A capped installation is non-impact only if nothing writes outward
   except through actions the cap holds. Today the triage fleet enforces shadow in its own code
   (`orchestrator.py` forces a dry run); with packs, every outward write must be an action decided by
@@ -428,8 +442,10 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 3. Installation folders, the installation's name, the read-only mount into flotillad, the snapshot
    API on the workers' listener, slots, overrides with their warning, approval of a set, rollback,
    prune, and "changed routines start at shadow".
-4. The `requires` check (§3), after RFC-0002 §9 step 4 registers the tools and gates it checks
-   against.
+4. The registry in flotillad: the tools, gates, actions and model capabilities an installation has,
+   declared by each worker image (a file the image carries, read by flotillad at `-check` and at
+   start). RFC-0002 §9 step 4 put the tools and gates in the worker's code; it did not give
+   flotillad a list of them. Then the `requires` check (§3) against it.
 5. The installation-wide autonomy and budget caps.
 6. Record export in one format with the input contract (§8), and the promotion record.
    The replay entry point does not wait for packs: it goes first, as an RFC-0002 amendment (the
@@ -555,3 +571,15 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
     caps per file kind; `/` as the manifest's separator; the built-in set hash empty; flotillad's
     version (the image tag in CI builds); the workers' listener missing from `components.md`; the
     default skills folder empty today.
+- **2026-11-12, fourth independent review, of revision 6** (a fresh read-only agent). It confirmed
+  revision 6's code claims and §10's cross-references, and found, and revision 7 changes:
+  - **The registry the `requires` check needs had no owner.** RFC-0002 §9 step 4 is built, but it
+    left the tools and gates in the worker's code. §10 step 4 now builds the registry in flotillad
+    (declared by each worker image), then the check.
+  - **Smaller fixes:** a run's file manifest is the union of what flotillad and the worker read,
+    the worker returns its pack hash with the result and flotillad records a difference by the
+    routine's `worker:`; the approval event records the set's full values and each routine's
+    autonomy, which rollback reads; retention keeps the current set's snapshot, not every approved
+    one; the copy applies the refusals as it goes; `routines` and empty values defined in the set
+    hash; the snapshot API checks the hash segment; the pack cap below the worker's tmpfs; deploy
+    scripts that name a container; the default skills folder absent today.
