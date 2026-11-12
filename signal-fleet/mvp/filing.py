@@ -239,8 +239,9 @@ ROUTE_LABEL = "triage-fleet/routed:bugfix"
 CHAIN_REPOS = {"chipi/orrery"}
 
 # glitchtip project prefix → GitHub repo (operator mapping 2026-07-29).
-# Unmapped projects fall back to SF_OPS_REPO; with neither, filing refuses
-# (visible, not silent).
+# Unmapped projects fall back to SF_OPS_REPO, else the ops repo, as unmapped grafana signals do.
+# Until 2026-11-12 they fell back to SF_OPS_REPO alone, unset on the mini, and a refusal was only
+# printed: 15 file and escalate decisions before 2026-11-07 (6 fingerprints, 4 projects) went nowhere.
 REPO_MAP = {
     "ORRERY": "chipi/orrery",
     "LITELLM": "chipi/agentic-ai-homelab",
@@ -380,7 +381,7 @@ def repo_for(signal):
     for prefix, repo in REPO_MAP.items():
         if proj.upper().startswith(prefix):
             return repo
-    return OPS_REPO
+    return OPS_REPO or OPS_REPO_DEFAULT
 
 
 def title_ok(title):
