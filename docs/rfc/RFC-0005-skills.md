@@ -42,6 +42,11 @@ loaded by rule (§4).
 
 ## 3. Where skills come from
 
+Amended by [ADR-0013](../adr/ADR-0013-fleet-packs.md) (2026-11-12): an installation's fleet pack
+is a skill layer of its own; its content hash and the operator's recorded approval take the place
+of "pinned by commit", and a load from a pack records the pack's name, hashes and approval event
+(§6). The layers below are unchanged.
+
 Skills are instructions: they come only from **trusted, versioned git sources**, never from
 knowledge. Three layers, each pinned per deploy, so every deploy has one exact set of skills and a
 rollback restores the previous set (decided 2):

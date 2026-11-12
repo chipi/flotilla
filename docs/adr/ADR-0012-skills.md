@@ -23,7 +23,9 @@ As RFC-0005 describes:
    every other field, which grants nothing.
 2. **Sources:** trusted, versioned git only, in three layers pinned per deploy: flotilla's default
    skills and each fleet's skills inside the images, the installation's skills repo pinned by commit
-   in config. Names are unique across layers.
+   in config. Names are unique across layers. (Amended by [ADR-0013](ADR-0013-fleet-packs.md):
+   an installation's fleet pack is a skill layer of its own, its hash and the operator's recorded
+   approval in place of "pinned by commit".)
 3. **Loading:** by rule (code matches the case's structured fields, in spec order) or on demand (the
    model calls `load_skill` from an index of names and descriptions), each listed in the routine's
    spec; the default is none. On-demand loads count against `max_skill_loads`, not the step or tool

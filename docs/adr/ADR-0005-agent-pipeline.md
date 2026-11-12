@@ -27,7 +27,8 @@ operator is away. RFC-0004 has the design, the fleets end to end, and the review
    trusted or untrusted per path; a run that read untrusted content is tainted and capped at propose.
 4. **Policy in flotillad decides; workers execute.** Autonomy, lowest wins: the job's stage, the
    capability's earned level (shadow → propose → auto, promoted only by the operator, per capability
-   on every machine, within each host's ceiling), taint, the autonomy freeze.
+   on every machine, within each host's ceiling), taint, the autonomy freeze. (Amended by
+   [ADR-0013](ADR-0013-fleet-packs.md): the installation's cap joins the list.)
 5. **Workers per role**, not per fleet; Ops starts with `ops-read` and `ops-act-host`.
 6. **Host writes through an actuator**: a host service with an allowlist, idempotent by execution id,
    with its own ADR before it is built.

@@ -92,6 +92,7 @@ nav:
     - ADR-0010 — Memory and knowledge: adr/ADR-0010-memory-and-knowledge.md
     - ADR-0011 — Tools and actions: adr/ADR-0011-tools-and-actions.md
     - ADR-0012 — Skills in the harness: adr/ADR-0012-skills.md
+    - ADR-0013 — Fleet packs: adr/ADR-0013-fleet-packs.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

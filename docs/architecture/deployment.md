@@ -113,6 +113,11 @@ the first write at propose (ADR-0006 §11).
   it.
 - **State:** the database lives on a volume and survives restarts. Schema steps run at start-up in
   order, each in a transaction; an older flotillad refuses a newer database.
+- **Fleet packs** ([ADR-0013](../adr/ADR-0013-fleet-packs.md), not built): an installation's pack
+  folders are mounted read-only into flotillad only, never into a worker; a change to a pack runs
+  only after the operator approves its set hash, not at the next deploy. flotillad's config gains
+  `installation:`, its name, beside `environment:`. A second installation on one host needs the
+  compose project's name and the container names parametrised.
 
 ## Development and tests
 

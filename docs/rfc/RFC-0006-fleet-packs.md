@@ -1,9 +1,9 @@
 # RFC-0006 — Fleet packs: flows as files, shared between people and promoted between installations
 
-**Status:** Draft, revision 9 (2026-11-12): the operator's decisions on revision 1 applied (§12);
-revision 3 draws the boundary between development tests and evaluation, and adds the replay entry
-point and the input contract (§8); revisions 4 to 9 take in six independent reviews (§15).
-Nothing is built from it until it is accepted.
+**Status:** Accepted → [ADR-0013](../adr/ADR-0013-fleet-packs.md) (operator, 2026-11-12),
+revision 9. The operator's decisions on revision 1 are applied (§12); revision 3 draws the boundary
+between development tests and evaluation, and adds the replay entry point and the input contract
+(§8); revisions 4 to 9 take in six independent reviews (§15).
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the runtime, steps and the harness),
 [ADR-0007](../adr/ADR-0007-routine.md) (routines), [ADR-0008](../adr/ADR-0008-autonomy.md) (autonomy),
 [ADR-0011](../adr/ADR-0011-tools-and-actions.md) (tools and actions),

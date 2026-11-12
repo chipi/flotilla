@@ -214,8 +214,9 @@ It is the same code for every fleet. Fleets differ only in what they configure.
   - Read-only is enforced by the credential the tool uses (a read-only database role, viewer
     tokens), not by inspecting what the model asked for.
 - **No writes inside the harness.** Every write is an output: a GitHub issue, comment, PR or label,
-  a finding, a page, a push. Outputs run after the gates, and only when the job's stage allows it or
-  after the operator's approval (RFC-0001 §5, Components).
+  a finding, a page, a git push (a metrics push is telemetry, ADR-0013). Outputs run after the
+  gates, and only when the job's stage allows it or after the operator's approval (RFC-0001 §5,
+  Components).
 - **Gates read only the run's recorded evidence.**
   - A lookup a gate needs (the edge gate's live queries, GitHub's open state for dedup) is made as a
     recorded tool call.
