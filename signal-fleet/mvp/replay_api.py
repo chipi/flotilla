@@ -273,45 +273,78 @@ def _reply(turn):
 
 
 def triage(world, signal, model, tools, gates="live", max_probes=None):
-    """One triage step (triage.investigate: the probe loop, the decision, the gates) over a recorded world.
+    """One triage step (triage.investigate: the probe loop, the decision, the gates) over a world, each seam
+    recorded or live.
 
-    model:  {"replies": [turn, ...]} the recorded replies in order (a capture's exact.turns, or reply strings), with
-            optional "model" (the alias the requests named), "url" (the endpoint) and "trace_id", so the requests
-            come out as recorded; or {"stub": decision}: a fixed decision, no model call at all.
-    tools:  {"results": probe table} (a capture's `probes`): the probes answered from the record.
+    model:  recorded: {"replies": [turn, ...]} the recorded replies in order (a capture's exact.turns, or reply
+            strings), with optional "model" (the alias the requests named), "url" (the endpoint) and "trace_id",
+            so the requests come out as recorded; or {"stub": decision}: a fixed decision, no model call at all.
+            live (model replay): {"alias": name, "k": runs, "body": extra request fields (reasoning_effort,
+            max_tokens), "timeout": seconds, "reply_in_tool_call": a tool name whose call carries the reply,
+            "tags": [...], "url": endpoint}. Through the gateway, live requests are tagged "flotilla-replay" (and
+            the caller's tags) in their metadata, so its traces tell them from production. The key is the
+            installation's (OPENROUTER_API_KEY); without it the call is refused.
+    tools:  {"results": probe table} (a capture's `probes`), or "live": the installation's probes, read-only
+            (freezing: the run's probe trace is what was frozen).
     gates:  {"lookups": [...]} as for ra.gates, or "live".
-    Live models and live tools (model replay, freezing) are the next step and are refused here.
     Returns the usual shape with "decision" (after the gates), "model_decision" (before them), and the record:
-    the turns, lookups and requests sent ("exact"), and the probe trace."""
+    the turns, lookups and requests sent ("exact"), the probe trace and meta. With k > 1, "runs" holds every
+    run's result, decision, model_decision and record, and the top level is the first run's."""
     import copy
     import json
     import guards
     import observ
     import triage as t
-    if not isinstance(tools, dict) or "results" not in tools:
-        raise NotImplementedError("live tools (freezing) are not in this version: pass {'results': probe table}")
-    if not isinstance(model, dict) or not ({"replies", "stub"} & set(model)):
-        raise NotImplementedError("live models (model replay) are not in this version: pass replies or a stub")
-    sent, missing = [], []
-    queue = [_reply(x) for x in model.get("replies") or []]
+    live_tools = tools == "live"
+    if not live_tools and not (isinstance(tools, dict) and "results" in tools):
+        raise ValueError("tools: {'results': probe table} or 'live'")
+    live_model = isinstance(model, dict) and "alias" in model
+    if not isinstance(model, dict) or not (live_model or {"replies", "stub"} & set(model)):
+        raise ValueError("model: {'replies': [...]}, {'stub': decision} or {'alias': name, ...}")
+    if live_model and not config.OPENROUTER_KEY:
+        raise RuntimeError("a live model needs the installation's key (OPENROUTER_API_KEY); none is set")
+    missing = []
+    real_post = t.post_json
 
-    def post(url, body, headers=None, timeout=60):
-        sent.append(json.dumps(body))
-        a = queue.pop(0) if queue else {"choices": [{"message": {"content": ""}}], "usage": {}}
-        if isinstance(a, BaseException):
-            raise a
-        return copy.deepcopy(a)
+    def recorded_post(sent, queue):
+        def post(url, body, headers=None, timeout=60):
+            sent.append(json.dumps(body))
+            a = queue.pop(0) if queue else {"choices": [{"message": {"content": ""}}], "usage": {}}
+            if isinstance(a, BaseException):
+                raise a
+            return copy.deepcopy(a)
+        return post
 
-    t_attrs = {"post_json": post, "_EXACT": None}
-    if "stub" in model:
-        stub = json.dumps(dict(model["stub"], action="decide"))
-        t_attrs["_call"] = lambda messages, trace_id=None, step=None: (stub, {})
+    def live_post(sent):
+        tags = ["flotilla-replay"] + list(model.get("tags") or [])
+        tool_name = model.get("reply_in_tool_call")
+
+        def post(url, body, headers=None, timeout=60):
+            if config.via_gateway():   # the gateway's Langfuse reads the tags; OpenRouter direct takes no metadata
+                body = dict(body, metadata=dict(body.get("metadata") or {}, tags=tags, trace_name="flotilla-replay"))
+            body = dict(body, **(model.get("body") or {}))
+            if "reasoning_effort" in body and config.via_gateway():
+                # a LiteLLM gateway refuses reasoning_effort for most hosted models unless the request names it
+                body["allowed_openai_params"] = sorted(set(body.get("allowed_openai_params") or []) |
+                                                       {"reasoning_effort"})
+            sent.append(json.dumps(body))
+            resp = real_post(url, body, headers=headers, timeout=model.get("timeout") or timeout)
+            if tool_name:
+                msg = ((resp.get("choices") or [{}])[0]).get("message") or {}
+                calls = msg.get("tool_calls") or []
+                if not (msg.get("content") or "").strip() and len(calls) == 1 \
+                        and (calls[0].get("function") or {}).get("name") == tool_name:
+                    args = calls[0]["function"].get("arguments")
+                    msg["content"] = args if isinstance(args, str) else json.dumps(args)
+            return resp
+        return post
+
     cfg = {"CAPTURE_PROBES": True}
-    if model.get("model"):
-        cfg["TRIAGE_MODEL"] = model["model"]
+    if model.get("model") or model.get("alias"):
+        cfg["TRIAGE_MODEL"] = model.get("alias") or model["model"]
     if model.get("url"):
         cfg["OPENROUTER_URL"] = model["url"]
-    if not config.OPENROUTER_KEY:
+    if not live_model and not config.OPENROUTER_KEY:
         cfg["OPENROUTER_KEY"] = "replay"   # never sent anywhere: post_json is the record's
     g_attrs = {}
     if gates != "live":
@@ -327,21 +360,34 @@ def triage(world, signal, model, tools, gates="live", max_probes=None):
             raise RuntimeError("no recorded lookup")
         g_attrs["restarts_near"] = restarts_near
     tid = model.get("trace_id")
+    k = int(model.get("k") or 1) if live_model else 1
+    runs = []
     if not _BUSY.acquire(blocking=False):
         raise RuntimeError("replay_api runs one call at a time in a process: use processes for parallel replays")
     try:
-        with _quiet(), _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), _swapped(config, cfg), \
-                _swapped(t, t_attrs), _swapped(guards, g_attrs), \
-                _swapped(observ, {"new_trace_id": (lambda: tid)} if tid else {}):
-            d = t.investigate(copy.deepcopy(signal), max_probes=max_probes, probe_table=tools["results"])
+        for _ in range(k):
+            sent = []
+            t_attrs = {"_EXACT": None, "post_json": live_post(sent) if live_model else
+                       recorded_post(sent, [_reply(x) for x in model.get("replies") or []])}
+            if "stub" in model:
+                stub = json.dumps(dict(model["stub"], action="decide"))
+                t_attrs["_call"] = lambda messages, trace_id=None, step=None: (stub, {})
+            with _quiet(), _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), _swapped(config, cfg), \
+                    _swapped(t, t_attrs), _swapped(guards, g_attrs), \
+                    _swapped(observ, {"new_trace_id": (lambda: tid)} if tid else {}):
+                d = t.investigate(copy.deepcopy(signal), max_probes=max_probes,
+                                  probe_table=None if live_tools else tools["results"])
+            if missing:
+                raise LookupMissing("the record holds no " + "; ".join(missing))
+            meta = d.get("_meta") or {}
+            decision = {key: v for key, v in d.items() if not key.startswith("_")}
+            runs.append({"result": f"{decision.get('disposition')} ({meta.get('gates')})", "decision": decision,
+                         "model_decision": d.get("_pre_gate"),
+                         "record": {"exact": dict(d.get("_exact") or {}, requests=sent),
+                                    "probe_trace": d.get("_probe_trace"), "meta": meta}})
     finally:
         _BUSY.release()
-    if missing:
-        raise LookupMissing("the record holds no " + "; ".join(missing))
-    meta = d.get("_meta") or {}
-    decision = {k: v for k, v in d.items() if not k.startswith("_")}
-    return {"api": API_VERSION, "result": f"{decision.get('disposition')} ({meta.get('gates')})", "writes": [],
-            "ledger": world.ledger(),
-            "record": {"exact": dict(d.get("_exact") or {}, requests=sent), "probe_trace": d.get("_probe_trace"),
-                       "meta": meta},
-            "decision": decision, "model_decision": d.get("_pre_gate")}
+    out = dict(runs[0], api=API_VERSION, writes=[], ledger=world.ledger())
+    if k > 1:
+        out["runs"] = runs
+    return out

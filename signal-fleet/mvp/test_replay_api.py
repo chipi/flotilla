@@ -337,12 +337,96 @@ class Triage(unittest.TestCase):
                 config.OPENROUTER_KEY, triage.post_json = key, real_post
         self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
 
-    def test_live_seams_are_refused_in_this_version(self):
+    def test_bad_seams_are_refused(self):
         with ra.World(now=NOW, github=GitHub()) as w:
-            with self.assertRaises(NotImplementedError):
-                ra.triage(w, SIG, model={"alias": "triage-pro"}, tools={"results": {}})
-            with self.assertRaises(NotImplementedError):
-                ra.triage(w, SIG, model={"stub": {"disposition": "dismiss"}}, tools="live")
+            with self.assertRaises(ValueError):
+                ra.triage(w, SIG, model={"replies": []}, tools={"probes": {}})
+            with self.assertRaises(ValueError):
+                ra.triage(w, SIG, model={"nothing": 1}, tools={"results": {}})
+
+
+class TriageLive(unittest.TestCase):
+    """The live seams over a fake network: what ra.triage sends to the model and asks of the probes."""
+
+    GATEWAY = "http://gateway.invalid/v1/chat/completions"
+    DECIDE = ('{"action":"decide","disposition":"dismiss","reason":"benign","certainty":"high",'
+              '"dismissal_evidence":"service_logs: all quiet","immediate_recommendation":null}')
+    PROBE = '{"action":"probe","probe":"service_logs","probe_args":{}}'
+
+    def setUp(self):
+        import triage
+        self.triage = triage
+        self.calls = []
+        self.replies = []
+        self.real = (triage.post_json, config.OPENROUTER_KEY)
+
+        def network(url, body, headers=None, timeout=60):     # the model endpoint, faked
+            self.calls.append({"url": url, "body": body, "timeout": timeout})
+            content = self.replies.pop(0) if self.replies else self.DECIDE
+            if isinstance(content, dict):
+                return {"choices": [{"message": content}], "usage": {}}
+            return {"choices": [{"message": {"content": content}}], "usage": {"prompt_tokens": 1}}
+        triage.post_json = network
+        config.OPENROUTER_KEY = "test-key"
+
+    def tearDown(self):
+        self.triage.post_json, config.OPENROUTER_KEY = self.real
+
+    def live(self, tools=None, **model):
+        import gate_harness_replay as ghr
+        with ra.World(now=NOW, github=GitHub()) as w:
+            return ra.triage(w, ghr.SIG, model=dict({"alias": "triage-pro"}, **model),
+                             tools=tools or {"results": ghr.TABLE}, gates={"lookups": []})
+
+    def test_model_replay_k_runs_through_the_gateway(self):
+        self.replies = [self.PROBE, self.DECIDE, self.DECIDE]
+        out = self.live(k=2, url=self.GATEWAY, body={"reasoning_effort": "low", "max_tokens": 900}, timeout=120,
+                        tags=["evh-eval"])
+        self.assertEqual(len(out["runs"]), 2)
+        self.assertEqual([len(r["record"]["exact"]["requests"]) for r in out["runs"]], [2, 1])
+        self.assertEqual(out["decision"], out["runs"][0]["decision"])
+        body = self.calls[0]["body"]
+        self.assertEqual(body["model"], "triage-pro")
+        self.assertEqual(body["metadata"]["tags"], ["flotilla-replay", "evh-eval"])
+        self.assertEqual((body["reasoning_effort"], body["max_tokens"]), ("low", 900))
+        self.assertEqual(body["allowed_openai_params"], ["reasoning_effort"])
+        self.assertEqual(self.calls[0]["timeout"], 120)
+        self.assertEqual(self.calls[0]["url"], self.GATEWAY)
+        self.assertIs(self.triage.post_json.__name__, "network")       # restored
+
+    def test_direct_calls_carry_no_metadata(self):
+        self.live(url="https://openrouter.ai/api/v1/chat/completions", body={"reasoning_effort": "low"})
+        self.assertNotIn("metadata", self.calls[0]["body"])
+        self.assertNotIn("allowed_openai_params", self.calls[0]["body"])
+
+    def test_a_reply_given_as_a_tool_call(self):
+        self.replies = [{"content": "", "tool_calls": [{"function": {"name": "decide", "arguments": self.DECIDE}}]}]
+        out = self.live(url=self.GATEWAY, reply_in_tool_call="decide")
+        self.assertEqual(out["model_decision"]["disposition"], "dismiss")
+        self.assertEqual(len(self.calls), 1)        # decided on that reply, not on a retry after an empty one
+
+    def test_freezing_runs_the_probes_live_and_records_them(self):
+        import probes
+        asked = []
+        real_run = probes.run_probe
+
+        def run_probe(signal, name, args, table=None):
+            asked.append(table)
+            return "logs: all quiet (live)"
+        probes.run_probe = run_probe
+        try:
+            self.replies = [self.PROBE, self.DECIDE]
+            out = self.live(tools="live", url=self.GATEWAY)
+        finally:
+            probes.run_probe = real_run
+        self.assertEqual(asked, [None])                                 # live: no table
+        self.assertEqual(out["record"]["probe_trace"][0]["result"], "logs: all quiet (live)")
+
+    def test_a_live_model_needs_the_key(self):
+        config.OPENROUTER_KEY = ""
+        with self.assertRaises(RuntimeError):
+            self.live(url=self.GATEWAY)
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == "__main__":

@@ -128,5 +128,7 @@ the returned record, so a model replay's output is itself a record under the inp
    sweeps; the adapter reproduces it faithfully, 324 of 324), with the expected per-step outputs
    from the evaluation project.
 2. `ra.gates`, then `ra.triage` with recorded seams (exact replay) and a stub model, then live
-   seams (model replay, freezing; refused with `NotImplementedError` until then).
+   seams: a model alias with k runs, body extras, timeout, replay tags (through the gateway) and a
+   reply given as a tool call (model replay), and live probes (freezing). Built and proven on
+   synthetic cases; a live call against a real model needs the operator's go (it costs).
 3. The scorer moves out (ADR-0013), using `ra.triage`.
