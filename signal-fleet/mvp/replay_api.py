@@ -6,6 +6,7 @@ recorded world, with nothing sent, so an evaluation project never patches this c
         out = ra.file(world, signal, issue, "bug")        # file_or_update
         out = ra.escalate(world, signal, decision)        # file_escalation
         out = ra.sweep(world, occurrences, firing)        # one stale sweep
+        out = ra.gates(world, signal, decision, trace=trace, gates={"lookups": [...]})  # the gates alone
 
 `gh(method, path, payload)` is the caller's: every GitHub call goes to it, writes included, and its answer is what
 the code reads back; the caller decides what time its reads stand at. Each call returns
@@ -191,3 +192,49 @@ def sweep(world, occurrences, firing, quiet_days=None):
             stack.enter_context(_swapped(callrec, {"write_sweep": lambda rec, now, occurrences: kept.append(rec.rec)}))
         result = stale.run_pass(dry_run=False, now=world.now, force=True)
     return _out(world, result, writes, kept[-1] if kept else None)
+
+
+class LookupMissing(LookupError):
+    """A gate asked for a lookup the record does not hold: refused rather than answered live."""
+
+
+def gates(world, signal, decision, trace=(), gates="live"):
+    """The registered gates alone (triage._gate in the routine's configured order) over the model's own decision, no
+    model call. `trace`: the probe trace the decision was made on ({"probe", "args", "result"} each; the dismiss gate
+    reads it). `gates`: "live" (the installation's lookups, read-only) or {"lookups": [{"kind", "args", "result" |
+    "error"}, ...]} as recorded; a lookup the record lacks raises LookupMissing. Returns the usual shape with
+    "decision" (after the gates), "model_decision" (as given) and the gates string as "result"; "record" holds the
+    lookups the gates made."""
+    import copy
+    import guards
+    import triage
+    model_decision = copy.deepcopy(decision)
+    attrs, missing = {}, []
+    if gates != "live":
+        recorded = list((gates or {}).get("lookups") or [])
+
+        def restarts_near(instance, at, before_s=600, after_s=300, data=None):
+            for look in recorded:
+                if look.get("kind") == "restarts_near" and look.get("args") == {"instance": instance, "at": at}:
+                    if "error" in look:
+                        raise RuntimeError(look["error"])
+                    return list(look.get("result") or [])
+            # the edge gate turns any lookup error into an escalation, so the miss is noted and raised after it
+            missing.append(f"restarts_near for {instance} at {at!r}")
+            raise RuntimeError("no recorded lookup")
+        attrs["restarts_near"] = restarts_near
+    if not _BUSY.acquire(blocking=False):
+        raise RuntimeError("replay_api runs one call at a time in a process: use processes for parallel replays")
+    try:
+        with _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), \
+                _swapped(config, {"CAPTURE_PROBES": True}), _swapped(guards, attrs), \
+                _swapped(triage, {"_EXACT": None}):
+            triage._exact_start()
+            d, result = triage._gate(copy.deepcopy(decision), signal, list(trace))
+            lookups = list((triage._EXACT or {}).get("lookups") or [])
+    finally:
+        _BUSY.release()
+    if missing:
+        raise LookupMissing("the record holds no " + "; ".join(missing))
+    return {"api": API_VERSION, "result": result, "writes": [], "ledger": world.ledger(),
+            "record": {"lookups": lookups}, "decision": d, "model_decision": model_decision}

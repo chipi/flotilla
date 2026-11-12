@@ -41,7 +41,7 @@ world = ra.World(
 out = ra.file(world, signal, issue, kind)        # a file decision (file_or_update)
 out = ra.escalate(world, signal, decision)       # an escalate decision (file_escalation)
 out = ra.sweep(world, occurrences, firing, quiet_days=None)    # one stale sweep
-out = ra.gates(world, signal, decision, gates=...)             # the gates alone, no model call
+out = ra.gates(world, signal, decision, trace=..., gates=...)  # the gates alone, no model call
 out = ra.triage(world, signal, model=..., tools=..., gates=...) # one triage step (below)
 ```
 
@@ -72,6 +72,12 @@ Each call returns the same shape:
 
 `ra.triage` and `ra.gates` add `"decision"` (after the gates) and `"model_decision"` (the model's
 own, before them; `ra.gates` returns the one it was given).
+
+**The gates alone:** `ra.gates` runs the registered gates in the routine's configured order over
+the model's decision and the probe `trace` it was made on, with no model call; its `result` is the
+gates string and its record the lookups the gates made. With recorded `gates` (`{"lookups": [...]}`),
+a lookup the record does not hold raises `ra.LookupMissing` instead of being answered live (the
+edge gate would otherwise turn the miss into a "lookup failed" escalation).
 
 **The triage step's seams**, each recorded or live per call (RFC-0006 §8's table):
 

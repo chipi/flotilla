@@ -192,5 +192,54 @@ class Sweep(unittest.TestCase):
         self.assertIs(filing.alert_key.__module__, "filing")
 
 
+class Gates(unittest.TestCase):
+    EDGE = {"fingerprint": "grafana:edge1", "source": "grafana", "alertname": "Edge 5xx burst on example.invalid",
+            "labels": {}, "startsAt": "2026-10-26T13:46:30Z"}
+    LOOK = {"kind": "restarts_near", "args": {"instance": "prod-podcast", "at": "2026-10-26T13:46:30Z"}}
+    LOGS = [{"probe": "service_logs", "args": {}, "result": "200 OK for the last hour"}]
+
+    def run_gates(self, signal, decision, trace=(), gates=None):
+        import guards
+        import triage
+        before = (guards.restarts_near, triage._EXACT)
+        with ra.World(now=NOW, github=GitHub()) as w:
+            out = ra.gates(w, signal, decision, trace=trace, gates=gates if gates is not None else {"lookups": []})
+        self.assertIs(guards.restarts_near, before[0])
+        self.assertIs(triage._EXACT, before[1])
+        return out
+
+    def test_a_file_without_cited_intent_is_escalated(self):
+        model = {"disposition": "file", "reason": "r", "file": {"acceptance": [{"text": "works"}]}}
+        out = self.run_gates(SIG, model)
+        self.assertEqual(out["decision"]["disposition"], "escalate")
+        self.assertIn("i:downgraded", out["result"])
+        self.assertEqual(out["model_decision"], model)        # the model's own, untouched
+        self.assertEqual(model["disposition"], "file")        # the caller's dict is not changed
+
+    def test_a_dismiss_with_corroboration_passes(self):
+        out = self.run_gates(SIG, {"disposition": "dismiss", "reason": "r", "dismissal_evidence": "logs clean"},
+                             trace=self.LOGS)
+        self.assertEqual(out["decision"]["disposition"], "dismiss")
+        self.assertIn("d:passed", out["result"])
+
+    def test_the_edge_gate_reads_the_recorded_lookup(self):
+        dismiss = {"disposition": "dismiss", "reason": "r", "dismissal_evidence": "logs clean"}
+        quiet = self.run_gates(self.EDGE, dict(dismiss), self.LOGS, {"lookups": [dict(self.LOOK, result=[])]})
+        self.assertIn("e:passed", quiet["result"])
+        self.assertEqual(quiet["record"]["lookups"], [dict(self.LOOK, result=[])])
+        hit = self.run_gates(self.EDGE, dict(dismiss), self.LOGS, {"lookups": [dict(self.LOOK, result=["player-api"])]})
+        self.assertEqual(hit["decision"]["disposition"], "escalate")
+        self.assertIn("e:downgraded (restart nearby)", hit["result"])
+        err = self.run_gates(self.EDGE, dict(dismiss), self.LOGS, {"lookups": [dict(self.LOOK, error="timeout")]})
+        self.assertIn("e:downgraded (lookup failed)", err["result"])
+
+    def test_a_missing_recorded_lookup_is_refused(self):
+        dismiss = {"disposition": "dismiss", "reason": "r", "dismissal_evidence": "logs clean"}
+        with self.assertRaises(ra.LookupMissing):
+            self.run_gates(self.EDGE, dismiss, self.LOGS, {"lookups": []})
+        with ra.World(now=NOW, github=GitHub()) as w:         # and the lock is free again
+            ra.gates(w, SIG, {"disposition": "dismiss", "reason": "r"}, gates={"lookups": []})
+
+
 if __name__ == "__main__":
     unittest.main()
