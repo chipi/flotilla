@@ -583,6 +583,7 @@ def _link(fp, gk, nk, ak, prior):
     if not link_enabled() or prior.get("_dim") not in LINK_DIMS or prior.get("fingerprint") == fp:
         return
     own = [r for r in _ledger_rows({"fingerprint": fp}) if r.get("fingerprint") == fp]
+    callrec.note("link_own", own)   # the read the decision below rests on, for an exact replay
     if own and not own[-1].get("linked_via"):
         return
     if own and (own[-1]["repo"], str(own[-1]["issue"]), own[-1]["linked_via"]) \

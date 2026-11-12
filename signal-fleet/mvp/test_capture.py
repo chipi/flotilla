@@ -222,6 +222,12 @@ class FilingAndSweepRecords(unittest.TestCase):
         rec = self.callrec.LAST_FILING
         self.assertTrue(out.startswith("COMMENTED"), out)
         self.assertEqual((rec["matched"]["issue"], rec["matched"]["_dim"]), ("5", "norm_key"))
+        self.assertEqual(rec["link_own"], [])   # the link's own read: no row of its own yet
+        self.assertEqual(rec["written"][-1]["linked_via"], "norm_key")
+        with mock.patch.object(config, "CAPTURE_PROBES", True):
+            self._file()
+        rec = self.callrec.LAST_FILING
+        self.assertEqual([r["linked_via"] for r in rec["link_own"]], ["norm_key"])   # the link it kept
 
     def test_probes_gets_only_the_capture(self):
         with mock.patch.object(config, "CAPTURE_PROBES", True):
