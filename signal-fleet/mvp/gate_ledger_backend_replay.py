@@ -45,8 +45,25 @@ def synthetic(path, n, seed=11):
                      f"g{r.randrange(n // 8 + 1)}" if r.random() < .3 else "")
             cols = [f"glitchtip:X-{i}", "o/r", str(1000 + i), group,
                     "2026-11-01T00:00:00Z", "", f"n{r.randrange(n // 4 + 1)}" if r.random() < .8 else "",
-                    f"a{r.randrange(n // 10 + 1)}" if r.random() < .5 else ""]
+                    f"a{r.randrange(n // 10 + 1)}" if r.random() < .5 else "",
+                    r.choice(filing.LINK_DIMS) if r.random() < .15 else ""]   # linked rows: lookups skip them
             f.write("\t".join(cols) + "\n")
+
+
+def pads_an_old_file(work):
+    """A filed.tsv from before `linked_via` (8 columns) is refused by import until `pad` rewrites it."""
+    path = os.path.join(work, "old.tsv")
+    with open(path, "w") as f:
+        f.write("\t".join(filing.FILED_COLS[:8]) + "\n")
+        f.write("glitchtip:O-1\to/r\t1\t\t2026-01-01\t\tn1\ta1\n")
+    keep, filing.FILED = filing.FILED, path
+    use("api", f"replay-{uuid.uuid4().hex[:12]}")
+    try:
+        if ledger_sync.main(["import"]) != 1:
+            return False
+        return ledger_sync.main(["pad"]) == 0 and ledger_sync.main(["import"]) == 0
+    finally:
+        filing.FILED = keep
 
 
 def refuses_short_rows(work):
@@ -166,6 +183,8 @@ def main():
             bad.append("the TSVs rendered from the store differ from the files after the writes")
         if not refuses_short_rows(work):
             bad.append("an import of a ledger with a short row was not refused")
+        if not pads_an_old_file(work):
+            bad.append("an 8-column filed.tsv was not refused, then padded and imported")
         use("api", f"replay-{uuid.uuid4().hex[:12]}")   # a namespace never imported
         try:
             filing._ledger_rows({"fingerprint": "x"})

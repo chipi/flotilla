@@ -434,6 +434,118 @@ class TestLedgerDedup(unittest.TestCase):
         self.assertTrue(out.startswith("MUTED"), f"expected mute honored, got: {out}")
 
 
+class TestFilingLink(unittest.TestCase):
+    """A fingerprint matched on another key gets a linked row naming the issue; ledger_lookup
+    never returns linked rows, so no decision changes and no mute spreads through a link."""
+
+    REPO = "chipi/podcast_scraper"
+    TITLE = "Audio eviction size mismatch: cold (999999) != local (1) for /a/b/c"
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False)
+        self._tmp.close()
+        self._orig = (filing.FILED, filing._gh, filing.issue_state)
+        filing.FILED = self._tmp.name
+        self.gh_calls, self.muted = [], False
+        filing._gh = lambda m, p, payload=None: (self.gh_calls.append((m, p, payload))
+                                                  or {"number": 99, "html_url": "u/99"})
+        filing.issue_state = lambda repo, num: {
+            "state": "open", "labels": [filing.MUTE_LABEL] if self.muted else [],
+            "closed_at": None, "url": ""}
+        os.environ.pop("SF_FILING_LINK", None)
+
+    def tearDown(self):
+        filing.FILED, filing._gh, filing.issue_state = self._orig
+        os.environ.pop("SF_FILING_LINK", None)
+        os.unlink(self._tmp.name)
+
+    def _seed_old(self, **extra):
+        sig = _psig("glitchtip:PODCAST-OLD", self.TITLE)
+        row = {"fingerprint": "glitchtip:PODCAST-OLD", "repo": self.REPO, "issue": "5",
+               "group_key": "", "norm_key": filing.normalized_key(sig)}
+        filing._ledger_write([dict(row, **extra)])
+
+    def _file_new(self, fp="glitchtip:PODCAST-NEW"):
+        return filing.file_or_update(_psig(fp, self.TITLE), {"title": "t", "body": "b"}, "bug")
+
+    def _row(self, fp):
+        return next((r for r in filing._tsv_rows() if r["fingerprint"] == fp), None)
+
+    def test_comment_via_norm_key_links_the_new_fingerprint(self):
+        self._seed_old()
+        self.assertTrue(self._file_new().startswith("COMMENTED"))
+        r = self._row("glitchtip:PODCAST-NEW")
+        self.assertEqual((r["repo"], r["issue"], r["linked_via"]), (self.REPO, "5", "norm_key"))
+        self.assertEqual(self._row("glitchtip:PODCAST-OLD")["linked_via"], "")
+
+    def test_dedup_links_too(self):
+        self._seed_old(last_comment_day=filing._today())
+        self.assertTrue(self._file_new().startswith("DEDUP"))
+        self.assertEqual(self._row("glitchtip:PODCAST-NEW")["linked_via"], "norm_key")
+
+    def test_lookup_never_returns_a_linked_row(self):
+        self._seed_old()
+        self._file_new()
+        self.assertIsNone(filing.ledger_lookup("glitchtip:PODCAST-NEW"))
+
+    def test_a_mute_never_spreads_through_a_link(self):
+        # linked while the issue was open; muted later: the new fingerprint still files fresh,
+        # as it did before links, instead of matching its linked row exactly and inheriting the mute
+        self._seed_old()
+        self._file_new()
+        self.muted = True
+        out = self._file_new()
+        self.assertTrue(out.startswith("FILED"), f"expected a fresh file, got: {out}")
+        self.assertEqual(self._row("glitchtip:PODCAST-NEW")["linked_via"], "")   # its own row now
+
+    def test_group_key_mute_links(self):
+        filing._ledger_write([{"fingerprint": "grafana:old", "repo": "r", "issue": "7",
+                               "group_key": "gk", "norm_key": ""}])
+        self.muted = True
+        sig = {"fingerprint": "grafana:new", "source": "grafana", "alertname": "x", "labels": {}}
+        orig = filing.group_key_for
+        filing.group_key_for = lambda *a: "gk"
+        try:
+            out = filing.file_or_update(sig, {"title": "x", "body": "b"}, "bug")
+        finally:
+            filing.group_key_for = orig
+        self.assertTrue(out.startswith("MUTED"), out)
+        self.assertEqual(self._row("grafana:new")["linked_via"], "group_key")
+
+    def test_exact_fingerprint_hit_writes_no_link(self):
+        self._seed_old()
+        self.assertTrue(self._file_new("glitchtip:PODCAST-OLD").startswith("COMMENTED"))
+        self.assertEqual([r["linked_via"] for r in filing._tsv_rows()], [""])
+
+    def test_switch_off_writes_no_link(self):
+        os.environ["SF_FILING_LINK"] = "0"
+        self._seed_old()
+        self.assertTrue(self._file_new().startswith("COMMENTED"))
+        self.assertIsNone(self._row("glitchtip:PODCAST-NEW"))
+
+    def test_a_row_of_its_own_is_never_replaced(self):
+        filing._ledger_write([{"fingerprint": "fp", "repo": "r", "issue": "1", "group_key": ""}])
+        filing._link("fp", "", "", "", {"fingerprint": "other", "repo": "r", "issue": "2",
+                                        "_dim": "norm_key"})
+        self.assertEqual(self._row("fp")["issue"], "1")
+
+    def test_a_linked_row_is_never_a_rollup_bucket(self):
+        gk = filing.ROLLUP_PREFIX + "podcast"
+        filing._ledger_write([{"fingerprint": "own", "repo": "r", "issue": "1", "group_key": gk},
+                              {"fingerprint": "lnk", "repo": "r", "issue": "2", "group_key": gk,
+                               "linked_via": "group_key"}])
+        self.assertEqual(filing._rollup_row(gk)["issue"], "1")
+
+    def test_an_unchanged_link_is_not_rewritten(self):
+        self._seed_old()
+        self._file_new()
+        first = self._row("glitchtip:PODCAST-NEW")["filed_at"]
+        filing._link("glitchtip:PODCAST-NEW", "", "", "",
+                     dict(self._row("glitchtip:PODCAST-OLD"), _dim="norm_key"))
+        self.assertEqual(self._row("glitchtip:PODCAST-NEW")["filed_at"], first)
+
+
 def _lowsig(fp, title, count="1", users=0, culprit=""):
     return {"fingerprint": fp, "source": "glitchtip", "alertname": title,
             "labels": {"project": "podcast", "count": count},

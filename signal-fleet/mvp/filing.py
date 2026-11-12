@@ -38,7 +38,19 @@ FILED = os.path.expanduser(os.environ.get("SF_FILED_LEDGER",
 # every read is `.get("norm_key","")`. This is `filed.tsv`, a SEPARATE ledger from
 # config.LEDGER (dispositions.tsv, migrated by actions._ensure_ledger_schema).
 FILED_COLS = ["fingerprint", "repo", "issue", "group_key", "filed_at",
-              "last_comment_day", "norm_key", "alert_key"]
+              "last_comment_day", "norm_key", "alert_key", "linked_via"]
+
+# A signal that matched an issue on a key other than its own fingerprint gets a row of its own
+# pointing at that issue, marked `linked_via` (the key it matched on). Before 2026-11-12 it got
+# none: 265 of 1,117 file decisions before 2026-11-07 left no row, so the stale check and the
+# GlitchTip close sync never saw them. ledger_lookup never returns a linked row, so every decision
+# still goes through the rows that made it, exactly as before, and an operator's mute is never
+# inherited through a fuzzy match. SF_FILING_LINK=0 turns linking off (rollback; the replay's base).
+LINK_DIMS = ("group_key", "norm_key", "alert_key")
+
+
+def link_enabled():
+    return os.environ.get("SF_FILING_LINK", "1") != "0"
 
 
 # ── the ledger's backend (RFC-0002 §9 step 5) ────────────────────────────────
@@ -405,7 +417,10 @@ def _tsv_rows():
         return []
     with open(FILED) as f:
         lines = f.read().splitlines()
-    return [dict(zip(FILED_COLS, ln.split("\t"))) for ln in lines[1:] if ln]
+    # padded to every column, as the api backend's rows are: a row of an older, shorter file reads
+    # the same before and after _ledger_write rewrites it
+    return [dict(zip(FILED_COLS, ln.split("\t") + [""] * len(FILED_COLS)))
+            for ln in lines[1:] if ln]
 
 
 def _ledger_write(rows):
@@ -427,8 +442,9 @@ def ledger_lookup(fingerprint, group_key="", norm_key="", alert_key="", is_open=
     dedups on fingerprint only), and first-match returns the OLDEST — after one
     regression cycle that resolves to a stale closed issue (review R3). Empty keys
     never match (a keyless row must not match every other keyless row)."""
-    rows = _ledger_rows({"fingerprint": fingerprint, "group_key": group_key, "norm_key": norm_key,
-                         "alert_key": alert_key})
+    rows = [r for r in _ledger_rows({"fingerprint": fingerprint, "group_key": group_key,
+                                     "norm_key": norm_key, "alert_key": alert_key})
+            if not r.get("linked_via")]
 
     def newest(pred):
         hit = None
@@ -561,6 +577,22 @@ def ledger_upsert(entry):
     _ledger_write(rows)
 
 
+def _link(fp, gk, nk, ak, prior):
+    """Give `fp`, matched on another key, a row of its own naming the issue that tracks it
+    (FILED_COLS' comment). Never replaces a row of its own; rewrites a link only when it moved."""
+    if not link_enabled() or prior.get("_dim") not in LINK_DIMS or prior.get("fingerprint") == fp:
+        return
+    own = [r for r in _ledger_rows({"fingerprint": fp}) if r.get("fingerprint") == fp]
+    if own and not own[-1].get("linked_via"):
+        return
+    if own and (own[-1]["repo"], str(own[-1]["issue"]), own[-1]["linked_via"]) \
+            == (prior["repo"], str(prior["issue"]), prior["_dim"]):
+        return
+    ledger_upsert({"fingerprint": fp, "repo": prior["repo"], "issue": prior["issue"],
+                   "group_key": gk, "filed_at": _now().isoformat(), "last_comment_day": "",
+                   "norm_key": nk, "alert_key": ak, "linked_via": prior["_dim"]})
+
+
 # ── GitHub REST ──────────────────────────────────────────────────────────
 def _gh(method, path, payload=None):
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -647,8 +679,8 @@ def _rollup_row(roll_gk):
     """The newest filed row of a rollup bucket, or None."""
     existing = None
     for r in _ledger_rows({"group_key": roll_gk}):
-        if r.get("group_key") == roll_gk:
-            existing = r                      # newest wins
+        if r.get("group_key") == roll_gk and not r.get("linked_via"):
+            existing = r                      # newest wins; a linked row is never a decision's input
     return existing
 
 
@@ -792,6 +824,7 @@ def _file_or_update(signal, issue, kind):
             if prior.get("_dim") in ("norm_key", "alert_key"):
                 prior = None
             else:
+                _link(fp, gk, nk, ak, prior)
                 return f"MUTED: {fp} → {prior['repo']}#{prior['issue']} (operator muted)"
 
     if prior:
@@ -803,6 +836,7 @@ def _file_or_update(signal, issue, kind):
             prior["alert_key"] = ak
         if st["state"] == "open":
             if prior.get("last_comment_day") == _today():
+                _link(fp, gk, nk, ak, prior)
                 return f"DEDUP: {fp} already commented today on {prior['repo']}#{prior['issue']}"
             inst = (signal.get("labels") or {}).get("instance", "")
             _gh("POST", f"/repos/{prior['repo']}/issues/{prior['issue']}/comments",
@@ -813,6 +847,7 @@ def _file_or_update(signal, issue, kind):
                          f"_signal-fleet recurrence tracking._"})
             prior["last_comment_day"] = _today()
             ledger_upsert(prior)
+            _link(fp, gk, nk, ak, prior)
             return (f"COMMENTED: recurrence on {prior['repo']}#{prior['issue']} (via {prior.get('_dim', '?')}"
                     f"{', duplicate ' + via if via else ''})")
         # closed
@@ -825,6 +860,7 @@ def _file_or_update(signal, issue, kind):
                          f"{' (via duplicate ' + via + ')' if via else ''}"})
             prior["last_comment_day"] = _today()
             ledger_upsert(prior)
+            _link(fp, gk, nk, ak, prior)
             _glitchtip_note(signal, f"Recurred after close — reopened GitHub issue "
                                     f"{prior['repo']}#{prior['issue']}")
             _grafana_annotation(f"reopened {prior['repo']}#{prior['issue']} (recurrence after close)",

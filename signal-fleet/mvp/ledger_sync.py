@@ -2,6 +2,8 @@
 
   python3 ledger_sync.py import     # load filed.tsv and dispositions.tsv into the routine's namespace, once
   python3 ledger_sync.py check      # render both TSVs from the store; equal to the files, byte for byte?
+  python3 ledger_sync.py pad        # rewrite filed.tsv with the current header and every column (no store
+                                    # needed): before an import or a check after FILED_COLS gained a column
 
 Run inside a worker, as its routine runs: FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE and FLOTILLA_ROUTINE
 (the namespace) name the ledger; SF_FILED_LEDGER and SF_LEDGER name the files (filing.FILED, config.LEDGER).
@@ -54,9 +56,23 @@ def _file(path):
 
 
 def main(argv):
-    if len(argv) != 1 or argv[0] not in ("import", "check"):
+    if len(argv) != 1 or argv[0] not in ("import", "check", "pad"):
         print(__doc__)
         return 2
+    if argv[0] == "pad":   # a TSV maintenance step, like filing's: the rows unchanged, padded to FILED_COLS
+        fh, before = tsv_filings()
+        if fh is None:
+            print("PAD: no filed.tsv")
+            return 1
+        rows = filing._tsv_rows()
+        filing._ledger_write(rows)
+        fh2, after = tsv_filings()
+        ok = fh2 == "\t".join(filing.FILED_COLS) and len(after) == len(before) \
+            and all(len(r) == len(filing.FILED_COLS) for r in after) \
+            and all(a[c] == b.get(c, "") for a, b in zip(after, before) for c in filing.FILED_COLS)
+        print(f"PAD: {len(after)} rows, {len(filing.FILED_COLS)} columns{'' if fh == fh2 else ' (header updated)'}: "
+              f"{'OK' if ok else 'FAILED'}")
+        return 0 if ok else 1
     if argv[0] == "import":   # the one caller allowed an empty namespace: it fills it
         client = filing._ledger_module().from_env()
     else:

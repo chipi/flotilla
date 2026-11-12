@@ -187,6 +187,11 @@ To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
 `filing.backfill_alert_keys` and `filing.retire_glitchtip_project` edit filed.tsv only; after one,
 re-import the namespace (a new namespace, or the routine's after an operator removes it).
 
+When `filing.FILED_COLS` gains a column (`linked_via`, 2026-11-12), a filed.tsv written by the older
+code keeps the old header until the routine's next filing rewrites it, and `import` refuses it. Run
+`ledger_sync.py pad` (the same `docker exec`, with the routine paused) before step 2; it rewrites the
+file with every column and the rows unchanged, and needs no store.
+
 ## Deploy, roll back, operate
 
 ```sh
