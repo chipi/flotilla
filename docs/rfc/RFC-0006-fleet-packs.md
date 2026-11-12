@@ -1,8 +1,8 @@
 # RFC-0006 — Fleet packs: flows as files, shared between people and promoted between installations
 
-**Status:** Draft, revision 5 (2026-11-12): the operator's decisions on revision 1 applied (§12);
+**Status:** Draft, revision 6 (2026-11-12): the operator's decisions on revision 1 applied (§12);
 revision 3 draws the boundary between development tests and evaluation, and adds the replay entry
-point and the input contract (§8); revisions 4 and 5 take in two independent reviews (§15).
+point and the input contract (§8); revisions 4 to 6 take in three independent reviews (§15).
 Nothing is built from it until it is accepted.
 **Builds on:** [ADR-0004](../adr/ADR-0004-job-runtime.md) (the runtime, steps and the harness),
 [ADR-0007](../adr/ADR-0007-routine.md) (routines), [ADR-0008](../adr/ADR-0008-autonomy.md) (autonomy),
@@ -61,21 +61,27 @@ requires:
   gates: [intent, cleanup, dismiss_corroborated, edge]
   actions: [github.file_issue, github.comment, glitchtip.resolve]
   models: {tools: json}      # the capability its harness needs (RFC-0002 §3)
-slots:                       # the installation's facts it needs, by name (§4)
+slots:                       # the installation's facts it needs, by name and kind (§4)
   repo_for_project: map      # error project -> repository
   error_tracker: source
   alert_source: source
 ```
 
+Slot kinds: `string`; `map` (string keys to string values); `source`, the name of a signal source
+the installation has configured (`glitchtip`, `grafana`). `-check` refuses a value of another kind.
+
 Everything else in a pack is the format flotilla already reads. A routine spec in a pack is the same
-spec as one in `fleets/<fleet>/` today. The built-in fleets do not follow this layout yet (their
-specs sit at the fleet's root, with `*-default.json` files beside them); they move to it in §10
-step 2, so one layout and one hashing rule serve both layers.
+spec as one in `fleets/<fleet>/` today. The built-in fleets do not follow this layout yet: their
+specs sit at the fleet's root, and triage keeps two copies of parts of its spec there
+(`harness-default.json` and `skills/default-rules.json`, the spec's harness block and skill rules for
+runs without flotillad, kept equal to the spec by tests). Those copies are not pack defaults: in §10
+step 2 they move out of the fleet folder into the fleet's code, and the specs move to `routines/`,
+so one layout and one hashing rule serve both layers.
 
 **Single routines.** An installation may take one routine from a pack, not the whole fleet (one
 better daily brief without the rest of its fleet). The routine brings the playbooks, skills and
 defaults it names; `-check` refuses a routine that names a playbook, skill or default that neither
-the pack nor flotilla's built-in default skills (`skills/`, RFC-0005 §3) hold.
+the pack nor flotilla's built-in default skills (`skills/`, RFC-0005 §3; empty today) hold.
 
 ## 3. Text only, never code
 
@@ -85,10 +91,13 @@ installation's registered extension), exactly as ADR-0011 has it for actions. Th
 "skills never grant anything", applied to whole flows:
 
 - `-check` refuses a pack that requires a tool, gate, action or capability the installation does not
-  have, and names each one missing;
+  have, and names each one missing. That needs a registry: today flotillad checks only the names'
+  syntax, and the tools and gates live in the worker's code. The check comes with RFC-0002 §9 step 4's
+  registered tools and gates (§10);
 - a pack's files are read, never executed. `-check` refuses a file outside the layout of §2 (a
-  `scripts/` folder included), a symbolic link and a file over a size cap, as the skill loader
-  refuses links and caps size today; so every file a pack holds is hashed and shown (§5, §6);
+  `scripts/` folder included), a symbolic link and a file over its kind's size cap (16 KiB for a
+  skill, as the skill loader has today; one each for specs, playbooks and defaults), as the skill
+  loader refuses links today; so every file a pack holds is hashed and shown (§5, §6);
 - a pack cannot raise its own autonomy (§6), widen a host's allowlist or raise a budget above the
   installation's cap (§7).
 
@@ -121,12 +130,13 @@ packs:
 (The example is the ops fleet, the first pack in §9. Triage stays built in until §9 is done, and an
 installation pack named like a built-in fleet is refused.)
 
-`-check` refuses a pack whose slots are not all filled, or filled with the wrong kind. A run gets
-its pack and values as environment JSON, as it gets `FLOTILLA_SKILLS` and `FLOTILLA_HARNESS` today:
-`FLOTILLA_PACK` (name, layer, pack hash, set hash: §5, §6), `FLOTILLA_SLOTS` (the slot values) and
-`FLOTILLA_DEFAULTS` (the pack's defaults with the installation's overrides applied). A slot value is
-a fact, but decisions depend on it (where an issue is filed), so a changed slot value is shown and
-approved like an override (§6) and recorded with every run (§8).
+`-check` refuses a pack whose slots are not all filled, or filled with the wrong kind, and an
+override naming no default the pack declares. A run gets its pack and values as environment JSON, as
+it gets `FLOTILLA_SKILLS` and `FLOTILLA_HARNESS` today: `FLOTILLA_PACK` (name, layer, pack hash, set
+hash: §5, §6; a built-in pack has no set, so its set hash is empty), `FLOTILLA_SLOTS` (the slot
+values) and `FLOTILLA_DEFAULTS` (the pack's defaults with the installation's overrides applied). A
+slot value is a fact, but decisions depend on it (where an issue is filed), so a changed slot value
+is shown and approved like an override (§6) and recorded with every run (§8).
 
 **`installation` and `environment`.** `environment` is today's required telemetry label, pushed to
 every run as `FLOTILLA_ENVIRONMENT`. `installation` names this flotilla: two installations may share
@@ -157,7 +167,7 @@ version control. No mechanism here depends on one.
 
 | Layer | Where | Approved by |
 | --- | --- | --- |
-| **built in** | flotilla's repo, `fleets/<name>/`, inside the images | the deploy: flotillad's `start` event records the image tag and each built-in pack's hash; §6's steps do not apply |
+| **built in** | flotilla's repo, `fleets/<name>/`, inside the images | the deploy: flotillad's `start` event records its version (the image tag in CI builds) and each built-in pack's hash; §6's steps do not apply |
 | **the installation's** | the folders named in the installation's config | the operator, by hash (§6) |
 
 - A fleet's name is unique in an installation; no layer shadows another. Skill names stay unique
@@ -167,47 +177,62 @@ version control. No mechanism here depends on one.
   the operator's recorded approval take the place of "pinned by commit". The built-in layers are
   unchanged.
 - **The content hash is the version.** flotillad hashes every file of a pack. The manifest is one
-  line per file, `<sha256 hex>  <relative path>\n`, paths sorted bytewise, UTF-8, `FLEET.md`
-  included; the **pack hash** is the sha256 of that text, written `sha256:<hex>`. A change to this
-  rule is a new prefix. `-check`'s refusals (§3) mean no file is left out of it. A pack's identity
-  anywhere, in any installation, is that hash; the author's `version` is a label.
-- **Runs read the approved snapshot, never the folder.** For the built-in layer the image is the
-  snapshot: flotillad hashes `fleets/<name>/` in its image, the worker reads the same bytes from its
-  own image, and the deploy pins both. Installation pack folders are mounted read-only into
-  flotillad only, never into a worker (ADR-0002: a run cannot read the host). flotillad copies a
-  pack's files into its own state, keyed by the pack hash, when it shows a change (§6), and a run
-  uses only an approved snapshot: the worker fetches the files it needs from flotillad's worker API,
-  `/v1/packs/<hash>/<path>`, using `FLOTILLA_PACK` (§4), and caches them in its run's tmpfs. A folder
-  edited afterwards changes nothing that runs until its new hash is shown and approved; a deleted or
-  missing folder stops nothing either (`-check` warns, the snapshot runs).
+  line per file, `<sha256 hex>  <relative path>\n`, paths with `/` as the separator, sorted
+  bytewise, UTF-8, `FLEET.md` included; the **pack hash** is the sha256 of that text, written
+  `sha256:<hex>`. A change to this rule is a new prefix. `-check`'s refusals (§3) mean no file is
+  left out of it. A pack's identity anywhere, in any installation, is that hash; the author's
+  `version` is a label.
+- **Runs read the approved snapshot, never the folder.** For the built-in layer the worker's image
+  is the snapshot, and the image a worker runs need not be flotillad's: the candidate worker
+  (RFC-0002 §9) runs another tag on purpose. So the worker hashes what it reads, by the same rule,
+  and its record carries that pack hash and the per-file hashes (contract 3); flotillad's hash of
+  its own image goes in its `start` event. A run whose pack hash differs from flotillad's records
+  the difference: expected for the candidate job, an alert for any other. Installation pack folders
+  are mounted read-only into flotillad only, never into a worker (ADR-0002: a run cannot read the
+  host). flotillad copies a pack's files into its own state, keyed by the pack hash, when it shows a
+  change (§6), and a run uses only an approved snapshot: the worker fetches the files it needs from
+  flotillad's worker API, `/v1/packs/<hash>/<path>`, using `FLOTILLA_PACK` (§4), and caches them by
+  hash in the worker's tmpfs. A folder edited afterwards changes nothing that runs until its new
+  hash is shown and approved; a deleted or missing folder stops nothing either (`-check` warns, the
+  snapshot runs).
 - **The snapshot API** serves approved snapshots only (the current one and earlier approved ones),
   never a pending one, and only paths listed in that snapshot's manifest, so no path leaves it. Any
   worker-role caller may read it: a pack holds no secret (slots and credentials are config, §4).
-- **Every run records** the pack's name, layer and hash, and the hash of each file it read, so a
+- **Every run records** the pack's name, layer, pack hash and set hash, and the hash of each file it
+  read, so a
   record says exactly which flow decided what. Any other identifier the operator gives (a version
   control revision, a ticket) is stored beside the hash as a label, never instead of it.
 - **Rollback:** `flotilla pack rollback <pack> [<set hash>]` returns to an approved set this
-  installation approved before (the previous one by default); any other hash is refused. It is an
-  audit event like an approval (§6.3), and the routines keep their autonomy, since the set ran before.
-- **Retention:** a snapshot that run records name is kept and is exported with them (§8), so a
-  recorded hash always resolves to its text; other approved snapshots are kept until removed by
-  hand. A pack has at most one **pending** snapshot; a newer change replaces it. A pack's total size
+  installation approved before (the previous one by default) whose snapshot it still holds; any
+  other hash is refused, and a set whose snapshot was pruned is refused with that reason. It is an
+  audit event like an approval (§6.3). Autonomy is per routine, not per set, so each routine the
+  rollback changes gets the autonomy recorded for it in the approval event that replaced that set,
+  never more than it has now.
+- **Retention:** a snapshot that run records or an approved set name is kept and is exported with
+  them (§8), so a recorded hash always resolves to its text. Others are removed with
+  `flotilla pack prune <pack hash>` (operator token, an audit event), which refuses a snapshot still
+  named. A pack has at most one **pending** snapshot; a newer change replaces it. A pack's total size
   is capped, as each file's is (§3).
 
 ## 6. Trust: installing and changing a pack is shown, approved, recorded, and starts at shadow
 
 Whoever can write a pack's folder can propose a change, so no change takes effect unseen:
 
-What is approved is a **set**: the pack's files and the installation's values for it (slots and
-overrides). Its **set hash** is the sha256 of the pack hash followed by the slot and override values
-as canonical JSON (keys sorted, no whitespace). A change to the files, a slot value or an override
-is a new set hash.
+What is approved is a **set**: the pack's files and everything the installation's config says about
+the pack except its `path` (the routines it takes, slot values, overrides). Its **set hash** is
+`sha256:<hex>` over the pack hash's text (`sha256:<hex>`), a newline, and the JSON Canonicalization
+Scheme (RFC 8785) form of one object, `{"overrides": …, "routines": […], "slots": …}`. Values are
+typed by the manifest (a slot's kind, a default's type), so `10` given where a string is declared is
+refused by `-check`, never hashed two ways. A change to the files, the routines taken, a slot value
+or an override is a new set hash; a change to this rule is a new prefix.
 
-1. **Detection** runs at `-check`, at flotillad's start and on demand (`flotilla pack show <pack>`),
-   never by polling. A new or changed set is copied into the pack's **pending snapshot** (the files
-   and the values) and shown against the approved set: the files with their differences, the
-   overrides and slot values before and after. An override is called out as a **warning**, so a
-   default never changes silently.
+1. **Detection** runs at flotillad's start and on demand (`flotilla pack show <pack>`), never by
+   polling. `-check` shows a difference and writes nothing (the deploy runs it beside the running
+   daemon). flotillad first copies the folder into its own state, then hashes the copy, so the
+   pending snapshot (the copied files and the values) is exactly what its hash names, whatever is
+   being written to the folder meanwhile. It is shown against the approved set: the files with their
+   differences, the routines taken, the overrides and slot values before and after. An override is
+   called out as a **warning**, so a default never changes silently.
 2. **The operator approves a set hash,** with the operator's token (`flotilla pack approve <pack>
    <set hash>`). An approval naming anything but the pending set's hash is refused, so what runs is
    exactly what was shown, whatever the folder or the config holds by then: a run gets the values of
@@ -215,12 +240,13 @@ is a new set hash.
    previous approved set, or nothing for a new pack.
 3. **The approval is an audit event:** who approved, when, the pack, the pack hash and set hash
    before and after, the changed files, overrides and slot values. Refusals are recorded the same way.
-4. **The changed routines run at `shadow`**, whatever their specs say, until the operator raises them.
-   A routine is changed when anything it depends on differs from the approved set: a file it reads
-   (its spec, playbooks, skills, defaults; a file two routines share changes both), or a slot or
-   override it uses. The approval sets each changed routine's autonomy control (ADR-0008) to
-   `shadow`. Autonomy is earned in each installation, routine by routine; the author's settings are
-   an upper bound, never a starting point.
+4. **The changed routines run at `shadow`**, whatever their specs say, until the operator raises
+   them. A routine is changed when anything it depends on differs from the approved set: a file it
+   reads (its spec, playbooks, skills, defaults; a file two routines share changes both), or a slot
+   or override it uses; a routine newly taken (`routines:`) is changed too. The approval sets each
+   changed routine's autonomy control (ADR-0008) to `shadow`. Autonomy is earned in each
+   installation, routine by routine; the author's settings are an upper bound, never a starting
+   point.
 
 Trust therefore rests on what the operator saw and approved, not on where the files came from: no
 list of trusted sources is needed, and none is implied.
@@ -244,21 +270,24 @@ installation:
   flotilla does not assume they are comparable).
 
 It can be a separate machine, or a second flotilla on the same machine: a second compose project
-with its own state, once the compose file's fixed container names and shared network names are
-parametrised per installation (below). Inside one installation, the candidate worker (RFC-0002 §9)
-stays the tool for one image beside the live routine.
+with its own state, once the compose project's name, its container names and its default volume
+names are parametrised per installation (below). Inside one installation, the candidate worker
+(RFC-0002 §9) stays the tool for one image beside the live routine.
 
 ### Promotion is moving the same files
 
 1. The pack runs in a capped installation, which records everything the evaluation needs (§8).
-2. `flotilla pack promote-record <pack>` writes a **promotion record**: the pack, its pack hash and
-   set hash, its labels, the routines, the installation it ran in and over what period, where its
-   run records were exported, the overrides it ran with, the preconditions outside the pack (an
-   alias the next installation must map, a service it needs), and a free reference to the
-   evaluation's result (an evaluation harness report), filled by whoever judged it.
-3. The next installation receives the same folder, by any means, and the record. flotillad checks
-   that the folder's hash is the one in the record (a mismatch is shown, never silently accepted),
-   shows the change (§6) with the record beside it, and the routines start at shadow there.
+2. `flotilla pack promote-record <pack>` writes a **promotion record**: the pack, its pack hash, its
+   labels, the set it ran as (set hash, routines, slot values, overrides; the set hash names the
+   exported records), the installation it ran in and over what period, where its run records were
+   exported, the preconditions outside the pack (an alias the next installation must map, a service
+   it needs), and a free reference to the evaluation's result (an evaluation harness report), filled
+   by whoever judged it.
+3. The next installation receives the same folder, by any means, and the record
+   (`flotilla pack show <pack> --record <file>`). Its own slot values differ legitimately, so its set
+   hash will differ: flotillad checks the **pack hash** against the record (a mismatch is shown,
+   never silently accepted), shows the change (§6) with the record's values beside this
+   installation's, and the routines start at shadow there.
 
 No tier has a fixed name or count: dev → test → prod, or sandbox → prod, or ten.
 
@@ -267,8 +296,9 @@ No tier has a fixed name or count: dev → test → prod, or sandbox → prod, o
 - **The installation-wide autonomy and budget caps** (above), and the installation's name.
 - **The pack mount and the snapshot API** (§5): a read-only mount into flotillad, and the worker
   API that serves approved snapshots by hash.
-- **A second installation on one host:** the compose file's container names and its networks
-  parametrised per installation, as `FLOTILLA_VOLUME_PREFIX` already does for the secrets volume.
+- **A second installation on one host:** the compose project's name, the container names and the
+  default volume names parametrised per installation, as `FLOTILLA_VOLUME_PREFIX` already does for
+  the secrets volume. The external networks (the other stacks') stay shared.
 - **Outputs only through actions.** A capped installation is non-impact only if nothing writes outward
   except through actions the cap holds. Today the triage fleet enforces shadow in its own code
   (`orchestrator.py` forces a dry run); with packs, every outward write must be an action decided by
@@ -352,8 +382,9 @@ What flotilla promises about its records, so an evaluation can rely on them:
 4. **Stage and namespace on every record and run row:** live, shadow or candidate; the ledger
    namespace; the installation's name and whether it was capped. A shadow row must never read as a
    live one.
-5. **Which code ran when:** flotillad's `start` event (it records `start` and `stop` with the
-   version today) also carries the image tag and each built-in pack's hash; with the approval and
+5. **Which code ran when:** flotillad's `start` event (it records `start` and `stop` with its
+   version today, the image tag in CI builds) also carries each built-in pack's hash, and a run's
+   own record carries the worker's (§5); with the approval and
    rollback events (§6) it says which code and which sets ran when, and the export includes them. A
    deploy script's own log stays the installation's and is not promised.
 6. **Stable record ids,** so an evaluation can name a record it read without printing its content.
@@ -388,17 +419,22 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 ## 10. Order of work
 
 1. This RFC, reviewed and decided.
-2. The built-in fleets moved to §2's layout (`routines/`, `defaults/`; the spec loader's glob and
-   the images' `COPY fleets` follow), then the manifest, the `requires` check, content hashing and
-   recording for them, and flotillad's `start` event carrying each built-in pack's hash.
+2. The built-in fleets moved to §2's layout: specs to `routines/` (the spec loader's glob and the
+   images' `COPY fleets` follow); triage's two spec copies (`harness-default.json`,
+   `skills/default-rules.json`) out of the fleet folder into its code, with `triage.py`'s paths, the
+   harness replay and the two Go tests that keep them equal to the spec. Then the manifest, content
+   hashing by flotillad and by the worker, recording, and flotillad's `start` event carrying each
+   built-in pack's hash.
 3. Installation folders, the installation's name, the read-only mount into flotillad, the snapshot
    API on the workers' listener, slots, overrides with their warning, approval of a set, rollback,
-   and "changed routines start at shadow".
-4. The installation-wide autonomy and budget caps.
-5. Record export in one format with the input contract (§8), and the promotion record.
+   prune, and "changed routines start at shadow".
+4. The `requires` check (§3), after RFC-0002 §9 step 4 registers the tools and gates it checks
+   against.
+5. The installation-wide autonomy and budget caps.
+6. Record export in one format with the input contract (§8), and the promotion record.
    The replay entry point does not wait for packs: it goes first, as an RFC-0002 amendment (the
    `eval_*` → `gate_*` rename is done, 15442c3). The scorer moves out after the entry point.
-6. The ops fleet as the first pack; the triage fleet once §9 is done.
+7. The ops fleet as the first pack; the triage fleet once §9 is done.
 
 ## 11. Vocabulary
 
@@ -410,7 +446,7 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 | **capped installation** | an installation whose config caps every routine at `shadow`: non-impact mode |
 | **promotion record** | what moves with a pack to the next installation: its hashes, where and how it ran, where its records are, its preconditions, a reference to the evaluation's result |
 | **pack hash** | the sha256 of a pack's file manifest (§5) |
-| **set hash** | the sha256 of the pack hash and the installation's slot and override values: what an approval names (§6) |
+| **set hash** | the sha256 of the pack hash and the installation's routines, slot and override values for it: what an approval names (§6). It extends decision 5: the pack hash identifies the files, the set hash what ran |
 
 ## 12. Decided (operator, 2026-11-12)
 
@@ -439,8 +475,9 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
 - ADR-0008 ("three places cap it") and ADR-0005 decision 4 ("lowest wins"): the installation's cap
   (§7).
 - `docs/architecture/deployment.md`: the read-only pack mount into flotillad; the installation's name.
-- `docs/architecture/components.md`: the snapshot API on the workers' listener; in code, the
-  comments that say the workers' listener serves the ledger and nothing else (`internal/api`).
+- `docs/architecture/components.md`: the workers' listener itself (documented today only in
+  `deploy/compose/README.md`, as `worker_listen`) with the ledger and the snapshot API; in code,
+  the comments that say the workers' listener serves the ledger and nothing else (`internal/api`).
 - RFC-0002 §4: "a push" among outputs means a git push; a metrics push is telemetry (§7).
 - RFC-0002 §8: the replay entry point's seams and `freeze.py` (§8 here).
 
@@ -499,3 +536,22 @@ that are declarative from the start (the ops fleet's daily brief, RFC-0001 phase
     the manifest's exact format; the example uses the ops fleet; "changed routine" defined; step 3
     holds the mount, the API and the installation name; RFC-0005 §6 and §10 and RFC-0002 §4 in §13;
     `ledger show`, which does not exist, dropped; the rename written as done.
+- **2026-11-12, third independent review, of revision 5** (a fresh read-only agent). It confirmed
+  revision 5's code claims and found, and revision 6 changes:
+  - **The two `*default*.json` files are not pack defaults.** They are triage's copies of its spec
+    for runs without flotillad, so the layout move would have refused the built-in pack again; step
+    2 moves them into the fleet's code.
+  - **The candidate worker runs another image,** so "the worker reads the same bytes flotillad
+    hashed" was false where contract 3 matters most. The worker now hashes what it reads; a
+    difference from flotillad's hash is recorded (expected for the candidate job, an alert
+    otherwise).
+  - **Smaller fixes:** the set hash's exact form (RFC 8785 over one typed object) and the routines
+    taken as part of the set; copy, then hash, so a pending snapshot is what its hash names;
+    `-check` shows and writes nothing (the deploy runs it beside the running daemon); rollback
+    restores each routine's recorded autonomy and refuses a pruned set, with `pack prune` for
+    removal; the promotion record carries the set's values and the next installation compares the
+    pack hash; the `requires` check waits for RFC-0002 §9 step 4's registry; the compose names to
+    parametrise listed correctly; slot kinds defined; an override naming no default refused; size
+    caps per file kind; `/` as the manifest's separator; the built-in set hash empty; flotillad's
+    version (the image tag in CI builds); the workers' listener missing from `components.md`; the
+    default skills folder empty today.

@@ -43,4 +43,4 @@ landed on an answer.
   (Accepted → ADR-0005, 2026-11-09)
 - [RFC-0005 — Skills in the harness](RFC-0005-skills.md) (Accepted → ADR-0012, 2026-11-11)
 - [RFC-0006 — Fleet packs: flows as files, shared and promoted](RFC-0006-fleet-packs.md)
-  (Draft, revision 5, 2026-11-12)
+  (Draft, revision 6, 2026-11-12)
