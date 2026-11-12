@@ -388,6 +388,7 @@ class TriageLive(unittest.TestCase):
         body = self.calls[0]["body"]
         self.assertEqual(body["model"], "triage-pro")
         self.assertEqual(body["metadata"]["tags"], ["flotilla-replay", "evh-eval"])
+        self.assertNotIn("existing_trace_id", body["metadata"])   # else the gateway drops the tags (see replay_api)
         self.assertEqual((body["reasoning_effort"], body["max_tokens"]), ("low", 900))
         self.assertEqual(body["allowed_openai_params"], ["reasoning_effort"])
         self.assertEqual(self.calls[0]["timeout"], 120)

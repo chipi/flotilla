@@ -374,7 +374,10 @@ def triage(world, signal, model, tools, gates="live", max_probes=None):
                 t_attrs["_call"] = lambda messages, trace_id=None, step=None: (stub, {})
             with _quiet(), _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), _swapped(config, cfg), \
                     _swapped(t, t_attrs), _swapped(guards, g_attrs), \
-                    _swapped(observ, {"new_trace_id": (lambda: tid)} if tid else {}):
+                    _swapped(observ, {"new_trace_id": (lambda: tid)} if tid or live_model else {}):
+                # live, with no trace id given: no existing_trace_id, so the gateway makes its own trace per call,
+                # named and tagged from the request's metadata (with one, it leaves name and tags to the fleet's
+                # trace, which observability off never writes: 2026-11-12's live proof had traces with neither)
                 d = t.investigate(copy.deepcopy(signal), max_probes=max_probes,
                                   probe_table=None if live_tools else tools["results"])
             if missing:
