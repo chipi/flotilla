@@ -233,6 +233,19 @@ class Gates(unittest.TestCase):
         err = self.run_gates(self.EDGE, dict(dismiss), self.LOGS, {"lookups": [dict(self.LOOK, error="timeout")]})
         self.assertIn("e:downgraded (lookup failed)", err["result"])
 
+    def test_fleet_code_without_exact_records(self):
+        # older fleet code has no _exact_start: the gates still run, and no lookups are recorded
+        import triage
+        real = triage._exact_start
+        del triage._exact_start
+        try:
+            out = self.run_gates(SIG, {"disposition": "dismiss", "reason": "r", "dismissal_evidence": "logs clean"},
+                                 trace=self.LOGS)
+        finally:
+            triage._exact_start = real
+        self.assertIn("d:passed", out["result"])
+        self.assertEqual(out["record"]["lookups"], [])
+
     def test_a_missing_recorded_lookup_is_refused(self):
         dismiss = {"disposition": "dismiss", "reason": "r", "dismissal_evidence": "logs clean"}
         with self.assertRaises(ra.LookupMissing):

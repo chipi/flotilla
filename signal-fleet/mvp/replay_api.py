@@ -230,7 +230,8 @@ def gates(world, signal, decision, trace=(), gates="live"):
         with _swapped(os.environ, {"SF_OBSERV_DISABLED": "1"}, env=True), \
                 _swapped(config, {"CAPTURE_PROBES": True}), _swapped(guards, attrs), \
                 _swapped(triage, {"_EXACT": None}):
-            triage._exact_start()
+            if hasattr(triage, "_exact_start"):   # fleet code from before the exact records has none: no lookups
+                triage._exact_start()
             d, result = triage._gate(copy.deepcopy(decision), signal, list(trace))
             lookups = list((triage._EXACT or {}).get("lookups") or [])
     finally:
