@@ -1,6 +1,6 @@
 """Replay for RFC-0002 §9 step 4: triage's probe loop on the shared harness (runtime/harness.py).
 
-  python3 eval_harness_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
+  python3 gate_harness_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
 
 The old code is triage.py at BASE_REV (or --baseline FILE, a copy beside triage.py, where there is no
 git); the new is the working tree. post_json, the probes and the edge gate's lookup are served from the

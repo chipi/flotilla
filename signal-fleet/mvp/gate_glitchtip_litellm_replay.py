@@ -21,7 +21,7 @@ And reference-filing/filed-2026-10-01.tsv, the filed-ledger as it stood that day
    that is NOT the shared pool stays None; and the class of all 829 historical signals
    and the other 4 live issues is unchanged.
 
-  python3 eval_glitchtip_litellm_replay.py      # exit 1 on any failure
+  python3 gate_glitchtip_litellm_replay.py      # exit 1 on any failure
 """
 import copy
 import importlib.util

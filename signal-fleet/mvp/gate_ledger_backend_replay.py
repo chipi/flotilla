@@ -1,7 +1,7 @@
 """Replay for RFC-0002 §9 step 5: dedup through flotillad's ledger (SF_LEDGER_BACKEND=api) against filed.tsv.
 
-  python3 eval_ledger_backend_replay.py FILED_TSV [DISPOSITIONS_TSV]   # a real ledger, copied (read-only use)
-  python3 eval_ledger_backend_replay.py --synthetic N                    # N random filings
+  python3 gate_ledger_backend_replay.py FILED_TSV [DISPOSITIONS_TSV]   # a real ledger, copied (read-only use)
+  python3 gate_ledger_backend_replay.py --synthetic N                    # N random filings
 
 Run inside a worker, as a routine runs (FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE): it works in fresh
 namespaces of its own (replay-<random>), never the routine's.

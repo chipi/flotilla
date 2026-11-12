@@ -1,6 +1,6 @@
 """Deterministic dedup-efficacy eval (EVAL.md companion, #1 regression guard).
 
-score.py measures the LLM triager; eval_hardening.py measures the deterministic
+score.py measures the LLM triager; gate_hardening.py measures the deterministic
 classifier gates; THIS measures the DETERMINISTIC FILING STAGE — how much the
 normalized dedup key (#1) + operational gate + low-signal rollup actually collapse a
 real signal corpus into distinct GitHub issues. It replays a frozen, scrubbed sample
@@ -8,7 +8,7 @@ of 100 real GlitchTip signals (reference-dedup/corpus.json) and ASSERTS the coll
 so the ~40% volume win the 2026-08-27 cleanup pass asked for can't silently regress.
 No LLM, no network, no flakes: same corpus -> same numbers, every run.
 
-  python3 eval_dedup.py            # print the report, exit non-zero if below floor
+  python3 gate_dedup.py            # print the report, exit non-zero if below floor
 
 Cultivate: refreeze the corpus (build from a fresh GlitchTip pull, scrub.py) when the
 signal mix changes materially; keep the thresholds a margin below the live number.

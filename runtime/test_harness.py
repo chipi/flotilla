@@ -1,5 +1,5 @@
 """python3 runtime/test_harness.py — the harness's own checks; triage's loop on it is proven by
-signal-fleet/mvp/eval_harness_replay.py (old against new)."""
+signal-fleet/mvp/gate_harness_replay.py (old against new)."""
 import os
 import sys
 import unittest

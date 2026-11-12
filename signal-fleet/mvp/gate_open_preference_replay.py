@@ -20,9 +20,9 @@ Pass:
   - every move comes through norm_key (a second version also let alert_key prefer
     open issues; its moves mostly matched GitHub's duplicate links, and where they
     differed the link was the more exact answer, e.g. #2037 -> #1958 vs duplicateOf
-    #2040; duplicates are followed explicitly instead, eval_duplicate_follow_replay).
+    #2040; duplicates are followed explicitly instead, gate_duplicate_follow_replay).
 
-  python3 eval_open_preference_replay.py     # exit 1 on any failure
+  python3 gate_open_preference_replay.py     # exit 1 on any failure
 """
 import importlib.util
 import json

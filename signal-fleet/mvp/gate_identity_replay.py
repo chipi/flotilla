@@ -29,7 +29,7 @@ Pass:
      either an expected case or the operator's own duplicateOf link points at the same
      issue; #2371 and #2354 absorb their storms; no fold crosses a project.
 
-  python3 eval_identity_replay.py     # exit 1 on any failure
+  python3 gate_identity_replay.py     # exit 1 on any failure
 """
 import importlib.util
 import json

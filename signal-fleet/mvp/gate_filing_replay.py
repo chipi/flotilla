@@ -21,9 +21,9 @@ Two arms per case:
 Then a whole-ledger counterfactual: every issue the fleet ever opened, replayed in
 order with the fix on, lists which would have been a comment instead.
 
-  python3 eval_filing_replay.py            # report; exit non-zero on any case miss
-  python3 eval_filing_replay.py --report OUT.txt   # also write every merge family
-  python3 eval_filing_replay.py --build F_TSV D_TSV TIMELINES_JSON   # rebuild corpus
+  python3 gate_filing_replay.py            # report; exit non-zero on any case miss
+  python3 gate_filing_replay.py --report OUT.txt   # also write every merge family
+  python3 gate_filing_replay.py --build F_TSV D_TSV TIMELINES_JSON   # rebuild corpus
 """
 import csv
 import json

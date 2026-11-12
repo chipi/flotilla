@@ -20,7 +20,7 @@ clock at the event, triage and recurrence writes recorded, never sent. Pass:
   - baseline: every event is a recurrence row, as history recorded (faithful);
   - fix: exactly the EXPECTED events re-triage; every other event acts as before.
 
-  python3 eval_promotion_replay.py     # exit 1 on any failure
+  python3 gate_promotion_replay.py     # exit 1 on any failure
 """
 import contextlib
 import gzip

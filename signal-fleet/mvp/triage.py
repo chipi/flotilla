@@ -272,7 +272,7 @@ _LAST_RESPONSE = None   # the dict post_json returned for the call in progress: 
 
 def _post_json_transport(url, data, headers, timeout):
     """The client's transport over this module's post_json, looked up at call time, so a patched
-    triage.post_json (the fleet session's eval adapter, eval_triager_failure_replay) still sees the request
+    triage.post_json (the fleet session's eval adapter, gate_triager_failure_replay) still sees the request
     as a dict, the timeout as a keyword, and has its returned dict used as the response."""
     global _LAST_RESPONSE
     _LAST_RESPONSE = None

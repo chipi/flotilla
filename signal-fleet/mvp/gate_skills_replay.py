@@ -1,6 +1,6 @@
 """Replay for RFC-0002 §9 step 3: the playbook and the class hints as files and rule-loaded skills.
 
-  python3 eval_skills_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
+  python3 gate_skills_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
 
 The old code is triage.py at BASE_REV (or --baseline FILE where there is no git, as in a worker
 container); the new is the working tree. Nothing is sent anywhere.

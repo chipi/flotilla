@@ -16,7 +16,7 @@ Replay over every Grafana filing in reference-filing/replay-2026-09-30.json:
   fix       repo_for(signal + the rule's labels from rules.yaml): only prod-app
             rules may change repo, and each must move to podcast_scraper.
 
-  python3 eval_routing_replay.py      # exit 1 on an unfaithful baseline or a wrong move
+  python3 gate_routing_replay.py      # exit 1 on an unfaithful baseline or a wrong move
 """
 import json
 import os

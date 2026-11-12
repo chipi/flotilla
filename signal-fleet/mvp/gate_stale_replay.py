@@ -13,8 +13,8 @@ at that moment, and which human comments existed.
   fix       nudge resolved ones; must not nudge a real one — or, where it does,
             the case must be a named, known blind spot
 
-  python3 eval_stale_replay.py                    # report; exit 1 on an unexplained miss
-  python3 eval_stale_replay.py --build FILED_TSV DISPOSITIONS_TSV ANNOTATIONS_JSON INPUTS_JSON
+  python3 gate_stale_replay.py                    # report; exit 1 on an unexplained miss
+  python3 gate_stale_replay.py --build FILED_TSV DISPOSITIONS_TSV ANNOTATIONS_JSON INPUTS_JSON
 """
 import csv
 import json

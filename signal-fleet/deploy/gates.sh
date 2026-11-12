@@ -17,9 +17,9 @@ say() { printf '%s\n' "$*"; }
 cd "$SF/mvp" || { say "FAIL cannot cd to $SF/mvp"; exit 1; }
 GATE_HOME="$(mktemp -d)"
 ok=1
-for g in eval_hardening.py eval_dedup.py eval_filing_replay.py eval_stale_replay.py eval_routing_replay.py eval_triager_failure_replay.py eval_glitchtip_litellm_replay.py eval_recurrence_replay.py eval_open_preference_replay.py eval_duplicate_follow_replay.py eval_identity_replay.py eval_promotion_replay.py eval_oom_edge_replay.py eval_assistant_failover_replay.py eval_inbox_open_replay.py test_units.py test_capture.py test_scrub.py; do
-  # eval_filing_replay: the 2026-09-30 duplicate cases must stay comments (#9)
-  args=""; [ "$g" = eval_filing_replay.py ] && args="--cases-only"
+for g in gate_hardening.py gate_dedup.py gate_filing_replay.py gate_stale_replay.py gate_routing_replay.py gate_triager_failure_replay.py gate_glitchtip_litellm_replay.py gate_recurrence_replay.py gate_open_preference_replay.py gate_duplicate_follow_replay.py gate_identity_replay.py gate_promotion_replay.py gate_oom_edge_replay.py gate_assistant_failover_replay.py gate_inbox_open_replay.py test_units.py test_capture.py test_scrub.py; do
+  # gate_filing_replay: the 2026-09-30 duplicate cases must stay comments (#9)
+  args=""; [ "$g" = gate_filing_replay.py ] && args="--cases-only"
   # HOME = an empty dir: every live state path is under ~/signal-fleet, so no gate can
   # read the host's ledgers (2026-10-17: a replay passed on a laptop, failed on the mini)
   if HOME="$GATE_HOME" SF_OBSERV_DISABLED=1 python3 "$g" $args >"/tmp/sf-deploy-$g.log" 2>&1; then

@@ -7,7 +7,7 @@ No LLM, no cost, no flakes: same input -> same verdict, every run. It replays a
 VERSIONED dataset of the real (scrubbed) flood signals and asserts behavior, so the
 incident that happened becomes the test that guarantees it can't silently recur.
 
-  python3 eval_hardening.py            # run all cases, exit non-zero on any failure
+  python3 gate_hardening.py            # run all cases, exit non-zero on any failure
 
 Cultivate: when a new incident class appears, add a case to
 reference-hardening/hardening-cases.json with its real (scrubbed) strings + expected

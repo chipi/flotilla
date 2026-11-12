@@ -25,7 +25,7 @@ Pass:
 Limitation: an observation the old code skipped silently left no row, so it is not
 in the input. That is safe here: the old code skipping means the new code skips too.
 
-  python3 eval_recurrence_replay.py      # exit 1 on any failure
+  python3 gate_recurrence_replay.py      # exit 1 on any failure
 """
 import csv
 import datetime

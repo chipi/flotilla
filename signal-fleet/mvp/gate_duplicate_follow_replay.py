@@ -21,7 +21,7 @@ recorded, never sent. Pass:
   - every other row acts exactly as the baseline did;
   - the disk rows (#42, #44, #45, #46) comment on #43.
 
-  python3 eval_duplicate_follow_replay.py     # exit 1 on any failure
+  python3 gate_duplicate_follow_replay.py     # exit 1 on any failure
 """
 import importlib.util
 import json

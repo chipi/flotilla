@@ -218,7 +218,7 @@ SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OB
 echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's workers' listener"
 LR="$($D exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485 \
   -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad -e SF_OBSERV_DISABLED=1 \
-  flotilla-worker-triage python3 eval_ledger_backend_replay.py --synthetic 300 2>&1)"
+  flotilla-worker-triage python3 gate_ledger_backend_replay.py --synthetic 300 2>&1)"
 echo "$LR" | grep -q "LEDGER BACKEND REPLAY: PASS" \
   && ok "dedup through the ledger equals filed.tsv: $(echo "$LR" | grep '^lookup:' | cut -c1-90)" \
   || bad "ledger replay: $(echo "$LR" | tail -4 | tr '\n' ' ')"

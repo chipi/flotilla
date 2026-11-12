@@ -20,7 +20,7 @@ Pass:
   4. every control issue and historical signal keeps its baseline class; attach_backend reads events
      for litellm issues only.
 
-  python3 eval_assistant_failover_replay.py      # exit 1 on any failure
+  python3 gate_assistant_failover_replay.py      # exit 1 on any failure
 """
 import copy
 import importlib.util

@@ -1,5 +1,5 @@
 """Offline unit checks for the DETERMINISTIC triage-enhancement helpers (no LLM,
-no network, no creds). Companion to eval_hardening.py (real-signal dataset) — this
+no network, no creds). Companion to gate_hardening.py (real-signal dataset) — this
 covers the pure functions the enhancements add, stage by stage.
 
   SF_OBSERV_DISABLED=1 python3 test_units.py            # all, non-zero on failure
@@ -231,7 +231,7 @@ class TestInboxExport(unittest.TestCase):
         self.assertEqual(doc["queue_depth"], {"bug": 1, "cleanup": 1})
 
     def test_rows_unchanged_without_issues(self):
-        """The replay gate (eval_inbox_open_replay) compares rows: collecting issues must not alter them."""
+        """The replay gate (gate_inbox_open_replay) compares rows: collecting issues must not alter them."""
         a = self.inbox._recent_escalations(state_of=self._state_of)
         b = self.inbox._recent_escalations(state_of=self._state_of, issues={})
         self.assertEqual(a, b)

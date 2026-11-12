@@ -1,5 +1,5 @@
 """python3 runtime/test_ledger.py — the ledger client against a stand-in transport; the client against a real
-flotillad is signal-fleet/mvp/eval_ledger_backend_replay.py (the e2e runs it)."""
+flotillad is signal-fleet/mvp/gate_ledger_backend_replay.py (the e2e runs it)."""
 import io
 import json
 import os

@@ -12,7 +12,7 @@ exact error:
 Outcome per failure: "aggregate" (TriagerDown — one fleet-wide issue), "deferred"
 (retried next cycle, no issue), or "per-signal" (an escalation issue for this signal).
 
-  python3 eval_triager_failure_replay.py     # exit 1 if the fix still escalates per signal
+  python3 gate_triager_failure_replay.py     # exit 1 if the fix still escalates per signal
 """
 import http.client
 import importlib.util

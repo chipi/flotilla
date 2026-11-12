@@ -612,7 +612,7 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 
 2. **Model client** under `triage.py`'s `_call`.
    - *Proof:* a golden-request test (the request body byte-identical to today's), and the error
-     classes against recorded failures. `eval_triager_failure_replay.py` fakes `post_json`
+     classes against recorded failures. `gate_triager_failure_replay.py` fakes `post_json`
      (line 72); it is moved to fake the client's transport as part of this step. Then shadow
      comparison.
 3. **Playbook and hints to files** (`fleets/triage/playbooks/triage.md`, `hints/*.md`).

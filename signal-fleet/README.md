@@ -51,7 +51,7 @@ context.
   fails (historically fails-open → issue flood). If it's misbehaving, check those creds
   first (litellm key: [`infra/litellm/README.md`](../infra/litellm/README.md); tokens
   live in `fleet-gateway.env`).
-- **Evals (versioned + reproducible):** `python3 mvp/eval_hardening.py` — a
+- **Evals (versioned + reproducible):** `python3 mvp/gate_hardening.py` — a
   deterministic end-to-end eval of the flood hardening (#5/#2/#7) over a versioned
   dataset of the real (scrubbed) flood signals; runs anywhere, no LLM/creds, ALL PASS
   ([`reference-hardening/`](reference-hardening/README.md)). `mvp/score.py` measures

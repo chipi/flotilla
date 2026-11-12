@@ -92,7 +92,7 @@ def _ledger_client():
 # Alert names reach us already cut at 100 chars (GlitchTip titles), and the
 # dispositions ledger stores the same cut, so a key backfilled from history equals
 # the key of a live signal. SF_ALERT_KEY_DEDUP=0 turns the dimension off (rollback,
-# and the baseline arm of eval_filing_replay.py).
+# and the baseline arm of gate_filing_replay.py).
 ALERT_KEY_VERSION = "a2"
 
 # a2 (2026-10-01): on top of _normalize_skeleton, mask the per-occurrence numbers that

@@ -17,7 +17,7 @@ Pass:
   3. nothing else changes: every row it keeps is the baseline's row, unchanged;
   4. GitHub unreadable (state_of raises): all 9 counted, nothing raised.
 
-  python3 eval_inbox_open_replay.py      # exit 1 on any failure
+  python3 gate_inbox_open_replay.py      # exit 1 on any failure
 """
 import importlib.util
 import json

@@ -33,7 +33,7 @@ Pass:
 The trace for Part B is rebuilt from the recorded reason ("metric probe shows no 5xx");
 the raw probe results of that triage were not stored.
 
-  python3 eval_oom_edge_replay.py      # exit 1 on any failure
+  python3 gate_oom_edge_replay.py      # exit 1 on any failure
 """
 import calendar
 import importlib.util

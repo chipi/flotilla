@@ -1,6 +1,6 @@
 """Replay for RFC-0002 §9 step 2: triage._call on the model client, against _call as it was before.
 
-  python3 eval_model_client_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
+  python3 gate_model_client_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
 
 Two parts, each the old code (triage.py at BASE_REV, or --baseline FILE where there is no git, as in a
 worker container) against the working tree, with post_json faked (nothing is sent anywhere):
