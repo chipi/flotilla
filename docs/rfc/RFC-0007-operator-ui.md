@@ -164,8 +164,9 @@ actions need none.
   callers-file `operator` token. The CLI on the host passes it by `docker exec`, as today. Agent
   tokens are refused, and so are other roles.
 - The check that no admin exists and the insert run in one transaction.
-- The same token can add an admin again when every admin has been revoked or lost (break-glass).
-  That event is marked as break-glass.
+- The same token can add an admin again at any time, and do nothing else (break-glass). Every use is
+  recorded as `user.break-glass`. (Amended at ADR-0014: flotillad can't tell when an admin's token is
+  lost, so break-glass is not limited to "every admin revoked".)
 - There is no default user and no default password.
 
 **There is always an admin.** Revoking the last admin, demoting the last admin (themself included),

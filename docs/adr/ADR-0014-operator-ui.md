@@ -40,9 +40,11 @@ the UI's design.
 
    Callers (`agent`, `worker`) stay outside this order, as RFC-0007 §4 sets out.
 5. **The first user is an admin, and there is always one.**
-   - Only the callers-file `operator` token can create the first admin, or add one again when every
-     admin is lost (break-glass), in one transaction. It does nothing else once an admin exists, and
-     it cannot sign in.
+   - Only the callers-file `operator` token can create the first admin (`user.bootstrap`). Once an
+     admin exists, that token can still add an admin, and nothing else (break-glass). flotillad can't
+     tell an admin whose token was lost from one who is fine, so this is not limited to "every admin
+     is gone". Each use is recorded as `user.break-glass`, by the host-held token. The token cannot
+     sign in.
    - Agent tokens never create users.
    - Removing or demoting the last admin is refused.
 6. **Sessions:** a token pasted once per device starts a server-side session.
