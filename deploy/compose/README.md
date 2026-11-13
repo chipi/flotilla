@@ -138,6 +138,24 @@ default:
   allowed_domains: [victoriametrics, victorialogs, victoriatraces, grafana, litellm, <glitchtip web container>, langfuse-web, api.github.com]
 ```
 
+## The ops workers: pipeline v1 (RFC-0004 §10)
+
+The image carries `fleets/ops/` (`backup-monitor` on `ops-read`, `rerun-backup` on `ops-act-host`).
+A host must do one of two things before deploying a tag that has them, or flotillad's `-check`
+refuses to start, before anything changes:
+
+- **Run them:** add `ops` to `COMPOSE_PROFILES` in `.env`; create `config/worker-ops-read.token` and
+  `config/worker-ops-act-host.token` (32+ random characters each) and `config/worker-ops.env`
+  (`ROUTINE_VM_URL`, `ROUTINE_BACKUP_INSTANCE`, the backup metric's `instance` label, and
+  `ROUTINE_BACKUP_TARGET`, e.g. `host:mini`); add both workers under `workers` in `flotillad.yaml`
+  (`url: http://worker-ops-read:8081`, `token_file: /run/flotilla/worker-ops-read.token`, and the
+  same for `ops-act-host`). `secrets.sh` fills their token volumes when the tokens exist.
+- **Not yet:** list `ops/backup-monitor` and `ops/rerun-backup` in `disabled_routines`.
+
+They reach VictoriaMetrics through the proxy, already on its allowlist for flotillad's metrics.
+`rerun-backup` is capped at shadow: its plans are recorded and nothing is sent to the host.
+`flotilla case list` and `flotilla case show <id>` show what they did.
+
 ## The candidate worker: shadow comparison of a candidate image
 
 ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs

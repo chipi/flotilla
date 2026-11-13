@@ -1,0 +1,19 @@
+fleet: ops
+routine: rerun-backup
+description: >-
+  The acting routine for failed_backup cases (RFC-0004 §7): re-checks the backup's age with fresh
+  numbers and plans backup.rerun_observability on the case's host, or closes the case as resolved.
+  It plans only: policy decides, the host agent runs. Capped at shadow for v1: the gate (5 shadow plans
+  the operator agrees with) comes before any promotion.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: failed_backup}
+run:
+  command: python3 /opt/flotilla/ops/rerun_backup.py
+  workdir: .
+  timeout: 1m
+autonomy: shadow
+max_autonomy: shadow
+budget:
+  day_usd: 0

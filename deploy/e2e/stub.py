@@ -5,6 +5,7 @@ the way LiteLLM does (usage.cost, the deployment id header); as VictoriaTraces i
 names a trace export carries (the names are plain strings inside the protobuf).
 """
 import json
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -27,6 +28,15 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(n) if n else b""
         print(f"{NAME} POST {self.path} {len(body)}b", flush=True)
+        if self.path == "/api/v1/query":
+            # As VictoriaMetrics, for the ops monitor: the backup's age, which the e2e sets (STUB_QUERY_VALUE,
+            # seconds); the query itself is printed so the e2e can read what was asked.
+            print(f"{NAME} QUERY {body.decode('utf-8', 'replace')}", flush=True)
+            value = os.environ.get("STUB_QUERY_VALUE", "73800")
+            out = json.dumps({"status": "success", "data": {"resultType": "vector",
+                              "result": [{"metric": {}, "value": [0, value]}]}}).encode()
+            self._done(200, out)
+            return
         if self.path.endswith("/chat/completions"):
             auth = self.headers.get("Authorization", "")
             print(f"{NAME} CHAT auth={'bearer' if auth.startswith('Bearer ') and len(auth) > 7 else 'none'} "

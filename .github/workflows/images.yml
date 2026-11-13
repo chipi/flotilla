@@ -48,7 +48,7 @@ jobs:
           # manifest refused ("denied") by ghcr on 2026-11-08 after the layers were uploaded.
           # No attestations: one plain image manifest per tag.
           docker buildx create --use --name flotilla >/dev/null
-          for i in flotillad worker-triage smokescreen; do
+          for i in flotillad worker-triage worker-ops smokescreen; do
             ref="ghcr.io/chipi/flotilla-$i:$TAG"
             docker buildx build --push --provenance=false --sbom=false \
               -f "deploy/docker/$i.Dockerfile" --build-arg VERSION="$TAG" \

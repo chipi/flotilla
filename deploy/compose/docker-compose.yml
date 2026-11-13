@@ -44,7 +44,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,worker-triage-candidate,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-ops-read,worker-ops-act-host,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
@@ -130,6 +130,55 @@ services:
       start_interval: 1s
     networks: [flotilla]
 
+  # The ops workers (pipeline v1, ADR-0005 decision 5: workers per role), profile ops: one image, two
+  # roles. ops-read runs the monitors, ops-act-host the acting routines (it holds no host key: flotillad
+  # signs executions, ADR-0006). Neither holds a fleet secret, only its worker token. A run writes its
+  # plan file under HOME, a tmpfs (the root is read-only). worker-ops.env sets ROUTINE_VM_URL,
+  # ROUTINE_BACKUP_INSTANCE and ROUTINE_BACKUP_TARGET (installation facts).
+  worker-ops-read:
+    <<: *hardening
+    profiles: [ops]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-ops:${FLOTILLA_TAG}
+    container_name: flotilla-worker-ops-read
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=16m", "/home/worker:size=16m,uid=10001,gid=10001,mode=0700"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-ops.env"]
+    environment: &ops-env
+      FLOTILLA_WORKER: ops-read
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_NO_PROXY: flotillad
+    volumes:
+      - worker-ops-read-secrets:/run/flotilla:ro
+    healthcheck: &ops-health
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 1s
+    networks: [flotilla]
+
+  worker-ops-act-host:
+    <<: *hardening
+    profiles: [ops]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-ops:${FLOTILLA_TAG}
+    container_name: flotilla-worker-ops-act-host
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=16m", "/home/worker:size=16m,uid=10001,gid=10001,mode=0700"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-ops.env"]
+    environment:
+      <<: *ops-env
+      FLOTILLA_WORKER: ops-act-host
+    volumes:
+      - worker-ops-act-host-secrets:/run/flotilla:ro
+    healthcheck: *ops-health
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -158,6 +207,13 @@ volumes:
     external: true
   triage-state:
     name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}
+    external: true
+  # the ops workers' tokens (profile ops); secrets.sh fills them when the tokens exist
+  worker-ops-read-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-ops-read-secrets
+    external: true
+  worker-ops-act-host-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-ops-act-host-secrets
     external: true
   # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
   triage-candidate-state:

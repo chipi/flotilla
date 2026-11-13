@@ -30,7 +30,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
-  COMPOSE_PROFILES=candidate TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
+  COMPOSE_PROFILES=candidate,ops TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"; }
@@ -38,7 +38,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -48,7 +48,7 @@ if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
 down
 
 echo "== build"
-for i in flotillad worker-triage smokescreen; do
+for i in flotillad worker-triage worker-ops smokescreen; do
   $D build -q -f "$ROOT/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$ROOT" >/dev/null \
     || { echo "BUILD FAIL $i"; exit 1; }
 done
@@ -63,6 +63,7 @@ tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 OP=$(tok); AGENT=$(tok); WT=$(tok)
 hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
 printf %s "$WT" > "$WORK/config/worker-triage.token"
+tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"
 printf %s "$OP" > "$WORK/config/cli.token"          # the CLI inside flotillad acts as the operator here
 printf %s "$AGENT" > "$WORK/agent.token"
 cat > "$WORK/config/callers.yaml" <<EOF
@@ -85,6 +86,8 @@ callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
   triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage.token}
+  ops-read: {url: "http://worker-ops-read:8081", token_file: /run/flotilla/worker-ops-read.token}
+  ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
 disabled_routines: [triage/cycle, triage/cycle-shadow]
 models:
   endpoints:
@@ -99,6 +102,12 @@ ROUTINE_HEARTBEAT_DENIED_URL=http://forbidden:8080/
 ROUTINE_HEARTBEAT_MODEL_ALIAS=e2e-model
 ROUTINE_SF_SERVICE=triage-fleet
 ROUTINE_SF_GLITCHTIP_SYNC=1
+EOF
+# the ops workers' installation facts; the VictoriaMetrics stand-in answers the backup's age (20.5h)
+cat > "$WORK/config/worker-ops.env" <<EOF
+ROUTINE_VM_URL=http://victoriametrics:8080
+ROUTINE_BACKUP_INSTANCE=homelab
+ROUTINE_BACKUP_TARGET=host:mini
 EOF
 cat > "$WORK/config/smokescreen.yaml" <<EOF
 ip: 0.0.0.0
@@ -201,6 +210,25 @@ seen e2e-victoriatraces "POST /insert/opentelemetry/v1/traces" && ok "traces rea
   || bad "no traces at the VictoriaTraces stand-in"
 seen e2e-victoriatraces "SPAN model.chat" && ok "the routine's model.chat span reached VictoriaTraces through the proxy" \
   || bad "no model.chat span at the VictoriaTraces stand-in"
+
+echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
+# The monitor runs at start; the stand-in says the backup is 20.5h old, above shadow's 20h. The dispatcher
+# (every 15s) hands the case to ops/rerun-backup, whose plan policy records in shadow, closing the case.
+for i in $(seq 1 45); do
+  CASES="$(cli case list --all 2>&1)"
+  echo "$CASES" | grep -q "failed_backup .*host:mini .*closed .*shadow_plan_recorded" && break; sleep 2
+done
+echo "$CASES" | grep -q "failed_backup .*host:mini .*closed .*shadow_plan_recorded" \
+  && ok "the backup monitor's detection became a case, planned and closed as a shadow plan" || bad "the chain: $CASES"
+CID="$(echo "$CASES" | awk '/failed_backup/ {print $1; exit}')"
+SHOW="$(cli case show "$CID" 2>&1)"
+echo "$SHOW" | grep -q "case.handed_over .*ops/backup-monitor .*by detector" && ok "opened by ops/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
+echo "$SHOW" | grep -q "case.planned .*ops/rerun-backup .*by act .*backup_age_above(20h): holds" \
+  && ok "planned by ops/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
+echo "$SHOW" | grep -q "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
+  && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
+$D logs e2e-victoriametrics 2>&1 | grep -q 'QUERY .*instance%3D%22homelab%22' \
+  && ok "the ops workers queried VictoriaMetrics through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
 
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"
@@ -325,7 +353,11 @@ done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 echo "== hardening"
-for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-egress; do
+for w in flotilla-worker-ops-read flotilla-worker-ops-act-host; do
+  NW="$($D inspect $w --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+  [ "$NW" = "${P}_flotilla " ] && ok "$w is on the internal network only" || bad "$w networks: '$NW'"
+done
+for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-egress; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
   case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
 done

@@ -187,7 +187,8 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	}
 	switch dec.Outcome {
 	case "plan":
-		if err := st.MoveCase(ctx, c.ID, cases.Planned, cases.ByAct, "", j.ID(), "run "+r.ID); err != nil {
+		// the re-check's numbers go on the case with the move: the plan cites them (RFC-0004 §5.1)
+		if err := st.MoveCase(ctx, c.ID, cases.Planned, cases.ByAct, "", j.ID(), strings.TrimSpace("run "+r.ID+": "+dec.Detail)); err != nil {
 			return err
 		}
 		pd, pid, err := d.API.DecidePlan(ctx, policy.Plan{CaseID: c.ID, RunID: r.ID, Action: dec.Action, Params: dec.Params})

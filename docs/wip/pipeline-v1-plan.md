@@ -103,3 +103,21 @@ promotion to propose).
   **Not yet:** the chain end to end in the e2e: it needs a monitor to open cases (step 6) and an
   acting routine to run (step 7). Lease renewal by a job is not built: a lease lasts the routine's
   timeout plus 2m, which covers a run that ends; a longer job would need it.
+- **Steps 6 and 7, the monitor and the acting routine:** built 2026-11-13. 6a (c818394): a routine
+  on time declares `detects: [kind]` and reports detections in its plan file; flotillad computes the
+  keys, opens or attaches, and hands a new case over. 6b/7: `ops/` (stdlib Python): `backup_monitor.py`
+  reads `homelab_backup_offsite_last_success_timestamp` (the homelab alert's expression) and detects
+  above the threshold of `backup.rerun_observability`'s `backup_age_above` for its stage, read from
+  `host/registry.json` (20h in shadow); `rerun_backup.py` re-checks and plans, or closes as resolved,
+  evaluating the registry's preconditions itself (`not_running` recorded as the host's to check);
+  a test
+  keeps the declaration's precondition names equal to what the code implements. One image,
+  `flotilla-worker-ops`, two services `worker-ops-read` and `worker-ops-act-host` (compose profile
+  `ops`), tokens only, HOME a tmpfs. `fleets/ops/rerun-backup.yaml` is capped at shadow.
+  **The chain runs end to end in the e2e:** the monitor's detection (the VictoriaMetrics stand-in at
+  20.5h) becomes a case, handed over, planned by `ops/rerun-backup` citing its re-check, closed by policy
+  as a shadow plan that would have been a proposal. Found on the way: flotillad's `NO_PROXY` did not
+  list the new workers, so it reached them through the egress proxy and was refused (407).
+  **Deploy:** a host must run the ops workers or disable their routines before it takes this tag
+  (`deploy/compose/README.md`). Live in shadow on the mini only on the operator's go; then step 8 (the
+  UI's slice 2) and the gate (5 shadow plans the operator agrees with).

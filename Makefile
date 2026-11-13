@@ -66,6 +66,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@$(GO) test ./...
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) test ./...
 	@python3 worker/test_worker.py >/tmp/flotilla-test_worker.log 2>&1 && echo "PASS worker/test_worker.py" || { echo "FAIL worker/test_worker.py"; tail -30 /tmp/flotilla-test_worker.log; exit 1; }
+	@python3 ops/test_ops.py >/tmp/flotilla-test_ops.log 2>&1 && echo "PASS ops/test_ops.py" || { echo "FAIL ops/test_ops.py"; tail -30 /tmp/flotilla-test_ops.log; exit 1; }
 	@python3 deploy/mini/test_mirror.py >/tmp/flotilla-test_mirror.log 2>&1 && echo "PASS deploy/mini/test_mirror.py" || { echo "FAIL deploy/mini/test_mirror.py"; tail -30 /tmp/flotilla-test_mirror.log; exit 1; }
 	@python3 deploy/mini/test_shadow_compare.py >/tmp/flotilla-test_shadow_compare.log 2>&1 && echo "PASS deploy/mini/test_shadow_compare.py" || { echo "FAIL deploy/mini/test_shadow_compare.py"; tail -30 /tmp/flotilla-test_shadow_compare.log; exit 1; }
 	@python3 deploy/mini/test_triage_hooks.py >/tmp/flotilla-test_triage_hooks.log 2>&1 && echo "PASS deploy/mini/test_triage_hooks.py" || { echo "FAIL deploy/mini/test_triage_hooks.py"; tail -30 /tmp/flotilla-test_triage_hooks.log; exit 1; }

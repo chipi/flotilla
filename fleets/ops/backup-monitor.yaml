@@ -1,0 +1,19 @@
+fleet: ops
+routine: backup-monitor
+description: >-
+  Pipeline v1's code-only Ops monitor (RFC-0004 §10): reads the age of the mini's off-box backup and
+  reports a failed_backup detection when it is above the threshold of backup.rerun_observability's
+  backup_age_above for its stage (20h in shadow). flotillad opens the case. No model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  every: 10m
+detects: [failed_backup]
+run:
+  command: python3 /opt/flotilla/ops/backup_monitor.py
+  workdir: .
+  timeout: 1m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 25m

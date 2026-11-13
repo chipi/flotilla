@@ -51,6 +51,13 @@ put $V-flotillad-secrets cli.token 65532 "$FLOTILLA_CONFIG/cli.token"
 put $V-flotillad-secrets worker-triage.token 65532 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets fleet.env 10001 "$TRIAGE_ENV_FILE"
+# the ops workers (compose profile ops), where their tokens exist: a host without them is unaffected
+for w in ops-read ops-act-host; do
+  if [ -s "$FLOTILLA_CONFIG/worker-$w.token" ]; then
+    put $V-flotillad-secrets worker-$w.token 65532 "$FLOTILLA_CONFIG/worker-$w.token"
+    put $V-worker-$w-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-$w.token"
+  fi
+done
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"
