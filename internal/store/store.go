@@ -187,6 +187,8 @@ var schema = []string{
 		lifted_by TEXT
 	);
 	CREATE INDEX holds_scope ON holds(scope, until);`,
+	// RFC-0004 §3.5: the job holding a case (cases.holder) holds it until its lease ends.
+	`ALTER TABLE cases ADD COLUMN lease_until TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

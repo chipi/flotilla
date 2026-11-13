@@ -165,8 +165,10 @@ echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | gre
   && ok "-check in the image reads the registry it carries (backup.rerun_observability)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
+# Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
+for i in $(seq 1 15); do $D logs flotilla-worker-triage 2>&1 | grep -q '"line": "HEARTBEAT PASS"' && break; sleep 1; done
 $D logs flotilla-worker-triage 2>&1 | grep -q '"line": "HEARTBEAT PASS"' && ok "the heartbeat saw allowed-in and denied-out" \
-  || bad "no HEARTBEAT PASS in the worker's log"
+  || bad "no HEARTBEAT PASS in the worker's log (waited 15s)"
 # the proxy writes its log line just after it refuses: wait for it rather than read once (a race, 2026-11-11)
 seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep -q "$2" && return 0; sleep 1; done; return 1; }
 seen flotilla-egress "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"

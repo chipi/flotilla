@@ -91,3 +91,15 @@ promotion to propose).
   and the deploy stand-down (a hold the deploy takes); both before the first plan above shadow.
   Found on the way: flotillad's heartbeat read the scheduler's clock before `Loop` set it up (a race
   since phase 2, which the new case timers made likelier); `Scheduler.Clock()` sets it up first.
+- **Step 5, triggers and the job contract:** built 2026-11-13. 5a (c4dda78): `trigger: {case: {kind}}`,
+  one acting routine per kind, no interval and no freshness. 5b (8f8cd43): the run's plan file
+  (`FLOTILLA_PLAN_FILE`, one JSON object, read and removed by the worker; never a failed run's, never
+  an old run's) and `FLOTILLA_CASE`. 5c: `internal/dispatch`, every 15s in flotillad: expired leases
+  freed (never with an execution open), each handed-over case leased atomically to its routine and
+  run with the case; a plan goes to policy, `resolved_itself` closes, `escalate` escalates, anything
+  else is a `run.no_decision` event and a 10m backoff (also after a defer); schema step 8
+  (`cases.lease_until`). 8 mutants: 7 killed, 1 equivalent (the dispatcher's holder check, a fast
+  path: `LeaseCase` is the guard, and its mutant is killed). Race detector clean.
+  **Not yet:** the chain end to end in the e2e: it needs a monitor to open cases (step 6) and an
+  acting routine to run (step 7). Lease renewal by a job is not built: a lease lasts the routine's
+  timeout plus 2m, which covers a run that ends; a longer job would need it.

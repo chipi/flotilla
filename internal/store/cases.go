@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
 )
@@ -321,4 +322,35 @@ func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// LeaseCase gives a handed-over case to a job until a time, if no one holds it (RFC-0004 §3.5): false
+// when another job holds it or it moved on. Atomic, so a case is never dispatched twice.
+func (s *Store) LeaseCase(ctx context.Context, id, holder string, until time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = ?, lease_until = ? WHERE id = ? AND holder = '' AND status = ?`,
+		holder, until.UTC().Format(ts), id, cases.HandedOver)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// ReleaseCase ends a job's lease on a case.
+func (s *Store) ReleaseCase(ctx context.Context, id, holder string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = '', lease_until = '' WHERE id = ? AND holder = ?`, id, holder)
+	return err
+}
+
+// ExpireLeases returns cases whose lease ended to no one, unless an execution is open on them (executing
+// or checking): then the check resumes and the action never runs again (RFC-0004 §3.5). It returns how
+// many it freed.
+func (s *Store) ExpireLeases(ctx context.Context, now time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = '', lease_until = ''
+		WHERE holder <> '' AND lease_until <> '' AND lease_until < ? AND status NOT IN (?, ?)`,
+		now.UTC().Format(ts), cases.Executing, cases.Checking)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

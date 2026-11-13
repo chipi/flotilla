@@ -23,6 +23,7 @@ import (
 
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/casetimer"
+	"github.com/chipi/flotilla/internal/dispatch"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
@@ -315,12 +316,17 @@ func main() {
 	}
 	hbDone := make(chan struct{})
 	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, log) }()
+	// Cases handed over to a kind start that kind's acting routine (pipeline v1 step 5).
+	dispDone := make(chan struct{})
+	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}
+	go func() { defer close(dispDone); disp.Loop(ctx, 15*time.Second) }()
 
 	s.Loop(ctx)
-	// The heartbeat must finish before the deferred st.Close: a backup cut off by the close logged
-	// "sql: database is closed" (2026-11-11, a flotillad whose loop ended at once).
+	// The heartbeat and the dispatcher's runs must finish before the deferred st.Close: a backup cut off
+	// by the close logged "sql: database is closed" (2026-11-11, a flotillad whose loop ended at once).
 	stop()
 	<-hbDone
+	<-dispDone
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
