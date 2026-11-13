@@ -160,6 +160,30 @@ def _promote_now(sig, base):
     return bool(row) and str(row.get("group_key", "")).startswith(filing.ROLLUP_PREFIX)
 
 
+def _overturn_now(sig, base):
+    """A dismissed error that recurred is re-triaged at once, not after RETRIAGE_HOURS: before
+    2026-11-07, 49 of 64 dismissals that came back were overturned at their re-triage (none of the
+    issues they filed closed as not planned), a median of 85 hours later (fleet-eval-data
+    projects/signal-fleet-retriage). Once per dismissal: a dismissal that was itself an early
+    re-triage of a dismissal waits out the window, so an error the model keeps dismissing costs
+    one extra triage, not one per count change."""
+    if (base or {}).get("disposition") != "dismiss":
+        return False
+    rows = actions.decisions_for_fingerprint(sig["fingerprint"])
+    if len(rows) >= 2 and rows[-2]["disposition"] == "dismiss" and rows[-1]["ts"] == base["ts"]:
+        try:
+            gap = (_parse_ts(rows[-1]["ts"]) - _parse_ts(rows[-2]["ts"])).total_seconds() / 3600
+        except ValueError:
+            return False
+        if gap < config.RETRIAGE_HOURS:
+            return False
+    return True
+
+
+def _parse_ts(ts_iso):
+    return datetime.datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+
+
 def run_glitchtip(limit=5, dry_run=True):
     """Phase B: process unresolved GlitchTip errors through the same spine.
 
@@ -177,7 +201,8 @@ def run_glitchtip(limit=5, dry_run=True):
         cur_count = int(sig.get("labels", {}).get("count") or 0)
         if prior_occ:
             if base and cur_count > base["count"] > 0:
-                if _hours_since(base["ts"]) < config.RETRIAGE_HOURS and not _promote_now(sig, base):
+                if (_hours_since(base["ts"]) < config.RETRIAGE_HOURS and not _promote_now(sig, base)
+                        and not _overturn_now(sig, base)):
                     # one row per count CHANGE, not per cycle: the count stays above the
                     # baseline until re-triage, which wrote ~140 identical rows per bump
                     # (10,764 of 11,700 GlitchTip recurrence rows by 2026-10-01)

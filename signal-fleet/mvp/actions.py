@@ -100,6 +100,25 @@ def last_for_fingerprint(fp):
     return last
 
 
+def decisions_for_fingerprint(fp):
+    """Every NON-recurrence ledger row for a fingerprint, oldest first, as {ts, disposition}."""
+    if not os.path.exists(config.LEDGER):
+        return []
+    fi = LEDGER_COLS.index("fingerprint")
+    di = LEDGER_COLS.index("disposition")
+    ti = LEDGER_COLS.index("ts")
+    out = []
+    with open(config.LEDGER) as f:
+        for n, line in enumerate(f):
+            if n == 0:
+                continue
+            p = line.rstrip("\n").split("\t")
+            if len(p) <= di or p[fi] != fp or p[di] == "recurrence":
+                continue
+            out.append({"ts": p[ti], "disposition": p[di]})
+    return out
+
+
 def record_recurrence(signal, prior):
     """A fingerprint re-fired after a disposition: log it (the implicit-overturn
     signal for Dismiss, review R2-2) without paying for a fresh triage."""

@@ -128,6 +128,10 @@ def main():
                                   "startsAt": occ.split("@", 1)[1] if "@" in occ else "",
                                   "labels": {"count": m.group(2)}}})
     base, fix = _baseline(), _load(os.path.join(HERE, "orchestrator.py"), "orchestrator_fix")
+    # The dismissal re-triage (orchestrator._overturn_now, 2026-11-13) re-triages recurrences this replay
+    # expects as recurrence rows; gate_retriage_replay.py proves that rule, so it is off here and this
+    # replay keeps testing only its own.
+    fix._overturn_now = lambda sig, base: False
     fails, changed, same = [], [], 0
     for ev in events:
         fp_rows = [rows[i] for i in by_fp[ev["fp"]] if i < ev["idx"]]

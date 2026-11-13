@@ -16,7 +16,7 @@ LOGS="$(mktemp -d)"; GATE_HOME="$(mktemp -d)"; ok=0; bad=0
 for g in gate_hardening.py gate_dedup.py gate_filing_replay.py gate_stale_replay.py gate_routing_replay.py \
          gate_triager_failure_replay.py gate_glitchtip_litellm_replay.py gate_recurrence_replay.py \
          gate_open_preference_replay.py gate_duplicate_follow_replay.py gate_identity_replay.py \
-         gate_promotion_replay.py gate_oom_edge_replay.py gate_assistant_failover_replay.py gate_inbox_open_replay.py; do
+         gate_promotion_replay.py gate_retriage_replay.py gate_oom_edge_replay.py gate_assistant_failover_replay.py gate_inbox_open_replay.py; do
   args=""; [ "$g" = gate_filing_replay.py ] && args="--cases-only"
   if HOME="$GATE_HOME" SF_OBSERV_DISABLED=1 python3 "$g" $args >"$LOGS/$g.log" 2>&1; then
     echo "PASS $g"; ok=$((ok + 1))

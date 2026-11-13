@@ -1670,5 +1670,61 @@ class TestSubstrateGlitchTipProjects(unittest.TestCase):
             self._run({"detail": "Permission denied"})
 
 
+class TestOverturnNow(unittest.TestCase):
+    """A dismissed error that recurs is re-triaged at once, once per dismissal (orchestrator._overturn_now).
+    The replay's corpus never hits the cap, so it is pinned here."""
+
+    def setUp(self):
+        import tempfile
+        import config
+        self.config = config
+        self._tmp = tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False)
+        self._tmp.close()
+        self._orig = config.LEDGER
+        config.LEDGER = self._tmp.name
+
+    def tearDown(self):
+        self.config.LEDGER = self._orig
+        os.unlink(self._tmp.name)
+
+    def _ledger(self, *rows):
+        cols = actions.LEDGER_COLS
+        with open(self._tmp.name, "w") as f:
+            f.write("\t".join(cols) + "\n")
+            for ts, disp in rows:
+                r = dict.fromkeys(cols, "")
+                r.update(ts=ts, fingerprint="glitchtip:X-1", disposition=disp, signal_count="1")
+                f.write("\t".join(r[c] for c in cols) + "\n")
+
+    def _now(self):
+        import orchestrator
+        base = actions.last_for_fingerprint("glitchtip:X-1")
+        return orchestrator._overturn_now({"fingerprint": "glitchtip:X-1"}, base)
+
+    def test_a_filed_error_waits(self):
+        self._ledger(("2026-11-10T10:00:00+00:00", "file"))
+        self.assertFalse(self._now())
+
+    def test_a_dismissal_is_overturned_at_once(self):
+        self._ledger(("2026-11-10T10:00:00+00:00", "dismiss"))
+        self.assertTrue(self._now())
+
+    def test_recurrence_rows_do_not_count_as_decisions(self):
+        self._ledger(("2026-11-10T10:00:00+00:00", "dismiss"), ("2026-11-10T11:00:00+00:00", "recurrence"))
+        self.assertTrue(self._now())
+
+    def test_a_quick_redismissal_waits_out_the_window(self):
+        self._ledger(("2026-11-10T10:00:00+00:00", "dismiss"), ("2026-11-10T12:00:00+00:00", "dismiss"))
+        self.assertFalse(self._now())
+
+    def test_a_redismissal_after_the_window_is_overturned_again(self):
+        self._ledger(("2026-11-08T10:00:00+00:00", "dismiss"), ("2026-11-10T12:00:00+00:00", "dismiss"))
+        self.assertTrue(self._now())
+
+    def test_a_dismissal_after_a_filing_is_overturned(self):
+        self._ledger(("2026-11-10T10:00:00+00:00", "file"), ("2026-11-10T11:00:00+00:00", "dismiss"))
+        self.assertTrue(self._now())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
