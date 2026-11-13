@@ -20,6 +20,11 @@ operator is away. RFC-0004 has the design, the fleets end to end, and the review
    awaiting approval → executing → checking → closed, or escalated), enforced by a transition table
    with stuck-state timers. Cases replace decisions, work items, approvals and executions. Hand-overs
    between jobs are a case moving; triage still files GitHub issues as the mirror of bug cases.
+   (Amended by the operator, 2026-11-13: **one case per incident.** A case closed as a recorded shadow
+   plan stays its incident's case until the monitor that opened it reports its key clear; detections
+   in between are absorbed into it, so a fault that lasts makes one case, not one per monitor run.
+   Any other close ends the incident. RFC-0004 §3.5 matched detections only against open and
+   dismissed cases.)
 2. **One capability registry** for reads and writes: named, typed, scoped, `for_kinds`, risk,
    reversibility. Agents plan writes; they never run them.
 3. **Recall** replaces memory and external knowledge: what flotilla recorded (exact lookup by key) and

@@ -251,6 +251,7 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", fmt.Sprintf("%d detections, more than %d", len(rep.Detections), maxDetections))
 		return
 	}
+	present := map[string]bool{} // the keys this run reports: an incident whose key is absent has cleared
 	for _, x := range rep.Detections {
 		if !contains(j.Detects, x.Kind) || !targetRe.MatchString(x.Target) {
 			d.Log.Error("detection refused", "routine", j.ID(), "run_id", r.ID, "kind", x.Kind, "target", x.Target,
@@ -258,21 +259,29 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 			continue
 		}
 		k := store.Key{Kind: "target", Value: x.Kind + "/" + x.Target}
+		present[k.String()] = true
 		detail := strings.TrimSpace("run " + r.ID + ": " + x.Detail)
-		id, opened, err := d.API.Store.OpenCase(ctx, store.NewCase{Kind: x.Kind, Target: x.Target, Project: j.Fleet,
+		id, how, err := d.API.Store.DetectIncident(ctx, store.NewCase{Kind: x.Kind, Target: x.Target, Project: j.Fleet,
 			Keys: []store.Key{k}, Canonical: k}, j.ID(), detail)
 		if err != nil {
 			d.Log.Error("open case", "routine", j.ID(), "kind", x.Kind, "target", x.Target, "err", err)
 			continue
 		}
-		if !opened {
-			continue // attached to the open case for this key: a storm is one case
+		if how != store.Opened {
+			continue // attached to the open case, or absorbed into the incident's: one case per incident
 		}
 		if err := d.API.Store.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", j.ID(), "a code detector with a known kind"); err != nil {
 			d.Log.Error("hand over", "case", id, "err", err)
 			continue
 		}
 		d.Log.Info("case opened", "case", id, "kind", x.Kind, "target", x.Target, "routine", j.ID(), "run_id", r.ID)
+	}
+	cleared, err := d.API.Store.ClearIncidents(ctx, j.ID(), present)
+	if err != nil {
+		d.Log.Error("clear incidents", "routine", j.ID(), "err", err)
+	}
+	for _, id := range cleared {
+		d.Log.Info("incident cleared", "case", id, "routine", j.ID(), "run_id", r.ID)
 	}
 }
 

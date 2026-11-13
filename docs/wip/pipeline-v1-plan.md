@@ -126,6 +126,7 @@ promotion to propose).
   the whole timeline), "Cases that need you" on Now (escalated or awaiting approval); every role reads
   them. The e2e's browser check opens the chain's case. **8b, approving and rejecting,** waits for the
   host agent (step 9): an approval would move a case to executing with nothing to execute it.
-  **Open question** (found in the e2e, 2026-11-13): RFC-0004 §3.5 matches a new detection only against
+  **Resolved (operator, 2026-11-13): one case per incident** (ADR-0005 decision 1, amended). Found in
+  the e2e: RFC-0004 §3.5 matches a new detection only against
   open cases and dismissed ones, so while the backup stays over 20h every monitor run after a shadow
   close opens a new case (about 24 a day, not RFC-0004 §10's "daily shadow cases").

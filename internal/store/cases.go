@@ -111,22 +111,29 @@ func (s *Store) OpenCase(ctx context.Context, n NewCase, actor, detail string) (
 	case !errors.Is(err, sql.ErrNoRows):
 		return "", false, err
 	}
-	if id, err = newCaseID(now.Format("20060102")); err != nil {
-		return "", false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, n.Kind, n.Target, ck, n.Project, n.Urgency, cases.Detected, at, at); err != nil {
-		return "", false, err
-	}
-	for _, k := range n.Keys {
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO case_keys (case_id, kind, value) VALUES (?, ?, ?)`, id, k.Kind, k.Value); err != nil {
-			return "", false, err
-		}
-	}
-	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case.detected", Actor: actor, To: cases.Detected, Detail: detail}); err != nil {
+	if id, err = insertCase(ctx, tx, n, now, actor, detail); err != nil {
 		return "", false, err
 	}
 	return id, true, tx.Commit()
+}
+
+// insertCase writes a new case at detected, with its keys and its first event.
+func insertCase(ctx context.Context, tx *sql.Tx, n NewCase, now time.Time, actor, detail string) (string, error) {
+	id, err := newCaseID(now.Format("20060102"))
+	if err != nil {
+		return "", err
+	}
+	at := now.Format(ts)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, n.Kind, n.Target, n.Canonical.String(), n.Project, n.Urgency, cases.Detected, at, at); err != nil {
+		return "", err
+	}
+	for _, k := range n.Keys {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO case_keys (case_id, kind, value) VALUES (?, ?, ?)`, id, k.Kind, k.Value); err != nil {
+			return "", err
+		}
+	}
+	return id, addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case.detected", Actor: actor, To: cases.Detected, Detail: detail})
 }
 
 // MoveCase changes a case's status if the transition table allows it (cases.Check): the move, the role

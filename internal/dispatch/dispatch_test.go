@@ -327,3 +327,66 @@ func TestDetectionToShadowPlan(t *testing.T) {
 		t.Fatalf("case %+v", c)
 	}
 }
+
+const old = `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h"}]}`
+const fine = `{"outcome": "detections", "detections": []}`
+
+func (f *fixture) all(t *testing.T) []store.Case {
+	cs, err := f.st.Cases(context.Background(), store.CaseFilter{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cs
+}
+
+// One case per incident (operator, 2026-11-13): while the backup stays old, the monitor's detections go
+// into the incident's case, closed as a shadow plan; once a run reports it clear, the next detection is
+// a new case.
+func TestOneCasePerIncident(t *testing.T) {
+	f := setup(t)
+	f.monitor(t, "ok", old)
+	first := f.all(t)[0].ID
+	f.w.mu.Lock()
+	f.w.plan = `{"outcome": "plan", "action": "backup.rerun_observability", "params": {"host": "mini"}}`
+	f.w.mu.Unlock()
+	f.pass(t)
+	for i := 0; i < 3; i++ {
+		f.monitor(t, "ok", old)
+	}
+	if n := len(f.all(t)); n != 1 {
+		t.Fatalf("the same incident made %d cases", n)
+	}
+	ev, _ := f.st.CaseEvents(context.Background(), first)
+	if ev[len(ev)-1].Kind != "signal.absorbed" {
+		t.Fatalf("the repeat is not on the incident's case: %+v", ev[len(ev)-1])
+	}
+	f.monitor(t, "error", fine) // a failed run knows nothing: it clears nothing
+	f.monitor(t, "ok", old)
+	if n := len(f.all(t)); n != 1 {
+		t.Fatalf("a failed run cleared the incident: %d cases", n)
+	}
+	f.monitor(t, "ok", fine)
+	ev, _ = f.st.CaseEvents(context.Background(), first)
+	if ev[len(ev)-1].Kind != "incident.cleared" {
+		t.Fatalf("a run reporting it clear did not clear it: %+v", ev[len(ev)-1])
+	}
+	f.monitor(t, "ok", old)
+	cs := f.all(t)
+	if len(cs) != 2 || cs[0].ID == first || cs[0].Status != cases.HandedOver {
+		t.Fatalf("after the incident cleared, a new detection: %+v", cs)
+	}
+}
+
+// Only a shadow close holds the incident: a case the acting routine closed as resolved ended it.
+func TestResolvedEndsTheIncident(t *testing.T) {
+	f := setup(t)
+	f.monitor(t, "ok", old)
+	f.w.mu.Lock()
+	f.w.plan = `{"outcome": "resolved_itself", "detail": "fine on a fresh look"}`
+	f.w.mu.Unlock()
+	f.pass(t)
+	f.monitor(t, "ok", old)
+	if n := len(f.all(t)); n != 2 {
+		t.Fatalf("a detection after a resolved case: %d cases, want a new one", n)
+	}
+}

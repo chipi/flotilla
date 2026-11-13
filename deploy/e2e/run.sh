@@ -327,6 +327,16 @@ for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 [ "$(started flotillad)" != "$F0" ] && ok "a new flotillad config hash recreates flotillad" || bad "flotillad not recreated: $(cat "$WORK/up2.log")"
 [ "$(started flotilla-egress)" = "$E0" ] && [ "$(started flotilla-worker-triage)" = "$W0" ] \
   && ok "the proxy and the worker, whose config did not change, keep running" || bad "other services were recreated too"
+# The recreated flotillad runs its monitor again at start; the backup is still old: one case per incident
+# (ADR-0005 decision 1, amended 2026-11-13), the repeat absorbed into the closed shadow case.
+for i in $(seq 1 20); do
+  CID="$(agent case list --all 2>&1 | awk '/failed_backup/ {print $1}')"
+  agent case show $CID 2>/dev/null | grep -q "signal.absorbed" && break; sleep 2
+done
+N="$(agent case list --all 2>&1 | grep -c failed_backup)"
+[ "$N" = 1 ] && agent case show $CID 2>&1 | grep -q "signal.absorbed .*ops/backup-monitor" \
+  && ok "after the restart the monitor's repeat went into the incident's case (one case, signal.absorbed)" \
+  || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
 
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"
