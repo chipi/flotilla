@@ -21,6 +21,7 @@ import (
 
 func (s *Server) hostRoutes(m *http.ServeMux) {
 	m.Handle("GET /v1/hosts", s.auth(ActRead, s.hostsList))
+	m.Handle("GET /v1/hosts/{name}/executions", s.auth(ActRead, s.hostExecutions))
 	m.Handle("POST /v1/hosts/{name}/enrolment", s.auth(ActHosts, s.hostEnrolment))
 	m.Handle("POST /v1/hosts/{name}/revoke", s.auth(ActHosts, s.hostRevoke))
 }
@@ -138,6 +139,33 @@ func (s *Server) hostsList(w http.ResponseWriter, r *http.Request, c Caller) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"hosts": hs})
+}
+
+// hostExecutions is flotillad's side of an audit (`flotilla host audit`): what it sent the host, what
+// came back, and the chain head it last heard.
+func (s *Server) hostExecutions(w http.ResponseWriter, r *http.Request, c Caller) {
+	name := r.PathValue("name")
+	hs, err := s.Store.Hosts(r.Context())
+	if err != nil {
+		writeAction(w, err, 0, nil)
+		return
+	}
+	head, found := "", false
+	for _, h := range hs {
+		if h.Name == name {
+			head, found = h.ChainHead, true
+		}
+	}
+	if !found {
+		writeAction(w, problem(404, "no such host"), 0, nil)
+		return
+	}
+	xs, err := s.Store.HostExecutions(r.Context(), name)
+	if err != nil {
+		writeAction(w, err, 0, nil)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"host": name, "chain_head": head, "executions": xs})
 }
 
 func (s *Server) hostEnrolment(w http.ResponseWriter, r *http.Request, c Caller) {

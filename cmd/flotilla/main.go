@@ -14,6 +14,7 @@
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
 //	flotilla host list | enrolment NAME | revoke NAME     (operator: host agents; the token is shown once)
+//	flotilla host audit NAME --log FILE                (the host's audit log against flotillad's record)
 //	flotilla ca root DIR                               (offline: the host agents' root CA, kept by the operator)
 //	flotilla ca intermediate ROOTDIR OUTDIR            (offline: the intermediate for flotillad's secrets volume)
 //	flotilla ca signing-key DIR ID                     (offline: the execution-signing key; prints the hosts' line)
@@ -34,6 +35,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/hostaudit"
 )
 
 func main() {
@@ -311,9 +313,48 @@ func hostCmd(args []string) {
 	case "revoke":
 		need(args, 2, "host revoke NAME")
 		post("/v1/hosts/"+args[1]+"/revoke", nil)
+	case "audit":
+		logPath := flagValue(&args, "--log")
+		need(args, 2, "host audit NAME --log FILE   (FILE: the host's audit log, fetched over SSH)")
+		if logPath == "" {
+			need(nil, 1, "host audit NAME --log FILE")
+		}
+		os.Exit(hostAudit(args[1], logPath))
 	default:
-		need(nil, 1, "host list | host enrolment NAME | host revoke NAME")
+		need(nil, 1, "host list | host enrolment NAME | host revoke NAME | host audit NAME --log FILE")
 	}
+}
+
+// hostAudit compares a host's audit log with flotillad's record of what it sent there (ADR-0006 §8).
+// It prints one line per finding and AUDIT PASS or AUDIT FAIL; the exit code is 1 on a failure.
+func hostAudit(host, logPath string) int {
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	var out struct {
+		ChainHead  string `json:"chain_head"`
+		Executions []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"executions"`
+	}
+	get("/v1/hosts/"+host+"/executions", &out)
+	var recs []hostaudit.Record
+	for _, x := range out.Executions {
+		recs = append(recs, hostaudit.Record{ID: x.ID, Status: x.Status})
+	}
+	fs := hostaudit.Compare(log, recs, out.ChainHead)
+	for _, f := range fs {
+		fmt.Println(f.String())
+	}
+	if hostaudit.Failed(fs) {
+		fmt.Printf("AUDIT FAIL: %s, %d executions on record\n", host, len(recs))
+		return 1
+	}
+	fmt.Printf("AUDIT PASS: %s, %d executions on record\n", host, len(recs))
+	return 0
 }
 
 // actionCmd is `flotilla action list | action autonomy NAME LEVEL [--reason R]` (ADR-0008): an action's

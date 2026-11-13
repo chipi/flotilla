@@ -179,3 +179,34 @@ func TestIntermediateRotation(t *testing.T) {
 		t.Fatalf("after rotating the intermediate: %q %v", host, err)
 	}
 }
+
+// flotillad's side of an audit: what it sent a host and what came back, and the head it last heard.
+func TestHostExecutionsRoute(t *testing.T) {
+	ctx := context.Background()
+	srv, ts, _ := hostServer(t)
+	if _, err := enrol(t, srv, "mini", mint(t, ts, "mini"), "mini"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, ChainHead: "head-abc",
+		ConnectedAt: time.Now(), LastContact: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.StartHostExecution(ctx, store.HostExecution{ID: "case-1-p1", CaseID: "case-1", PlanID: 1, Host: "mini",
+		Action: "host.true", Approved: "user:ada", Envelope: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.EndHostExecution(ctx, "case-1-p1", "done", 0, "sha", "", "head-abc"); err != nil {
+		t.Fatal(err)
+	}
+	c, out := call(t, ts, "GET", "/v1/hosts/mini/executions", agentTok, "")
+	xs, _ := out["executions"].([]any)
+	if c != 200 || out["chain_head"] != "head-abc" || len(xs) != 1 || xs[0].(map[string]any)["status"] != "done" {
+		t.Fatalf("executions: %d %v", c, out)
+	}
+	if _, has := xs[0].(map[string]any)["envelope"]; has {
+		t.Fatal("the envelope's bytes are in the listing")
+	}
+	if c, _ := call(t, ts, "GET", "/v1/hosts/nohost/executions", agentTok, ""); c != 404 {
+		t.Fatalf("an unknown host: %d", c)
+	}
+}

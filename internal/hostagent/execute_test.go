@@ -96,7 +96,8 @@ func TestRealExecution(t *testing.T) {
 	}
 	w.api.Exec.Wait()
 	if s := status(w.api.Store, id); s != cases.Checking {
-		t.Fatalf("approved: the case is %s", s)
+		r, _ := w.api.Store.HostExecution(ctx, id+"-p1")
+		t.Fatalf("approved: the case is %s; the execution: %+v", s, r)
 	}
 	rec, _ := w.api.Store.HostExecution(ctx, id+"-p1")
 	b, _ := os.ReadFile(auditPath)
@@ -108,6 +109,16 @@ func TestRealExecution(t *testing.T) {
 	}
 	if rec.ChainHead != x.ChainHead() {
 		t.Fatalf("flotillad's chain head %s, the host's %s", rec.ChainHead, x.ChainHead())
+	}
+	// the audit (`flotilla host audit`): the host's real log against flotillad's real record
+	xs, _ := w.api.Store.HostExecutions(ctx, "mini")
+	var recs []hostaudit.Record
+	for _, e := range xs {
+		recs = append(recs, hostaudit.Record{ID: e.ID, Status: e.Status})
+	}
+	hs, _ := w.api.Store.Hosts(ctx)
+	if fs := hostaudit.Compare(b, recs, hs[0].ChainHead); hostaudit.Failed(fs) || len(recs) != 1 {
+		t.Fatalf("the audit after a real execution: %d records, %v", len(recs), fs)
 	}
 }
 

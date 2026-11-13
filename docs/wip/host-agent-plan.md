@@ -227,8 +227,19 @@ VPS.
     `approved` carries), and is refused while the installation is frozen or a hold covers the target
     or its host; rejecting needs a reason, escalates the case, releases the target and demotes the
     action to shadow (the store's existing rule). 7 mutants killed.
-  - **H9b, `flotilla host audit`:** the host's audit log (fetched over SSH) against flotillad's
-    record: the chain verifies, it leads to the stored head, and each execution matches both ways.
+  - **H9b, `flotilla host audit NAME --log FILE` (built):** the host's audit log (fetched over SSH)
+    against flotillad's record (`GET /v1/hosts/{name}/executions`: each execution's status, and the
+    chain head flotillad last heard; never the envelopes). `hostaudit.Compare`: the chain verifies;
+    it leads to the stored head (a log rewritten after it reported fails); every execution the host
+    started, flotillad sent; every result flotillad recorded, the host logged the same; one flotillad
+    holds as unknown is resolved by the host's own line; one never sent, the host never logged; a
+    refusal of an envelope that did not verify is listed by the id it claimed. Ends AUDIT PASS or
+    AUDIT FAIL (exit 1). The real-connection test now audits the host's real log after a real
+    execution. 7 mutants killed. That test failed once under `-race` (the case escalated instead of
+    reaching checking) and passed 54 times after; unconfirmed, the likely cause is the test world's
+    50 ms heartbeat (dropped after 150 ms of silence) on a loaded machine, the same shape as an
+    earlier ci-fast failure: the heartbeat is now 200 ms, and the test prints the execution's record
+    if it fails again.
   - **H9c, the e2e:** an e2e-only test fleet and registry extension (mounted config, not the image)
     take one execution through the whole path (detect, plan, propose, approve, sign, send, run,
     result, checking), then an action outside the host's allowlist and its rate limit, refused on

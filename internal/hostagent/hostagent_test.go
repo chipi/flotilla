@@ -70,7 +70,7 @@ func newWorld(t *testing.T) world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := &hostlink.Server{Auth: a, Log: quiet, Heartbeat: 50 * time.Millisecond,
+	link := &hostlink.Server{Auth: a, Log: quiet, Heartbeat: 200 * time.Millisecond,
 		TLS: &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{srvCert.Raw, inter.Cert.Raw}, PrivateKey: key}}},
 		// as flotillad wires it (cmd/flotillad recordContact)
 		OnContact: func(h hostlink.HostState) {
@@ -102,7 +102,7 @@ func (w world) agent(t *testing.T, host string, x Executor) *Agent {
 	return &Agent{Addr: w.addr, ServerName: "flotilla", Root: w.root.Cert, Host: host, Version: "test", Key: key,
 		LoadChain: func() ([]byte, error) { mu.Lock(); defer mu.Unlock(); return chain, nil },
 		SaveChain: func(b []byte) error { mu.Lock(); defer mu.Unlock(); chain = b; return nil },
-		Exec:      x, Heartbeat: 50 * time.Millisecond, Log: quiet}
+		Exec:      x, Heartbeat: 200 * time.Millisecond, Log: quiet}
 }
 
 func run(t *testing.T, a *Agent) context.CancelFunc {
@@ -158,12 +158,12 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	// heartbeats keep it connected over many intervals, and update its last contact, in the store too
 	before := st.LastContact
 	hs0, _ := w.api.Store.Hosts(context.Background())
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond) // three heartbeats at 200 ms
 	if hs, _ := w.api.Store.Hosts(context.Background()); hs[0].LastContact <= hs0[0].LastContact {
 		t.Fatalf("the stored last contact did not move with heartbeats: %s then %s", hs0[0].LastContact, hs[0].LastContact)
 	}
 	if st := w.link.Hosts()[0]; !st.Connected || !st.LastContact.After(before) {
-		t.Fatalf("after 6 heartbeats: %+v", st)
+		t.Fatalf("after three heartbeats: %+v", st)
 	}
 	if _, err := w.link.Execute(context.Background(), "dgx", "x2", []byte("x2"), time.Second); !errors.Is(err, hostlink.ErrNotConnected) {
 		t.Fatalf("a host never connected: %v", err)

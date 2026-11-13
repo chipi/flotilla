@@ -268,6 +268,26 @@ func (s *Store) HostExecution(ctx context.Context, id string) (*HostExecution, e
 	return &x, err
 }
 
+// HostExecutions lists flotillad's record of a host's executions, oldest first (`flotilla host audit`).
+func (s *Store) HostExecutions(ctx context.Context, host string) ([]HostExecution, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, status, exit_code, output_sha256,
+		detail, chain_head, sent_at, ended_at FROM host_executions WHERE host = ? ORDER BY sent_at, id`, host)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	xs := []HostExecution{}
+	for rows.Next() {
+		var x HostExecution
+		if err := rows.Scan(&x.ID, &x.CaseID, &x.PlanID, &x.Host, &x.Action, &x.Approved, &x.Status, &x.ExitCode,
+			&x.OutputSHA256, &x.Detail, &x.ChainHead, &x.SentAt, &x.EndedAt); err != nil {
+			return nil, err
+		}
+		xs = append(xs, x)
+	}
+	return xs, rows.Err()
+}
+
 // RecoverHostExecutions marks every execution left sent by the last flotillad unknown (its result, if
 // any, was lost with it) and returns them: their cases escalate, their targets stay held.
 func (s *Store) RecoverHostExecutions(ctx context.Context) ([]HostExecution, error) {
