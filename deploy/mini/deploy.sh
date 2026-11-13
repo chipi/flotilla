@@ -95,6 +95,11 @@ say "$OUT" | sed 's/^/   /'
 grep -q "^CHECK PASS" <<<"$OUT" || die "flotillad -check failed for $TAG"
 
 say "== up"
+# A deploy stand-down on this host (RFC-0004 §5.1): plans on it are deferred while the stack changes.
+# FLOTILLA_STANDDOWN_HOST in .env names it; unset, none is taken. Never blocks the deploy.
+if [ -n "$(envget FLOTILLA_STANDDOWN_HOST)" ] && [ -f "$REPO/deploy/mini/standdown.sh" ]; then   # an older tag has none
+  bash "$REPO/deploy/mini/standdown.sh" "$(envget FLOTILLA_STANDDOWN_HOST)" 30m "flotilla $TAG" | sed 's/^/   /'
+fi
 # A container whose mounted config changed must restart to read it: compose recreates a container
 # only when its own definition changes, never for a changed bind-mounted file. Each service's config
 # files are hashed into its environment, so a changed file is a changed definition (found 2026-11-09:

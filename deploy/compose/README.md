@@ -156,6 +156,21 @@ They reach VictoriaMetrics through the proxy, already on its allowlist for floti
 `rerun-backup` is capped at shadow: its plans are recorded and nothing is sent to the host.
 `flotilla case list` and `flotilla case show <id>` show what they did.
 
+## The deploy stand-down (RFC-0004 §5.1)
+
+While a deploy changes a host, policy defers every plan on it. `deploy/mini/standdown.sh HOST DURATION
+WHY` takes that stand-down: a hold on `host:HOST` by the installation's `deploy` caller, ending on its
+own. It never fails its caller. `deploy.sh` takes one for 30m before `up` when `.env` names
+`FLOTILLA_STANDDOWN_HOST` (e.g. `mini`); the homelab's `mini-deploy.sh` takes one from its pre-pull
+hook. To set it up:
+
+1. Add a caller with role `agent` (it may hold, never lift) to `callers.yaml`:
+   `- {name: deploy, role: agent, token_sha256: <sha256 of the token>}`
+   (`flotilla hash-token < config/deploy.token`).
+2. Put the token in `config/deploy.token`; `secrets.sh` copies it into flotillad's secrets volume,
+   where the script reads it by path.
+3. Set `FLOTILLA_STANDDOWN_HOST=mini` in `.env`.
+
 ## The candidate worker: shadow comparison of a candidate image
 
 ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs

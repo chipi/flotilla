@@ -138,3 +138,10 @@ promotion to propose).
   verified, failed. 5 mutants
   killed. **Not yet:** automatic demotion (failed or unknown → propose; rejected proposals → shadow),
   which needs executions and approvals (the host agent, 8b).
+- **The deploy stand-down** (before any plan above shadow): built 2026-11-13.
+  `deploy/mini/standdown.sh` takes a hold on `host:HOST` by the installation's `deploy` caller (role
+  agent; its token read by path from flotillad's secrets volume) and never fails its caller. flotilla's
+  `deploy.sh` takes one for 30m before `up` (`FLOTILLA_STANDDOWN_HOST`); the homelab's `mini-deploy.sh`
+  from a pre-pull hook. The e2e takes one and checks it is the host's hold, and that one that
+  cannot be
+  taken is skipped.
