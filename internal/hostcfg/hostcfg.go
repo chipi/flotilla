@@ -50,7 +50,13 @@ type Param struct {
 	Pattern string   `json:"pattern,omitempty"`
 }
 
-// Pre is a local precondition the agent checks before it runs (ADR-0006 §7). Kinds are the agent's (H3).
+// PreKinds are the precondition kinds the agent can check (internal/hostexec), each with its exact
+// arguments; a config naming another is refused at load, not found out at execution.
+var PreKinds = map[string][]string{
+	"launchd_not_running": {"label"},
+}
+
+// Pre is a local precondition the agent checks before it runs (ADR-0006 §7).
 type Pre struct {
 	Kind string            `json:"kind"`
 	Args map[string]string `json:"args,omitempty"`
@@ -229,8 +235,18 @@ func validAction(name string, a Action) error {
 		bad("timeout must be > 0")
 	}
 	for _, p := range a.Pre {
-		if !nameRe.MatchString(strings.ReplaceAll(p.Kind, "_", "-")) {
-			bad("precondition kind %q", p.Kind)
+		args, ok := PreKinds[p.Kind]
+		if !ok {
+			bad("precondition kind %q is not one the agent can check", p.Kind)
+			continue
+		}
+		if len(p.Args) != len(args) {
+			bad("precondition %s takes %v", p.Kind, args)
+		}
+		for _, k := range args {
+			if p.Args[k] == "" {
+				bad("precondition %s needs %s", p.Kind, k)
+			}
 		}
 	}
 	return errors.Join(errs...)

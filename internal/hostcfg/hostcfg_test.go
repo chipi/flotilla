@@ -106,6 +106,9 @@ func TestBadConfigs(t *testing.T) {
 		"no rate limit":               {`"per_hour": 1,`, `"per_hour": 0,`},
 		"no timeout":                  {`"timeout": "30m"`, `"timeout": "0s"`},
 		"an unknown field":            {`"per_hour": 1,`, `"per_hour": 1, "shell": true,`},
+		"an unknown precondition":     {`{"kind": "launchd_not_running", "args": {"label": "system/com.homelab.db-backup"}}`, `{"kind": "file_absent"}`},
+		"a precondition missing args": {`"args": {"label": "system/com.homelab.db-backup"}`, `"args": {"name": "system/com.homelab.db-backup"}`},
+		"a precondition, extra args":  {`"args": {"label": "system/com.homelab.db-backup"}`, `"args": {"label": "system/com.homelab.db-backup", "x": "y"}`},
 	} {
 		body := strings.Replace(string(good), c.from, c.to, 1)
 		if body == string(good) {

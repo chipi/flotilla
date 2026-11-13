@@ -63,3 +63,18 @@ VPS.
   a command with no arguments (alone it would allow any). `visudo -c` (Debian's sudo, in a container)
   parses it; note that it parses a wildcard line too, so the refusal of wildcards is this package's.
   10 mutants: 9 killed, 1 a redundant duplicate check, removed.
+- **H3, execution on the host:** built 2026-11-13, `internal/hostexec`. `Handle` takes the raw bytes
+  and, in order: verifies the envelope; a seen id with identical bytes returns the recorded result
+  (`resent`, nothing runs), with other bytes is refused as a forgery; builds the argv (`hostcfg.Argv`);
+  refuses everything at ceiling shadow and an `auto` approval above the ceiling; refuses past the
+  action's hourly limit here (a `precondition_false` ran nothing and does not count); commits `started`;
+  checks the local preconditions (`precondition_false`; one that cannot be checked is `unknown`); runs
+  the argv without a shell, in its own process group, with a built environment (`PATH`, `LANG=C`),
+  SIGTERM then SIGKILL to the group past the action's timeout (`unknown`, the target stays held);
+  keeps the last 16 KiB of output and the sha256 of all of it. `Open` marks a `started` left by a
+  previous run `unknown`: it never runs again. One precondition kind, `launchd_not_running`:
+  `/bin/launchctl print <label>` (no sudo), holds unless the `state =` line says `running`; a failed
+  exit or no state line is `unknown`. `hostcfg` now refuses, at load, a precondition kind the agent
+  cannot check, or one with the wrong arguments. 18 mutants killed (10 executor, 5 checker, 3 config).
+  Not verified: that `_flotilla` (not the operator's account) can run `launchctl print` on the mini;
+  checked when H8 installs it.
