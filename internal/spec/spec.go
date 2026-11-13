@@ -44,6 +44,10 @@ func FleetdStage(autonomy string) string {
 	return autonomy
 }
 
+// Rank orders the autonomy levels (shadow 0, propose 1, auto 2), so a change can be told apart as
+// raising or lowering.
+func Rank(autonomy string) int { return levelRank[autonomy] }
+
 // Allows reports whether autonomy s is within the routine's cap (max_autonomy; no cap when it is empty).
 func (j *Routine) Allows(s string) bool {
 	return j.MaxAutonomy == "" || levelRank[s] <= levelRank[j.MaxAutonomy]

@@ -194,7 +194,7 @@ echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot change a routine's auton
 cli stop platform >/dev/null && cli run platform/heartbeat >/dev/null
 sleep 3
 cli runs platform/heartbeat -n 1 | grep -q " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
-cli start platform >/dev/null
+cli start platform --reason "e2e: start after the STOP check" >/dev/null
 cli events -n 5 | grep -q "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
 W="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
 r=urllib.request.Request("http://127.0.0.1:8081/healthz",headers={"Authorization":"Bearer wrong"})

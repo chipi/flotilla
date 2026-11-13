@@ -1,11 +1,13 @@
 // Package api is flotillad's HTTP API, the one surface the CLI (and later the UI and MCP) use.
 //
-// Every request but /healthz carries a caller's bearer token. A caller has a role:
+// Every request but /healthz carries a bearer token: a caller's from the callers file (agents, workers,
+// and the operator token kept for bootstrap and break-glass), or a person's (users.go, ADR-0014). What a
+// role may do is one table, authorize.go:
 //   - agent: read, start a run, pause a routine, STOP a fleet (making things safer is never gated);
-//   - operator: also resume a routine, start a STOPped fleet, change a autonomy.
+//   - viewer: read; operator: also resume, start a STOPped fleet, set autonomy; admin: also users.
 //
-// An agent can never do what only the operator may (AGENTS.md rule 2). Every change is recorded in the
-// event log with the caller's name.
+// An agent can never do what only an operator may (AGENTS.md rule 2). Loosening needs a reason. Every
+// change is recorded in the event log with the caller's name (a person's is user:<name>).
 package api
 
 import (
@@ -54,6 +56,8 @@ type Caller struct {
 	Name        string `yaml:"name"`
 	Role        string `yaml:"role"`
 	TokenSHA256 string `yaml:"token_sha256"`
+	// User is a person from the store (ADR-0014), not a callers-file entry.
+	User bool `yaml:"-"`
 }
 
 type Callers struct {
@@ -113,15 +117,16 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "version": s.Version})
 	})
-	m.Handle("GET /v1/status", s.auth(RoleAgent, s.status))
-	m.Handle("GET /v1/runs", s.auth(RoleAgent, s.runs))
-	m.Handle("GET /v1/events", s.auth(RoleAgent, s.events))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(RoleAgent, s.run))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(RoleAgent, s.control(sched.KeyPaused, "1", true)))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(RoleOperator, s.control(sched.KeyPaused, "0", true)))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(RoleOperator, s.autonomy))
-	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(RoleAgent, s.control(sched.KeyStop, "1", false)))
-	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(RoleOperator, s.control(sched.KeyStop, "0", false)))
+	m.Handle("GET /v1/status", s.auth(ActRead, s.status))
+	m.Handle("GET /v1/runs", s.auth(ActRead, s.runs))
+	m.Handle("GET /v1/events", s.auth(ActRead, s.events))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(ActRun, s.run))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(ActPause, s.control(ActPause, sched.KeyPaused, "1", true)))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(ActResume, s.control(ActResume, sched.KeyPaused, "0", true)))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(ActAutonomy, s.autonomy))
+	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(ActStop, s.control(ActStop, sched.KeyStop, "1", false)))
+	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(ActStart, s.control(ActStart, sched.KeyStop, "0", false)))
+	s.userRoutes(m)
 	s.ledgerRoutes(m)
 	return m
 }
@@ -138,44 +143,100 @@ func (s *Server) WorkerHandler() http.Handler {
 }
 
 func (s *Server) ledgerRoutes(m *http.ServeMux) {
-	m.Handle("GET /v1/ledger/filings", s.auth(RoleWorker, s.ledgerFilings))
-	m.Handle("POST /v1/ledger/filings", s.auth(RoleWorker, s.ledgerWriteFiling))
-	m.Handle("GET /v1/ledger/entries", s.auth(RoleWorker, s.ledgerEntries))
-	m.Handle("POST /v1/ledger/entries", s.auth(RoleWorker, s.ledgerAppendEntry))
-	m.Handle("GET /v1/ledger/counts", s.auth(RoleWorker, s.ledgerCounts))
-	m.Handle("POST /v1/ledger/import", s.auth(RoleWorker, s.ledgerImport))
+	m.Handle("GET /v1/ledger/filings", s.auth(ActLedger, s.ledgerFilings))
+	m.Handle("POST /v1/ledger/filings", s.auth(ActLedger, s.ledgerWriteFiling))
+	m.Handle("GET /v1/ledger/entries", s.auth(ActLedger, s.ledgerEntries))
+	m.Handle("POST /v1/ledger/entries", s.auth(ActLedger, s.ledgerAppendEntry))
+	m.Handle("GET /v1/ledger/counts", s.auth(ActLedger, s.ledgerCounts))
+	m.Handle("POST /v1/ledger/import", s.auth(ActLedger, s.ledgerImport))
 }
 
-func (s *Server) auth(need string, h func(http.ResponseWriter, *http.Request, Caller)) http.Handler {
+// whoIs resolves a bearer token: the callers file first, then the store's users. nil when unknown.
+func (s *Server) whoIs(ctx context.Context, tok string) (*Caller, error) {
+	got := HashToken(tok)
+	var who *Caller
+	for i := range s.Callers {
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.Callers[i].TokenSHA256)) == 1 {
+			c := s.Callers[i]
+			who = &c
+		}
+	}
+	if who != nil {
+		return who, nil
+	}
+	u, err := s.Store.UserByToken(ctx, got)
+	if err != nil || u == nil {
+		return nil, err
+	}
+	return &Caller{Name: "user:" + u.Name, Role: u.Role, User: true}, nil
+}
+
+// effectiveRole is the role the table is read with. The callers-file operator token is an operator only
+// while no admin exists (so an installation works before its first user); after that it is retired:
+// bootstrap and break-glass are the users endpoint's own check (users.go).
+func (s *Server) effectiveRole(ctx context.Context, c Caller) (string, error) {
+	if c.User || c.Role != RoleOperator {
+		return c.Role, nil
+	}
+	n, err := s.Store.ActiveAdmins(ctx)
+	if err != nil {
+		return "", err
+	}
+	if n > 0 {
+		return "retired-operator-token", nil
+	}
+	return RoleOperator, nil
+}
+
+func (s *Server) auth(a Action, h func(http.ResponseWriter, *http.Request, Caller)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || tok == "" {
 			writeJSON(w, 401, map[string]string{"error": "a bearer token is required"})
 			return
 		}
-		got := HashToken(tok)
-		var who *Caller
-		for i := range s.Callers {
-			if subtle.ConstantTimeCompare([]byte(got), []byte(s.Callers[i].TokenSHA256)) == 1 {
-				who = &s.Callers[i]
-			}
+		who, err := s.whoIs(r.Context(), tok)
+		if err != nil {
+			writeErr(w, err)
+			return
 		}
 		if who == nil {
 			writeJSON(w, 401, map[string]string{"error": "unknown token"})
 			return
 		}
-		if need == RoleOperator && who.Role != RoleOperator {
-			s.Log.Warn("refused: operator-only", "caller", who.Name, "path", r.URL.Path)
-			writeJSON(w, 403, map[string]string{"error": "only the operator may do this; an agent never can"})
+		role, err := s.effectiveRole(r.Context(), *who)
+		if err != nil {
+			writeErr(w, err)
 			return
 		}
-		if (need == RoleWorker) != (who.Role == RoleWorker) { // a worker reaches the ledger and only the ledger
-			s.Log.Warn("refused: wrong role", "caller", who.Name, "path", r.URL.Path)
-			writeJSON(w, 403, map[string]string{"error": "the ledger is a worker's; a worker reaches nothing else"})
+		// The users endpoints decide the callers-file operator's bootstrap themselves (users.go).
+		if !Authorize(role, a) && !(a == ActUsers && !who.User && who.Role == RoleOperator) {
+			s.Log.Warn("refused", "caller", who.Name, "role", role, "action", a, "path", r.URL.Path)
+			msg := "your role may not do this"
+			switch {
+			case role == RoleWorker:
+				msg = "the ledger is a worker's; a worker reaches nothing else"
+			case a == ActLedger:
+				msg = "the ledger is a worker's"
+			case role == RoleAgent:
+				msg = "only an operator may do this; an agent never can"
+			case role == "retired-operator-token":
+				msg = "an admin exists: the callers-file operator token is for bootstrap and break-glass only; use your user token"
+			}
+			writeJSON(w, 403, map[string]string{"error": msg})
 			return
 		}
 		h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, *who)), *who)
 	})
+}
+
+// reason reads a loosening action's reason from the JSON body ({"reason": "..."}); "" when absent.
+func reason(r *http.Request, w http.ResponseWriter) string {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	return strings.TrimSpace(body.Reason)
 }
 
 type routineStatus struct {
@@ -286,8 +347,15 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, c Caller) {
 	writeJSON(w, 202, map[string]string{"started": j.ID(), "by": c.Name})
 }
 
-func (s *Server) control(key, value string, perJob bool) func(http.ResponseWriter, *http.Request, Caller) {
+func (s *Server) control(a Action, key, value string, perJob bool) func(http.ResponseWriter, *http.Request, Caller) {
 	return func(w http.ResponseWriter, r *http.Request, c Caller) {
+		why := ""
+		if loosening(a) {
+			if why = reason(r, w); why == "" {
+				writeJSON(w, 400, map[string]string{"error": "loosening needs a reason: body {\"reason\": \"...\"}"})
+				return
+			}
+		}
 		subject := r.PathValue("fleet")
 		if perJob {
 			j := s.routine(w, r)
@@ -299,11 +367,11 @@ func (s *Server) control(key, value string, perJob bool) func(http.ResponseWrite
 			writeJSON(w, 404, map[string]string{"error": "no such fleet"})
 			return
 		}
-		if err := s.Store.SetControl(r.Context(), subject, key, value, c.Name, "api"); err != nil {
+		if err := s.Store.SetControlBecause(r.Context(), subject, key, value, c.Name, "api", why); err != nil {
 			writeErr(w, err)
 			return
 		}
-		s.Log.Info("control set", "subject", subject, "key", key, "value", value, "caller", c.Name)
+		s.Log.Info("control set", "subject", subject, "key", key, "value", value, "caller", c.Name, "reason", why)
 		writeJSON(w, 200, map[string]string{"subject": subject, key: value, "by": c.Name})
 	}
 }
@@ -315,11 +383,13 @@ func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 	}
 	var body struct {
 		Autonomy string `json:"autonomy"`
+		Reason   string `json:"reason"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"shadow|propose|auto\"}"})
+		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"shadow|propose|auto\", \"reason\": \"...\"}"})
 		return
 	}
+	body.Reason = strings.TrimSpace(body.Reason)
 	switch body.Autonomy {
 	case spec.AutonomyShadow, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
@@ -330,11 +400,20 @@ func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("%s is capped at %s by its spec (max_autonomy)", j.ID(), j.MaxAutonomy)})
 		return
 	}
-	if err := s.Store.SetControl(r.Context(), j.ID(), sched.KeyAutonomy, body.Autonomy, c.Name, "api"); err != nil {
+	cur, err := s.Sched.Autonomy(r.Context(), j)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Log.Info("autonomy set", "routine", j.ID(), "autonomy", body.Autonomy, "caller", c.Name)
+	if spec.Rank(body.Autonomy) > spec.Rank(cur) && body.Reason == "" { // raising loosens (ADR-0014)
+		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("raising %s from %s to %s needs a reason", j.ID(), cur, body.Autonomy)})
+		return
+	}
+	if err := s.Store.SetControlBecause(r.Context(), j.ID(), sched.KeyAutonomy, body.Autonomy, c.Name, "api", body.Reason); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.Log.Info("autonomy set", "routine", j.ID(), "autonomy", body.Autonomy, "caller", c.Name, "reason", body.Reason)
 	writeJSON(w, 200, map[string]string{"routine": j.ID(), "autonomy": body.Autonomy, "by": c.Name})
 }
 

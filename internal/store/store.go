@@ -101,6 +101,23 @@ var schema = []string{
 	);
 	CREATE INDEX ledger_entries_occ ON ledger_entries(namespace, occurrence_id, seq);
 	CREATE INDEX ledger_entries_fp ON ledger_entries(namespace, fingerprint, seq);`,
+	// ADR-0014: people (users.go). Only token hashes are kept; a revoked user stays, so a name is never
+	// reused. A session row holds the hash of its cookie's id.
+	`CREATE TABLE users (
+		name TEXT PRIMARY KEY,
+		role TEXT NOT NULL,
+		token_sha256 TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL,
+		revoked_at TEXT
+	);
+	CREATE TABLE sessions (
+		id_sha256 TEXT PRIMARY KEY,
+		user_name TEXT NOT NULL REFERENCES users(name),
+		csrf TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		last_seen TEXT NOT NULL
+	);
+	CREATE INDEX sessions_user ON sessions(user_name);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.
@@ -232,6 +249,16 @@ func (s *Store) Events(ctx context.Context, limit int) ([]Event, error) {
 
 // SetControl sets one control and records who did it, in one transaction.
 func (s *Store) SetControl(ctx context.Context, subject, key, value, actor, via string) error {
+	return s.SetControlBecause(ctx, subject, key, value, actor, via, "")
+}
+
+// SetControlBecause is SetControl with the reason a loosening control needs (ADR-0014): the event's
+// detail is the value, then the reason.
+func (s *Store) SetControlBecause(ctx context.Context, subject, key, value, actor, via, reason string) error {
+	detail := value
+	if reason != "" {
+		detail = value + ": " + reason
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -244,7 +271,7 @@ func (s *Store) SetControl(ctx context.Context, subject, key, value, actor, via 
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO events (at, actor, via, kind, subject, detail) VALUES (?, ?, ?, ?, ?, ?)`,
-		at, actor, via, "control."+key, subject, value); err != nil {
+		at, actor, via, "control."+key, subject, detail); err != nil {
 		return err
 	}
 	return tx.Commit()

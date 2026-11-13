@@ -4,9 +4,13 @@
 //	flotilla runs [fleet/routine] [-n 20]
 //	flotilla events [-n 50]
 //	flotilla run fleet/routine
-//	flotilla pause|resume fleet/routine
-//	flotilla autonomy fleet/routine shadow|propose|auto      (operator only)
-//	flotilla stop|start fleet                          (start: operator only)
+//	flotilla pause fleet/routine
+//	flotilla resume fleet/routine --reason "..."        (operator; loosening needs a reason)
+//	flotilla autonomy fleet/routine shadow|propose|auto [--reason "..."]   (operator; raising needs one)
+//	flotilla stop fleet
+//	flotilla start fleet --reason "..."                 (operator)
+//	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
+//	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
 //
 // FLOTILLA_URL (default http://127.0.0.1:8484) says where; FLOTILLA_TOKEN, or FLOTILLA_TOKEN_FILE, who.
@@ -54,6 +58,8 @@ func main() {
 			break
 		}
 	}
+	reason := flagValue(&args, "--reason")
+	role := flagValue(&args, "--role")
 	// -json: the API's answer as it is, for scripts (deploy/mini/mirror.sh)
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-json" {
@@ -130,22 +136,76 @@ func main() {
 		for _, e := range out.Events {
 			fmt.Printf("%v  %-16v %-14v %-22v %v %v\n", e["at"], e["actor"], e["kind"], e["subject"], e["via"], e["detail"])
 		}
-	case "run", "pause", "resume":
+	case "run", "pause":
 		need(args, 1, cmd+" fleet/routine")
 		post("/v1/routines/"+args[0]+"/"+cmd, nil)
+	case "resume":
+		need(args, 1, `resume fleet/routine --reason "..."`)
+		post("/v1/routines/"+args[0]+"/resume", map[string]string{"reason": reason})
 	case "autonomy":
-		need(args, 2, "autonomy fleet/routine shadow|propose|auto")
-		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": args[1]})
-	case "stop", "start":
-		need(args, 1, cmd+" fleet")
-		post("/v1/fleets/"+args[0]+"/"+cmd, nil)
+		need(args, 2, `autonomy fleet/routine shadow|propose|auto [--reason "..."]`)
+		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": args[1], "reason": reason})
+	case "stop":
+		need(args, 1, "stop fleet")
+		post("/v1/fleets/"+args[0]+"/stop", nil)
+	case "start":
+		need(args, 1, `start fleet --reason "..."`)
+		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
+	case "user":
+		userCmd(args, role)
 	default:
 		usage()
 	}
 }
 
+// userCmd is `flotilla user …` (ADR-0014). A new or rotated token is printed once.
+func userCmd(args []string, role string) {
+	need(args, 1, "user add|list|role|rotate|revoke …")
+	switch args[0] {
+	case "list":
+		var out struct {
+			Users []map[string]any
+		}
+		get("/v1/users", &out)
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tROLE\tCREATED\tREVOKED")
+		for _, u := range out.Users {
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", u["name"], u["role"], u["created_at"], orDash(u["revoked_at"]))
+		}
+		w.Flush()
+	case "add":
+		need(args, 2, "user add NAME --role admin|operator|viewer")
+		if role == "" {
+			fmt.Fprintln(os.Stderr, "user add needs --role admin|operator|viewer")
+			os.Exit(2)
+		}
+		post("/v1/users", map[string]string{"name": args[1], "role": role})
+	case "role":
+		need(args, 3, "user role NAME admin|operator|viewer")
+		post("/v1/users/"+args[1]+"/role", map[string]string{"role": args[2]})
+	case "rotate", "revoke":
+		need(args, 2, "user "+args[0]+" NAME")
+		post("/v1/users/"+args[1]+"/"+args[0], nil)
+	default:
+		usage()
+	}
+}
+
+// flagValue removes `name value` from args and returns the value ("" when absent).
+func flagValue(args *[]string, name string) string {
+	a := *args
+	for i := 0; i < len(a); i++ {
+		if a[i] == name && i+1 < len(a) {
+			v := a[i+1]
+			*args = append(a[:i], a[i+2:]...)
+			return v
+		}
+	}
+	return ""
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause|resume ROUTINE | autonomy ROUTINE STAGE | stop|start FLEET | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

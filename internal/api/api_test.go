@@ -126,7 +126,10 @@ func TestOperatorStage(t *testing.T) {
 	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"yolo"}`); c != 400 {
 		t.Fatalf("bad autonomy: %d", c)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"propose"}`); c != 200 {
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"propose"}`); c != 400 {
+		t.Fatalf("raising autonomy without a reason (ADR-0014): %d, want 400", c)
+	}
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"propose","reason":"test"}`); c != 200 {
 		t.Fatalf("autonomy: %d", c)
 	}
 	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyAutonomy); v != "propose" {
