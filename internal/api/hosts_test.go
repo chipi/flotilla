@@ -107,7 +107,7 @@ func TestHostEnrolAuthenticateRevoke(t *testing.T) {
 	if _, err := srv.AuthenticateHost(ctx, chain); err != nil {
 		t.Fatalf("after an agent's refused revoke: %v", err)
 	}
-	if c, out := call(t, ts, "GET", "/v1/hosts", agentTok, ""); c != 200 || !strings.Contains(fmt.Sprint(out["hosts"]), chain[0].SerialNumber.Text(16)) {
+	if c, out := call(t, ts, "GET", "/v1/hosts", agentTok, ""); c != 200 || !strings.Contains(fmt.Sprint(out["hosts"]), hostca.Fingerprint(chain[0])) {
 		t.Fatalf("hosts: %d %v", c, out)
 	}
 	// another CA's certificate for the same name
@@ -177,6 +177,44 @@ func TestIntermediateRotation(t *testing.T) {
 	srv.HostCA = next
 	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "mini" {
 		t.Fatalf("after rotating the intermediate: %q %v", host, err)
+	}
+}
+
+// A certificate's serial is not a secret (flotillad logs it), so it cannot be what makes a certificate
+// the host's current one: a retired or leaked intermediate under the same root, or the current one used
+// outside flotillad, can issue a certificate for the host with that serial and another key. flotillad
+// accepts exactly the certificate it issued and recorded.
+func TestHostCertificateWithTheCurrentSerialRefused(t *testing.T) {
+	ctx := context.Background()
+	srv, ts, root := hostServer(t)
+	chain, err := enrol(t, srv, "mini", mint(t, ts, "mini"), "mini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := hostca.NewIntermediate(root, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	for name, ca := range map[string]*hostca.CA{"another intermediate": other, "the current intermediate": srv.HostCA} {
+		der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{
+			SerialNumber: chain[0].SerialNumber, Subject: chain[0].Subject,
+			NotBefore: chain[0].NotBefore, NotAfter: chain[0].NotAfter,
+			KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}, ca.Cert, pub, ca.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if host, err := srv.AuthenticateHost(ctx, []*x509.Certificate{leaf, ca.Cert}); !errors.Is(err, store.ErrNotCurrent) {
+			t.Fatalf("%s: a certificate with mini's serial and another key: %q %v", name, host, err)
+		}
+	}
+	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "mini" {
+		t.Fatalf("the issued certificate: %q %v", host, err)
 	}
 }
 

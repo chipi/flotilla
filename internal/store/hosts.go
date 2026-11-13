@@ -18,7 +18,7 @@ var (
 
 type Host struct {
 	Name         string  `json:"name"`
-	CertSerial   string  `json:"cert_serial"`
+	CertSHA256   string  `json:"cert_sha256"` // the current certificate's hostca.Fingerprint
 	CertNotAfter string  `json:"cert_not_after"`
 	CreatedAt    string  `json:"created_at"`
 	EnrolledAt   *string `json:"enrolled_at"`
@@ -89,7 +89,7 @@ func (s *Store) AddEnrolment(ctx context.Context, host, tokenSHA256, actor, via 
 // Enrol spends an enrolment token for host and records the certificate issue made for it, in one
 // transaction: issue runs only for a token that is good, and the token is spent only if it succeeds.
 // The new certificate becomes the host's only accepted one; a revoked host is no longer revoked.
-func (s *Store) Enrol(ctx context.Context, host, tokenSHA256 string, issue func() (serial string, notAfter time.Time, err error)) error {
+func (s *Store) Enrol(ctx context.Context, host, tokenSHA256 string, issue func() (cert string, notAfter time.Time, err error)) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -105,15 +105,15 @@ func (s *Store) Enrol(ctx context.Context, host, tokenSHA256 string, issue func(
 	if n, _ := res.RowsAffected(); n != 1 {
 		return ErrEnrolment
 	}
-	serial, notAfter, err := issue()
+	cert, notAfter, err := issue()
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_serial = ?, cert_not_after = ?, enrolled_at = ?, revoked_at = NULL WHERE name = ?`,
-		serial, notAfter.UTC().Format(ts), at, host); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_sha256 = ?, cert_not_after = ?, enrolled_at = ?, revoked_at = NULL WHERE name = ?`,
+		cert, notAfter.UTC().Format(ts), at, host); err != nil {
 		return err
 	}
-	if err := event(ctx, tx, at, "host:"+host, "enrolment", "host.enrolled", "host:"+host, "certificate "+serial); err != nil {
+	if err := event(ctx, tx, at, "host:"+host, "enrolment", "host.enrolled", "host:"+host, "certificate "+cert); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -127,40 +127,40 @@ func (s *Store) RevokeHost(ctx context.Context, host, actor, via string) error {
 	}
 	defer tx.Rollback()
 	at := s.now().Format(ts)
-	var serial string
-	if err := tx.QueryRowContext(ctx, `SELECT cert_serial FROM hosts WHERE name = ?`, host).Scan(&serial); errors.Is(err, sql.ErrNoRows) {
+	var cert string
+	if err := tx.QueryRowContext(ctx, `SELECT cert_sha256 FROM hosts WHERE name = ?`, host).Scan(&cert); errors.Is(err, sql.ErrNoRows) {
 		return ErrNoSuchHost
 	} else if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_serial = '', cert_not_after = '', revoked_at = ? WHERE name = ?`, at, host); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_sha256 = '', cert_not_after = '', revoked_at = ? WHERE name = ?`, at, host); err != nil {
 		return err
 	}
 	// its unused enrolment tokens go with it
 	if _, err := tx.ExecContext(ctx, `UPDATE host_enrolments SET used_at = ? WHERE host = ? AND used_at IS NULL`, at, host); err != nil {
 		return err
 	}
-	if err := event(ctx, tx, at, actor, via, "host.revoked", "host:"+host, "certificate "+serial); err != nil {
+	if err := event(ctx, tx, at, actor, via, "host.revoked", "host:"+host, "certificate "+cert); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-// HostCertCurrent reports whether serial is host's current certificate. Revoking clears it, so a
-// revoked host has none.
-func (s *Store) HostCertCurrent(ctx context.Context, host, serial string) (bool, error) {
-	if serial == "" {
+// HostCertCurrent reports whether cert (a hostca.Fingerprint, never a serial: serials are no secret) is
+// host's current certificate. Revoking clears it, so a revoked host has none.
+func (s *Store) HostCertCurrent(ctx context.Context, host, cert string) (bool, error) {
+	if cert == "" {
 		return false, nil
 	}
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts WHERE name = ? AND cert_serial = ?`,
-		host, serial).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts WHERE name = ? AND cert_sha256 = ?`,
+		host, cert).Scan(&n)
 	return n == 1, err
 }
 
 // Hosts lists every host.
 func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT name, cert_serial, cert_not_after, created_at, enrolled_at, revoked_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT name, cert_sha256, cert_not_after, created_at, enrolled_at, revoked_at,
 		connected, version, connected_at, last_contact, clock_offset_ms, chain_head FROM hosts ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
 	hs := []Host{}
 	for rows.Next() {
 		var h Host
-		if err := rows.Scan(&h.Name, &h.CertSerial, &h.CertNotAfter, &h.CreatedAt, &h.EnrolledAt, &h.RevokedAt,
+		if err := rows.Scan(&h.Name, &h.CertSHA256, &h.CertNotAfter, &h.CreatedAt, &h.EnrolledAt, &h.RevokedAt,
 			&h.Connected, &h.Version, &h.ConnectedAt, &h.LastContact, &h.ClockOffsetMS, &h.ChainHead); err != nil {
 			return nil, err
 		}
@@ -178,24 +178,25 @@ func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
 	return hs, rows.Err()
 }
 
-// RenewHost records host's next certificate in place of the current one, oldSerial, which must still be
-// current: a renewal on a connection made with a replaced or revoked certificate is refused.
-func (s *Store) RenewHost(ctx context.Context, host, oldSerial, serial string, notAfter time.Time) error {
+// RenewHost records host's next certificate in place of the current one, oldCert, which must still be
+// current: a renewal on a connection made with a replaced or revoked certificate is refused. Both are
+// hostca fingerprints.
+func (s *Store) RenewHost(ctx context.Context, host, oldCert, cert string, notAfter time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	at := s.now().Format(ts)
-	res, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_serial = ?, cert_not_after = ? WHERE name = ? AND cert_serial = ? AND cert_serial <> ''`,
-		serial, notAfter.UTC().Format(ts), host, oldSerial)
+	res, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_sha256 = ?, cert_not_after = ? WHERE name = ? AND cert_sha256 = ? AND cert_sha256 <> ''`,
+		cert, notAfter.UTC().Format(ts), host, oldCert)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
 		return ErrNotCurrent
 	}
-	if err := event(ctx, tx, at, "host:"+host, "connection", "host.renewed", "host:"+host, oldSerial+" -> "+serial); err != nil {
+	if err := event(ctx, tx, at, "host:"+host, "connection", "host.renewed", "host:"+host, oldCert+" -> "+cert); err != nil {
 		return err
 	}
 	return tx.Commit()

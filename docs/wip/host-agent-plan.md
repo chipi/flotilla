@@ -115,6 +115,14 @@ VPS.
   endpoint's connection (H6); flotillad's config for the CA files also comes with H6. 14 mutants: 13
   killed; one (`revoked_at` checked at connect as well as the serial cleared) was a second mechanism
   for the same refusal, removed: revoking clears the serial, and that is what refuses it.
+  **Amended 2026-11-13 (found writing H10):** the serial was no identity. Serials are no secret
+  (flotillad logged them), so any key under the root (a retired or leaked intermediate, or the
+  current one used outside flotillad) could issue a certificate for a host with its current serial
+  and another key, and flotillad accepted it. The hosts table now keeps the issued certificate's
+  SHA-256 (`cert_sha256`, schema step 9, still unshipped; `hostca.Fingerprint`), and only that exact
+  certificate authenticates and renews. Repro first (`TestHostCertificateWithTheCurrentSerialRefused`,
+  accepted as mini before the fix); 2 mutants killed (the fingerprint back to the serial; the store's
+  answer ignored).
 - **H6a, the connection:** built 2026-11-13. `internal/hostwire`: frames of a 4-byte length and JSON
   (1 MiB at most, refused from the header), strict bodies. `internal/hostlink`, flotillad's endpoint:
   TLS 1.3; a connection without a client certificate may only send `enrol`; one with a certificate

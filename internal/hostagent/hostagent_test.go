@@ -238,7 +238,7 @@ func TestRenewal(t *testing.T) {
 		hs, _ := w.api.Store.Hosts(context.Background())
 		next, _ := a.LoadChain()
 		chain, _ := parseChain(next)
-		return connected(w, "mini")() && hs[0].CertSerial == chain[0].SerialNumber.Text(16)
+		return connected(w, "mini")() && hs[0].CertSHA256 == hostca.Fingerprint(chain[0])
 	})
 	// it reconnects at once after a renewal, not after a backoff (at least 0.5 s)
 	if d := time.Since(renewed); d > 400*time.Millisecond {

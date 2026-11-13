@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/hostwire"
 )
@@ -34,7 +35,7 @@ var (
 type Auth interface {
 	AuthenticateHost(ctx context.Context, chain []*x509.Certificate) (string, error)
 	EnrolHost(ctx context.Context, host, token string, csrDER []byte) ([]byte, error)
-	RenewHost(ctx context.Context, host, oldSerial string, csrDER []byte) ([]byte, error)
+	RenewHost(ctx context.Context, host, oldCert string, csrDER []byte) ([]byte, error)
 }
 
 // HostState is what flotillad knows of a connected (or once connected) host.
@@ -173,7 +174,7 @@ func (s *Server) handle(tc *tls.Conn) {
 	s.Log.Info("host connected", "host", host, "version", hello.Version, "clock_offset", hello.Clock.Sub(at))
 	s.report(host)
 	defer s.drop(c)
-	serial := chain[0].SerialNumber.Text(16)
+	cert := hostca.Fingerprint(chain[0])
 	for {
 		tc.SetReadDeadline(time.Now().Add(3 * s.Heartbeat))
 		f, err := hostwire.Read(tc)
@@ -226,7 +227,7 @@ func (s *Server) handle(tc *tls.Conn) {
 				refuse(tc, err.Error())
 				return
 			}
-			chainPEM, err := s.Auth.RenewHost(ctx, host, serial, rb.CSR)
+			chainPEM, err := s.Auth.RenewHost(ctx, host, cert, rb.CSR)
 			if err != nil {
 				s.Log.Warn("host renewal refused", "host", host, "err", err)
 				c.write(hostwire.Refusal, hostwire.RefusalBody{Detail: "renewal refused: " + err.Error()})

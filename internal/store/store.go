@@ -194,7 +194,7 @@ var schema = []string{
 	// hash, used once. The connection columns are what flotillad last heard (hello, heartbeat, result).
 	`CREATE TABLE hosts (
 		name TEXT PRIMARY KEY,
-		cert_serial TEXT NOT NULL DEFAULT '',
+		cert_sha256 TEXT NOT NULL DEFAULT '',
 		cert_not_after TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL,
 		enrolled_at TEXT,

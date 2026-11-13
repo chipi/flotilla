@@ -86,7 +86,7 @@ func TestHostEnrolment(t *testing.T) {
 		t.Fatal(err)
 	}
 	hs, err := s.Hosts(ctx)
-	if err != nil || len(hs) != 1 || hs[0].CertSerial != "s4" || hs[0].RevokedAt != nil || hs[0].EnrolledAt == nil {
+	if err != nil || len(hs) != 1 || hs[0].CertSHA256 != "s4" || hs[0].RevokedAt != nil || hs[0].EnrolledAt == nil {
 		t.Fatalf("hosts: %+v %v", hs, err)
 	}
 	var kinds []string

@@ -5,9 +5,11 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
@@ -52,9 +54,10 @@ func newPKI(t *testing.T, at ...time.Time) pki {
 
 func TestChain(t *testing.T) {
 	p := newPKI(t)
-	name, serial, err := VerifyHost([]*x509.Certificate{p.host, p.inter.Cert}, p.root.Cert, now)
-	if err != nil || name != "mini" || serial != p.host.SerialNumber.Text(16) {
-		t.Fatalf("verify: %q %q %v", name, serial, err)
+	name, fp, err := VerifyHost([]*x509.Certificate{p.host, p.inter.Cert}, p.root.Cert, now)
+	sum := sha256.Sum256(p.host.Raw)
+	if err != nil || name != "mini" || fp != hex.EncodeToString(sum[:]) {
+		t.Fatalf("verify: %q %q %v", name, fp, err)
 	}
 	if !p.host.NotAfter.Equal(now.Add(HostValidity)) || p.inter.Cert.MaxPathLen != 0 || !p.inter.Cert.MaxPathLenZero {
 		t.Fatalf("validity %s, path len %d", p.host.NotAfter, p.inter.Cert.MaxPathLen)

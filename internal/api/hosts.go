@@ -65,7 +65,7 @@ func (s *Server) EnrolHost(ctx context.Context, host, token string, csrDER []byt
 			return "", time.Time{}, problem(400, "the certificate request: %v", err)
 		}
 		cert = c
-		return c.SerialNumber.Text(16), c.NotAfter, nil
+		return hostca.Fingerprint(c), c.NotAfter, nil
 	})
 	if errors.Is(err, store.ErrEnrolment) {
 		s.Log.Warn("host enrolment refused", "host", host)
@@ -74,7 +74,7 @@ func (s *Server) EnrolHost(ctx context.Context, host, token string, csrDER []byt
 	if err != nil {
 		return nil, err
 	}
-	s.Log.Info("host enrolled", "host", host, "serial", cert.SerialNumber.Text(16), "until", cert.NotAfter)
+	s.Log.Info("host enrolled", "host", host, "certificate", hostca.Fingerprint(cert), "until", cert.NotAfter)
 	return append(hostca.CertPEM(cert), hostca.CertPEM(s.HostCA.Cert)...), nil
 }
 
@@ -84,11 +84,11 @@ func (s *Server) AuthenticateHost(ctx context.Context, chain []*x509.Certificate
 	if s.HostCA == nil || s.HostRoot == nil {
 		return "", errNoHostCA
 	}
-	host, serial, err := hostca.VerifyHost(chain, s.HostRoot, time.Now())
+	host, cert, err := hostca.VerifyHost(chain, s.HostRoot, time.Now())
 	if err != nil {
 		return "", err
 	}
-	ok, err := s.Store.HostCertCurrent(ctx, host, serial)
+	ok, err := s.Store.HostCertCurrent(ctx, host, cert)
 	if err != nil {
 		return "", err
 	}
@@ -99,9 +99,9 @@ func (s *Server) AuthenticateHost(ctx context.Context, chain []*x509.Certificate
 }
 
 // RenewHost issues an authenticated host's next certificate, over its connection, for the key in csr,
-// in place of oldSerial, the certificate it connected with (which must still be current). It returns
-// the certificate and the intermediate, PEM.
-func (s *Server) RenewHost(ctx context.Context, host, oldSerial string, csrDER []byte) ([]byte, error) {
+// in place of oldCert, the fingerprint of the certificate it connected with (which must still be
+// current). It returns the certificate and the intermediate, PEM.
+func (s *Server) RenewHost(ctx context.Context, host, oldCert string, csrDER []byte) ([]byte, error) {
 	if s.HostCA == nil {
 		return nil, errNoHostCA
 	}
@@ -109,10 +109,10 @@ func (s *Server) RenewHost(ctx context.Context, host, oldSerial string, csrDER [
 	if err != nil {
 		return nil, fmt.Errorf("the certificate request: %w", err)
 	}
-	if err := s.Store.RenewHost(ctx, host, oldSerial, c.SerialNumber.Text(16), c.NotAfter); err != nil {
+	if err := s.Store.RenewHost(ctx, host, oldCert, hostca.Fingerprint(c), c.NotAfter); err != nil {
 		return nil, err
 	}
-	s.Log.Info("host certificate renewed", "host", host, "serial", c.SerialNumber.Text(16), "until", c.NotAfter)
+	s.Log.Info("host certificate renewed", "host", host, "certificate", hostca.Fingerprint(c), "until", c.NotAfter)
 	return append(hostca.CertPEM(c), hostca.CertPEM(s.HostCA.Cert)...), nil
 }
 

@@ -11,8 +11,10 @@ package hostca
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -146,9 +148,9 @@ func HostRequest(key ed25519.PrivateKey, host string) ([]byte, error) {
 }
 
 // VerifyHost checks a connecting agent's chain (leaf first, as TLS presents it) up to root, at now, for
-// client authentication, and returns the host it names and the certificate's serial. Whether that
+// client authentication, and returns the host it names and the certificate's Fingerprint. Whether that
 // certificate is the host's current one, and not revoked, is the hosts table's to say.
-func VerifyHost(chain []*x509.Certificate, root *x509.Certificate, now time.Time) (host, serial string, err error) {
+func VerifyHost(chain []*x509.Certificate, root *x509.Certificate, now time.Time) (host, fingerprint string, err error) {
 	if len(chain) == 0 {
 		return "", "", errors.New("no certificate")
 	}
@@ -165,7 +167,14 @@ func VerifyHost(chain []*x509.Certificate, root *x509.Certificate, now time.Time
 	if !HostNameRe.MatchString(leaf.Subject.CommonName) {
 		return "", "", fmt.Errorf("the certificate names %q", leaf.Subject.CommonName)
 	}
-	return leaf.Subject.CommonName, leaf.SerialNumber.Text(16), nil
+	return leaf.Subject.CommonName, Fingerprint(leaf), nil
+}
+
+// Fingerprint identifies exactly one certificate: the SHA-256 of its DER, hex. Not its serial, which is
+// no secret: any key under the root could issue another certificate with the same serial and name.
+func Fingerprint(c *x509.Certificate) string {
+	sum := sha256.Sum256(c.Raw)
+	return hex.EncodeToString(sum[:])
 }
 
 // PEM encodings: certificates as CERTIFICATE, keys as PKCS #8 PRIVATE KEY.

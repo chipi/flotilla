@@ -29,7 +29,7 @@ brings the case tables.
 | `locks` | the per-target lock: target, case, taken at |
 | `autonomy` | per action: level, who promoted or demoted it and why; per host: its autonomy cap |
 | `notes` | short lessons with a scope; active only once the operator activates them |
-| `hosts` | each host agent: identity, certificate serial and expiry, version, last contact, allowlist hash, revoked |
+| `hosts` | each host agent: identity, the current certificate's SHA-256 (the only one accepted) and expiry, version, last contact, allowlist hash, revoked |
 | `controls` | pause, STOP, autonomy, hold, freeze, with who changed them |
 | `spend` | per fleet and routine: spend and tokens per day |
 | `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, routine) |
