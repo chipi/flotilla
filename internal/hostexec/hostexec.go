@@ -117,6 +117,9 @@ func Open(path string) (*sql.DB, int64, error) {
 	return db, n, nil
 }
 
+// ChainHead is the audit log's head now (sent with every heartbeat).
+func (x *Executor) ChainHead() string { return x.Audit.Head() }
+
 // New is an Executor over an opened store and audit log.
 func New(db *sql.DB, audit *hostaudit.Log, cfg *hostcfg.Config, run Runner, check Checker) *Executor {
 	return &Executor{Cfg: cfg, Run: run, Check: check, Audit: audit, Now: time.Now, db: db}

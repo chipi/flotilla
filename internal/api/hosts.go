@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -94,6 +95,24 @@ func (s *Server) AuthenticateHost(ctx context.Context, chain []*x509.Certificate
 		return "", store.ErrNotCurrent
 	}
 	return host, nil
+}
+
+// RenewHost issues an authenticated host's next certificate, over its connection, for the key in csr,
+// in place of oldSerial, the certificate it connected with (which must still be current). It returns
+// the certificate and the intermediate, PEM.
+func (s *Server) RenewHost(ctx context.Context, host, oldSerial string, csrDER []byte) ([]byte, error) {
+	if s.HostCA == nil {
+		return nil, errNoHostCA
+	}
+	c, err := s.HostCA.IssueHost(csrDER, host, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("the certificate request: %w", err)
+	}
+	if err := s.Store.RenewHost(ctx, host, oldSerial, c.SerialNumber.Text(16), c.NotAfter); err != nil {
+		return nil, err
+	}
+	s.Log.Info("host certificate renewed", "host", host, "serial", c.SerialNumber.Text(16), "until", c.NotAfter)
+	return append(hostca.CertPEM(c), hostca.CertPEM(s.HostCA.Cert)...), nil
 }
 
 func (s *Server) RevokeHost(ctx context.Context, c Caller, via, host string) error {

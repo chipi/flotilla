@@ -143,3 +143,26 @@ func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
 	}
 	return hs, rows.Err()
 }
+
+// RenewHost records host's next certificate in place of the current one, oldSerial, which must still be
+// current: a renewal on a connection made with a replaced or revoked certificate is refused.
+func (s *Store) RenewHost(ctx context.Context, host, oldSerial, serial string, notAfter time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	at := s.now().Format(ts)
+	res, err := tx.ExecContext(ctx, `UPDATE hosts SET cert_serial = ?, cert_not_after = ? WHERE name = ? AND cert_serial = ? AND cert_serial <> ''`,
+		serial, notAfter.UTC().Format(ts), host, oldSerial)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return ErrNotCurrent
+	}
+	if err := event(ctx, tx, at, "host:"+host, "connection", "host.renewed", "host:"+host, oldSerial+" -> "+serial); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

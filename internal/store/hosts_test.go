@@ -102,3 +102,33 @@ func TestHostEnrolment(t *testing.T) {
 		t.Fatalf("events:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+func TestRenewHost(t *testing.T) {
+	ctx := context.Background()
+	s, _ := open(t)
+	if _, err := s.AddEnrolment(ctx, "mini", "tok", "user:ada", "api"); err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(30 * 24 * time.Hour)
+	if err := s.Enrol(ctx, "mini", "tok", func() (string, time.Time, error) { return "s1", until, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenewHost(ctx, "mini", "s0", "s2", until); !errors.Is(err, ErrNotCurrent) {
+		t.Fatalf("a renewal from a replaced certificate: %v", err)
+	}
+	if err := s.RenewHost(ctx, "mini", "s1", "s2", until); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.HostCertCurrent(ctx, "mini", "s2"); !ok {
+		t.Fatal("the renewed certificate is not current")
+	}
+	if err := s.RenewHost(ctx, "mini", "s1", "s3", until); !errors.Is(err, ErrNotCurrent) {
+		t.Fatalf("a second renewal from the old certificate: %v", err)
+	}
+	if err := s.RevokeHost(ctx, "mini", "user:ada", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenewHost(ctx, "mini", "", "s4", until); !errors.Is(err, ErrNotCurrent) {
+		t.Fatalf("a revoked host renewing: %v", err)
+	}
+}

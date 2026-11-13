@@ -115,3 +115,27 @@ VPS.
   endpoint's connection (H6); flotillad's config for the CA files also comes with H6. 14 mutants: 13
   killed; one (`revoked_at` checked at connect as well as the serial cleared) was a second mechanism
   for the same refusal, removed: revoking clears the serial, and that is what refuses it.
+- **H6a, the connection:** built 2026-11-13. `internal/hostwire`: frames of a 4-byte length and JSON
+  (1 MiB at most, refused from the header), strict bodies. `internal/hostlink`, flotillad's endpoint:
+  TLS 1.3; a connection without a client certificate may only send `enrol`; one with a certificate
+  must be the host's current one (`AuthenticateHost`), checked again at every heartbeat, so a revoked
+  host is cut off within one; `hello` then `welcome`; one connection per host (the newer wins);
+  silent for three heartbeats, dropped; `Execute` sends a signed execution and waits for its result:
+  `ErrNotConnected` (nothing sent) or `ErrUnknown` (sent, then the connection was lost or the time
+  ran out); each host's version, connection time, last contact, clock offset and chain head, in
+  memory (stored in H7). Renewal over the connection: a request for the same key, issued in place of
+  the certificate the connection used (`store.RenewHost` refuses any other), and then flotillad
+  closes the connection. `internal/hostagent`, the agent's side: `Enrol`; a session pinned to the root
+  and flotillad's name, its certificate checked by the agent too (this host, this key, the root);
+  heartbeats with its clock and chain head; executions run through `hostexec` and their results
+  sent back; renewal when under 10 days are left, then an immediate reconnect; otherwise backoff from
+  1 s to 60 s with jitter. Tests over loopback TLS, with `-race`, three runs: connect, execute, clock
+  offset, heartbeats; a revoke cuts off a connected host, an execution in flight comes back unknown,
+  it cannot reconnect; reconnects after flotillad drops it; renewal; enrolment refusals (another
+  host's token, used twice, another server name or root); another CA's agent; a silent agent
+  dropped. 22 mutants killed; 5 of them survived the first run, each showing a weak test (another
+  CA's agent was refused by its own check before reaching flotillad; nothing sent a good token under
+  another frame type, kept a connection open after a renewal, timed the reconnect after one, or
+  checked why an oversize frame was refused), fixed. Not tested: a host's older connection closed
+  when a newer one arrives. Next, H6b: flotillad's config (the endpoint's address, the CA files, the
+  server name) and the `flotilla-host` binary; H6c: the container e2e.
