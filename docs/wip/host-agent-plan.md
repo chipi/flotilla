@@ -45,3 +45,11 @@ the host; the path is built and proven in the e2e, and used from the first promo
 Releases built and signed by CI and self-update (before the second host); drift alerts (before the
 second host); the connector relaying approvals (with the first promotion to propose); the DGX and the
 VPS.
+
+## Progress
+
+- **H1, the signed envelope:** built 2026-11-13, `internal/envelope` (stdlib only). Verified over the
+  exact payload bytes, then decoded strictly; refuses a bad signature, an unknown key id, another host,
+  an expired envelope, one signed more than 10 minutes in the future, and one valid for longer than
+  10 minutes (even with a good signature); returns the signed bytes for the agent's resend-or-forgery
+  check. 8 mutants killed; `FuzzVerify` 30s (2.5M executions), no failure.
