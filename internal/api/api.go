@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/policy"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
@@ -112,6 +114,9 @@ type Server struct {
 	// refuses every plan.
 	Registry *registry.Registry
 	Limits   policy.Limits
+	// The host agents' intermediate CA and the root over it (ADR-0006 §3); nil: no host can enrol.
+	HostCA   *hostca.CA
+	HostRoot *x509.Certificate
 }
 
 type ctxKey struct{}
@@ -140,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/freeze", s.auth(ActFreeze, s.freeze))
 	m.Handle("POST /v1/unfreeze", s.auth(ActUnfreeze, s.unfreeze))
 	s.userRoutes(m)
+	s.hostRoutes(m)
 	s.ledgerRoutes(m)
 	return m
 }

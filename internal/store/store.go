@@ -189,6 +189,24 @@ var schema = []string{
 	CREATE INDEX holds_scope ON holds(scope, until);`,
 	// RFC-0004 §3.5: the job holding a case (cases.holder) holds it until its lease ends.
 	`ALTER TABLE cases ADD COLUMN lease_until TEXT NOT NULL DEFAULT '';`,
+	// ADR-0006 §3: hosts and their enrolment. A host's current certificate is the only one accepted
+	// (renewal replaces it); revoking clears it. An enrolment token is kept as its hash, used once.
+	`CREATE TABLE hosts (
+		name TEXT PRIMARY KEY,
+		cert_serial TEXT NOT NULL DEFAULT '',
+		cert_not_after TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		enrolled_at TEXT,
+		revoked_at TEXT
+	);
+	CREATE TABLE host_enrolments (
+		token_sha256 TEXT PRIMARY KEY,
+		host TEXT NOT NULL,
+		created_by TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		used_at TEXT
+	);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

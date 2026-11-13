@@ -102,5 +102,16 @@ VPS.
   the root's key never written beside the intermediate. The root key is a plain PEM file (the
   standard library has no encrypted PKCS #8); it is kept offline as the backup key is. 15 mutants
   killed.
-- **H5b, next:** schema step 9 (the `hosts` table and enrolment tokens), minting a token, enrolment
-  (token and request in, certificate out), revocation.
+- **H5b, flotillad's side of identity:** built 2026-11-13. Schema step 9: `hosts` (the current
+  certificate's serial and expiry, enrolled, revoked) and `host_enrolments` (a token's hash, its host,
+  15 minutes, used once). `flotilla host enrolment NAME` (operator or admin; agents may not) prints
+  a token once; `EnrolHost` spends it and issues the certificate in one transaction (a bad request does
+  not spend it; a token for another host, used, late or unknown is refused, and nothing is issued);
+  the new certificate is the host's only accepted one. `AuthenticateHost`, flotillad's check at
+  connect: the chain up to the pinned root, then the host's current serial. `flotilla host revoke NAME`
+  clears the serial and spends the host's unused tokens (no access to the host needed); a new token
+  brings a revoked host back. `flotilla host list`. Rotating the intermediate leaves issued
+  certificates working (the root is what is pinned). The enrolment itself goes over the host
+  endpoint's connection (H6); flotillad's config for the CA files also comes with H6. 14 mutants: 13
+  killed; one (`revoked_at` checked at connect as well as the serial cleared) was a second mechanism
+  for the same refusal, removed: revoking clears the serial, and that is what refuses it.

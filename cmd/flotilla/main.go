@@ -12,6 +12,7 @@
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
+//	flotilla host list | enrolment NAME | revoke NAME     (operator: host agents; the token is shown once)
 //	flotilla ca root DIR                               (offline: the host agents' root CA, kept by the operator)
 //	flotilla ca intermediate ROOTDIR OUTDIR            (offline: the intermediate for flotillad's secrets volume)
 //
@@ -181,6 +182,8 @@ func main() {
 		holdCmd(args, reason)
 	case "action":
 		actionCmd(args, reason)
+	case "host":
+		hostCmd(args)
 	case "user":
 		userCmd(args, role)
 	default:
@@ -255,6 +258,31 @@ func holdCmd(args []string, reason string) {
 	default:
 		need(args, 2, `hold host:<name> <duration> --reason "..."`)
 		post("/v1/holds", map[string]string{"scope": args[0], "for": args[1], "reason": reason})
+	}
+}
+
+// hostCmd is `flotilla host list | host enrolment NAME | host revoke NAME` (ADR-0006 §3): host agents.
+// The enrolment token is printed once; it goes to the host inside the SSH session only.
+func hostCmd(args []string) {
+	need(args, 1, "host list | host enrolment NAME | host revoke NAME")
+	switch args[0] {
+	case "list":
+		var out struct{ Hosts []map[string]any }
+		get("/v1/hosts", &out)
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "HOST\tENROLLED\tCERTIFICATE UNTIL\tREVOKED")
+		for _, h := range out.Hosts {
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", h["name"], orDash(h["enrolled_at"]), orDash(h["cert_not_after"]), orDash(h["revoked_at"]))
+		}
+		w.Flush()
+	case "enrolment":
+		need(args, 2, "host enrolment NAME")
+		post("/v1/hosts/"+args[1]+"/enrolment", nil)
+	case "revoke":
+		need(args, 2, "host revoke NAME")
+		post("/v1/hosts/"+args[1]+"/revoke", nil)
+	default:
+		need(nil, 1, "host list | host enrolment NAME | host revoke NAME")
 	}
 }
 

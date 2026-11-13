@@ -155,6 +155,7 @@ promotion to propose).
   "Saturday 11-15", rested on a wrong calendar of mine: 11-14 is the Saturday, its freeze runs before
   the promotion, and the next scheduled one is 11-21; the fleet session caught it). On the operator's
   go:
-  the store-copy check for schema steps 5 to 8; `ui_listen`/`ui_host`; the ops workers' tokens,
+  the store-copy check for schema steps 5 to 9 (step 9, `hosts` and `host_enrolments`, is the host
+  agent's H5b, empty until a host enrols); `ui_listen`/`ui_host`; the ops workers' tokens,
   `worker-ops.env` and profile `ops` (or their routines disabled); the `deploy` caller, its token and
   `FLOTILLA_STANDDOWN_HOST`; then the homelab proxy node.
