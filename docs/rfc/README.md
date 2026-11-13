@@ -44,3 +44,5 @@ landed on an answer.
 - [RFC-0005 — Skills in the harness](RFC-0005-skills.md) (Accepted → ADR-0012, 2026-11-11)
 - [RFC-0006 — Fleet packs: flows as files, shared and promoted](RFC-0006-fleet-packs.md)
   (Accepted → ADR-0013, 2026-11-12)
+- [RFC-0007 — The operator UI: from mockup v3 to pages flotillad serves](RFC-0007-operator-ui.md)
+  (Proposed, 2026-11-13)

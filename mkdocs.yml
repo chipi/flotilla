@@ -100,6 +100,7 @@ nav:
     - RFC-0004 — The agent pipeline: rfc/RFC-0004-agent-pipeline.md
     - RFC-0005 — Skills in the harness: rfc/RFC-0005-skills.md
     - RFC-0006 — Fleet packs: rfc/RFC-0006-fleet-packs.md
+    - RFC-0007 — The operator UI: rfc/RFC-0007-operator-ui.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md
