@@ -28,7 +28,8 @@ operator is away. RFC-0004 has the design, the fleets end to end, and the review
 4. **Policy in flotillad decides; workers execute.** Autonomy, lowest wins: the job's stage, the
    capability's earned level (shadow → propose → auto, promoted only by the operator, per capability
    on every machine, within each host's ceiling), taint, the autonomy freeze. (Amended by
-   [ADR-0013](ADR-0013-fleet-packs.md): the installation's cap joins the list.)
+   [ADR-0013](ADR-0013-fleet-packs.md): the installation's cap joins the list; amended by
+   [ADR-0014](ADR-0014-operator-ui.md): the freeze lowers every routine to `shadow`.)
 5. **Workers per role**, not per fleet; Ops starts with `ops-read` and `ops-act-host`.
 6. **Host writes through an actuator**: a host service with an allowlist, idempotent by execution id,
    with its own ADR before it is built.

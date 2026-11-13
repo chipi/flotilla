@@ -37,6 +37,9 @@ What happens is the lowest of the three; taint and the freeze can only lower it 
 Amended by [ADR-0013](ADR-0013-fleet-packs.md) (2026-11-12): an installation's config can cap
 every routine (`max_autonomy`, non-impact mode), a fourth cap in the same "lowest wins".
 
+Amended by [ADR-0014](ADR-0014-operator-ui.md) (2026-11-13): the freeze lowers every routine to
+`shadow`, so nothing outward happens while it holds; it never overwrites a routine's own control.
+
 Renamed where flotilla owns the word: the docs and UI; the spec (`autonomy`, `max_autonomy`); the
 store (the runs column and the control key, by a schema step that also turns `live` into `auto`);
 the API and CLI (`flotilla autonomy <routine> shadow|propose|auto`); the metric label `autonomy`.

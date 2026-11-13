@@ -1,7 +1,7 @@
 # RFC-0007 — The operator UI: from mockup v3 to pages flotillad serves
 
-**Status:** Proposed (2026-11-13), revision 4: the operator's decisions in §9, and an independent
-review taken in (§10).
+**Status:** Accepted → [ADR-0014](../adr/ADR-0014-operator-ui.md) (operator, 2026-11-13), revision 4:
+the operator's decisions in §9, and an independent review taken in (§10).
 **Builds on:** [ADR-0001](../adr/ADR-0001-platform-foundations.md) (the API serves a small web UI in
 the same binary), [RFC-0001](RFC-0001-fleet-platform.md) §6 (interfaces), §8 (security) and §10.3 (the
 UI served by the Go binary), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (cases, the freeze),

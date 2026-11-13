@@ -93,6 +93,7 @@ nav:
     - ADR-0011 — Tools and actions: adr/ADR-0011-tools-and-actions.md
     - ADR-0012 — Skills in the harness: adr/ADR-0012-skills.md
     - ADR-0013 — Fleet packs: adr/ADR-0013-fleet-packs.md
+    - ADR-0014 — The operator UI: adr/ADR-0014-operator-ui.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

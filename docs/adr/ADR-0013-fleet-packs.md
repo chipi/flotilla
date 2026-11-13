@@ -32,6 +32,8 @@ As RFC-0006 describes:
 4. **Trust is what the operator saw and approved:** a change is copied into a pending snapshot,
    shown, approved by its set hash, recorded as an audit event, and the changed routines start at
    `shadow`. Rollback and prune are commands with the same record.
+   (Amended by [ADR-0014](ADR-0014-operator-ui.md), 2026-11-13: approving, rolling back and pruning
+   packs is an `admin`'s.)
 5. **Installations and promotion:** an installation can be capped at `shadow` and at a daily budget
    (non-impact mode), carries an `installation` name beside its `environment` label, and promotes a
    pack by moving the same files with a promotion record. flotilla does not compare installations.

@@ -10,7 +10,9 @@ web
 
 Decided in [RFC-0001](docs/rfc/RFC-0001-fleet-platform.md) §10 (decision 3): the UI is served by the
 flotillad Go binary, as server-rendered pages with a little JavaScript, with no separate frontend
-build. It uses the same API as the CLI and the MCP server.
+build. Its pages call the server's own functions under the same authorization as the API, the CLI
+and the MCP server ([ADR-0014](docs/adr/ADR-0014-operator-ui.md)): it adds no authority and takes
+none away.
 
 ## Users
 
@@ -21,8 +23,8 @@ depth, reviewing runs). Today that is one person on one homelab.
 
 flotilla is written for any installation, so operators of other installations (people running
 their own flotilla, sharing fleet packs) are a later, secondary audience. The UI must not assume
-the first operator's setup, but is not designed for teams or several approvers per installation
-yet.
+the first operator's setup. Several people can work one installation, each with a role: `admin`,
+`operator` or `viewer` (ADR-0014).
 
 ## Product Purpose
 

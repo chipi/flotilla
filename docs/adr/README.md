@@ -60,3 +60,4 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0011 — Tools and actions, not "capabilities"](ADR-0011-tools-and-actions.md) (Accepted, 2026-11-11)
 - [ADR-0012 — Skills in the harness](ADR-0012-skills.md) (Accepted, 2026-11-11)
 - [ADR-0013 — Fleet packs](ADR-0013-fleet-packs.md) (Accepted, 2026-11-12)
+- [ADR-0014 — The operator UI, users and roles](ADR-0014-operator-ui.md) (Accepted, 2026-11-13)
