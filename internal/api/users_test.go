@@ -83,6 +83,7 @@ func TestPermissionTable(t *testing.T) {
 		{ActRead, "GET", "/v1/status", ""},
 		{ActRead, "GET", "/v1/runs", ""},
 		{ActRead, "GET", "/v1/events", ""},
+		{ActRead, "GET", "/v1/cases", ""},
 		{ActPause, "POST", "/v1/routines/triage/cycle/pause", ""},
 		{ActResume, "POST", "/v1/routines/triage/cycle/resume", `{"reason":"t"}`},
 		{ActAutonomy, "POST", "/v1/routines/triage/cycle/autonomy", `{"autonomy":"shadow"}`},

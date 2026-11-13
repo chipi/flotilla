@@ -118,6 +118,8 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("GET /v1/status", s.auth(ActRead, s.status))
 	m.Handle("GET /v1/runs", s.auth(ActRead, s.runs))
 	m.Handle("GET /v1/events", s.auth(ActRead, s.events))
+	m.Handle("GET /v1/cases", s.auth(ActRead, s.cases))
+	m.Handle("GET /v1/cases/{id}", s.auth(ActRead, s.caseShow))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(ActRun, s.run))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(ActPause, s.pause))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(ActResume, s.resume))
@@ -262,6 +264,40 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, _ Caller) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"events": ev})
+}
+
+// cases lists cases, the most recently changed first: open ones unless all=1; status and kind narrow it.
+func (s *Server) cases(w http.ResponseWriter, r *http.Request, _ Caller) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	cs, err := s.Store.Cases(r.Context(), store.CaseFilter{Open: q.Get("all") != "1", Status: q.Get("status"), Kind: q.Get("kind"), Limit: limit})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if cs == nil {
+		cs = []store.Case{} // a list, never null, for every client
+	}
+	writeJSON(w, 200, map[string]any{"cases": cs})
+}
+
+// caseShow is one case and its whole timeline: "flotilla case show <id> is the whole story" (ADR-0005).
+func (s *Server) caseShow(w http.ResponseWriter, r *http.Request, _ Caller) {
+	c, err := s.Store.Case(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrNoSuchCase) {
+		writeJSON(w, 404, map[string]string{"error": "no such case"})
+		return
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	ev, err := s.Store.CaseEvents(r.Context(), c.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"case": c, "events": ev})
 }
 
 func routineID(r *http.Request) string { return r.PathValue("fleet") + "/" + r.PathValue("routine") }

@@ -166,8 +166,53 @@ func main() {
 	case "start":
 		need(args, 1, `start fleet --reason "..."`)
 		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
+	case "case":
+		caseCmd(args, n)
 	case "user":
 		userCmd(args, role)
+	default:
+		usage()
+	}
+}
+
+// caseCmd is `flotilla case list [--all] | show ID` (ADR-0005): the open cases, or one case's whole story.
+func caseCmd(args []string, n string) {
+	need(args, 1, "case list [--all] [-n N] | case show ID")
+	switch args[0] {
+	case "list":
+		q := "/v1/cases?limit=" + n
+		if len(args) > 1 && args[1] == "--all" {
+			q += "&all=1"
+		}
+		var out struct{ Cases []map[string]any }
+		get(q, &out)
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "CASE\tKIND\tTARGET\tSTATUS\tSINCE\tRESOLUTION")
+		for _, c := range out.Cases {
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", c["id"], c["kind"], c["target"], c["status"], c["status_at"], orDash(c["resolution"]))
+		}
+		w.Flush()
+	case "show":
+		need(args, 2, "case show ID")
+		var out struct {
+			Case   map[string]any
+			Events []map[string]any
+		}
+		get("/v1/cases/"+args[1], &out)
+		c := out.Case
+		res := ""
+		if r, _ := c["resolution"].(string); r != "" {
+			res = " (" + r + ")"
+		}
+		fmt.Printf("%v  %v  %v\nstatus %v since %v%s\nopened %v  key %v\n", c["id"], c["kind"], c["target"], c["status"], c["status_at"],
+			res, c["opened_at"], c["canonical_key"])
+		for _, e := range out.Events {
+			move := ""
+			if e["to"] != nil && e["to"] != "" {
+				move = fmt.Sprintf(" %v->%v", orDash(e["from"]), e["to"])
+			}
+			fmt.Printf("  %v  %-18v %-20v by %-9v%v  %v\n", e["at"], e["kind"], e["actor"], orDash(e["by"]), move, orDash(e["detail"]))
+		}
 	default:
 		usage()
 	}
@@ -220,7 +265,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

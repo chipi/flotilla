@@ -49,3 +49,11 @@ RFC-0007 §7.
 RFC-0004 §10's list: triage as producer, the brief, recall, the reviewer agent, config-change PRs,
 `cost_spike`, marketing, actuators on the DGX and the VPS. Also Slack approvals (with the first
 promotion to propose).
+
+## Progress
+
+- **Step 1, the case store:** built 2026-11-13. Schema step 6 (`cases`, `case_keys`, `case_events`;
+  one open case per canonical key is a partial unique index); `internal/cases` holds the transition
+  table, tested against the diagram written out separately; `flotilla case list` and `case show`,
+  `GET /v1/cases` and `GET /v1/cases/{id}`. 7 mutants killed. The longest stay per status moved to
+  step 2, with the timers. Before deploying: the store-copy check again, now for steps 5 and 6.

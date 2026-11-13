@@ -118,6 +118,43 @@ var schema = []string{
 		last_seen TEXT NOT NULL
 	);
 	CREATE INDEX sessions_user ON sessions(user_name);`,
+	// ADR-0005: cases (cases.go). One open case per canonical key is the partial unique index, so two
+	// detections of one key at once cannot both open a case. The timeline is append-only, closed or not.
+	`CREATE TABLE cases (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL,
+		target TEXT NOT NULL,
+		canonical_key TEXT NOT NULL,
+		project TEXT NOT NULL DEFAULT '',
+		urgency INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL,
+		resolution TEXT NOT NULL DEFAULT '',
+		holder TEXT NOT NULL DEFAULT '',
+		opened_at TEXT NOT NULL,
+		status_at TEXT NOT NULL,
+		closed_at TEXT
+	);
+	CREATE UNIQUE INDEX cases_one_open ON cases(canonical_key) WHERE status <> 'closed';
+	CREATE INDEX cases_status ON cases(status, status_at);
+	CREATE TABLE case_keys (
+		case_id TEXT NOT NULL REFERENCES cases(id),
+		kind TEXT NOT NULL,
+		value TEXT NOT NULL,
+		PRIMARY KEY (case_id, kind, value)
+	);
+	CREATE INDEX case_keys_lookup ON case_keys(kind, value);
+	CREATE TABLE case_events (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		case_id TEXT NOT NULL REFERENCES cases(id),
+		at TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		actor TEXT NOT NULL,
+		by_role TEXT NOT NULL DEFAULT '',
+		from_status TEXT NOT NULL DEFAULT '',
+		to_status TEXT NOT NULL DEFAULT '',
+		detail TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX case_events_case ON case_events(case_id, seq);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.
