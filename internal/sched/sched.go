@@ -181,7 +181,7 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		return nil, nil, err
 	} else if reason != "" {
 		rec.Detail, rec.Status = reason, store.StatusSkipped
-		rec.StartedAt = s.Now().UTC().Format(time.RFC3339Nano)
+		rec.StartedAt = s.Now().UTC().Format(store.TimeFormat)
 		if err := s.Store.SkippedRun(ctx, rec); err != nil {
 			return nil, nil, err
 		}
@@ -204,7 +204,7 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
 
-	rec.StartedAt = s.Now().UTC().Format(time.RFC3339Nano)
+	rec.StartedAt = s.Now().UTC().Format(store.TimeFormat)
 	rec.Status = store.StatusRunning
 	rec.TraceID = span.SpanContext().TraceID().String()
 	if err := s.Store.StartRun(ctx, rec); err != nil {

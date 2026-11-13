@@ -40,6 +40,10 @@ const (
 	started           = "started"
 )
 
+// timeFormat is how times are stored: fixed-width, because the rate limit compares them as strings
+// (the same layout as flotillad's store.TimeFormat; the agent does not link flotillad's store).
+const timeFormat = "2006-01-02T15:04:05.000000000Z07:00"
+
 // OutputMax caps what is kept of a command's output; its hash covers all of it.
 const OutputMax = 16 * 1024
 
@@ -166,7 +170,7 @@ func (x *Executor) decide(ctx context.Context, raw []byte) (Result, envelope.Exe
 	var n int
 	// what ran or may have run counts; a precondition that no longer held ran nothing
 	if err := x.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM executions WHERE action = ? AND started_at >= ? AND status <> ?`,
-		e.Action, now.Add(-time.Hour).Format(time.RFC3339Nano), PreconditionFalse).Scan(&n); err != nil {
+		e.Action, now.Add(-time.Hour).Format(timeFormat), PreconditionFalse).Scan(&n); err != nil {
 		return refused(e.ID, "the store: "+err.Error()), e
 	}
 	if n >= a.PerHour {
@@ -179,12 +183,12 @@ func (x *Executor) decide(ctx context.Context, raw []byte) (Result, envelope.Exe
 	}
 	argvJSON, _ := json.Marshal(argv)
 	if _, err := x.db.ExecContext(ctx, `INSERT INTO executions (id, payload, action, argv, status, started_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		e.ID, payload, e.Action, string(argvJSON), started, now.Format(time.RFC3339Nano)); err != nil {
+		e.ID, payload, e.Action, string(argvJSON), started, now.Format(timeFormat)); err != nil {
 		return refused(e.ID, "the store: "+err.Error()), e
 	}
 	r := x.execute(ctx, e, a, argv)
 	if _, err := x.db.ExecContext(ctx, `UPDATE executions SET status = ?, exit_code = ?, output = ?, output_sha256 = ?, detail = ?, ended_at = ?
-		WHERE id = ?`, r.Status, r.ExitCode, r.Output, r.OutputSHA, r.Detail, x.Now().UTC().Format(time.RFC3339Nano), e.ID); err != nil {
+		WHERE id = ?`, r.Status, r.ExitCode, r.Output, r.OutputSHA, r.Detail, x.Now().UTC().Format(timeFormat), e.ID); err != nil {
 		r.Detail = "ran, but the result could not be recorded: " + err.Error()
 	}
 	return r, e

@@ -259,7 +259,12 @@ type Control struct {
 	At      string `json:"at"`
 }
 
-const ts = time.RFC3339Nano
+// TimeFormat is how every time is stored (always UTC). SQL compares stored times as strings, so the
+// layout is fixed-width: RFC3339Nano drops trailing zeros, and within one second a later time sorted as
+// earlier ('.' before 'Z'). time.Parse with time.RFC3339Nano reads it, and rows stored before it.
+const TimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
+
+const ts = TimeFormat
 
 // Open creates or migrates the database at path.
 func Open(path string) (*Store, error) {

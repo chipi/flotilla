@@ -218,6 +218,27 @@ func TestRateLimit(t *testing.T) {
 	}
 }
 
+// Times are compared as strings: an execution half a second into a second still counts against a
+// bound at that whole second (it did not with RFC3339Nano, which sorts "…:00.5Z" before "…:00Z").
+func TestRateLimitWithinASecond(t *testing.T) {
+	ctx := context.Background()
+	x, _, _ := setup(t, "propose")
+	t0 := now.Add(time.Minute + 500*time.Millisecond)
+	x.Now = func() time.Time { return t0 }
+	for _, id := range []string{"a", "b"} {
+		if r := x.Handle(ctx, sign(t, exe(id))); r.Status != Done {
+			t.Fatalf("%s: %+v", id, r)
+		}
+	}
+	// an hour after the whole second before them: both are still within the hour
+	x.Now = func() time.Time { return t0.Add(time.Hour - 500*time.Millisecond) }
+	late := exe("c")
+	late.SignedAt, late.ExpiresAt = now.Add(61*time.Minute), now.Add(65*time.Minute)
+	if r := x.Handle(ctx, sign(t, late)); r.Status != Refused {
+		t.Fatalf("the third within the hour ran: %+v", r)
+	}
+}
+
 func TestOutcomes(t *testing.T) {
 	ctx := context.Background()
 	x, run, _ := setup(t, "propose")
@@ -245,7 +266,7 @@ func TestStartedIsUnknownAfterARestart(t *testing.T) {
 	raw := sign(t, exe("crash"))
 	_, payload, _ := envelope.Verify(raw, x.Cfg.Keys(), "mini", now.Add(time.Minute))
 	if _, err := x.db.Exec(`INSERT INTO executions (id, payload, action, argv, status, started_at) VALUES ('crash', ?, 'backup.rerun_observability', '[]', 'started', ?)`,
-		payload, now.Format(time.RFC3339Nano)); err != nil {
+		payload, now.Format(timeFormat)); err != nil {
 		t.Fatal(err)
 	}
 	x.db.Close()
