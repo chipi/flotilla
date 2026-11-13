@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T11:40:00Z",
+  "title": "Design System: flotilla",
+  "extensions": {
+    "colorMeta": {
+      "signal-blue": { "role": "primary", "displayName": "Signal Blue" },
+      "ink": { "role": "neutral", "displayName": "Ink" },
+      "paper": { "role": "neutral", "displayName": "Paper" },
+      "wait-ink": { "role": "status", "displayName": "Waiting" },
+      "ok-ink": { "role": "status", "displayName": "OK" },
+      "stop-red": { "role": "status", "displayName": "Stop Red" },
+      "badge-orange": { "role": "status", "displayName": "Badge Orange" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "The page title, one per page; 24px on phones." },
+      "exact": { "displayName": "Exact", "purpose": "Hashes, commands, ids: anything copied or compared." }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      { "name": "phone", "value": "640px" },
+      { "name": "narrow-laptop", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action of a decision; it names its object.",
+      "html": "<button class=\"ds-btn-primary\">Approve plan 4f1c…9e07</button>",
+      "css": ".ds-btn-primary { min-height: 48px; padding: 0 18px; border-radius: 10px; border: 1px solid #1F4FD1; background: #1F4FD1; color: #FFFFFF; font: 600 16px Inter, system-ui, sans-serif; cursor: pointer; } .ds-btn-primary:hover { background: #163A9C; border-color: #163A9C; } .ds-btn-primary:focus-visible { outline: 3px solid #1F4FD1; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Reject…, Copy the hash, Cancel.",
+      "html": "<button class=\"ds-btn\">Reject…</button>",
+      "css": ".ds-btn { min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #7C808A; background: #FFFFFF; color: #17191E; font: 600 14px Inter, system-ui, sans-serif; cursor: pointer; } .ds-btn:hover { background: #FAFAF7; } .ds-btn:focus-visible { outline: 3px solid #1F4FD1; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Chips",
+      "kind": "chip",
+      "refersTo": "chip-wait",
+      "description": "Status in paired voices: dark ink on its own wash, always with its word.",
+      "html": "<span class=\"ds-chip ds-wait\">waiting for you</span> <span class=\"ds-chip ds-ok\">verified</span> <span class=\"ds-chip ds-stop\">failed</span>",
+      "css": ".ds-chip { display: inline-block; padding: 3px 8px; border-radius: 5px; font: 600 12px Inter, system-ui, sans-serif; } .ds-wait { background: #FCE8D8; color: #8A3205; } .ds-ok { background: #DDF1E5; color: #14532D; } .ds-stop { background: #FBE4E2; color: #8F1D14; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Label above, 16px text so phones never zoom.",
+      "html": "<label class=\"ds-field\">Why (kept with the case)<textarea rows=\"2\"></textarea></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font: 500 14px Inter, system-ui, sans-serif; color: #17191E; } .ds-field textarea { font: 16px/1.4 Inter, system-ui, sans-serif; border: 1px solid #7C808A; border-radius: 8px; padding: 10px 12px; } .ds-field textarea:focus-visible { outline: 3px solid #1F4FD1; outline-offset: 2px; }"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "nav",
+      "description": "Night chrome: four groups, one badge on Decide, the autonomy pill.",
+      "html": "<nav class=\"ds-nav\"><b>flotilla</b><a aria-current=\"true\">Decide<span class=\"ds-badge\">5</span></a><a>Watch</a><a>Govern</a><a>Record</a></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 2px; min-height: 56px; padding: 0 16px; background: #17191E; color: #D7D9DE; font: 600 15px Inter, system-ui, sans-serif; } .ds-nav b { color: #F6F6F3; font-size: 18px; margin-right: 14px; } .ds-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; } .ds-nav a[aria-current] { background: #F6F6F3; color: #17191E; } .ds-badge { margin-left: 6px; padding: 1px 7px; border-radius: 10px; background: #E8590C; color: #17191E; font-size: 12px; font-weight: 700; }"
+    },
+    {
+      "name": "Decision Box",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "The signature component: everything needed to decide, the plan hash, the two answers.",
+      "html": "<article class=\"ds-dec\"><div class=\"ds-band\"><span class=\"ds-wait-chip\">waiting for you</span> C-0142 · failed backup</div><div class=\"ds-dbody\"><h3>Rerun the observability backup on mini</h3><div class=\"ds-well\">backup.rerun_observability(host=mini)</div><button class=\"ds-go\">Approve plan 4f1c…9e07</button></div></article>",
+      "css": ".ds-dec { background: #FFFFFF; border: 1px solid #C9CAC3; border-radius: 12px; overflow: hidden; font: 14px/1.5 Inter, system-ui, sans-serif; color: #17191E; } .ds-band { padding: 12px 18px; background: #FFF8F2; border-bottom: 1px solid #E3E3DE; font-size: 13px; color: #3D414A; } .ds-wait-chip { padding: 3px 8px; border-radius: 5px; background: #FCE8D8; color: #8A3205; font-weight: 600; font-size: 12px; } .ds-dbody { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; } .ds-dbody h3 { margin: 0; font-size: 18px; } .ds-well { background: #F4F4F0; border: 1px solid #E3E3DE; border-radius: 8px; padding: 10px 12px; font: 13px 'JetBrains Mono', monospace; } .ds-go { min-height: 48px; border-radius: 10px; border: 0; background: #1F4FD1; color: #FFFFFF; font: 600 16px Inter, system-ui, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Control Room",
+    "overview": "A quiet room with good instruments. The fleet works in the background and proposes; the operator decides. Most of the time nothing needs a person, and the screen says so plainly. When something does need a person, exactly one thing lights up: the decision, with everything needed to make it in view. Calm is the resting state, and colour is spent only on state and on the one action.",
+    "keyCharacteristics": [
+      "Warm paper ground, white panels, near-black ink; one blue for the action and links.",
+      "Status in three paired voices (ok, waiting, stopped): a dark ink on its own pale wash.",
+      "Exact things in JetBrains Mono; everything else in Inter.",
+      "Flat surfaces, 1px borders, 44px tap targets everywhere.",
+      "One badge in the whole UI: how many things wait for the operator."
+    ],
+    "rules": [
+      { "name": "The Meaning Rule", "body": "Colour is never decoration. Blue is the action, and the three status voices are state; a coloured element that is neither is a bug.", "section": "colors" },
+      { "name": "The Paired Voice Rule", "body": "Status text is always its dark ink on its own wash (for example wait-ink on wait-wash), never a coloured word on white or paper. Hue is never the only signal: every status also carries its word (\"waiting for you\", \"failed\").", "section": "colors" },
+      { "name": "The Red Means Stop Rule", "body": "stop-red fills a surface only when autonomy is frozen, or on the button that confirms a rejection. At rest the brakes are outlined, not red.", "section": "colors" },
+      { "name": "The Exact Face Rule", "body": "Anything the operator might copy, compare or type into a terminal is set in the Exact face; nothing else is.", "section": "typography" },
+      { "name": "The Sixteen Rule", "body": "Text fields use 16px text, so phones never zoom on focus.", "section": "typography" },
+      { "name": "The No Sideways Scroll Rule", "body": "At 360–430px no page scrolls sideways. Tables become stacked cards (each cell labelled with its column) below 640px; a wide diagram (the fleet workflow) stacks vertically.", "section": "layout" },
+      { "name": "The Thumb Rule", "body": "Below 640px the four navigation groups move to a fixed bottom bar, and the page reserves 104px at its foot so nothing hides under it.", "section": "layout" },
+      { "name": "The Flat Rule", "body": "No box-shadow on any surface. If something needs to stand out, give it a stronger border or its status band, not a lift.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do name the object on every action button (\"Approve plan 4f1c…9e07\", \"Reject plan …\").",
+      "Do set hashes, commands and ids in JetBrains Mono, and give the full value wherever it can be copied.",
+      "Do pair every status colour with its word.",
+      "Do check every page at 360, 390 and 1440px: no sideways scroll, 44px targets.",
+      "Do keep loosening actions (unfreeze, promote) behind a required reason; tightening actions (freeze, demote) act at once and can be undone."
+    ],
+    "donts": [
+      "Don't use shadows, gradients or decorative colour.",
+      "Don't put a second badge anywhere; the only count is what waits for the operator.",
+      "Don't show red at rest: the brakes are quiet until used.",
+      "Don't show an approve button for a plan whose current content is not on screen.",
+      "Don't use fixed column counts for card grids, or tables that scroll sideways on a phone."
+    ]
+  }
+}
