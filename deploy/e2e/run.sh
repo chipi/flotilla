@@ -205,6 +205,26 @@ sleep 3
 cli runs platform/heartbeat -n 1 | grep -q " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
 cli start platform --reason "e2e: start after the STOP check" >/dev/null
 cli events -n 5 | grep -q "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
+# The freeze (ADR-0014 decision 8), through the real scheduler and worker: the heartbeat's own autonomy is auto.
+agent() { $D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla "$@"; }
+OUT="$(agent autonomy freeze 2>&1)"
+echo "$OUT" | grep -q '"frozen":"1"' && ok "an agent pulls the freeze" || bad "agent freeze: $OUT"
+cli status | grep -q "^FROZEN since .* by e2e-agent" && ok "status says frozen, and who froze it" || bad "status while frozen: $(cli status 2>&1 | head -3)"
+N0=$(cli runs platform/heartbeat -n 500 | wc -l)
+cli run platform/heartbeat >/dev/null
+for i in $(seq 1 30); do
+  L="$(cli runs platform/heartbeat -n 500)"
+  [ "$(echo "$L" | wc -l)" -gt "$N0" ] && ! echo "$L" | sed -n 2p | grep -q " running " && break; sleep 1
+done
+echo "$L" | sed -n 2p | grep -q " shadow " && ok "frozen, a heartbeat run (set auto) ran at shadow" || bad "frozen run: $(echo "$L" | sed -n 2p)"
+OUT="$(agent autonomy unfreeze --reason "e2e" 2>&1)"
+echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot lift the freeze" || bad "agent unfreeze: $OUT"
+OUT="$(cli autonomy unfreeze 2>&1)"
+echo "$OUT" | grep -q "needs a reason" && ok "lifting the freeze needs a reason" || bad "unfreeze without a reason: $OUT"
+cli autonomy unfreeze --reason "e2e: lift the freeze" >/dev/null
+OUT="$(cli status 2>&1)"
+! echo "$OUT" | grep -q "^FROZEN" && echo "$OUT" | grep -q "^platform/heartbeat  *auto  *auto " \
+  && ok "lifted, the heartbeat is back at auto (its own control untouched)" || bad "after unfreeze: $OUT"
 W="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
 r=urllib.request.Request("http://127.0.0.1:8081/healthz",headers={"Authorization":"Bearer wrong"})
 try: urllib.request.urlopen(r); print(200)

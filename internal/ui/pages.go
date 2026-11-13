@@ -53,9 +53,16 @@ func caller(s *store.Session) api.Caller {
 }
 
 func (u *Server) pageFor(s *store.Session, title, active string, r *http.Request, data any) page {
-	return page{Title: title, User: s.User, Role: s.Role, CSRF: s.CSRF, Active: active, Nav: nav(active, s.Role),
+	p := page{Title: title, User: s.User, Role: s.Role, CSRF: s.CSRF, Active: active, Nav: nav(active, s.Role),
 		CanAct: s.Role == api.RoleOperator || s.Role == api.RoleAdmin, IsAdmin: s.Role == api.RoleAdmin,
 		Msg: r.URL.Query().Get("msg"), Error: r.URL.Query().Get("err"), Data: data}
+	fr, err := u.API.FreezeState(r.Context())
+	if err != nil {
+		u.Log.Error("reading the freeze", "err", err)
+		p.Error = "flotillad could not read whether the freeze holds; check `flotilla status`"
+	}
+	p.Freeze = fr
+	return p
 }
 
 // done redirects back with the action's outcome, as a short message on the page.
@@ -244,6 +251,17 @@ func (u *Server) fleetAction(w http.ResponseWriter, r *http.Request, s *store.Se
 		return
 	}
 	done(w, r, back, err, ok)
+}
+
+// freezeAction pulls the freeze, or lifts it with a reason; both from the Now page.
+func (u *Server) freezeAction(frozen bool) func(http.ResponseWriter, *http.Request, *store.Session, string) {
+	return func(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+		ok := "Frozen: every routine runs at shadow until the freeze is lifted."
+		if !frozen {
+			ok = "The freeze is lifted: each routine runs at its own autonomy again."
+		}
+		done(w, r, "/", u.API.SetFrozen(r.Context(), caller(s), "ui", frozen, r.PostFormValue("reason")), ok)
+	}
 }
 
 type historyData struct {

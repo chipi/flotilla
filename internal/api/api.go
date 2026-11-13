@@ -124,6 +124,8 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(ActAutonomy, s.autonomy))
 	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(ActStop, s.stopFleet))
 	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(ActStart, s.startFleet))
+	m.Handle("POST /v1/freeze", s.auth(ActFreeze, s.freeze))
+	m.Handle("POST /v1/unfreeze", s.auth(ActUnfreeze, s.unfreeze))
 	s.userRoutes(m)
 	s.ledgerRoutes(m)
 	return m
@@ -228,7 +230,12 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"version": s.Version, "routines": routines, "workers": workers})
+	fr, err := s.FreezeState(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"version": s.Version, "freeze": fr, "routines": routines, "workers": workers})
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request, _ Caller) {
@@ -296,6 +303,16 @@ func (s *Server) stopFleet(w http.ResponseWriter, r *http.Request, c Caller) {
 func (s *Server) startFleet(w http.ResponseWriter, r *http.Request, c Caller) {
 	err := s.SetStopped(r.Context(), c, "api", r.PathValue("fleet"), false, reason(r, w))
 	writeAction(w, err, 200, map[string]string{"subject": r.PathValue("fleet"), sched.KeyStop: "0", "by": c.Name})
+}
+
+func (s *Server) freeze(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.SetFrozen(r.Context(), c, "api", true, "")
+	writeAction(w, err, 200, map[string]string{"subject": sched.FreezeSubject, sched.KeyFrozen: "1", "by": c.Name})
+}
+
+func (s *Server) unfreeze(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.SetFrozen(r.Context(), c, "api", false, reason(r, w))
+	writeAction(w, err, 200, map[string]string{"subject": sched.FreezeSubject, sched.KeyFrozen: "0", "by": c.Name})
 }
 
 func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {

@@ -35,11 +35,14 @@ type Metrics interface {
 }
 
 // Control keys. A fleet's "stop" skips every routine of the fleet; a routine's "paused" skips that routine; a
-// routine's "autonomy" overrides the spec's default.
+// routine's "autonomy" overrides the spec's default. The installation's "frozen" (ADR-0014 decision 8) runs
+// every routine at shadow; it is kept on FreezeSubject, which no fleet or routine id can be.
 const (
-	KeyStop     = "stop"
-	KeyPaused   = "paused"
-	KeyAutonomy = "autonomy"
+	KeyStop       = "stop"
+	KeyPaused     = "paused"
+	KeyAutonomy   = "autonomy"
+	KeyFrozen     = "frozen"
+	FreezeSubject = "*"
 )
 
 var ErrRunning = errors.New("already running")
@@ -257,10 +260,29 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	return &out, nil
 }
 
-// Autonomy is the routine's effective autonomy: the control if set, else the spec's default. A control above
-// the spec's max_autonomy (set before the cap existed, or written to the store by hand) is not obeyed:
-// the routine runs at its cap.
+// Autonomy is the autonomy a run starts with: shadow while the installation is frozen, else the routine's
+// own (Configured). A run keeps what it started with, so a freeze does not reach a run in flight.
 func (s *Scheduler) Autonomy(ctx context.Context, j *spec.Routine) (string, error) {
+	set, err := s.Configured(ctx, j)
+	if err != nil {
+		return set, err
+	}
+	if frozen, err := s.Frozen(ctx); err != nil || frozen {
+		return spec.AutonomyShadow, err
+	}
+	return set, nil
+}
+
+// Frozen reports whether the installation's freeze holds.
+func (s *Scheduler) Frozen(ctx context.Context) (bool, error) {
+	v, err := s.Store.Control(ctx, FreezeSubject, KeyFrozen)
+	return v == "1", err
+}
+
+// Configured is the routine's own autonomy, what the freeze leaves alone: the control if set, else the
+// spec's default. A control above the spec's max_autonomy (set before the cap existed, or written to the
+// store by hand) is not obeyed: the routine runs at its cap.
+func (s *Scheduler) Configured(ctx context.Context, j *spec.Routine) (string, error) {
 	v, err := s.Store.Control(ctx, j.ID(), KeyAutonomy)
 	if err != nil || v == "" {
 		return j.Autonomy, err

@@ -3,15 +3,16 @@
 <main class="page">
   <section>
     <h1>Autonomy</h1>
-    <p class="meta">What each routine may do on its own: shadow (nothing outward), propose (asks first), auto. A routine never goes above its spec's cap. Change it on the fleet's page; raising it needs a reason. STOP stops a fleet's runs entirely.</p>
+    <p class="meta">What each routine may do on its own: shadow (nothing outward), propose (asks first), auto. A routine never goes above its spec's cap, and while the freeze holds every routine runs at shadow whatever is set. Change it on the fleet's page; raising it needs a reason. STOP stops a fleet's runs entirely.</p>
   </section>
   <div class="table-box">
     <table class="data">
-      <thead><tr><th>Routine</th><th>Now</th><th>Spec default</th><th>Cap</th><th>Fleet</th></tr></thead>
+      <thead><tr><th>Routine</th><th>Runs at</th><th>Set</th><th>Spec default</th><th>Cap</th><th>Fleet</th></tr></thead>
       <tbody>
         {{range .Data}}{{$f := .}}{{range .Routines}}<tr>
           <td data-label="Routine"><a class="exact" href="/fleets/{{.Fleet}}">{{.ID}}</a></td>
-          <td data-label="Now"><span class="{{chip .Autonomy}}">{{.Autonomy}}</span></td>
+          <td data-label="Runs at"><span class="{{chip .Autonomy}}">{{.Autonomy}}</span></td>
+          <td data-label="Set">{{.AutonomySet}}</td>
           <td data-label="Spec default">{{.SpecAutonomy}}</td>
           <td data-label="Cap">{{if .MaxAutonomy}}{{.MaxAutonomy}}{{else}}none{{end}}</td>
           <td data-label="Fleet">{{if $f.Stopped}}<span class="chip chip--stop">STOPped</span>{{else}}running{{end}}</td>

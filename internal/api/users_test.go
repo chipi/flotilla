@@ -90,6 +90,8 @@ func TestPermissionTable(t *testing.T) {
 		{ActStart, "POST", "/v1/fleets/triage/start", `{"reason":"t"}`},
 		{ActUsers, "GET", "/v1/users", ""},
 		{ActLedger, "GET", "/v1/ledger/counts?ns=triage/cycle", ""},
+		{ActFreeze, "POST", "/v1/freeze", ""},
+		{ActUnfreeze, "POST", "/v1/unfreeze", `{"reason":"t"}`},
 	}
 	for _, role := range []string{RoleWorker, RoleAgent, RoleViewer, RoleOperator, RoleAdmin} {
 		for _, q := range reqs {
@@ -109,6 +111,8 @@ func TestPermissionTable(t *testing.T) {
 		{RoleAgent, ActResume, false}, {RoleAgent, ActStop, true}, {RoleAgent, ActUsers, false},
 		{RoleOperator, ActUsers, false}, {RoleAdmin, ActResume, true}, {RoleAdmin, ActUsers, true},
 		{RoleWorker, ActRead, false}, {RoleAdmin, ActLedger, false},
+		{RoleAgent, ActFreeze, true}, {RoleAgent, ActUnfreeze, false}, {RoleViewer, ActFreeze, false},
+		{RoleOperator, ActUnfreeze, true}, {RoleWorker, ActFreeze, false},
 	} {
 		if Authorize(x.role, x.a) != x.ok {
 			t.Errorf("Authorize(%s, %s) != %v", x.role, x.a, x.ok)
@@ -118,7 +122,7 @@ func TestPermissionTable(t *testing.T) {
 
 func TestLooseningNeedsAReason(t *testing.T) {
 	ts, st := server(t)
-	for _, p := range []string{"/v1/routines/triage/cycle/resume", "/v1/fleets/triage/start"} {
+	for _, p := range []string{"/v1/routines/triage/cycle/resume", "/v1/fleets/triage/start", "/v1/unfreeze"} {
 		if c, _ := call(t, ts, "POST", p, opTok, ""); c != 400 {
 			t.Fatalf("%s without a reason: %d, want 400", p, c)
 		}

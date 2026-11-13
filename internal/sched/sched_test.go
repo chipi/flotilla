@@ -92,6 +92,43 @@ func TestStageControlOverridesSpec(t *testing.T) {
 	}
 }
 
+// ADR-0014 decision 8: frozen, a run starts at shadow; the routine's own control is untouched, so
+// lifting the freeze restores it; a run already in flight keeps what it started with.
+func TestFreeze(t *testing.T) {
+	ctx := context.Background()
+	s, fr, _ := setup(t, 2)
+	_ = s.Store.SetControl(ctx, "triage/cycle", KeyAutonomy, "auto", "operator", "api")
+	fr.block = make(chan struct{})
+	done := make(chan *store.Run)
+	go func() { r, _ := s.RunNow(ctx, "triage/cycle", "manual", "operator"); done <- r }()
+	for started := false; !started; time.Sleep(time.Millisecond) { // the worker has it: its autonomy is read
+		fr.mu.Lock()
+		started = len(fr.got) == 1
+		fr.mu.Unlock()
+	}
+	_ = s.Store.SetControl(ctx, FreezeSubject, KeyFrozen, "1", "claude-homelab", "api")
+	close(fr.block)
+	if r := <-done; r.Autonomy != "auto" || fr.got[0].Env["FLEETD_STAGE"] != spec.FleetdStage("auto") {
+		t.Fatalf("a run in flight when the freeze came: %s / %s", r.Autonomy, fr.got[0].Env["FLEETD_STAGE"])
+	}
+	fr.block = nil
+	r, _ := s.RunNow(ctx, "triage/cycle", "manual", "operator")
+	if r.Autonomy != "shadow" || fr.got[1].Env["FLEETD_STAGE"] != "shadow" {
+		t.Fatalf("frozen, a run started at %s / %s", r.Autonomy, fr.got[1].Env["FLEETD_STAGE"])
+	}
+	if v, _ := s.Store.Control(ctx, "triage/cycle", KeyAutonomy); v != "auto" {
+		t.Fatalf("the freeze overwrote the routine's control: %q", v)
+	}
+	if set, _ := s.Configured(ctx, s.Routines[0]); set != "auto" {
+		t.Fatalf("configured while frozen: %s", set)
+	}
+	_ = s.Store.SetControl(ctx, FreezeSubject, KeyFrozen, "0", "operator", "api")
+	r, _ = s.RunNow(ctx, "triage/cycle", "manual", "operator")
+	if r.Autonomy != "auto" {
+		t.Fatalf("after the freeze, a run started at %s", r.Autonomy)
+	}
+}
+
 func TestControlAboveMaxAutonomyNotObeyed(t *testing.T) {
 	s, fr, _ := setup(t, 2)
 	s.Routines[0].MaxAutonomy = spec.AutonomyShadow

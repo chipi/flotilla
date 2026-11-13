@@ -29,7 +29,7 @@
     <h2 id="r-{{.ID}}" class="exact">{{.ID}}</h2>
     <p>{{.Description}}</p>
     <dl class="facts">
-      <div><dt>Autonomy</dt><dd><span class="{{chip .Autonomy}}">{{.Autonomy}}</span>{{if .MaxAutonomy}} <span class="meta">cap {{.MaxAutonomy}}</span>{{end}}</dd></div>
+      <div><dt>Autonomy</dt><dd><span class="{{chip .Autonomy}}">{{.Autonomy}}</span>{{if ne .Autonomy .AutonomySet}} <span class="meta">set {{.AutonomySet}}</span>{{end}}{{if .MaxAutonomy}} <span class="meta">cap {{.MaxAutonomy}}</span>{{end}}</dd></div>
       <div><dt>Every</dt><dd>{{.Every}}</dd></div>
       <div><dt>Last ok</dt><dd>{{if .LastSuccess}}{{when .LastSuccess}}{{else}}never{{end}}{{if .Stale}} <span class="chip chip--stop">stale</span>{{end}}</dd></div>
       <div><dt>State</dt><dd>{{if not .Enabled}}disabled{{else if .Paused}}<span class="chip chip--wait">paused</span>{{else if .Running}}running{{else}}idle{{end}}</dd></div>
@@ -52,9 +52,9 @@
         {{template "csrf" $csrf}}
         <label class="field">Autonomy
           <select name="autonomy">
-            <option value="shadow"{{if eq .Autonomy "shadow"}} selected{{end}}>shadow</option>
-            <option value="propose"{{if eq .Autonomy "propose"}} selected{{end}}>propose</option>
-            <option value="auto"{{if eq .Autonomy "auto"}} selected{{end}}>auto</option>
+            <option value="shadow"{{if eq .AutonomySet "shadow"}} selected{{end}}>shadow</option>
+            <option value="propose"{{if eq .AutonomySet "propose"}} selected{{end}}>propose</option>
+            <option value="auto"{{if eq .AutonomySet "auto"}} selected{{end}}>auto</option>
           </select>
         </label>
         <label class="field">Why, if it raises it<input name="reason"></label>

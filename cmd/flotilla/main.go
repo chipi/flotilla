@@ -83,13 +83,20 @@ func main() {
 	switch cmd {
 	case "status":
 		var out struct {
-			Version  string `json:"version"`
+			Version string `json:"version"`
+			Freeze  struct {
+				Frozen bool
+				By, At string
+			}
 			Routines []map[string]any
 			Workers  map[string]any
 		}
 		get("/v1/status", &out)
+		if out.Freeze.Frozen {
+			fmt.Printf("FROZEN since %s by %s: every routine runs at shadow (AUTONOMY shows what runs; SET, the routine's own)\n", out.Freeze.At, out.Freeze.By)
+		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintf(w, "flotillad %s\nROUTINE\tAUTONOMY\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
+		fmt.Fprintf(w, "flotillad %s\nROUTINE\tAUTONOMY\tSET\tEVERY\tLAST OK\tSTALE\tSPEND TODAY\tSTATE\n", out.Version)
 		for _, j := range out.Routines {
 			state := []string{}
 			if j["enabled"] != true {
@@ -104,7 +111,7 @@ func main() {
 			if r, _ := j["running"].(string); r != "" {
 				state = append(state, "running "+r)
 			}
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t$%.4f/$%.2f\t%s\n", j["id"], j["autonomy"], j["every"], orDash(j["last_success"]),
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t$%.4f/$%.2f\t%s\n", j["id"], j["autonomy"], j["autonomy_set"], j["every"], orDash(j["last_success"]),
 				j["stale"], j["spend_today_usd"], j["budget_day_usd"], strings.Join(state, ","))
 		}
 		w.Flush()
@@ -143,7 +150,15 @@ func main() {
 		need(args, 1, `resume fleet/routine --reason "..."`)
 		post("/v1/routines/"+args[0]+"/resume", map[string]string{"reason": reason})
 	case "autonomy":
-		need(args, 2, `autonomy fleet/routine shadow|propose|auto [--reason "..."]`)
+		if len(args) == 1 && args[0] == "freeze" {
+			post("/v1/freeze", nil)
+			return
+		}
+		if len(args) == 1 && args[0] == "unfreeze" {
+			post("/v1/unfreeze", map[string]string{"reason": reason})
+			return
+		}
+		need(args, 2, `autonomy fleet/routine shadow|propose|auto [--reason "..."] | autonomy freeze | autonomy unfreeze --reason "..."`)
 		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": args[1], "reason": reason})
 	case "stop":
 		need(args, 1, "stop fleet")
@@ -205,7 +220,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

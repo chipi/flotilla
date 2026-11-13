@@ -1,12 +1,32 @@
 {{template "head" .}}
 {{template "nav" .}}
 <main class="page">
+  {{$frozen := .Freeze.Frozen}}{{$csrf := .CSRF}}
   <section>
     <p class="meta">Signed in as {{.User}} ({{.Role}})</p>
     {{with .Data}}
-    <h1>{{if or .Wrong .Failed .Unhealthy}}Something needs a look.{{else}}Nothing is wrong.{{end}}</h1>
+    <h1>{{if or $frozen .Wrong .Failed .Unhealthy}}Something needs a look.{{else}}Nothing is wrong.{{end}}</h1>
     {{end}}
   </section>
+  {{if .CanAct}}
+  <section class="card" aria-labelledby="freeze-h">
+    <h2 id="freeze-h">The freeze</h2>
+    {{if $frozen}}
+    <p>Every routine runs at shadow. Each keeps its own autonomy, and gets it back when the freeze is lifted. A run that started before the freeze keeps the autonomy it started with.</p>
+    <form method="post" action="/unfreeze" class="form-row">
+      {{template "csrf" $csrf}}
+      <label class="field">Why lift it (kept with the change)<input name="reason" required></label>
+      <button class="btn" type="submit">Lift the freeze</button>
+    </form>
+    {{else}}
+    <p>Freezing runs every routine at shadow, so nothing outward happens, without changing any routine's own autonomy. STOP on a fleet is stronger: no runs at all.</p>
+    <form method="post" action="/freeze">
+      {{template "csrf" $csrf}}
+      <button class="btn btn--stop" type="submit">Freeze: everything to shadow</button>
+    </form>
+    {{end}}
+  </section>
+  {{end}}
   {{with .Data}}
   <section class="card" aria-labelledby="wrong-h">
     <h2 id="wrong-h">Wrong right now</h2>

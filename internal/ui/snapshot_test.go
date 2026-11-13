@@ -52,11 +52,7 @@ func TestSnapshots(t *testing.T) {
 	}
 	pages := map[string]string{"now": "/", "runs": "/runs", "run": "/runs/triage-cycle-20261113100", "fleets": "/fleets",
 		"fleet": "/fleets/triage", "autonomy": "/autonomy", "history": "/history", "users": "/users", "signin": "/signin"}
-	for name, p := range pages {
-		cookie := ck
-		if name == "fleet" {
-			cookie = ock
-		}
+	snap := func(name, p, cookie string) {
 		resp, body := f.do("GET", p, cookie, nil, nil)
 		if resp.StatusCode != 200 {
 			t.Fatalf("%s: %d", p, resp.StatusCode)
@@ -66,6 +62,19 @@ func TestSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for name, p := range pages {
+		cookie := ck
+		if name == "fleet" {
+			cookie = ock
+		}
+		snap(name, p, cookie)
+	}
+	// The same installation frozen, with a routine set above shadow so the pages show both.
+	_ = f.st.SetControl(ctx, "triage/cycle", "autonomy", "propose", "user:ada", "api")
+	_ = f.st.SetControl(ctx, "*", "frozen", "1", "user:otto", "ui")
+	snap("now-frozen", "/", ock)
+	snap("fleet-frozen", "/fleets/triage", ock)
+	snap("autonomy-frozen", "/autonomy", ck)
 	if err := os.MkdirAll(filepath.Join(dir, "fonts"), 0o755); err != nil {
 		t.Fatal(err)
 	}

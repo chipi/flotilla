@@ -17,6 +17,8 @@ const (
 	ActStart      Action = "start"       // start a STOPped fleet (loosening: needs a reason)
 	ActAutonomy   Action = "autonomy"    // set a routine's autonomy (raising it needs a reason)
 	ActUsers      Action = "users"       // users and sessions
+	ActFreeze     Action = "freeze"      // pull the installation's freeze (every routine at shadow)
+	ActUnfreeze   Action = "unfreeze"    // lift it (loosening: needs a reason)
 )
 
 // Roles of people (ADR-0014); callers keep RoleAgent, RoleOperator (the callers file's) and RoleWorker.
@@ -39,10 +41,12 @@ var may = map[Action]map[string]bool{
 	ActStart:      {RoleOperator: true, RoleAdmin: true},
 	ActAutonomy:   {RoleOperator: true, RoleAdmin: true},
 	ActUsers:      {RoleAdmin: true},
+	ActFreeze:     {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
+	ActUnfreeze:   {RoleOperator: true, RoleAdmin: true},
 }
 
 // Authorize reports whether a caller holding role may do action.
 func Authorize(role string, a Action) bool { return may[a][role] }
 
 // loosening actions need a reason, from every client (ADR-0014 decision 2).
-func loosening(a Action) bool { return a == ActResume || a == ActStart }
+func loosening(a Action) bool { return a == ActResume || a == ActStart || a == ActUnfreeze }

@@ -28,6 +28,7 @@
     {{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
   </nav>
 </header>
+{{if .Freeze.Frozen}}<p class="flash alert alert--stop" role="status"><strong>Frozen.</strong> Every routine runs at shadow: nothing outward happens. Since {{when .Freeze.At}}, by {{.Freeze.By}}.{{if and .CanAct (ne .Active "Now")}} <a href="/">Lift it on Now</a>.{{end}}</p>{{end}}
 {{if .Msg}}<p class="flash flash--ok" role="status">{{.Msg}}</p>{{end}}
 {{if .Error}}<p class="flash alert alert--stop" role="alert">{{.Error}}</p>{{end}}{{end}}
 

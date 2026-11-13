@@ -65,6 +65,8 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("GET /fleets/{fleet}", u.session(u.fleetPage))
 	m.Handle("POST /routines/{fleet}/{routine}/{action}", u.session(u.routineAction))
 	m.Handle("POST /fleets/{fleet}/{action}", u.session(u.fleetAction))
+	m.Handle("POST /freeze", u.session(u.freezeAction(true)))
+	m.Handle("POST /unfreeze", u.session(u.freezeAction(false)))
 	m.Handle("GET /autonomy", u.session(u.autonomyPage))
 	m.Handle("GET /history", u.session(u.historyPage))
 	m.Handle("GET /users", u.session(u.usersPage))
@@ -133,7 +135,8 @@ type page struct {
 	Nav     []navGroup
 	CanAct  bool // operator or admin: show the controls (the server checks every action anyway)
 	IsAdmin bool
-	Msg     string // an action's outcome, from the redirect after it
+	Freeze  api.Freeze // shown on every page while it holds
+	Msg     string     // an action's outcome, from the redirect after it
 	Error   string
 	Data    any
 }

@@ -207,6 +207,13 @@ People sign in with their own token; agents and workers keep the callers file. O
 3. Add people: `flotilla user add <name> --role admin|operator|viewer`; `user list`, `user role`,
    `user rotate`, `user revoke`.
 
+The freeze runs every routine at `shadow`, so nothing outward happens, and leaves each routine's own
+autonomy as it is. An agent, an operator or an admin pulls it with `flotilla autonomy freeze` (or on
+the UI's Now page). Only an operator or an admin lifts it, with a reason:
+`flotilla autonomy unfreeze --reason "…"`. A run already going keeps the autonomy it started with.
+While it holds, `flotilla status` starts with a `FROZEN` line, and its AUTONOMY column shows what runs
+and SET what is set. STOP on a fleet is stronger: no runs at all.
+
 The UI listens on `ui_listen` (for example `0.0.0.0:8486`) and answers only `ui_host` (the
 `flotilla.<tailnet>` name). Put both in `flotillad.yaml`. flotillad joins the `ui` network
 (`NET_UI`, default `flotilla_ui`), which is internal. The homelab's caddy-tailscale proxy joins that

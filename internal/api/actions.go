@@ -68,7 +68,8 @@ type RoutineStatus struct {
 	Enabled      bool    `json:"enabled"`
 	Worker       string  `json:"worker"`
 	Every        string  `json:"every"`
-	Autonomy     string  `json:"autonomy"`
+	Autonomy     string  `json:"autonomy"`     // what a run starting now gets: shadow while frozen
+	AutonomySet  string  `json:"autonomy_set"` // the routine's own, which the freeze leaves alone
 	SpecAutonomy string  `json:"spec_autonomy"`
 	MaxAutonomy  string  `json:"max_autonomy,omitempty"`
 	SpecHash     string  `json:"spec_hash"`
@@ -92,12 +93,16 @@ func (s *Server) Status(ctx context.Context) ([]RoutineStatus, map[string]any, e
 		if err != nil {
 			return nil, nil, err
 		}
+		set, err := s.Sched.Configured(ctx, j)
+		if err != nil {
+			return nil, nil, err
+		}
 		paused, _ := s.Store.Control(ctx, j.ID(), sched.KeyPaused)
 		stopped, _ := s.Store.Control(ctx, j.Fleet, sched.KeyStop)
 		last, _ := s.Store.LastSuccess(ctx, j.ID())
 		spent, _ := s.Store.Spend(ctx, day, j.ID())
 		js := RoutineStatus{ID: j.ID(), Fleet: j.Fleet, Description: j.Description, Enabled: j.Enabled, Worker: j.Worker,
-			Every: j.Every.String(), Autonomy: st, SpecAutonomy: j.Autonomy, MaxAutonomy: j.MaxAutonomy, SpecHash: j.Hash,
+			Every: j.Every.String(), Autonomy: st, AutonomySet: set, SpecAutonomy: j.Autonomy, MaxAutonomy: j.MaxAutonomy, SpecHash: j.Hash,
 			Paused: paused == "1", Stopped: stopped == "1", Running: running[j.ID()], SpendToday: spent, BudgetDay: j.Budget.DayUSD,
 			Stale: j.Enabled && (last.IsZero() || now.Sub(last) > j.Fresh)}
 		if !last.IsZero() {
@@ -205,7 +210,7 @@ func (s *Server) SetAutonomy(ctx context.Context, c Caller, via, routineID, leve
 	if !j.Allows(level) {
 		return problem(400, "%s is capped at %s by its spec (max_autonomy)", j.ID(), j.MaxAutonomy)
 	}
-	cur, err := s.Sched.Autonomy(ctx, j)
+	cur, err := s.Sched.Configured(ctx, j) // the freeze lowers what runs, not what is set
 	if err != nil {
 		return err
 	}
@@ -218,4 +223,38 @@ func (s *Server) SetAutonomy(ctx context.Context, c Caller, via, routineID, leve
 	}
 	s.Log.Info("autonomy set", "routine", j.ID(), "autonomy", level, "caller", c.Name, "via", via, "reason", reason)
 	return nil
+}
+
+// Freeze is the installation's freeze: whether it holds, and who set it last and when.
+type Freeze struct {
+	Frozen bool   `json:"frozen"`
+	By     string `json:"by,omitempty"`
+	At     string `json:"at,omitempty"`
+}
+
+// FreezeState reads the freeze.
+func (s *Server) FreezeState(ctx context.Context) (Freeze, error) {
+	cs, err := s.Store.Controls(ctx)
+	if err != nil {
+		return Freeze{}, err
+	}
+	for _, c := range cs {
+		if c.Subject == sched.FreezeSubject && c.Key == sched.KeyFrozen {
+			return Freeze{Frozen: c.Value == "1", By: c.Actor, At: c.At}, nil
+		}
+	}
+	return Freeze{}, nil
+}
+
+// SetFrozen pulls the freeze (every routine runs at shadow, ADR-0014 decision 8) or, with a reason,
+// lifts it. Routines' own autonomy is never touched, so lifting it restores each one.
+func (s *Server) SetFrozen(ctx context.Context, c Caller, via string, frozen bool, reason string) error {
+	a, v := ActFreeze, "1"
+	if !frozen {
+		a, v = ActUnfreeze, "0"
+	}
+	if err := s.Check(ctx, c, a); err != nil {
+		return err
+	}
+	return s.setControl(ctx, c, via, a, sched.FreezeSubject, sched.KeyFrozen, v, reason)
 }
