@@ -34,7 +34,7 @@ E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/conf
   COMPOSE_PROFILES=candidate,ops TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
-compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"; }
+compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" -f "$ROOT/deploy/e2e/docker-compose.e2e.yml" "$@"; }
 
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
@@ -62,6 +62,9 @@ ok "images built"
 
 echo "== config and stand-ins"
 mkdir -p "$WORK/config"
+# the specs: the shipped fleets and the e2e-only fleet (its host.true path, H9c); its registry extension
+mkdir -p "$WORK/config/specs" && cp -r "$ROOT/fleets/." "$WORK/config/specs/" && cp -r "$ROOT/deploy/e2e/fleets/." "$WORK/config/specs/"
+cp "$ROOT/deploy/e2e/registry-e2e.json" "$WORK/config/registry-e2e.json"
 printf '%s\n' "${E2E_ENV[@]}" > "$WORK/.env"
 tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 OP=$(tok); AGENT=$(tok); WT=$(tok)
@@ -82,7 +85,8 @@ listen: 127.0.0.1:8484
 worker_listen: 0.0.0.0:8485
 ui_listen: 0.0.0.0:8486
 ui_host: flotilla.e2e
-specs_dir: /opt/flotilla/fleets
+specs_dir: /etc/flotilla/specs          # the image's fleets plus the e2e fleet (deploy/e2e/fleets), staged below
+registry_files: [/opt/flotilla/host/registry.json, /etc/flotilla/registry-e2e.json]   # plus the e2e's host.true
 state_dir: /var/lib/flotilla
 environment: e2e
 timezone: Europe/Amsterdam
@@ -131,7 +135,8 @@ default:
   action: ${E2E_ACL_ACTION:-enforce}   # E2E_ACL_ACTION=open is the mutation check: the run must FAIL
   allowed_domains: [victoriametrics, victoriatraces, litellm]
 EOF
-chmod 644 "$WORK"/config/*
+find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
+chmod -R a+rX "$WORK/config/specs"
 for n in $NETS; do $D network create --label $LABEL "$n" >/dev/null; done
 stub() { $D run -d --label $LABEL --name "e2e-$1" --network "$2" --network-alias "$1" --memory 64m \
   -v "$ROOT/deploy/e2e/stub.py:/stub.py:ro" python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b \
@@ -191,8 +196,8 @@ STORE="$(python3 "$ROOT/deploy/e2e/old_store.py" check "$WORK/storecopy/flotilla
 echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if "error" not in d and d["schema"] == d["latest"] and d["old_runs"] == 5000 and d["old_auto"] == 2500 and d["live_left"] == 0 and d["stage_controls"] == 0 and d["heartbeat_autonomy"] == "auto" else 1)' \
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | grep -q "^CHECK PASS.*, 1 actions$" \
-  && ok "-check in the image reads the registry it carries (backup.rerun_observability)" || bad "-check: $OUT"
+echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | grep -q "^action host.true$" && echo "$OUT" | grep -q "^CHECK PASS.*, 2 actions$" \
+  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, host.true)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
@@ -428,6 +433,33 @@ HL="$(cli host list 2>&1)"
 echo "$HL" | grep -q "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
   && ok "host list: connected, its version, last contact and clock offset, from the store (no chain head: nothing ran)" || bad "host list while connected: $HL"
 ! $D logs flotillad 2>&1 | grep -q '"msg":"host alert"' && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
+# H9c, one real execution through the whole path: a detection, a case, the acting routine's plan,
+# policy (propose: the action promoted, the routine capped at propose), an operator's approval, the
+# envelope signed and sent, the host's own checks, /bin/true, the result, the case in checking; then the
+# host's audit log against flotillad's record.
+cli action autonomy host.true propose --reason "e2e: the security e2e's harmless action" >/dev/null 2>&1
+cli action list 2>&1 | grep -q "^host.true  *propose " && ok "host.true promoted to propose (operator, with a reason)" || bad "promote: $(cli action list 2>&1)"
+cli run e2e/host-true-monitor >/dev/null
+for i in $(seq 1 45); do
+  HC="$(cli case list --all 2>&1 | awk '/e2e_host_true .*host:e2e-host .*awaiting_approval/ {print $1; exit}')"
+  [ -n "$HC" ] && break; sleep 2
+done
+[ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
+  || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
+OUT="$(cli case approve "$HC" 2>&1)"
+echo "$OUT" | grep -q '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"
+for i in $(seq 1 30); do cli case list --all 2>&1 | grep -q "^$HC .* checking " && break; sleep 2; done
+SHOW="$(cli case show "$HC" 2>&1)"
+echo "$SHOW" | grep -q "case.executing .*operator .*by operator .*approved host.true on host:e2e-host" \
+  && echo "$SHOW" | grep -q "case.checking .*flotillad .*by act .*on e2e-host: done" \
+  && ok "signed, sent, run on the host as _flotilla (/bin/true), done: the case is in checking" || bad "the execution: $SHOW"
+hx flotilla-e2e-host cat /var/log/flotilla-host/audit.jsonl > "$WORK/host-audit.jsonl" 2>/dev/null
+AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit.jsonl" 2>&1)"; ARC=$?
+[ $ARC = 0 ] && echo "$AUD" | grep -q "^AUDIT PASS: e2e-host, 1 executions on record" && echo "$AUD" | grep -q "done on both sides" \
+  && ok "flotilla host audit: the host's real log matches flotillad's record (AUDIT PASS)" || bad "audit: rc=$ARC $AUD"
+sed '0,/"status":"done"/s//"status":"failed"/' "$WORK/host-audit.jsonl" > "$WORK/host-audit-tampered.jsonl"
+AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit-tampered.jsonl" 2>&1)"; ARC=$?
+[ $ARC = 1 ] && echo "$AUD" | grep -q "^AUDIT FAIL" && ok "a rewritten copy of the host's log fails the audit" || bad "tampered audit: rc=$ARC $AUD"
 $D restart flotillad >/dev/null
 for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 for i in $(seq 1 30); do [ "$(hostlog | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && break; sleep 1; done

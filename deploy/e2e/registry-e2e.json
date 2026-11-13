@@ -1,0 +1,16 @@
+{
+  "component": "host:e2e",
+  "actions": [
+    {
+      "name": "host.true",
+      "for_kinds": ["e2e_host_true"],
+      "params": {"host": {"kind": "target_host"}},
+      "risk": "low",
+      "reversible": "yes",
+      "pre": ["e2e_always"],
+      "check": {"verify": "e2e_nothing", "within": "5m"},
+      "limits": {"per_target_per_day": 5},
+      "timeout": "1m"
+    }
+  ]
+}

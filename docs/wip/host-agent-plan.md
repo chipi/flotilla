@@ -240,9 +240,18 @@ VPS.
     50 ms heartbeat (dropped after 150 ms of silence) on a loaded machine, the same shape as an
     earlier ci-fast failure: the heartbeat is now 200 ms, and the test prints the execution's record
     if it fails again.
-  - **H9c, the e2e:** an e2e-only test fleet and registry extension (mounted config, not the image)
-    take one execution through the whole path (detect, plan, propose, approve, sign, send, run,
-    result, checking), then an action outside the host's allowlist and its rate limit, refused on
-    the host, then the audit. Forged, expired, another host's and auto-above-the-ceiling envelopes
-    cannot come down flotillad's legitimate path at all; they stay covered by the Go tests over the
-    real connection (internal/hostagent, internal/hostexec).
+  - **H9c, the e2e (built):** an e2e-only test fleet (`deploy/e2e/fleets/e2e/`: a monitor run by hand,
+    an acting routine capped at propose) and registry extension (`deploy/e2e/registry-e2e.json`:
+    `host.true`), mounted into flotillad by an e2e-only compose override
+    (`deploy/e2e/docker-compose.e2e.yml`), never in the image. One execution goes through the whole
+    path on the installed stand-in host: the action promoted to propose, a detection, a case, the plan,
+    policy's proposal, the operator's `case approve`, the envelope signed and sent, the host's checks,
+    `/bin/true` as `_flotilla`, the result, the case in checking. Then `flotilla host audit e2e-host
+    --log -` with the host's real log passes, and a copy with one status rewritten fails (exit 1).
+    `make test-e2e`: E2E PASS, 126 checks. **Not in the e2e:** an action outside the host's allowlist
+    and the host's rate limit. An execution goes only to its case's target host (`host:NAME`), and
+    the first case stays in checking holding that target's lock (H7b: the check step is not built), so a second case on
+    the stand-in host never reaches it; they come with the checking exit. Until then they, and the
+    forged, expired, another host's and auto-above-the-ceiling envelopes (which cannot come down
+    flotillad's legitimate path at all), are covered by the Go tests over the real connection
+    (internal/hostagent, internal/hostexec).

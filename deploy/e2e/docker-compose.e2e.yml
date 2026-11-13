@@ -1,0 +1,8 @@
+# The e2e's additions to deploy/compose/docker-compose.yml (deploy/e2e/run.sh passes both files): the
+# specs flotillad reads (the shipped fleets plus the e2e-only fleet) and the e2e registry extension
+# (host.true, the security e2e's harmless action, H9c). Never used by a deploy.
+services:
+  flotillad:
+    volumes:
+      - ${FLOTILLA_CONFIG}/specs:/etc/flotilla/specs:ro
+      - ${FLOTILLA_CONFIG}/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro

@@ -327,8 +327,15 @@ func hostCmd(args []string) {
 
 // hostAudit compares a host's audit log with flotillad's record of what it sent there (ADR-0006 §8).
 // It prints one line per finding and AUDIT PASS or AUDIT FAIL; the exit code is 1 on a failure.
+// --log - reads the log from stdin (ssh HOST cat /var/log/flotilla-host/audit.jsonl | flotilla host audit ...).
 func hostAudit(host, logPath string) int {
-	log, err := os.ReadFile(logPath)
+	var log []byte
+	var err error
+	if logPath == "-" {
+		log, err = io.ReadAll(io.LimitReader(os.Stdin, 256<<20))
+	} else {
+		log, err = os.ReadFile(logPath)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2

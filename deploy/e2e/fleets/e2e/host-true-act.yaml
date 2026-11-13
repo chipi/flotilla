@@ -1,0 +1,20 @@
+fleet: e2e
+routine: host-true-act
+description: >-
+  The security e2e's acting routine (host agent plan H9c), never shipped: plans host.true (the e2e
+  registry's harmless action, /bin/true on the stand-in host) for an e2e_host_true case. Capped at
+  propose, so the case waits for an operator's approval, as a real write does.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: e2e_host_true}
+run:
+  command: >-
+    printf '{"outcome": "plan", "action": "host.true", "params": {"host": "e2e-host"}, "detail": "e2e: plan host.true"}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0
