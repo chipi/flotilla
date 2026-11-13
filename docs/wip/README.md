@@ -17,6 +17,7 @@ prioritized task lists. Promotion targets:
 - [Phase 3 plan](phase-3-plan.md): the runtime, and triage onto it (ADR-0004).
 - [Promotion plan](promotion-plan.md): the live triage fleet onto main and the API ledger,
   planned for 2026-11-14.
+- [Pipeline v1 plan](pipeline-v1-plan.md): cases, policy and the first write in shadow (ADR-0005, ADR-0006).
 - [Replay entry point](replay-entry-point.md): the versioned module evaluation projects call instead
   of patching internals (ADR-0013), agreed.
 
