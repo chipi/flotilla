@@ -96,6 +96,8 @@ func TestPermissionTable(t *testing.T) {
 		{ActRead, "GET", "/v1/holds", ""},
 		{ActHold, "POST", "/v1/holds", `{"scope":"host:mini","for":"1h","reason":"t"}`},
 		{ActUnhold, "POST", "/v1/holds/1/lift", `{"reason":"t"}`},
+		{ActRead, "GET", "/v1/actions", ""},
+		{ActAutonomy, "POST", "/v1/actions/backup.rerun_observability/autonomy", `{"autonomy":"shadow"}`},
 	}
 	for _, role := range []string{RoleWorker, RoleAgent, RoleViewer, RoleOperator, RoleAdmin} {
 		for _, q := range reqs {

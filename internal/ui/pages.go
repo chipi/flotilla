@@ -214,13 +214,30 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 	http.NotFound(w, r)
 }
 
+type autonomyData struct {
+	Fleets  []fleetView
+	Actions []api.ActionStatus
+}
+
 func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
 	fs, err := u.fleets(r)
 	if err != nil {
 		http.Error(w, "status failed", 500)
 		return
 	}
-	u.render(w, "autonomy.html", 200, u.pageFor(s, "Autonomy", "Autonomy", r, fs))
+	as, err := u.API.Actions(r.Context())
+	if err != nil {
+		http.Error(w, "actions failed", 500)
+		return
+	}
+	u.render(w, "autonomy.html", 200, u.pageFor(s, "Autonomy", "Autonomy", r, autonomyData{Fleets: fs, Actions: as}))
+}
+
+// actionAutonomy promotes or demotes an action from the Autonomy page: the same rules as the API's.
+func (u *Server) actionAutonomy(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+	name, level := r.PathValue("name"), r.PostFormValue("autonomy")
+	err := u.API.SetActionAutonomy(r.Context(), caller(s), "ui", name, level, r.PostFormValue("reason"))
+	done(w, r, "/autonomy", err, name+" is now "+level+".")
 }
 
 // routineAction is run, pause, resume or autonomy on a routine, from a form.

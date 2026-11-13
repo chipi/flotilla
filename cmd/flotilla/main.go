@@ -170,6 +170,8 @@ func main() {
 		caseCmd(args, n)
 	case "hold":
 		holdCmd(args, reason)
+	case "action":
+		actionCmd(args, reason)
 	case "user":
 		userCmd(args, role)
 	default:
@@ -247,6 +249,29 @@ func holdCmd(args []string, reason string) {
 	}
 }
 
+// actionCmd is `flotilla action list | action autonomy NAME LEVEL [--reason R]` (ADR-0008): an action's
+// own autonomy, promoted one step at a time on its record.
+func actionCmd(args []string, reason string) {
+	need(args, 1, `action list | action autonomy NAME shadow|propose|auto [--reason "..."]`)
+	switch args[0] {
+	case "list":
+		var out struct{ Actions []map[string]any }
+		get("/v1/actions", &out)
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "ACTION\tAUTONOMY\tMAX\tPLANS\tSHADOW WOULD BE\tVERIFIED\tFAILED")
+		for _, a := range out.Actions {
+			rec, _ := a["record"].(map[string]any)
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v\n", a["name"], a["autonomy"], a["max"], rec["plans"], rec["would"], rec["verified"], rec["failed"])
+		}
+		w.Flush()
+	case "autonomy":
+		need(args, 3, `action autonomy NAME shadow|propose|auto [--reason "..."]`)
+		post("/v1/actions/"+args[1]+"/autonomy", map[string]string{"autonomy": args[2], "reason": reason})
+	default:
+		usage()
+	}
+}
+
 // userCmd is `flotilla user …` (ADR-0014). A new or rotated token is printed once.
 func userCmd(args []string, role string) {
 	need(args, 1, "user add|list|role|rotate|revoke …")
@@ -294,7 +319,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

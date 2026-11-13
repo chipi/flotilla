@@ -126,6 +126,8 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("GET /v1/events", s.auth(ActRead, s.events))
 	m.Handle("GET /v1/cases", s.auth(ActRead, s.cases))
 	m.Handle("GET /v1/cases/{id}", s.auth(ActRead, s.caseShow))
+	m.Handle("GET /v1/actions", s.auth(ActRead, s.actionsList))
+	m.Handle("POST /v1/actions/{name}/autonomy", s.auth(ActAutonomy, s.actionAutonomy))
 	m.Handle("GET /v1/holds", s.auth(ActRead, s.holds))
 	m.Handle("POST /v1/holds", s.auth(ActHold, s.holdAdd))
 	m.Handle("POST /v1/holds/{id}/lift", s.auth(ActUnhold, s.holdLift))

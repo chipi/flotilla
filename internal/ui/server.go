@@ -67,6 +67,7 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("GET /fleets/{fleet}", u.session(u.fleetPage))
 	m.Handle("POST /routines/{fleet}/{routine}/{action}", u.session(u.routineAction))
 	m.Handle("POST /fleets/{fleet}/{action}", u.session(u.fleetAction))
+	m.Handle("POST /actions/{name}/autonomy", u.session(u.actionAutonomy))
 	m.Handle("POST /freeze", u.session(u.freezeAction(true)))
 	m.Handle("POST /unfreeze", u.session(u.freezeAction(false)))
 	m.Handle("GET /autonomy", u.session(u.autonomyPage))

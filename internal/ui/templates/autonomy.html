@@ -9,7 +9,7 @@
     <table class="data">
       <thead><tr><th>Routine</th><th>Runs at</th><th>Set</th><th>Spec default</th><th>Cap</th><th>Fleet</th></tr></thead>
       <tbody>
-        {{range .Data}}{{$f := .}}{{range .Routines}}<tr>
+        {{range .Data.Fleets}}{{$f := .}}{{range .Routines}}<tr>
           <td data-label="Routine"><a class="exact" href="/fleets/{{.Fleet}}">{{.ID}}</a></td>
           <td data-label="Runs at"><span class="{{chip .Autonomy}}">{{.Autonomy}}</span></td>
           <td data-label="Set">{{.AutonomySet}}</td>
@@ -17,6 +17,38 @@
           <td data-label="Cap">{{if .MaxAutonomy}}{{.MaxAutonomy}}{{else}}none{{end}}</td>
           <td data-label="Fleet">{{if $f.Stopped}}<span class="chip chip--stop">STOPped</span>{{else}}running{{end}}</td>
         </tr>{{end}}{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
+  <section aria-labelledby="actions-h">
+    <h2 id="actions-h">Actions</h2>
+    <p class="meta">An action's own autonomy is earned on its record: from shadow (its plans recorded) to propose (it asks you) to auto, one step at a time, promoted only by an operator or an admin. What happens is the lowest of the action's, the routine's and the host's.</p>
+  </section>
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th>Action</th><th>Autonomy</th><th>Record</th><th>For</th>{{if $act}}<th>Change</th>{{end}}</tr></thead>
+      <tbody>
+        {{range .Data.Actions}}<tr>
+          <td data-label="Action" class="exact">{{.Name}}</td>
+          <td data-label="Autonomy"><span class="{{chip .Autonomy}}">{{.Autonomy}}</span> <span class="meta">at most {{.Max}}</span></td>
+          <td data-label="Record">plans {{.Record.Plans}}{{range $k, $v := .Record.Would}} · would be {{$k}}: {{$v}}{{end}} · verified {{.Record.Verified}} · failed {{.Record.Failed}}</td>
+          <td data-label="For" class="exact">{{range .ForKinds}}{{.}} {{end}}</td>
+          {{if $act}}<td data-label="Change" class="stack">
+            <form method="post" action="/actions/{{.Name}}/autonomy" class="form-row">
+              {{template "csrf" $csrf}}
+              <label class="field">Autonomy
+                <select name="autonomy">
+                  <option value="shadow"{{if eq .Autonomy "shadow"}} selected{{end}}>shadow</option>
+                  <option value="propose"{{if eq .Autonomy "propose"}} selected{{end}}>propose</option>
+                  <option value="auto"{{if eq .Autonomy "auto"}} selected{{end}}>auto</option>
+                </select>
+              </label>
+              <label class="field">Why, if it promotes it<input name="reason"></label>
+              <button class="btn" type="submit">Set</button>
+            </form>
+          </td>{{end}}
+        </tr>{{else}}<tr><td colspan="5">No actions are declared.</td></tr>{{end}}
       </tbody>
     </table>
   </div>

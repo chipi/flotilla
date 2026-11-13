@@ -130,3 +130,11 @@ promotion to propose).
   the e2e: RFC-0004 §3.5 matches a new detection only against
   open cases and dismissed ones, so while the backup stays over 20h every monitor run after a shadow
   close opens a new case (about 24 a day, not RFC-0004 §10's "daily shadow cases").
+- **Promoting an action** (before any plan above shadow): built 2026-11-13. `flotilla action list`,
+  `flotilla action autonomy NAME LEVEL --reason`, `GET /v1/actions`, `POST /v1/actions/{name}/autonomy`,
+  and the Actions table on the Autonomy page (a form for operators and admins). One step up at a time,
+  with a reason, by an operator or an admin; down any number of steps without one;
+  `reversible: no` at most propose. The record shown: plans, what shadow plans would have been,
+  verified, failed. 5 mutants
+  killed. **Not yet:** automatic demotion (failed or unknown → propose; rejected proposals → shadow),
+  which needs executions and approvals (the host agent, 8b).

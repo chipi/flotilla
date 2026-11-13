@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -46,7 +47,11 @@ func setup(t *testing.T) *fixture {
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
 	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	a := &api.Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Log: log,
+	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &api.Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Log: log, Registry: reg,
 		Callers: append([]api.Caller{{Name: "operator", Role: api.RoleOperator, TokenSHA256: api.HashToken(opTok)},
 			{Name: "claude-homelab", Role: api.RoleAgent, TokenSHA256: api.HashToken(agentTok)}},
 			api.WorkerCallers(map[string]string{"triage": workerTok})...)}
