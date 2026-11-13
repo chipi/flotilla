@@ -194,3 +194,27 @@ VPS.
   `backup_newer_than_execution`), so a done case waits in checking; no timer for checking yet. Not
   in the e2e: an execution end to end (no case reaches executing on a host in v1 without approvals,
   8b); the e2e checks the key is made, delivered and loaded.
+- **H8, install over SSH:** built 2026-11-13. `deploy/host/install.sh install|upgrade|remove
+  SSH_TARGET`, on the operator's machine: builds `flotilla-host` from `--ref` in a temporary worktree
+  (the pinned golang image, `GOOS`/`GOARCH`), stages it with the host's config, the root certificate,
+  `agent.env` and the enrolment token (mode 600), copies the folder over SSH and runs
+  `deploy/host/remote-install.sh` under `sudo` with a terminal (sudo may ask); both ends delete the
+  folder when it ends. `remote-install.sh` (bash 3.2, for macOS): the `_flotilla` user (macOS: a hidden
+  account, a free id between 300 and 399, shell `/usr/bin/false`; Linux: a system user, `nologin`);
+  the binary, config and root certificate root's; the state the agent's (700); the audit log the
+  agent's (600) in a root-owned directory and append-only (decided: `sappnd` on macOS, cleared only
+  in single-user mode; `chattr +a` on Linux where the kernel allows it, else a warning); the sudoers
+  lines from `flotilla-host sudoers`, checked with `visudo -cf` before they go in and `visudo -c`
+  after; enrolment as `_flotilla` (the token deleted at once, whatever happens); on macOS, whether
+  `_flotilla` can read the backup job's state with `launchctl print` (the H3 question, reported);
+  the service (a launchd daemon running as `_flotilla`, or a systemd unit). `upgrade` replaces the
+  binary (and the config and its sudoers when given); `remove` stops the service and removes all
+  but the audit log. Revoking needs no access to the host (`flotilla host revoke`). The e2e now
+  installs the agent with `remote-install.sh`, as root, in a Debian container with sudo: owners and
+  modes, the one sudoers rule (`/bin/true ""`), the audit log append-only (the agent's user appends,
+  cannot truncate), the token gone, the installed agent connects as `_flotilla`, and `remove`
+  leaves only the audit log. Its first run failed two checks of mine: the generated sudoers file
+  carries a two-line header, which the rule count and an exact-content check did not expect; both
+  now read the rules only. Not tested: the SSH wrapper itself (`install.sh`) and the macOS path
+  (dscl, `sappnd`, launchd, `plutil`): they run for the first time on the mini, on the operator's
+  go.

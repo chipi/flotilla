@@ -368,35 +368,58 @@ N="$(agent case list --all 2>&1 | grep -c failed_backup)"
   && ok "after the restart the monitor's repeat went into the incident's case (one case, signal.absorbed)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
 
-echo "== the host agent (ADR-0006): enrol, connect, heartbeat, a flotillad restart, revocation"
+echo "== the host agent (ADR-0006): installed by deploy/host/remote-install.sh; enrol, connect, heartbeat, a flotillad restart, revocation, remove"
 mkdir -p "$WORK/host"
 cp "$WORK/config/host-ca/root.crt" "$WORK/host/root.crt"
+# one harmless unprivileged action and one privileged (sudo /bin/true), so the sudoers path runs too
 cat > "$WORK/host/config.json" <<EOF
 {"host": "e2e-host", "user": "_flotilla", "ceiling": "propose",
  "signing_keys": {"e2e1": "$SIGNPUB"},
- "actions": {"host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"}}}
+ "actions": {
+   "host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"},
+   "host.true_root": {"argv": ["/usr/bin/sudo", "-n", "/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"}}}
 EOF
+printf 'FLOTILLA_ADDR=flotillad:8487\nFLOTILLA_SERVER_NAME=flotillad\nFLOTILLA_HEARTBEAT=2s\n' > "$WORK/host/agent.env"
 chmod 644 "$WORK/host/"*
-host_agent() {  # host_agent <docker run options...> -- <flotilla-host args...>
-  local o=(); while [ "$1" != -- ]; do o+=("$1"); shift; done; shift
-  $D run --label $LABEL --network ${P}_flotilla --memory 128m -v flotilla-e2e-host-state:/var/db/flotilla-host \
-    -v flotilla-e2e-host-audit:/var/log/flotilla-host -v "$WORK/host:/etc/flotilla-host:ro" "${o[@]}" "$HOST_AGENT_IMAGE" \
-    "$@" -addr flotillad:8487 -server-name flotillad -heartbeat 2s
-}
+# the host: a root shell, as the operator's sudo over SSH is; the audit log's directory on a volume, with
+# the one capability chattr +a needs (the container's own filesystem does not take the flag)
+$D run -d --name flotilla-e2e-host --label $LABEL --network ${P}_flotilla --memory 256m --cap-add LINUX_IMMUTABLE \
+  -v flotilla-e2e-host-audit:/var/log/flotilla-host -v "$WORK/host:/stage-src:ro" "$HOST_AGENT_IMAGE" >/dev/null || bad "the stand-in host did not start"
+hx() { $D exec "$@"; }
+hostlog() { $D exec flotilla-e2e-host cat /var/log/flotilla-host/agent.log 2>/dev/null; }
+hseen() { for _ in $(seq 1 30); do hostlog | grep -q "$1" && return 0; sleep 1; done; return 1; }
 HT="$(cli host enrolment e2e-host 2>&1 | sed -n 's/.*"token":"\(fle_[0-9a-f]*\)".*/\1/p')"
 [ ${#HT} = 68 ] && ok "an operator minted an enrolment token" || bad "host enrolment: $(cli host enrolment e2e-host 2>&1)"
-OUT="$(printf '%s\n' "$HT" | host_agent --rm -i -- enrol 2>&1)"
-echo "$OUT" | grep -q "^enrolled e2e-host with flotillad:8487" && ok "the agent enrolled (key made on the host, token on stdin)" || bad "enrol: $OUT"
-OUT="$(printf '%s\n' "$HT" | host_agent --rm -i -- enrol 2>&1)"
+# stage as install.sh does: the files, the binary, the token (mode 600)
+hx flotilla-e2e-host sh -c 'mkdir -m 700 /stage && cp /stage-src/* /stage/ && cp /opt/flotilla-host /stage/' \
+  && cp "$ROOT/deploy/host/remote-install.sh" "$WORK/host-remote-install.sh" && $D cp "$WORK/host-remote-install.sh" flotilla-e2e-host:/stage/remote-install.sh >/dev/null \
+  && printf '%s\n' "$HT" | hx -i flotilla-e2e-host sh -c 'umask 077 && cat > /stage/token' || bad "staging"
+OUT="$(hx flotilla-e2e-host bash /stage/remote-install.sh /stage install --no-service 2>&1)"; echo "$OUT"
+echo "$OUT" | grep -q "^INSTALL PASS" && echo "$OUT" | grep -q "sudoers: 1 line(s) in /etc/sudoers.d/flotilla-host, checked with visudo" \
+  && ok "remote-install.sh: user, files, sudoers (checked with visudo), enrolled" || bad "install: $OUT"
+hx flotilla-e2e-host test ! -e /stage/token && ok "the token is gone from the staging folder" || bad "the token was left on the host"
+M="$(hx flotilla-e2e-host sh -c 'stat -c "%n %a %U" /usr/local/libexec/flotilla-host/flotilla-host /etc/flotilla-host/config.json /etc/flotilla-host/root.crt /var/db/flotilla-host /var/db/flotilla-host/key.pem /var/log/flotilla-host /var/log/flotilla-host/audit.jsonl /etc/sudoers.d/flotilla-host' 2>&1 | tr '\n' ';')"
+[ "$M" = "/usr/local/libexec/flotilla-host/flotilla-host 755 root;/etc/flotilla-host/config.json 644 root;/etc/flotilla-host/root.crt 644 root;/var/db/flotilla-host 700 _flotilla;/var/db/flotilla-host/key.pem 600 _flotilla;/var/log/flotilla-host 755 root;/var/log/flotilla-host/audit.jsonl 600 _flotilla;/etc/sudoers.d/flotilla-host 440 root;" ] \
+  && ok "owners and modes: binary and config root's, state and key the agent's (700/600), audit log the agent's in a root-owned directory, sudoers 440" || bad "owners and modes: $M"
+S="$(hx flotilla-e2e-host grep -v '^#' /etc/sudoers.d/flotilla-host 2>&1)"   # the rules, below the generated header
+[ "$S" = '_flotilla ALL=(root) NOPASSWD: /bin/true ""  # host.true_root' ] && ok "the sudoers line: exactly the privileged action, no arguments allowed ($S)" || bad "sudoers: $S"
+hx flotilla-e2e-host sh -c 'lsattr /var/log/flotilla-host/audit.jsonl' 2>&1 | grep -q '^-*a' \
+  && hx flotilla-e2e-host sudo -u _flotilla sh -c 'echo x >> /var/log/flotilla-host/audit.jsonl' 2>/dev/null \
+  && ! hx flotilla-e2e-host sudo -u _flotilla sh -c ': > /var/log/flotilla-host/audit.jsonl' 2>/dev/null \
+  && ok "the audit log is append-only (chattr +a): the agent's user appends, cannot truncate" || bad "append-only: $(hx flotilla-e2e-host lsattr /var/log/flotilla-host/audit.jsonl 2>&1)"
+# the line appended above is not an audit entry: the agent would refuse that log, as it should; start
+# its log over (as root, which clears the flag first) before the agent runs
+hx flotilla-e2e-host sh -c 'chattr -a /var/log/flotilla-host/audit.jsonl && : > /var/log/flotilla-host/audit.jsonl && chattr +a /var/log/flotilla-host/audit.jsonl'
+OUT="$(printf '%s\n' "$HT" | hx -i flotilla-e2e-host sudo -u _flotilla /usr/local/libexec/flotilla-host/flotilla-host enrol -config /etc/flotilla-host/config.json \
+  -state /var/db/flotilla-host -audit /var/log/flotilla-host/audit.jsonl -root /etc/flotilla-host/root.crt -addr flotillad:8487 -server-name flotillad 2>&1)"
 echo "$OUT" | grep -q "enrolment refused" && ok "the same token a second time is refused" || bad "a used token: $OUT"
-K="$($D run --rm --entrypoint sh -v flotilla-e2e-host-state:/s "$HOST_AGENT_IMAGE" -c 'stat -c "%a %U" /s/key.pem' 2>&1)"
-[ "$K" = "600 flotilla-host" ] && ok "the host's key is mode 600, the agent's user's ($K)" || bad "key file: $K"
 cli host list | grep -q "^e2e-host  *no  *- .*[0-9]T" && ok "host list shows it enrolled, not yet connected, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
 $D logs flotillad 2>&1 | grep -q '"msg":"host executions are signed".*"key_id":"e2e1"' \
   && ok "flotillad loaded the execution-signing key from its secrets volume (secrets.sh)" || bad "no signing key at start: $($D logs flotillad 2>&1 | grep -i 'sign' | tail -2)"
-host_agent -d --name flotilla-e2e-host -- run >/dev/null
-seen flotilla-e2e-host '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected".*"host":"e2e-host"' \
-  && ok "the agent connected; flotillad authenticated it as e2e-host" || bad "connect: $($D logs flotilla-e2e-host 2>&1 | tail -3)"
+# the service: what launchd or systemd would run, as the agent's user (the container has neither)
+hx -d flotilla-e2e-host sh -c 'sudo -u _flotilla /usr/local/libexec/flotilla-host/flotilla-host run -config /etc/flotilla-host/config.json -state /var/db/flotilla-host -audit /var/log/flotilla-host/audit.jsonl -root /etc/flotilla-host/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s 2>>/var/log/flotilla-host/agent.log'
+hseen '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected".*"host":"e2e-host"' \
+  && ok "the installed agent connected as _flotilla; flotillad authenticated it as e2e-host" || bad "connect: $(hostlog | tail -3)"
 sleep 8   # four heartbeats at 2s; silent for three, flotillad would drop it
 ! $D logs flotillad 2>&1 | grep -q '"msg":"host disconnected"' && ok "heartbeats keep the connection (8s, flotillad drops after 6s of silence)" \
   || bad "the connection dropped: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
@@ -407,17 +430,21 @@ echo "$HL" | grep -q "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mÂ
 ! $D logs flotillad 2>&1 | grep -q '"msg":"host alert"' && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
 $D restart flotillad >/dev/null
 for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
-for i in $(seq 1 30); do [ "$($D logs flotilla-e2e-host 2>&1 | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && break; sleep 1; done
-[ "$($D logs flotilla-e2e-host 2>&1 | grep -c '"msg":"connected to flotillad"')" -ge 2 ] \
-  && $D logs flotilla-e2e-host 2>&1 | grep -q '"msg":"connection to flotillad lost"' \
-  && ok "after a flotillad restart the agent lost the connection and reconnected by itself" || bad "reconnect: $($D logs flotilla-e2e-host 2>&1 | tail -4)"
+for i in $(seq 1 30); do [ "$(hostlog | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && break; sleep 1; done
+[ "$(hostlog | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && hostlog | grep -q '"msg":"connection to flotillad lost"' \
+  && ok "after a flotillad restart the agent lost the connection and reconnected by itself" || bad "reconnect: $(hostlog | tail -4)"
 cli host revoke e2e-host >/dev/null
 seen flotillad '"msg":"host cut off".*"host":"e2e-host"' && ok "revoked: flotillad cut the connected host off at its next heartbeat" \
   || bad "revoke: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
 sleep 3
-seen flotillad '"msg":"host endpoint: refused"' && $D logs flotilla-e2e-host 2>&1 | grep -q 'flotillad refused: refused' \
-  && ok "its reconnects are refused" || bad "after revoke: $($D logs flotilla-e2e-host 2>&1 | tail -3)"
+seen flotillad '"msg":"host endpoint: refused"' && hostlog | grep -q 'flotillad refused: refused' \
+  && ok "its reconnects are refused" || bad "after revoke: $(hostlog | tail -3)"
 cli host list | grep -q "^e2e-host  *no .* -  *[0-9-]*T[0-9:.]*Z " && ok "host list shows it revoked, not connected, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
+hx flotilla-e2e-host sh -c 'pkill -u _flotilla flotilla-host; true'
+OUT="$(hx flotilla-e2e-host bash /stage/remote-install.sh /stage remove 2>&1)"
+R="$(hx flotilla-e2e-host sh -c 'ls -d /usr/local/libexec/flotilla-host /etc/flotilla-host /var/db/flotilla-host /etc/sudoers.d/flotilla-host /var/log/flotilla-host/audit.jsonl 2>/dev/null' | tr '\n' ' ')"
+echo "$OUT" | grep -q "^REMOVE PASS" && [ "$R" = "/var/log/flotilla-host/audit.jsonl " ] \
+  && ok "remove: binary, config, state and sudoers gone; the audit log stays" || bad "remove: $OUT / left: $R"
 $D rm -f flotilla-e2e-host >/dev/null
 
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
