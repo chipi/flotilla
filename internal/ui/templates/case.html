@@ -1,0 +1,47 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page page--narrow">
+  {{with .Data}}{{with .Case}}
+  <section>
+    <p class="meta"><a href="/cases">Cases</a> / <span class="exact">{{.ID}}</span></p>
+    <h1><span class="exact">{{.Kind}}</span> on <span class="exact">{{.Target}}</span> <span class="{{chip .Status}}">{{.Status}}</span></h1>
+  </section>
+  <dl class="facts card">
+    <div><dt>Status</dt><dd>{{.Status}}{{if .Resolution}}: {{.Resolution}}{{end}}</dd></div>
+    <div><dt>Since</dt><dd>{{when .StatusAt}}</dd></div>
+    <div><dt>Opened</dt><dd>{{when .OpenedAt}}</dd></div>
+    <div><dt>Held by</dt><dd>{{if .Holder}}<span class="exact">{{.Holder}}</span>{{else}}nobody{{end}}</dd></div>
+    <div><dt>Project</dt><dd>{{if .Project}}{{.Project}}{{else}}–{{end}}</dd></div>
+    <div><dt>Key</dt><dd class="exact">{{.CanonicalKey}}</dd></div>
+  </dl>
+  {{end}}
+  <section class="card" aria-labelledby="plans-h">
+    <h2 id="plans-h">Plans</h2>
+    {{range .Plans}}
+    <div class="plan">
+      <p><span class="exact">{{.Action}}</span>{{range $k, $v := .Params}} <span class="exact">{{$k}}={{$v}}</span>{{end}}
+        <span class="{{chip .Outcome}}">{{.Outcome}}</span>
+        {{if .Would}}<span class="meta">would have been</span> <span class="{{chip .Would}}">{{.Would}}</span>{{end}}</p>
+      <dl class="facts">
+        <div><dt>Decided</dt><dd>{{when .DecidedAt}}</dd></div>
+        <div><dt>Autonomy</dt><dd>{{.Autonomy}}</dd></div>
+        <div><dt>Run</dt><dd><a class="exact" href="/runs/{{.RunID}}">{{short .RunID 40}}</a></dd></div>
+        <div><dt>Plan hash</dt><dd class="exact">{{short .PlanHash 16}}</dd></div>
+      </dl>
+      <ol class="reasons">{{range .Reasons}}<li>{{.}}</li>{{end}}</ol>
+    </div>
+    {{else}}<p class="meta">No plan yet.</p>{{end}}
+  </section>
+  <section class="card" aria-labelledby="timeline-h">
+    <h2 id="timeline-h">Timeline</h2>
+    <ol class="timeline">
+      {{range .Events}}<li>
+        <p><span class="meta">{{when .At}}</span> <span class="exact">{{.Kind}}</span>{{if .To}} <span class="meta">{{if .From}}{{.From}} → {{end}}{{.To}}</span>{{end}}</p>
+        <p class="meta">{{.Actor}}{{if .By}} · as {{.By}}{{end}}</p>
+        {{if .Detail}}<p class="timeline__detail">{{.Detail}}</p>{{end}}
+      </li>{{end}}
+    </ol>
+  </section>
+  {{end}}
+</main>
+{{template "foot" .}}

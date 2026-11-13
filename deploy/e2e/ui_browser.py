@@ -57,11 +57,22 @@ with sync_playwright() as pw:
     check(card.locator(".chip", has_text="paused").count() == 0 and page.locator(".flash--ok").count() == 1,
           "resume with a reason from the fleet page")
 
-    for path in ["/", "/runs", "/fleets", "/fleets/platform", "/autonomy", "/history", "/users"]:
+    # the chain's case (run.sh's cases section ran first): its page, reached from the list
+    page.goto(BASE + "/cases?all=1")
+    # the closed one: flotillad restarts during the e2e and its monitor runs again, opening a newer case
+    link = page.locator("tr", has_text="shadow_plan_recorded").locator("a[href^='/cases/case-']").first
+    case_path = link.get_attribute("href") if link.count() else ""
+    check(case_path != "", "the cases page lists the chain's case")
+    for path in ["/", "/runs", "/fleets", "/fleets/platform", "/autonomy", "/history", "/users", "/cases?all=1"] + ([case_path] if case_path else []):
         page.goto(BASE + path)
         page.evaluate("document.fonts.ready.then(() => 1)")
         wide = page.evaluate("document.documentElement.scrollWidth")
         check(wide <= 390, f"{path} at 390px: no sideways scroll ({wide})")
+    if case_path:
+        page.goto(BASE + case_path)
+        body = page.content()
+        missing = [w for w in ("backup.rerun_observability", "would have been", "shadow_plan_recorded") if w not in body]
+        check(not missing, f"the case page shows the plan, what it would have been, and the close (missing: {missing})")
     faces = page.evaluate("[...document.fonts].filter(f => f.status === 'loaded').map(f => f.family.replace(/\"/g, ''))")
     check("Inter" in faces and "JetBrains Mono" in faces, f"the self-hosted fonts load ({sorted(set(faces))})")
     check(not problems, f"no console errors or CSP violations ({problems[:3]})")

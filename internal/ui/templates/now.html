@@ -5,7 +5,7 @@
   <section>
     <p class="meta">Signed in as {{.User}} ({{.Role}})</p>
     {{with .Data}}
-    <h1>{{if or $frozen .Wrong .Failed .Unhealthy}}Something needs a look.{{else}}Nothing is wrong.{{end}}</h1>
+    <h1>{{if or $frozen .NeedYou .Wrong .Failed .Unhealthy}}Something needs a look.{{else}}Nothing is wrong.{{end}}</h1>
     {{end}}
   </section>
   {{if .CanAct}}
@@ -28,6 +28,18 @@
   </section>
   {{end}}
   {{with .Data}}
+  {{if .NeedYou}}
+  <section class="card" aria-labelledby="needyou-h">
+    <h2 id="needyou-h">Cases that need you</h2>
+    <ul class="list">
+      {{range .NeedYou}}<li>
+        <a href="/cases/{{.ID}}" class="exact">{{.Kind}} on {{.Target}}</a>
+        <span class="{{chip .Status}}">{{.Status}}</span>
+        <span class="meta">{{when .StatusAt}}</span>
+      </li>{{end}}
+    </ul>
+  </section>
+  {{end}}
   <section class="card" aria-labelledby="wrong-h">
     <h2 id="wrong-h">Wrong right now</h2>
     {{if or .Wrong .Unhealthy}}

@@ -1,0 +1,26 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}
+  <section>
+    <h1>Cases</h1>
+    <p class="meta">Every problem is a case: detected, handed to the routine that acts on its kind, planned, decided by policy. {{if .All}}All cases, the most recently changed first · <a href="/cases">open ones only</a>{{else}}Open cases, the most recently changed first · <a href="/cases?all=1">closed ones too</a>{{end}}</p>
+  </section>
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th>Case</th><th>Kind</th><th>Target</th><th>Status</th><th>Since</th><th>Held by</th></tr></thead>
+      <tbody>
+        {{range .Cases}}<tr>
+          <td data-label="Case"><a class="exact" href="/cases/{{.ID}}">{{.ID}}</a></td>
+          <td data-label="Kind" class="exact">{{.Kind}}</td>
+          <td data-label="Target" class="exact">{{.Target}}</td>
+          <td data-label="Status"><span class="{{chip .Status}}">{{.Status}}</span>{{if .Resolution}} <span class="meta">{{.Resolution}}</span>{{end}}</td>
+          <td data-label="Since">{{when .StatusAt}}</td>
+          <td data-label="Held by">{{if .Holder}}<span class="exact">{{.Holder}}</span>{{else}}–{{end}}</td>
+        </tr>{{else}}<tr><td colspan="6">{{if .All}}No cases yet.{{else}}No open cases.{{end}}</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</main>
+{{template "foot" .}}

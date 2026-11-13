@@ -59,6 +59,8 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("POST /signout", u.session(u.signout))
 	m.Handle("POST /signout-everywhere", u.session(u.signoutEverywhere))
 	m.Handle("GET /{$}", u.session(u.now))
+	m.Handle("GET /cases", u.session(u.casesPage))
+	m.Handle("GET /cases/{id}", u.session(u.casePage))
 	m.Handle("GET /runs", u.session(u.runsPage))
 	m.Handle("GET /runs/{id}", u.session(u.runPage))
 	m.Handle("GET /fleets", u.session(u.fleetsPage))

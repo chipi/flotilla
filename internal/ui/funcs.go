@@ -14,9 +14,9 @@ var funcs = template.FuncMap{
 		switch status {
 		case "ok", "file", "auto", "verified":
 			return "chip chip--ok"
-		case "running", "skipped", "propose", "escalate", "waiting":
+		case "running", "skipped", "propose", "escalate", "waiting", "defer", "awaiting_approval", "executing", "checking":
 			return "chip chip--wait"
-		case "error", "timeout", "interrupted", "failed":
+		case "error", "timeout", "interrupted", "failed", "escalated", "refuse":
 			return "chip chip--stop"
 		}
 		return "chip chip--neutral"

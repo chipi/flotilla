@@ -44,6 +44,21 @@ func TestSnapshots(t *testing.T) {
 	}
 	_ = f.st.SetControl(ctx, "triage/cycle", "paused", "1", "user:ada", "api")
 	_ = time.Now
+	// v1's shadow chain on one case, and an escalated one (Now lists it)
+	k := store.Key{Kind: "target", Value: "failed_backup/host:mini"}
+	cid, _, _ := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Project: "ops", Keys: []store.Key{k}, Canonical: k},
+		"ops/backup-monitor", "run ops-backup-monitor-20261113T101500-a1b2c3: backup 20.4h old, above 20h")
+	_ = f.st.MoveCase(ctx, cid, "handed_over", "detector", "", "ops/backup-monitor", "a code detector with a known kind")
+	_ = f.st.MoveCase(ctx, cid, "planned", "act", "", "ops/rerun-backup",
+		"run ops-rerun-backup-20261113T101515-d4e5f6: backup_age_above(20h): holds (age 20.4h); not_running: the host's to check")
+	_, _ = f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: cid, RunID: "ops-rerun-backup-20261113T101515-d4e5f6", Action: "backup.rerun_observability",
+		Params: map[string]string{"host": "mini"}, PlanHash: "9f2c41d0b7a3e8c15d6f20a4b9e7c3d1", Outcome: "shadow", Autonomy: "shadow", Would: "propose",
+		Reasons: []string{"registry: backup.rerun_observability for failed_backup on host:mini", "autonomy: routine shadow, action shadow, host ceiling propose"}},
+		"closed", "shadow_plan_recorded", "host:mini", false)
+	k2 := store.Key{Kind: "target", Value: "failed_backup/host:dgx-llm-1"}
+	esc, _, _ := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:dgx-llm-1", Keys: []store.Key{k2}, Canonical: k2}, "ops/backup-monitor", "")
+	_ = f.st.MoveCase(ctx, esc, "handed_over", "detector", "", "ops/backup-monitor", "")
+	_ = f.st.MoveCase(ctx, esc, "escalated", "timer", "", "flotillad", "handed over since 2026-11-12T10:15:00Z, longer than 24h0m0s")
 	op := f.addOperator()
 	ck := f.signin(f.admin)
 	ock := f.signin(op)
@@ -51,7 +66,8 @@ func TestSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	pages := map[string]string{"now": "/", "runs": "/runs", "run": "/runs/triage-cycle-20261113100", "fleets": "/fleets",
-		"fleet": "/fleets/triage", "autonomy": "/autonomy", "history": "/history", "users": "/users", "signin": "/signin"}
+		"fleet": "/fleets/triage", "autonomy": "/autonomy", "history": "/history", "users": "/users", "signin": "/signin",
+		"cases": "/cases?all=1", "case": "/cases/" + cid}
 	snap := func(name, p, cookie string) {
 		resp, body := f.do("GET", p, cookie, nil, nil)
 		if resp.StatusCode != 200 {

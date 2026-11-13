@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/store"
 )
 
@@ -29,7 +31,7 @@ type navGroup struct {
 // nav is the four groups (DESIGN.md: Decide, Watch, Govern, Record) with the pages that exist today.
 func nav(active, role string) []navGroup {
 	groups := []navGroup{
-		{Label: "Decide", Pages: []navPage{{Label: "Now", Href: "/"}}},
+		{Label: "Decide", Pages: []navPage{{Label: "Now", Href: "/"}, {Label: "Cases", Href: "/cases"}}},
 		{Label: "Watch", Pages: []navPage{{Label: "Runs", Href: "/runs"}, {Label: "Fleets", Href: "/fleets"}}},
 		{Label: "Govern", Pages: []navPage{{Label: "Autonomy", Href: "/autonomy"}}},
 		{Label: "Record", Pages: []navPage{{Label: "History", Href: "/history"}}},
@@ -89,6 +91,7 @@ func safeBack(v, fallback string) string {
 }
 
 type nowData struct {
+	NeedYou   []store.Case // escalated, or awaiting an operator's approval
 	Wrong     []api.RoutineStatus
 	Fine      int
 	Failed    []store.Run
@@ -116,6 +119,14 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 		}
 	}
 	sort.Strings(d.Unhealthy)
+	for _, st := range []string{cases.Escalated, cases.AwaitingApproval} {
+		cs, err := u.API.Store.Cases(r.Context(), store.CaseFilter{Status: st, Limit: 50})
+		if err != nil {
+			http.Error(w, "cases failed", 500)
+			return
+		}
+		d.NeedYou = append(d.NeedYou, cs...)
+	}
 	runs, _ := u.API.Store.Runs(r.Context(), "", 200)
 	cut := u.API.Sched.Now().Add(-24 * time.Hour).Format(time.RFC3339)
 	for _, x := range runs {
@@ -262,6 +273,54 @@ func (u *Server) freezeAction(frozen bool) func(http.ResponseWriter, *http.Reque
 		}
 		done(w, r, "/", u.API.SetFrozen(r.Context(), caller(s), "ui", frozen, r.PostFormValue("reason")), ok)
 	}
+}
+
+type casesData struct {
+	All   bool
+	Cases []store.Case
+}
+
+// casesPage lists the open cases, the most recently changed first; all=1 shows closed ones too.
+func (u *Server) casesPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+	all := r.URL.Query().Get("all") == "1"
+	cs, err := u.API.Store.Cases(r.Context(), store.CaseFilter{Open: !all, Limit: 200})
+	if err != nil {
+		http.Error(w, "cases failed", 500)
+		return
+	}
+	u.render(w, "cases.html", 200, u.pageFor(s, "Cases", "Cases", r, casesData{All: all, Cases: cs}))
+}
+
+type caseData struct {
+	Case   store.Case
+	Events []store.CaseEvent
+	Plans  []store.PlanRecord
+}
+
+// casePage is one case's whole story (ADR-0005): its keys, its timeline, and each plan policy decided,
+// with every reason and, in shadow, what it would have done.
+func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+	ctx := r.Context()
+	c, err := u.API.Store.Case(ctx, r.PathValue("id"))
+	if errors.Is(err, store.ErrNoSuchCase) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
+	ev, err := u.API.Store.CaseEvents(ctx, c.ID)
+	if err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
+	plans, err := u.API.Store.Plans(ctx, c.ID)
+	if err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
+	u.render(w, "case.html", 200, u.pageFor(s, "Case "+c.ID, "Cases", r, caseData{Case: c, Events: ev, Plans: plans}))
 }
 
 type historyData struct {
