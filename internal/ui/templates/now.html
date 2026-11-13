@@ -1,0 +1,17 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  <section>
+    <p class="meta">Signed in as {{.User}} ({{.Role}})</p>
+    <h1>Now</h1>
+  </section>
+  <section class="card">
+    <h2>The pages come next</h2>
+    <p>Health, runs, fleets, history and autonomy arrive with the rest of slice 1 (ADR-0014).</p>
+    <form method="post" action="/signout-everywhere">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button class="btn" type="submit">Sign out everywhere</button>
+    </form>
+  </section>
+</main>
+{{template "foot" .}}

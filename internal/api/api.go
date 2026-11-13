@@ -151,8 +151,8 @@ func (s *Server) ledgerRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/ledger/import", s.auth(ActLedger, s.ledgerImport))
 }
 
-// whoIs resolves a bearer token: the callers file first, then the store's users. nil when unknown.
-func (s *Server) whoIs(ctx context.Context, tok string) (*Caller, error) {
+// WhoIs resolves a bearer token: the callers file first, then the store's users. nil when unknown.
+func (s *Server) WhoIs(ctx context.Context, tok string) (*Caller, error) {
 	got := HashToken(tok)
 	var who *Caller
 	for i := range s.Callers {
@@ -171,10 +171,10 @@ func (s *Server) whoIs(ctx context.Context, tok string) (*Caller, error) {
 	return &Caller{Name: "user:" + u.Name, Role: u.Role, User: true}, nil
 }
 
-// effectiveRole is the role the table is read with. The callers-file operator token is an operator only
+// EffectiveRole is the role the table is read with. The callers-file operator token is an operator only
 // while no admin exists (so an installation works before its first user); after that it is retired:
 // bootstrap and break-glass are the users endpoint's own check (users.go).
-func (s *Server) effectiveRole(ctx context.Context, c Caller) (string, error) {
+func (s *Server) EffectiveRole(ctx context.Context, c Caller) (string, error) {
 	if c.User || c.Role != RoleOperator {
 		return c.Role, nil
 	}
@@ -195,7 +195,7 @@ func (s *Server) auth(a Action, h func(http.ResponseWriter, *http.Request, Calle
 			writeJSON(w, 401, map[string]string{"error": "a bearer token is required"})
 			return
 		}
-		who, err := s.whoIs(r.Context(), tok)
+		who, err := s.WhoIs(r.Context(), tok)
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -204,7 +204,7 @@ func (s *Server) auth(a Action, h func(http.ResponseWriter, *http.Request, Calle
 			writeJSON(w, 401, map[string]string{"error": "unknown token"})
 			return
 		}
-		role, err := s.effectiveRole(r.Context(), *who)
+		role, err := s.EffectiveRole(r.Context(), *who)
 		if err != nil {
 			writeErr(w, err)
 			return

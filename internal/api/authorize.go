@@ -24,7 +24,7 @@ const (
 )
 
 // may is ADR-0014's table. A role missing from an action's set may not do it. The callers-file
-// operator is resolved before this table is read (Caller.effectiveRole): it is an operator, with the
+// operator is resolved before this table is read (Server.EffectiveRole): it is an operator, with the
 // bootstrap besides, only while no admin exists, and nothing after.
 var may = map[Action]map[string]bool{
 	ActRead:     {RoleAgent: true, RoleViewer: true, RoleOperator: true, RoleAdmin: true},

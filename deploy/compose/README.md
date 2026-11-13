@@ -192,6 +192,35 @@ code keeps the old header until the routine's next filing rewrites it, and `impo
 `ledger_sync.py pad` (the same `docker exec`, with the routine paused) before step 2; it rewrites the
 file with every column and the rows unchanged, and needs no store.
 
+## Users and the UI (ADR-0014)
+
+People sign in with their own token; agents and workers keep the callers file. On a new installation:
+
+1. Create the first admin, with the callers-file operator token the CLI inside flotillad uses:
+   `docker exec flotillad flotilla user add <name> --role admin`. The answer shows the token once;
+   keep it in a password manager. After that the operator token is retired, except for adding an admin
+   again (break-glass, recorded as `user.break-glass`).
+2. Use your own token from then on, in the UI, or with
+   `docker exec -e FLOTILLA_TOKEN=<token> flotillad flotilla …`. Loosening needs a reason:
+   `flotilla resume <routine> --reason "…"`, the same for `start`, and for `autonomy` when it
+   raises.
+3. Add people: `flotilla user add <name> --role admin|operator|viewer`; `user list`, `user role`,
+   `user rotate`, `user revoke`.
+
+The UI listens on `ui_listen` (for example `0.0.0.0:8486`) and answers only `ui_host` (the
+`flotilla.<tailnet>` name). Put both in `flotillad.yaml`. flotillad joins the `ui` network
+(`NET_UI`, default `flotilla_ui`), which is internal. The homelab's caddy-tailscale proxy joins that
+network as an external one and serves the node with `bind tailscale/flotilla` and
+`reverse_proxy flotillad:8486`. The proxy terminates TLS and plays no part in identity; Funnel is never
+on.
+
+The users step adds store schema step 5, and an older flotillad refuses a newer store. So before the
+first deploy with it:
+
+- run the new image read-only against a copy of the real store;
+- deploy with a store copy taken first;
+- to roll back, restore that copy, then deploy the previous tag.
+
 ## Deploy, roll back, operate
 
 ```sh

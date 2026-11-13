@@ -26,7 +26,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
   COMPOSE_PROFILES=candidate TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
-  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse
+  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" "$@"; }
 
@@ -66,6 +66,8 @@ EOF
 cat > "$WORK/config/flotillad.yaml" <<EOF
 listen: 127.0.0.1:8484
 worker_listen: 0.0.0.0:8485
+ui_listen: 0.0.0.0:8486
+ui_host: flotilla.e2e
 specs_dir: /opt/flotilla/fleets
 state_dir: /var/lib/flotilla
 environment: e2e
@@ -256,15 +258,33 @@ for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 [ "$(started flotilla-egress)" = "$E0" ] && [ "$(started flotilla-worker-triage)" = "$W0" ] \
   && ok "the proxy and the worker, whose config did not change, keep running" || bad "other services were recreated too"
 
+echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
+UA="$(cli user add ada --role admin 2>&1)"
+ADMIN="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
+[ ${#ADMIN} = 68 ] && ok "the first admin, with the operator token (a 256-bit token, shown once)" || bad "first admin: $UA"
+OUT="$(cli status 2>&1)"
+echo "$OUT" | grep -q "HTTP 403" && ok "after it, the operator token is retired" || bad "operator token after the first admin: $OUT"
+OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat 2>&1)"
+echo "$OUT" | grep -q "needs a reason" && ok "loosening without a reason is refused" || bad "resume without a reason: $OUT"
+OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat --reason "e2e" 2>&1)"
+echo "$OUT" | grep -q '"by":"user:ada"' && ok "the admin resumes with a reason, as user:ada" || bad "admin resume: $OUT"
+UIC="$($D exec -i flotilla-worker-triage python3 - "$ADMIN" "$OP" < "$ROOT/deploy/e2e/ui_check.py" 2>&1)"; UIRC=$?
+while IFS= read -r line; do
+  case "$line" in PASS*) ok "UI: ${line#PASS }" ;; FAIL*) bad "UI: ${line#FAIL }" ;; esac
+done <<< "$UIC"
+[ "$UIRC" = 0 ] || bad "ui_check.py exit $UIRC: $(echo "$UIC" | tail -3 | tr '\n' ' ')"
+
 echo "== hardening"
 for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-egress; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
   case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
 done
-for c in flotillad flotilla-worker-triage; do
-  NW="$($D inspect "$c" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
-  [ "$NW" = "${P}_flotilla " ] && ok "$c is on the internal network only" || bad "$c networks: '$NW'"
-done
+NW="$($D inspect flotilla-worker-triage --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+[ "$NW" = "${P}_flotilla " ] && ok "flotilla-worker-triage is on the internal network only" || bad "flotilla-worker-triage networks: '$NW'"
+NW="$($D inspect flotillad --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+[ "$NW" = "e2e-ui ${P}_flotilla " ] && ok "flotillad is on the internal flotilla network and the UI network only" || bad "flotillad networks: '$NW'"
+NW="$($D network inspect e2e-ui --format '{{.Internal}}' 2>&1)"
+[ "$NW" = true ] && ok "the UI network is internal (no route out)" || bad "ui network internal=$NW"
 NW="$($D network inspect ${P}_flotilla --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the flotilla network is internal (no route out)" || bad "flotilla network internal=$NW"
 

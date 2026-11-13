@@ -187,3 +187,9 @@ table.data tbody tr:hover { background: var(--signal-blue-wash); }
     font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
   button, input, select { min-height: var(--target); }
 }
+
+/* sign-in and sign-out */
+.signin { max-width: 480px; }
+.signin__form { display: flex; flex-direction: column; gap: var(--space-lg); }
+.nav__signout { margin: 0; }
+.nav .nav__signout-btn { color: var(--night-text); min-height: var(--target); }

@@ -1,0 +1,32 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · flotilla</title>
+<link rel="stylesheet" href="/static/flotilla.css">
+</head>
+<body>{{end}}
+
+{{define "nav"}}<header class="nav">
+  <div class="nav__top">
+    <a class="nav__brand" href="/">flotilla</a>
+    <nav class="nav__groups" aria-label="Sections">
+      <a class="nav__tab" href="/" {{if eq .Active "decide"}}aria-current="true"{{end}}>Decide</a>
+    </nav>
+    <span class="nav__meta">{{.User}} · {{.Role}}</span>
+    <form method="post" action="/signout" class="nav__signout">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button class="btn btn--link nav__signout-btn" type="submit">Sign out</button>
+    </form>
+  </div>
+  <nav class="nav__pages" aria-label="Decide pages">
+    <a class="nav__sub" href="/" {{if eq .Active "decide"}}aria-current="page"{{end}}>Now</a>
+  </nav>
+  <nav class="nav__bar" aria-label="Sections">
+    <a href="/" {{if eq .Active "decide"}}aria-current="true"{{end}}>Decide</a>
+  </nav>
+</header>{{end}}
+
+{{define "foot"}}</body>
+</html>{{end}}

@@ -12,6 +12,7 @@
 #
 # Networks:
 #   flotilla       internal: no route out. flotillad, the worker and the proxy talk here.
+#   ui             internal: flotillad's UI listener and the homelab's caddy-tailscale proxy (ADR-0014).
 #   out            the proxy's way to the internet (api.github.com).
 #   the services'  the proxy joins the networks of the services routines read (VictoriaMetrics, LiteLLM,
 #                  GlitchTip, Langfuse) and reaches them by container name, never through the
@@ -52,7 +53,7 @@ services:
       - ${FLOTILLA_CONFIG}/callers.yaml:/etc/flotilla/callers.yaml:ro
       - flotillad-secrets:/run/flotilla:ro
       - state:/var/lib/flotilla
-    networks: [flotilla]
+    networks: [flotilla, ui]
     depends_on:
       egress: {condition: service_started}
       worker-triage: {condition: service_healthy}   # the first run starts at boot: the worker must be listening
@@ -165,6 +166,11 @@ volumes:
 
 networks:
   flotilla:
+    internal: true
+  # ADR-0014: the UI's network. Only flotillad (its ui_listen) and the homelab's caddy-tailscale proxy are
+  # on it; internal, so it gives flotillad no route out. The proxy joins it as an external network.
+  ui:
+    name: ${NET_UI:-flotilla_ui}
     internal: true
   out: {}
   backend:

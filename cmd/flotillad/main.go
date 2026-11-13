@@ -28,6 +28,7 @@ import (
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/telemetry"
+	"github.com/chipi/flotilla/internal/ui"
 	"github.com/chipi/flotilla/internal/worker"
 )
 
@@ -39,7 +40,11 @@ type Config struct {
 	Listen string `yaml:"listen"`
 	// Optional: where workers' routines reach their ledger (RFC-0002 §9 step 5). It serves the ledger
 	// routes and nothing else, so `listen` can stay on loopback.
-	WorkerListen  string `yaml:"worker_listen"`
+	WorkerListen string `yaml:"worker_listen"`
+	// Optional: the operator UI's listener and the one Host it answers (ADR-0014): the pages for people
+	// with a session, and /v1 for people's tokens only. Only the UI's proxy reaches it.
+	UIListen      string `yaml:"ui_listen"`
+	UIHost        string `yaml:"ui_host"`
 	SpecsDir      string `yaml:"specs_dir"`
 	StateDir      string `yaml:"state_dir"`
 	Environment   string `yaml:"environment"`
@@ -83,6 +88,9 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Environment == "" {
 		errs = append(errs, errors.New("environment is required (the homelab label: operations)"))
+	}
+	if c.UIListen != "" && c.UIHost == "" {
+		errs = append(errs, errors.New("ui_listen needs ui_host: the one Host the UI answers (flotilla.<tailnet>)"))
 	}
 	for name, w := range c.Workers {
 		if w.URL == "" || w.TokenFile == "" {
@@ -266,6 +274,19 @@ func main() {
 			}
 		}()
 	}
+	var usrv *http.Server
+	if cfg.UIListen != "" {
+		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log}
+		usrv = &http.Server{Addr: cfg.UIListen, Handler: u.Handler(), ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+		go func() {
+			log.Info("flotillad listening for the UI", "addr", cfg.UIListen, "host", cfg.UIHost)
+			if err := usrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("ui listen", "err", err)
+				stop()
+			}
+		}()
+	}
 	hbDone := make(chan struct{})
 	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, log) }()
 
@@ -279,6 +300,9 @@ func main() {
 	_ = srv.Shutdown(sctx)
 	if wsrv != nil {
 		_ = wsrv.Shutdown(sctx)
+	}
+	if usrv != nil {
+		_ = usrv.Shutdown(sctx)
 	}
 	_ = st.Event(context.Background(), "flotillad", "flotillad", "stop", version, "")
 	log.Info("flotillad exit")
@@ -334,6 +358,11 @@ func backup(ctx context.Context, st *store.Store, stateDir, day string, log *slo
 		return
 	}
 	log.Info("store backed up", "path", path)
+	if n, err := st.PruneSessions(ctx); err != nil { // once a day, with the backup (ADR-0014)
+		log.Error("prune sessions", "err", err)
+	} else if n > 0 {
+		log.Info("sessions pruned", "n", n)
+	}
 	old, _ := filepath.Glob(filepath.Join(dir, "flotilla-*.db"))
 	for len(old) > 7 {
 		_ = os.Remove(old[0])

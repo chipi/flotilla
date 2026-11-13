@@ -1,0 +1,13 @@
+{{template "head" .}}
+<main class="page page--narrow signin">
+  <h1>Sign in to flotilla</h1>
+  <p class="meta">Paste your flotilla token. An admin gives it to you with <code>flotilla user add</code>; it is shown once, so keep it in a password manager.</p>
+  {{if .Error}}<p class="alert alert--stop" role="alert">{{.Error}}</p>{{end}}
+  <form method="post" action="/signin" class="card signin__form">
+    <label class="field">Token
+      <input type="password" name="token" autocomplete="current-password" required spellcheck="false">
+    </label>
+    <button class="btn btn--primary" type="submit">Sign in</button>
+  </form>
+</main>
+{{template "foot" .}}
