@@ -19,6 +19,7 @@ COPY --from=build /out/flotillad /out/flotilla /usr/local/bin/
 COPY --from=build --chown=65532:65532 /out/state /var/lib/flotilla
 # the specs travel with the image: a spec change is a deploy (ADR-0002)
 COPY fleets /opt/flotilla/fleets
+COPY host/registry.json /opt/flotilla/host/registry.json
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/flotillad"]
 CMD ["-config", "/etc/flotilla/flotillad.yaml"]

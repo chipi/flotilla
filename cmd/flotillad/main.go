@@ -24,6 +24,7 @@ import (
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/casetimer"
 	"github.com/chipi/flotilla/internal/models"
+	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/skills"
 	"github.com/chipi/flotilla/internal/spec"
@@ -65,7 +66,13 @@ type Config struct {
 	// Optional: how long a case may stay detected (then an alert) or handed over (then escalated);
 	// RFC-0004 §3.5. Unset: 30m and 24h.
 	CaseTimers casetimer.Config `yaml:"case_timers"`
+	// Optional: the registry's declarations (ADR-0011, RFC-0006 §10 step 4). Unset: the host agent's,
+	// which the image carries. An installation's extension adds its own file here.
+	RegistryFiles []string `yaml:"registry_files"`
 }
+
+// defaultRegistry is the declaration flotillad's image carries for its own tag.
+var defaultRegistry = []string{"/opt/flotilla/host/registry.json"}
 
 type WorkerConfig struct {
 	URL       string `yaml:"url"`
@@ -153,6 +160,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "callers:", err)
 		os.Exit(2)
 	}
+	regFiles := cfg.RegistryFiles
+	if len(regFiles) == 0 {
+		regFiles = defaultRegistry
+	}
+	reg, err := registry.Load(regFiles...)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "registry:", err)
+		os.Exit(2)
+	}
 	loc := time.Local
 	if cfg.Timezone != "" {
 		if loc, err = time.LoadLocation(cfg.Timezone); err != nil {
@@ -200,7 +216,10 @@ func main() {
 		if cfg.Models != nil {
 			n = len(cfg.Models.Aliases)
 		}
-		fmt.Printf("CHECK PASS: %d routines, %d callers, %d workers, %d model aliases\n", len(routines), len(callers), len(clients), n)
+		for _, a := range reg.Actions() {
+			fmt.Printf("action %s\n", a)
+		}
+		fmt.Printf("CHECK PASS: %d routines, %d callers, %d workers, %d model aliases, %d actions\n", len(routines), len(callers), len(clients), n, len(reg.Actions()))
 		return
 	}
 

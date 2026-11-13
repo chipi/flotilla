@@ -19,6 +19,10 @@ plan recorded". Nothing is sent to a host in v1 (ADR-0006 §12).
 
 ## Corrections the design needs on the way
 
+- **Words:** ADR-0011 renamed RFC-0004's terms: a write capability is an **action**, a read
+  capability a **tool**, the capability registry **the registry**; ADR-0009 renamed the actuator to
+  the host agent's **`actions` role**. This plan and the code use the new words.
+
 - **The freeze caps at `shadow`, not `propose`.** RFC-0004 §5.1 and §5.3 predate ADR-0014, which
   changed it; policy follows the ADR. The freeze is already built (`sched.FreezeSubject`).
 - **Cases do not replace the ledger tables yet.** RFC-0004 §3.5 says the case tables take their place;
@@ -36,8 +40,8 @@ RFC-0007 §7.
 | --- | --- | --- |
 | 1 | **The case store** (schema step 6): cases, their keys, their timeline; the transition table in Go (from, to, who, the longest stay); one open case per canonical key; events appended to closed cases; `flotilla case list` and `case show`; `GET /v1/cases`, `GET /v1/cases/{id}` (viewer and up) | every allowed transition taken and every other refused; two detects of one key at once give one case; a closed case takes events but not a status change |
 | 2 | **Holders, leases and stuck-state timers**: a case held by one job; a lease renewed while it runs; `detected` too long alerts, `handed_over` too long escalates, `executing` past its deadline becomes `unknown` and holds the target | a fake clock walks each timer; an expired lease returns the case unless an execution is open |
-| 3 | **The capability registry**: entries as files in the repo (`capabilities/*.yaml`), strict, validated at load like specs; `backup.rerun_observability` first | a bad entry stops flotillad at load; the entry's fields match RFC-0004 §3.4 |
-| 4 | **Policy** in flotillad, RFC-0004 §5.1 in order: registry (scope, `for_kinds`, no retargeting, cited numbers), autonomy lowest wins (job stage, capability level, host ceiling, taint, the freeze), the per-target lock and limits, holds (STOP, `flotilla hold`, deploy stand-down), the platform cap and circuit breaker; every refusal recorded with its reason | a table of plans and states, each with its expected decision and reason; mutants for each rule |
+| 3 | **The registry** (ADR-0011: actions and tools; RFC-0006 §10 step 4's design): the host agent's `actions` role declares `backup.rerun_observability` in `host/registry.json`, carried by flotillad's image and validated at load | a bad declaration stops flotillad at load; the entry's fields match RFC-0004 §3.4 |
+| 4 | **Policy** in flotillad, RFC-0004 §5.1 in order: registry (scope, `for_kinds`, no retargeting, cited numbers), autonomy lowest wins (job stage, the action's autonomy, host ceiling, taint, the freeze), the per-target lock and limits, holds (STOP, `flotilla hold`, deploy stand-down), the platform cap and circuit breaker; every refusal recorded with its reason | a table of plans and states, each with its expected decision and reason; mutants for each rule |
 | 5 | **Event triggers and the job contract**: a case handed over to a kind starts that kind's job with the case and its lease; a job returns a plan (`plan` output, writes only); checks are timer events | e2e: a case handed over starts a run on the worker, which gets the case |
 | 6 | **The Ops monitor** (code only, `ops-read`): the backup's age from VictoriaMetrics; opens `failed_backup` at the shadow threshold (20 h) | against recorded metric values; dedup holds across cycles |
 | 7 | **The `ops-act-host` planning job, in shadow**: the code re-check, the plan, the case closed as "shadow, plan recorded" | e2e end to end with a stand-in metric; then live on the mini in shadow (operator's go) |
@@ -61,5 +65,16 @@ promotion to propose).
   per case, and a `timer.stuck` event) and `handed_over` (24h from the first hand-over, a deferral
   keeping the clock and a reassignment restarting it: escalated by the timer), checked every minute
   in flotillad's heartbeat; `case_timers` in flotillad.yaml (operator, 2026-11-13). 6 mutants killed.
-  **Moved:** the `executing` and `checking` deadlines need each capability's timeout and check window
+  **Moved:** the `executing` and `checking` deadlines need each action's timeout and check window
   (step 3), and leases need jobs to hold them (step 5); they land with those steps.
+- **Step 3, the registry (actions only):** built 2026-11-13, option 1 of the operator's choice
+  ("the mechanism and the one action now"). `internal/registry` loads strict JSON declarations;
+  `host/registry.json` (the host agent's `actions` role, ADR-0009) declares `backup.rerun_observability`
+  as RFC-0004 §3.4 has it, with two choices made here: its `host` parameter is `target_host` (the case's
+  host; which hosts exist is an installation fact, ADR-0013), and its `timeout` is 30m (ADR-0006 §7
+  needs one; RFC-0004 gives none). flotillad's image carries it; `-check` lists the actions; a bad
+  declaration stops flotillad. 6 mutants killed; the e2e checks `-check` in the image.
+  **Not done (the gap, on purpose):** the workers' tools and gates, `GET /v1/registry` on the worker
+  and the comparison with flotillad's copy, and the test keeping a declaration equal to its code. Those
+  need the fleet session (triage's tools and gates live in its code) and come before the `requires`
+  check of RFC-0006 §10.

@@ -1,6 +1,6 @@
 // Package casetimer is RFC-0004 §3.5's timers for stuck states: a case left in detected too long is
 // alerted (the diagnosing worker may be down); one left in handed_over too long is escalated. The
-// executing and checking deadlines come from each capability (its timeout, its check window) and join
+// executing and checking deadlines come from each action (its timeout, its check window) and join
 // here with the registry (pipeline v1 step 3).
 package casetimer
 
