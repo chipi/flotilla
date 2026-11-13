@@ -145,3 +145,12 @@ promotion to propose).
   from a pre-pull hook. The e2e takes one and checks it is the host's hold, and that one that
   cannot be
   taken is skipped.
+- **Automatic demotion:** built 2026-11-13, in the case's move (one transaction): a failed or unknown
+  execution (executing → escalated) lowers the case's action from auto to propose; an operator's
+  rejection (awaiting_approval → escalated by the operator) lowers it to shadow, on the first one
+  (RFC-0004 §5.2 says "rejected proposals" without a count; the cautious reading). An expiry is not
+  a rejection; a demotion never raises; an `action.demoted` event goes on the case. 4 mutants killed.
+- **Deploy checklist** for the mini, with the UI and v1 (after the promotion's window, operator's go):
+  the store-copy check for schema steps 5 to 8; `ui_listen`/`ui_host`; the ops workers' tokens,
+  `worker-ops.env` and profile `ops` (or their routines disabled); the `deploy` caller, its token and
+  `FLOTILLA_STANDDOWN_HOST`; then the homelab proxy node.
