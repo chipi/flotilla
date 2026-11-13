@@ -91,3 +91,16 @@ VPS.
   rewrite the whole chain; what catches that is flotillad's stored head and the copy Alloy already
   shipped. On macOS, install can set `sappnd` on the file (append-only, cleared only in single-user
   mode); to decide at H8.
+- **H5a, the certificates:** built 2026-11-13, `internal/hostca` (stdlib only, Ed25519 throughout).
+  The root (10 years) and the intermediate (3 years, path length 0, never outliving the root); a
+  host's client certificate (30 days) issued only for a request signed by its own Ed25519 key and
+  naming exactly that host; flotillad's server certificate (90 days); `VerifyHost` checks a chain up
+  to the root for client use and returns the host and serial (the hosts table decides revocation,
+  H5b). A real TLS 1.3 handshake in the test: an agent connects, another CA's agent is refused, and
+  the agent refuses a server under another name. `flotilla ca root DIR` and `flotilla ca intermediate
+  ROOTDIR OUTDIR` make them on the operator's machine, offline: keys mode 600, nothing overwritten,
+  the root's key never written beside the intermediate. The root key is a plain PEM file (the
+  standard library has no encrypted PKCS #8); it is kept offline as the backup key is. 15 mutants
+  killed.
+- **H5b, next:** schema step 9 (the `hosts` table and enrolment tokens), minting a token, enrolment
+  (token and request in, certificate out), revocation.

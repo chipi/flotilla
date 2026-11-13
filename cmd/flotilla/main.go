@@ -12,6 +12,8 @@
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
+//	flotilla ca root DIR                               (offline: the host agents' root CA, kept by the operator)
+//	flotilla ca intermediate ROOTDIR OUTDIR            (offline: the intermediate for flotillad's secrets volume)
 //
 // FLOTILLA_URL (default http://127.0.0.1:8484) says where; FLOTILLA_TOKEN, or FLOTILLA_TOKEN_FILE, who.
 package main
@@ -48,6 +50,13 @@ func main() {
 	if cmd == "hash-token" {
 		tok, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		fmt.Println(api.HashToken(strings.TrimSpace(tok)))
+		return
+	}
+	if cmd == "ca" { // offline, on the operator's machine: no flotillad involved
+		if err := caCmd(args, time.Now()); err != nil {
+			fmt.Fprintln(os.Stderr, "flotilla ca:", err)
+			os.Exit(1)
+		}
 		return
 	}
 	n := "20"
