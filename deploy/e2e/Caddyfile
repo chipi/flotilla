@@ -1,0 +1,12 @@
+# The e2e's TLS front for the browser check (ui_browser.py), standing in for the homelab's caddy-tailscale:
+# https on 443, the Host passed through unchanged, flotillad's UI listener behind it. The UI network has no
+# route out, so the certificate comes from Caddy's own CA.
+{
+	auto_https disable_redirects
+	skip_install_trust
+}
+
+flotilla.e2e {
+	tls internal
+	reverse_proxy flotillad:8486
+}

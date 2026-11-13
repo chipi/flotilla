@@ -9,7 +9,9 @@
 # autonomy; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
 # worker (profile candidate) is healthy on its own state volume and its routine cannot leave shadow; the
 # heartbeat's model step calls the LiteLLM stand-in through the model client, with the models section
-# from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported.
+# from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported. The UI
+# in Chromium behind a Caddy TLS front (ui_browser.py): sign-in, the session cookie, a pause and a resume
+# from the fleet page, phone width, the fonts, no CSP violations, sign-out.
 # Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -18,6 +20,9 @@ P=flotilla-e2e
 TAG=e2e-local
 LABEL=flotilla.e2e=1
 NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse"
+PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
+# The browser check's TLS front, standing in for the homelab's caddy-tailscale (Caddy 2.11.9).
+CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 WORK="${E2E_WORK:-$ROOT/.e2e}"
 fails=0
 ok() { echo "PASS $*"; }
@@ -47,6 +52,8 @@ for i in flotillad worker-triage smokescreen; do
   $D build -q -f "$ROOT/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$ROOT" >/dev/null \
     || { echo "BUILD FAIL $i"; exit 1; }
 done
+$D build -q -f "$ROOT/deploy/e2e/browser.Dockerfile" -t "$PLAYWRIGHT_IMAGE" "$ROOT/deploy/e2e" >/dev/null \
+  || { echo "BUILD FAIL e2e-browser"; exit 1; }
 ok "images built"
 
 echo "== config and stand-ins"
@@ -273,6 +280,14 @@ while IFS= read -r line; do
   case "$line" in PASS*) ok "UI: ${line#PASS }" ;; FAIL*) bad "UI: ${line#FAIL }" ;; esac
 done <<< "$UIC"
 [ "$UIRC" = 0 ] || bad "ui_check.py exit $UIRC: $(echo "$UIC" | tail -3 | tr '\n' ' ')"
+$D run -d --name flotilla-e2e-caddy --label $LABEL --network e2e-ui --memory 256m \
+  -v "$ROOT/deploy/e2e/Caddyfile:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" >/dev/null || bad "the TLS front did not start"
+UIB="$($D run --rm --label $LABEL --network e2e-ui --memory 2g --init -v "$ROOT/deploy/e2e:/e2e:ro" "$PLAYWRIGHT_IMAGE" \
+  python3 /e2e/ui_browser.py "$ADMIN" 2>&1)"; UIBRC=$?
+while IFS= read -r line; do
+  case "$line" in PASS*) ok "browser: ${line#PASS }" ;; FAIL*) bad "browser: ${line#FAIL }" ;; esac
+done <<< "$UIB"
+[ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 echo "== hardening"
 for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-egress; do
