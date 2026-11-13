@@ -250,8 +250,9 @@ VPS.
     --log -` with the host's real log passes, and a copy with one status rewritten fails (exit 1).
     `make test-e2e`: E2E PASS, 126 checks. **Not in the e2e:** an action outside the host's allowlist
     and the host's rate limit. An execution goes only to its case's target host (`host:NAME`), and
-    the first case stays in checking holding that target's lock (H7b: the check step is not built), so a second case on
-    the stand-in host never reaches it; they come with the checking exit. Until then they, and the
+    the first case stays in checking holding that target's lock (H7b: the check step is not
+    built), so a second case on the stand-in host never reaches it; they come with the checking
+    exit. Until then they, and the
     forged, expired, another host's and auto-above-the-ceiling envelopes (which cannot come down
     flotillad's legitimate path at all), are covered by the Go tests over the real connection
     (internal/hostagent, internal/hostexec).
