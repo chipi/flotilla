@@ -11,7 +11,8 @@
 # heartbeat's model step calls the LiteLLM stand-in through the model client, with the models section
 # from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported. The UI
 # in Chromium behind a Caddy TLS front (ui_browser.py): sign-in, the session cookie, a pause and a resume
-# from the fleet page, phone width, the fonts, no CSP violations, sign-out.
+# from the fleet page, phone width, the fonts, no CSP violations, sign-out. The host agent (ADR-0006): a CA
+# made with `flotilla ca`, enrolment, connect and heartbeat, a flotillad restart, revocation.
 # Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -38,7 +39,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-host-state flotilla-e2e-host-audit; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -52,6 +53,9 @@ for i in flotillad worker-triage worker-ops smokescreen; do
   $D build -q -f "$ROOT/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$ROOT" >/dev/null \
     || { echo "BUILD FAIL $i"; exit 1; }
 done
+HOST_AGENT_IMAGE=local/flotilla-e2e-host-agent:$TAG
+$D build -q -f "$ROOT/deploy/e2e/host-agent.Dockerfile" --build-arg VERSION=$TAG -t "$HOST_AGENT_IMAGE" "$ROOT" >/dev/null \
+  || { echo "BUILD FAIL e2e-host-agent"; exit 1; }
 $D build -q -f "$ROOT/deploy/e2e/browser.Dockerfile" -t "$PLAYWRIGHT_IMAGE" "$ROOT/deploy/e2e" >/dev/null \
   || { echo "BUILD FAIL e2e-browser"; exit 1; }
 ok "images built"
@@ -96,6 +100,7 @@ models:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
   aliases:
     e2e-model: {endpoint: gateway, model: fleet-triage-flash}
+hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
@@ -135,6 +140,16 @@ stub victoriametrics e2e-backend; stub victoriatraces e2e-backend; stub litellm 
 # off the allowlist but reachable and answering: refusing it is the proxy's doing, nothing else
 stub forbidden e2e-backend
 ok "stand-ins up"
+
+echo "== the host agents' CA, made as the operator makes it (flotilla ca, offline)"
+mkdir -p "$WORK/ca"
+caf() { $D run --rm --user "$(id -u):$(id -g)" --network none -v "$WORK:/w" --entrypoint /usr/local/bin/flotilla "local/flotilla-flotillad:$TAG" ca "$@"; }
+if caf root /w/ca/root >"$WORK/ca.log" 2>&1 && caf intermediate /w/ca/root /w/config/host-ca >>"$WORK/ca.log" 2>&1; then
+  ok "root and intermediate made; the root's key only in the root's folder ($(ls "$WORK/config/host-ca" | tr '\n' ' '))"
+else
+  cat "$WORK/ca.log"; bad "flotilla ca"
+fi
+[ ! -e "$WORK/config/host-ca/root.key" ] || bad "root.key beside the intermediate"
 
 echo "== secrets and seeded state (deploy/mini/secrets.sh, as a deploy runs it)"
 printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/fleet.env"   # a random stand-in key, made per run
@@ -348,6 +363,51 @@ N="$(agent case list --all 2>&1 | grep -c failed_backup)"
 [ "$N" = 1 ] && agent case show $CID 2>&1 | grep -q "signal.absorbed .*ops/backup-monitor" \
   && ok "after the restart the monitor's repeat went into the incident's case (one case, signal.absorbed)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
+
+echo "== the host agent (ADR-0006): enrol, connect, heartbeat, a flotillad restart, revocation"
+mkdir -p "$WORK/host"
+cp "$WORK/config/host-ca/root.crt" "$WORK/host/root.crt"
+cat > "$WORK/host/config.json" <<EOF
+{"host": "e2e-host", "user": "_flotilla", "ceiling": "propose",
+ "signing_keys": {"k1": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="},
+ "actions": {"host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"}}}
+EOF
+chmod 644 "$WORK/host/"*
+host_agent() {  # host_agent <docker run options...> -- <flotilla-host args...>
+  local o=(); while [ "$1" != -- ]; do o+=("$1"); shift; done; shift
+  $D run --label $LABEL --network ${P}_flotilla --memory 128m -v flotilla-e2e-host-state:/var/db/flotilla-host \
+    -v flotilla-e2e-host-audit:/var/log/flotilla-host -v "$WORK/host:/etc/flotilla-host:ro" "${o[@]}" "$HOST_AGENT_IMAGE" \
+    "$@" -addr flotillad:8487 -server-name flotillad -heartbeat 2s
+}
+HT="$(cli host enrolment e2e-host 2>&1 | sed -n 's/.*"token":"\(fle_[0-9a-f]*\)".*/\1/p')"
+[ ${#HT} = 68 ] && ok "an operator minted an enrolment token" || bad "host enrolment: $(cli host enrolment e2e-host 2>&1)"
+OUT="$(printf '%s\n' "$HT" | host_agent --rm -i -- enrol 2>&1)"
+echo "$OUT" | grep -q "^enrolled e2e-host with flotillad:8487" && ok "the agent enrolled (key made on the host, token on stdin)" || bad "enrol: $OUT"
+OUT="$(printf '%s\n' "$HT" | host_agent --rm -i -- enrol 2>&1)"
+echo "$OUT" | grep -q "enrolment refused" && ok "the same token a second time is refused" || bad "a used token: $OUT"
+K="$($D run --rm --entrypoint sh -v flotilla-e2e-host-state:/s "$HOST_AGENT_IMAGE" -c 'stat -c "%a %U" /s/key.pem' 2>&1)"
+[ "$K" = "600 flotilla-host" ] && ok "the host's key is mode 600, the agent's user's ($K)" || bad "key file: $K"
+cli host list | grep -q "^e2e-host .*[0-9]T" && ok "host list shows it enrolled, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
+host_agent -d --name flotilla-e2e-host -- run >/dev/null
+seen flotilla-e2e-host '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected".*"host":"e2e-host"' \
+  && ok "the agent connected; flotillad authenticated it as e2e-host" || bad "connect: $($D logs flotilla-e2e-host 2>&1 | tail -3)"
+sleep 8   # four heartbeats at 2s; silent for three, flotillad would drop it
+! $D logs flotillad 2>&1 | grep -q '"msg":"host disconnected"' && ok "heartbeats keep the connection (8s, flotillad drops after 6s of silence)" \
+  || bad "the connection dropped: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
+$D restart flotillad >/dev/null
+for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
+for i in $(seq 1 30); do [ "$($D logs flotilla-e2e-host 2>&1 | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && break; sleep 1; done
+[ "$($D logs flotilla-e2e-host 2>&1 | grep -c '"msg":"connected to flotillad"')" -ge 2 ] \
+  && $D logs flotilla-e2e-host 2>&1 | grep -q '"msg":"connection to flotillad lost"' \
+  && ok "after a flotillad restart the agent lost the connection and reconnected by itself" || bad "reconnect: $($D logs flotilla-e2e-host 2>&1 | tail -4)"
+cli host revoke e2e-host >/dev/null
+seen flotillad '"msg":"host cut off".*"host":"e2e-host"' && ok "revoked: flotillad cut the connected host off at its next heartbeat" \
+  || bad "revoke: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
+sleep 3
+seen flotillad '"msg":"host endpoint: refused"' && $D logs flotilla-e2e-host 2>&1 | grep -q 'flotillad refused: refused' \
+  && ok "its reconnects are refused" || bad "after revoke: $($D logs flotilla-e2e-host 2>&1 | tail -3)"
+cli host list | grep -q "^e2e-host .* - .*[0-9]T" && ok "host list shows it revoked, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
+$D rm -f flotilla-e2e-host >/dev/null
 
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"

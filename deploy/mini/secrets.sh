@@ -66,6 +66,14 @@ done
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"
 fi
+# optional: the host agents' intermediate CA (flotillad.yaml hosts.ca_dir: /run/flotilla), from
+# `flotilla ca intermediate ROOTDIR $FLOTILLA_CONFIG/host-ca`; the root's key is never among them
+if [ -s "$FLOTILLA_CONFIG/host-ca/intermediate.key" ]; then
+  [ ! -e "$FLOTILLA_CONFIG/host-ca/root.key" ] || { echo "SECRETS FAIL: root.key is in $FLOTILLA_CONFIG/host-ca: it stays offline"; exit 1; }
+  for f in intermediate.crt intermediate.key root.crt; do
+    put $V-flotillad-secrets "$f" 65532 "$FLOTILLA_CONFIG/host-ca/$f"
+  done
+fi
 # the triage state volume is external to compose too: make sure it exists (an empty one takes the
 # image's directory owner on first mount)
 $D volume create "${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}" >/dev/null

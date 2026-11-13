@@ -175,14 +175,16 @@ hook. To set it up:
 
 Optional; without it no host can enrol or connect. The CA comes from the operator's machine, offline:
 `flotilla ca root DIR` once (the root's key stays there, kept as the backup key is), then
-`flotilla ca intermediate DIR OUT`; the three files in `OUT` (`intermediate.crt`,
-`intermediate.key`, `root.crt`) go to flotillad's secrets volume. In `config/flotillad.yaml`:
+`flotilla ca intermediate DIR config/host-ca`; `secrets.sh` copies the three files there
+(`intermediate.crt`, `intermediate.key`, `root.crt`) into flotillad's secrets volume, and refuses a
+`root.key` among them. In `config/flotillad.yaml`:
 
 ```yaml
 hosts:
   listen: 0.0.0.0:8486                   # its own port: mutual TLS, terminated by flotillad
   ca_dir: /run/flotilla/host-ca          # the three files above
   server_names: [<the name agents dial>]  # in flotillad's server certificate (made at start, renewed in memory)
+  heartbeat: 30s                         # optional, the default: the agents' -heartbeat; three missed, dropped
 ```
 
 A proxy in front may only pass TCP through. flotillad checks at start that the root signed the

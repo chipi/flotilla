@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/chipi/flotilla/internal/hostagent"
 	"github.com/chipi/flotilla/internal/hostaudit"
@@ -39,6 +40,7 @@ var version = "dev"
 
 type opts struct {
 	config, state, audit, addr, serverName, root string
+	heartbeat                                    time.Duration
 }
 
 func main() {
@@ -55,6 +57,7 @@ func main() {
 	fs.StringVar(&o.addr, "addr", "", "flotillad's host endpoint, host:port")
 	fs.StringVar(&o.serverName, "server-name", "", "flotillad's name in its certificate")
 	fs.StringVar(&o.root, "root", "/etc/flotilla-host/root.crt", "the root CA's certificate")
+	fs.DurationVar(&o.heartbeat, "heartbeat", 30*time.Second, "the heartbeat interval (flotillad's hosts.heartbeat must match)")
 	fs.Parse(os.Args[2:])
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("service", "flotilla-host", "version", version)
 	var err error
@@ -203,7 +206,7 @@ func run(o opts, log *slog.Logger) error {
 	a := &hostagent.Agent{Addr: o.addr, ServerName: o.serverName, Root: root, Host: cfg.Host, Version: version, Key: key,
 		LoadChain: func() ([]byte, error) { return os.ReadFile(chainPath(o.state)) },
 		SaveChain: func(b []byte) error { return saveChain(o.state, b) },
-		Exec:      x, Log: log}
+		Exec:      x, Heartbeat: o.heartbeat, Log: log}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	log.Info("flotilla-host starting", "host", cfg.Host, "addr", o.addr, "ceiling", cfg.Ceiling, "actions", len(cfg.Actions))

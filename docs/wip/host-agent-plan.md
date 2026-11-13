@@ -146,5 +146,18 @@ VPS.
   `run` (the executor, the audit log, the connection; a `started` left by the last run is logged as
   unknown), `sudoers`; connection settings are flags, the host's name is its config's. It builds for
   the mini (darwin/amd64, macOS 15.7.7, checked with `uname -m`). 3 mutants killed. Not tested:
-  that a crash mid-write leaves the old certificate file (the write is a rename). Next, H6c: the
-  container e2e.
+  that a crash mid-write leaves the old certificate file (the write is a rename).
+- **H6c, the container e2e:** built 2026-11-13, in `deploy/e2e/run.sh` (`make test-e2e`). The CA is
+  made with `flotilla ca` from flotillad's image, the way the operator makes it; `secrets.sh` copies
+  `config/host-ca/` into flotillad's secrets volume (and refuses a `root.key` there); flotillad
+  starts its endpoint from `hosts:`. A stand-in host (`deploy/e2e/host-agent.Dockerfile`, not
+  shipped) runs the real `flotilla-host`: an operator mints a token; the agent enrols (its key made
+  there, mode 600, its own user; the token on stdin); the same token again is refused; `host list`
+  shows it; it connects and flotillad authenticates it; heartbeats hold the connection; after
+  `docker restart flotillad` it reconnects by itself; `flotilla host revoke` cuts it off at its next
+  heartbeat and its reconnects are refused. The heartbeat is configurable (`hosts.heartbeat`, the
+  agent's `-heartbeat`; 2s in the e2e). Run 2026-11-13 on the dev engine: E2E PASS, 112 checks, 0
+  failed, torn down (no container or volume left). Not covered here: an execution sent down the
+  connection (flotillad sends none until H7); a network partition with no reset (the agent then
+  relies on Go's TCP keepalive, not measured); the e2e's own checks were not mutation-tested (they
+  read log lines both sides write).

@@ -24,6 +24,9 @@ type HostsConfig struct {
 	CADir string `yaml:"ca_dir"`
 	// the names agents dial flotillad by; its server certificate carries them
 	ServerNames []string `yaml:"server_names"`
+	// the agents' heartbeat interval (their -heartbeat); silent for three, a connection is dropped.
+	// Unset: 30s.
+	Heartbeat time.Duration `yaml:"heartbeat"`
 }
 
 func (h HostsConfig) validate() error {
@@ -32,6 +35,9 @@ func (h HostsConfig) validate() error {
 	}
 	if h.CADir == "" || len(h.ServerNames) == 0 {
 		return errors.New("hosts: listen needs ca_dir and server_names")
+	}
+	if h.Heartbeat < 0 {
+		return errors.New("hosts: heartbeat cannot be negative")
 	}
 	return nil
 }

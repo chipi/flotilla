@@ -322,7 +322,7 @@ func main() {
 		}
 		apiSrv.HostCA, apiSrv.HostRoot = inter, root
 		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
-		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}}
+		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}, Heartbeat: cfg.Hosts.Heartbeat}
 		hostLn, err = net.Listen("tcp", cfg.Hosts.Listen)
 		if err != nil {
 			log.Error("host endpoint listen", "addr", cfg.Hosts.Listen, "err", err)
