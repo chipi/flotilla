@@ -1,0 +1,33 @@
+{
+  "host": "mini",
+  "user": "_flotilla",
+  "ceiling": "propose",
+  "signing_keys": {"k1": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="},
+  "actions": {
+    "backup.rerun_observability": {
+      "argv": ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.homelab.db-backup"],
+      "params": {"host": {"kind": "this_host"}},
+      "per_hour": 1,
+      "timeout": "30m",
+      "pre": [{"kind": "launchd_not_running", "args": {"label": "system/com.homelab.db-backup"}}]
+    },
+    "container.restart": {
+      "argv": ["/usr/bin/sudo", "-n", "-u", "_dockerhost", "/usr/local/bin/docker", "restart", "{name}"],
+      "params": {"host": {"kind": "this_host"}, "name": {"kind": "enum", "values": ["grafana", "victoriametrics"]}},
+      "per_hour": 2,
+      "timeout": "2m"
+    },
+    "host.uptime": {
+      "argv": ["/usr/bin/sudo", "-n", "/usr/bin/uptime"],
+      "params": {"host": {"kind": "this_host"}},
+      "per_hour": 10,
+      "timeout": "10s"
+    },
+    "logs.tail": {
+      "argv": ["/usr/bin/tail", "-n", "50", "{file}"],
+      "params": {"host": {"kind": "this_host"}, "file": {"kind": "pattern", "pattern": "/tmp/com\\.homelab\\.[a-z-]+\\.log"}},
+      "per_hour": 10,
+      "timeout": "10s"
+    }
+  }
+}

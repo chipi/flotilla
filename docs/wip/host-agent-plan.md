@@ -53,3 +53,13 @@ VPS.
   an expired envelope, one signed more than 10 minutes in the future, and one valid for longer than
   10 minutes (even with a good signature); returns the signed bytes for the agent's resend-or-forgery
   check. 8 mutants killed; `FuzzVerify` 30s (2.5M executions), no failure.
+- **H2, the host's config and its sudoers:** built 2026-11-13, `internal/hostcfg` (stdlib only).
+  Strict JSON: the host, the agent's user (never root), the ceiling, one or two signing keys, each
+  action as an exact argv. A parameter fills one whole argv element; a privileged command
+  (`/usr/bin/sudo -n [-u user] /absolute/command ...`) takes only enum parameters, and no element or
+  value it gets may hold a sudoers wildcard, separator, space or quote; a pattern parameter only for
+  an unprivileged command, matched whole. `Argv` is the only way a command is built (this host, declared
+  parameters only, values checked). `Sudoers` writes one line per action and enum value, with `""` for
+  a command with no arguments (alone it would allow any). `visudo -c` (Debian's sudo, in a container)
+  parses it; note that it parses a wildcard line too, so the refusal of wildcards is this package's.
+  10 mutants: 9 killed, 1 a redundant duplicate check, removed.
