@@ -24,12 +24,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/chipi/flotilla/internal/sched"
-	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
 )
@@ -121,11 +119,11 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("GET /v1/runs", s.auth(ActRead, s.runs))
 	m.Handle("GET /v1/events", s.auth(ActRead, s.events))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(ActRun, s.run))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(ActPause, s.control(ActPause, sched.KeyPaused, "1", true)))
-	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(ActResume, s.control(ActResume, sched.KeyPaused, "0", true)))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(ActPause, s.pause))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(ActResume, s.resume))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(ActAutonomy, s.autonomy))
-	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(ActStop, s.control(ActStop, sched.KeyStop, "1", false)))
-	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(ActStart, s.control(ActStart, sched.KeyStop, "0", false)))
+	m.Handle("POST /v1/fleets/{fleet}/stop", s.auth(ActStop, s.stopFleet))
+	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(ActStart, s.startFleet))
 	s.userRoutes(m)
 	s.ledgerRoutes(m)
 	return m
@@ -204,27 +202,12 @@ func (s *Server) auth(a Action, h func(http.ResponseWriter, *http.Request, Calle
 			writeJSON(w, 401, map[string]string{"error": "unknown token"})
 			return
 		}
-		role, err := s.EffectiveRole(r.Context(), *who)
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
 		// The users endpoints decide the callers-file operator's bootstrap themselves (users.go).
-		if !Authorize(role, a) && !(a == ActUsers && !who.User && who.Role == RoleOperator) {
-			s.Log.Warn("refused", "caller", who.Name, "role", role, "action", a, "path", r.URL.Path)
-			msg := "your role may not do this"
-			switch {
-			case role == RoleWorker:
-				msg = "the ledger is a worker's; a worker reaches nothing else"
-			case a == ActLedger:
-				msg = "the ledger is a worker's"
-			case role == RoleAgent:
-				msg = "only an operator may do this; an agent never can"
-			case role == "retired-operator-token":
-				msg = "an admin exists: the callers-file operator token is for bootstrap and break-glass only; use your user token"
+		if !(a == ActUsers && !who.User && who.Role == RoleOperator) {
+			if err := s.Check(r.Context(), *who, a); err != nil {
+				writeAction(w, err, 0, nil)
+				return
 			}
-			writeJSON(w, 403, map[string]string{"error": msg})
-			return
 		}
 		h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, *who)), *who)
 	})
@@ -239,56 +222,11 @@ func reason(r *http.Request, w http.ResponseWriter) string {
 	return strings.TrimSpace(body.Reason)
 }
 
-type routineStatus struct {
-	ID           string  `json:"id"`
-	Description  string  `json:"description"`
-	Enabled      bool    `json:"enabled"`
-	Worker       string  `json:"worker"`
-	Every        string  `json:"every"`
-	Autonomy     string  `json:"autonomy"`
-	SpecAutonomy string  `json:"spec_autonomy"`
-	SpecHash     string  `json:"spec_hash"`
-	Paused       bool    `json:"paused"`
-	Stopped      bool    `json:"fleet_stopped"`
-	Running      string  `json:"running,omitempty"`
-	LastSuccess  string  `json:"last_success,omitempty"`
-	Stale        bool    `json:"stale"`
-	SpendToday   float64 `json:"spend_today_usd"`
-	BudgetDay    float64 `json:"budget_day_usd"`
-}
-
 func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
-	ctx := r.Context()
-	running := s.Sched.Running()
-	now := s.Sched.Now()
-	day := now.In(s.Sched.Location).Format("2006-01-02")
-	var routines []routineStatus
-	for _, j := range s.Sched.Routines {
-		st, err := s.Sched.Autonomy(ctx, j)
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		paused, _ := s.Store.Control(ctx, j.ID(), sched.KeyPaused)
-		stopped, _ := s.Store.Control(ctx, j.Fleet, sched.KeyStop)
-		last, _ := s.Store.LastSuccess(ctx, j.ID())
-		spent, _ := s.Store.Spend(ctx, day, j.ID())
-		js := routineStatus{ID: j.ID(), Description: j.Description, Enabled: j.Enabled, Worker: j.Worker, Every: j.Every.String(),
-			Autonomy: st, SpecAutonomy: j.Autonomy, SpecHash: j.Hash, Paused: paused == "1", Stopped: stopped == "1",
-			Running: running[j.ID()], SpendToday: spent, BudgetDay: j.Budget.DayUSD,
-			Stale: j.Enabled && (last.IsZero() || now.Sub(last) > j.Fresh)}
-		if !last.IsZero() {
-			js.LastSuccess = last.Format(time.RFC3339)
-		}
-		routines = append(routines, js)
-	}
-	workers := map[string]any{}
-	for name, c := range s.Workers {
-		if h, err := c.Health(ctx); err != nil {
-			workers[name] = map[string]any{"ok": false, "error": err.Error()}
-		} else {
-			workers[name] = h
-		}
+	routines, workers, err := s.Status(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"version": s.Version, "routines": routines, "workers": workers})
 }
@@ -319,68 +257,48 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, _ Caller) {
 	writeJSON(w, 200, map[string]any{"events": ev})
 }
 
-func (s *Server) routine(w http.ResponseWriter, r *http.Request) *spec.Routine {
-	j := s.Sched.Routine(r.PathValue("fleet") + "/" + r.PathValue("routine"))
-	if j == nil {
-		writeJSON(w, 404, map[string]string{"error": "no such routine"})
+func routineID(r *http.Request) string { return r.PathValue("fleet") + "/" + r.PathValue("routine") }
+
+// writeAction answers an action's result: a Problem's code and message, or ok with the body given.
+func writeAction(w http.ResponseWriter, err error, code int, ok map[string]string) {
+	if p := AsProblem(err); p != nil {
+		writeJSON(w, p.Code, map[string]string{"error": p.Msg})
+		return
 	}
-	return j
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, code, ok)
 }
 
-// run starts a run in the background and answers at once with the run id the CLI can follow.
+// run starts a run in the background and answers at once.
 func (s *Server) run(w http.ResponseWriter, r *http.Request, c Caller) {
-	j := s.routine(w, r)
-	if j == nil {
-		return
-	}
-	if busy := s.Sched.Running()[j.ID()]; busy != "" {
-		writeJSON(w, 409, map[string]string{"error": "already running", "run_id": busy})
-		return
-	}
-	_ = s.Store.Event(r.Context(), c.Name, "api", "run.requested", j.ID(), "")
-	go func() {
-		ctx := context.WithoutCancel(r.Context())
-		if _, err := s.Sched.RunNow(ctx, j.ID(), "manual", c.Name); err != nil {
-			s.Log.Error("manual run failed", "routine", j.ID(), "caller", c.Name, "err", err)
-		}
-	}()
-	writeJSON(w, 202, map[string]string{"started": j.ID(), "by": c.Name})
+	err := s.RunNow(r.Context(), c, "api", routineID(r))
+	writeAction(w, err, 202, map[string]string{"started": routineID(r), "by": c.Name})
 }
 
-func (s *Server) control(a Action, key, value string, perJob bool) func(http.ResponseWriter, *http.Request, Caller) {
-	return func(w http.ResponseWriter, r *http.Request, c Caller) {
-		why := ""
-		if loosening(a) {
-			if why = reason(r, w); why == "" {
-				writeJSON(w, 400, map[string]string{"error": "loosening needs a reason: body {\"reason\": \"...\"}"})
-				return
-			}
-		}
-		subject := r.PathValue("fleet")
-		if perJob {
-			j := s.routine(w, r)
-			if j == nil {
-				return
-			}
-			subject = j.ID()
-		} else if !s.hasFleet(subject) {
-			writeJSON(w, 404, map[string]string{"error": "no such fleet"})
-			return
-		}
-		if err := s.Store.SetControlBecause(r.Context(), subject, key, value, c.Name, "api", why); err != nil {
-			writeErr(w, err)
-			return
-		}
-		s.Log.Info("control set", "subject", subject, "key", key, "value", value, "caller", c.Name, "reason", why)
-		writeJSON(w, 200, map[string]string{"subject": subject, key: value, "by": c.Name})
-	}
+func (s *Server) pause(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.SetPaused(r.Context(), c, "api", routineID(r), true, "")
+	writeAction(w, err, 200, map[string]string{"subject": routineID(r), sched.KeyPaused: "1", "by": c.Name})
+}
+
+func (s *Server) resume(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.SetPaused(r.Context(), c, "api", routineID(r), false, reason(r, w))
+	writeAction(w, err, 200, map[string]string{"subject": routineID(r), sched.KeyPaused: "0", "by": c.Name})
+}
+
+func (s *Server) stopFleet(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.SetStopped(r.Context(), c, "api", r.PathValue("fleet"), true, "")
+	writeAction(w, err, 200, map[string]string{"subject": r.PathValue("fleet"), sched.KeyStop: "1", "by": c.Name})
+}
+
+func (s *Server) startFleet(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.SetStopped(r.Context(), c, "api", r.PathValue("fleet"), false, reason(r, w))
+	writeAction(w, err, 200, map[string]string{"subject": r.PathValue("fleet"), sched.KeyStop: "0", "by": c.Name})
 }
 
 func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
-	j := s.routine(w, r)
-	if j == nil {
-		return
-	}
 	var body struct {
 		Autonomy string `json:"autonomy"`
 		Reason   string `json:"reason"`
@@ -389,32 +307,8 @@ func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"shadow|propose|auto\", \"reason\": \"...\"}"})
 		return
 	}
-	body.Reason = strings.TrimSpace(body.Reason)
-	switch body.Autonomy {
-	case spec.AutonomyShadow, spec.AutonomyPropose, spec.AutonomyAuto:
-	default:
-		writeJSON(w, 400, map[string]string{"error": "autonomy must be shadow, propose or auto"})
-		return
-	}
-	if !j.Allows(body.Autonomy) {
-		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("%s is capped at %s by its spec (max_autonomy)", j.ID(), j.MaxAutonomy)})
-		return
-	}
-	cur, err := s.Sched.Autonomy(r.Context(), j)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if spec.Rank(body.Autonomy) > spec.Rank(cur) && body.Reason == "" { // raising loosens (ADR-0014)
-		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("raising %s from %s to %s needs a reason", j.ID(), cur, body.Autonomy)})
-		return
-	}
-	if err := s.Store.SetControlBecause(r.Context(), j.ID(), sched.KeyAutonomy, body.Autonomy, c.Name, "api", body.Reason); err != nil {
-		writeErr(w, err)
-		return
-	}
-	s.Log.Info("autonomy set", "routine", j.ID(), "autonomy", body.Autonomy, "caller", c.Name, "reason", body.Reason)
-	writeJSON(w, 200, map[string]string{"routine": j.ID(), "autonomy": body.Autonomy, "by": c.Name})
+	err := s.SetAutonomy(r.Context(), c, "api", routineID(r), body.Autonomy, body.Reason)
+	writeAction(w, err, 200, map[string]string{"routine": routineID(r), "autonomy": body.Autonomy, "by": c.Name})
 }
 
 func (s *Server) hasFleet(f string) bool {

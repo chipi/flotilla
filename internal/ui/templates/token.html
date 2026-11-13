@@ -1,0 +1,11 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page page--narrow">
+  {{with .Data}}
+  <h1>The token for {{.Name}}</h1>
+  <p class="alert alert--wait">It is shown this once; flotilla keeps only its hash. Give it to {{.Name}} by a private channel, and keep it in a password manager.</p>
+  <p class="well token exact">{{.Token}}</p>
+  <p><a class="btn" href="/users">Back to Users</a></p>
+  {{end}}
+</main>
+{{template "foot" .}}

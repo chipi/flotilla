@@ -1,0 +1,25 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page page--narrow">
+  {{with .Data}}
+  <section>
+    <p class="meta"><a href="/runs">Runs</a> / <span class="exact">{{.ID}}</span></p>
+    <h1><span class="exact">{{.Routine}}</span> <span class="{{chip .Status}}">{{.Status}}</span></h1>
+  </section>
+  <dl class="facts card">
+    <div><dt>Started</dt><dd>{{when .StartedAt}}</dd></div>
+    <div><dt>Ended</dt><dd>{{when .EndedAt}}</dd></div>
+    <div><dt>Took</dt><dd>{{secs .DurationS}}</dd></div>
+    <div><dt>Autonomy</dt><dd>{{.Autonomy}}</dd></div>
+    <div><dt>Trigger</dt><dd>{{.Trigger}} by {{.Actor}}</dd></div>
+    <div><dt>Spend</dt><dd>{{usd .SpendUSD}}</dd></div>
+    <div><dt>Spec</dt><dd class="exact">{{short .SpecHash 12}}</dd></div>
+    <div><dt>Trace id</dt><dd class="exact">{{if .TraceID}}{{.TraceID}}{{else}}–{{end}}</dd></div>
+  </dl>
+  <section class="card" aria-labelledby="detail-h">
+    <h2 id="detail-h">What it reported</h2>
+    {{if .Detail}}<pre class="well run-detail">{{.Detail}}</pre>{{else}}<p class="meta">Nothing.</p>{{end}}
+  </section>
+  {{end}}
+</main>
+{{template "foot" .}}

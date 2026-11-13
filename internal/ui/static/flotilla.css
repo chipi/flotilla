@@ -81,7 +81,7 @@ h3 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.3; text-wrap: 
 /* buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-sm); min-height: var(--target);
   padding: 0 var(--space-lg); border-radius: var(--rounded-control); border: 1px solid var(--control-edge);
-  background: var(--panel); color: var(--ink); font: 600 14px var(--font-body); text-decoration: none; cursor: pointer; }
+  background: var(--panel); color: var(--ink); font: 600 14px var(--font-body); text-decoration: none; cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--sunken); color: var(--ink); }
 .btn--primary { min-height: 48px; padding: 0 18px; border-radius: var(--rounded-card); border-color: var(--signal-blue);
   background: var(--signal-blue); color: var(--panel); font-size: 16px; }
@@ -112,7 +112,7 @@ h3 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.3; text-wrap: 
 
 /* fields */
 .field { display: flex; flex-direction: column; gap: var(--space-xs); font-size: 14px; font-weight: 500; }
-.field input, .field textarea, .field select { font: 16px/1.4 var(--font-body); color: var(--ink); background: var(--panel);
+.field input, .field textarea, .field select, .form-inline select { font: 16px/1.4 var(--font-body); color: var(--ink); background: var(--panel);
   border: 1px solid var(--control-edge); border-radius: var(--rounded-control); padding: 10px var(--space-md); min-height: var(--target); }
 .field textarea { resize: vertical; }
 .field ::placeholder { color: #6B6F78; }
@@ -188,8 +188,42 @@ table.data tbody tr:hover { background: var(--signal-blue-wash); }
   button, input, select { min-height: var(--target); }
 }
 
+/* pages (slice 1) */
+.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) 10px; min-height: var(--target);
+  border-top: 1px solid var(--divider); padding: var(--space-xs) 0; }
+.list li:first-child { border-top: 0; }
+.facts { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px var(--space-lg); }
+.facts dt { font-size: 12px; color: var(--slate); }
+.facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.card { display: flex; flex-direction: column; gap: var(--space-md); }
+.card--link { color: var(--ink); text-decoration: none; }
+.card--link:hover { border-color: var(--edge); color: var(--ink); }
+.grid-cards--wide { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.controls { display: flex; flex-direction: column; gap: var(--space-md); border-top: 1px solid var(--divider); padding-top: var(--space-md); }
+.form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-md); }
+.form-row .field { flex: 1 1 200px; }
+.form-inline { display: inline-flex; gap: var(--space-xs); margin: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm); }
+.flash { margin: var(--space-lg) auto 0; max-width: 1272px; }
+.flash--ok { border: 1px solid var(--ok-ink); background: var(--ok-wash); color: var(--ok-ink); border-radius: var(--rounded-control);
+  padding: var(--space-md) 14px; }
+.filters { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-md); }
+.btn--current { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn--current:hover { background: var(--ink); color: var(--paper); }
+.run-detail { white-space: pre-wrap; margin: 0; max-height: 60vh; overflow: auto; }
+.token { font-size: 15px; user-select: all; }
+.routine h2 { overflow-wrap: anywhere; }
+
 /* sign-in and sign-out */
 .signin { max-width: 480px; }
 .signin__form { display: flex; flex-direction: column; gap: var(--space-lg); }
 .nav__signout { margin: 0; }
 .nav .nav__signout-btn { color: var(--night-text); min-height: var(--target); }
+
+@media (max-width: 640px) {
+  .flash { margin: var(--space-md) var(--space-lg) 0; }
+  table.data td.stack { display: block; text-align: left; }
+  table.data td.stack::before { display: block; max-width: none; margin-bottom: var(--space-xxs); }
+  .list a, table.data td a { display: inline-flex; align-items: center; min-height: var(--target); }
+}

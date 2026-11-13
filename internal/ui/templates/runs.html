@@ -1,0 +1,25 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  <section>
+    <h1>Runs</h1>
+    {{with .Data}}{{if .Routine}}<p class="meta">Only <span class="exact">{{.Routine}}</span> · <a href="/runs">all routines</a></p>{{end}}{{end}}
+  </section>
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th>Started</th><th>Routine</th><th>Status</th><th>Autonomy</th><th>Took</th><th>Spend</th><th>Trigger</th></tr></thead>
+      <tbody>
+        {{range .Data.Runs}}<tr>
+          <td data-label="Started"><a href="/runs/{{.ID}}">{{when .StartedAt}}</a></td>
+          <td data-label="Routine"><a class="exact" href="/runs?routine={{.Routine}}">{{.Routine}}</a></td>
+          <td data-label="Status"><span class="{{chip .Status}}">{{.Status}}</span></td>
+          <td data-label="Autonomy">{{.Autonomy}}</td>
+          <td data-label="Took">{{secs .DurationS}}</td>
+          <td data-label="Spend">{{usd .SpendUSD}}</td>
+          <td data-label="Trigger">{{.Trigger}} · {{.Actor}}</td>
+        </tr>{{else}}<tr><td colspan="7">No runs yet.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+</main>
+{{template "foot" .}}

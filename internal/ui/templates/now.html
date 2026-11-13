@@ -3,15 +3,37 @@
 <main class="page">
   <section>
     <p class="meta">Signed in as {{.User}} ({{.Role}})</p>
-    <h1>Now</h1>
+    {{with .Data}}
+    <h1>{{if or .Wrong .Failed .Unhealthy}}Something needs a look.{{else}}Nothing is wrong.{{end}}</h1>
+    {{end}}
   </section>
-  <section class="card">
-    <h2>The pages come next</h2>
-    <p>Health, runs, fleets, history and autonomy arrive with the rest of slice 1 (ADR-0014).</p>
-    <form method="post" action="/signout-everywhere">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <button class="btn" type="submit">Sign out everywhere</button>
-    </form>
+  {{with .Data}}
+  <section class="card" aria-labelledby="wrong-h">
+    <h2 id="wrong-h">Wrong right now</h2>
+    {{if or .Wrong .Unhealthy}}
+    <ul class="list">
+      {{range .Wrong}}<li>
+        <a href="/fleets/{{.Fleet}}" class="exact">{{.ID}}</a>
+        {{if .Stopped}}<span class="chip chip--stop">fleet STOPped</span>{{end}}
+        {{if .Paused}}<span class="chip chip--wait">paused</span>{{end}}
+        {{if .Stale}}<span class="chip chip--stop">stale</span> <span class="meta">last ok {{if .LastSuccess}}{{when .LastSuccess}}{{else}}never{{end}}</span>{{end}}
+      </li>{{end}}
+      {{range .Unhealthy}}<li><span class="exact">worker {{.}}</span> <span class="chip chip--stop">not healthy</span></li>{{end}}
+    </ul>
+    {{else}}<p>Every enabled routine is fresh and running ({{.Fine}}), and every worker is healthy.</p>{{end}}
   </section>
+  <section class="card" aria-labelledby="failed-h">
+    <h2 id="failed-h">Failed runs, last 24 hours</h2>
+    {{if .Failed}}
+    <ul class="list">
+      {{range .Failed}}<li><a href="/runs/{{.ID}}" class="exact">{{.Routine}}</a> <span class="{{chip .Status}}">{{.Status}}</span> <span class="meta">{{when .StartedAt}}</span></li>{{end}}
+    </ul>
+    {{else}}<p>None.</p>{{end}}
+  </section>
+  {{end}}
+  <form method="post" action="/signout-everywhere">
+    {{template "csrf" .CSRF}}
+    <button class="btn" type="submit">Sign out everywhere</button>
+  </form>
 </main>
 {{template "foot" .}}

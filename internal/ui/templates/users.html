@@ -1,0 +1,44 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{$csrf := .CSRF}}{{$me := .User}}
+  <section>
+    <h1>Users</h1>
+    <p class="meta">Admins manage people. An admin also decides who and what this installation trusts; operators do the day's work; viewers read. There is always one admin.</p>
+  </section>
+  <section class="card" aria-labelledby="add-h">
+    <h2 id="add-h">Add a person</h2>
+    <form method="post" action="/users" class="form-row">
+      {{template "csrf" $csrf}}
+      <label class="field">Name<input name="name" required pattern="[a-z][a-z0-9._\-]{1,39}" autocomplete="off"></label>
+      <label class="field">Role
+        <select name="role"><option value="viewer">viewer</option><option value="operator">operator</option><option value="admin">admin</option></select>
+      </label>
+      <button class="btn btn--primary" type="submit">Add and show the token</button>
+    </form>
+  </section>
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Role</th><th>Added</th><th>State</th><th>Change</th></tr></thead>
+      <tbody>
+        {{range .Data}}<tr>
+          <td data-label="Name" class="exact">{{.Name}}{{if eq .Name $me}} (you){{end}}</td>
+          <td data-label="Role">{{.Role}}</td>
+          <td data-label="Added">{{when .CreatedAt}}</td>
+          <td data-label="State">{{if .RevokedAt}}<span class="chip chip--stop">revoked {{when .RevokedAt}}</span>{{else}}active{{end}}</td>
+          <td data-label="Change" class="stack">{{if not .RevokedAt}}<div class="actions">
+            <form method="post" action="/users/{{.Name}}/role" class="form-inline">
+              {{template "csrf" $csrf}}
+              <select name="role" aria-label="Role for {{.Name}}"><option value="viewer"{{if eq .Role "viewer"}} selected{{end}}>viewer</option><option value="operator"{{if eq .Role "operator"}} selected{{end}}>operator</option><option value="admin"{{if eq .Role "admin"}} selected{{end}}>admin</option></select>
+              <button class="btn" type="submit">Set role</button>
+            </form>
+            <form method="post" action="/users/{{.Name}}/rotate" class="form-inline">{{template "csrf" $csrf}}<button class="btn" type="submit">New token</button></form>
+            <form method="post" action="/users/{{.Name}}/sessions" class="form-inline">{{template "csrf" $csrf}}<button class="btn" type="submit">End sessions</button></form>
+            <form method="post" action="/users/{{.Name}}/revoke" class="form-inline">{{template "csrf" $csrf}}<button class="btn btn--stop" type="submit">Revoke</button></form>
+          </div>{{end}}</td>
+        </tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+</main>
+{{template "foot" .}}

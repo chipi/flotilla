@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +14,8 @@ import (
 )
 
 // ADR-0014: people. An admin manages users. The callers-file operator token may add the first admin, or
-// an admin again when none is left (break-glass), and nothing else here.
+// an admin again (break-glass), and nothing else here. The HTTP handlers and the UI call the same
+// functions below.
 
 var userNameRe = regexp.MustCompile(`^[a-z][a-z0-9._-]{1,39}$`)
 
@@ -26,6 +28,7 @@ func (s *Server) userRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/users/{name}/role", s.auth(ActUsers, s.setRole))
 	m.Handle("POST /v1/users/{name}/rotate", s.auth(ActUsers, s.rotateUser))
 	m.Handle("POST /v1/users/{name}/revoke", s.auth(ActUsers, s.revokeUser))
+	m.Handle("POST /v1/users/{name}/sessions/end", s.auth(ActUsers, s.endSessions))
 }
 
 // newToken is 256 bits from crypto/rand, hex, with a prefix that says what it is.
@@ -37,27 +40,15 @@ func newToken() (string, error) {
 	return "flt_" + hex.EncodeToString(b), nil
 }
 
-// isAdmin: only a person holding admin manages users; the callers-file token reaches addUser's bootstrap only.
+// isAdmin: only a person holding admin manages users; the callers-file token reaches AddUser's
+// bootstrap only.
 func isAdmin(c Caller) bool { return c.User && c.Role == RoleAdmin }
 
-func (s *Server) refuseNonAdmin(w http.ResponseWriter, c Caller) bool {
+func needAdmin(c Caller) error {
 	if isAdmin(c) {
-		return false
+		return nil
 	}
-	writeJSON(w, 403, map[string]string{"error": "only an admin manages users"})
-	return true
-}
-
-func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, c Caller) {
-	if s.refuseNonAdmin(w, c) {
-		return
-	}
-	us, err := s.Store.Users(r.Context())
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"users": us})
+	return problem(403, "only an admin manages users")
 }
 
 func (s *Server) nameTaken(name string) bool {
@@ -72,6 +63,104 @@ func (s *Server) nameTaken(name string) bool {
 	return false
 }
 
+// userProblem turns the store's errors into answers the caller can act on.
+func userProblem(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, store.ErrNoSuchUser):
+		return problem(404, "%s", err.Error())
+	case errors.Is(err, store.ErrUserExists), errors.Is(err, store.ErrLastAdmin):
+		return problem(409, "%s", err.Error())
+	case errors.Is(err, store.ErrBadRole), strings.Contains(err.Error(), "first user must be an admin"):
+		return problem(400, "%s", err.Error())
+	}
+	return err
+}
+
+// Users lists every user (admins only).
+func (s *Server) Users(ctx context.Context, c Caller) ([]store.User, error) {
+	if err := needAdmin(c); err != nil {
+		return nil, err
+	}
+	return s.Store.Users(ctx)
+}
+
+// AddUser adds a person and returns their token, shown once. An admin adds anyone; the callers-file
+// operator token adds an admin only (the first one, or break-glass).
+func (s *Server) AddUser(ctx context.Context, c Caller, via, name, role string) (string, string, error) {
+	bootstrap := !c.User && c.Role == RoleOperator
+	if !bootstrap {
+		if err := needAdmin(c); err != nil {
+			return "", "", err
+		}
+	}
+	if !userNameRe.MatchString(name) {
+		return "", "", problem(400, "a name is 2 to 40 characters: a-z first, then a-z 0-9 . _ -")
+	}
+	if s.nameTaken(name) {
+		return "", "", problem(409, "that name is reserved or a caller's")
+	}
+	tok, err := newToken()
+	if err != nil {
+		return "", "", err
+	}
+	if err := userProblem(s.Store.AddUser(ctx, name, role, HashToken(tok), c.Name, via, bootstrap)); err != nil {
+		return "", "", err
+	}
+	s.Log.Info("user added", "user", name, "role", role, "by", c.Name, "bootstrap", bootstrap)
+	return name, tok, nil
+}
+
+func (s *Server) SetUserRole(ctx context.Context, c Caller, via, name, role string) error {
+	if err := needAdmin(c); err != nil {
+		return err
+	}
+	return userProblem(s.Store.SetRole(ctx, name, role, c.Name, via))
+}
+
+// RotateUser gives a user a new token (returned once) and ends their sessions.
+func (s *Server) RotateUser(ctx context.Context, c Caller, via, name string) (string, error) {
+	if err := needAdmin(c); err != nil {
+		return "", err
+	}
+	tok, err := newToken()
+	if err != nil {
+		return "", err
+	}
+	if err := userProblem(s.Store.RotateToken(ctx, name, HashToken(tok), c.Name, via)); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+func (s *Server) RevokeUser(ctx context.Context, c Caller, via, name string) error {
+	if err := needAdmin(c); err != nil {
+		return err
+	}
+	return userProblem(s.Store.RevokeUser(ctx, name, c.Name, via))
+}
+
+// EndUserSessions ends another user's sessions (admins).
+func (s *Server) EndUserSessions(ctx context.Context, c Caller, via, name string) error {
+	if err := needAdmin(c); err != nil {
+		return err
+	}
+	_, err := s.Store.EndSessions(ctx, name, c.Name, via)
+	return err
+}
+
+// --- the HTTP handlers ---
+
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, c Caller) {
+	us, err := s.Users(r.Context(), c)
+	if err != nil {
+		writeAction(w, err, 0, nil)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"users": us})
+}
+
 func (s *Server) addUser(w http.ResponseWriter, r *http.Request, c Caller) {
 	var body struct {
 		Name string `json:"name"`
@@ -81,37 +170,17 @@ func (s *Server) addUser(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeJSON(w, 400, map[string]string{"error": "body: {\"name\": \"...\", \"role\": \"admin|operator|viewer\"}"})
 		return
 	}
-	bootstrap := !c.User && c.Role == RoleOperator
-	if !bootstrap && s.refuseNonAdmin(w, c) {
-		return
-	}
-	if !userNameRe.MatchString(body.Name) {
-		writeJSON(w, 400, map[string]string{"error": "a name is 2 to 40 characters: a-z first, then a-z 0-9 . _ -"})
-		return
-	}
-	if s.nameTaken(body.Name) {
-		writeJSON(w, 409, map[string]string{"error": "that name is reserved or a caller's"})
-		return
-	}
-	tok, err := newToken()
+	name, tok, err := s.AddUser(r.Context(), c, "api", body.Name, body.Role)
 	if err != nil {
-		writeErr(w, err)
+		writeAction(w, err, 0, nil)
 		return
 	}
-	err = s.Store.AddUser(r.Context(), body.Name, body.Role, HashToken(tok), c.Name, "api", bootstrap)
-	if !s.userErr(w, err) {
-		return
-	}
-	s.Log.Info("user added", "user", body.Name, "role", body.Role, "by", c.Name, "bootstrap", bootstrap)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 201, map[string]string{"name": body.Name, "role": body.Role, "token": tok,
+	writeJSON(w, 201, map[string]string{"name": name, "role": body.Role, "token": tok,
 		"note": "the token is shown once; flotilla keeps only its hash"})
 }
 
 func (s *Server) setRole(w http.ResponseWriter, r *http.Request, c Caller) {
-	if s.refuseNonAdmin(w, c) {
-		return
-	}
 	var body struct {
 		Role string `json:"role"`
 	}
@@ -119,22 +188,14 @@ func (s *Server) setRole(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeJSON(w, 400, map[string]string{"error": "body: {\"role\": \"admin|operator|viewer\"}"})
 		return
 	}
-	if !s.userErr(w, s.Store.SetRole(r.Context(), r.PathValue("name"), body.Role, c.Name, "api")) {
-		return
-	}
-	writeJSON(w, 200, map[string]string{"name": r.PathValue("name"), "role": body.Role, "by": c.Name})
+	err := s.SetUserRole(r.Context(), c, "api", r.PathValue("name"), body.Role)
+	writeAction(w, err, 200, map[string]string{"name": r.PathValue("name"), "role": body.Role, "by": c.Name})
 }
 
 func (s *Server) rotateUser(w http.ResponseWriter, r *http.Request, c Caller) {
-	if s.refuseNonAdmin(w, c) {
-		return
-	}
-	tok, err := newToken()
+	tok, err := s.RotateUser(r.Context(), c, "api", r.PathValue("name"))
 	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if !s.userErr(w, s.Store.RotateToken(r.Context(), r.PathValue("name"), HashToken(tok), c.Name, "api")) {
+		writeAction(w, err, 0, nil)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -143,34 +204,11 @@ func (s *Server) rotateUser(w http.ResponseWriter, r *http.Request, c Caller) {
 }
 
 func (s *Server) revokeUser(w http.ResponseWriter, r *http.Request, c Caller) {
-	if s.refuseNonAdmin(w, c) {
-		return
-	}
-	if !s.userErr(w, s.Store.RevokeUser(r.Context(), r.PathValue("name"), c.Name, "api")) {
-		return
-	}
-	writeJSON(w, 200, map[string]string{"name": r.PathValue("name"), "revoked_by": c.Name})
+	err := s.RevokeUser(r.Context(), c, "api", r.PathValue("name"))
+	writeAction(w, err, 200, map[string]string{"name": r.PathValue("name"), "revoked_by": c.Name})
 }
 
-// userErr writes the store's error as an HTTP answer; true when there was none.
-func (s *Server) userErr(w http.ResponseWriter, err error) bool {
-	switch {
-	case err == nil:
-		return true
-	case errors.Is(err, store.ErrNoSuchUser):
-		writeJSON(w, 404, map[string]string{"error": err.Error()})
-	case errors.Is(err, store.ErrUserExists):
-		writeJSON(w, 409, map[string]string{"error": err.Error()})
-	case errors.Is(err, store.ErrLastAdmin):
-		writeJSON(w, 409, map[string]string{"error": err.Error()})
-	case errors.Is(err, store.ErrBadRole):
-		writeJSON(w, 400, map[string]string{"error": err.Error()})
-	default:
-		if strings.Contains(err.Error(), "first user must be an admin") {
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
-		} else {
-			writeErr(w, err)
-		}
-	}
-	return false
+func (s *Server) endSessions(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.EndUserSessions(r.Context(), c, "api", r.PathValue("name"))
+	writeAction(w, err, 200, map[string]string{"name": r.PathValue("name"), "sessions_ended_by": c.Name})
 }

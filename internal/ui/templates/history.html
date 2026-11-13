@@ -1,0 +1,35 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}
+  <section>
+    <h1>History</h1>
+    <p class="meta">The decisions in a routine's ledger, newest first. Recurrences are counted on the decision they follow.</p>
+    {{if .Namespaces}}
+    <nav class="filters" aria-label="Ledgers">
+      {{$ns := .NS}}{{range .Namespaces}}<a class="btn{{if eq . $ns}} btn--current{{end}}" href="/history?ns={{.}}"{{if eq . $ns}} aria-current="page"{{end}}>{{.}}</a>{{end}}
+    </nav>
+    {{end}}
+  </section>
+  {{if .Namespaces}}
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th>When</th><th>Decision</th><th>Signal</th><th>Why</th><th>Recurred</th></tr></thead>
+      <tbody>
+        {{range .Decisions}}<tr>
+          <td data-label="When">{{when (index .Row "ts")}}</td>
+          <td data-label="Decision"><span class="{{chip (index .Row "disposition")}}">{{index .Row "disposition"}}</span></td>
+          <td data-label="Signal" class="stack"><span class="exact">{{short (index .Row "fingerprint") 48}}</span><br><span class="meta">{{short (index .Row "alertname") 80}}</span></td>
+          <td data-label="Why" class="stack">{{short (index .Row "reason") 160}}</td>
+          <td data-label="Recurred">{{if .Recurrences}}{{.Recurrences}}×{{else}}–{{end}}</td>
+        </tr>{{else}}<tr><td colspan="5">No decisions in this ledger.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{if .Older}}<p><a class="btn" href="/history?ns={{.NS}}&amp;before={{.Older}}">Older decisions</a></p>{{end}}
+  {{else}}
+  <p class="card">No routine keeps its ledger in flotilla yet.</p>
+  {{end}}
+  {{end}}
+</main>
+{{template "foot" .}}

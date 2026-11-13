@@ -1,0 +1,14 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  <h1>Fleets</h1>
+  <div class="grid-cards grid-cards--wide">
+    {{range .Data}}<a class="card card--link" href="/fleets/{{.Name}}">
+      <h2>{{.Name}} {{if .Stopped}}<span class="chip chip--stop">STOPped</span>{{end}}</h2>
+      <ul class="list">
+        {{range .Routines}}<li><span class="exact">{{.ID}}</span> <span class="{{chip .Autonomy}}">{{.Autonomy}}</span>{{if .Paused}} <span class="chip chip--wait">paused</span>{{end}}{{if .Stale}} <span class="chip chip--stop">stale</span>{{end}}{{if not .Enabled}} <span class="chip chip--neutral">disabled</span>{{end}}</li>{{end}}
+      </ul>
+    </a>{{end}}
+  </div>
+</main>
+{{template "foot" .}}

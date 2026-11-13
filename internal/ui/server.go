@@ -45,7 +45,7 @@ const (
 
 func (u *Server) init() {
 	u.once.Do(func() {
-		u.tmpl = template.Must(template.New("").Funcs(template.FuncMap{}).ParseFS(templatesFS, "templates/*.html"))
+		u.tmpl = template.Must(template.New("").Funcs(funcs).ParseFS(templatesFS, "templates/*.html"))
 	})
 }
 
@@ -59,6 +59,17 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("POST /signout", u.session(u.signout))
 	m.Handle("POST /signout-everywhere", u.session(u.signoutEverywhere))
 	m.Handle("GET /{$}", u.session(u.now))
+	m.Handle("GET /runs", u.session(u.runsPage))
+	m.Handle("GET /runs/{id}", u.session(u.runPage))
+	m.Handle("GET /fleets", u.session(u.fleetsPage))
+	m.Handle("GET /fleets/{fleet}", u.session(u.fleetPage))
+	m.Handle("POST /routines/{fleet}/{routine}/{action}", u.session(u.routineAction))
+	m.Handle("POST /fleets/{fleet}/{action}", u.session(u.fleetAction))
+	m.Handle("GET /autonomy", u.session(u.autonomyPage))
+	m.Handle("GET /history", u.session(u.historyPage))
+	m.Handle("GET /users", u.session(u.usersPage))
+	m.Handle("POST /users", u.session(u.userAdd))
+	m.Handle("POST /users/{name}/{action}", u.session(u.userAction))
 	m.Handle("/v1/", u.v1(u.API.Handler()))
 	return u.hardened(m)
 }
@@ -114,13 +125,17 @@ func (u *Server) v1(apiHandler http.Handler) http.Handler {
 }
 
 type page struct {
-	Title  string
-	User   string
-	Role   string
-	CSRF   string
-	Active string
-	Error  string
-	Data   any
+	Title   string
+	User    string
+	Role    string
+	CSRF    string
+	Active  string // the page's label in the navigation
+	Nav     []navGroup
+	CanAct  bool // operator or admin: show the controls (the server checks every action anyway)
+	IsAdmin bool
+	Msg     string // an action's outcome, from the redirect after it
+	Error   string
+	Data    any
 }
 
 func (u *Server) render(w http.ResponseWriter, name string, code int, p page) {
@@ -246,9 +261,4 @@ func (u *Server) signoutEverywhere(w http.ResponseWriter, r *http.Request, s *st
 	_, _ = u.API.Store.EndSessions(r.Context(), s.User, "user:"+s.User, "ui")
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
-}
-
-// now is the home page; slice 1 part 3 fills it (health and what is wrong).
-func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	u.render(w, "now.html", 200, page{Title: "Now", User: s.User, Role: s.Role, CSRF: s.CSRF, Active: "decide"})
 }

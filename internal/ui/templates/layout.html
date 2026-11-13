@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · flotilla</title>
 <link rel="stylesheet" href="/static/flotilla.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 </head>
 <body>{{end}}
 
@@ -12,7 +13,7 @@
   <div class="nav__top">
     <a class="nav__brand" href="/">flotilla</a>
     <nav class="nav__groups" aria-label="Sections">
-      <a class="nav__tab" href="/" {{if eq .Active "decide"}}aria-current="true"{{end}}>Decide</a>
+      {{range .Nav}}<a class="nav__tab" href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
     </nav>
     <span class="nav__meta">{{.User}} · {{.Role}}</span>
     <form method="post" action="/signout" class="nav__signout">
@@ -20,13 +21,17 @@
       <button class="btn btn--link nav__signout-btn" type="submit">Sign out</button>
     </form>
   </div>
-  <nav class="nav__pages" aria-label="Decide pages">
-    <a class="nav__sub" href="/" {{if eq .Active "decide"}}aria-current="page"{{end}}>Now</a>
-  </nav>
+  {{range .Nav}}{{if .Current}}<nav class="nav__pages" aria-label="{{.Label}} pages">
+    {{range .Pages}}<a class="nav__sub" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+  </nav>{{end}}{{end}}
   <nav class="nav__bar" aria-label="Sections">
-    <a href="/" {{if eq .Active "decide"}}aria-current="true"{{end}}>Decide</a>
+    {{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
   </nav>
-</header>{{end}}
+</header>
+{{if .Msg}}<p class="flash flash--ok" role="status">{{.Msg}}</p>{{end}}
+{{if .Error}}<p class="flash alert alert--stop" role="alert">{{.Error}}</p>{{end}}{{end}}
+
+{{define "csrf"}}<input type="hidden" name="csrf" value="{{.}}">{{end}}
 
 {{define "foot"}}</body>
 </html>{{end}}
