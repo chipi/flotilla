@@ -9,7 +9,8 @@
 // action is under its hourly limit here. Then `started` is committed before anything runs; the local
 // preconditions are checked (no longer holding: precondition_false, nothing runs); the argv runs without
 // a shell, with the action's timeout (past it: unknown); the result is recorded. After a restart, a
-// `started` with no result is unknown and never runs again.
+// `started` with no result is unknown and never runs again. Every outcome is a line in the audit log
+// (internal/hostaudit), and `started` is logged before the store records it: nothing runs unlogged.
 package hostexec
 
 import (
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/envelope"
+	"github.com/chipi/flotilla/internal/hostaudit"
 	"github.com/chipi/flotilla/internal/hostcfg"
 	_ "modernc.org/sqlite"
 )
@@ -50,6 +52,7 @@ type Result struct {
 	OutputSHA   string `json:"output_sha256,omitempty"`
 	Detail      string `json:"detail,omitempty"`
 	Resent      bool   `json:"resent,omitempty"` // the recorded result of an identical resend; nothing ran
+	ChainHead   string `json:"chain_head"`       // the audit log's head after this result (ADR-0006 §8)
 }
 
 // Runner runs an argv, without a shell, within timeout. timedOut reports the timeout; err is a failure
@@ -69,6 +72,7 @@ type Executor struct {
 	Cfg   *hostcfg.Config
 	Run   Runner
 	Check Checker
+	Audit *hostaudit.Log
 	Now   func() time.Time
 
 	db *sql.DB
@@ -109,58 +113,81 @@ func Open(path string) (*sql.DB, int64, error) {
 	return db, n, nil
 }
 
-// New is an Executor over an opened store.
-func New(db *sql.DB, cfg *hostcfg.Config, run Runner, check Checker) *Executor {
-	return &Executor{Cfg: cfg, Run: run, Check: check, Now: time.Now, db: db}
+// New is an Executor over an opened store and audit log.
+func New(db *sql.DB, audit *hostaudit.Log, cfg *hostcfg.Config, run Runner, check Checker) *Executor {
+	return &Executor{Cfg: cfg, Run: run, Check: check, Audit: audit, Now: time.Now, db: db}
 }
 
 func refused(id, why string) Result { return Result{ExecutionID: id, Status: Refused, Detail: why} }
 
-// Handle decides and, when everything allows it, runs one execution received as raw bytes.
+// Handle decides and, when everything allows it, runs one execution received as raw bytes. Every
+// outcome is a line in the audit log, and the result carries the log's chain head after it.
 func (x *Executor) Handle(ctx context.Context, raw []byte) Result {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	r, e := x.decide(ctx, raw)
+	ev := hostaudit.Ended
+	switch {
+	case r.Resent:
+		ev = hostaudit.Resent
+	case r.Status == Refused:
+		ev = hostaudit.Refused
+	}
+	if _, err := x.Audit.Append(hostaudit.Entry{Time: x.Now().UTC(), Event: ev, ExecutionID: r.ExecutionID, CaseID: e.CaseID,
+		Action: e.Action, Approved: e.Approved, Status: r.Status, ExitCode: r.ExitCode, OutputSHA: r.OutputSHA, Detail: r.Detail}); err != nil {
+		r.Detail += " (not in the audit log: " + err.Error() + ")"
+	}
+	r.ChainHead = x.Audit.Head()
+	return r
+}
+
+func (x *Executor) decide(ctx context.Context, raw []byte) (Result, envelope.Execution) {
 	now := x.Now().UTC()
 	e, payload, err := envelope.Verify(raw, x.Cfg.Keys(), x.Cfg.Host, now)
 	if err != nil {
-		return refused(e.ID, err.Error())
+		return refused(e.ID, err.Error()), e
 	}
 	if r, seen, err := x.recorded(ctx, e.ID, payload); err != nil {
-		return refused(e.ID, "the store: "+err.Error())
+		return refused(e.ID, "the store: "+err.Error()), e
 	} else if seen {
-		return r
+		return r, e
 	}
 	argv, err := x.Cfg.Argv(e.Action, e.Params)
 	if err != nil {
-		return refused(e.ID, err.Error())
+		return refused(e.ID, err.Error()), e
 	}
 	switch {
 	case x.Cfg.Ceiling == "shadow":
-		return refused(e.ID, "this host accepts nothing (its ceiling is shadow)")
+		return refused(e.ID, "this host accepts nothing (its ceiling is shadow)"), e
 	case e.Approved == "auto" && x.Cfg.Ceiling != "auto":
-		return refused(e.ID, "approved automatically, above this host's ceiling ("+x.Cfg.Ceiling+")")
+		return refused(e.ID, "approved automatically, above this host's ceiling ("+x.Cfg.Ceiling+")"), e
 	}
 	a := x.Cfg.Actions[e.Action]
 	var n int
 	// what ran or may have run counts; a precondition that no longer held ran nothing
 	if err := x.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM executions WHERE action = ? AND started_at >= ? AND status <> ?`,
 		e.Action, now.Add(-time.Hour).Format(time.RFC3339Nano), PreconditionFalse).Scan(&n); err != nil {
-		return refused(e.ID, "the store: "+err.Error())
+		return refused(e.ID, "the store: "+err.Error()), e
 	}
 	if n >= a.PerHour {
-		return refused(e.ID, fmt.Sprintf("%s ran %d times in the last hour here, its limit", e.Action, n))
+		return refused(e.ID, fmt.Sprintf("%s ran %d times in the last hour here, its limit", e.Action, n)), e
+	}
+	// nothing runs that the audit log does not show starting
+	if _, err := x.Audit.Append(hostaudit.Entry{Time: now, Event: hostaudit.Started, ExecutionID: e.ID, CaseID: e.CaseID,
+		Action: e.Action, Approved: e.Approved, Argv: argv}); err != nil {
+		return refused(e.ID, "the audit log: "+err.Error()), e
 	}
 	argvJSON, _ := json.Marshal(argv)
 	if _, err := x.db.ExecContext(ctx, `INSERT INTO executions (id, payload, action, argv, status, started_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		e.ID, payload, e.Action, string(argvJSON), started, now.Format(time.RFC3339Nano)); err != nil {
-		return refused(e.ID, "the store: "+err.Error())
+		return refused(e.ID, "the store: "+err.Error()), e
 	}
 	r := x.execute(ctx, e, a, argv)
 	if _, err := x.db.ExecContext(ctx, `UPDATE executions SET status = ?, exit_code = ?, output = ?, output_sha256 = ?, detail = ?, ended_at = ?
 		WHERE id = ?`, r.Status, r.ExitCode, r.Output, r.OutputSHA, r.Detail, x.Now().UTC().Format(time.RFC3339Nano), e.ID); err != nil {
 		r.Detail = "ran, but the result could not be recorded: " + err.Error()
 	}
-	return r
+	return r, e
 }
 
 func (x *Executor) execute(ctx context.Context, e envelope.Execution, a hostcfg.Action, argv []string) Result {

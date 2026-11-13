@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/envelope"
+	"github.com/chipi/flotilla/internal/hostaudit"
 	"github.com/chipi/flotilla/internal/hostcfg"
 )
 
@@ -79,8 +82,13 @@ func setup(t *testing.T, ceiling string) (*Executor, *fakeRun, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	audit, err := hostaudit.Open(filepath.Join(filepath.Dir(path), "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { audit.Close() })
 	run := &fakeRun{out: "kicked"}
-	x := New(db, config(t, ceiling), run, fakeCheck{holds: true})
+	x := New(db, audit, config(t, ceiling), run, fakeCheck{holds: true})
 	x.Now = func() time.Time { return now.Add(time.Minute) }
 	return x, run, path
 }
@@ -102,6 +110,52 @@ func TestRunsOnceAndAResendGetsTheResult(t *testing.T) {
 	forged.CaseID = "case-2"
 	if r := x.Handle(ctx, sign(t, forged)); r.Status != Refused || !strings.Contains(r.Detail, "forgery") || len(run.calls) != 1 {
 		t.Fatalf("a different envelope under a seen id: %+v", r)
+	}
+}
+
+// Every outcome is a line in the audit log, `started` before the command, and each result carries the
+// head after its own line.
+func TestAuditLog(t *testing.T) {
+	ctx := context.Background()
+	x, run, path := setup(t, "propose")
+	raw := sign(t, exe("exec-1"))
+	ran := x.Handle(ctx, raw)
+	resent := x.Handle(ctx, raw)
+	auto := exe("exec-2")
+	auto.Approved = "auto" // above the ceiling, propose
+	refusedR := x.Handle(ctx, sign(t, auto))
+	f, err := os.Open(filepath.Join(filepath.Dir(path), "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	body, _ := io.ReadAll(f)
+	hashes, err := hostaudit.Verify(bytes.NewReader(body))
+	if err != nil || len(hashes) != 4 {
+		t.Fatalf("the log: %d lines, %v\n%s", len(hashes), err, body)
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+		var e hostaudit.Entry
+		json.Unmarshal([]byte(line), &e)
+		got = append(got, e.Event+" "+e.ExecutionID+" "+e.Status+" "+e.Approved+" "+strings.Join(e.Argv, " "))
+	}
+	want := []string{
+		"started exec-1  user:ada /usr/bin/sudo -n /bin/launchctl kickstart system/com.homelab.db-backup",
+		"result exec-1 done user:ada ",
+		"resent exec-1 done user:ada ",
+		"refused exec-2 refused auto ",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the log's lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if ran.ChainHead != hashes[1] || resent.ChainHead != hashes[2] || refusedR.ChainHead != hashes[3] {
+		t.Fatalf("chain heads %s %s %s, want %v", ran.ChainHead, resent.ChainHead, refusedR.ChainHead, hashes)
+	}
+	// A log that cannot be written to: nothing runs.
+	x.Audit.Close()
+	if r := x.Handle(ctx, sign(t, exe("exec-3"))); r.Status != Refused || !strings.Contains(r.Detail, "audit log") || len(run.calls) != 1 {
+		t.Fatalf("ran without a log: %+v, %d runs", r, len(run.calls))
 	}
 }
 
@@ -200,7 +254,7 @@ func TestStartedIsUnknownAfterARestart(t *testing.T) {
 		t.Fatalf("reopen: %d marked, %v", n, err)
 	}
 	defer db.Close()
-	y := New(db, x.Cfg, run, fakeCheck{holds: true})
+	y := New(db, x.Audit, x.Cfg, run, fakeCheck{holds: true})
 	y.Now = x.Now
 	if r := y.Handle(ctx, raw); r.Status != Unknown || !r.Resent || len(run.calls) != 0 {
 		t.Fatalf("the crashed execution sent again: %+v, %d runs", r, len(run.calls))

@@ -78,3 +78,16 @@ VPS.
   cannot check, or one with the wrong arguments. 18 mutants killed (10 executor, 5 checker, 3 config).
   Not verified: that `_flotilla` (not the operator's account) can run `launchctl print` on the mini;
   checked when H8 installs it.
+- **H4, the audit log:** built 2026-11-13, `internal/hostaudit` (stdlib only). JSONL, each line naming
+  the sha256 of the exact bytes of the line before it; the head is the last line's hash. Opening
+  verifies the whole log and refuses a broken or torn one (the agent then runs nothing). The executor
+  logs `started` (with the resolved argv and who approved) before the store records it, so nothing runs
+  unlogged, then one line per outcome (`result`, `refused`, `resent`); every result carries the head
+  after its own line. A removed, moved, repeated or edited line breaks the chain; the last line
+  edited or removed shows only against the head flotillad stored (`Leads`, used by `host audit` in
+  H9).
+  12 mutants: 11 killed, 1 (the sequence-number check) redundant with the chain, removed. Each line
+  is fsynced; no test can tell a missing fsync. For H8: the agent's user owns the file, so it could
+  rewrite the whole chain; what catches that is flotillad's stored head and the copy Alloy already
+  shipped. On macOS, install can set `sappnd` on the file (append-only, cleared only in single-user
+  mode); to decide at H8.
