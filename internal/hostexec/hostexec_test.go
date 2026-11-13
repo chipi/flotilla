@@ -187,6 +187,15 @@ func TestRefusals(t *testing.T) {
 		if r.Status != Refused || !strings.Contains(r.Detail, c.want) || len(run.calls) != 0 {
 			t.Errorf("%s: %+v, %d runs", name, r, len(run.calls))
 		}
+		// every refusal carries the id it was sent under, verified or not: flotillad matches it at once
+		if r.ExecutionID != envelope.PeekID(c.raw) || r.ExecutionID == "" {
+			t.Errorf("%s: refused under id %q", name, r.ExecutionID)
+		}
+	}
+	// not an envelope at all: refused, with no id to give
+	x, _, _ := setup(t, "propose")
+	if r := x.Handle(ctx, []byte("garbage")); r.Status != Refused || r.ExecutionID != "" {
+		t.Errorf("garbage: %+v", r)
 	}
 	// auto on an auto host runs
 	x, run, _ := setup(t, "auto")

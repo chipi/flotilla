@@ -213,7 +213,24 @@ var schema = []string{
 		created_at TEXT NOT NULL,
 		expires_at TEXT NOT NULL,
 		used_at TEXT
-	);`,
+	);
+	CREATE TABLE host_executions (
+		id TEXT PRIMARY KEY,
+		case_id TEXT NOT NULL,
+		plan_id INTEGER NOT NULL,
+		host TEXT NOT NULL,
+		action TEXT NOT NULL,
+		approved TEXT NOT NULL,
+		envelope BLOB NOT NULL,
+		status TEXT NOT NULL,
+		exit_code INTEGER NOT NULL DEFAULT 0,
+		output_sha256 TEXT NOT NULL DEFAULT '',
+		detail TEXT NOT NULL DEFAULT '',
+		chain_head TEXT NOT NULL DEFAULT '',
+		sent_at TEXT NOT NULL,
+		ended_at TEXT
+	);
+	CREATE INDEX host_executions_case ON host_executions(case_id);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

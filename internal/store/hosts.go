@@ -200,3 +200,95 @@ func (s *Store) RenewHost(ctx context.Context, host, oldSerial, serial string, n
 	}
 	return tx.Commit()
 }
+
+// Statuses of an execution flotillad sent to a host, besides the host's own (hostexec: done, failed,
+// unknown, precondition_false, refused).
+const (
+	ExecSent    = "sent"     // on its way, or its result not yet back
+	ExecNotSent = "not_sent" // the host was not connected: nothing reached it, and it may be sent again
+)
+
+var ErrExecutionExists = errors.New("this execution was already sent")
+
+// HostExecution is flotillad's record of one signed execution: the envelope it sent, and what came back.
+type HostExecution struct {
+	ID           string  `json:"id"`
+	CaseID       string  `json:"case_id"`
+	PlanID       int64   `json:"plan_id"`
+	Host         string  `json:"host"`
+	Action       string  `json:"action"`
+	Approved     string  `json:"approved"`
+	Envelope     []byte  `json:"-"`
+	Status       string  `json:"status"`
+	ExitCode     int     `json:"exit_code"`
+	OutputSHA256 string  `json:"output_sha256"`
+	Detail       string  `json:"detail"`
+	ChainHead    string  `json:"chain_head"`
+	SentAt       string  `json:"sent_at"`
+	EndedAt      *string `json:"ended_at"`
+}
+
+// StartHostExecution records an execution as sent, before it goes. An id seen before is refused unless
+// its last attempt reached no one (not_sent): then this attempt, with its new envelope, replaces it.
+func (s *Store) StartHostExecution(ctx context.Context, x HostExecution) error {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO host_executions (id, case_id, plan_id, host, action, approved, envelope, status, sent_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET envelope = excluded.envelope, status = excluded.status, sent_at = excluded.sent_at, detail = ''
+		WHERE host_executions.status = ?`,
+		x.ID, x.CaseID, x.PlanID, x.Host, x.Action, x.Approved, x.Envelope, ExecSent, s.now().Format(ts), ExecNotSent)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return ErrExecutionExists
+	}
+	return nil
+}
+
+// EndHostExecution records what came back (or that nothing could be sent).
+func (s *Store) EndHostExecution(ctx context.Context, id, status string, exitCode int, outputSHA, detail, chainHead string) error {
+	var ended any
+	if status != ExecNotSent {
+		ended = s.now().Format(ts)
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE host_executions SET status = ?, exit_code = ?, output_sha256 = ?, detail = ?, chain_head = ?, ended_at = ?
+		WHERE id = ?`, status, exitCode, outputSHA, detail, chainHead, ended, id)
+	return err
+}
+
+// HostExecution returns an execution by id, or nil.
+func (s *Store) HostExecution(ctx context.Context, id string) (*HostExecution, error) {
+	var x HostExecution
+	err := s.db.QueryRowContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, envelope, status, exit_code, output_sha256, detail,
+		chain_head, sent_at, ended_at FROM host_executions WHERE id = ?`, id).Scan(&x.ID, &x.CaseID, &x.PlanID, &x.Host, &x.Action,
+		&x.Approved, &x.Envelope, &x.Status, &x.ExitCode, &x.OutputSHA256, &x.Detail, &x.ChainHead, &x.SentAt, &x.EndedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &x, err
+}
+
+// RecoverHostExecutions marks every execution left sent by the last flotillad unknown (its result, if
+// any, was lost with it) and returns them: their cases escalate, their targets stay held.
+func (s *Store) RecoverHostExecutions(ctx context.Context) ([]HostExecution, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, host FROM host_executions WHERE status = ?`, ExecSent)
+	if err != nil {
+		return nil, err
+	}
+	var xs []HostExecution
+	for rows.Next() {
+		var x HostExecution
+		if err := rows.Scan(&x.ID, &x.CaseID, &x.Host); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		xs = append(xs, x)
+	}
+	rows.Close()
+	for _, x := range xs {
+		if err := s.EndHostExecution(ctx, x.ID, "unknown", 0, "", "flotillad stopped before its result came back", ""); err != nil {
+			return nil, err
+		}
+	}
+	return xs, nil
+}

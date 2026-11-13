@@ -71,6 +71,10 @@ func (d *Dispatcher) Loop(ctx context.Context, every time.Duration) {
 		if err := d.Once(ctx); err != nil {
 			d.Log.Error("dispatch", "err", err)
 		}
+		// executing cases on a host go to it, signed (ADR-0006 §4)
+		if _, err := d.API.SendExecutions(ctx); err != nil {
+			d.Log.Error("dispatch: host executions", "err", err)
+		}
 		select {
 		case <-ctx.Done():
 			d.wg.Wait()

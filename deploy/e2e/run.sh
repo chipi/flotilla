@@ -100,7 +100,7 @@ models:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
   aliases:
     e2e-model: {endpoint: gateway, model: fleet-triage-flash}
-hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s}
+hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
@@ -150,6 +150,10 @@ else
   cat "$WORK/ca.log"; bad "flotilla ca"
 fi
 [ ! -e "$WORK/config/host-ca/root.key" ] || bad "root.key beside the intermediate"
+SK="$(caf signing-key /w/config/host-ca e2e1 2>&1)"
+echo "$SK" | grep -q '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/config/host-ca/signing.key" ] \
+  && ok "the execution-signing key made; its public line printed for the hosts' configs" || bad "signing-key: $SK"
+SIGNPUB="$(echo "$SK" | sed -n 's/^  "e2e1": "\(.*\)"$/\1/p')"
 
 echo "== secrets and seeded state (deploy/mini/secrets.sh, as a deploy runs it)"
 printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/fleet.env"   # a random stand-in key, made per run
@@ -369,7 +373,7 @@ mkdir -p "$WORK/host"
 cp "$WORK/config/host-ca/root.crt" "$WORK/host/root.crt"
 cat > "$WORK/host/config.json" <<EOF
 {"host": "e2e-host", "user": "_flotilla", "ceiling": "propose",
- "signing_keys": {"k1": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="},
+ "signing_keys": {"e2e1": "$SIGNPUB"},
  "actions": {"host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"}}}
 EOF
 chmod 644 "$WORK/host/"*
@@ -388,6 +392,8 @@ echo "$OUT" | grep -q "enrolment refused" && ok "the same token a second time is
 K="$($D run --rm --entrypoint sh -v flotilla-e2e-host-state:/s "$HOST_AGENT_IMAGE" -c 'stat -c "%a %U" /s/key.pem' 2>&1)"
 [ "$K" = "600 flotilla-host" ] && ok "the host's key is mode 600, the agent's user's ($K)" || bad "key file: $K"
 cli host list | grep -q "^e2e-host  *no  *- .*[0-9]T" && ok "host list shows it enrolled, not yet connected, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
+$D logs flotillad 2>&1 | grep -q '"msg":"host executions are signed".*"key_id":"e2e1"' \
+  && ok "flotillad loaded the execution-signing key from its secrets volume (secrets.sh)" || bad "no signing key at start: $($D logs flotillad 2>&1 | grep -i 'sign' | tail -2)"
 host_agent -d --name flotilla-e2e-host -- run >/dev/null
 seen flotilla-e2e-host '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected".*"host":"e2e-host"' \
   && ok "the agent connected; flotillad authenticated it as e2e-host" || bad "connect: $($D logs flotilla-e2e-host 2>&1 | tail -3)"

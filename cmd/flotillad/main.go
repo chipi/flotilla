@@ -331,6 +331,19 @@ func main() {
 		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
 		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}, Heartbeat: cfg.Hosts.Heartbeat,
 			OnContact: recordContact(st, log)}
+		if cfg.Hosts.SigningKeyFile != "" {
+			key, err := loadSigningKey(cfg.Hosts.SigningKeyFile)
+			if err != nil {
+				log.Error("the execution-signing key", "file", cfg.Hosts.SigningKeyFile, "err", err)
+				os.Exit(1)
+			}
+			apiSrv.Exec = &api.Executions{Link: link, Key: key, KeyID: cfg.Hosts.SigningKeyID}
+			if err := apiSrv.RecoverExecutions(ctx); err != nil {
+				log.Error("host executions: recovery", "err", err)
+				os.Exit(1)
+			}
+			log.Info("host executions are signed", "key_id", cfg.Hosts.SigningKeyID)
+		}
 		hostLn, err = net.Listen("tcp", cfg.Hosts.Listen)
 		if err != nil {
 			log.Error("host endpoint listen", "addr", cfg.Hosts.Listen, "err", err)

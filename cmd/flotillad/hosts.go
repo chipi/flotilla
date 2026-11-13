@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -32,7 +33,13 @@ type HostsConfig struct {
 	// the agents' heartbeat interval (their -heartbeat); silent for three, a connection is dropped.
 	// Unset: 30s.
 	Heartbeat time.Duration `yaml:"heartbeat"`
+	// Optional: the execution-signing key (`flotilla ca signing-key`) and its id, which each host's config
+	// lists among its accepted keys. Unset: flotillad sends no execution.
+	SigningKeyFile string `yaml:"signing_key_file"`
+	SigningKeyID   string `yaml:"signing_key_id"`
 }
+
+var keyIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 func (h HostsConfig) validate() error {
 	if h.Listen == "" {
@@ -44,7 +51,22 @@ func (h HostsConfig) validate() error {
 	if h.Heartbeat < 0 {
 		return errors.New("hosts: heartbeat cannot be negative")
 	}
+	if (h.SigningKeyFile == "") != (h.SigningKeyID == "") {
+		return errors.New("hosts: signing_key_file and signing_key_id go together")
+	}
+	if h.SigningKeyID != "" && !keyIDRe.MatchString(h.SigningKeyID) {
+		return fmt.Errorf("hosts: signing_key_id %q", h.SigningKeyID)
+	}
 	return nil
+}
+
+// loadSigningKey reads the execution-signing key (a PEM PKCS #8 Ed25519 key, mode 600).
+func loadSigningKey(path string) (ed25519.PrivateKey, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return hostca.ParseKey(b)
 }
 
 // loadHostCA reads the intermediate and the root, and refuses an intermediate the root did not sign.

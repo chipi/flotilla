@@ -15,6 +15,7 @@
 //	flotilla host list | enrolment NAME | revoke NAME     (operator: host agents; the token is shown once)
 //	flotilla ca root DIR                               (offline: the host agents' root CA, kept by the operator)
 //	flotilla ca intermediate ROOTDIR OUTDIR            (offline: the intermediate for flotillad's secrets volume)
+//	flotilla ca signing-key DIR ID                     (offline: the execution-signing key; prints the hosts' line)
 //
 // FLOTILLA_URL (default http://127.0.0.1:8484) says where; FLOTILLA_TOKEN, or FLOTILLA_TOKEN_FILE, who.
 package main

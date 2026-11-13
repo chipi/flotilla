@@ -185,12 +185,21 @@ hosts:
   ca_dir: /run/flotilla/host-ca          # the three files above
   server_names: [<the name agents dial>]  # in flotillad's server certificate (made at start, renewed in memory)
   heartbeat: 30s                         # optional, the default: the agents' -heartbeat; three missed, dropped
+  signing_key_file: /run/flotilla/signing.key   # optional: without it flotillad sends no execution
+  signing_key_id: <id>
 ```
 
 A proxy in front may only pass TCP through. flotillad checks at start that the root signed the
 intermediate. Then `flotilla host enrolment NAME` (an operator) prints a single-use token for 15
 minutes, which goes to the host inside the SSH session only, on `flotilla-host enrol`'s stdin;
 `flotilla host list` and `flotilla host revoke NAME`.
+
+The execution-signing key: `flotilla ca signing-key config/host-ca ID` writes `signing.key`
+(`secrets.sh` copies it into flotillad's secrets volume) and prints the line each host's config lists
+under `signing_keys`. With it, an executing case on a host is signed and sent (approved `auto` by
+policy, or by the operator who approved it), valid for 10 minutes; the host's result moves the case:
+done to checking, a precondition that no longer holds closes it, anything else escalates it with the
+target still held. A host not connected is retried for 10 minutes, then the case escalates.
 
 ## The candidate worker: shadow comparison of a candidate image
 

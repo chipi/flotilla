@@ -158,3 +158,25 @@ func FuzzVerify(f *testing.F) {
 		}
 	})
 }
+
+// PeekID reads the id of an envelope that did not verify (to label its refusal), and nothing else.
+func TestPeekID(t *testing.T) {
+	_, priv := keypair(t, 1)
+	if id := PeekID(signed(t, priv, exe())); id != "exec-1" {
+		t.Fatalf("a good envelope: %q", id)
+	}
+	long := exe()
+	long.ID = strings.Repeat("x", 129)
+	for name, raw := range map[string][]byte{
+		"not JSON":       []byte("garbage"),
+		"a bad payload":  []byte(`{"key":"k1","sig":"","payload":"!!"}`),
+		"no id":          []byte(`{"key":"k1","sig":"","payload":"` + base64.StdEncoding.EncodeToString([]byte(`{"host":"mini"}`)) + `"}`),
+		"an id too long": signed(t, priv, long),
+		"too big": []byte(`{"key":"k1","sig":"","payload":"` + base64.StdEncoding.EncodeToString(
+			[]byte(`{"id":"exec-1","pad":"`+strings.Repeat("x", MaxBytes)+`"}`)) + `"}`),
+	} {
+		if id := PeekID(raw); id != "" {
+			t.Errorf("%s: %q", name, id)
+		}
+	}
+}

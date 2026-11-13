@@ -139,7 +139,9 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	w := newWorld(t)
 	x := &fakeExec{}
 	a := w.agent(t, "mini", x)
-	a.Now = func() time.Time { return time.Now().Add(2 * time.Second) } // the agent's clock runs 2 s ahead
+	// The agent's clock runs 60 s ahead. The offset flotillad measures includes the frame's way there:
+	// under a loaded machine a heartbeat took ~2 s (ci-fast, 2026-11-13), so a small skew vanished.
+	a.Now = func() time.Time { return time.Now().Add(60 * time.Second) }
 	run(t, a)
 	waitFor(t, "the agent to connect", connected(w, "mini"))
 	r, err := w.link.Execute(context.Background(), "mini", "x1", []byte("x1"), 2*time.Second)
@@ -150,8 +152,8 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	if st.ChainHead != "head-x1" || st.Version != "test" {
 		t.Fatalf("state after a result: %+v", st)
 	}
-	if st.ClockOffset < 1500*time.Millisecond || st.ClockOffset > 2500*time.Millisecond {
-		t.Fatalf("clock offset %s, want about 2 s", st.ClockOffset)
+	if st.ClockOffset < 50*time.Second || st.ClockOffset > 61*time.Second {
+		t.Fatalf("clock offset %s, want about 60 s", st.ClockOffset)
 	}
 	// heartbeats keep it connected over many intervals, and update its last contact, in the store too
 	before := st.LastContact
@@ -168,7 +170,7 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	}
 	// the store has what the endpoint heard: `host list` and the alerts read it
 	hs, _ := w.api.Store.Hosts(context.Background())
-	if h := hs[0]; !h.Connected || h.Version != "test" || h.LastContact == "" || h.ClockOffsetMS < 1500 || h.ClockOffsetMS > 2500 || h.ChainHead == "" {
+	if h := hs[0]; !h.Connected || h.Version != "test" || h.LastContact == "" || h.ClockOffsetMS < 50000 || h.ClockOffsetMS > 61000 || h.ChainHead == "" {
 		t.Fatalf("the stored host: %+v", h)
 	}
 }

@@ -172,3 +172,25 @@ VPS.
   starts (to GlitchTip) and an INFO when it clears, never repeated while on. 9 mutants killed (one
   survived first, a heartbeat not written to the store: the test read the store only after a
   result, which writes it too; it now checks heartbeats alone move it).
+- **H7b, flotillad sends executions:** built 2026-11-13. `flotilla ca signing-key DIR ID` makes the
+  execution-signing key offline (mode 600) and prints the hosts' `signing_keys` line; `secrets.sh`
+  copies it; flotillad's `hosts.signing_key_file`/`signing_key_id`. `host_executions` (schema step
+  9, amended): each signed execution, recorded `sent` before it goes. The dispatch loop (every 15 s)
+  sends each executing case on a `host:` target, signed (approved `auto`, or the operator who moved
+  it from awaiting_approval), valid 10 minutes, in its own goroutine; the store refuses a second
+  record of one execution, so a case is sent once. The result: done to checking; precondition_false
+  closes it (resolved itself); failed, refused, unknown or a lost connection escalate it (the target
+  stays held, and the existing rule demotes the action); not connected is retried, then escalates
+  after 10 minutes. At start, an execution left `sent` is unknown and its case escalates. Tests: the
+  sending (a fake link) and, over the real connection with the real `hostexec`, an operator-approved
+  execution runs `/bin/true`, is in the host's audit log, and its chain head reaches flotillad; `auto`
+  above a `propose` host is refused by the host; a key the host does not accept is refused. That last
+  test found a real bug: a refusal of an envelope that did not verify carried no execution id (it is
+  read only after verifying), so flotillad could not match it and would have waited out the action's
+  timeout (31 minutes) to call it unknown. Fixed with `envelope.PeekID`, the id read unverified only
+  to label the refusal. 15 mutants killed; the first round showed three guards against a double send
+  (an in-memory set, a pre-check, the store's refusal), and the first two are removed: the store's
+  is the one. Not built: the check step (checking to closed, verified: the registry's
+  `backup_newer_than_execution`), so a done case waits in checking; no timer for checking yet. Not
+  in the e2e: an execution end to end (no case reaches executing on a host in v1 without approvals,
+  8b); the e2e checks the key is made, delivered and loaded.

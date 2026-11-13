@@ -117,6 +117,8 @@ type Server struct {
 	// The host agents' intermediate CA and the root over it (ADR-0006 §3); nil: no host can enrol.
 	HostCA   *hostca.CA
 	HostRoot *x509.Certificate
+	// Sending decided executions to hosts (ADR-0006 §4); nil: none are sent.
+	Exec *Executions
 }
 
 type ctxKey struct{}

@@ -69,3 +69,25 @@ func TestCA(t *testing.T) {
 		t.Error("a bad command")
 	}
 }
+
+// The execution-signing key: mode 600, never overwritten, a key id from the safe set.
+func TestSigningKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := caCmd([]string{"signing-key", dir, "k2026"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(filepath.Join(dir, "signing.key"))
+	if err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("signing.key: %v %v", st, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "signing.key"))
+	if _, err := hostca.ParseKey(b); err != nil {
+		t.Fatalf("not a key: %v", err)
+	}
+	if err := caCmd([]string{"signing-key", dir, "k2026"}, time.Now()); err == nil {
+		t.Fatal("a second signing key overwrote the first")
+	}
+	if err := caCmd([]string{"signing-key", t.TempDir(), "Bad Id"}, time.Now()); err == nil {
+		t.Fatal("a bad key id")
+	}
+}

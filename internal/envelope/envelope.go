@@ -148,3 +148,27 @@ func Verify(raw []byte, keys map[string]ed25519.PublicKey, host string, now time
 	}
 	return e, payload, nil
 }
+
+// PeekID reads an envelope's execution id without verifying anything, for one use only: labelling the
+// refusal of an envelope that did not verify, so that flotillad can match it to what it sent. It is never
+// trusted for anything else; "" when there is none to read.
+func PeekID(raw []byte) string {
+	if len(raw) > MaxBytes {
+		return ""
+	}
+	var w wire
+	if json.Unmarshal(raw, &w) != nil {
+		return ""
+	}
+	payload, err := base64.StdEncoding.DecodeString(w.Payload)
+	if err != nil {
+		return ""
+	}
+	var e struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(payload, &e) != nil || len(e.ID) > 128 {
+		return ""
+	}
+	return e.ID
+}

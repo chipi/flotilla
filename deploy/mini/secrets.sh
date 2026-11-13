@@ -74,6 +74,11 @@ if [ -s "$FLOTILLA_CONFIG/host-ca/intermediate.key" ]; then
     put $V-flotillad-secrets "$f" 65532 "$FLOTILLA_CONFIG/host-ca/$f"
   done
 fi
+# optional: the execution-signing key (hosts.signing_key_file: /run/flotilla/signing.key), from
+# `flotilla ca signing-key $FLOTILLA_CONFIG/host-ca ID`
+if [ -s "$FLOTILLA_CONFIG/host-ca/signing.key" ]; then
+  put $V-flotillad-secrets signing.key 65532 "$FLOTILLA_CONFIG/host-ca/signing.key"
+fi
 # the triage state volume is external to compose too: make sure it exists (an empty one takes the
 # image's directory owner on first mount)
 $D volume create "${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}" >/dev/null

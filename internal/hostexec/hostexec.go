@@ -152,7 +152,8 @@ func (x *Executor) decide(ctx context.Context, raw []byte) (Result, envelope.Exe
 	now := x.Now().UTC()
 	e, payload, err := envelope.Verify(raw, x.Cfg.Keys(), x.Cfg.Host, now)
 	if err != nil {
-		return refused(e.ID, err.Error()), e
+		// labelled with the id it claims (unverified), so flotillad can match the refusal at once
+		return refused(envelope.PeekID(raw), err.Error()), e
 	}
 	if r, seen, err := x.recorded(ctx, e.ID, payload); err != nil {
 		return refused(e.ID, "the store: "+err.Error()), e
