@@ -282,6 +282,10 @@ func main() {
 	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
+	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
+	// v1 steps 5 and 6). Set before anything can start a run.
+	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}
+	s.AfterRun = disp.Detected
 	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second, Handler: apiSrv.Handler()}
 	go func() {
 		log.Info("flotillad listening", "addr", cfg.Listen, "routines", len(routines))
@@ -316,9 +320,7 @@ func main() {
 	}
 	hbDone := make(chan struct{})
 	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, log) }()
-	// Cases handed over to a kind start that kind's acting routine (pipeline v1 step 5).
 	dispDone := make(chan struct{})
-	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}
 	go func() { defer close(dispDone); disp.Loop(ctx, 15*time.Second) }()
 
 	s.Loop(ctx)

@@ -1,9 +1,9 @@
 package dispatch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -48,10 +48,11 @@ func (f *fakeWorker) Run(ctx context.Context, r worker.Request) (*worker.Result,
 func (f *fakeWorker) runs() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.got) }
 
 type fixture struct {
-	d   *Dispatcher
-	st  *store.Store
-	w   *fakeWorker
-	now time.Time
+	d    *Dispatcher
+	st   *store.Store
+	w    *fakeWorker
+	now  time.Time
+	logs *bytes.Buffer
 }
 
 func setup(t *testing.T) *fixture {
@@ -67,12 +68,15 @@ func setup(t *testing.T) *fixture {
 	}
 	j := &spec.Routine{Fleet: "ops", Routine: "rerun", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
 		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
+	mon := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
+		Trigger: spec.Trigger{Every: "10m"}, Every: 10 * time.Minute, Detects: []string{"failed_backup"}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	w := &fakeWorker{status: "ok"}
-	f := &fixture{st: st, w: w, now: time.Now()}
-	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"ops": w},
+	f := &fixture{st: st, w: w, now: time.Now(), logs: &bytes.Buffer{}}
+	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j, mon}, Workers: map[string]sched.Runner{"ops": w},
 		Now: func() time.Time { return f.now }}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.NewTextHandler(f.logs, nil))
 	f.d = &Dispatcher{API: &api.Server{Sched: s, Store: st, Registry: reg, Log: log}, Log: log}
+	s.AfterRun = f.d.Detected
 	return f
 }
 
@@ -239,5 +243,87 @@ func TestNoActingRoutineNoRun(t *testing.T) {
 	f.pass(t)
 	if f.w.runs() != 0 {
 		t.Fatal("a disabled routine ran")
+	}
+}
+
+// monitor runs the backup monitor through the scheduler, as its time loop or "run now" does, with the
+// worker answering report.
+func (f *fixture) monitor(t *testing.T, status, report string) {
+	t.Helper()
+	f.w.mu.Lock()
+	f.w.status, f.w.plan = status, report
+	f.w.mu.Unlock()
+	if _, err := f.d.API.Sched.RunNow(context.Background(), "ops/backup-monitor", "schedule", "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *fixture) open(t *testing.T) []store.Case {
+	t.Helper()
+	cs, err := f.st.Cases(context.Background(), store.CaseFilter{Open: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cs
+}
+
+// A monitor's detection opens a case, keyed by code from kind and target, and hands it over; the same
+// detection again is one case.
+func TestDetectionOpensAndHandsOver(t *testing.T) {
+	f := setup(t)
+	rep := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h"}]}`
+	f.monitor(t, "ok", rep)
+	cs := f.open(t)
+	if len(cs) != 1 || cs[0].Status != cases.HandedOver || cs[0].Project != "ops" || cs[0].CanonicalKey != "target=failed_backup/host:mini" {
+		t.Fatalf("cases %+v", cs)
+	}
+	ev, _ := f.st.CaseEvents(context.Background(), cs[0].ID)
+	if ev[0].Actor != "ops/backup-monitor" || !strings.Contains(ev[0].Detail, "age 20.4h") || ev[1].By != cases.ByDetector {
+		t.Fatalf("timeline %+v", ev)
+	}
+	f.monitor(t, "ok", rep)
+	if cs := f.open(t); len(cs) != 1 {
+		t.Fatalf("a repeated detection opened %d cases", len(cs))
+	}
+	if ev, _ := f.st.CaseEvents(context.Background(), cs[0].ID); ev[len(ev)-1].Kind != "signal.attached" {
+		t.Fatalf("the repeat is not on the case: %+v", ev[len(ev)-1])
+	}
+}
+
+func TestReportsRefused(t *testing.T) {
+	many := `{"outcome": "detections", "detections": [` + strings.TrimSuffix(strings.Repeat(`{"kind": "failed_backup", "target": "host:mini"},`, 51), ",") + `]}`
+	for name, c := range map[string]struct{ status, report, log string }{
+		"an undeclared kind": {"ok", `{"outcome": "detections", "detections": [{"kind": "disk_full", "target": "host:mini"}]}`, "detection refused"},
+		"a malformed target": {"ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "mini; rm -rf"}]}`, "detection refused"},
+		"too many":           {"ok", many, "more than 50"},
+		"another outcome":    {"ok", `{"outcome": "plan"}`, "monitor report refused"},
+		"no report":          {"ok", "", "no plan file"},
+		"a failed run":       {"error", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini"}]}`, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := setup(t)
+			f.monitor(t, c.status, c.report)
+			if cs := f.open(t); len(cs) != 0 {
+				t.Fatalf("opened %+v", cs)
+			}
+			if c.log != "" && (!strings.Contains(f.logs.String(), c.log) || !strings.Contains(f.logs.String(), "level=ERROR")) {
+				t.Fatalf("no ERROR %q in the log:\n%s", c.log, f.logs)
+			}
+		})
+	}
+}
+
+// The whole chain without a host: the monitor detects, the dispatcher hands the case to the acting
+// routine, its plan goes to policy, and the case closes with the shadow plan recorded.
+func TestDetectionToShadowPlan(t *testing.T) {
+	f := setup(t)
+	f.monitor(t, "ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h"}]}`)
+	id := f.open(t)[0].ID
+	f.w.mu.Lock()
+	f.w.plan = `{"outcome": "plan", "action": "backup.rerun_observability", "params": {"host": "mini"}}`
+	f.w.mu.Unlock()
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Closed || c.Resolution != cases.ShadowPlan {
+		t.Fatalf("case %+v", c)
 	}
 }

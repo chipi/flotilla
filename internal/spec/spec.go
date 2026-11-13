@@ -69,6 +69,9 @@ type Routine struct {
 	Freshness   string   `yaml:"freshness"`
 	Skills      Skills   `yaml:"skills"`  // ADR-0012: the skills the routine may load; default none
 	Harness     *Harness `yaml:"harness"` // RFC-0002 §4: the routine's model-driven step, when it has one
+	// The case kinds this routine may open (pipeline v1 step 6): a monitor reports detections in its
+	// plan file and flotillad opens the cases; a kind not listed here is refused.
+	Detects []string `yaml:"detects"`
 
 	// filled by Load
 	Path  string        `yaml:"-"`
@@ -349,6 +352,14 @@ func (j *Routine) validate() error {
 		}
 	default:
 		j.Every = dur("trigger.every", j.Trigger.Every, time.Minute)
+	}
+	for _, k := range j.Detects {
+		if !caseFieldRe.MatchString(k) {
+			bad("detects: %q is not a case kind", k)
+		}
+	}
+	if len(j.Detects) > 0 && j.Trigger.Case != nil {
+		bad("detects: a routine on cases acts on them; a monitor runs on time")
 	}
 	j.Limit = dur("run.timeout", j.Run.Timeout, 10*time.Second)
 	if j.Freshness != "" || j.Trigger.Case == nil { // a routine on cases runs when there is work: no freshness

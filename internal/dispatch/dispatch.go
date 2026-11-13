@@ -20,12 +20,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/policy"
+	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
@@ -205,4 +208,78 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 func (d *Dispatcher) noDecision(ctx context.Context, id, routine, why string) error {
 	d.Log.Warn("acting run made no decision", "case", id, "routine", routine, "why", why)
 	return d.API.Store.AddCaseEvent(ctx, id, "run.no_decision", routine, why)
+}
+
+// Detection is one thing a monitor found (pipeline v1 step 6). The monitor says what and where; the
+// case's keys are computed here, from the kind and the target, never taken from the run (RFC-0004 §3.5).
+type Detection struct {
+	Kind   string `json:"kind"`
+	Target string `json:"target"`
+	Detail string `json:"detail"`
+}
+
+// maxDetections bounds one run's report: a monitor gone wrong cannot flood the store.
+const maxDetections = 50
+
+var targetRe = regexp.MustCompile(`^[a-z][a-z0-9_]*:[A-Za-z0-9._/-]{1,120}$`)
+
+// Detected opens a case for each detection a monitor's run reported, or attaches it to the open case
+// with the same key; a case it opens is handed over at once (detected -> handed_over by the detector: a
+// code detector with a known kind). A kind the routine does not declare in `detects` is refused, as is a
+// malformed report; the refusals are logged as errors, so they reach GlitchTip.
+func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run, out *sched.CaseOutcome) {
+	var rep struct {
+		Outcome    string      `json:"outcome"`
+		Detections []Detection `json:"detections"`
+	}
+	switch {
+	case r.Status != store.StatusOK:
+		return // its run is recorded as failed; a failed monitor's findings are not findings
+	case out.PlanError != "":
+		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", out.PlanError)
+		return
+	case len(out.Plan) == 0:
+		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", "no plan file")
+		return
+	}
+	if err := json.Unmarshal(out.Plan, &rep); err != nil || rep.Outcome != "detections" {
+		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", `not {"outcome": "detections", ...}`)
+		return
+	}
+	if len(rep.Detections) > maxDetections {
+		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", fmt.Sprintf("%d detections, more than %d", len(rep.Detections), maxDetections))
+		return
+	}
+	for _, x := range rep.Detections {
+		if !contains(j.Detects, x.Kind) || !targetRe.MatchString(x.Target) {
+			d.Log.Error("detection refused", "routine", j.ID(), "run_id", r.ID, "kind", x.Kind, "target", x.Target,
+				"why", "a kind the routine does not declare in detects, or a malformed target")
+			continue
+		}
+		k := store.Key{Kind: "target", Value: x.Kind + "/" + x.Target}
+		detail := strings.TrimSpace("run " + r.ID + ": " + x.Detail)
+		id, opened, err := d.API.Store.OpenCase(ctx, store.NewCase{Kind: x.Kind, Target: x.Target, Project: j.Fleet,
+			Keys: []store.Key{k}, Canonical: k}, j.ID(), detail)
+		if err != nil {
+			d.Log.Error("open case", "routine", j.ID(), "kind", x.Kind, "target", x.Target, "err", err)
+			continue
+		}
+		if !opened {
+			continue // attached to the open case for this key: a storm is one case
+		}
+		if err := d.API.Store.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", j.ID(), "a code detector with a known kind"); err != nil {
+			d.Log.Error("hand over", "case", id, "err", err)
+			continue
+		}
+		d.Log.Info("case opened", "case", id, "kind", x.Kind, "target", x.Target, "routine", j.ID(), "run_id", r.ID)
+	}
+}
+
+func contains(xs []string, x string) bool {
+	for _, y := range xs {
+		if y == x {
+			return true
+		}
+	}
+	return false
 }

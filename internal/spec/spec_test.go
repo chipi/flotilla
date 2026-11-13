@@ -69,6 +69,8 @@ func TestRejects(t *testing.T) {
 		"every and case":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {every: 10m, case: {kind: failed_backup}}", 1), "every or case, not both"},
 		"a bad case kind":           {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: Failed-Backup}}", 1), "trigger.case.kind"},
 		"no trigger":                {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}\n", "", 1), "trigger.every"},
+		"a bad detected kind":       {"triage/cycle.yaml", good + "detects: [Disk Full]\n", "detects: \"Disk Full\""},
+		"a case routine detecting":  {"triage/cycle.yaml", strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}}", 1), "freshness: 35m\n", "", 1) + "detects: [failed_backup]\n", "a monitor runs on time"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

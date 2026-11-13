@@ -62,6 +62,7 @@ type Scheduler struct {
 	// gets them as FLOTILLA_OTLP_TRACES_URL and FLOTILLA_ENVIRONMENT (runtime/telemetry.py)
 	OTLPTracesURL string
 	Environment   string
+	AfterRun      AfterRun
 
 	mu      sync.Mutex
 	running map[string]string // routine id -> run id
@@ -144,6 +145,10 @@ type CaseOutcome struct {
 	Plan      json.RawMessage
 	PlanError string
 }
+
+// AfterRun, when set, gets each run not on a case that reported, scheduled or manual (a monitor's
+// detections, pipeline v1 step 6). flotillad sets it to the dispatcher.
+type AfterRun func(ctx context.Context, j *spec.Routine, r *store.Run, out *CaseOutcome)
 
 // RunWith is RunNow with the run's case (pipeline v1 step 5): caseEnv is added to the run's environment
 // (FLOTILLA_CASE), and the run gets a plan file whose content comes back. caseEnv nil is RunNow.
@@ -234,7 +239,8 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	for k, v := range caseEnv {
 		env[k] = v
 	}
-	if caseEnv != nil {
+	reports := caseEnv != nil || len(j.Detects) > 0 // an acting routine or a monitor answers in a plan file
+	if reports {
 		planFile = ".flotilla-plan-" + runID + ".json" // under the run's HOME; the worker reads and removes it
 	}
 	s.Log.Info("run start", "routine", id, "run_id", runID, "autonomy", autonomy, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
@@ -248,7 +254,7 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		detail = callErr.Error()
 	} else {
 		status, exit, spend, dur = res.Status, res.ExitCode, res.SpendUSD, res.DurationS
-		if caseEnv != nil {
+		if reports {
 			outcome = &CaseOutcome{Plan: res.Plan, PlanError: res.PlanError}
 		}
 		if status != store.StatusOK {
@@ -286,6 +292,9 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	out := rec
 	out.Status, out.ExitCode, out.SpendUSD, out.Detail = status, exit, spend, detail
 	out.DurationS = &dur
+	if caseEnv == nil && outcome != nil && s.AfterRun != nil {
+		s.AfterRun(fctx, j, &out, outcome)
+	}
 	return &out, outcome, nil
 }
 
