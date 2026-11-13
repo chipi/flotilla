@@ -13,7 +13,9 @@ Every historical GlitchTip recurrence (one per fingerprint and count change) goe
 orchestrator.run_glitchtip of
   baseline  orchestrator.py at BASE_REV (git)
   fix       the working tree
-with that fingerprint's ledger and the filed-ledger as of the event, the clock at the event, triage and
+with that fingerprint's ledger and the filed-ledger as of the event (the whole ledger, every stage: it is one
+fleet's ledger, in stage shadow until its promotion on 2026-07-29 and propose after, and run_glitchtip reads it
+without regard to stage; replaying per stage is unfaithful for 12 events), the clock at the event, triage and
 recurrence writes recorded, never sent. Pass:
   - baseline: every event is a recurrence row, as history recorded (faithful), except the rollup
     promotions gate_promotion_replay.py expects (PROMOTED), which the baseline re-triages;
@@ -182,7 +184,9 @@ def main():
     print(f"Re-triage replay: {len(events)} GlitchTip recurrences before {CUT:%Y-%m-%d} "
           f"(one per fingerprint and count change), {len(by_fp)} fingerprints in the ledger\n")
     print(f"  unchanged: {same}    changed recurrence -> triage: {changed} (the rule expects {expected_n})")
-    print(f"  dismissals whose recurrence now re-triages at once: {len(episodes)}")
+    print(f"  dismissals whose recurrence now re-triages at once: {len(episodes)}: the extra triages in"
+          " production, at most (the first re-triage writes a decision, so the later recurrences replayed"
+          " here as changed fall inside its window)")
     print(f"  recurrences after a dismissal that wait, by the once-per-dismissal cap: {capped}")
     print("\n" + ("RETRIAGE REPLAY: PASS" if not fails else "RETRIAGE REPLAY: FAIL\n  " + "\n  ".join(fails[:25])))
     return 1 if fails else 0
