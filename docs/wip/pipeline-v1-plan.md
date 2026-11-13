@@ -78,3 +78,16 @@ promotion to propose).
   and the comparison with flotillad's copy, and the test keeping a declaration equal to its code. Those
   need the fleet session (triage's tools and gates live in its code) and come before the `requires`
   check of RFC-0006 §10.
+- **Step 4, policy:** built 2026-11-13. 4a (092a7a3): `internal/policy`, the decision as a pure
+  function, RFC-0004 §5.1 in order, shadow recording what it would have done; 14 mutants killed.
+  4b: schema step 7 (`plans`, `target_locks`, `holds`); `DecidePlan` gathers the state and applies the
+  decision with the case's move and the target's lock in one transaction (a race on the lock is
+  decided again as a defer); the lock stays held after a failed or unknown execution and goes on
+  close, rejection or reassignment; `flotilla hold` and `/v1/holds`; 12 more mutants killed, the e2e
+  holds a host through the CLI. Choices made here, all config-free for now: a host's ceiling is
+  propose (ADR-0006: a new host starts there; per-host config comes with the host agent); a run is
+  never tainted (recall is not in v1); the guardrail numbers of 4a; the host incident window 15m.
+  **Not yet:** promoting an action's autonomy (`flotilla action autonomy …`, operator only, ADR-0008)
+  and the deploy stand-down (a hold the deploy takes); both before the first plan above shadow.
+  Found on the way: flotillad's heartbeat read the scheduler's clock before `Loop` set it up (a race
+  since phase 2, which the new case timers made likelier); `Scheduler.Clock()` sets it up first.

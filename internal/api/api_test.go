@@ -14,6 +14,7 @@ import (
 
 	"log/slog"
 
+	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -40,6 +41,16 @@ func server(t *testing.T) (*httptest.Server, *store.Store) {
 
 func serverWith(t *testing.T, mod func(*spec.Routine)) (*httptest.Server, *store.Store) {
 	t.Helper()
+	srv := newServer(t, mod)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	return ts, srv.Store
+}
+
+// newServer is the API server itself, for tests that call its actions directly. Its registry is the
+// repo's host/registry.json, the declaration flotillad's image carries.
+func newServer(t *testing.T, mod func(*spec.Routine)) *Server {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "a.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -48,14 +59,15 @@ func serverWith(t *testing.T, mod func(*spec.Routine)) (*httptest.Server, *store
 	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage", Autonomy: "shadow",
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
 	mod(j)
+	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
-	srv := &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test",
+	return &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Registry: reg,
 		Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		Callers: append([]Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-homelab", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}},
 			WorkerCallers(map[string]string{"triage": workerTok})...)}
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
-	return ts, st
 }
 
 func call(t *testing.T, ts *httptest.Server, method, path, tok, body string) (int, map[string]any) {

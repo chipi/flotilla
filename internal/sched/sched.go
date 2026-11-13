@@ -323,6 +323,13 @@ func (s *Scheduler) metric(j *spec.Routine, status, autonomy string, dur float64
 	}
 }
 
+// Clock is the scheduler's time, safe to read before Loop has started: Now is filled in by init, and
+// flotillad's heartbeat starts before Loop does.
+func (s *Scheduler) Clock() time.Time {
+	s.init()
+	return s.Now()
+}
+
 // Running lists the routines with a run in flight.
 func (s *Scheduler) Running() map[string]string {
 	s.init()

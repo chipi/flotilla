@@ -93,6 +93,9 @@ func TestPermissionTable(t *testing.T) {
 		{ActLedger, "GET", "/v1/ledger/counts?ns=triage/cycle", ""},
 		{ActFreeze, "POST", "/v1/freeze", ""},
 		{ActUnfreeze, "POST", "/v1/unfreeze", `{"reason":"t"}`},
+		{ActRead, "GET", "/v1/holds", ""},
+		{ActHold, "POST", "/v1/holds", `{"scope":"host:mini","for":"1h","reason":"t"}`},
+		{ActUnhold, "POST", "/v1/holds/1/lift", `{"reason":"t"}`},
 	}
 	for _, role := range []string{RoleWorker, RoleAgent, RoleViewer, RoleOperator, RoleAdmin} {
 		for _, q := range reqs {

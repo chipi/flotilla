@@ -27,6 +27,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/chipi/flotilla/internal/policy"
+	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
@@ -106,6 +108,10 @@ type Server struct {
 	Callers []Caller
 	Version string
 	Log     *slog.Logger
+	// The registry policy reads (ADR-0011) and the guardrails' numbers (RFC-0004 §5.3); a nil registry
+	// refuses every plan.
+	Registry *registry.Registry
+	Limits   policy.Limits
 }
 
 type ctxKey struct{}
@@ -120,6 +126,9 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("GET /v1/events", s.auth(ActRead, s.events))
 	m.Handle("GET /v1/cases", s.auth(ActRead, s.cases))
 	m.Handle("GET /v1/cases/{id}", s.auth(ActRead, s.caseShow))
+	m.Handle("GET /v1/holds", s.auth(ActRead, s.holds))
+	m.Handle("POST /v1/holds", s.auth(ActHold, s.holdAdd))
+	m.Handle("POST /v1/holds/{id}/lift", s.auth(ActUnhold, s.holdLift))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(ActRun, s.run))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(ActPause, s.pause))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(ActResume, s.resume))

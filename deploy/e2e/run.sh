@@ -228,6 +228,16 @@ cli autonomy unfreeze --reason "e2e: lift the freeze" >/dev/null
 OUT="$(cli status 2>&1)"
 ! echo "$OUT" | grep -q "^FROZEN" && echo "$OUT" | grep -q "^platform/heartbeat  *auto  *auto " \
   && ok "lifted, the heartbeat is back at auto (its own control untouched)" || bad "after unfreeze: $OUT"
+# Holds (RFC-0004 §5.1 step 4) through the CLI: an agent holds a host, only an operator lifts it, with a reason.
+OUT="$(agent hold host:mini 2h --reason "e2e: disk work" 2>&1)"
+HID="$(echo "$OUT" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')"
+[ -n "$HID" ] && cli hold list | grep -q "host:mini .*e2e-agent .*e2e: disk work" && ok "an agent holds a host; hold list shows it" || bad "hold: $OUT / $(cli hold list 2>&1)"
+OUT="$(agent hold lift "$HID" --reason "e2e" 2>&1)"
+echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot lift a hold" || bad "agent lift: $OUT"
+OUT="$(cli hold lift "$HID" 2>&1)"
+echo "$OUT" | grep -q "needs a reason" && ok "lifting a hold needs a reason" || bad "lift without a reason: $OUT"
+cli hold lift "$HID" --reason "e2e: disk done" >/dev/null
+[ -z "$(cli hold list | sed 1d)" ] && ok "lifted, no hold is active" || bad "after lift: $(cli hold list 2>&1)"
 W="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
 r=urllib.request.Request("http://127.0.0.1:8081/healthz",headers={"Authorization":"Bearer wrong"})
 try: urllib.request.urlopen(r); print(200)

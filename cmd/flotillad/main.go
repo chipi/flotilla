@@ -280,7 +280,7 @@ func main() {
 	}
 	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
-	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log}
+	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
 	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second, Handler: apiSrv.Handler()}
 	go func() {
 		log.Info("flotillad listening", "addr", cfg.Listen, "routines", len(routines))
@@ -351,10 +351,10 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 				push.LastSuccess(j.ID(), at)
 			}
 		}
-		if err := casetimer.Run(ctx, st, s.Now(), timers, log); err != nil {
+		if err := casetimer.Run(ctx, st, s.Clock(), timers, log); err != nil {
 			log.Error("case timers", "err", err)
 		}
-		backup(ctx, st, stateDir, s.Now().In(s.Location).Format("2006-01-02"), log)
+		backup(ctx, st, stateDir, s.Clock().In(s.Location).Format("2006-01-02"), log)
 		select {
 		case <-ctx.Done():
 			return

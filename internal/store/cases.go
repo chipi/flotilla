@@ -137,6 +137,24 @@ func (s *Store) MoveCase(ctx context.Context, id, to, by, resolution, actor, det
 		return err
 	}
 	defer tx.Rollback()
+	moveErr := s.moveCase(ctx, tx, id, to, by, resolution, actor, detail)
+	if moveErr != nil && !errors.Is(moveErr, ErrBadTransition) {
+		return moveErr
+	}
+	if err := tx.Commit(); err != nil { // a refused move commits its transition.refused event
+		return err
+	}
+	return moveErr
+}
+
+// moveCase is MoveCase inside the caller's transaction. On a refused move it writes the
+// transition.refused event and returns ErrBadTransition; the caller decides whether to commit.
+//
+// The per-target lock (RFC-0004 §3.5) is released when the case closes, when a proposal is rejected or
+// expires (awaiting_approval -> escalated: nothing ran) and when the operator reassigns an escalated
+// case. An execution that failed or is unknown (executing or checking -> escalated) keeps it: the target
+// stays held until the operator clears the case.
+func (s *Store) moveCase(ctx context.Context, tx *sql.Tx, id, to, by, resolution, actor, detail string) error {
 	var from string
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM cases WHERE id = ?`, id).Scan(&from); errors.Is(err, sql.ErrNoRows) {
 		return ErrNoSuchCase
@@ -147,9 +165,6 @@ func (s *Store) MoveCase(ctx context.Context, id, to, by, resolution, actor, det
 	if cerr := cases.Check(from, to, by, resolution); cerr != nil {
 		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "transition.refused", Actor: actor, By: by,
 			From: from, To: to, Detail: cerr.Error()}); err != nil {
-			return err
-		}
-		if err := tx.Commit(); err != nil {
 			return err
 		}
 		return fmt.Errorf("%w: %v", ErrBadTransition, cerr)
@@ -169,7 +184,12 @@ func (s *Store) MoveCase(ctx context.Context, id, to, by, resolution, actor, det
 	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case." + to, Actor: actor, By: by, From: from, To: to, Detail: d}); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if to == cases.Closed || (from == cases.AwaitingApproval && to == cases.Escalated) || (from == cases.Escalated && to == cases.HandedOver) {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM target_locks WHERE case_id = ?`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AddCaseEvent appends to a case's timeline, closed or not (an outcome check days later, a recurrence,

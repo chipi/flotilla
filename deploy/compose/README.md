@@ -215,6 +215,11 @@ the UI's Now page). Only an operator or an admin lifts it, with a reason:
 While it holds, `flotilla status` starts with a `FROZEN` line, and its AUTONOMY column shows what runs
 and SET what is set. STOP on a fleet is stronger: no runs at all.
 
+A hold keeps flotilla's actions off one host or target for a while; while it lasts, policy defers
+every plan there (RFC-0004 §5.1). An agent, an operator or an admin holds:
+`flotilla hold host:mini 2h --reason "disk work"`; `flotilla hold list` shows the active ones;
+only an operator or an admin lifts one early, with a reason: `flotilla hold lift <id> --reason "…"`.
+
 The UI listens on `ui_listen` (for example `0.0.0.0:8486`) and answers only `ui_host` (the
 `flotilla.<tailnet>` name). Put both in `flotillad.yaml`. flotillad joins the `ui` network
 (`NET_UI`, default `flotilla_ui`), which is internal. The homelab's caddy-tailscale proxy joins that

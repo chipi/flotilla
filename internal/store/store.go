@@ -155,6 +155,38 @@ var schema = []string{
 		detail TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX case_events_case ON case_events(case_id, seq);`,
+	// RFC-0004 §5.1 (plans.go): each plan policy decided, with its hash and every reason; the per-target
+	// lock (one case at a time touches a target: the primary key); holds on a host or a target.
+	`CREATE TABLE plans (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		case_id TEXT NOT NULL REFERENCES cases(id),
+		run_id TEXT NOT NULL,
+		action TEXT NOT NULL,
+		params TEXT NOT NULL,
+		plan_hash TEXT NOT NULL,
+		outcome TEXT NOT NULL,
+		autonomy TEXT NOT NULL,
+		would TEXT NOT NULL DEFAULT '',
+		reasons TEXT NOT NULL,
+		decided_at TEXT NOT NULL
+	);
+	CREATE INDEX plans_case ON plans(case_id, id);
+	CREATE TABLE target_locks (
+		target TEXT PRIMARY KEY,
+		case_id TEXT NOT NULL REFERENCES cases(id),
+		taken_at TEXT NOT NULL
+	);
+	CREATE TABLE holds (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		scope TEXT NOT NULL,
+		until TEXT NOT NULL,
+		actor TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		lifted_at TEXT,
+		lifted_by TEXT
+	);
+	CREATE INDEX holds_scope ON holds(scope, until);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

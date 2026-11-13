@@ -273,3 +273,11 @@ func TestUnknownJob(t *testing.T) {
 		t.Fatal("unknown routine")
 	}
 }
+
+// flotillad's heartbeat reads the clock before Loop has started: Clock must not depend on Loop.
+func TestClockBeforeLoop(t *testing.T) {
+	s := &Scheduler{}
+	if s.Clock().IsZero() || s.Location == nil {
+		t.Fatal("Clock on a scheduler nothing has started")
+	}
+}

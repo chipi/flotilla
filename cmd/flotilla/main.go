@@ -168,6 +168,8 @@ func main() {
 		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
 	case "case":
 		caseCmd(args, n)
+	case "hold":
+		holdCmd(args, reason)
 	case "user":
 		userCmd(args, role)
 	default:
@@ -218,6 +220,33 @@ func caseCmd(args []string, n string) {
 	}
 }
 
+// holdCmd is `flotilla hold SCOPE DURATION --reason R | hold list [--all] | hold lift ID --reason R`
+// (RFC-0004 §5.1): while a hold lasts, policy defers every plan on that host or target.
+func holdCmd(args []string, reason string) {
+	need(args, 1, `hold host:<name> <duration> --reason "..." | hold list [--all] | hold lift ID --reason "..."`)
+	switch args[0] {
+	case "list":
+		q := "/v1/holds"
+		if len(args) > 1 && args[1] == "--all" {
+			q += "?all=1"
+		}
+		var out struct{ Holds []map[string]any }
+		get(q, &out)
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tSCOPE\tUNTIL\tBY\tREASON\tLIFTED")
+		for _, h := range out.Holds {
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", h["id"], h["scope"], h["until"], h["actor"], h["reason"], orDash(h["lifted_at"]))
+		}
+		w.Flush()
+	case "lift":
+		need(args, 2, `hold lift ID --reason "..."`)
+		post("/v1/holds/"+args[1]+"/lift", map[string]string{"reason": reason})
+	default:
+		need(args, 2, `hold host:<name> <duration> --reason "..."`)
+		post("/v1/holds", map[string]string{"scope": args[0], "for": args[1], "reason": reason})
+	}
+}
+
 // userCmd is `flotilla user …` (ADR-0014). A new or rotated token is printed once.
 func userCmd(args []string, role string) {
 	need(args, 1, "user add|list|role|rotate|revoke …")
@@ -265,7 +294,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

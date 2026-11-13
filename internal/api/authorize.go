@@ -19,6 +19,8 @@ const (
 	ActUsers      Action = "users"       // users and sessions
 	ActFreeze     Action = "freeze"      // pull the installation's freeze (every routine at shadow)
 	ActUnfreeze   Action = "unfreeze"    // lift it (loosening: needs a reason)
+	ActHold       Action = "hold"        // hold a host or a target (RFC-0004 §5.1 step 4)
+	ActUnhold     Action = "unhold"      // lift a hold early (loosening: needs a reason)
 )
 
 // Roles of people (ADR-0014); callers keep RoleAgent, RoleOperator (the callers file's) and RoleWorker.
@@ -43,10 +45,14 @@ var may = map[Action]map[string]bool{
 	ActUsers:      {RoleAdmin: true},
 	ActFreeze:     {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActUnfreeze:   {RoleOperator: true, RoleAdmin: true},
+	ActHold:       {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
+	ActUnhold:     {RoleOperator: true, RoleAdmin: true},
 }
 
 // Authorize reports whether a caller holding role may do action.
 func Authorize(role string, a Action) bool { return may[a][role] }
 
 // loosening actions need a reason, from every client (ADR-0014 decision 2).
-func loosening(a Action) bool { return a == ActResume || a == ActStart || a == ActUnfreeze }
+func loosening(a Action) bool {
+	return a == ActResume || a == ActStart || a == ActUnfreeze || a == ActUnhold
+}
