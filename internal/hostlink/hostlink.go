@@ -56,6 +56,9 @@ type Server struct {
 	// Heartbeat is the agents' interval; a connection silent for three of them is closed.
 	Heartbeat time.Duration
 	Now       func() time.Time
+	// OnContact, when set, gets a host's state after each change (connect, heartbeat, result, drop):
+	// flotillad keeps it in its store for `host list` and the alerts.
+	OnContact func(HostState)
 
 	mu    sync.Mutex
 	conns map[string]*conn
@@ -105,6 +108,17 @@ func (s *Server) Serve(ln net.Listener) error {
 		}
 		go s.handle(tls.Server(nc, cfg))
 	}
+}
+
+// report hands a copy of host's state to OnContact, outside the lock.
+func (s *Server) report(host string) {
+	if s.OnContact == nil {
+		return
+	}
+	s.mu.Lock()
+	st := *s.state[host]
+	s.mu.Unlock()
+	s.OnContact(st)
 }
 
 func refuse(tc *tls.Conn, detail string) {
@@ -157,6 +171,7 @@ func (s *Server) handle(tc *tls.Conn) {
 		ClockOffset: hello.Clock.Sub(at), ChainHead: hello.ChainHead}
 	s.mu.Unlock()
 	s.Log.Info("host connected", "host", host, "version", hello.Version, "clock_offset", hello.Clock.Sub(at))
+	s.report(host)
 	defer s.drop(c)
 	serial := chain[0].SerialNumber.Text(16)
 	for {
@@ -184,6 +199,7 @@ func (s *Server) handle(tc *tls.Conn) {
 			st := s.state[host]
 			st.LastContact, st.ClockOffset, st.ChainHead = now, hb.Clock.Sub(now), hb.ChainHead
 			s.mu.Unlock()
+			s.report(host)
 		case hostwire.Result:
 			var r hostexec.Result
 			if err := f.Decode(&r); err != nil {
@@ -198,6 +214,7 @@ func (s *Server) handle(tc *tls.Conn) {
 			}
 			s.state[host].LastContact = s.now()
 			s.mu.Unlock()
+			s.report(host)
 			if ch == nil {
 				s.Log.Warn("host sent a result nobody waits for", "host", host, "execution", r.ExecutionID, "status", r.Status)
 				continue
@@ -251,11 +268,15 @@ func (s *Server) enrol(ctx context.Context, tc *tls.Conn) {
 
 func (s *Server) drop(c *conn) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	close(c.closed)
-	if s.conns[c.host] == c {
+	current := s.conns[c.host] == c
+	if current {
 		delete(s.conns, c.host)
 		s.state[c.host].Connected = false
+	}
+	s.mu.Unlock()
+	if current {
+		s.report(c.host)
 	}
 }
 

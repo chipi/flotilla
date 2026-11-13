@@ -26,6 +26,7 @@ import (
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/casetimer"
 	"github.com/chipi/flotilla/internal/dispatch"
+	"github.com/chipi/flotilla/internal/hostalert"
 	"github.com/chipi/flotilla/internal/hostlink"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/registry"
@@ -314,6 +315,7 @@ func main() {
 		}()
 	}
 	var hostLn net.Listener
+	var hostWatch *hostalert.Watcher
 	if cfg.Hosts.Listen != "" {
 		inter, root, err := loadHostCA(cfg.Hosts.CADir)
 		if err != nil {
@@ -321,8 +323,14 @@ func main() {
 			os.Exit(1)
 		}
 		apiSrv.HostCA, apiSrv.HostRoot = inter, root
+		if err := st.DisconnectHosts(ctx); err != nil { // no connection outlives the last flotillad
+			log.Error("hosts: the store", "err", err)
+			os.Exit(1)
+		}
+		hostWatch = &hostalert.Watcher{}
 		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
-		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}, Heartbeat: cfg.Hosts.Heartbeat}
+		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}, Heartbeat: cfg.Hosts.Heartbeat,
+			OnContact: recordContact(st, log)}
 		hostLn, err = net.Listen("tcp", cfg.Hosts.Listen)
 		if err != nil {
 			log.Error("host endpoint listen", "addr", cfg.Hosts.Listen, "err", err)
@@ -352,7 +360,7 @@ func main() {
 		}()
 	}
 	hbDone := make(chan struct{})
-	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, log) }()
+	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, hostWatch, log) }()
 	dispDone := make(chan struct{})
 	go func() { defer close(dispDone); disp.Loop(ctx, 15*time.Second) }()
 
@@ -381,10 +389,14 @@ func main() {
 // heartbeat pushes flotilla_up and each routine's freshness and last success every minute, checks open
 // cases against their stuck-state limits, and takes one backup of the store per day
 // (state_dir/backup/flotilla-<day>.db, the last 7 kept).
-func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store, stateDir string, timers casetimer.Config, log *slog.Logger) {
+func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store, stateDir string, timers casetimer.Config,
+	hostWatch *hostalert.Watcher, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
+		if hostWatch != nil {
+			watchHosts(ctx, st, hostWatch, s.Clock(), log)
+		}
 		push.Up()
 		for _, j := range s.Routines {
 			if !j.Enabled {

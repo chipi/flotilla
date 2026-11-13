@@ -71,7 +71,12 @@ func newWorld(t *testing.T) world {
 		t.Fatal(err)
 	}
 	link := &hostlink.Server{Auth: a, Log: quiet, Heartbeat: 50 * time.Millisecond,
-		TLS: &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{srvCert.Raw, inter.Cert.Raw}, PrivateKey: key}}}}
+		TLS: &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{srvCert.Raw, inter.Cert.Raw}, PrivateKey: key}}},
+		// as flotillad wires it (cmd/flotillad recordContact)
+		OnContact: func(h hostlink.HostState) {
+			st.RecordHostContact(context.Background(), store.HostContact{Host: h.Host, Connected: h.Connected, Version: h.Version,
+				ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead})
+		}}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -148,14 +153,23 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	if st.ClockOffset < 1500*time.Millisecond || st.ClockOffset > 2500*time.Millisecond {
 		t.Fatalf("clock offset %s, want about 2 s", st.ClockOffset)
 	}
-	// heartbeats keep it connected over many intervals, and update its last contact
+	// heartbeats keep it connected over many intervals, and update its last contact, in the store too
 	before := st.LastContact
+	hs0, _ := w.api.Store.Hosts(context.Background())
 	time.Sleep(300 * time.Millisecond)
+	if hs, _ := w.api.Store.Hosts(context.Background()); hs[0].LastContact <= hs0[0].LastContact {
+		t.Fatalf("the stored last contact did not move with heartbeats: %s then %s", hs0[0].LastContact, hs[0].LastContact)
+	}
 	if st := w.link.Hosts()[0]; !st.Connected || !st.LastContact.After(before) {
 		t.Fatalf("after 6 heartbeats: %+v", st)
 	}
 	if _, err := w.link.Execute(context.Background(), "dgx", "x2", []byte("x2"), time.Second); !errors.Is(err, hostlink.ErrNotConnected) {
 		t.Fatalf("a host never connected: %v", err)
+	}
+	// the store has what the endpoint heard: `host list` and the alerts read it
+	hs, _ := w.api.Store.Hosts(context.Background())
+	if h := hs[0]; !h.Connected || h.Version != "test" || h.LastContact == "" || h.ClockOffsetMS < 1500 || h.ClockOffsetMS > 2500 || h.ChainHead == "" {
+		t.Fatalf("the stored host: %+v", h)
 	}
 }
 
@@ -185,6 +199,10 @@ func TestRevokeCutsOffAndInFlightIsUnknown(t *testing.T) {
 		t.Fatal("the execution in flight never ended")
 	}
 	waitFor(t, "the host to show disconnected", func() bool { return !connected(w, "mini")() })
+	waitFor(t, "the store to show it disconnected", func() bool {
+		hs, _ := w.api.Store.Hosts(context.Background())
+		return len(hs) == 1 && !hs[0].Connected
+	})
 	time.Sleep(1500 * time.Millisecond) // the agent retries (backoff 1 s): each is refused
 	if connected(w, "mini")() {
 		t.Fatal("a revoked host reconnected")

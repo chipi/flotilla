@@ -270,9 +270,22 @@ func hostCmd(args []string) {
 		var out struct{ Hosts []map[string]any }
 		get("/v1/hosts", &out)
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintln(w, "HOST\tENROLLED\tCERTIFICATE UNTIL\tREVOKED")
+		fmt.Fprintln(w, "HOST\tCONNECTED\tVERSION\tLAST CONTACT\tCLOCK OFFSET\tCERTIFICATE UNTIL\tREVOKED\tCHAIN HEAD")
 		for _, h := range out.Hosts {
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", h["name"], orDash(h["enrolled_at"]), orDash(h["cert_not_after"]), orDash(h["revoked_at"]))
+			conn := "no"
+			if h["connected"] == true {
+				conn = "yes"
+			}
+			offset := "-"
+			if ms, ok := h["clock_offset_ms"].(float64); ok && h["last_contact"] != "" {
+				offset = (time.Duration(ms) * time.Millisecond).String()
+			}
+			head, _ := h["chain_head"].(string)
+			if len(head) > 12 {
+				head = head[:12]
+			}
+			fmt.Fprintf(w, "%v\t%s\t%v\t%v\t%s\t%v\t%v\t%v\n", h["name"], conn, orDash(h["version"]), orDash(h["last_contact"]), offset,
+				orDash(h["cert_not_after"]), orDash(h["revoked_at"]), orDash(head))
 		}
 		w.Flush()
 	case "enrolment":

@@ -387,13 +387,18 @@ OUT="$(printf '%s\n' "$HT" | host_agent --rm -i -- enrol 2>&1)"
 echo "$OUT" | grep -q "enrolment refused" && ok "the same token a second time is refused" || bad "a used token: $OUT"
 K="$($D run --rm --entrypoint sh -v flotilla-e2e-host-state:/s "$HOST_AGENT_IMAGE" -c 'stat -c "%a %U" /s/key.pem' 2>&1)"
 [ "$K" = "600 flotilla-host" ] && ok "the host's key is mode 600, the agent's user's ($K)" || bad "key file: $K"
-cli host list | grep -q "^e2e-host .*[0-9]T" && ok "host list shows it enrolled, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
+cli host list | grep -q "^e2e-host  *no  *- .*[0-9]T" && ok "host list shows it enrolled, not yet connected, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
 host_agent -d --name flotilla-e2e-host -- run >/dev/null
 seen flotilla-e2e-host '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected".*"host":"e2e-host"' \
   && ok "the agent connected; flotillad authenticated it as e2e-host" || bad "connect: $($D logs flotilla-e2e-host 2>&1 | tail -3)"
 sleep 8   # four heartbeats at 2s; silent for three, flotillad would drop it
 ! $D logs flotillad 2>&1 | grep -q '"msg":"host disconnected"' && ok "heartbeats keep the connection (8s, flotillad drops after 6s of silence)" \
   || bad "the connection dropped: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
+HL="$(cli host list 2>&1)"
+# nothing has run on the host, so its audit log is empty and has no chain head yet ("-")
+echo "$HL" | grep -q "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
+  && ok "host list: connected, its version, last contact and clock offset, from the store (no chain head: nothing ran)" || bad "host list while connected: $HL"
+! $D logs flotillad 2>&1 | grep -q '"msg":"host alert"' && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
 $D restart flotillad >/dev/null
 for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 for i in $(seq 1 30); do [ "$($D logs flotilla-e2e-host 2>&1 | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && break; sleep 1; done
@@ -406,7 +411,7 @@ seen flotillad '"msg":"host cut off".*"host":"e2e-host"' && ok "revoked: flotill
 sleep 3
 seen flotillad '"msg":"host endpoint: refused"' && $D logs flotilla-e2e-host 2>&1 | grep -q 'flotillad refused: refused' \
   && ok "its reconnects are refused" || bad "after revoke: $($D logs flotilla-e2e-host 2>&1 | tail -3)"
-cli host list | grep -q "^e2e-host .* - .*[0-9]T" && ok "host list shows it revoked, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
+cli host list | grep -q "^e2e-host  *no .* -  *[0-9-]*T[0-9:.]*Z " && ok "host list shows it revoked, not connected, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
 $D rm -f flotilla-e2e-host >/dev/null
 
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"

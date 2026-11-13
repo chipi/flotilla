@@ -161,3 +161,14 @@ VPS.
   connection (flotillad sends none until H7); a network partition with no reset (the agent then
   relies on Go's TCP keepalive, not measured); the e2e's own checks were not mutation-tested (they
   read log lines both sides write).
+- **H7a, flotillad keeps and watches its hosts:** built 2026-11-13. Schema step 9 (not yet shipped,
+  so amended rather than a step 10) carries each host's connection: connected, version, connected
+  at, last contact, clock offset, audit chain head. The endpoint reports each change (connect,
+  heartbeat, result, drop) through `OnContact`, which flotillad writes to the store; at start every
+  host is marked not connected. `flotilla host list` shows them. `internal/hostalert` (pure) and its
+  watcher, run each minute: an enrolled, unrevoked host not connected for 5 minutes (since its last
+  contact, or its enrolment if it never connected), a connected host's clock more than 30 s off
+  (ADR-0006 §4), a certificate with under 7 days left (renewal comes at 10): each an ERROR when it
+  starts (to GlitchTip) and an INFO when it clears, never repeated while on. 9 mutants killed (one
+  survived first, a heartbeat not written to the store: the test read the store only after a
+  result, which writes it too; it now checks heartbeats alone move it).

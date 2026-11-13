@@ -1,18 +1,23 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/chipi/flotilla/internal/hostalert"
 	"github.com/chipi/flotilla/internal/hostca"
+	"github.com/chipi/flotilla/internal/hostlink"
+	"github.com/chipi/flotilla/internal/store"
 )
 
 // HostsConfig is the host agents' endpoint (ADR-0006 §2, decided 1): its own port with mutual TLS,
@@ -69,6 +74,33 @@ func loadHostCA(dir string) (*hostca.CA, *x509.Certificate, error) {
 		return nil, nil, fmt.Errorf("the intermediate is not the root's: %w", err)
 	}
 	return inter, root, nil
+}
+
+// watchHosts logs a host alert once when it starts (an ERROR, which reaches GlitchTip) and once when it
+// clears (ADR-0006 §10).
+func watchHosts(ctx context.Context, st *store.Store, w *hostalert.Watcher, now time.Time, log *slog.Logger) {
+	hs, err := st.Hosts(ctx)
+	if err != nil {
+		log.Error("host alerts: the store", "err", err)
+		return
+	}
+	started, cleared := w.Update(hostalert.Check(hs, now, hostalert.Defaults))
+	for _, a := range started {
+		log.Error("host alert", "host", a.Host, "kind", a.Kind, "detail", a.Detail)
+	}
+	for _, a := range cleared {
+		log.Info("host alert cleared", "host", a.Host, "kind", a.Kind)
+	}
+}
+
+// recordContact keeps what the endpoint heard from a host in the store.
+func recordContact(st *store.Store, log *slog.Logger) func(hostlink.HostState) {
+	return func(h hostlink.HostState) {
+		if err := st.RecordHostContact(context.Background(), store.HostContact{Host: h.Host, Connected: h.Connected, Version: h.Version,
+			ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead}); err != nil {
+			log.Error("host contact: the store", "host", h.Host, "err", err)
+		}
+	}
 }
 
 // serverCert is flotillad's certificate for the endpoint: a key made in memory at start, issued by the

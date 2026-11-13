@@ -23,6 +23,38 @@ type Host struct {
 	CreatedAt    string  `json:"created_at"`
 	EnrolledAt   *string `json:"enrolled_at"`
 	RevokedAt    *string `json:"revoked_at"`
+	// what flotillad last heard from the host's agent
+	Connected     bool   `json:"connected"`
+	Version       string `json:"version"`
+	ConnectedAt   string `json:"connected_at"`
+	LastContact   string `json:"last_contact"`
+	ClockOffsetMS int64  `json:"clock_offset_ms"` // the agent's clock minus flotillad's
+	ChainHead     string `json:"chain_head"`
+}
+
+// HostContact is what flotillad heard from a host's agent (internal/hostlink).
+type HostContact struct {
+	Host        string
+	Connected   bool
+	Version     string
+	ConnectedAt time.Time
+	LastContact time.Time
+	ClockOffset time.Duration
+	ChainHead   string
+}
+
+// RecordHostContact keeps a host's connection state; a host flotillad never enrolled is not added.
+func (s *Store) RecordHostContact(ctx context.Context, c HostContact) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET connected = ?, version = ?, connected_at = ?, last_contact = ?,
+		clock_offset_ms = ?, chain_head = ? WHERE name = ?`, c.Connected, c.Version, c.ConnectedAt.UTC().Format(ts),
+		c.LastContact.UTC().Format(ts), c.ClockOffset.Milliseconds(), c.ChainHead, c.Host)
+	return err
+}
+
+// DisconnectHosts marks every host not connected: no connection outlives flotillad.
+func (s *Store) DisconnectHosts(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET connected = 0`)
+	return err
 }
 
 func event(ctx context.Context, tx *sql.Tx, at, actor, via, kind, subject, detail string) error {
@@ -128,7 +160,8 @@ func (s *Store) HostCertCurrent(ctx context.Context, host, serial string) (bool,
 
 // Hosts lists every host.
 func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT name, cert_serial, cert_not_after, created_at, enrolled_at, revoked_at FROM hosts ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT name, cert_serial, cert_not_after, created_at, enrolled_at, revoked_at,
+		connected, version, connected_at, last_contact, clock_offset_ms, chain_head FROM hosts ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +169,8 @@ func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
 	hs := []Host{}
 	for rows.Next() {
 		var h Host
-		if err := rows.Scan(&h.Name, &h.CertSerial, &h.CertNotAfter, &h.CreatedAt, &h.EnrolledAt, &h.RevokedAt); err != nil {
+		if err := rows.Scan(&h.Name, &h.CertSerial, &h.CertNotAfter, &h.CreatedAt, &h.EnrolledAt, &h.RevokedAt,
+			&h.Connected, &h.Version, &h.ConnectedAt, &h.LastContact, &h.ClockOffsetMS, &h.ChainHead); err != nil {
 			return nil, err
 		}
 		hs = append(hs, h)
