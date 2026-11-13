@@ -48,8 +48,8 @@ flag, and never overwritten after:
 ~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
 ```
 
-`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`, `disabled_routines`,
-`models`):
+`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`,
+`disabled_routines`, `case_timers` and `models`):
 
 ```yaml
 listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
@@ -65,6 +65,7 @@ callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
 disabled_routines: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a routine whose worker is missing
+case_timers: {detected_alert: 30m, handed_over_escalate: 24h}   # optional, these are the defaults: a case detected that long alerts, handed over that long escalates
 models:                                 # optional (ADR-0004): the aliases routines name; every run gets it as FLOTILLA_MODELS
   endpoints:
     gateway:

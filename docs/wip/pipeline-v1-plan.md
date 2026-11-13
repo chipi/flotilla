@@ -57,3 +57,9 @@ promotion to propose).
   table, tested against the diagram written out separately; `flotilla case list` and `case show`,
   `GET /v1/cases` and `GET /v1/cases/{id}`. 7 mutants killed. The longest stay per status moved to
   step 2, with the timers. Before deploying: the store-copy check again, now for steps 5 and 6.
+- **Step 2, stuck-state timers:** built 2026-11-13 for `detected` (30m: an ERROR to GlitchTip, once
+  per case, and a `timer.stuck` event) and `handed_over` (24h from the first hand-over, a deferral
+  keeping the clock and a reassignment restarting it: escalated by the timer), checked every minute
+  in flotillad's heartbeat; `case_timers` in flotillad.yaml (operator, 2026-11-13). 6 mutants killed.
+  **Moved:** the `executing` and `checking` deadlines need each capability's timeout and check window
+  (step 3), and leases need jobs to hold them (step 5); they land with those steps.

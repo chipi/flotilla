@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/casetimer"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/skills"
@@ -61,6 +62,9 @@ type Config struct {
 	// the model aliases routines may name and their OpenAI-compatible endpoints (ADR-0004); every run gets
 	// it as JSON in FLOTILLA_MODELS. Optional: without it, a routine that needs a model fails its run.
 	Models *models.Config `yaml:"models"`
+	// Optional: how long a case may stay detected (then an alert) or handed over (then escalated);
+	// RFC-0004 §3.5. Unset: 30m and 24h.
+	CaseTimers casetimer.Config `yaml:"case_timers"`
 }
 
 type WorkerConfig struct {
@@ -96,6 +100,9 @@ func loadConfig(path string) (*Config, error) {
 		if w.URL == "" || w.TokenFile == "" {
 			errs = append(errs, fmt.Errorf("worker %s: url and token_file are required", name))
 		}
+	}
+	if c.CaseTimers.DetectedAlert < 0 || c.CaseTimers.HandedOverEscalate < 0 {
+		errs = append(errs, errors.New("case_timers: a limit cannot be negative (leave it out for the default)"))
 	}
 	if c.Models != nil {
 		if err := c.Models.Validate(); err != nil {
@@ -288,7 +295,7 @@ func main() {
 		}()
 	}
 	hbDone := make(chan struct{})
-	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, log) }()
+	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, log) }()
 
 	s.Loop(ctx)
 	// The heartbeat must finish before the deferred st.Close: a backup cut off by the close logged
@@ -308,9 +315,10 @@ func main() {
 	log.Info("flotillad exit")
 }
 
-// heartbeat pushes flotilla_up and each routine's freshness and last success every minute, and takes
-// one backup of the store per day (state_dir/backup/flotilla-<day>.db, the last 7 kept).
-func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store, stateDir string, log *slog.Logger) {
+// heartbeat pushes flotilla_up and each routine's freshness and last success every minute, checks open
+// cases against their stuck-state limits, and takes one backup of the store per day
+// (state_dir/backup/flotilla-<day>.db, the last 7 kept).
+func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store, stateDir string, timers casetimer.Config, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
@@ -323,6 +331,9 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 			if at, err := st.LastSuccess(ctx, j.ID()); err == nil {
 				push.LastSuccess(j.ID(), at)
 			}
+		}
+		if err := casetimer.Run(ctx, st, s.Now(), timers, log); err != nil {
+			log.Error("case timers", "err", err)
 		}
 		backup(ctx, st, stateDir, s.Now().In(s.Location).Format("2006-01-02"), log)
 		select {
