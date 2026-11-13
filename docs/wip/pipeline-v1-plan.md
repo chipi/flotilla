@@ -150,7 +150,8 @@ promotion to propose).
   rejection (awaiting_approval → escalated by the operator) lowers it to shadow, on the first one
   (RFC-0004 §5.2 says "rejected proposals" without a count; the cautious reading). An expiry is not
   a rejection; a demotion never raises; an `action.demoted` event goes on the case. 4 mutants killed.
-- **Deploy checklist** for the mini, with the UI and v1 (after the promotion's window, operator's go):
+- **Deploy checklist** for the mini, with the UI and v1: **Saturday 2026-11-15, after the weekly
+  freeze and check pass on the promoted code** (operator, 2026-11-13), on the operator's go:
   the store-copy check for schema steps 5 to 8; `ui_listen`/`ui_host`; the ops workers' tokens,
   `worker-ops.env` and profile `ops` (or their routines disabled); the `deploy` caller, its token and
   `FLOTILLA_STANDDOWN_HOST`; then the homelab proxy node.

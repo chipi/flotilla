@@ -31,14 +31,14 @@ the host; the path is built and proven in the e2e, and used from the first promo
 | H9 | **The security e2e** (ADR-0006: before the first write): an agent container with a harmless test action; a signed execution runs once; a forged one, an expired one, another host's, one not in the allowlist, one over the rate limit, one above the ceiling are refused and logged; `flotilla host audit` compares the host's log with flotillad's record | the e2e, with mutants on the agent's checks |
 | H10 | **Docs before the first write at propose** (ADR-0006 §11): the procedures for the execution key's rotation, the intermediate CA and a host's certificate; security.md's T13 to T15 marked built | docs build |
 
-## Decisions the operator makes before H5/H6
+## Decided (operator, 2026-11-13)
 
-- **How the agent on the mini reaches flotillad's host endpoint.** flotillad runs in the production
-  Docker VM; the agent runs on the Mac. Options: a port published on the mini's loopback from the
-  production compose (a production change; homelab ADR-0009 governs that engine), or through the
-  homelab's Tailscale (ADR-0006 decided 1: "this homelab publishes it on its tailnet only").
-- **Where the root CA is made and kept** (ADR-0006 decided 2: offline, with the operator, as the backup
-  decryption key is).
+- **The mini's agent reaches flotillad's host endpoint through Tailscale** (ADR-0006 decided 1: this
+  homelab publishes it on its tailnet only): a TCP passthrough to flotillad's port; mutual TLS stays
+  flotillad's own. No port is published on the production engine.
+- **The root CA is made on the operator's laptop and kept offline, as the backup decryption key is**
+  (ADR-0006 decided 2). A script the operator runs makes the root and the intermediate; the
+  intermediate goes to flotillad's secrets volume, the root stays with the operator.
 
 ## Not in v1
 
