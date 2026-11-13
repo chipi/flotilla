@@ -49,7 +49,7 @@ flag, and never overwritten after:
 ```
 
 `config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`,
-`disabled_routines`, `case_timers` and `models`):
+`disabled_routines`, `case_timers`, `models` and `hosts`):
 
 ```yaml
 listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
@@ -170,6 +170,25 @@ hook. To set it up:
 2. Put the token in `config/deploy.token`; `secrets.sh` copies it into flotillad's secrets volume,
    where the script reads it by path.
 3. Set `FLOTILLA_STANDDOWN_HOST=mini` in `.env`.
+
+## The host agents' endpoint (ADR-0006)
+
+Optional; without it no host can enrol or connect. The CA comes from the operator's machine, offline:
+`flotilla ca root DIR` once (the root's key stays there, kept as the backup key is), then
+`flotilla ca intermediate DIR OUT`; the three files in `OUT` (`intermediate.crt`,
+`intermediate.key`, `root.crt`) go to flotillad's secrets volume. In `config/flotillad.yaml`:
+
+```yaml
+hosts:
+  listen: 0.0.0.0:8486                   # its own port: mutual TLS, terminated by flotillad
+  ca_dir: /run/flotilla/host-ca          # the three files above
+  server_names: [<the name agents dial>]  # in flotillad's server certificate (made at start, renewed in memory)
+```
+
+A proxy in front may only pass TCP through. flotillad checks at start that the root signed the
+intermediate. Then `flotilla host enrolment NAME` (an operator) prints a single-use token for 15
+minutes, which goes to the host inside the SSH session only, on `flotilla-host enrol`'s stdin;
+`flotilla host list` and `flotilla host revoke NAME`.
 
 ## The candidate worker: shadow comparison of a candidate image
 

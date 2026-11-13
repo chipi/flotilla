@@ -7,10 +7,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,6 +26,7 @@ import (
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/casetimer"
 	"github.com/chipi/flotilla/internal/dispatch"
+	"github.com/chipi/flotilla/internal/hostlink"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
@@ -70,6 +73,8 @@ type Config struct {
 	// Optional: the registry's declarations (ADR-0011, RFC-0006 §10 step 4). Unset: the host agent's,
 	// which the image carries. An installation's extension adds its own file here.
 	RegistryFiles []string `yaml:"registry_files"`
+	// Optional: the host agents' endpoint (ADR-0006). Unset: no host can enrol or connect.
+	Hosts HostsConfig `yaml:"hosts"`
 }
 
 // defaultRegistry is the declaration flotillad's image carries for its own tag.
@@ -116,6 +121,9 @@ func loadConfig(path string) (*Config, error) {
 		if err := c.Models.Validate(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if err := c.Hosts.validate(); err != nil {
+		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
@@ -305,6 +313,31 @@ func main() {
 			}
 		}()
 	}
+	var hostLn net.Listener
+	if cfg.Hosts.Listen != "" {
+		inter, root, err := loadHostCA(cfg.Hosts.CADir)
+		if err != nil {
+			log.Error("the host CA", "dir", cfg.Hosts.CADir, "err", err)
+			os.Exit(1)
+		}
+		apiSrv.HostCA, apiSrv.HostRoot = inter, root
+		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
+		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}}
+		hostLn, err = net.Listen("tcp", cfg.Hosts.Listen)
+		if err != nil {
+			log.Error("host endpoint listen", "addr", cfg.Hosts.Listen, "err", err)
+			os.Exit(1)
+		}
+		go func() {
+			log.Info("flotillad listening for host agents", "addr", cfg.Hosts.Listen, "names", cfg.Hosts.ServerNames,
+				"intermediate_until", inter.Cert.NotAfter)
+			if err := link.Serve(hostLn); err != nil && !errors.Is(err, net.ErrClosed) {
+				log.Error("host endpoint", "err", err)
+				stop()
+			}
+		}()
+		defer link.CloseAll()
+	}
 	var usrv *http.Server
 	if cfg.UIListen != "" {
 		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log}
@@ -337,6 +370,9 @@ func main() {
 	}
 	if usrv != nil {
 		_ = usrv.Shutdown(sctx)
+	}
+	if hostLn != nil {
+		hostLn.Close()
 	}
 	_ = st.Event(context.Background(), "flotillad", "flotillad", "stop", version, "")
 	log.Info("flotillad exit")

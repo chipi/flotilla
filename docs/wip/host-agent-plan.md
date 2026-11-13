@@ -137,5 +137,14 @@ VPS.
   CA's agent was refused by its own check before reaching flotillad; nothing sent a good token under
   another frame type, kept a connection open after a renewal, timed the reconnect after one, or
   checked why an oversize frame was refused), fixed. Not tested: a host's older connection closed
-  when a newer one arrives. Next, H6b: flotillad's config (the endpoint's address, the CA files, the
-  server name) and the `flotilla-host` binary; H6c: the container e2e.
+  when a newer one arrives.
+- **H6b, flotillad's config and the agent's binary:** built 2026-11-13. flotillad's optional
+  `hosts:` (`listen`, `ca_dir`, `server_names`): it loads the intermediate and the root, refuses an
+  intermediate the root did not sign, and starts the endpoint; its server certificate is made in
+  memory from the intermediate and issued again when under 30 days are left. `cmd/flotilla-host`:
+  `enrol` (the token on stdin only; the key made on the host, mode 600, kept on a second enrolment),
+  `run` (the executor, the audit log, the connection; a `started` left by the last run is logged as
+  unknown), `sudoers`; connection settings are flags, the host's name is its config's. It builds for
+  the mini (darwin/amd64, macOS 15.7.7, checked with `uname -m`). 3 mutants killed. Not tested:
+  that a crash mid-write leaves the old certificate file (the write is a rename). Next, H6c: the
+  container e2e.
