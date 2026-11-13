@@ -41,7 +41,15 @@ The ledger backend goes from `tsv` to `api`. No store schema changes between `90
    passes, and its log has 0 ledger errors.
 3. Candidate against live, counts only, with main's `deploy/mini/shadow_compare.py`. Not the deploy
    checkout's copy, which prints test-side items (SPLIT.md rule 7; 2026-11-13).
-4. The weekly freeze: if it runs that morning, promote after it, so the freeze shows one code version.
+4. The fleet session's weekly freeze (LaunchDaemon `com.homelab.fleet-weekly-freeze`, Saturdays
+   10:17Z; a week's window takes longer than the 7 min 43 s of its first one-day run). Start the
+   window only after `~/signal-fleet/frozen/reports/weekly-freeze.log` ends with
+   `WEEKLY FREEZE: PASS`.
+5. The fleet session reruns its filing gate preview (9048e6f → 35b04d2, counts only) on the new
+   week and sends the verdict. On the week of 11-06 it was `FILING GATE: PASS`, so no
+   `SF_FILING_GATE_ACCEPT` was needed. Its counts-only gate (fleet-eval-data ba11f6d) has to be in the
+   mini's `~/fleet-eval-data` before the deploy, because the new week is test side. That needs the
+   operator's go for the fleet session.
 
 ## The window (operator's go; about 15 minutes)
 
@@ -52,7 +60,7 @@ The ledger backend goes from `tsv` to `api`. No store schema changes between `90
    -e FLOTILLA_ROUTINE=triage/cycle flotilla-worker-triage python3 ledger_sync.py import`.
    Then `check`. **Stop on anything but `LEDGER CHECK: PASS`.**
 3. In `.env`, set `TRIAGE_LEDGER_BACKEND=api`; the old `.env` is kept beside it.
-4. `deploy.sh sha-35b04d2`. The filing gate flags the filing change, so set
+4. `deploy.sh sha-35b04d2`. If the fleet session's preview on the new week flags a change, set
    `SF_FILING_GATE_ACCEPT` with the reason: the filing replays pass, and the fleet session's
    `test_exact_link` passes 4/4. Tell the fleet session before this step.
 5. `flotilla resume triage/cycle`. Watch the first cycles. Then run `check` for `triage/cycle`, and
