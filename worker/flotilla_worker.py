@@ -3,7 +3,7 @@
 The worker holds the fleet's secrets (its env files) and its code; flotillad holds neither. flotillad
 says what to run and when; the worker runs it and reports. Python stdlib only.
 
-  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, env}  -> the result, when done
+  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, plan_file, env}  -> the result, when done
   GET  /healthz   {ok, worker, version, running}
   GET  /livez     {ok} without a token: the container healthcheck
 
@@ -100,11 +100,49 @@ def read_spend(path):
         return 0.0
 
 
+PLAN_MAX = 64 * 1024
+
+
+def read_plan(path):
+    """Consume what a routine on a case decided (pipeline v1 step 5): one JSON object, at most PLAN_MAX
+    bytes, then removed. Returns (plan, error); a missing file is (None, "")."""
+    if not path:
+        return None, ""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(PLAN_MAX + 1)
+    except FileNotFoundError:
+        return None, ""
+    except OSError as e:
+        return None, f"plan_file: {e}"
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    if len(raw) > PLAN_MAX:
+        return None, f"plan_file: over {PLAN_MAX} bytes"
+    try:
+        plan = json.loads(raw)
+    except ValueError as e:
+        return None, f"plan_file: not JSON: {e}"
+    if not isinstance(plan, dict):
+        return None, "plan_file: not a JSON object"
+    return plan, ""
+
+
 def run_job(req, environ=None):
     environ = os.environ if environ is None else environ
     env = build_env(req.get("env"), environ)
     workdir = resolve(CODE_ROOT, req.get("workdir"))
     spend_path = resolve(env.get("HOME", "/"), req["spend_file"]) if req.get("spend_file") else ""
+    plan_path = resolve(env.get("HOME", "/"), req["plan_file"]) if req.get("plan_file") else ""
+    if plan_path:  # a plan left by an earlier run must never be read as this run's
+        try:
+            os.remove(plan_path)
+        except FileNotFoundError:
+            pass
+        env["FLOTILLA_PLAN_FILE"] = plan_path
     timeout = float(req["timeout_s"])
     start = time.monotonic()
     proc = subprocess.Popen(["sh", "-c", req["command"]], cwd=workdir, env=env, stdout=subprocess.PIPE,
@@ -128,8 +166,15 @@ def run_job(req, environ=None):
     if status == "ok" and proc.returncode != 0:
         status = "error"
     out = b"".join(chunks).decode("utf-8", "replace")
-    return {"status": status, "exit_code": proc.returncode, "duration_s": round(time.monotonic() - start, 3),
-            "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:]}
+    res = {"status": status, "exit_code": proc.returncode, "duration_s": round(time.monotonic() - start, 3),
+           "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:]}
+    plan, plan_error = read_plan(plan_path)
+    if status == "ok":  # a failed run's plan is not a decision
+        if plan is not None:
+            res["plan"] = plan
+        if plan_error:
+            res["plan_error"] = plan_error
+    return res
 
 
 def _kill_group(proc):

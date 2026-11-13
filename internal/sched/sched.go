@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -134,20 +135,33 @@ func (s *Scheduler) Loop(ctx context.Context) {
 // RunNow runs one routine now and waits for it. trigger says why ("schedule", "manual"), actor who.
 // A skipped run (STOP, paused, budget) is recorded with its reason and returned without error.
 func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*store.Run, error) {
+	r, _, err := s.RunWith(ctx, id, trigger, actor, nil)
+	return r, err
+}
+
+// CaseOutcome is what a run on a case reported: its plan file's object, or why there was none.
+type CaseOutcome struct {
+	Plan      json.RawMessage
+	PlanError string
+}
+
+// RunWith is RunNow with the run's case (pipeline v1 step 5): caseEnv is added to the run's environment
+// (FLOTILLA_CASE), and the run gets a plan file whose content comes back. caseEnv nil is RunNow.
+func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, caseEnv map[string]string) (*store.Run, *CaseOutcome, error) {
 	s.init()
 	j := s.Routine(id)
 	if j == nil {
-		return nil, fmt.Errorf("no routine %s", id)
+		return nil, nil, fmt.Errorf("no routine %s", id)
 	}
 	runner, ok := s.Workers[j.Worker]
 	if !ok {
-		return nil, fmt.Errorf("routine %s: worker %s is not configured", id, j.Worker)
+		return nil, nil, fmt.Errorf("routine %s: worker %s is not configured", id, j.Worker)
 	}
 	runID := newRunID(j, s.Now())
 	s.mu.Lock()
 	if prev, busy := s.running[id]; busy {
 		s.mu.Unlock()
-		return nil, fmt.Errorf("%s: %w (%s)", id, ErrRunning, prev)
+		return nil, nil, fmt.Errorf("%s: %w (%s)", id, ErrRunning, prev)
 	}
 	s.running[id] = runID
 	s.mu.Unlock()
@@ -155,26 +169,26 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 
 	autonomy, err := s.Autonomy(ctx, j)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rec := store.Run{ID: runID, Routine: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Autonomy: autonomy}
 	if reason, err := s.skipReason(ctx, j); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if reason != "" {
 		rec.Detail, rec.Status = reason, store.StatusSkipped
 		rec.StartedAt = s.Now().UTC().Format(time.RFC3339Nano)
 		if err := s.Store.SkippedRun(ctx, rec); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		s.Log.Info("run skipped", "routine", id, "run_id", runID, "reason", reason)
 		s.metric(j, store.StatusSkipped, autonomy, 0)
-		return &rec, nil
+		return &rec, nil, nil
 	}
 
 	day := s.Now().In(s.Location).Format("2006-01-02")
 	spent, err := s.Store.Spend(ctx, day, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tracer := otel.Tracer("flotillad")
 	ctx, span := tracer.Start(ctx, "run "+id, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
@@ -189,7 +203,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	rec.Status = store.StatusRunning
 	rec.TraceID = span.SpanContext().TraceID().String()
 	if err := s.Store.StartRun(ctx, rec); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	env := map[string]string{
 		"FLEETD_STAGE":       spec.FleetdStage(autonomy),
@@ -216,16 +230,27 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	if s.Environment != "" {
 		env["FLOTILLA_ENVIRONMENT"] = s.Environment
 	}
+	planFile := ""
+	for k, v := range caseEnv {
+		env[k] = v
+	}
+	if caseEnv != nil {
+		planFile = ".flotilla-plan-" + runID + ".json" // under the run's HOME; the worker reads and removes it
+	}
 	s.Log.Info("run start", "routine", id, "run_id", runID, "autonomy", autonomy, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
 	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Routine: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
-		TimeoutS: j.Limit.Seconds(), SpendFile: j.Run.SpendFile, Env: env})
+		TimeoutS: j.Limit.Seconds(), SpendFile: j.Run.SpendFile, PlanFile: planFile, Env: env})
 
 	status, detail, spend, dur := store.StatusError, "", 0.0, 0.0
 	var exit *int
+	var outcome *CaseOutcome
 	if callErr != nil {
 		detail = callErr.Error()
 	} else {
 		status, exit, spend, dur = res.Status, res.ExitCode, res.SpendUSD, res.DurationS
+		if caseEnv != nil {
+			outcome = &CaseOutcome{Plan: res.Plan, PlanError: res.PlanError}
+		}
 		if status != store.StatusOK {
 			detail = tail(res.OutputTail, 800)
 		}
@@ -234,12 +259,12 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	if err := s.Store.FinishRun(fctx, runID, status, exit, spend, dur, detail); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	total := spent
 	if spend > 0 {
 		if total, err = s.Store.AddSpend(fctx, day, id, spend); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	span.SetAttributes(attribute.String("flotilla.status", status), attribute.Float64("flotilla.spend_usd", spend))
@@ -261,7 +286,7 @@ func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*sto
 	out := rec
 	out.Status, out.ExitCode, out.SpendUSD, out.Detail = status, exit, spend, detail
 	out.DurationS = &dur
-	return &out, nil
+	return &out, outcome, nil
 }
 
 // Autonomy is the autonomy a run starts with: shadow while the installation is frozen, else the routine's

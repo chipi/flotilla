@@ -21,6 +21,7 @@ type Request struct {
 	Workdir   string            `json:"workdir"`
 	TimeoutS  float64           `json:"timeout_s"`
 	SpendFile string            `json:"spend_file,omitempty"`
+	PlanFile  string            `json:"plan_file,omitempty"` // a routine on a case writes its decision here
 	Env       map[string]string `json:"env"`
 }
 
@@ -32,6 +33,10 @@ type Result struct {
 	DurationS  float64 `json:"duration_s"`
 	SpendUSD   float64 `json:"spend_usd"`
 	OutputTail string  `json:"output_tail"`
+	// What a routine on a case decided (pipeline v1 step 5): one JSON object, from an ok run only, or why
+	// it could not be read.
+	Plan      json.RawMessage `json:"plan,omitempty"`
+	PlanError string          `json:"plan_error,omitempty"`
 }
 
 type Health struct {

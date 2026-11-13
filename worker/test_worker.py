@@ -97,6 +97,44 @@ class TestRunJob(unittest.TestCase):
         with self.assertRaises(ValueError):
             fw.run_job(self.req("true", spend_file="../../etc/x"), self.environ)
 
+    def planned(self, command, plan_file="plan.json"):
+        r = self.req(command)
+        r["plan_file"] = plan_file
+        return fw.run_job(r, self.environ)
+
+    def test_plan_returned_and_removed(self):
+        res = self.planned('echo \'{"outcome": "plan", "action": "a.b"}\' > "$FLOTILLA_PLAN_FILE"')
+        self.assertEqual(res["plan"], {"outcome": "plan", "action": "a.b"})
+        self.assertNotIn("plan_error", res)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "plan.json")), "consumed once")
+
+    def test_an_old_plan_is_never_this_runs(self):
+        with open(os.path.join(self.home, "plan.json"), "w") as f:
+            f.write('{"outcome": "plan", "action": "left.over"}')
+        res = self.planned("true")
+        self.assertNotIn("plan", res)
+
+    def test_a_failed_runs_plan_is_not_a_decision(self):
+        res = self.planned('echo \'{"outcome": "plan"}\' > "$FLOTILLA_PLAN_FILE"; exit 2')
+        self.assertEqual(res["status"], "error")
+        self.assertNotIn("plan", res)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "plan.json")))
+
+    def test_bad_plans(self):
+        for name, cmd, want in [
+            ("not JSON", 'echo nope > "$FLOTILLA_PLAN_FILE"', "not JSON"),
+            ("not an object", 'echo "[1]" > "$FLOTILLA_PLAN_FILE"', "not a JSON object"),
+            ("too big", f'head -c {fw.PLAN_MAX + 10} /dev/zero > "$FLOTILLA_PLAN_FILE"', "over"),
+        ]:
+            with self.subTest(name):
+                res = self.planned(cmd)
+                self.assertNotIn("plan", res)
+                self.assertIn(want, res.get("plan_error", ""))
+
+    def test_plan_file_cannot_leave_home(self):
+        with self.assertRaises(ValueError):
+            self.planned("true", plan_file="../../etc/x")
+
 
 class TestHTTP(unittest.TestCase):
     @classmethod

@@ -293,3 +293,21 @@ func TestLoopLeavesCaseRoutinesAlone(t *testing.T) {
 		t.Fatalf("a routine on cases ran %d times on time", len(fr.got))
 	}
 }
+
+// A run on a case gets the case in its environment and a plan file of its own, and returns the plan.
+func TestRunWithACase(t *testing.T) {
+	ctx := context.Background()
+	s, fr, _ := setup(t, 2)
+	fr.res.Plan = []byte(`{"outcome":"plan","action":"backup.rerun_observability"}`)
+	r, out, err := s.RunWith(ctx, "triage/cycle", "case", "flotillad", map[string]string{"FLOTILLA_CASE": `{"id":"case-1"}`})
+	if err != nil || out == nil || string(out.Plan) != `{"outcome":"plan","action":"backup.rerun_observability"}` {
+		t.Fatalf("run %+v outcome %+v err %v", r, out, err)
+	}
+	req := fr.got[0]
+	if req.Env["FLOTILLA_CASE"] != `{"id":"case-1"}` || !strings.Contains(req.PlanFile, r.ID) {
+		t.Fatalf("the request: env %v plan_file %q", req.Env["FLOTILLA_CASE"], req.PlanFile)
+	}
+	if _, err := s.RunNow(ctx, "triage/cycle", "manual", "op"); err != nil || fr.got[1].PlanFile != "" {
+		t.Fatalf("a run on time asked for a plan file: %q", fr.got[1].PlanFile)
+	}
+}
