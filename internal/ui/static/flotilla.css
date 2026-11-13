@@ -1,5 +1,10 @@
 /* flotilla UI: tokens and components. DESIGN.md is the source; ui_test.go keeps the colour tokens equal to it. */
 
+/* self-hosted, see fonts/README.md */
+@font-face { font-family: Inter; src: url("fonts/InterVariable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+
 :root {
   /* colours (DESIGN.md frontmatter, same names) */
   --signal-blue: #1F4FD1;

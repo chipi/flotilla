@@ -235,4 +235,18 @@ func TestStaticIsServed(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(body, "--signal-blue") {
 		t.Fatalf("the stylesheet: %d", resp.StatusCode)
 	}
+	// A font the stylesheet names but the binary lacks fails silently in the browser (a fallback face).
+	urls := regexp.MustCompile(`url\("([^"]+)"\)`).FindAllStringSubmatch(body, -1)
+	if len(urls) < 3 {
+		t.Fatalf("expected the three self-hosted fonts in the stylesheet, found %d url()s", len(urls))
+	}
+	for _, u := range urls {
+		r, _ := f.do("GET", "/static/"+u[1], "", nil, nil)
+		if r.StatusCode != 200 {
+			t.Errorf("%s: %d", u[1], r.StatusCode)
+		}
+		if strings.HasSuffix(u[1], ".woff2") && r.Header.Get("Content-Type") != "font/woff2" {
+			t.Errorf("%s: Content-Type %q", u[1], r.Header.Get("Content-Type"))
+		}
+	}
 }

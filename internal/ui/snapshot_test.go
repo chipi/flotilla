@@ -66,6 +66,16 @@ func TestSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "fonts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fonts, _ := Static.ReadDir("static/fonts")
+	for _, e := range fonts {
+		b, _ := Static.ReadFile("static/fonts/" + e.Name())
+		if err := os.WriteFile(filepath.Join(dir, "fonts", e.Name()), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	ico, _ := Static.ReadFile("static/favicon.svg")
 	_ = os.WriteFile(filepath.Join(dir, "favicon.svg"), ico, 0o644)
 	css, _ := Static.ReadFile("static/flotilla.css")
