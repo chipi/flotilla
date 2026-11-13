@@ -148,6 +148,7 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/unfreeze", s.auth(ActUnfreeze, s.unfreeze))
 	s.userRoutes(m)
 	s.hostRoutes(m)
+	s.caseRoutes(m)
 	s.ledgerRoutes(m)
 	return m
 }

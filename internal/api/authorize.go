@@ -21,6 +21,7 @@ const (
 	ActUnfreeze   Action = "unfreeze"    // lift it (loosening: needs a reason)
 	ActHold       Action = "hold"        // hold a host or a target (RFC-0004 §5.1 step 4)
 	ActUnhold     Action = "unhold"      // lift a hold early (loosening: needs a reason)
+	ActApprove    Action = "approve"     // approve or reject a proposed plan (RFC-0004 §5)
 	ActHosts      Action = "hosts"       // mint a host's enrolment token, revoke a host (ADR-0006 §3)
 )
 
@@ -49,6 +50,7 @@ var may = map[Action]map[string]bool{
 	ActHold:       {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActUnhold:     {RoleOperator: true, RoleAdmin: true},
 	ActHosts:      {RoleOperator: true, RoleAdmin: true},
+	ActApprove:    {RoleOperator: true, RoleAdmin: true},
 }
 
 // Authorize reports whether a caller holding role may do action.

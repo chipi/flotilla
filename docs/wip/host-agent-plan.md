@@ -218,3 +218,20 @@ VPS.
   now read the rules only. Not tested: the SSH wrapper itself (`install.sh`) and the macOS path
   (dscl, `sappnd`, launchd, `plutil`): they run for the first time on the mini, on the operator's
   go.
+- **H9, the security e2e:** in progress (operator, 2026-11-13: a CLI-only approval first, 8b's UI
+  later). No case reaches `executing` on a host without it (policy's host ceiling is propose, and
+  v1's acting routines are capped at shadow), so H9 comes in three parts:
+  - **H9a, approval (built):** `POST /v1/cases/{id}/approve` and `/reject`, `flotilla case approve
+    ID` and `case reject ID --reason`, a new `approve` permission (operator and admin; agents may
+    not). Approving moves awaiting_approval to executing as the caller (the name the envelope's
+    `approved` carries), and is refused while the installation is frozen or a hold covers the target
+    or its host; rejecting needs a reason, escalates the case, releases the target and demotes the
+    action to shadow (the store's existing rule). 7 mutants killed.
+  - **H9b, `flotilla host audit`:** the host's audit log (fetched over SSH) against flotillad's
+    record: the chain verifies, it leads to the stored head, and each execution matches both ways.
+  - **H9c, the e2e:** an e2e-only test fleet and registry extension (mounted config, not the image)
+    take one execution through the whole path (detect, plan, propose, approve, sign, send, run,
+    result, checking), then an action outside the host's allowlist and its rate limit, refused on
+    the host, then the audit. Forged, expired, another host's and auto-above-the-ceiling envelopes
+    cannot come down flotillad's legitimate path at all; they stay covered by the Go tests over the
+    real connection (internal/hostagent, internal/hostexec).

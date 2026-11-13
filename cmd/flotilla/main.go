@@ -9,6 +9,7 @@
 //	flotilla autonomy fleet/routine shadow|propose|auto [--reason "..."]   (operator; raising needs one)
 //	flotilla stop fleet
 //	flotilla start fleet --reason "..."                 (operator)
+//	flotilla case approve ID | reject ID --reason "..." (operator: a proposed plan)
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
@@ -178,6 +179,10 @@ func main() {
 		need(args, 1, `start fleet --reason "..."`)
 		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
 	case "case":
+		if len(args) > 0 && (args[0] == "approve" || args[0] == "reject") {
+			caseDecision(args, reason)
+			return
+		}
 		caseCmd(args, n)
 	case "hold":
 		holdCmd(args, reason)
@@ -190,6 +195,17 @@ func main() {
 	default:
 		usage()
 	}
+}
+
+// caseDecision is `flotilla case approve ID | case reject ID --reason "..."` (RFC-0004 §5): an operator's
+// answer to a proposed plan. Approving sends it on to its host, signed; rejecting escalates the case.
+func caseDecision(args []string, reason string) {
+	need(args, 2, `case approve ID | case reject ID --reason "..."`)
+	if args[0] == "approve" {
+		post("/v1/cases/"+args[1]+"/approve", nil)
+		return
+	}
+	post("/v1/cases/"+args[1]+"/reject", map[string]string{"reason": reason})
 }
 
 // caseCmd is `flotilla case list [--all] | show ID` (ADR-0005): the open cases, or one case's whole story.
