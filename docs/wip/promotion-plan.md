@@ -50,6 +50,13 @@ The ledger backend goes from `tsv` to `api`. No store schema changes between `90
    `SF_FILING_GATE_ACCEPT` was needed. Its counts-only gate (fleet-eval-data ba11f6d) has to be in the
    mini's `~/fleet-eval-data` before the deploy, because the new week is test side. That needs the
    operator's go for the fleet session.
+6. **The `filed.tsv` header** (found 2026-11-13): main's `FILED_COLS` has a 9th column, `linked_via`.
+   `deploy/compose/README.md` says an older file keeps its 8-column header until a filing rewrites it,
+   and `import` refuses it until `ledger_sync.py pad` has run. Decide the order before the window. One
+   option: import with the live worker's old code before the deploy (as below), then run `pad`
+   with the new image after the deploy and before resuming, then `check`. Try that order first
+   on a copy of the live state, for example on the candidate's volume, which still holds the
+   8-column header.
 
 ## The window (operator's go; about 15 minutes)
 
