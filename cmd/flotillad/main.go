@@ -346,7 +346,9 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 			if !j.Enabled {
 				continue
 			}
-			push.Freshness(j.ID(), j.Fresh)
+			if j.Fresh > 0 { // a routine on cases has no freshness
+				push.Freshness(j.ID(), j.Fresh)
+			}
 			if at, err := st.LastSuccess(ctx, j.ID()); err == nil {
 				push.LastSuccess(j.ID(), at)
 			}

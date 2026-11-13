@@ -106,6 +106,10 @@ func (s *Scheduler) Loop(ctx context.Context) {
 			s.Log.Error("routine's worker is not configured: routine not started", "routine", j.ID(), "worker", j.Worker)
 			continue
 		}
+		if k := j.OnCase(); k != "" {
+			s.Log.Info("routine runs on cases, not on time", "routine", j.ID(), "kind", k)
+			continue
+		}
 		wg.Add(1)
 		go func(j *spec.Routine) {
 			defer wg.Done()

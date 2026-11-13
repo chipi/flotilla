@@ -78,8 +78,25 @@ type Routine struct {
 	Fresh time.Duration `yaml:"-"`
 }
 
+// Trigger is what starts the routine (ADR-0007): time (every) or an event on a case (RFC-0004 §3.7),
+// exactly one of them.
 type Trigger struct {
-	Every string `yaml:"every"`
+	Every string       `yaml:"every"`
+	Case  *CaseTrigger `yaml:"case"`
+}
+
+// CaseTrigger starts the routine when a case of its kind is handed over: it is that kind's acting
+// routine (pipeline v1 step 5). One routine per kind.
+type CaseTrigger struct {
+	Kind string `yaml:"kind"`
+}
+
+// OnCase is the case kind the routine acts on, "" for a routine on time.
+func (j *Routine) OnCase() string {
+	if j.Trigger.Case == nil {
+		return ""
+	}
+	return j.Trigger.Case.Kind
 }
 
 // Skills (ADR-0012, RFC-0005 §4): rules the routine's code matches against its case's structured fields;
@@ -201,6 +218,13 @@ func Load(dir string) ([]*Routine, error) {
 			continue
 		}
 		seen[j.ID()] = p
+		if k := j.OnCase(); k != "" {
+			if prev, dup := seen["case:"+k]; dup {
+				errs = append(errs, fmt.Errorf("%s: %s cases already have an acting routine in %s", p, k, prev))
+				continue
+			}
+			seen["case:"+k] = p
+		}
 		routines = append(routines, j)
 	}
 	if len(errs) > 0 {
@@ -316,9 +340,20 @@ func (j *Routine) validate() error {
 		}
 		return d
 	}
-	j.Every = dur("trigger.every", j.Trigger.Every, time.Minute)
+	switch {
+	case j.Trigger.Case != nil && j.Trigger.Every != "":
+		bad("trigger: every or case, not both")
+	case j.Trigger.Case != nil:
+		if !caseFieldRe.MatchString(j.Trigger.Case.Kind) {
+			bad("trigger.case.kind %q: a case kind such as failed_backup", j.Trigger.Case.Kind)
+		}
+	default:
+		j.Every = dur("trigger.every", j.Trigger.Every, time.Minute)
+	}
 	j.Limit = dur("run.timeout", j.Run.Timeout, 10*time.Second)
-	j.Fresh = dur("freshness", j.Freshness, time.Minute)
+	if j.Freshness != "" || j.Trigger.Case == nil { // a routine on cases runs when there is work: no freshness
+		j.Fresh = dur("freshness", j.Freshness, time.Minute)
+	}
 	if j.Every > 0 && j.Limit > j.Every*3 {
 		bad("run.timeout %s is more than three intervals (%s)", j.Limit, j.Every)
 	}

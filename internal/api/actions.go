@@ -104,7 +104,7 @@ func (s *Server) Status(ctx context.Context) ([]RoutineStatus, map[string]any, e
 		js := RoutineStatus{ID: j.ID(), Fleet: j.Fleet, Description: j.Description, Enabled: j.Enabled, Worker: j.Worker,
 			Every: j.Every.String(), Autonomy: st, AutonomySet: set, SpecAutonomy: j.Autonomy, MaxAutonomy: j.MaxAutonomy, SpecHash: j.Hash,
 			Paused: paused == "1", Stopped: stopped == "1", Running: running[j.ID()], SpendToday: spent, BudgetDay: j.Budget.DayUSD,
-			Stale: j.Enabled && (last.IsZero() || now.Sub(last) > j.Fresh)}
+			Stale: j.Enabled && j.Fresh > 0 && (last.IsZero() || now.Sub(last) > j.Fresh)}
 		if !last.IsZero() {
 			js.LastSuccess = last.Format(time.RFC3339)
 		}

@@ -281,3 +281,15 @@ func TestClockBeforeLoop(t *testing.T) {
 		t.Fatal("Clock on a scheduler nothing has started")
 	}
 }
+
+// A routine on cases is never run on time (its Every is zero: a ticker would panic).
+func TestLoopLeavesCaseRoutinesAlone(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.Routines[0].Trigger.Case, s.Routines[0].Every = &spec.CaseTrigger{Kind: "failed_backup"}, 0
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	s.Loop(ctx)
+	if len(fr.got) != 0 {
+		t.Fatalf("a routine on cases ran %d times on time", len(fr.got))
+	}
+}

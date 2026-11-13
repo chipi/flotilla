@@ -66,6 +66,9 @@ func TestRejects(t *testing.T) {
 		"bad skill name":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}, load: [Bad_Name]}]}\n", `skill name "Bad_Name"`},
 		"bad case field":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {Class: a}, load: [x]}]}\n", `field "Class"`},
 		"unknown skills field":      {"triage/cycle.yaml", good + "skills: {rules: []}\n", "field rules not found"},
+		"every and case":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {every: 10m, case: {kind: failed_backup}}", 1), "every or case, not both"},
+		"a bad case kind":           {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: Failed-Backup}}", 1), "trigger.case.kind"},
+		"no trigger":                {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}\n", "", 1), "trigger.every"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -106,6 +109,25 @@ func TestOneBadSpecFailsTheLoad(t *testing.T) {
 	write(t, d, "triage/broken.yaml", "fleet: triage\njob: broken\n")
 	if _, err := Load(d); err == nil {
 		t.Fatal("a bad spec must fail the whole load, not drop that routine")
+	}
+}
+
+// A routine on cases (RFC-0004 §3.7): no interval, no freshness, one acting routine per kind.
+func TestCaseTrigger(t *testing.T) {
+	onCase := strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}}", 1),
+		"freshness: 35m\n", "", 1)
+	d := t.TempDir()
+	write(t, d, "ops/rerun.yaml", strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: rerun").Replace(onCase))
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := routines[0]; j.OnCase() != "failed_backup" || j.Every != 0 || j.Fresh != 0 {
+		t.Fatalf("a routine on cases: kind %q every %s fresh %s", j.OnCase(), j.Every, j.Fresh)
+	}
+	write(t, d, "ops/rerun2.yaml", strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: rerun2").Replace(onCase))
+	if _, err := Load(d); err == nil || !strings.Contains(err.Error(), "already have an acting routine") {
+		t.Fatalf("two acting routines for one kind: %v", err)
 	}
 }
 
