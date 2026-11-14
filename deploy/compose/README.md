@@ -82,7 +82,9 @@ models:                                 # optional (ADR-0004): the aliases routi
 `runtime/testdata/models-*.json`) and prints the number of aliases. In `worker-triage.env`,
 `ROUTINE_HEARTBEAT_MODEL_ALIAS=<alias>` makes the heartbeat call that alias once per run through the
 model client, traced: the platform's live check of the models section, the key, the endpoint through
-the proxy and the routine's spans. Unset, the heartbeat makes no model call.
+the proxy and the routine's spans. Unset, the heartbeat makes no model call. Name the alias the
+fleets actually decide with (the mini: `triage-pro`, the model of `SF_TRIAGE_MODEL`), so the canary
+watches the model production uses; the call allows 256 tokens, room for a model that reasons first.
 
 `config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
 
