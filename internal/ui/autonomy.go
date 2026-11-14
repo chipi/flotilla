@@ -85,6 +85,11 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		d.Line = fmt.Sprintf("Autonomy is normal. The circuit breaker is %s (%d of %d failures in the last hour). Tightening takes effect at once; loosening asks why and is recorded.",
 			breaker, bad, lim.BreakerFailures)
 	}
+	verdicts, err := u.API.Store.VerdictsByAction(ctx)
+	if err != nil {
+		http.Error(w, "feedback failed", 500)
+		return
+	}
 	for _, a := range as {
 		row := actionRow{ActionStatus: a, Kinds: strings.Join(a.ForKinds, ", "), Up: levelUp[a.Autonomy], Down: levelDown[a.Autonomy]}
 		switch a.Reversible {
@@ -99,6 +104,9 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		row.CanUp = row.Up != "" && !row.AtMax && !fr.Frozen
 		// G13: policy has no evidence threshold for a level (only a person promotes), so the record is shown as it is.
 		row.Evidence = fmt.Sprintf("%s · verified %d · failed %d", plural(a.Record.Plans, "plan", "plans"), a.Record.Verified, a.Record.Failed)
+		if v := verdicts[a.Name]; v[0]+v[1] > 0 {
+			row.Evidence += fmt.Sprintf(" · diagnoses right %d, wrong %d", v[0], v[1])
+		}
 		if a.Reversible == "no" {
 			row.Evidence = "irreversible: never auto; " + row.Evidence
 		}

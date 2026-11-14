@@ -23,6 +23,8 @@ const (
 	ActUnhold     Action = "unhold"      // lift a hold early (loosening: needs a reason)
 	ActApprove    Action = "approve"     // approve or reject a proposed plan (RFC-0004 §5)
 	ActHosts      Action = "hosts"       // mint a host's enrolment token, revoke a host (ADR-0006 §3)
+	ActFeedback   Action = "feedback"    // a verdict on a case's diagnosis, or a note proposed from it (G8)
+	ActNotes      Action = "notes"       // activate or drop a note agents will read
 )
 
 // Roles of people (ADR-0014); callers keep RoleAgent, RoleOperator (the callers file's) and RoleWorker.
@@ -51,6 +53,8 @@ var may = map[Action]map[string]bool{
 	ActUnhold:     {RoleOperator: true, RoleAdmin: true},
 	ActHosts:      {RoleOperator: true, RoleAdmin: true},
 	ActApprove:    {RoleOperator: true, RoleAdmin: true},
+	ActFeedback:   {RoleOperator: true, RoleAdmin: true},
+	ActNotes:      {RoleOperator: true, RoleAdmin: true},
 }
 
 // Authorize reports whether a caller holding role may do action.

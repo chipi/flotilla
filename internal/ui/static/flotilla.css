@@ -690,3 +690,7 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
   .trace__head .trace__ticks, .trace__bar { display: none; }
   .trace__row { min-height: var(--target); }
 }
+.btn--verdict-right { background: var(--ok-ink); border-color: var(--ok-ink); color: var(--panel); }
+.btn--verdict-right:hover { background: var(--ok-ink); color: var(--panel); }
+.btn--verdict-wrong { background: var(--stop-ink); border-color: var(--stop-ink); color: var(--panel); }
+.btn--verdict-wrong:hover { background: var(--stop-ink); color: var(--panel); }

@@ -1,0 +1,71 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
+  {{with .Data}}
+  <section class="head">
+    <div>
+      <h1>Knowledge</h1>
+      <p class="sub">What agents may look up. <strong>Memory</strong> is what flotilla recorded itself: your feedback on cases and the notes you activate. <strong>Sources</strong> is what each fleet's agents read from git: its playbooks and skills.</p>
+    </div>
+  </section>
+  <nav class="utabs" aria-label="Knowledge views">
+    {{range .Tabs}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+  </nav>
+
+  {{if eq .Tab "memory"}}
+  <section class="casecards" aria-labelledby="notes">
+    <h2 id="notes">Notes waiting for you</h2>
+    {{range .Proposed}}<article class="card card--edge">
+      <span class="meta">N-{{.ID}} · scope <span class="exact">{{.Scope}}</span> · from {{if .FromCase}}<a class="exact" href="/cases/{{.FromCase}}">{{.FromCase}}</a>, {{end}}{{.By}} at {{.When}}</span>
+      <strong>{{.Text}}</strong>
+      {{if $act}}<div class="actions">
+        <form method="post" action="/notes/{{.ID}}/activate" class="inline">{{template "csrf" $csrf}}<button class="btn btn--blue" type="submit">Activate</button></form>
+        <form method="post" action="/notes/{{.ID}}/drop" class="inline">{{template "csrf" $csrf}}<button class="btn btn--small" type="submit">Drop</button></form>
+      </div>{{end}}
+    </article>{{else}}<p class="card">No note waits. A note comes from a case: "Add a note" under "After the check: was the diagnosis right?".</p>{{end}}
+  </section>
+  <section class="casecards" aria-labelledby="active">
+    <h2 id="active">Active notes</h2>
+    <div class="table-box">
+      <table class="data">
+        <thead><tr><th scope="col">Note</th><th scope="col">Text</th><th scope="col">Scope</th><th scope="col">Activated</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
+        <tbody>
+          {{range .Active}}<tr>
+            <td data-label="Note" class="exact">N-{{.ID}}</td>
+            <td data-label="Text" class="stack">{{.Text}}</td>
+            <td data-label="Scope" class="exact">{{.Scope}}</td>
+            <td data-label="Activated" class="nowrap">{{.Decided}} by {{.DecidedBy}}</td>
+            {{if $act}}<td data-label="Change" class="r"><form method="post" action="/notes/{{.ID}}/drop" class="inline">{{template "csrf" $csrf}}<button class="btn btn--small" type="submit">Drop</button></form></td>{{end}}
+          </tr>{{else}}<tr><td colspan="5" class="empty">No active note.</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    {{template "gap" (gap "G7" "Agents do not read notes yet, and the harness does not report what a run read, so a note's use count is not drawn. Activating a note records your decision for when they do.")}}
+    {{if .Dropped}}<p class="footnote">{{plural .Dropped "note was" "notes were"}} dropped.</p>{{end}}
+  </section>
+  {{end}}
+
+  {{if eq .Tab "sources"}}
+  <section class="casecards" aria-labelledby="src">
+    <h2 id="src">Plugged-in sources</h2>
+    <div class="table-box">
+      <table class="data">
+        <thead><tr><th scope="col">Fleet</th><th scope="col">Source</th><th scope="col">Kind</th><th scope="col">Trust</th><th scope="col">Version</th></tr></thead>
+        <tbody>
+          {{range .Sources}}<tr>
+            <td data-label="Fleet"><strong>{{.Fleet}}</strong></td>
+            <td data-label="Source"><a class="exact" href="https://github.com/chipi/flotilla/tree/main/{{.Source}}">{{.Source}}</a></td>
+            <td data-label="Kind">{{.Kind}}</td>
+            <td data-label="Trust"><span class="chip chip--ok">trusted (git)</span></td>
+            <td data-label="Version" class="exact">{{.Version}}</td>
+          </tr>{{else}}<tr><td colspan="5" class="empty">No fleet carries playbooks or skills.</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote">These ship in the image from git, reviewed like code, so they are trusted. A run that reads anything untrusted (a log line from outside) is capped at propose.</p>
+  </section>
+  {{end}}
+  {{end}}
+</main>
+{{template "foot" .}}

@@ -27,11 +27,12 @@ var templatesFS embed.FS
 const cookieName = "__Host-flotilla"
 
 type Server struct {
-	API     *api.Server
-	Host    string                // the one Host the proxy forwards (flotilla.<tailnet>); "" accepts any, for tests
-	LogsURL string                // VictoriaLogs (flotillad.yaml vlogs_url), for log lines on the run, fleet and host pages
-	Fleets  map[string]spec.Fleet // each fleet's own description and pack hash (fleets/<fleet>/fleet.yaml)
-	Log     *slog.Logger
+	API      *api.Server
+	Host     string                // the one Host the proxy forwards (flotilla.<tailnet>); "" accepts any, for tests
+	LogsURL  string                // VictoriaLogs (flotillad.yaml vlogs_url), for log lines on the run, fleet and host pages
+	Fleets   map[string]spec.Fleet // each fleet's own description and pack hash (fleets/<fleet>/fleet.yaml)
+	SpecsDir string                // the fleets' folder, for Knowledge's sources
+	Log      *slog.Logger
 
 	tmpl     *template.Template
 	once     sync.Once
@@ -81,8 +82,8 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("POST /unfreeze", u.session(u.freezeAction(false)))
 	m.Handle("GET /autonomy", u.session(u.autonomyPage))
 	m.Handle("GET /models", u.session(u.modelsPage))
-	m.Handle("GET /knowledge", u.session(u.notBuilt("Knowledge",
-		"what each run read (its memory and sources) and the notes you activate (G7, G8).")))
+	m.Handle("GET /knowledge", u.session(u.knowledgePage))
+	m.Handle("POST /notes/{id}/{action}", u.session(u.noteAction))
 	m.Handle("GET /brief", u.session(u.notBuilt("Brief",
 		"a routine that writes the morning brief from the day's cases (G11). Now and History hold the same facts today.")))
 	m.Handle("GET /history", u.session(u.historyPage))

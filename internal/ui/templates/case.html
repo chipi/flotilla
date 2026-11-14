@@ -77,7 +77,21 @@
       </section>
       <section class="card card--edge" aria-labelledby="fb">
         <h2 id="fb">After the check: was the diagnosis right?</h2>
-        {{template "gap" (gap "G8" "There is no place to keep your verdict on a diagnosis yet, so the Right / Wrong / note answers are not offered.")}}
+        <p class="panel-note">Answer once the check has run. It feeds this action's record on Autonomy; a note takes effect only once it is activated in <a href="/knowledge">Knowledge</a>.</p>
+        {{if $act}}<div class="actions">
+          <form method="post" action="/cases/{{$c.ID}}/right" class="inline">{{template "csrf" $csrf}}<button class="btn{{if eq .Mine "right"}} btn--verdict-right{{else}} btn--edge{{end}}" type="submit" aria-pressed="{{if eq .Mine "right"}}true{{else}}false{{end}}">Right</button></form>
+          <form method="post" action="/cases/{{$c.ID}}/wrong" class="inline">{{template "csrf" $csrf}}<button class="btn{{if eq .Mine "wrong"}} btn--verdict-wrong{{else}} btn--edge{{end}}" type="submit" aria-pressed="{{if eq .Mine "wrong"}}true{{else}}false{{end}}">Wrong</button></form>
+          <details class="decision__rejectwrap">
+            <summary class="btn btn--edge">Add a note</summary>
+            <form class="confirm" method="post" action="/cases/{{$c.ID}}/note">
+              {{template "csrf" $csrf}}
+              <label class="field field--strong">The note (for every {{$c.Kind}} case, once activated)<textarea name="note" rows="3" required data-needs maxlength="2000"></textarea></label>
+              <div class="actions"><button class="btn btn--blue" type="submit">Propose the note</button></div>
+            </form>
+          </details>
+        </div>{{end}}
+        {{range .Verdicts}}<p class="panel-note">{{.User}}: the diagnosis was <strong>{{.Verdict}}</strong>.</p>{{end}}
+        {{range .Notes}}<p class="panel-note">Note N-{{.ID}} ({{.Status}}): {{short .Text 140}}</p>{{end}}
       </section>
     </aside>
   </div>

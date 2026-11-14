@@ -414,6 +414,9 @@ type caseData struct {
 	CanFix    bool // escalated: an operator may close or reassign it
 	PlanCount int
 	Decided   string
+	Verdicts  []store.Feedback
+	Mine      string // the signed-in person's verdict
+	Notes     []store.Note
 }
 
 func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -494,6 +497,25 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 			d.Record = fmt.Sprintf("%s: %s, %d verified, %d failed", p.Action, plural(rec.Plans, "plan", "plans"), rec.Verified, rec.Failed)
 		}
 	}
+	if d.Verdicts, err = u.API.Store.CaseFeedback(ctx, c.ID); err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
+	for _, v := range d.Verdicts {
+		if v.User == s.User {
+			d.Mine = v.Verdict
+		}
+	}
+	notes, err := u.API.Store.Notes(ctx, "")
+	if err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
+	for _, n := range notes {
+		if n.FromCase == c.ID {
+			d.Notes = append(d.Notes, n)
+		}
+	}
 	u.render(w, "case.html", 200, u.pageFor(s, "Case "+c.ID, "Cases", r, d))
 }
 
@@ -515,6 +537,12 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 		err, ok = u.API.CloseCase(r.Context(), caller(s), "ui", id, why), "Closed "+id+"."
 	case "reassign":
 		err, ok = u.API.ReassignCase(r.Context(), caller(s), "ui", id, why), "Handed "+id+" back to its routine."
+	case "right", "wrong":
+		err, ok = u.API.SetVerdict(r.Context(), caller(s), "ui", id, r.PathValue("action")), "Recorded: the diagnosis was "+r.PathValue("action")+"."
+	case "note":
+		var n int64
+		n, err = u.API.ProposeNote(r.Context(), caller(s), "ui", id, r.PostFormValue("note"))
+		ok = fmt.Sprintf("Note N-%d proposed: it takes effect once it is activated in Knowledge.", n)
 	default:
 		http.NotFound(w, r)
 		return

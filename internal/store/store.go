@@ -255,6 +255,27 @@ var schema = []string{
 	CREATE INDEX run_calls_at ON run_calls(at);`,
 	// G3: a detection's one-line problem sentence, which the UI shows as the case's title.
 	`ALTER TABLE cases ADD COLUMN title TEXT NOT NULL DEFAULT '';`,
+	// G8 (feedback.go): a person's verdict on a case's diagnosis, and the notes they propose, which take
+	// effect only once activated.
+	`CREATE TABLE case_feedback (
+		case_id TEXT NOT NULL REFERENCES cases(id),
+		user_name TEXT NOT NULL,
+		verdict TEXT NOT NULL,
+		at TEXT NOT NULL,
+		PRIMARY KEY (case_id, user_name)
+	);
+	CREATE TABLE notes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		scope TEXT NOT NULL,
+		text TEXT NOT NULL,
+		from_case TEXT NOT NULL DEFAULT '',
+		by_user TEXT NOT NULL,
+		status TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		decided_at TEXT NOT NULL DEFAULT '',
+		decided_by TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX notes_status ON notes(status, id);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

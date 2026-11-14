@@ -86,6 +86,62 @@ func TestRunTrace(t *testing.T) {
 	}
 }
 
+// A verdict and a note on a case (G8): an operator's verdict is kept (and shown on the action's record),
+// a viewer's is refused; a note waits on Knowledge until activated, which a viewer may not do.
+func TestFeedbackAndNotes(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	k := store.Key{Kind: "target", Value: "failed_backup/host:mini"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
+	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun_observability", Params: map[string]string{"host": "mini"},
+		PlanHash: "abcdef0123", Outcome: "shadow", Autonomy: "shadow", Reasons: []string{"r"}}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
+		t.Fatal(err)
+	}
+	op := f.addOperator()
+	ck, csrf := f.csrfOf(op)
+	vck, vcsrf := f.csrfOf(f.vic)
+	if resp, _ := f.do("POST", "/cases/"+id+"/right", vck, url.Values{"csrf": {vcsrf}}, nil); !strings.Contains(resp.Header.Get("Location"), "err=") {
+		t.Fatal("a viewer's verdict was taken")
+	}
+	if resp, _ := f.do("POST", "/cases/"+id+"/right", ck, url.Values{"csrf": {csrf}}, nil); !strings.Contains(resp.Header.Get("Location"), "msg=") {
+		t.Fatalf("the operator's verdict: %s", resp.Header.Get("Location"))
+	}
+	if fb, _ := f.st.CaseFeedback(ctx, id); len(fb) != 1 || fb[0].User != "otto" || fb[0].Verdict != "right" {
+		t.Fatalf("the verdict: %+v", fb)
+	}
+	if _, page := f.do("GET", "/autonomy", ck, nil, nil); !strings.Contains(page, "diagnoses right 1, wrong 0") {
+		t.Error("the verdict is not on the action's record")
+	}
+	if resp, _ := f.do("POST", "/cases/"+id+"/note", ck, url.Values{"csrf": {csrf}, "note": {"the LiteLLM dump is the slow step"}}, nil); !strings.Contains(resp.Header.Get("Location"), "msg=") {
+		t.Fatalf("proposing a note: %s", resp.Header.Get("Location"))
+	}
+	notes, _ := f.st.Notes(ctx, store.NoteProposed)
+	if len(notes) != 1 || notes[0].Scope != "kind:failed_backup" || notes[0].FromCase != id {
+		t.Fatalf("the note: %+v", notes)
+	}
+	nid := fmt.Sprint(notes[0].ID)
+	if _, page := f.do("GET", "/knowledge", ck, nil, nil); !strings.Contains(page, "the LiteLLM dump is the slow step") || !strings.Contains(page, `action="/notes/`+nid+`/activate"`) {
+		t.Fatal("the note does not wait on Knowledge")
+	}
+	if resp, _ := f.do("POST", "/notes/"+nid+"/activate", vck, url.Values{"csrf": {vcsrf}}, nil); !strings.Contains(resp.Header.Get("Location"), "err=") {
+		t.Fatal("a viewer activated a note")
+	}
+	if resp, _ := f.do("POST", "/notes/"+nid+"/activate", ck, url.Values{"csrf": {csrf}}, nil); !strings.Contains(resp.Header.Get("Location"), "msg=") {
+		t.Fatalf("activating: %s", resp.Header.Get("Location"))
+	}
+	if resp, _ := f.do("POST", "/notes/"+nid+"/activate", ck, url.Values{"csrf": {csrf}}, nil); !strings.Contains(resp.Header.Get("Location"), "err=") {
+		t.Fatal("an active note was activated twice")
+	}
+	if active, _ := f.st.Notes(ctx, store.NoteActive); len(active) != 1 || active[0].DecidedBy != "otto" {
+		t.Fatalf("the active note: %+v", active)
+	}
+}
+
 // The Decision box binds an answer to the plan it showed: an approval of another plan is refused, the
 // shown plan's is accepted, and the note is kept with the answer.
 func TestApproveBindsToThePlanShown(t *testing.T) {
