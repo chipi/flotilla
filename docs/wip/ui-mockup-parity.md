@@ -27,22 +27,23 @@ Rules for the rebuild:
 
 ## Gaps (data flotilla does not have yet)
 
-| # | What | Where it shows | Why missing | Closed by |
+| # | What | Where it shows | Status | Still open |
 | --- | --- | --- | --- | --- |
-| G1 | The model and tokens of each run | Runs "Model" column, Trace meta, Now "Models, last 24h", Models and spend | runs record spend only; model calls are in LiteLLM and Langfuse | runs record the model calls (harness reports them) |
-| G2 | A run's spans | Trace | spans are in VictoriaTraces; flotillad does not read them | flotillad reads VictoriaTraces by trace id |
-| G3 | A case's problem sentence | Cases "Problem", Case H1, Decision title | cases have kind and target only | detections carry a title; until then the first event's detail is shown |
-| G4 | Host load (CPU, memory, disk), roles, containers, logs | Hosts, Host | no host metrics in flotilla | the host agent reports them, or flotillad reads VictoriaMetrics |
-| G5 | Fleet logs | Fleet "Logs" tab, the workflow block's "Log, last lines" | logs are in VictoriaLogs | flotillad reads VictoriaLogs |
-| G6 | Fleet packs and their approval | Fleets "pack" line, Fleet pack line | packs are not a concept yet | fleet packs (later RFC) |
-| G7 | What the agent read (memory, sources, trust) | Case aside | the harness does not record its context sources | the harness records them per run |
-| G8 | Diagnosis feedback (Right / Wrong / note) | Case aside | no feedback store | a feedback table, feeding the action's record |
+| G1 | The model and tokens of each run | Runs "Model" column, Trace meta, Now "Models, last 24h", Models and spend | closed 2026-11-14 (840ab01): the model client logs each call; runs keep them (run_calls) | — |
+| G2 | A run's spans | Trace | closed 2026-11-14 (11bb74c): the run page reads the trace from VictoriaTraces | routines without spans of their own show flotillad's run span only |
+| G3 | A case's problem sentence | Cases "Problem", Case H1, Decision title | closed 2026-11-14 (d429933): detections carry a title, kept on the case | monitors other than the backup's send none yet |
+| G4 | Host load (CPU, memory, disk), roles, containers, logs | Hosts, Host | load closed 2026-11-14 (35f7629): VictoriaMetrics by host_metrics; containers where cAdvisor runs | roles; the mini's containers (no cAdvisor); the host agent's log |
+| G5 | Fleet logs | Fleet "Logs" tab, the workflow block's "Log, last lines" | closed 2026-11-14 (8a0b33b): VictoriaLogs by run, routine and fleet (vlogs_url) | the host agent's log, a macOS file the containerised Alloy cannot read |
+| G6 | Fleet packs and their approval | Fleets "pack" line, Fleet pack line | closed 2026-11-14 (946581c): `fleets/<fleet>/fleet.yaml` and a pack hash | approving a pack: a spec change goes through review and deploy |
+| G7 | What the agent read (memory, sources, trust) | Case aside | partly closed 2026-11-14 (10724d1): the case's runs and their model calls | for a model run, the playbook, skills and notes it loaded, and their trust |
+| G8 | Diagnosis feedback (Right / Wrong / note) | Case aside | closed 2026-11-14 (82395d2): verdicts, notes, Knowledge | agents reading active notes (G7) |
 | G9 | Slack approvals and their daily cap | Approvals subtitle, Decision "Approve from" | Slack is not wired | the Slack connector |
-| G10 | A plan's host command | Decision "What would run" second line | the command lives in the host agent's allowlist | the registry or host agent reports it |
-| G11 | Models and spend, Knowledge, the morning brief | their pages | not built (no data) | their own slices |
+| G10 | A plan's host command | Decision "What would run" second line | closed 2026-11-14 (999ddc4): the agent reports its allowlist in hello | needs the agent upgraded to this build |
+| G11 | Models and spend, Knowledge, the morning brief | their pages | Models and spend and Knowledge built 2026-11-14 | the morning brief |
 | G12 | Platform and per-host execution caps as numbers | Autonomy guardrails, Now status line | closed in the rebuild: read from `policy.Limits` | — |
 | G13 | The evidence a level needs | Autonomy "Evidence toward the next level" bar | policy has no threshold: only a person promotes | a promotion rule in policy; the page shows the record without a bar until then |
 | G14 | A recurrence rule per kind | Autonomy | policy has none; a case that comes back is a new case | a recurrence rule in policy |
+| G15 | Contract checks on a schedule | Models "Check now", the selected model's checks | runtime/contract_check.py exists, no routine runs it | a platform routine that runs it daily |
 
 ## Other deviations, named
 
