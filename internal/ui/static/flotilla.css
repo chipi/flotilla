@@ -650,3 +650,16 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
   a.tag, a.chip { position: relative; padding-block: 3px; margin-block: 0; }
   a.tag::before, a.chip::before { content: ""; position: absolute; inset: -11px 0; }
 }
+.minispark { display: block; width: 56px; height: 16px; }
+
+/* Now's models panel: tokens by alias (mockup v3's engine bar) */
+.sharebar { display: block; width: 100%; height: 10px; border-radius: 5px; overflow: hidden; background: var(--track); }
+.sharebar__0, .swatch--0 { fill: var(--signal-blue); background: var(--signal-blue); }
+.sharebar__1, .swatch--1 { fill: var(--blue-soft); background: var(--blue-soft); }
+.sharebar__2, .swatch--2 { fill: var(--wait-edge); background: var(--wait-edge); }
+.sharebar__3, .swatch--3 { fill: var(--violet); background: var(--violet); }
+.engine { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.engine .exact { flex: 1 1 auto; }
+.engine strong { flex: 0 0 56px; text-align: right; }
+.swatch { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border-radius: 2px; background: var(--slate); }
+.lampline { display: inline-flex; align-items: center; gap: var(--space-xs); white-space: nowrap; }

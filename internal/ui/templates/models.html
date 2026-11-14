@@ -1,0 +1,90 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}
+  <section class="head">
+    <div>
+      <h1>Models and spend</h1>
+      <p class="sub">Every model alias flotilla's routines use, where it runs, how its last call went, and what it costs.</p>
+    </div>
+    <nav class="pills" aria-label="Period">
+      {{range .Periods}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
+  </section>
+
+  <section class="scores" aria-label="Totals">
+    {{range .Cards}}{{template "score" .}}{{end}}
+  </section>
+
+  <nav class="utabs" aria-label="Views">
+    {{range .Tabs}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+  </nav>
+
+  {{if eq .Tab "inv"}}
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Engine</th><th scope="col">Can do</th><th scope="col">Last call</th><th scope="col">p50</th><th scope="col">Used by</th><th scope="col">$ / 1M tokens</th></tr></thead>
+      <tbody>
+        {{range .Inventory}}<tr>
+          <td data-label="Alias"><a class="exact" href="?tab=inv&amp;period={{$.Data.Period}}&amp;alias={{.Name}}"><strong>{{.Name}}</strong></a></td>
+          <td data-label="Model" class="exact soft">{{.Model}}</td>
+          <td data-label="Engine">{{.Engine}}</td>
+          <td data-label="Can do" class="soft">{{.Caps}}</td>
+          <td data-label="Last call" class="nowrap"><span class="lampline"><span class="{{.LastClass}}" aria-hidden="true"></span>{{.LastCall}}</span></td>
+          <td data-label="p50">{{.P50}}</td>
+          <td data-label="Used by" class="exact">{{.UsedBy}}</td>
+          <td data-label="$ / 1M tokens">{{if ne .PricePerM "–"}}{{.PricePerM}}{{else}}{{.Effective}}{{end}}</td>
+        </tr>{{else}}<tr><td colspan="8" class="empty">No model alias is configured (flotillad.yaml models).</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{with .Sel}}<section class="card" aria-label="Selected model">
+    <div class="cards2">
+      <div class="casecards">
+        <h2 class="exact">{{.Name}}</h2>
+        <span class="panel-note">{{.Engine}} · {{.Model}} · {{.Caps}}{{if .Calls}} · {{plural .Calls "call" "calls"}} in the period{{end}}</span>
+      </div>
+      <div class="casecards">
+        <strong class="label">By routine, this period</strong>
+        {{range $.Data.SelRoutines}}<span>{{.}}</span>{{else}}<span class="panel-note">No call in the period.</span>{{end}}
+      </div>
+    </div>
+    {{template "gap" (gap "G15" "Contract checks (does the alias still do tools, JSON and report its cost?) do not run on a schedule yet; Last call is the newest real call instead.")}}
+  </section>{{end}}
+  {{end}}
+
+  {{if eq .Tab "spend"}}
+  <div class="split split--tight">
+    <section class="main" aria-labelledby="bf">
+      <h2 id="bf">By fleet</h2>
+      <div class="table-box">
+        <table class="data">
+          <thead><tr><th scope="col">Fleet</th><th scope="col">Tokens</th><th scope="col">Local</th><th scope="col">Spend</th><th scope="col">Per case</th></tr></thead>
+          <tbody>
+            {{range .ByFleet}}<tr><td data-label="Fleet"><strong>{{.Name}}</strong></td><td data-label="Tokens">{{.Tokens}}</td><td data-label="Local">{{.Local}}</td><td data-label="Spend">{{.Spend}}</td><td data-label="Per case">{{.Per}}</td></tr>{{else}}<tr><td colspan="5" class="empty">No model call in the period.</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="main" aria-labelledby="bm">
+      <h2 id="bm">By model</h2>
+      <div class="table-box">
+        <table class="data">
+          <thead><tr><th scope="col">Model</th><th scope="col">14 days</th><th scope="col">Tokens ▼</th><th scope="col">In / out</th><th scope="col">Requests</th><th scope="col">Spend</th></tr></thead>
+          <tbody>
+            {{range .ByModel}}<tr>
+              <td data-label="Model" class="exact">{{.Name}}</td>
+              <td data-label="14 days"><svg class="minispark" viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label="{{.Spark.Label}}"><polyline class="spark-line" points="{{.Spark.Line}}" vector-effect="non-scaling-stroke"></polyline></svg></td>
+              <td data-label="Tokens">{{.Tokens}}</td><td data-label="In / out" class="soft">{{.IO}}</td><td data-label="Requests">{{.Requests}}</td><td data-label="Spend"><strong>{{.Spend}}</strong></td>
+            </tr>{{else}}<tr><td colspan="6" class="empty">No model call in the period.</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  {{end}}
+  {{if not .HasCalls}}<p class="footnote">Model calls are recorded from 2026-11-14 on; runs before that kept only their total cost.</p>{{end}}
+  {{if .Unpriced}}<p class="footnote">{{plural .Unpriced "call" "calls"}} in the period had no cost from the endpoint; they are counted as unpriced, never as free.</p>{{end}}
+  {{end}}
+</main>
+{{template "foot" .}}

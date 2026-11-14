@@ -267,6 +267,22 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	if err := s.Store.FinishRun(fctx, runID, status, exit, spend, dur, detail); err != nil {
 		return nil, nil, err
 	}
+	if callErr == nil && len(res.Calls) > 0 {
+		calls := make([]store.ModelCall, len(res.Calls))
+		for i, c := range res.Calls {
+			at := s.Now().UTC()
+			if t, err := time.Parse(time.RFC3339Nano, c.At); err == nil {
+				at = t.UTC()
+			}
+			calls[i] = store.ModelCall{RunID: runID, Routine: id, At: at.Format(store.TimeFormat), Alias: c.Alias, Endpoint: c.Endpoint,
+				Model: c.Model, Deployment: c.Deployment, TokensIn: c.TokensIn, TokensOut: c.TokensOut, CostUSD: c.CostUSD,
+				CostSource: c.CostSource, LatencyS: c.LatencyS, Error: c.Error}
+		}
+		// the calls are a record of the run, not its outcome: a failure to keep them is logged, not fatal
+		if err := s.Store.RecordCalls(fctx, calls); err != nil {
+			s.Log.Error("recording the run's model calls", "run_id", runID, "err", err)
+		}
+	}
 	total := spent
 	if spend > 0 {
 		if total, err = s.Store.AddSpend(fctx, day, id, spend); err != nil {

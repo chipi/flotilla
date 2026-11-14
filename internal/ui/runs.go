@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,41 @@ type runRow struct {
 	store.Run
 	Fleet, Start, Took, Cost, Chip string
 	Cases                          []string
+	Model, Tokens                  string // "triage-pro ×2", "1.8k"; "" when the run made no recorded call
+	Calls                          []store.ModelCall
+}
+
+// modelText is a run's calls for its table cell: each alias with its count, failed calls named.
+func modelText(calls []store.ModelCall) (string, string) {
+	if len(calls) == 0 {
+		return "", ""
+	}
+	n, failed := map[string]int{}, 0
+	var order []string
+	var tok int64
+	for _, c := range calls {
+		if n[c.Alias] == 0 {
+			order = append(order, c.Alias)
+		}
+		n[c.Alias]++
+		if c.Error != "" {
+			failed++
+		}
+		in, out := callTokens(c)
+		tok += in + out
+	}
+	parts := make([]string, len(order))
+	for i, a := range order {
+		parts[i] = a
+		if n[a] > 1 {
+			parts[i] += fmt.Sprintf(" ×%d", n[a])
+		}
+	}
+	s := strings.Join(parts, ", ")
+	if failed > 0 {
+		s += fmt.Sprintf(" (%d failed)", failed)
+	}
+	return s, tokensText(tok)
 }
 
 type runsData struct {
@@ -46,6 +82,10 @@ func (u *Server) runRows(r *http.Request, runs []store.Run) ([]runRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	calls, err := u.API.Store.RunCalls(r.Context(), ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]runRow, len(runs))
 	for i, x := range runs {
 		took := "–"
@@ -53,7 +93,8 @@ func (u *Server) runRows(r *http.Request, runs []store.Run) ([]runRow, error) {
 			took = secsText(*x.DurationS)
 		}
 		out[i] = runRow{Run: x, Fleet: fleetOf(x.Routine), Start: u.clock(x.StartedAt), Took: took, Cost: usd3(x.SpendUSD),
-			Chip: runChip(x.Status), Cases: cs[x.ID]}
+			Chip: runChip(x.Status), Cases: cs[x.ID], Calls: calls[x.ID]}
+		out[i].Model, out[i].Tokens = modelText(calls[x.ID])
 	}
 	return out, nil
 }
@@ -80,7 +121,7 @@ func (u *Server) runsPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 	_, by := u.specs()
 	d.Routines = sortedKeys(by)
 	d.Heads = []thCell{t.Th("run", "Run"), t.Th("routine", "Routine"), t.Th("trigger", "Trigger"), t.Th("started", "Started"),
-		t.Th("took", "Took"), t.Th("status", "Status"), t.Plain("Cases"), t.Th("cost", "Cost")}
+		t.Th("took", "Took"), t.Th("status", "Status"), t.Plain("Cases"), t.Plain("Model"), t.Th("cost", "Cost")}
 	u.render(w, "runs.html", 200, u.pageFor(s, "Runs", "Runs", r, d))
 }
 

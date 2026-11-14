@@ -64,6 +64,35 @@ func TestSnapshots(t *testing.T) {
 	_ = st.StartRun(ctx, store.Run{ID: "triage-cycle-running", Routine: "triage/cycle", SpecHash: "cad5f7e194e0aa", Trigger: "schedule",
 		Actor: "flotillad", Autonomy: "shadow", StartedAt: at(time.Minute), Status: "running"})
 
+	// The installation's models and the triage runs' model calls (G1), for Runs, Now and Models.
+	f.sch.ModelsJSON = `{"endpoints":{"gateway":{"base_url":"http://litellm:4000/v1","kind":"litellm","key_env":"K","defaults":{"tools":"native","json":"object","cost":"reported"}},` +
+		`"dgx":{"base_url":"http://dgx:8003/v1","kind":"openai","defaults":{"tools":"none","json":"object","cost":"zero"}}},` +
+		`"aliases":{"triage-flash":{"endpoint":"gateway","model":"fleet-triage-flash"},"triage-pro":{"endpoint":"gateway","model":"fleet-triage-pro"},` +
+		`"local-dgx":{"endpoint":"dgx","model":"NVFP4/Qwen3-30B-A3B"}}}`
+	recent, _, _ := st.RunsPage(ctx, store.RunQuery{Limit: 100000, Desc: true})
+	var calls []store.ModelCall
+	for i, r := range recent {
+		if !strings.HasPrefix(r.Routine, "triage/") && r.Routine != "platform/heartbeat" {
+			continue
+		}
+		alias, model, cost := "triage-pro", "deepseek/deepseek-v4-pro", 0.0021+float64(i%7)*0.0004
+		if r.Routine == "platform/heartbeat" {
+			alias, model, cost = "triage-flash", "deepseek/deepseek-v4-flash", 0.0001
+		} else if i%3 == 0 {
+			alias, model, cost = "local-dgx", "NVFP4/Qwen3-30B-A3B", 0
+		}
+		in, out, lat := int64(900+i*13%700), int64(80+i*7%300), 2.0+float64(i%9)
+		c := store.ModelCall{RunID: r.ID, Routine: r.Routine, At: r.StartedAt, Alias: alias, Model: model, TokensIn: &in, TokensOut: &out,
+			CostUSD: &cost, CostSource: "reported:body", LatencyS: &lat}
+		if i%23 == 0 {
+			c.Error, c.TokensIn, c.TokensOut, c.CostUSD = "Transient", nil, nil, nil
+		}
+		calls = append(calls, c)
+	}
+	if err := st.RecordCalls(ctx, calls); err != nil {
+		t.Fatal(err)
+	}
+
 	// The triage ledger, for History's ledger type.
 	for i := 0; i < 6; i++ {
 		_, _ = st.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{
@@ -149,7 +178,8 @@ func TestSnapshots(t *testing.T) {
 		"fleet-stats": "/fleets/ops?tab=stats", "fleet-logs": "/fleets/triage?tab=logs",
 		"hosts": "/hosts", "host": "/hosts/vps", "host-agent": "/hosts/mini?tab=agent", "host-exec": "/hosts/vps?tab=exec",
 		"autonomy": "/autonomy", "history": "/history?period=all", "history-ledger": "/history?type=ledger&period=all",
-		"account": "/account", "users": "/users", "models": "/models", "signin": "/signin"}
+		"account": "/account", "users": "/users", "models": "/models", "models-spend": "/models?tab=spend&period=30d",
+		"run-triage": "/runs/" + firstTriage(st, t), "signin": "/signin"}
 	snap := func(name, p, cookie string) {
 		resp, body := f.do("GET", p, cookie, nil, nil)
 		if resp.StatusCode != 200 {
@@ -188,4 +218,13 @@ func TestSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// firstTriage is the newest triage/cycle run, for a run page with model calls.
+func firstTriage(st *store.Store, t *testing.T) string {
+	rs, _, err := st.RunsPage(context.Background(), store.RunQuery{Routine: "triage/cycle", Limit: 1, Desc: true})
+	if err != nil || len(rs) == 0 {
+		t.Fatalf("no triage run: %v", err)
+	}
+	return rs[0].ID
 }

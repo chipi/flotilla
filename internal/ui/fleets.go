@@ -666,7 +666,29 @@ func (u *Server) fleetCards(ctx context.Context, f fleetSum, rows []caseRow) ([]
 	} else {
 		failCard.Value = "–"
 	}
-	tokens := scoreCard{Label: "Tokens", Value: "–", Unit: "not recorded yet", Delta: "G1: runs record spend, not tokens", Tone: "neutral", Arrow: "■", Spark: makeSpark(nil)}
+	calls, err := u.API.Store.CallsSince(ctx, now.AddDate(0, 0, -14).UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	tok := make([]float64, 14)
+	var tok24 int64
+	for _, c := range calls {
+		if fleetOf(c.Routine) != f.ID {
+			continue
+		}
+		t, ok := parseTime(c.At)
+		if !ok {
+			continue
+		}
+		in, out := callTokens(c)
+		if i, ok := idx[t.UTC().Format("2006-01-02")]; ok {
+			tok[i] += float64(in + out)
+		}
+		if now.Sub(t) < 24*time.Hour {
+			tok24 += in + out
+		}
+	}
+	tokens := countCard("Tokens", "last 24h", tok, tokensText(tok24), nil)
 	return []scoreCard{
 		countCard("Cases opened", "last 24h", opened, fmt.Sprint(f.Cases24), nil),
 		countCard("Fixed and verified", "last 24h", fixed, "", moreIsBetter),

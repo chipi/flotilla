@@ -77,8 +77,7 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("POST /freeze", u.session(u.freezeAction(true)))
 	m.Handle("POST /unfreeze", u.session(u.freezeAction(false)))
 	m.Handle("GET /autonomy", u.session(u.autonomyPage))
-	m.Handle("GET /models", u.session(u.notBuilt("Models and spend",
-		"each run's model calls and tokens (G1). Runs records what each run spent, and Runs shows it.")))
+	m.Handle("GET /models", u.session(u.modelsPage))
 	m.Handle("GET /knowledge", u.session(u.notBuilt("Knowledge",
 		"what each run read (its memory and sources) and the notes you activate (G7, G8).")))
 	m.Handle("GET /brief", u.session(u.notBuilt("Brief",

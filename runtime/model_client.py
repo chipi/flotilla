@@ -239,9 +239,31 @@ class Client:
                 rec = self._call(a, body, timeout)
             except ModelError as e:
                 self._annotate(span, e.record, error=e)
+                self._log_call(a, e.record, e)
                 raise
             self._annotate(span, rec)
+            self._log_call(a, rec)
             return rec
+
+    def _log_call(self, a, rec, error=None):
+        """One line per call in the run's calls file (FLOTILLA_CALLS_FILE, set by the worker), which the
+        worker returns with the run so flotillad records each call's model, tokens and cost. Without the
+        variable nothing is written; a failure to write never fails the call."""
+        path = self.environ.get("FLOTILLA_CALLS_FILE", "")
+        if not path:
+            return
+        usage = rec.get("usage") or {}
+        line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "alias": a.name, "endpoint": a.endpoint,
+                "model": rec.get("model") or a.model, "deployment": rec.get("model_id"),
+                "tokens_in": usage.get("prompt_tokens"), "tokens_out": usage.get("completion_tokens"),
+                "cost_usd": rec.get("cost_usd"), "cost_source": rec.get("cost_source"),
+                "latency_s": rec.get("latency_s"), "status": rec.get("status"),
+                "error": type(error).__name__ if error else None}
+        try:
+            with open(path, "a") as f:
+                f.write(json.dumps(line) + "\n")
+        except OSError:
+            pass
 
     def chat_policy(self, policy, messages, **kw):
         """A routine's model policy: {"model": alias, "fallback": [alias, ...], "fallback_on": ["transient", "empty"]}.

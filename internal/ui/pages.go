@@ -111,6 +111,7 @@ type nowData struct {
 	Hosts              []hostNode
 	Spend24            string
 	Fleets             []fleetSum
+	Models             modelsDay
 }
 
 func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -336,6 +337,10 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 	d.Normal = fmt.Sprintf("%s: the circuit breaker is %s (%d of %d failures in the last hour), %d of %d executions are used this hour, and runs cost %s in 24 hours.",
 		lead, breaker, badHour, lim.BreakerFailures, execHour, lim.PlatformPerHour, d.Spend24)
 	d.Fleets = fs
+	if d.Models, err = u.modelsLastDay(r); err != nil {
+		http.Error(w, "models failed", 500)
+		return
+	}
 	u.render(w, "now.html", 200, u.pageFor(s, "Now", "Now", r, d))
 }
 

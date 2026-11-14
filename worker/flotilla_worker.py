@@ -100,6 +100,40 @@ def read_spend(path):
         return 0.0
 
 
+CALLS_MAX = 500  # model calls returned per run; a run that makes more reports the first CALLS_MAX
+
+
+def calls_path(env, run_id):
+    """The run's calls file under HOME, one per run: two runs on one worker never share it."""
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)[:120]
+    return os.path.join(env.get("HOME", "/tmp"), f".flotilla-calls-{safe}.jsonl")
+
+
+def read_calls(path):
+    """Consume the run's model calls (runtime/model_client.py writes one JSON line per call), then remove
+    the file. Lines that are not JSON objects are skipped."""
+    out = []
+    try:
+        with open(path) as f:
+            for line in f:
+                if len(out) >= CALLS_MAX:
+                    break
+                try:
+                    c = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(c, dict):
+                    out.append(c)
+    except OSError:
+        return out
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return out
+
+
 PLAN_MAX = 64 * 1024
 
 
@@ -143,6 +177,12 @@ def run_job(req, environ=None):
         except FileNotFoundError:
             pass
         env["FLOTILLA_PLAN_FILE"] = plan_path
+    calls = calls_path(env, req["run_id"])
+    try:
+        os.remove(calls)
+    except OSError:
+        pass
+    env["FLOTILLA_CALLS_FILE"] = calls
     timeout = float(req["timeout_s"])
     start = time.monotonic()
     proc = subprocess.Popen(["sh", "-c", req["command"]], cwd=workdir, env=env, stdout=subprocess.PIPE,
@@ -167,7 +207,7 @@ def run_job(req, environ=None):
         status = "error"
     out = b"".join(chunks).decode("utf-8", "replace")
     res = {"status": status, "exit_code": proc.returncode, "duration_s": round(time.monotonic() - start, 3),
-           "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:]}
+           "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:], "calls": read_calls(calls)}
     plan, plan_error = read_plan(plan_path)
     if status == "ok":  # a failed run's plan is not a decision
         if plan is not None:

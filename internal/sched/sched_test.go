@@ -311,3 +311,26 @@ func TestRunWithACase(t *testing.T) {
 		t.Fatalf("a run on time asked for a plan file: %q", fr.got[1].PlanFile)
 	}
 }
+
+// A run's model calls, as its worker returned them, are kept with the run (G1).
+func TestRunRecordsItsModelCalls(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	in, cost := int64(120), 0.002
+	fr.res.Calls = []worker.Call{{At: "2026-11-14T10:00:01Z", Alias: "triage-pro", Model: "m", TokensIn: &in, CostUSD: &cost},
+		{At: "not a time", Alias: "triage-flash", Error: "Transient"}}
+	r, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Store.RunCalls(context.Background(), []string{r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := got[r.ID]
+	if len(cs) != 2 || cs[0].Routine != "triage/cycle" || *cs[0].TokensIn != 120 || cs[0].At != "2026-11-14T10:00:01.000000000Z" {
+		t.Fatalf("the calls: %+v", cs)
+	}
+	if cs[1].Error != "Transient" || cs[1].At == "" {
+		t.Fatalf("a call with a bad time is kept, at the run's time: %+v", cs[1])
+	}
+}

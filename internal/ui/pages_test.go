@@ -41,7 +41,8 @@ func TestEveryPageRendersForEveryRole(t *testing.T) {
 	_, _ = f.st.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"fingerprint": "glitchtip:X-1", "occurrence_id": "glitchtip:X-1@1",
 		"disposition": "file", "ts": "2026-11-13T10:00:00Z", "reason": evil, "alertname": "an alert"}, "")
 	op := f.addOperator()
-	pages := []string{"/", "/runs", "/runs/run-1", "/fleets", "/fleets/triage", "/autonomy", "/history"}
+	pages := []string{"/", "/runs", "/runs/run-1", "/fleets", "/fleets/triage", "/fleets/triage?tab=stats", "/autonomy", "/history",
+		"/models", "/models?tab=spend&period=30d", "/hosts", "/approvals"}
 	for _, who := range []struct{ name, tok string }{{"viewer", f.vic}, {"operator", op}, {"admin", f.admin}} {
 		ck := f.signin(who.tok)
 		for _, p := range pages {

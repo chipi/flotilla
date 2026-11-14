@@ -160,6 +160,30 @@ class Chat(unittest.TestCase):
         r = c.chat("triage-default", [])
         self.assertEqual((r["cost_usd"], r["cost_source"]), (None, "unknown"))
 
+    def test_calls_file_has_one_line_per_call(self):
+        """FLOTILLA_CALLS_FILE (the worker's) gets each call: model, tokens, cost; a failed call too; no key."""
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "calls.jsonl")
+        env = {"OPENROUTER_API_KEY": "sk-test", "FLOTILLA_CALLS_FILE": path}
+        c, _ = client(ok(usage={"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.0012}, headers={"x-litellm-model-id": "dep-1"}),
+                      (500, {}, "upstream down"), environ=env)
+        c.chat("triage-default", [])
+        with self.assertRaises(mc.Transient):
+            c.chat("triage-default", [])
+        with open(path) as f:
+            lines = [json.loads(l) for l in f]
+        self.assertEqual(len(lines), 2)
+        self.assertEqual({k: lines[0][k] for k in ("alias", "model", "deployment", "tokens_in", "tokens_out", "cost_usd", "cost_source", "error")},
+                         {"alias": "triage-default", "model": "fleet-triage-pro", "deployment": "dep-1", "tokens_in": 10, "tokens_out": 5,
+                          "cost_usd": 0.0012, "cost_source": "reported:body", "error": None})
+        self.assertEqual((lines[1]["error"], lines[1]["status"], lines[1]["tokens_in"]), ("Transient", 500, None))
+        with open(path) as f:
+            self.assertNotIn("sk-test", f.read())
+
+    def test_no_calls_file_without_the_variable(self):
+        c, _ = client(ok())
+        c.chat("triage-default", [])   # nothing to assert but that it does not fail: no variable, no file
+
     def test_zero_table_unknown(self):
         c, _ = client(ok(), ok(), ok())
         self.assertEqual(c.chat("local-dgx", [])["cost_usd"], 0.0)

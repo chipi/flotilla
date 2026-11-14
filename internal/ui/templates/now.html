@@ -84,8 +84,15 @@
 
       <section class="card" aria-labelledby="spend">
         <div class="row-head"><h2 id="spend">Models, last 24h</h2><a href="/models">Models and spend</a></div>
-        <p class="kv kv--tight"><span>Runs cost</span><span><strong>{{.Spend24}}</strong></span></p>
-        {{template "gap" (gap "G1" "Which model each call used, and its tokens, are not recorded per run yet, so the local share and the engines cannot be drawn.")}}
+        {{with .Models}}{{if .HasCalls}}
+        <p class="kv kv--tight"><span>{{.Tokens}} tokens · {{.Cost}}</span><span>runs cost <strong>{{$.Data.Spend24}}</strong></span></p>
+        <svg class="sharebar" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="Tokens by model alias">{{$x := 0}}{{range $i, $m := .Rows}}<rect x="{{$x}}" y="0" width="{{$m.Share}}" height="10" class="sharebar__{{$i}}"></rect>{{$x = add $x $m.Share}}{{end}}</svg>
+        {{range $i, $m := .Rows}}<div class="engine"><span class="swatch swatch--{{$i}}" aria-hidden="true"></span><span class="exact">{{$m.Name}}</span>{{if $m.Local}}<span class="meta">local</span>{{end}}<span class="meta">{{$m.Tokens}} · {{$m.Requests}} calls</span><strong>{{$m.Spend}}</strong></div>{{end}}
+        {{if .Unpriced}}<p class="panel-note">{{plural .Unpriced "call was" "calls were"}} unpriced by the endpoint.</p>{{end}}
+        {{else}}
+        <p class="kv kv--tight"><span>Runs cost</span><span><strong>{{$.Data.Spend24}}</strong></span></p>
+        <p class="panel-note">No model call recorded in the last 24 hours (calls are recorded from 2026-11-14 on).</p>
+        {{end}}{{end}}
       </section>
 
       <section class="card" aria-labelledby="fl">

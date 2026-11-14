@@ -37,6 +37,25 @@ type Result struct {
 	// it could not be read.
 	Plan      json.RawMessage `json:"plan,omitempty"`
 	PlanError string          `json:"plan_error,omitempty"`
+	// Each model call the run made through runtime/model_client.py (its FLOTILLA_CALLS_FILE).
+	Calls []Call `json:"calls,omitempty"`
+}
+
+// Call is one model call as the model client recorded it. Tokens and cost are nil when the endpoint
+// did not report them (never counted as zero).
+type Call struct {
+	At         string   `json:"at"`
+	Alias      string   `json:"alias"`
+	Endpoint   string   `json:"endpoint"`
+	Model      string   `json:"model"`
+	Deployment string   `json:"deployment"`
+	TokensIn   *int64   `json:"tokens_in"`
+	TokensOut  *int64   `json:"tokens_out"`
+	CostUSD    *float64 `json:"cost_usd"`
+	CostSource string   `json:"cost_source"`
+	LatencyS   *float64 `json:"latency_s"`
+	Status     *int     `json:"status"`
+	Error      string   `json:"error"`
 }
 
 type Health struct {

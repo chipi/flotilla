@@ -234,6 +234,25 @@ var schema = []string{
 	// The UI's Now (mockup v3): "since you looked" is the end of the user's previous visit (views.go).
 	`ALTER TABLE users ADD COLUMN now_seen_at TEXT NOT NULL DEFAULT '';
 	ALTER TABLE users ADD COLUMN now_since TEXT NOT NULL DEFAULT '';`,
+	// Each model call of a run (calls.go): which model, its tokens and cost, as the model client recorded it.
+	`CREATE TABLE run_calls (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id TEXT NOT NULL,
+		routine TEXT NOT NULL,
+		at TEXT NOT NULL,
+		alias TEXT NOT NULL DEFAULT '',
+		endpoint TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		deployment TEXT NOT NULL DEFAULT '',
+		tokens_in INTEGER,
+		tokens_out INTEGER,
+		cost_usd REAL,
+		cost_source TEXT NOT NULL DEFAULT '',
+		latency_s REAL,
+		error TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX run_calls_run ON run_calls(run_id);
+	CREATE INDEX run_calls_at ON run_calls(at);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

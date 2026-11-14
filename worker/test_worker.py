@@ -93,6 +93,19 @@ class TestRunJob(unittest.TestCase):
         with open(os.path.join(self.home, "r", "spend")) as f:
             self.assertEqual(f.read(), "", "consumed once, as fleetd did")
 
+    def test_calls_are_returned_and_the_file_removed(self):
+        cmd = ('echo \'{"alias":"a","tokens_in":3}\' >> "$FLOTILLA_CALLS_FILE"; echo not-json >> "$FLOTILLA_CALLS_FILE";'
+               ' echo \'{"alias":"b"}\' >> "$FLOTILLA_CALLS_FILE"')
+        res = fw.run_job(self.req(cmd), self.environ)
+        self.assertEqual([c["alias"] for c in res["calls"]], ["a", "b"], "every JSON line, a bad one skipped")
+        self.assertFalse(os.path.exists(fw.calls_path({"HOME": self.home}, "r1")), "consumed once")
+
+    def test_calls_of_an_earlier_run_are_not_this_runs(self):
+        with open(fw.calls_path({"HOME": self.home}, "r1"), "w") as f:
+            f.write('{"alias":"stale"}\n')
+        res = fw.run_job(self.req("true"), self.environ)
+        self.assertEqual(res["calls"], [])
+
     def test_spend_file_cannot_leave_home(self):
         with self.assertRaises(ValueError):
             fw.run_job(self.req("true", spend_file="../../etc/x"), self.environ)
