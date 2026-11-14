@@ -279,6 +279,9 @@ var schema = []string{
 	// G10: what a host's agent reported of its own config at its last hello (for people only).
 	`ALTER TABLE hosts ADD COLUMN ceiling TEXT NOT NULL DEFAULT '';
 	ALTER TABLE hosts ADD COLUMN allowlist TEXT NOT NULL DEFAULT '';`,
+	// G14: the recurrence rule (recurrence.go): the earlier case a new one comes back after.
+	`ALTER TABLE cases ADD COLUMN recurrence_of TEXT NOT NULL DEFAULT '';
+	CREATE INDEX cases_kind_target ON cases(kind, target, closed_at);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

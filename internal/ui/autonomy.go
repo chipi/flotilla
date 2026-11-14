@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,8 +19,9 @@ import (
 
 type actionRow struct {
 	api.ActionStatus
-	Kinds, Rev, Evidence, Up, Down string
-	CanUp, AtMax                   bool
+	Kinds, Rev, Evidence, Record, Up, Down string
+	CanUp, AtMax, Ready                    bool
+	Pct                                    int // the bar toward the next level (G13)
 }
 
 type changeRow struct{ When, Text string }
@@ -38,7 +40,11 @@ type autonomyData struct {
 	Hosts     []hostRow
 	Ceiling   string
 	FleetStop map[string]bool
+	Recur     []recurRow
 }
+
+// recurRow is one kind under "Recurrence rule per kind" (G14).
+type recurRow struct{ Kind, Rule string }
 
 var levelUp = map[string]string{spec.AutonomyShadow: spec.AutonomyPropose, spec.AutonomyPropose: spec.AutonomyAuto}
 var levelDown = map[string]string{spec.AutonomyAuto: spec.AutonomyPropose, spec.AutonomyPropose: spec.AutonomyShadow}
@@ -102,14 +108,16 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		}
 		row.AtMax = spec.Rank(a.Autonomy) >= spec.Rank(a.Max)
 		row.CanUp = row.Up != "" && !row.AtMax && !fr.Frozen
-		// G13: policy has no evidence threshold for a level (only a person promotes), so the record is shown as it is.
-		row.Evidence = fmt.Sprintf("%s · verified %d · failed %d", plural(a.Record.Plans, "plan", "plans"), a.Record.Verified, a.Record.Failed)
+		row.Record = fmt.Sprintf("%s · verified %d · failed %d", plural(a.Record.Plans, "plan", "plans"), a.Record.Verified, a.Record.Failed)
 		if v := verdicts[a.Name]; v[0]+v[1] > 0 {
-			row.Evidence += fmt.Sprintf(" · diagnoses right %d, wrong %d", v[0], v[1])
+			row.Record += fmt.Sprintf(" · diagnoses right %d, wrong %d", v[0], v[1])
 		}
-		if a.Reversible == "no" {
-			row.Evidence = "irreversible: never auto; " + row.Evidence
+		st, err := u.API.Store.PromotionStreak(ctx, a.Name)
+		if err != nil {
+			http.Error(w, "evidence failed", 500)
+			return
 		}
+		row.Evidence, row.Pct, row.Ready = evidence(a, row.AtMax, st)
 		d.Actions = append(d.Actions, row)
 	}
 	evs, err := u.API.Store.Events(ctx, 300)
@@ -172,6 +180,33 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 			d.Hosts = append(d.Hosts, h)
 		}
 	}
+	rec, err := u.API.Store.Recurrences(ctx, now.Add(-30*24*time.Hour).UTC().Format(store.TimeFormat))
+	if err != nil {
+		http.Error(w, "recurrences failed", 500)
+		return
+	}
+	seen := map[string]bool{}
+	var kinds []string
+	for _, a := range d.Actions {
+		for _, k := range a.ForKinds {
+			if !seen[k] {
+				seen[k] = true
+				kinds = append(kinds, k)
+			}
+		}
+	}
+	for k := range rec {
+		if !seen[k] {
+			seen[k] = true
+			kinds = append(kinds, k)
+		}
+	}
+	sort.Strings(kinds)
+	days := int(store.RecurrenceWindow.Hours() / 24)
+	for _, k := range kinds {
+		d.Recur = append(d.Recur, recurRow{Kind: k,
+			Rule: fmt.Sprintf("same target within %d days of a close: linked to the earlier case; %d in 30 days", days, rec[k])})
+	}
 	u.render(w, "autonomy.html", 200, u.pageFor(s, "Autonomy", "Autonomy", r, d))
 }
 
@@ -233,4 +268,38 @@ func (u *Server) fleetAction(w http.ResponseWriter, r *http.Request, s *store.Se
 		return
 	}
 	done(w, r, back, err, ok)
+}
+
+// evidence is the Actions table's line and bar toward the next level (G13): the clean plans in a row
+// the store counts, out of store.PromotionNeed, and why the bar is held.
+func evidence(a api.ActionStatus, atMax bool, st store.Streak) (string, int, bool) {
+	if a.Reversible == "no" && atMax {
+		return "irreversible: never auto; CLI approval only", 0, false
+	}
+	if atMax {
+		return fmt.Sprintf("at %s, its highest level; %s", a.Autonomy, plural(a.Record.Failed, "failure", "failures")), 100, false
+	}
+	what := "approved and verified"
+	if a.Autonomy == spec.AutonomyShadow {
+		what = "shadow plans you judged right"
+	}
+	text := fmt.Sprintf("%s: %d of %d", what, st.Clean, store.PromotionNeed)
+	pct := st.Clean * 100 / store.PromotionNeed
+	switch {
+	case st.Held:
+		text += fmt.Sprintf("; held: a %s plan on %s, under %d days ago", st.BadWhat, shortDay(st.BadAt), int(store.PromotionHold.Hours()/24))
+		if pct >= 100 {
+			pct = 80
+		}
+	case st.Ready():
+		text += ", ready"
+	}
+	return text, pct, st.Ready()
+}
+
+func shortDay(at string) string {
+	if t, ok := parseTime(at); ok {
+		return t.UTC().Format("2006-01-02")
+	}
+	return at
 }

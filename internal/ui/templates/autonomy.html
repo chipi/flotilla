@@ -45,7 +45,7 @@
     <h2 id="caps">Actions</h2>
     <div class="table-box">
       <table class="data">
-        <thead><tr><th scope="col">Action</th><th scope="col">For kinds</th><th scope="col">Risk</th><th scope="col">Reversible</th><th scope="col">Level</th><th scope="col">Its record</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
+        <thead><tr><th scope="col">Action</th><th scope="col">For kinds</th><th scope="col">Risk</th><th scope="col">Reversible</th><th scope="col">Level</th><th scope="col">Evidence toward the next level</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
         <tbody>
           {{range .Actions}}<tr>
             <td data-label="Action" class="exact">{{.Name}}</td>
@@ -53,7 +53,9 @@
             <td data-label="Risk">{{.Risk}}</td>
             <td data-label="Reversible">{{.Rev}}</td>
             <td data-label="Level"><span class="{{if $.Data.Frozen}}level level--frozen{{else}}{{level .Autonomy}}{{end}}">{{if and $.Data.Frozen (ne .Autonomy "shadow")}}{{.Autonomy}} → shadow (frozen){{else}}{{.Autonomy}}{{end}}</span></td>
-            <td data-label="Its record" class="stack"><span class="evidence"><span>{{.Evidence}}</span></span></td>
+            <td data-label="Evidence toward the next level" class="stack"><span class="evidence"><span>{{.Evidence}}</span>
+              <svg class="evbar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="evbar-track" width="100" height="6" rx="3"></rect>{{if .Pct}}<rect class="evbar-fill{{if ge .Pct 100}} evbar-fill--full{{end}}" width="{{.Pct}}" height="6" rx="3"></rect>{{end}}</svg>
+              <span class="soft">{{.Record}}</span></span></td>
             {{if $act}}<td data-label="Change" class="stack r"><div class="change-cell">
               {{if .CanUp}}<form method="post" action="/actions/{{.Name}}/autonomy">
                 {{template "csrf" $csrf}}<input type="hidden" name="autonomy" value="{{.Up}}">
@@ -69,7 +71,7 @@
         </tbody>
       </table>
     </div>
-    <p class="footnote">Policy has no evidence threshold for a level (G13): a person promotes on the record shown, one step at a time.</p>
+    <p class="footnote">An action is ready for its next level after 5 clean plans in a row (a shadow plan you judged right; a proposed one approved as it stood and verified) and no wrong verdict, failed execution or rejection in the last 7 days. You still promote, one step at a time.</p>
   </section>
 
   <section class="casecards" aria-labelledby="routines">
@@ -113,7 +115,7 @@
       <p class="panel-note">One cap for every host until each host's reviewed config comes with the host agent.</p>
       {{range .Hosts}}<div class="kv"><strong>{{.Name}}</strong><span class="{{level .Cap}}">{{.Cap}}</span></div>{{else}}<div class="kv"><span>every host</span><span class="{{level .Ceiling}}">{{.Ceiling}}</span></div>{{end}}
       <h2>Recurrence rule per kind</h2>
-      {{template "gap" (gap "G14" "Policy has no recurrence rule per kind yet; a case that comes back is a new case.")}}
+      {{range .Recur}}<div class="kv"><span class="exact">{{.Kind}}</span><span>{{.Rule}}</span></div>{{else}}<p class="panel-note">No action declares a kind yet.</p>{{end}}
     </section>
   </div>
   {{end}}

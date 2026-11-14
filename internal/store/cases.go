@@ -51,6 +51,7 @@ type Case struct {
 	StatusAt     string  `json:"status_at"`
 	ClosedAt     *string `json:"closed_at"`
 	Title        string  `json:"title,omitempty"`
+	RecurrenceOf string  `json:"recurrence_of,omitempty"` // G14: the earlier case this one came back after
 	Keys         []Key   `json:"keys,omitempty"`
 }
 
@@ -135,7 +136,10 @@ func insertCase(ctx context.Context, tx *sql.Tx, n NewCase, now time.Time, actor
 			return "", err
 		}
 	}
-	return id, addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case.detected", Actor: actor, To: cases.Detected, Detail: detail})
+	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case.detected", Actor: actor, To: cases.Detected, Detail: detail}); err != nil {
+		return "", err
+	}
+	return id, linkRecurrence(ctx, tx, id, n, now)
 }
 
 // MoveCase changes a case's status if the transition table allows it (cases.Check): the move, the role
@@ -274,13 +278,13 @@ func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
 	return err
 }
 
-const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title`
+const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of`
 
 func scanCase(sc interface{ Scan(...any) error }) (Case, error) {
 	var c Case
 	var closed sql.NullString
 	err := sc.Scan(&c.ID, &c.Kind, &c.Target, &c.CanonicalKey, &c.Project, &c.Urgency, &c.Status, &c.Resolution, &c.Holder,
-		&c.OpenedAt, &c.StatusAt, &closed, &c.Title)
+		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf)
 	if closed.Valid {
 		c.ClosedAt = &closed.String
 	}

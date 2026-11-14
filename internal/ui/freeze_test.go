@@ -69,6 +69,14 @@ func TestActionAutonomyInTheUI(t *testing.T) {
 	if !strings.Contains(page, "backup.rerun_observability") || !strings.Contains(page, `action="/actions/backup.rerun_observability/autonomy"`) {
 		t.Fatal("an operator's Autonomy page has no action or no form")
 	}
+	// G13: the record toward the next level, with its bar
+	if !strings.Contains(page, "shadow plans you judged right: 0 of 5") || !strings.Contains(page, `class="evbar"`) {
+		t.Error("the Autonomy page has no evidence toward the next level")
+	}
+	// G14: the recurrence rule for each kind an action is for
+	if !strings.Contains(page, "same target within 7 days of a close: linked to the earlier case; 0 in 30 days") {
+		t.Error("the Autonomy page has no recurrence rule per kind")
+	}
 	vck, vcsrf := f.csrfOf(f.vic)
 	_, vpage := f.do("GET", "/autonomy", vck, nil, nil)
 	if !strings.Contains(vpage, "backup.rerun_observability") || strings.Contains(vpage, `action="/actions/`) {

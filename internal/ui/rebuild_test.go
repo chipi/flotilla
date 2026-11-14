@@ -310,3 +310,27 @@ func TestRunsPage(t *testing.T) {
 		t.Fatal("sorting by Started ascending does not put the oldest first")
 	}
 }
+
+// G14: a case that came back links to the one it recurs.
+func TestCaseRecurs(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	open := func(key string) string {
+		k := store.Key{Kind: "target", Value: "failed_backup/host:mini" + key}
+		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k, Title: "t"}, "m", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	first := open("#1")
+	_ = f.st.MoveCase(ctx, first, cases.HandedOver, cases.ByDetector, "", "m", "")
+	if err := f.st.MoveCase(ctx, first, cases.Closed, cases.ByAct, cases.ResolvedItself, "a", ""); err != nil {
+		t.Fatal(err)
+	}
+	again := open("#2")
+	ck := f.signin(f.vic)
+	if _, page := f.do("GET", "/cases/"+again, ck, nil, nil); !strings.Contains(page, `recurs <a class="exact" href="/cases/`+first+`">`) {
+		t.Error("the case page does not link the case it recurs")
+	}
+}
