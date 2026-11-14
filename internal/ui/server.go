@@ -26,9 +26,10 @@ var templatesFS embed.FS
 const cookieName = "__Host-flotilla"
 
 type Server struct {
-	API  *api.Server
-	Host string // the one Host the proxy forwards (flotilla.<tailnet>); "" accepts any, for tests
-	Log  *slog.Logger
+	API     *api.Server
+	Host    string // the one Host the proxy forwards (flotilla.<tailnet>); "" accepts any, for tests
+	LogsURL string // VictoriaLogs (flotillad.yaml vlogs_url), for log lines on the run, fleet and host pages
+	Log     *slog.Logger
 
 	tmpl     *template.Template
 	once     sync.Once

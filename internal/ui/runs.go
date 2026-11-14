@@ -126,10 +126,11 @@ func (u *Server) runsPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 }
 
 type runData struct {
-	Row    runRow
-	Ended  string
-	Detail string
-	Trace  traceView
+	Row                 runRow
+	Ended               string
+	Detail              string
+	Trace               traceView
+	Printed, PrintedErr string
 }
 
 func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -149,6 +150,14 @@ func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Sessio
 	}
 	d := runData{Row: rows[0], Ended: "still running", Detail: strings.TrimRight(run.Detail, "\n"),
 		Trace: u.runTrace(r.Context(), run.TraceID, run.ID, r.URL.Query().Get("span"))}
+	if lines, err := u.logsQuery(r.Context(), "_time:30d run_id:"+logsQuote(run.ID), 400); err != nil {
+		d.PrintedErr = err.Error()
+	} else {
+		for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+			lines[i], lines[j] = lines[j], lines[i]
+		}
+		d.Printed = logsText(lines, false)
+	}
 	if run.EndedAt != nil {
 		d.Ended = u.clock(*run.EndedAt)
 	}

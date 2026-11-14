@@ -33,6 +33,7 @@ type fixture struct {
 	ts    *httptest.Server
 	st    *store.Store
 	sch   *sched.Scheduler
+	ui    *Server
 	admin string // ada's token
 	vic   string // a viewer's token
 }
@@ -65,7 +66,7 @@ func setupWith(t *testing.T, routines []*spec.Routine) *fixture {
 	u := &Server{API: a, Host: host, Log: log}
 	ts := httptest.NewServer(u.Handler())
 	t.Cleanup(ts.Close)
-	f := &fixture{t: t, ts: ts, st: st, sch: s}
+	f := &fixture{t: t, ts: ts, st: st, sch: s, ui: u}
 	ctx := context.Background()
 	f.admin = "flt_ada-token-for-tests"
 	if err := st.AddUser(ctx, "ada", store.UserAdmin, api.HashToken(f.admin), "operator", "api", true); err != nil {

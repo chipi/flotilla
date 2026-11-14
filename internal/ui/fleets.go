@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -282,12 +283,15 @@ type selected struct {
 	ID, Label, Desc, Lamp string
 	Facts                 [][2]string
 	Runs                  []lastRun
-	Log                   string
+	Log, LogFrom          string
 	Routine               *api.RoutineStatus
 	SpecURL               string
 }
 
 type fleetData struct {
+	LogsErr string
+	Level   string
+	Levels  []pillLink
 	F       fleetSum
 	Tab     string
 	Tabs    []pillLink
@@ -505,8 +509,13 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 			for _, x := range last {
 				sl.Runs = append(sl.Runs, lastRun{ID: x.ID, When: u.clock(x.StartedAt), Result: x.Status})
 			}
-			if len(last) > 0 {
-				sl.Log = tailLines(last[0].Detail, 8)
+			if lines, err := u.logsQuery(ctx, "_time:7d routine:"+logsQuote(pick.ID), 8); err == nil && len(lines) > 0 {
+				for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+					lines[i], lines[j] = lines[j], lines[i]
+				}
+				sl.Log, sl.LogFrom = logsText(lines, false), "VictoriaLogs"
+			} else if len(last) > 0 {
+				sl.Log, sl.LogFrom = tailLines(last[0].Detail, 8), "the last run's own report"
 			}
 			d.Sel = sl
 		}
@@ -572,6 +581,20 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		}
 		d.Cards = cards
 	case "logs":
+		d.Level = r.URL.Query().Get("level")
+		for _, p := range [][2]string{{"", "All levels"}, {"warn", "Warnings and errors"}, {"error", "Errors"}} {
+			href := base + "?tab=logs"
+			if p[0] != "" {
+				href += "&level=" + p[0]
+			}
+			d.Levels = append(d.Levels, pillLink{Label: p[1], Href: href, On: d.Level == p[0]})
+		}
+		lines, err := u.logsQuery(ctx, "_time:24h routine:~"+logsQuote("^"+regexpQuote(f.ID)+"/")+levelFilter(d.Level), 300)
+		if err == nil {
+			d.Log = logsText(lines, true)
+			break
+		}
+		d.LogsErr = err.Error()
 		last, _, err := u.API.Store.RunsPage(ctx, store.RunQuery{Fleet: f.ID, Limit: 30, Desc: true})
 		if err != nil {
 			http.Error(w, "runs failed", 500)
@@ -700,3 +723,5 @@ func (u *Server) fleetCards(ctx context.Context, f fleetSum, rows []caseRow) ([]
 		failCard,
 	}, nil
 }
+
+func regexpQuote(s string) string { return regexp.QuoteMeta(s) }

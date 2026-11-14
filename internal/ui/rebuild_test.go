@@ -14,6 +14,39 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
+// The run and fleet pages read their lines from VictoriaLogs (G5): the run's lines oldest first, the
+// fleet's Logs tab with its level filter in the query; without an address the page says so.
+func TestLogLines(t *testing.T) {
+	var queries []string
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		queries = append(queries, r.PostFormValue("query"))
+		fmt.Fprintln(w, `{"_time":"2026-11-14T17:09:09Z","level":"info","routine":"triage/cycle","run_id":"run-l","msg":"run output","line":"second"}`)
+		fmt.Fprintln(w, `{"_time":"2026-11-14T17:09:08Z","level":"error","routine":"triage/cycle","run_id":"run-l","msg":"run output","line":"first <b>"}`)
+	}))
+	defer vl.Close()
+	f := setup(t)
+	ctx := context.Background()
+	if err := f.st.StartRun(ctx, store.Run{ID: "run-l", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
+		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	ck := f.signin(f.vic)
+	if _, page := f.do("GET", "/runs/run-l", ck, nil, nil); !strings.Contains(page, "vlogs_url") {
+		t.Error("without an address the run page does not say why it has no lines")
+	}
+	f.ui.LogsURL = vl.URL
+	_, page := f.do("GET", "/runs/run-l", ck, nil, nil)
+	if i, j := strings.Index(page, "first &lt;b&gt;"), strings.Index(page, "second"); i < 0 || j < 0 || i > j {
+		t.Errorf("the run's lines, escaped and oldest first: %d %d", i, j)
+	}
+	f.do("GET", "/fleets/triage?tab=logs&level=error", ck, nil, nil)
+	last := queries[len(queries)-1]
+	if !strings.Contains(last, `routine:~"^triage/"`) || !strings.Contains(last, "error") || !strings.Contains(last, "limit 300") {
+		t.Errorf("the fleet's query: %s", last)
+	}
+}
+
 // The run page reads its trace from VictoriaTraces (G2): spans nested under their parent, the selected
 // span's attributes; a trace VictoriaTraces does not have, or no trace id, says why instead.
 func TestRunTrace(t *testing.T) {

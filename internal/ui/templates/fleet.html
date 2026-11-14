@@ -67,7 +67,7 @@
       {{range .Runs}}<a class="lastrun" href="/runs/{{.ID}}"><span class="exact">{{short .ID 30}}</span><span>{{.When}}</span><span>{{.Result}}</span></a>{{else}}<p class="panel-note">No run yet.</p>{{end}}
       <h3>Log, last lines</h3>
       {{if .Log}}<pre class="log log--small">{{.Log}}</pre>{{else}}<p class="panel-note">The last run reported nothing.</p>{{end}}
-      <p class="panel-note">From the last run's own report; VictoriaLogs is not read yet (G5).</p>
+      {{if .LogFrom}}<p class="panel-note">From {{.LogFrom}}.</p>{{end}}
       {{if $act}}<div class="actions">
         <form method="post" action="/routines/{{.ID}}/run" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}"><button class="btn btn--quiet" type="submit">Run now</button></form>
         {{if .Routine.Paused}}
@@ -118,8 +118,12 @@
 
   {{if eq .Tab "logs"}}
   <section class="casecards" aria-label="Logs">
-    <p class="meta">The fleet's last 30 runs, newest first, with the last lines each reported. VictoriaLogs is not read yet (G5); <a href="/runs?f=problems">Runs</a> filters the problems.</p>
-    {{if .Log}}<pre class="log">{{.Log}}</pre>{{else}}<p class="card">No run yet.</p>{{end}}
+    <div class="filters">
+      <span class="meta">All {{$f.Name}} routines, the last 24 hours, newest first, from VictoriaLogs</span>
+      <nav class="pills" aria-label="Level">{{range .Levels}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}</nav>
+    </div>
+    {{if .LogsErr}}<p class="gap"><strong>No log lines from VictoriaLogs:</strong> {{.LogsErr}}. Below, the last 30 runs' own reports.</p>{{end}}
+    {{if .Log}}<pre class="log">{{.Log}}</pre>{{else}}<p class="card">No line in the last 24 hours at this level.</p>{{end}}
   </section>
   {{end}}
   {{end}}

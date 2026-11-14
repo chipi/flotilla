@@ -52,7 +52,7 @@
   {{end}}
 
   {{if eq .Tab "logs"}}
-  {{template "gap" (gap "G5" "The host's logs are in VictoriaLogs, which flotillad does not read yet.")}}
+  {{template "gap" (gap "G5" "The host agent writes /var/log/flotilla-host/agent.log on the host; the homelab's Alloy runs in a container that sees only container logs, so these lines do not reach VictoriaLogs. They come with the agent reporting to flotillad (G4, G10).")}}
   {{end}}
   {{end}}
 </main>

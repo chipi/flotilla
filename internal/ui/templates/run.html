@@ -48,7 +48,9 @@
       </div>{{else}}<p class="panel-note">This run recorded no model call (a code-only routine, or a run from before 2026-11-14).</p>{{end}}
     </section>
     <section class="main card" aria-labelledby="rep-h">
-      <h2 id="rep-h">What it reported</h2>
+      <h2 id="rep-h">What it printed</h2>
+      {{if .Printed}}<pre class="log">{{.Printed}}</pre>{{else if .PrintedErr}}<p class="gap"><strong>No lines from VictoriaLogs:</strong> {{.PrintedErr}}.</p>{{else}}<p class="panel-note">VictoriaLogs has no line for this run (it keeps logs for a limited time).</p>{{end}}
+      <h2>What it reported</h2>
       {{if .Detail}}<pre class="log">{{.Detail}}</pre>{{else}}<p class="panel-note">The run reported nothing.</p>{{end}}
     </section>
     <aside class="aside aside--narrow">
