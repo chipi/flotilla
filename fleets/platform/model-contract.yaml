@@ -10,10 +10,11 @@ worker: triage
 trigger:
   every: 24h
 run:
-  command: python3 /opt/flotilla/runtime/contract_routine.py --spend-file "$HOME/.model-contract-spend"
+  # the worker's HOME is read-only; its state volume (signal-fleet/) is not
+  command: python3 /opt/flotilla/runtime/contract_routine.py --spend-file "$HOME/signal-fleet/results/.model-contract-spend"
   workdir: .
   timeout: 10m
-  spend_file: .model-contract-spend
+  spend_file: signal-fleet/results/.model-contract-spend
 autonomy: auto
 models: [triage-flash, triage-pro]   # the aliases its runs get (security T4)
 budget:

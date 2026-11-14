@@ -75,8 +75,12 @@ def main(argv=None, environ=None, transport=None):
                 except OSError as e:
                     print(f"the calls file: {e}")
     if a.spend_file:
-        with open(a.spend_file, "w") as f:
-            f.write(f"{spend:.6f}\n")
+        try:
+            with open(a.spend_file, "w") as f:
+                f.write(f"{spend:.6f}\n")
+        except OSError as e:
+            print(f"the spend file: {e} (this run's ${spend:.6f} is not counted)")
+            failed.append("spend file")
     print("CONTRACT PASS" if not failed else f"CONTRACT FAIL: {', '.join(failed)}")
     return 0 if not failed else 1
 

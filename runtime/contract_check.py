@@ -34,7 +34,8 @@ def run_checks(c, tools="native", cost="unknown", timeout=120, main="m", plain="
         out.append({"check": check, "ok": not fails, "detail": "; ".join(fails) or note, "rec": rec})
 
     try:
-        r = c.chat(main, [{"role": "user", "content": 'Answer with JSON only: {"ok": true}'}], max_tokens=20, timeout=timeout)
+        # room for a reasoning model to think first (the mini's flash and pro: 20 tokens were all reasoning)
+        r = c.chat(main, [{"role": "user", "content": 'Answer with JSON only: {"ok": true}'}], max_tokens=256, timeout=timeout)
         fails = []
         if json_mode == "object":
             try:
