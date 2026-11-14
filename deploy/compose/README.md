@@ -184,7 +184,7 @@ Optional; without it no host can enrol or connect. The CA comes from the operato
 ```yaml
 hosts:
   listen: 0.0.0.0:8486                   # its own port: mutual TLS, terminated by flotillad
-  ca_dir: /run/flotilla/host-ca          # the three files above
+  ca_dir: /run/flotilla                  # the three files above (secrets.sh puts them at its root)
   server_names: [<the name agents dial>]  # in flotillad's server certificate (made at start, renewed in memory)
   heartbeat: 30s                         # optional, the default: the agents' -heartbeat; three missed, dropped
   signing_key_file: /run/flotilla/signing.key   # optional: without it flotillad sends no execution
