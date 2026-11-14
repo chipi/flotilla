@@ -191,3 +191,40 @@ promotion to propose).
   agent's H5b, empty until a host enrols); `ui_listen`/`ui_host`; the ops workers' tokens,
   `worker-ops.env` and profile `ops` (or their routines disabled); the `deploy` caller, its token and
   `FLOTILLA_STANDDOWN_HOST`; then the homelab proxy node.
+
+  **Deployed 2026-11-14, a week early** (operator: skip the 11-21 gate, deploy today). Between the
+  promoted triage code and main, the fleet's own code (`signal-fleet/`, `runtime/`, `fleets/triage`)
+  is unchanged; only the worker gained plan-file support. So the 11-21 weekly check still judges the
+  same triage logic.
+  - **The store-copy check:** sha-f80c0c0, `--read-only --cap-drop ALL`, on a copy of the live store:
+    schema 4 to 9, 27,518 ledger entries and 1,170 filings kept.
+  - **`ui_listen: 0.0.0.0:8486`, `ui_host: flotilla.tail6d0ed4.ts.net`.**
+  - **The ops routines disabled** (`disabled_routines`): their workers come next.
+  - **No deploy caller and no stand-down yet.**
+  - **The store copy before the deploy:** `~/flotilla/state-bak-20261114-ui-1227` on the mini. The
+    rollback is that copy plus `deploy.sh sha-c7652aa`; an older flotillad refuses the newer store.
+  - **`DEPLOY PASS (sha-f80c0c0)`.**
+  - **The first admin,** `marko`, created with the host's operator token, which that retires. Its
+    token is in `~/flotilla/admin-marko.token` (mode 600), and it resumed `triage/cycle`.
+  - **The UI from inside its network:** `/signin` 200 for `ui_host`, 421 for another host.
+  - **Then the homelab proxy node.** The caddy-tailscale auth key had expired on 11-13, so the new
+    node could not register, and that failed caddy's whole config (every node down about 90 s, then
+    restored). It came up once the operator made a new key: `https://flotilla.tail6d0ed4.ts.net`
+    answers 303, then the sign-in page, and all 9 other nodes answer.
+
+  **Two faults of mine on the way:**
+  - The first attempt stopped flotillad for the store copy before the new config had been checked,
+    and a `sed` of mine had failed to edit `disabled_routines`, so `-check` refused it (ops routines
+    without their workers). flotilla was down about 3 minutes; the old config and container were put
+    back.
+  - The second attempt ran the new flotillad's `-check` on the new config, with the live mounts,
+    before stopping anything.
+
+  **Not done:**
+  - The ops workers (next).
+  - The deploy caller and the stand-down.
+  - The host agent on the mini.
+  - Ending the candidate (`triage/cycle-shadow`).
+
+  **Found:** flotillad exits at once when every routine is disabled (the scheduler's loop returns).
+  Production always has the heartbeat, but the API and the UI should keep serving without routines.
