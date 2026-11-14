@@ -69,8 +69,10 @@ def model_step(alias):
     import telemetry
     session = telemetry.setup()
     try:
+        # room for a model that reasons before it answers: since 2026-11-14 the mini's flash does,
+        # and 16 tokens were all reasoning (finish_reason length, no content)
         r = model_client.from_env().chat(alias, [{"role": "user", "content": "Reply with the JSON {\"ok\": true}."}],
-                                         max_tokens=16, timeout=30)
+                                         max_tokens=256, timeout=30)
         print(f"ok   model   {alias}: model={r.get('model')} deployment={r.get('model_id')} "
               f"cost={r.get('cost_usd')} ({r.get('cost_source')}) usage_reported={r.get('usage_reported')} "
               f"traced={session.active or session.why}")
