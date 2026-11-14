@@ -39,6 +39,19 @@ type Result struct {
 	PlanError string          `json:"plan_error,omitempty"`
 	// Each model call the run made through runtime/model_client.py (its FLOTILLA_CALLS_FILE).
 	Calls []Call `json:"calls,omitempty"`
+	// What the run read into a model's context (G7, runtime/loaded.py: its FLOTILLA_LOADED_FILE).
+	Loaded []Loaded `json:"loaded,omitempty"`
+}
+
+// Loaded is one thing a run read: a playbook, a skill, a memory or an input, and how far it is trusted
+// (source, memory, untrusted).
+type Loaded struct {
+	At     string `json:"at"`
+	Kind   string `json:"kind"`
+	Trust  string `json:"trust"`
+	Title  string `json:"title"`
+	Source string `json:"source"`
+	SHA256 string `json:"sha256"`
 }
 
 // Call is one model call as the model client recorded it. Tokens and cost are nil when the endpoint

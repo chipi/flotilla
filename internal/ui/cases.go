@@ -415,7 +415,7 @@ type caseData struct {
 	PlanCount int
 	Decided   string
 	Verdicts  []store.Feedback
-	RunsRead  []caseRunRead // the case's runs: what each called (G1), for "What the agent read"
+	RunsRead  []caseRunRead // the case's runs: what each called (G1) and read (G7), for "What the agent read"
 	Mine      string        // the signed-in person's verdict
 	Notes     []store.Note
 }
@@ -518,9 +518,14 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		http.Error(w, "case failed", 500)
 		return
 	}
+	ld, err := u.API.Store.RunLoaded(ctx, runIDs)
+	if err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
 	for _, id := range runIDs {
 		m, tok := modelText(calls[id])
-		d.RunsRead = append(d.RunsRead, caseRunRead{Run: id, Models: m, Tokens: tok})
+		d.RunsRead = append(d.RunsRead, caseRunRead{Run: id, Models: m, Tokens: tok, Read: ld[id], Untrusted: countUntrusted(ld[id])})
 	}
 	if d.Verdicts, err = u.API.Store.CaseFeedback(ctx, c.ID); err != nil {
 		http.Error(w, "case failed", 500)
@@ -575,4 +580,8 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 	done(w, r, back, err, ok)
 }
 
-type caseRunRead struct{ Run, Models, Tokens string }
+type caseRunRead struct {
+	Run, Models, Tokens string
+	Read                []store.Loaded
+	Untrusted           int
+}

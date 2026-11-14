@@ -32,12 +32,14 @@ from http_util import post_json
 # here, /opt/flotilla/runtime in the worker image. An extract of signal-fleet/ must carry it beside.
 try:
     import harness
+    import loaded
     import model_client
     import skills
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
     try:
         import harness
+        import loaded
         import model_client
         import skills
     except ImportError as e:
@@ -523,9 +525,20 @@ def _finish(signal, disp, trace, gates, usage, t0, trace_id=None):
     return disp
 
 
+def _probe(signal, name, args, table):
+    # what a probe returns is outside data in the model's context (G7)
+    loaded.record("probe", "untrusted", f"probe {name}", _trim(json.dumps(args, sort_keys=True), 200))
+    return probes.run_probe(signal, name, args, table=table)
+
+
 def investigate(signal, max_probes=None, probe_table=None):
     n = MAX_PROBES if max_probes is None else max_probes
     _exact_start()
+    # what enters the model's context (G7): the playbook (flotilla's own, pinned), and the signal's text
+    loaded.record("playbook", "source", "triage playbook", f"fleets/triage/playbooks/triage.md @ {PROMPT_SHA}",
+                  hashlib.sha256(_SYSTEM.encode()).hexdigest())
+    loaded.record("input", "untrusted", f"{signal.get('source') or 'signal'}: {signal.get('alertname') or '-'}",
+                  _trim(str(signal.get("summary") or ""), 200))
     messages = [{"role": "system", "content": _sys()},
                 {"role": "user", "content": _signal_intro(signal)}]
     # usage accumulates across ALL turns — reconciliation vs LiteLLM metering
@@ -539,7 +552,7 @@ def investigate(signal, max_probes=None, probe_table=None):
     res = harness.run_json_step(
         messages,
         call=lambda m, step: _call(m, trace_id=trace_id, step=step),
-        tool=lambda name, args: probes.run_probe(signal, name, args, table=probe_table),
+        tool=lambda name, args: _probe(signal, name, args, probe_table),
         cfg=cfg,
         errors={"fatal": (SystemExit, TriagerDown), "defer": TriageDeferred, "defer_prefix": "triager call failed: "},
         on_quirk=_mark_quirk)

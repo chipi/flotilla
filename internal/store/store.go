@@ -286,6 +286,19 @@ var schema = []string{
 	`ALTER TABLE run_calls ADD COLUMN check_name TEXT NOT NULL DEFAULT '';
 	ALTER TABLE run_calls ADD COLUMN check_ok INTEGER;
 	ALTER TABLE run_calls ADD COLUMN detail TEXT NOT NULL DEFAULT '';`,
+	// G7: what a run read into a model's context, and how far each was trusted (runtime/loaded.py).
+	`CREATE TABLE run_loaded (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id TEXT NOT NULL,
+		routine TEXT NOT NULL,
+		at TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		trust TEXT NOT NULL,
+		title TEXT NOT NULL,
+		source TEXT NOT NULL,
+		sha256 TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX run_loaded_run ON run_loaded(run_id);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

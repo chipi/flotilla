@@ -283,6 +283,20 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 			s.Log.Error("recording the run's model calls", "run_id", runID, "err", err)
 		}
 	}
+	if callErr == nil && len(res.Loaded) > 0 {
+		items := make([]store.Loaded, len(res.Loaded))
+		for i, l := range res.Loaded {
+			at := s.Now()
+			if t, err := time.Parse(time.RFC3339Nano, l.At); err == nil {
+				at = t
+			}
+			items[i] = store.Loaded{RunID: runID, Routine: id, At: at.UTC().Format(store.TimeFormat), Kind: l.Kind, Trust: l.Trust,
+				Title: l.Title, Source: l.Source, SHA256: l.SHA256}
+		}
+		if err := s.Store.RecordLoaded(fctx, items); err != nil {
+			s.Log.Error("recording what the run read", "run_id", runID, "err", err)
+		}
+	}
 	total := spent
 	if spend > 0 {
 		if total, err = s.Store.AddSpend(fctx, day, id, spend); err != nil {

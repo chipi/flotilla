@@ -131,6 +131,8 @@ type runData struct {
 	Detail              string
 	Trace               traceView
 	Printed, PrintedErr string
+	Read                []store.Loaded // what the run read into a model's context (G7)
+	Untrusted           int
 }
 
 func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -158,6 +160,13 @@ func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Sessio
 		}
 		d.Printed = logsText(lines, false)
 	}
+	ld, err := u.API.Store.RunLoaded(r.Context(), []string{run.ID})
+	if err != nil {
+		http.Error(w, "run failed", 500)
+		return
+	}
+	d.Read = ld[run.ID]
+	d.Untrusted = countUntrusted(d.Read)
 	if run.EndedAt != nil {
 		d.Ended = u.clock(*run.EndedAt)
 	}
@@ -168,4 +177,14 @@ func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Sessio
 		}
 	}
 	u.render(w, "run.html", 200, u.pageFor(s, "Run "+run.ID, "Runs", r, d))
+}
+
+func countUntrusted(ls []store.Loaded) int {
+	n := 0
+	for _, l := range ls {
+		if l.Trust == store.TrustUntrusted {
+			n++
+		}
+	}
+	return n
 }

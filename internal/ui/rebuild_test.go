@@ -377,3 +377,35 @@ func TestContractChecksOnModels(t *testing.T) {
 		t.Error("Models down does not count the alias whose last check failed")
 	}
 }
+
+// G7: what a run read, with its trust, on the run page; a run with nothing untrusted says so.
+func TestWhatTheAgentRead(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	for _, id := range []string{"run-r", "run-clean"} {
+		if err := f.st.StartRun(ctx, store.Run{ID: id, Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
+			Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.st.RecordLoaded(ctx, []store.Loaded{
+		{RunID: "run-r", Routine: "triage/cycle", Kind: "playbook", Trust: "source", Title: "triage playbook", Source: "fleets/triage/playbooks/triage.md @ ab12", SHA256: "abcdef0123456789"},
+		{RunID: "run-r", Routine: "triage/cycle", Kind: "input", Trust: "untrusted", Title: "glitchtip: <PLAYER-1I>", Source: "summary"},
+		{RunID: "run-clean", Routine: "triage/cycle", Kind: "skill", Trust: "source", Title: "hint-external", Source: "fleet skill hint-external @ v"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.RecordLoaded(ctx, []store.Loaded{{RunID: "run-r", Kind: "input", Trust: "trusted", Title: "x"}}); err == nil {
+		t.Error("an unknown trust was kept")
+	}
+	ck := f.signin(f.vic)
+	_, page := f.do("GET", "/runs/run-r", ck, nil, nil)
+	for _, want := range []string{`<span class="chip chip--ok">source</span><strong>triage playbook</strong>`, "sha256 abcdef012345",
+		`<span class="chip chip--stop">untrusted</span><strong>glitchtip: &lt;PLAYER-1I&gt;</strong>`, "1 untrusted item entered this run"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the run page has no %q", want)
+		}
+	}
+	if _, clean := f.do("GET", "/runs/run-clean", ck, nil, nil); !strings.Contains(clean, "Nothing untrusted entered this run.") {
+		t.Error("a run with only sources does not say nothing untrusted entered")
+	}
+}

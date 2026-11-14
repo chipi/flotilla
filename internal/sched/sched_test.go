@@ -319,6 +319,8 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 	fr.res.Calls = []worker.Call{{At: "2026-11-14T10:00:01Z", Alias: "triage-pro", Model: "m", TokensIn: &in, CostUSD: &cost},
 		{At: "not a time", Alias: "triage-flash", Error: "Transient"},
 		{At: "2026-11-14T10:00:02Z", Alias: "triage-flash", Check: "tools", CheckOK: &no, Detail: "no get_metric call"}}
+	fr.res.Loaded = []worker.Loaded{{At: "2026-11-14T10:00:00Z", Kind: "playbook", Trust: "source", Title: "triage playbook", Source: "p @ x", SHA256: "ab"},
+		{Kind: "input", Trust: "untrusted", Title: "glitchtip: X", Source: "s"}}
 	r, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if err != nil {
 		t.Fatal(err)
@@ -336,5 +338,12 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 	}
 	if cs[0].Check != "" || cs[0].CheckOK != nil || cs[2].Check != "tools" || cs[2].CheckOK == nil || *cs[2].CheckOK || cs[2].Detail != "no get_metric call" {
 		t.Fatalf("a contract check's result is kept on its row, an ordinary call has none (G15): %+v / %+v", cs[0], cs[2])
+	}
+	ld, err := s.Store.RunLoaded(context.Background(), []string{r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := ld[r.ID]; len(l) != 2 || l[0].Trust != "source" || l[0].At != "2026-11-14T10:00:00.000000000Z" || l[1].Trust != "untrusted" || l[1].At == "" {
+		t.Fatalf("what the run read (G7): %+v", l)
 	}
 }

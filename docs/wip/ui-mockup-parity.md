@@ -35,7 +35,7 @@ Rules for the rebuild:
 | G4 | Host load (CPU, memory, disk), roles, containers, logs | Hosts, Host | load closed 2026-11-14 (35f7629): VictoriaMetrics by host_metrics; containers where cAdvisor runs | roles; the mini's containers (no cAdvisor); the host agent's log |
 | G5 | Fleet logs | Fleet "Logs" tab, the workflow block's "Log, last lines" | closed 2026-11-14 (8a0b33b): VictoriaLogs by run, routine and fleet (vlogs_url) | the host agent's log, a macOS file the containerised Alloy cannot read |
 | G6 | Fleet packs and their approval | Fleets "pack" line, Fleet pack line | closed 2026-11-14 (946581c): `fleets/<fleet>/fleet.yaml` and a pack hash | approving a pack: a spec change goes through review and deploy |
-| G7 | What the agent read (memory, sources, trust) | Case aside | partly closed 2026-11-14 (10724d1): the case's runs and their model calls | for a model run, the playbook, skills and notes it loaded, and their trust |
+| G7 | What the agent read (memory, sources, trust) | Case aside | closed 2026-11-15: runtime/loaded.py records the playbook and skills (source, sha256), the signal and probe outputs (untrusted); the run and case pages list them | memory: no routine reads cases or notes into a model yet (a prompt change, proved by replay first) |
 | G8 | Diagnosis feedback (Right / Wrong / note) | Case aside | closed 2026-11-14 (82395d2): verdicts, notes, Knowledge | agents reading active notes (G7) |
 | G9 | Slack approvals and their daily cap | Approvals subtitle, Decision "Approve from" | Slack is not wired | the Slack connector |
 | G10 | A plan's host command | Decision "What would run" second line | closed 2026-11-14 (999ddc4): the agent reports its allowlist in hello | needs the agent upgraded to this build |

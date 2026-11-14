@@ -701,3 +701,9 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 .btn--verdict-wrong:hover { background: var(--stop-ink); color: var(--panel); }
 .hostcharts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-md); }
 .hostcharts .row-head strong { font-size: 18px; }
+
+/* What the agent read (G7) */
+.readitem { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.readitem__head { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: baseline; }
+.readitem__src { font-family: var(--font-exact); font-size: 12px; color: var(--slate); overflow-wrap: anywhere; }
+.ok-note { margin: 0; font-size: 14px; color: var(--ok-ink); }

@@ -47,6 +47,12 @@
         </table>
       </div>{{else}}<p class="panel-note">This run recorded no model call (a code-only routine, or a run from before 2026-11-14).</p>{{end}}
     </section>
+    <section class="main card" aria-labelledby="read-h">
+      <h2 id="read-h">What the agent read</h2>
+      {{if .Read}}{{template "readlist" .Read}}
+      {{if .Untrusted}}<p class="panel-note">{{plural .Untrusted "untrusted item" "untrusted items"}} entered this run: outside data, read as data and never as instructions.</p>{{else}}<p class="ok-note">Nothing untrusted entered this run.</p>{{end}}
+      {{else}}<p class="panel-note">This run recorded nothing it read into a model (a code-only routine, or a run from before 2026-11-15).</p>{{end}}
+    </section>
     <section class="main card" aria-labelledby="rep-h">
       <h2 id="rep-h">What it printed</h2>
       {{if .Printed}}<pre class="log">{{.Printed}}</pre>{{else if .PrintedErr}}<p class="gap"><strong>No lines from VictoriaLogs:</strong> {{.PrintedErr}}.</p>{{else}}<p class="panel-note">VictoriaLogs has no line for this run (it keeps logs for a limited time).</p>{{end}}

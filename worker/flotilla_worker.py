@@ -101,22 +101,23 @@ def read_spend(path):
 
 
 CALLS_MAX = 500  # model calls returned per run; a run that makes more reports the first CALLS_MAX
+LOADED_MAX = 200  # what a run read (runtime/loaded.py), per run
 
 
-def calls_path(env, run_id):
-    """The run's calls file under HOME, one per run: two runs on one worker never share it."""
+def calls_path(env, run_id, what="calls"):
+    """The run's calls (or loaded) file under HOME, one per run: two runs on one worker never share it."""
     safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)[:120]
-    return os.path.join(env.get("HOME", "/tmp"), f".flotilla-calls-{safe}.jsonl")
+    return os.path.join(env.get("HOME", "/tmp"), f".flotilla-{what}-{safe}.jsonl")
 
 
-def read_calls(path):
-    """Consume the run's model calls (runtime/model_client.py writes one JSON line per call), then remove
-    the file. Lines that are not JSON objects are skipped."""
+def read_calls(path, limit=CALLS_MAX):
+    """Consume the run's model calls (runtime/model_client.py writes one JSON line per call), or what it
+    read (runtime/loaded.py), then remove the file. Lines that are not JSON objects are skipped."""
     out = []
     try:
         with open(path) as f:
             for line in f:
-                if len(out) >= CALLS_MAX:
+                if len(out) >= limit:
                     break
                 try:
                     c = json.loads(line)
@@ -177,12 +178,13 @@ def run_job(req, environ=None):
         except FileNotFoundError:
             pass
         env["FLOTILLA_PLAN_FILE"] = plan_path
-    calls = calls_path(env, req["run_id"])
-    try:
-        os.remove(calls)
-    except OSError:
-        pass
-    env["FLOTILLA_CALLS_FILE"] = calls
+    calls, loaded = calls_path(env, req["run_id"]), calls_path(env, req["run_id"], "loaded")
+    for f in (calls, loaded):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    env["FLOTILLA_CALLS_FILE"], env["FLOTILLA_LOADED_FILE"] = calls, loaded
     timeout = float(req["timeout_s"])
     start = time.monotonic()
     proc = subprocess.Popen(["sh", "-c", req["command"]], cwd=workdir, env=env, stdout=subprocess.PIPE,
@@ -207,7 +209,8 @@ def run_job(req, environ=None):
         status = "error"
     out = b"".join(chunks).decode("utf-8", "replace")
     res = {"status": status, "exit_code": proc.returncode, "duration_s": round(time.monotonic() - start, 3),
-           "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:], "calls": read_calls(calls)}
+           "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:], "calls": read_calls(calls),
+           "loaded": read_calls(loaded, LOADED_MAX)}
     plan, plan_error = read_plan(plan_path)
     if status == "ok":  # a failed run's plan is not a decision
         if plan is not None:

@@ -73,3 +73,8 @@
 
 {{define "foot"}}</body>
 </html>{{end}}
+
+{{define "readlist"}}{{range .}}<div class="readitem">
+  <div class="readitem__head"><span class="chip {{if eq .Trust "source"}}chip--ok{{else if eq .Trust "memory"}}chip--info{{else}}chip--stop{{end}}">{{.Trust}}</span><strong>{{.Title}}</strong></div>
+  <span class="readitem__src">{{.Kind}} · {{.Source}}{{if .SHA256}} · sha256 {{short .SHA256 12}}{{end}}</span>
+</div>{{end}}{{end}}

@@ -106,6 +106,15 @@ class TestRunJob(unittest.TestCase):
         res = fw.run_job(self.req("true"), self.environ)
         self.assertEqual(res["calls"], [])
 
+    def test_what_the_run_read_is_returned(self):
+        # G7: runtime/loaded.py writes FLOTILLA_LOADED_FILE; a stale one from an earlier run is not this run's
+        with open(fw.calls_path({"HOME": self.home}, "r1", "loaded"), "w") as f:
+            f.write('{"kind":"stale"}\n')
+        cmd = 'echo \'{"kind":"skill","trust":"source"}\' >> "$FLOTILLA_LOADED_FILE"'
+        res = fw.run_job(self.req(cmd), self.environ)
+        self.assertEqual([x["kind"] for x in res["loaded"]], ["skill"])
+        self.assertFalse(os.path.exists(fw.calls_path({"HOME": self.home}, "r1", "loaded")), "consumed once")
+
     def test_spend_file_cannot_leave_home(self):
         with self.assertRaises(ValueError):
             fw.run_job(self.req("true", spend_file="../../etc/x"), self.environ)

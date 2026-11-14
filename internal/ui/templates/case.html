@@ -75,9 +75,10 @@
         <h2 id="looked">What the agent read</h2>
         {{range .RunsRead}}<div class="casecards">
           <span class="exact"><a href="/runs/{{.Run}}">{{short .Run 40}}</a></span>
-          <span class="panel-note">{{if .Models}}called {{.Models}} ({{.Tokens}} tokens){{else}}code only: no model call, so nothing was read but the run's own checks{{end}}</span>
+          {{if .Read}}{{template "readlist" .Read}}
+          {{if .Untrusted}}<span class="panel-note">{{plural .Untrusted "untrusted item" "untrusted items"}} entered this run, read as data.</span>{{else}}<span class="ok-note">Nothing untrusted entered this run.</span>{{end}}
+          {{else}}<span class="panel-note">{{if .Models}}called {{.Models}} ({{.Tokens}} tokens); it recorded nothing it read{{else}}code only: no model call, so nothing was read but the run's own checks{{end}}</span>{{end}}
         </div>{{else}}<p class="panel-note">No run has worked on this case yet.</p>{{end}}
-        {{template "gap" (gap "G7" "For a run that calls a model, the harness does not yet record which playbook, skills and notes it loaded, or whether each was trusted.")}}
       </section>
       <section class="card card--edge" aria-labelledby="fb">
         <h2 id="fb">After the check: was the diagnosis right?</h2>

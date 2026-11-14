@@ -20,6 +20,10 @@ import hashlib
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import loaded  # noqa: E402
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 MAX_BYTES = 16384
@@ -93,6 +97,7 @@ def load(name, fleet, root=None, version=None):
     rec = {"name": name, "layer": layer, "version": version or os.environ.get("FLOTILLA_VERSION") or "dev",
            "sha256": hashlib.sha256(raw).hexdigest()}
     _span(rec)
+    loaded.record("skill", "source", name, f"{layer} skill {name} @ {rec['version']}", rec["sha256"])
     return dict(rec, text=body)
 
 
