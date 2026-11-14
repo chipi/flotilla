@@ -69,7 +69,7 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 		}
 		row.Contact = "never"
 		if h.LastContact != "" {
-			row.Contact = u.ago(h.LastContact) + " ago"
+			row.Contact = u.agoText(h.LastContact)
 		}
 		out = append(out, row)
 	}

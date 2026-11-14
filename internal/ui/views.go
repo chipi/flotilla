@@ -366,3 +366,12 @@ func plural(n int, one, many string) string {
 	}
 	return fmt.Sprintf("%d %s", n, many)
 }
+
+// agoText is ago as a phrase: "41m ago", or "just now" (never "just now ago").
+func (u *Server) agoText(s string) string {
+	a := u.ago(s)
+	if a == "just now" || a == "–" {
+		return a
+	}
+	return a + " ago"
+}

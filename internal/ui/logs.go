@@ -16,8 +16,8 @@ import (
 // the address; without it the pages say so.
 
 type logLine struct {
-	At, Level, Routine, Text string
-	Bad                      bool
+	At, Level, Routine, Source, Text string
+	Bad                              bool
 }
 
 // logsQuery asks VictoriaLogs a LogsQL query and returns at most limit lines, newest first.
@@ -50,7 +50,12 @@ func (u *Server) logsQuery(ctx context.Context, query string, limit int) ([]logL
 		if json.Unmarshal(sc.Bytes(), &m) != nil {
 			continue
 		}
-		l := logLine{Level: strings.ToUpper(m["level"]), Routine: m["routine"], Text: m["line"]}
+		// flotillad and the worker both log a run's start and end; the source tells the two apart.
+		src := m["service"]
+		if src == "" {
+			src = m["container"]
+		}
+		l := logLine{Level: strings.ToUpper(m["level"]), Routine: m["routine"], Source: strings.TrimPrefix(src, "flotilla-"), Text: m["line"]}
 		if l.Text == "" {
 			l.Text = m["msg"]
 			for _, k := range []string{"status", "detail", "err"} {
@@ -68,7 +73,7 @@ func (u *Server) logsQuery(ctx context.Context, query string, limit int) ([]logL
 	return out, sc.Err()
 }
 
-// logsText is lines as a log pane: time, level, routine, text.
+// logsText is lines as a log pane: time, level, source, routine, text.
 func logsText(lines []logLine, withRoutine bool) string {
 	var b strings.Builder
 	for _, l := range lines {
@@ -77,9 +82,9 @@ func logsText(lines []logLine, withRoutine bool) string {
 			lvl = "-"
 		}
 		if withRoutine {
-			fmt.Fprintf(&b, "%s %-5s %-24s %s\n", l.At, lvl, l.Routine, l.Text)
+			fmt.Fprintf(&b, "%s %-5s %-24s %-24s %s\n", l.At, lvl, l.Source, l.Routine, l.Text)
 		} else {
-			fmt.Fprintf(&b, "%s %-5s %s\n", l.At, lvl, l.Text)
+			fmt.Fprintf(&b, "%s %-5s %-24s %s\n", l.At, lvl, l.Source, l.Text)
 		}
 	}
 	return b.String()

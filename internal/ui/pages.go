@@ -239,7 +239,7 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 		if x.Stale {
 			last := "it has never run ok"
 			if x.LastSuccess != "" {
-				last = "last ok " + u.clock(x.LastSuccess) + ", " + u.ago(x.LastSuccess) + " ago"
+				last = "last ok " + u.clock(x.LastSuccess) + ", " + u.agoText(x.LastSuccess)
 			}
 			d.Wrong = append(d.Wrong, wrongItem{What: x.ID + " is stale", Detail: last + "; it runs every " + x.Every, Go: "Fleet", Href: href})
 		}

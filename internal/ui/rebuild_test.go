@@ -45,7 +45,7 @@ func TestHostLoad(t *testing.T) {
 	}
 	f.ui.MetricsURL, f.ui.HostMetrics = vmsrv.URL, map[string]string{"mini": "homelab"}
 	// G10: mini's agent reported its config; dgx's (older) did not
-	if err := f.st.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, Version: "v", Ceiling: "propose",
+	if err := f.st.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, Version: "v", Ceiling: "propose", LastContact: time.Now(),
 		Allowlist: `[{"name":"backup.rerun_observability","argv":["/usr/bin/sudo","-n","/bin/launchctl","kickstart","system/com.homelab.db-backup"],"per_hour":1,"timeout":"30m0s"}]`}); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +58,10 @@ func TestHostLoad(t *testing.T) {
 	}
 	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "42% · 42% · 42%") || !strings.Contains(page, "– · – · –") {
 		t.Error("the Hosts column: mini's load, dgx's dashes")
+	}
+	// mini was heard from just now
+	if _, page := f.do("GET", "/hosts/mini", ck, nil, nil); !strings.Contains(page, "last heard just now ·") {
+		t.Error(`a contact under a minute old reads "just now", not "just now ago"`)
 	}
 	_, page := f.do("GET", "/hosts/mini", ck, nil, nil)
 	for _, want := range []string{"CPU", "Memory", "Disk IO", "peak 61% at", "runs no cAdvisor"} {
@@ -84,7 +88,8 @@ func TestLogLines(t *testing.T) {
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		queries = append(queries, r.PostFormValue("query"))
-		fmt.Fprintln(w, `{"_time":"2026-11-14T17:09:09Z","level":"info","routine":"triage/cycle","run_id":"run-l","msg":"run output","line":"second"}`)
+		fmt.Fprintln(w, `{"_time":"2026-11-14T17:09:09Z","level":"info","routine":"triage/cycle","run_id":"run-l","msg":"run output","line":"second","service":"flotilla-worker-triage"}`)
+		fmt.Fprintln(w, `{"_time":"2026-11-14T17:09:07Z","level":"info","routine":"triage/cycle","run_id":"run-l","msg":"run start","service":"flotillad"}`)
 		fmt.Fprintln(w, `{"_time":"2026-11-14T17:09:08Z","level":"error","routine":"triage/cycle","run_id":"run-l","msg":"run output","line":"first <b>"}`)
 	}))
 	defer vl.Close()
@@ -102,6 +107,9 @@ func TestLogLines(t *testing.T) {
 	_, page := f.do("GET", "/runs/run-l", ck, nil, nil)
 	if i, j := strings.Index(page, "first &lt;b&gt;"), strings.Index(page, "second"); i < 0 || j < 0 || i > j {
 		t.Errorf("the run's lines, escaped and oldest first: %d %d", i, j)
+	}
+	if !strings.Contains(page, "worker-triage") || !strings.Contains(page, "flotillad ") {
+		t.Error("each line names the service that wrote it (flotillad and the worker both log a run's start)")
 	}
 	f.do("GET", "/fleets/triage?tab=logs&level=error", ck, nil, nil)
 	last := queries[len(queries)-1]
