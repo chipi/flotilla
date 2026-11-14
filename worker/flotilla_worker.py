@@ -25,6 +25,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -105,9 +106,11 @@ LOADED_MAX = 200  # what a run read (runtime/loaded.py), per run
 
 
 def calls_path(env, run_id, what="calls"):
-    """The run's calls (or loaded) file under HOME, one per run: two runs on one worker never share it."""
+    """The run's calls (or loaded) file, one per run: two runs on one worker never share it. In the temp
+    directory: a worker's HOME can be read-only (the triage worker's is; only /tmp and its state volume
+    are writable), and the calls were lost there until 2026-11-14."""
     safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)[:120]
-    return os.path.join(env.get("HOME", "/tmp"), f".flotilla-{what}-{safe}.jsonl")
+    return os.path.join(env.get("TMPDIR") or tempfile.gettempdir(), f".flotilla-{what}-{safe}.jsonl")
 
 
 def read_calls(path, limit=CALLS_MAX):

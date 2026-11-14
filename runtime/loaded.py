@@ -10,6 +10,7 @@ Without the variable nothing is written; a failure to write never fails the run.
 """
 import json
 import os
+import sys
 import time
 
 KINDS = ("playbook", "skill", "note", "case", "input", "probe")
@@ -39,5 +40,5 @@ def record(kind, trust, title, source, sha256=None, environ=None):
     try:
         with open(path, "a") as f:
             f.write(json.dumps(line) + "\n")
-    except OSError:
-        pass
+    except OSError as e:
+        print(f"loaded: the loaded file {path}: {e}", file=sys.stderr)

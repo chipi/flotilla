@@ -38,6 +38,7 @@ import contextlib
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -262,8 +263,9 @@ class Client:
         try:
             with open(path, "a") as f:
                 f.write(json.dumps(line) + "\n")
-        except OSError:
-            pass
+        except OSError as e:
+            # never fails the call, but says so: a silent failure lost every call's record for a day
+            print(f"model client: the calls file {path}: {e}", file=sys.stderr)
 
     def chat_policy(self, policy, messages, **kw):
         """A routine's model policy: {"model": alias, "fallback": [alias, ...], "fallback_on": ["transient", "empty"]}.

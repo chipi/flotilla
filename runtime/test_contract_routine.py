@@ -14,7 +14,8 @@ import contract_routine as cr  # noqa: E402
 MODELS = {"endpoints": {"gw": {"base_url": "http://gw/v1", "kind": "openai",
                                "defaults": {"tools": "native", "json": "object", "cost": "zero"}}},
           "aliases": {"good": {"endpoint": "gw", "model": "m-good"},
-                      "notools": {"endpoint": "gw", "model": "m-notools"}}}
+                      "notools": {"endpoint": "gw", "model": "m-notools"},
+                      "reasons": {"endpoint": "gw", "model": "m-reasons"}}}
 
 
 class Endpoint:
@@ -34,6 +35,8 @@ class Endpoint:
             msg = {"content": None, "tool_calls": [{"id": "1", "type": "function",
                                                     "function": {"name": "get_metric", "arguments": '{"name": "pg_up"}'}}]}
         out = min(body.get("max_tokens") or 20, 5)
+        if body["model"] == "m-reasons" and body.get("max_tokens") == 5:
+            msg = {"content": ""}  # a reasoning model: five tokens of thinking, no content
         return 200, {}, json.dumps({"choices": [{"message": msg, "finish_reason": "stop"}], "model": body["model"],
                                     "usage": {"prompt_tokens": 10, "completion_tokens": out}})
 
@@ -60,7 +63,10 @@ class Routine(unittest.TestCase):
         self.assertEqual(got, {("good", "json_object"): True, ("good", "tools"): True, ("good", "max_tokens"): True,
                                ("good", "unknown_model"): True, ("notools", "json_object"): True,
                                ("notools", "tools"): False, ("notools", "max_tokens"): True,
-                               ("notools", "unknown_model"): True})
+                               ("notools", "unknown_model"): True, ("reasons", "json_object"): True, ("reasons", "tools"): True,
+                               ("reasons", "max_tokens"): True, ("reasons", "unknown_model"): True})
+        reasoning = [x for x in lines if x["alias"] == "reasons" and x["check"] == "max_tokens"][0]
+        self.assertIn("all reasoning", reasoning["detail"])
         bad = [x for x in lines if not x["check_ok"]][0]
         self.assertIn("no get_metric call", bad["detail"])
         self.assertIn("CONTRACT FAIL: notools tools", out)

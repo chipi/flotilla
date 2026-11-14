@@ -82,6 +82,19 @@ with sync_playwright() as pw:
     check("Inter" in faces and "JetBrains Mono" in faces, f"the self-hosted fonts load ({sorted(set(faces))})")
     check(not problems, f"no console errors or CSP violations ({problems[:3]})")
 
+    # G1: the heartbeat's model call is on its run (the calls file is in /tmp: the worker's HOME is
+    # read-only, and the calls were lost there)
+    page.goto(BASE + "/runs?routine=platform%2Fheartbeat")
+    hb = page.locator('a[href^="/runs/platform-heartbeat-"]')
+    found = False
+    for i in range(min(hb.count(), 5)):
+        page.goto(BASE + hb.nth(i).get_attribute("href"))
+        if "triage-flash" in page.locator("#calls-h").locator("xpath=..").inner_text():
+            found = True
+            break
+        page.goto(BASE + "/runs?routine=platform%2Fheartbeat")
+        hb = page.locator('a[href^="/runs/platform-heartbeat-"]')
+    check(found, "a heartbeat run shows its model call (G1: recorded from the worker)")
     page.goto(BASE + "/account")
     page.click("form[action='/signout'] button")
     page.wait_for_load_state()

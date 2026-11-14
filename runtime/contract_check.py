@@ -64,6 +64,13 @@ def run_checks(c, tools="native", cost="unknown", timeout=120, main="m", plain="
     try:
         r = c.chat(plain, [{"role": "user", "content": "Count from 1 to 200, comma separated."}], max_tokens=5, timeout=timeout)
         add("max_tokens", [] if (r.get("usage") or {}).get("completion_tokens", 99) <= 8 else ["max_tokens not honoured"], r)
+    except mc.EmptyCompletion as e:
+        # a reasoning model spends 5 tokens thinking and returns no content: the limit held all the same
+        used = ((e.record or {}).get("usage") or {}).get("completion_tokens")
+        if used is not None and used <= 8:
+            add("max_tokens", [], e.record, f"honoured: {used} tokens, all reasoning, no content")
+        else:
+            add("max_tokens", [f"EmptyCompletion with {used} completion tokens: {e}"], e.record)
     except mc.ModelError as e:
         add("max_tokens", [f"{type(e).__name__}: {e}"], e.record)
 
