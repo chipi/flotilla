@@ -278,3 +278,25 @@ VPS.
   intermediate or signing key would not have been loaded (`deploy.sh` now hashes `intermediate.crt`,
   `root.crt` and `signing.key` into flotillad's config hash). security.md T13 to T15 marked built,
   with what is not. None of the procedures has been run on a real host.
+- **Live on the mini, 2026-11-14 16:13Z** (operator's go):
+  - The root CA and the execution-signing key were made on the operator's laptop with `flotilla ca`
+    (built from 83b641c for darwin); the root's key stayed there. The intermediate, `root.crt` and
+    `signing.key` went to `~/flotilla/config/host-ca` on the mini (mode 700; no `root.key`, which
+    `secrets.sh` refuses).
+  - flotillad's `hosts` section: `listen: 0.0.0.0:8487`, `ca_dir: /run/flotilla`, `server_names:
+    [flotilla-hosts.tail6d0ed4.ts.net]`, signing key `mini-2026-11`. `DEPLOY PASS (sha-83b641c)`;
+    "flotillad listening for host agents", "host executions are signed".
+  - The path: a tailnet node of its own, `flotilla-hosts` (agentic-ai-homelab 35f930c, the
+    reverse-proxy stack): `tailscale/tailscale` 1.104.7, `TS_SERVE_CONFIG` forwarding TCP 8487 to
+    `flotillad:8487`, Caddy untouched. The tailnet policy allowed `tag:homelab-svc` only :443, so the
+    mini's connect timed out until chipi/infra#67 (`tag:homelab-host` to `tag:homelab-svc:8487`).
+  - `deploy/host/install.sh install` from the X3, `--ref da7f166 --os darwin --arch amd64`, the
+    mini's config allowing only `backup.rerun_observability` (one sudoers line, `visudo`-checked):
+    `INSTALL PASS`. The macOS steps (dscl user, `sappnd` audit log, launchd, `plutil`) ran for the
+    first time, and `_flotilla` can read the backup job's state with `launchctl print` (unverified
+    before). `flotilla host list`: `mini yes sha-da7f166`, certificate until 2026-12-14, clock offset
+    -83 ms; heartbeats every 30 s.
+  - **Not done:** an execution on the mini. `ops/rerun-backup` is capped at shadow by its spec, so a
+    stale backup's plan is recorded, not sent; lifting the cap is the v1 gate (5 shadow plans the
+    operator agrees with), which needs real stale backups. The certificate renews over the
+    connection before 2026-12-14; that renewal has not run on a real host yet.
