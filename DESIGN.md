@@ -32,6 +32,41 @@ colors:
   night-edge: "#3A3E47"
   night-text: "#D7D9DE"
   night-muted: "#9A9EA8"
+  night-active: "#2A2D35"
+  night-meta: "#C9CBD1"
+  night-line: "#33363E"
+  ink-soft: "#2B2E35"
+  code-grey: "#6B6F78"
+  control-soft: "#D5D6D0"
+  sort-idle: "#B5B8BF"
+  track: "#ECECE7"
+  ok-mid: "#1F7A4D"
+  wait-alert: "#FFF4EC"
+  info-wash: "#E1EBFF"
+  info-ink: "#173A9E"
+  target-wash: "#F3EEF9"
+  target-ink: "#4A2A73"
+  spark-wash: "#E8EEFC"
+  pivot-edge: "#B9C9F2"
+  blue-soft: "#7A9AE8"
+  violet: "#9A6FD0"
+  fleet-triage: "#5B4BC4"
+  fleet-marketing: "#B4440E"
+  board: "#1B1E24"
+  board-node: "#252932"
+  board-node-on: "#2A3550"
+  board-edge: "#3A3F4A"
+  board-focus: "#7AA2FF"
+  board-text: "#E6E8EC"
+  board-title: "#F2F3F5"
+  board-muted: "#AEB3BD"
+  board-label: "#8C93A0"
+  board-log: "#D7DBE2"
+  board-idle: "#6B7280"
+  board-wait: "#F59E0B"
+  board-bad: "#EF4444"
+  board-wait-text: "#FCD34D"
+  board-bad-text: "#FCA5A5"
 typography:
   headline:
     fontFamily: "Inter, system-ui, sans-serif"
@@ -182,7 +217,28 @@ every time it appears.
   separators, and the stronger border of the decision box.
 - **Control Edge** (`control-edge`): the border of every secondary button and text field, dark
   enough to meet 3:1 against white.
-- **Night Edge**, **Night Text**, **Night Muted**: borders and text on the dark navigation.
+- **Night Edge**, **Night Text**, **Night Muted**: borders and text on the dark navigation;
+  **Night Active** (`night-active`) is the active tab of the phone's bottom bar; **Night Meta**
+  (`night-meta`) the autonomy pill's text; **Night Line** (`night-line`) the bottom bar's top edge.
+- **Ink Soft**, **Code Grey** (`ink-soft`, `code-grey`): timeline text and kind chips; the grey
+  of code steps in a timeline and of placeholders.
+- **Control Soft** (`control-soft`): the lighter border of filter pills, search fields and quiet
+  buttons; **Sort Idle** (`sort-idle`): a table header's arrow when the column is not sorted.
+- **Track** (`track`): the empty part of a progress bar.
+
+### Information and the fleet board
+
+- **Info** (`info-ink` on `info-wash`): a case or run in flight (handed over, planned,
+  executing, checking, running). **Target** (`target-ink` on `target-wash`): target and role
+  chips. **Spark Wash** and **Pivot Edge**: the area under a sparkline, a selected row, the
+  pivot bar.
+- **Blue Soft**, **Violet**, **OK Mid**: second series in a chart (local engines, tool spans,
+  harness spans) and good deltas on a score card.
+- **Fleet colours** (`fleet-triage`, `signal-blue` for Ops, `fleet-marketing`, `ok-mid` for
+  Bugfix): the fleet icon box on Cases.
+- **Board** (`board`, `board-node`, `board-node-on`, `board-edge`, `board-focus`, the board
+  text colours, and lamps `ok-lamp`, `board-wait`, `board-bad`, `board-idle`): the dark workflow
+  board on a fleet's page and the dark log panes.
 
 ### Status
 
@@ -257,9 +313,10 @@ stronger border or its status band, not a lift.
 ## Shapes
 
 Gently rounded rectangles. Chips are 5px, small controls 6px, buttons and fields 8px, the
-primary button and standard cards 10px, panels and the decision box 12px; filter pills and
-sub-navigation tabs are fully rounded (22px). Borders are 1px; the only 2px border is the brakes
-panel when autonomy is frozen.
+primary button and standard cards 10px, panels and the decision box 12px. Filter pills and
+sub-navigation tabs are 6px and 36px tall (44px on a phone): mockup v3 drew them fully rounded
+and 44px, and the operator found that too round and too big (2026-11-14). Borders are 1px; the
+only 2px border is the brakes panel when autonomy is frozen.
 
 ## Components
 
@@ -296,7 +353,7 @@ panel when autonomy is frozen.
 
 - **Top bar** (`ink`, 56px): brand, the four groups (Decide, Watch, Govern, Record) as tabs,
   the autonomy pill on the right. The active group is a `paper` tab with ink text.
-- **Group pages:** a second row of rounded tabs for the pages inside the active group.
+- **Group pages:** a second row of compact tabs (6px, 36px) for the pages inside the active group.
 - **Phone:** the groups move to a bottom bar (icon + word, 56px targets); the badge rides on
   Decide.
 - **The autonomy pill:** outlined at rest ("Autonomy: normal", green lamp); solid `stop-red`

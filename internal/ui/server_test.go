@@ -38,14 +38,20 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage", Autonomy: "shadow",
+		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
+	return setupWith(t, []*spec.Routine{j})
+}
+
+// setupWith is setup with the given routines (the snapshots use the repo's own fleets).
+func setupWith(t *testing.T, routines []*spec.Routine) *fixture {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "u.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage", Autonomy: "shadow",
-		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
-	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{}}
+	s := &sched.Scheduler{Store: st, Routines: routines, Workers: map[string]sched.Runner{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
 	if err != nil {
@@ -170,7 +176,7 @@ func TestCSRFAndSignOutEverywhere(t *testing.T) {
 	f := setup(t)
 	ck := f.signin(f.vic)
 	other := f.signin(f.vic)
-	_, body := f.do("GET", "/", ck, nil, nil)
+	_, body := f.do("GET", "/account", ck, nil, nil)
 	m := csrfRe.FindStringSubmatch(body)
 	if m == nil {
 		t.Fatalf("no CSRF token in the page: %s", body)

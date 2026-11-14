@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,8 +15,8 @@ import (
 
 // RFC-0004 §5 and ADR-0005: a plan policy proposed waits in awaiting_approval for a person. Approving
 // sends it on (executing: flotillad signs and sends it to its host, approved by that person); rejecting
-// escalates the case, releases the target and demotes the action to shadow. The CLI and HTTP for now;
-// the UI's approvals come with pipeline v1 step 8b.
+// escalates the case, releases the target and demotes the action to shadow. The CLI, HTTP and the UI
+// (its Decision box) answer the same way.
 
 func (s *Server) caseRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/cases/{id}/approve", s.auth(ActApprove, s.caseApprove))
@@ -90,6 +91,12 @@ func (s *Server) awaiting(ctx context.Context, id string) (store.Case, error) {
 // ApproveCase moves a proposed case on to executing, as the caller. Refused while the installation is
 // frozen or a hold covers the target or its host: nothing may start then, approved or not.
 func (s *Server) ApproveCase(ctx context.Context, c Caller, via, id string) (string, error) {
+	return s.ApprovePlan(ctx, c, via, id, "", "")
+}
+
+// ApprovePlan is ApproveCase bound to the plan the caller saw: refused when the case's newest plan is
+// not planHash (a prefix of it is enough; "" approves the newest). The note is kept with the answer.
+func (s *Server) ApprovePlan(ctx context.Context, c Caller, via, id, planHash, note string) (string, error) {
 	if err := s.Check(ctx, c, ActApprove); err != nil {
 		return "", err
 	}
@@ -120,7 +127,13 @@ func (s *Server) ApproveCase(ctx context.Context, c Caller, via, id string) (str
 		return "", problem(409, "case %s has no plan to approve", id)
 	}
 	p := plans[len(plans)-1]
+	if hp := strings.TrimPrefix(planHash, "sha256:"); planHash != "" && (len(hp) < 8 || !strings.HasPrefix(p.PlanHash, hp)) {
+		return "", problem(409, "the plan changed: %s is not the plan on case %s now (%s); open the new plan", shortHash(planHash), id, shortHash(p.PlanHash))
+	}
 	detail := fmt.Sprintf("approved %s on %s (plan %s)", p.Action, cs.Target, shortHash(p.PlanHash))
+	if n := strings.TrimSpace(note); n != "" {
+		detail += ": " + n
+	}
 	if err := s.Store.MoveCase(ctx, id, cases.Executing, cases.ByOperator, "", c.Name, detail); err != nil {
 		return "", err
 	}
@@ -155,7 +168,11 @@ func shortHash(h string) string {
 }
 
 func (s *Server) caseApprove(w http.ResponseWriter, r *http.Request, c Caller) {
-	hash, err := s.ApproveCase(r.Context(), c, "api", r.PathValue("id"))
+	var body struct {
+		Plan string `json:"plan"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	hash, err := s.ApprovePlan(r.Context(), c, "api", r.PathValue("id"), strings.TrimSpace(body.Plan), "")
 	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "approved_by": c.Name, "plan_hash": hash})
 }
 

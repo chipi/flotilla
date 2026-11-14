@@ -1,14 +1,68 @@
 {{template "head" .}}
 {{template "nav" .}}
 <main class="page">
-  <h1>Fleets</h1>
-  <div class="grid-cards grid-cards--wide">
-    {{range .Data}}<a class="card card--link" href="/fleets/{{.Name}}">
-      <h2>{{.Name}} {{if .Stopped}}<span class="chip chip--stop">STOPped</span>{{end}}</h2>
-      <ul class="list">
-        {{range .Routines}}<li><span class="exact">{{.ID}}</span> <span class="{{chip .Autonomy}}">{{.Autonomy}}</span>{{if .Paused}} <span class="chip chip--wait">paused</span>{{end}}{{if .Stale}} <span class="chip chip--stop">stale</span>{{end}}{{if not .Enabled}} <span class="chip chip--neutral">disabled</span>{{end}}</li>{{end}}
-      </ul>
-    </a>{{end}}
-  </div>
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
+  {{with .Data}}{{$t := .T}}
+  <section class="head">
+    <div>
+      <h1>Fleets</h1>
+      <p class="sub">{{plural .Total "fleet" "fleets"}} · {{plural .Routines "routine" "routines"}}. Open a fleet for its workflow, routines, costs and logs.</p>
+    </div>
+    {{if $act}}{{if .Stopped}}
+    <details class="decision__rejectwrap">
+      <summary class="btn">Release STOP…</summary>
+      <form class="confirm" method="post" action="/fleets/release-all">
+        {{template "csrf" $csrf}}
+        <strong>Release STOP on every fleet?</strong>
+        <p>Every routine starts on its triggers again, at its own autonomy.</p>
+        <label class="field field--strong">Why (kept with the change)<textarea name="reason" rows="2" required data-needs></textarea></label>
+        <div class="actions"><button class="btn btn--blue" type="submit">Release STOP</button></div>
+      </form>
+    </details>
+    {{else}}
+    <form method="post" action="/fleets/stop-all" class="inline">
+      {{template "csrf" $csrf}}
+      <button class="btn btn--stop" type="submit">STOP all routines</button>
+    </form>
+    {{end}}{{end}}
+  </section>
+  {{if .Stopped}}<p class="banner banner--stop" role="status">STOP is on: no routine starts; runs in flight finish their current case.</p>{{end}}
+
+  <section class="filters" aria-label="Filters">
+    <nav class="pills" aria-label="Status">
+      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+    </nav>
+    {{template "search" (search $t "fleets" "Find" "fleet or routine")}}
+  </section>
+
+  <section class="fleetcards" aria-label="Fleets">
+    {{range .Fleets}}<a class="fleetcard" href="/fleets/{{.ID}}">
+      <span class="fleetcard__top">
+        <span class="{{.Lamp}} lamp--card" aria-hidden="true"></span>
+        <strong>{{.Name}}</strong>
+        <span class="{{.Chip}}">{{.Status}}</span>
+      </span>
+      <span class="fleetcard__purpose">{{.Purpose}}</span>
+      <span class="fleetcard__nums">
+        <span><span>routines</span><strong>{{len .Routines}}</strong></span>
+        <span><span>cases 24h</span><strong>{{.Cases24}}</strong></span>
+        <span><span>spend 24h</span><strong>{{.SpendText}}</strong></span>
+      </span>
+      <span class="fleetcard__spark">
+        <svg viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label="{{.Spark.Label}}">
+          <polyline class="spark-area" points="{{.Spark.Area}}"></polyline>
+          <polyline class="spark-line" points="{{.Spark.Line}}" vector-effect="non-scaling-stroke"></polyline>
+          <line class="spark-avg" x1="0" x2="120" y1="{{.Spark.AvgY}}" y2="{{.Spark.AvgY}}" vector-effect="non-scaling-stroke"></line>
+        </svg>
+        <span>runs a day, 14 days · {{.Runs24}} in 24h{{if .Failed24}}, {{.Failed24}} failed{{end}}</span>
+      </span>
+      <span class="fleetcard__foot">
+        <span>{{plural (len .Workers) "worker" "workers"}}</span>
+        <span>{{.Note}}</span>
+      </span>
+    </a>{{else}}<p class="card">No fleet matches these filters.</p>{{end}}
+  </section>
+  <p class="footnote">A fleet has no description or pack of its own yet (G6), so each card names its routines.</p>
+  {{end}}
 </main>
 {{template "foot" .}}

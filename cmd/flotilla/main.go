@@ -9,7 +9,7 @@
 //	flotilla autonomy fleet/routine shadow|propose|auto [--reason "..."]   (operator; raising needs one)
 //	flotilla stop fleet
 //	flotilla start fleet --reason "..."                 (operator)
-//	flotilla case approve ID | reject ID --reason "..." (operator: a proposed plan)
+//	flotilla case approve ID [--plan HASH] | reject ID --reason "..." (operator: a proposed plan)
 //	flotilla case close ID --reason "..."               (operator: an escalated case; releases its target)
 //	flotilla case reassign ID --reason "..."            (operator: an escalated case back to its routine)
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
@@ -201,14 +201,16 @@ func main() {
 	}
 }
 
-// caseDecision is `flotilla case approve ID | case reject|close|reassign ID --reason "..."` (RFC-0004
-// §5): an operator's answer to a proposed plan, or their way out of an escalated case. Approving sends
-// it on to its host, signed; rejecting escalates the case; closing an escalated case releases its
-// target; reassigning hands it back to its acting routine.
+// caseDecision is `flotilla case approve ID [--plan HASH] | case reject|close|reassign ID --reason "..."`
+// (RFC-0004 §5): an operator's answer to a proposed plan, or their way out of an escalated case.
+// Approving sends it on to its host, signed (with --plan, only if that is still the case's plan);
+// rejecting escalates the case; closing an escalated case releases its target; reassigning hands it
+// back to its acting routine.
 func caseDecision(args []string, reason string) {
-	need(args, 2, `case approve ID | case reject|close|reassign ID --reason "..."`)
+	plan := flagValue(&args, "--plan")
+	need(args, 2, `case approve ID [--plan HASH] | case reject|close|reassign ID --reason "..."`)
 	if args[0] == "approve" {
-		post("/v1/cases/"+args[1]+"/approve", nil)
+		post("/v1/cases/"+args[1]+"/approve", map[string]string{"plan": plan})
 		return
 	}
 	post("/v1/cases/"+args[1]+"/"+args[0], map[string]string{"reason": reason})
@@ -438,7 +440,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

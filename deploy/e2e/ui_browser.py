@@ -46,24 +46,29 @@ with sync_playwright() as pw:
     check(cookie is not None and cookie["httpOnly"] and cookie["secure"] and cookie["sameSite"] == "Strict",
           "the browser keeps the session cookie (HttpOnly, Secure, SameSite=Strict)")
 
-    page.goto(BASE + "/fleets/platform")
-    card = page.locator("section.routine", has_text=ROUTINE)
-    card.locator("form[action$='/pause'] button").click()
+    # the routine's block on its fleet's workflow: pause, then resume with a reason (the Resume… details;
+    # flotilla.js keeps its button disabled until the reason has text)
+    page.goto(BASE + "/fleets/platform?sel=" + ROUTINE)
+    sel = page.locator("aside.selaside")
+    sel.locator("form[action$='/pause'] button").click()
     page.wait_for_load_state()
-    check(card.locator(".chip", has_text="paused").count() == 1, "pause from the fleet page (a form with its CSRF field)")
-    card.locator("form[action$='/resume'] input[name=reason]").fill("e2e: resumed in a browser")
-    card.locator("form[action$='/resume'] button").click()
+    check(page.locator("aside.selaside summary", has_text="Resume").count() == 1, "pause from the fleet page (a form with its CSRF field)")
+    page.locator("aside.selaside summary", has_text="Resume").click()
+    check(page.locator("aside.selaside form[action$='/resume'] button").is_disabled(), "Resume waits for a reason (flotilla.js runs under the CSP)")
+    page.locator("aside.selaside form[action$='/resume'] textarea[name=reason]").fill("e2e: resumed in a browser")
+    page.locator("aside.selaside form[action$='/resume'] button").click()
     page.wait_for_load_state()
-    check(card.locator(".chip", has_text="paused").count() == 0 and page.locator(".flash--ok").count() == 1,
+    check(page.locator("aside.selaside form[action$='/pause']").count() == 1 and page.locator(".flash--ok").count() == 1,
           "resume with a reason from the fleet page")
 
     # the chain's case (run.sh's cases section ran first): its page, reached from the list
-    page.goto(BASE + "/cases?all=1")
+    page.goto(BASE + "/cases?status=closed")
     # the closed one: flotillad restarts during the e2e and its monitor runs again, opening a newer case
-    link = page.locator("tr", has_text="shadow_plan_recorded").locator("a[href^='/cases/case-']").first
+    link = page.locator("tr", has_text="shadow plan recorded").locator("a[href^='/cases/case-']").first
     case_path = link.get_attribute("href") if link.count() else ""
     check(case_path != "", "the cases page lists the chain's case")
-    for path in ["/", "/runs", "/fleets", "/fleets/platform", "/autonomy", "/history", "/users", "/cases?all=1"] + ([case_path] if case_path else []):
+    for path in ["/", "/approvals", "/cases", "/runs", "/fleets", "/fleets/platform", "/fleets/platform?tab=stats", "/hosts",
+                 "/autonomy", "/history", "/account", "/users"] + ([case_path] if case_path else []):
         page.goto(BASE + path)
         page.evaluate("document.fonts.ready.then(() => 1)")
         wide = page.evaluate("document.documentElement.scrollWidth")
@@ -77,7 +82,8 @@ with sync_playwright() as pw:
     check("Inter" in faces and "JetBrains Mono" in faces, f"the self-hosted fonts load ({sorted(set(faces))})")
     check(not problems, f"no console errors or CSP violations ({problems[:3]})")
 
-    page.click("form.nav__signout button")
+    page.goto(BASE + "/account")
+    page.click("form[action='/signout'] button")
     page.wait_for_load_state()
     page.goto(BASE + "/")
     check(page.url.startswith(BASE + "/signin"), "sign out ends the session")

@@ -1,0 +1,90 @@
+{{define "decision"}}{{$d := .D}}<article class="decision" aria-labelledby="dec-{{$d.ID}}" data-decision>
+  <header class="decision__band">
+    <span class="chip chip--wait chip--bold">{{if $d.CLI}}needs the CLI{{else}}waiting for you{{end}}</span>
+    {{if $d.SelfPage}}<span class="exact">{{$d.ID}}</span>{{else}}<a href="{{$d.Href}}">{{$d.ID}}</a>{{end}}
+    <span class="soft">{{$d.KindLabel}}{{if $d.Fleet}} · {{$d.Fleet}}{{end}}</span>
+    <span class="waiting">waiting {{$d.Waiting}}</span>
+  </header>
+  <div class="decision__body">
+    <h3 id="dec-{{$d.ID}}">{{$d.Title}}</h3>
+
+    <section class="decision__part decision__run" aria-label="What would run">
+      <span class="decision__lbl">What would run</span>
+      <div class="well">
+        <span>{{$d.Action}}</span>
+        <span class="on">on {{$d.On}}: the host agent's allowlisted command for it (not shown yet, G10)</span>
+      </div>
+    </section>
+
+    <dl class="decision__facts">
+      <div><dt>Risk</dt><dd><span class="risk risk--{{$d.Risk}}">{{$d.Risk}}</span></dd></div>
+      <div><dt>If it goes wrong</dt><dd class="strong">{{$d.Reversible}}</dd></div>
+      <div><dt>Approve from</dt><dd class="strong">{{$d.Channel}}</dd></div>
+      <div><dt>Proposed by</dt><dd><span class="exact">{{$d.ProposedBy}}</span> · <a href="/runs/{{$d.Run}}">run</a></dd></div>
+    </dl>
+
+    <section class="decision__part" aria-label="Why it asks you">
+      <span class="decision__lbl">Why it asks you</span>
+      <ul>{{range $d.Why}}<li>{{.}}</li>{{end}}</ul>
+    </section>
+
+    {{if $d.Evidence}}<section class="decision__part" aria-label="Evidence">
+      <span class="decision__lbl">Evidence</span>
+      <ul>{{range $d.Evidence}}<li>{{.}}</li>{{end}}</ul>
+    </section>{{end}}
+
+    <section class="decision__part" aria-label="After you approve">
+      <span class="decision__lbl">After you approve</span>
+      <p>{{$d.After}}</p>
+    </section>
+
+    <div class="decision__hash">
+      <span>Plan <span class="exact">{{$d.Short}}</span>. Your answer binds to this plan only.</span>
+      <button class="btn" type="button" data-copy="{{$d.Hash}}" hidden>Copy the hash</button>
+    </div>
+
+    {{if .CanAct}}{{if $d.CLI}}
+    <div class="decision__cli">
+      <strong>Finish this at your laptop.</strong>
+      <span>{{$d.CLIWhy}} Run this in a terminal on the operator's machine:</span>
+      <code>{{$d.CLICommand}}</code>
+      <button class="btn" type="button" data-copy="{{$d.CLICommand}}" hidden>Copy the command</button>
+    </div>
+    {{else}}
+    <form id="approve-{{$d.ID}}" class="decision__form" method="post" action="/cases/{{$d.ID}}/approve" data-hold="Sending your approval of plan {{$d.Short}}">
+      {{template "csrf" .CSRF}}
+      <input type="hidden" name="plan" value="{{$d.Hash}}">
+      <input type="hidden" name="back" value="{{.Back}}">
+      <label class="field">Note, kept with your answer (optional)
+        <textarea name="note" rows="2" placeholder="For example: the backup is running late, leave it"></textarea>
+      </label>
+    </form>
+    <div class="decision__answers">
+      <button class="btn btn--primary" type="submit" form="approve-{{$d.ID}}">Approve plan {{$d.Short}}</button>
+      <details class="decision__rejectwrap">
+        <summary class="btn btn--reject">Reject…</summary>
+        <form class="decision__reject" method="post" action="/cases/{{$d.ID}}/reject" data-hold="Sending your rejection of plan {{$d.Short}}" role="group" aria-labelledby="rej-{{$d.ID}}">
+          {{template "csrf" .CSRF}}
+          <input type="hidden" name="back" value="{{.Back}}">
+          <strong id="rej-{{$d.ID}}">Reject plan {{$d.Short}}?</strong>
+          <span>Nothing runs. The case is escalated to you, and {{$d.ActionName}} goes back to shadow on its record.</span>
+          <label class="field field--strong">Why (kept with the case and shown to the worker)
+            <textarea name="reason" rows="2" required data-needs placeholder="For example: it keeps recurring, it needs a real fix"></textarea>
+          </label>
+          <div class="actions">
+            <button class="btn btn--stop" type="submit">Reject plan {{$d.Short}}</button>
+            <button class="btn" type="button" data-close hidden>Cancel</button>
+          </div>
+        </form>
+      </details>
+    </div>
+    <div class="decision__pending" role="status" data-pending hidden>
+      <span data-pending-text></span>
+      <button class="btn btn--undo" type="button" data-undo>Undo</button>
+      <button class="btn btn--link" type="button" data-send>Send now</button>
+    </div>
+    {{end}}{{else}}
+    <p class="meta">Your role reads this plan; an operator or an admin answers it.</p>
+    {{end}}
+  </div>
+</article>{{end}}

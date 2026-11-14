@@ -1,0 +1,59 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}{{$h := .Row}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/hosts">Hosts</a> / {{$h.Name}}</nav>
+  <section class="head">
+    <div>
+      <div class="actions"><span class="{{$h.Lamp}} lamp--big" aria-hidden="true"></span><h1>{{$h.Name}}</h1></div>
+      <p class="sub">{{$h.Status}} · agent last heard {{$h.Contact}} · host agent {{$h.Agent}} · autonomy cap {{$h.Cap}}</p>
+    </div>
+  </section>
+
+  <nav class="utabs" aria-label="Host views">
+    {{range .Tabs}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+  </nav>
+
+  {{if eq .Tab "over"}}
+  {{template "gap" (gap "G4" "CPU, memory, disk, network and the host's containers are not reported to flotilla yet; Grafana has them.")}}
+  {{end}}
+
+  {{if eq .Tab "agent"}}
+  <section class="card">
+    <dl class="facts facts--plain">
+      <div><dt>Version</dt><dd class="exact">{{$h.Agent}}</dd></div>
+      <div><dt>Clock offset</dt><dd>{{$h.ClockOffsetMS}} ms</dd></div>
+      <div><dt>Certificate</dt><dd>{{$h.Cert}}</dd></div>
+      <div><dt>Certificate fingerprint</dt><dd class="exact">{{short $h.CertSHA256 16}}</dd></div>
+      <div><dt>Audit chain head</dt><dd class="exact">{{if $h.ChainHead}}{{short $h.ChainHead 16}}{{else}}–{{end}}</dd></div>
+      <div><dt>Connected since</dt><dd>{{if $h.ConnectedAt}}{{$h.ConnectedAt}}{{else}}–{{end}}</dd></div>
+    </dl>
+    {{template "gap" (gap "G10" "The host's allowlist (each action's exact command and rate limit) lives in the host agent's own config and is not reported yet.")}}
+  </section>
+  {{end}}
+
+  {{if eq .Tab "exec"}}{{$t := .T}}
+  <div class="table-box">
+    <table class="data">
+      <thead><tr><th scope="col">When ▼</th><th scope="col">Execution</th><th scope="col">Case</th><th scope="col">Action</th><th scope="col">Approved by</th><th scope="col">Result</th></tr></thead>
+      <tbody>
+        {{range .Execs}}<tr>
+          <td data-label="When" class="nowrap">{{.SentAt}}</td>
+          <td data-label="Execution" class="exact">{{short .ID 20}}</td>
+          <td data-label="Case"><a class="exact" href="/cases/{{.CaseID}}">{{short .CaseID 24}}</a></td>
+          <td data-label="Action" class="exact">{{.Action}}</td>
+          <td data-label="Approved by">{{.Approved}}</td>
+          <td data-label="Result">{{.Status}}{{if .Detail}}: {{.Detail}}{{end}}</td>
+        </tr>{{else}}<tr><td colspan="6" class="empty">Nothing has run on {{$h.Name}}.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{template "pager" $t}}
+  {{end}}
+
+  {{if eq .Tab "logs"}}
+  {{template "gap" (gap "G5" "The host's logs are in VictoriaLogs, which flotillad does not read yet.")}}
+  {{end}}
+  {{end}}
+</main>
+{{template "foot" .}}

@@ -214,3 +214,9 @@ func (s *Server) holdLift(w http.ResponseWriter, r *http.Request, c Caller) {
 	err = s.LiftHold(r.Context(), c, "api", id, reason(r, w))
 	writeAction(w, err, 200, map[string]string{"id": r.PathValue("id"), "lifted_by": c.Name})
 }
+
+// HostCeiling and IncidentWindow are shown on the UI's Autonomy page as they are.
+const (
+	HostCeiling    = hostCeiling
+	IncidentWindow = incidentWindow
+)

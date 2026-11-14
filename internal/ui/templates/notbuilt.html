@@ -1,0 +1,14 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page page--narrow">
+  {{with .Data}}
+  <section class="head">
+    <div>
+      <h1>{{.Title}}</h1>
+      <p class="sub">This page is in the design (mockup v3) but not built: flotilla does not have its data yet.</p>
+    </div>
+  </section>
+  <p class="gap"><strong>What it needs:</strong> {{.Needs}}</p>
+  {{end}}
+</main>
+{{template "foot" .}}

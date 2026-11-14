@@ -231,6 +231,9 @@ var schema = []string{
 		ended_at TEXT
 	);
 	CREATE INDEX host_executions_case ON host_executions(case_id);`,
+	// The UI's Now (mockup v3): "since you looked" is the end of the user's previous visit (views.go).
+	`ALTER TABLE users ADD COLUMN now_seen_at TEXT NOT NULL DEFAULT '';
+	ALTER TABLE users ADD COLUMN now_since TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

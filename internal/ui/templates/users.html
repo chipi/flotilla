@@ -2,9 +2,13 @@
 {{template "nav" .}}
 <main class="page">
   {{$csrf := .CSRF}}{{$me := .User}}
-  <section>
-    <h1>Users</h1>
-    <p class="meta">Admins manage people. An admin also decides who and what this installation trusts; operators do the day's work; viewers read. There is always one admin.</p>
+  {{with .Data}}{{$admins := .Admins}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/account">Your account</a> / Users</nav>
+  <section class="head">
+    <div>
+      <h1>Users</h1>
+      <p class="sub">Admins manage people and decide who and what this installation trusts; operators do the day's work; viewers read. There is always one admin.</p>
+    </div>
   </section>
   <section class="card" aria-labelledby="add-h">
     <h2 id="add-h">Add a person</h2>
@@ -19,26 +23,28 @@
   </section>
   <div class="table-box">
     <table class="data">
-      <thead><tr><th>Name</th><th>Role</th><th>Added</th><th>State</th><th>Change</th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Added</th><th scope="col">State</th><th scope="col">Change</th></tr></thead>
       <tbody>
-        {{range .Data}}<tr>
+        {{range .Users}}{{$last := and (eq .Role "admin") (not .RevokedAt) (eq $admins 1)}}<tr>
           <td data-label="Name" class="exact">{{.Name}}{{if eq .Name $me}} (you){{end}}</td>
           <td data-label="Role">{{.Role}}</td>
-          <td data-label="Added">{{when .CreatedAt}}</td>
+          <td data-label="Added" class="nowrap">{{when .CreatedAt}}</td>
           <td data-label="State">{{if .RevokedAt}}<span class="chip chip--stop">revoked {{when .RevokedAt}}</span>{{else}}active{{end}}</td>
           <td data-label="Change" class="stack">{{if not .RevokedAt}}<div class="actions">
-            <form method="post" action="/users/{{.Name}}/role" class="form-inline">
+            {{if $last}}<span class="meta">The last admin: add another admin before changing this one's role or revoking them.</span>{{else}}
+            <form method="post" action="/users/{{.Name}}/role" class="form-row">
               {{template "csrf" $csrf}}
               <select name="role" aria-label="Role for {{.Name}}"><option value="viewer"{{if eq .Role "viewer"}} selected{{end}}>viewer</option><option value="operator"{{if eq .Role "operator"}} selected{{end}}>operator</option><option value="admin"{{if eq .Role "admin"}} selected{{end}}>admin</option></select>
-              <button class="btn" type="submit">Set role</button>
-            </form>
-            <form method="post" action="/users/{{.Name}}/rotate" class="form-inline">{{template "csrf" $csrf}}<button class="btn" type="submit">New token</button></form>
-            <form method="post" action="/users/{{.Name}}/sessions" class="form-inline">{{template "csrf" $csrf}}<button class="btn" type="submit">End sessions</button></form>
-            <form method="post" action="/users/{{.Name}}/revoke" class="form-inline">{{template "csrf" $csrf}}<button class="btn btn--stop" type="submit">Revoke</button></form>
+              <button class="btn btn--small" type="submit">Set role</button>
+            </form>{{end}}
+            <form method="post" action="/users/{{.Name}}/rotate" class="inline">{{template "csrf" $csrf}}<button class="btn btn--small" type="submit">New token</button></form>
+            <form method="post" action="/users/{{.Name}}/sessions" class="inline">{{template "csrf" $csrf}}<button class="btn btn--small" type="submit">End sessions</button></form>
+            {{if not $last}}<form method="post" action="/users/{{.Name}}/revoke" class="inline">{{template "csrf" $csrf}}<button class="btn btn--stop-outline" type="submit">Revoke</button></form>{{end}}
           </div>{{end}}</td>
         </tr>{{end}}
       </tbody>
     </table>
   </div>
+  {{end}}
 </main>
 {{template "foot" .}}

@@ -1,25 +1,49 @@
 {{template "head" .}}
 {{template "nav" .}}
 <main class="page">
-  <section>
-    <h1>Runs</h1>
-    {{with .Data}}{{if .Routine}}<p class="meta">Only <span class="exact">{{.Routine}}</span> · <a href="/runs">all routines</a></p>{{end}}{{end}}
+  {{with .Data}}{{$t := .T}}
+  <section class="head">
+    <div>
+      <h1>Runs</h1>
+      <p class="sub">Every routine execution. Click a run for what it reported, a routine for its block on its fleet's workflow, a case for its story.</p>
+    </div>
+    <nav class="pills" aria-label="Filter">
+      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
   </section>
+
+  <section class="filters" aria-label="Filters">
+    <form class="select" method="get" action="/runs">
+      {{range $t.Hidden "routine"}}<input type="hidden" name="{{.K}}" value="{{.V}}">{{end}}
+      <label for="routine-f">Routine</label>
+      <select id="routine-f" name="routine" data-autosubmit>
+        <option value="">All routines</option>
+        {{range .Routines}}<option value="{{.}}"{{if eq . $.Data.Routine}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      <noscript><button class="btn btn--quiet" type="submit">Show</button></noscript>
+    </form>
+    {{template "search" (search $t "runs" "Find" "run id, routine, trigger, status")}}
+  </section>
+
   <div class="table-box">
     <table class="data">
-      <thead><tr><th>Started</th><th>Routine</th><th>Status</th><th>Autonomy</th><th>Took</th><th>Spend</th><th>Trigger</th></tr></thead>
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}</tr></thead>
       <tbody>
-        {{range .Data.Runs}}<tr>
-          <td data-label="Started"><a href="/runs/{{.ID}}">{{when .StartedAt}}</a></td>
-          <td data-label="Routine"><a class="exact" href="/runs?routine={{.Routine}}">{{.Routine}}</a></td>
-          <td data-label="Status"><span class="{{chip .Status}}">{{.Status}}</span></td>
-          <td data-label="Autonomy">{{.Autonomy}}</td>
-          <td data-label="Took">{{secs .DurationS}}</td>
-          <td data-label="Spend">{{usd .SpendUSD}}</td>
-          <td data-label="Trigger">{{.Trigger}} · {{.Actor}}</td>
-        </tr>{{else}}<tr><td colspan="7">No runs yet.</td></tr>{{end}}
+        {{range .Rows}}<tr>
+          <td data-label="Run"><a class="exact" href="/runs/{{.ID}}">{{short .ID 36}}</a></td>
+          <td data-label="Routine"><a class="exact" href="/fleets/{{.Fleet}}?sel={{.Routine}}">{{.Routine}}</a></td>
+          <td data-label="Trigger" class="soft">{{.Trigger}}{{if ne .Actor "flotillad"}} · {{.Actor}}{{end}}</td>
+          <td data-label="Started" class="soft nowrap">{{.Start}}</td>
+          <td data-label="Took" class="soft nowrap">{{.Took}}</td>
+          <td data-label="Status"><span class="{{.Chip}}">{{.Status}}</span></td>
+          <td data-label="Cases">{{range .Cases}}<a class="exact" href="/cases/{{.}}">{{short . 24}}</a> {{else}}<span class="soft">–</span>{{end}}</td>
+          <td data-label="Cost" class="nowrap">{{.Cost}}</td>
+        </tr>{{else}}<tr><td colspan="8" class="empty">No run matches these filters.</td></tr>{{end}}
       </tbody>
     </table>
   </div>
+  {{template "pager" $t}}
+  <p class="footnote">The model each run called and its tokens are not recorded yet (G1), so the mockup's Model column is not drawn; the cost is the run's own record.</p>
+  {{end}}
 </main>
 {{template "foot" .}}

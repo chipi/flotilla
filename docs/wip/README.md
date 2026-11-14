@@ -19,6 +19,8 @@ prioritized task lists. Promotion targets:
   planned for 2026-11-14.
 - [Pipeline v1 plan](pipeline-v1-plan.md): cases, policy and the first write in shadow (ADR-0005, ADR-0006).
 - [Host agent plan](host-agent-plan.md): `flotilla-host` v1 (ADR-0006 §12), after pipeline v1.
+- [UI mockup parity](ui-mockup-parity.md): every mockup v3 element against what is built,
+  the overrides and the data gaps.
 - [Replay entry point](replay-entry-point.md): the versioned module evaluation projects call instead
   of patching internals (ADR-0013), agreed.
 

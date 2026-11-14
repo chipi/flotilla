@@ -9,16 +9,17 @@ import (
 	"github.com/chipi/flotilla/internal/sched"
 )
 
-// The freeze in the UI: an operator pulls it on Now; every page says so, for every role; lifting it needs a
-// reason, as through the API; a viewer has no control and is refused if they post the form anyway.
+// The freeze in the UI: an operator pulls it on Autonomy (Govern owns autonomy changes); every page's
+// autonomy pill says so, for every role; lifting it needs a reason, as through the API; a viewer has no
+// control and is refused if they post the form anyway.
 func TestFreezeInTheUI(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	op := f.addOperator()
 	ck, csrf := f.csrfOf(op)
-	_, home := f.do("GET", "/", ck, nil, nil)
-	if !strings.Contains(home, `action="/freeze"`) {
-		t.Fatal("an operator's Now page has no freeze control")
+	_, brakes := f.do("GET", "/autonomy", ck, nil, nil)
+	if !strings.Contains(brakes, `action="/freeze"`) {
+		t.Fatal("an operator's Autonomy page has no freeze control")
 	}
 	resp, _ := f.do("POST", "/freeze", ck, url.Values{"csrf": {csrf}}, nil)
 	if resp.StatusCode != 303 || !strings.Contains(resp.Header.Get("Location"), "msg=") {
@@ -28,15 +29,15 @@ func TestFreezeInTheUI(t *testing.T) {
 		t.Fatalf("the freeze event: %+v", ev[0])
 	}
 	vck, vcsrf := f.csrfOf(f.vic)
-	for _, p := range []string{"/", "/runs", "/fleets", "/fleets/triage", "/autonomy", "/history"} {
+	for _, p := range []string{"/", "/cases", "/runs", "/fleets", "/fleets/triage", "/hosts", "/autonomy", "/history", "/account"} {
 		_, body := f.do("GET", p, vck, nil, nil)
-		if !strings.Contains(body, "<strong>Frozen.</strong>") {
-			t.Errorf("%s: no freeze banner for a viewer", p)
+		if !strings.Contains(body, "autopill--frozen") || !strings.Contains(body, "Autonomy: frozen") {
+			t.Errorf("%s: the autonomy pill does not say frozen for a viewer", p)
 		}
 	}
-	_, vhome := f.do("GET", "/", vck, nil, nil)
-	if strings.Contains(vhome, `action="/unfreeze"`) {
-		t.Error("a viewer's Now page shows the unfreeze control")
+	_, vbrakes := f.do("GET", "/autonomy", vck, nil, nil)
+	if strings.Contains(vbrakes, `action="/unfreeze"`) || !strings.Contains(vbrakes, "Frozen by otto") {
+		t.Error("a viewer's Autonomy page shows the unfreeze control, or not who froze it")
 	}
 	resp, _ = f.do("POST", "/unfreeze", vck, url.Values{"csrf": {vcsrf}, "reason": {"r"}}, nil)
 	if !strings.Contains(resp.Header.Get("Location"), "err=") {
@@ -53,8 +54,8 @@ func TestFreezeInTheUI(t *testing.T) {
 	if !strings.Contains(resp.Header.Get("Location"), "msg=") {
 		t.Fatalf("lifting with a reason: %s", resp.Header.Get("Location"))
 	}
-	if _, body := f.do("GET", "/runs", vck, nil, nil); strings.Contains(body, "<strong>Frozen.</strong>") {
-		t.Error("the banner outlived the freeze")
+	if _, body := f.do("GET", "/runs", vck, nil, nil); strings.Contains(body, "autopill--frozen") || !strings.Contains(body, "Autonomy: normal") {
+		t.Error("the pill outlived the freeze")
 	}
 }
 

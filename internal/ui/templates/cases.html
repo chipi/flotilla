@@ -1,26 +1,57 @@
 {{template "head" .}}
 {{template "nav" .}}
 <main class="page">
-  {{with .Data}}
-  <section>
-    <h1>Cases</h1>
-    <p class="meta">Every problem is a case: detected, handed to the routine that acts on its kind, planned, decided by policy. {{if .All}}All cases, the most recently changed first · <a href="/cases">open ones only</a>{{else}}Open cases, the most recently changed first · <a href="/cases?all=1">closed ones too</a>{{end}}</p>
+  {{with .Data}}{{$t := .T}}
+  <section class="head">
+    <div>
+      <h1>Cases</h1>
+      <p class="sub">One case per problem, from detection to a verified result.</p>
+    </div>
+    <a href="/history?type=case+closed&amp;period=all">All past cases in History</a>
   </section>
+
+  <section class="scores" aria-label="Case volume">
+    {{range .Cards}}{{template "score" .}}{{end}}
+  </section>
+
+  <section class="filters" aria-label="Filters">
+    <nav class="pills" aria-label="Status">
+      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+    </nav>
+    {{template "search" (search $t "cases" "Filter" "id, problem, kind, target")}}
+  </section>
+
+  {{if .Pivots}}<section class="pivots" aria-label="Pivot">
+    <a class="btn btn--back" href="{{.Back}}">← Back</a>
+    <span class="pivots__text">Showing cases where</span>
+    {{range .Pivots}}<span class="pivot">{{.Field}} = <strong>{{.Value}}</strong><a href="{{.Remove}}" aria-label="Remove this filter">×</a></span>{{end}}
+    <a class="clear" href="{{.Clear}}">Clear all</a>
+  </section>{{end}}
+
   <div class="table-box">
-    <table class="data">
-      <thead><tr><th>Case</th><th>Kind</th><th>Target</th><th>Status</th><th>Since</th><th>Held by</th></tr></thead>
+    <table class="data cases">
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}</tr></thead>
       <tbody>
-        {{range .Cases}}<tr>
-          <td data-label="Case"><a class="exact" href="/cases/{{.ID}}">{{.ID}}</a></td>
-          <td data-label="Kind" class="exact">{{.Kind}}</td>
-          <td data-label="Target" class="exact">{{.Target}}</td>
-          <td data-label="Status"><span class="{{chip .Status}}">{{.Status}}</span>{{if .Resolution}} <span class="meta">{{.Resolution}}</span>{{end}}</td>
-          <td data-label="Since">{{when .StatusAt}}</td>
-          <td data-label="Held by">{{if .Holder}}<span class="exact">{{.Holder}}</span>{{else}}–{{end}}</td>
-        </tr>{{else}}<tr><td colspan="6">{{if .All}}No cases yet.{{else}}No open cases.{{end}}</td></tr>{{end}}
+        {{range .Rows}}<tr>
+          <td data-label="Case" class="nowrap"><span class="idbox">
+            <span class="fleet-icon fleet-icon--{{.Fleet}}" role="img" aria-label="{{if .FleetName}}{{.FleetName}} fleet{{else}}no fleet{{end}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{.Icon}}"></path></svg></span>
+            <span><a class="exact" href="/cases/{{.ID}}">{{.ID}}</a><small>{{if .FleetName}}{{.FleetName}}{{else}}–{{end}}</small></span>
+          </span></td>
+          <td data-label="Status" class="nowrap"><a class="{{.Chip}}" href="{{pivot $t "status" .Status}}">{{.StatusText}}</a></td>
+          <td data-label="Problem">{{.Title}}</td>
+          <td data-label="Kind"><a class="tag tag--kind" href="{{pivot $t "kind" .Kind}}">{{.Kind}}</a></td>
+          <td data-label="Target"><a class="tag tag--target" href="{{pivot $t "target" .Target}}">{{.Target}}</a></td>
+          <td data-label="Last event" class="nowrap soft">{{.LastWhen}} · {{.LastWhat}}</td>
+        </tr>{{else}}<tr><td colspan="6" class="empty">{{if $.Data.Empty}}{{$.Data.Empty}}{{else}}No case matches these filters.{{end}}</td></tr>{{end}}
       </tbody>
     </table>
   </div>
+  {{if .Openers}}<section class="card" aria-labelledby="openers-h">
+    <h2 id="openers-h">The routines that open cases</h2>
+    <ul class="changes">{{range .Openers}}<li><span>{{.}}</span></li>{{end}}</ul>
+  </section>{{end}}
+  {{template "pager" $t}}
+  <p class="footnote">{{.Shown}} of {{.Total}} cases. Click a status, kind or target tag to see every case with that value.</p>
   {{end}}
 </main>
 {{template "foot" .}}

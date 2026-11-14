@@ -1,25 +1,37 @@
 {{template "head" .}}
 {{template "nav" .}}
-<main class="page page--narrow">
-  {{with .Data}}
-  <section>
-    <p class="meta"><a href="/runs">Runs</a> / <span class="exact">{{.ID}}</span></p>
-    <h1><span class="exact">{{.Routine}}</span> <span class="{{chip .Status}}">{{.Status}}</span></h1>
+<main class="page">
+  {{with .Data}}{{$r := .Row}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/runs">Runs</a> / <span class="exact">{{$r.ID}}</span></nav>
+  <section class="head">
+    <div>
+      <h1>run · <a class="exact" href="/fleets/{{$r.Fleet}}?sel={{$r.Routine}}">{{$r.Routine}}</a></h1>
+      <p class="meta">{{$r.Start}} · {{$r.Took}} · <span class="{{$r.Chip}}">{{$r.Status}}</span>{{range $r.Cases}} · case <a class="exact" href="/cases/{{.}}">{{.}}</a>{{end}} · autonomy {{$r.Autonomy}} · {{$r.Cost}} · {{$r.Trigger}} by {{$r.Actor}}</p>
+    </div>
   </section>
-  <dl class="facts card">
-    <div><dt>Started</dt><dd>{{when .StartedAt}}</dd></div>
-    <div><dt>Ended</dt><dd>{{when .EndedAt}}</dd></div>
-    <div><dt>Took</dt><dd>{{secs .DurationS}}</dd></div>
-    <div><dt>Autonomy</dt><dd>{{.Autonomy}}</dd></div>
-    <div><dt>Trigger</dt><dd>{{.Trigger}} by {{.Actor}}</dd></div>
-    <div><dt>Spend</dt><dd>{{usd .SpendUSD}}</dd></div>
-    <div><dt>Spec</dt><dd class="exact">{{short .SpecHash 12}}</dd></div>
-    <div><dt>Trace id</dt><dd class="exact">{{if .TraceID}}{{.TraceID}}{{else}}–{{end}}</dd></div>
-  </dl>
-  <section class="card" aria-labelledby="detail-h">
-    <h2 id="detail-h">What it reported</h2>
-    {{if .Detail}}<pre class="well run-detail">{{.Detail}}</pre>{{else}}<p class="meta">Nothing.</p>{{end}}
-  </section>
+
+  <div class="split split--tight">
+    <section class="main card" aria-labelledby="rep-h">
+      <h2 id="rep-h">What it reported</h2>
+      {{template "gap" (gap "G2" "The span waterfall needs flotillad to read the run's trace from VictoriaTraces; until then this is the run's own report.")}}
+      {{if .Detail}}<pre class="log">{{.Detail}}</pre>{{else}}<p class="panel-note">The run reported nothing.</p>{{end}}
+    </section>
+    <aside class="aside aside--narrow">
+      <section class="card" aria-labelledby="facts-h">
+        <h2 id="facts-h">The run</h2>
+        <dl class="facts facts--plain">
+          <div><dt>Run id</dt><dd class="exact">{{$r.ID}}</dd></div>
+          <div><dt>Started</dt><dd>{{$r.Start}}</dd></div>
+          <div><dt>Ended</dt><dd>{{.Ended}}</dd></div>
+          <div><dt>Took</dt><dd>{{$r.Took}}</dd></div>
+          <div><dt>Autonomy</dt><dd>{{$r.Autonomy}}</dd></div>
+          <div><dt>Cost</dt><dd>{{$r.Cost}}</dd></div>
+          <div><dt>Spec</dt><dd class="exact">{{short $r.SpecHash 12}}</dd></div>
+          <div><dt>Trace id</dt><dd class="exact">{{if $r.TraceID}}{{$r.TraceID}}{{else}}–{{end}}</dd></div>
+        </dl>
+      </section>
+    </aside>
+  </div>
   {{end}}
 </main>
 {{template "foot" .}}

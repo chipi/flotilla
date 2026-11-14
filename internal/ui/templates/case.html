@@ -1,47 +1,86 @@
 {{template "head" .}}
 {{template "nav" .}}
-<main class="page page--narrow">
-  {{with .Data}}{{with .Case}}
-  <section>
-    <p class="meta"><a href="/cases">Cases</a> / <span class="exact">{{.ID}}</span></p>
-    <h1><span class="exact">{{.Kind}}</span> on <span class="exact">{{.Target}}</span> <span class="{{chip .Status}}">{{.Status}}</span></h1>
-  </section>
-  <dl class="facts card">
-    <div><dt>Status</dt><dd>{{.Status}}{{if .Resolution}}: {{.Resolution}}{{end}}</dd></div>
-    <div><dt>Since</dt><dd>{{when .StatusAt}}</dd></div>
-    <div><dt>Opened</dt><dd>{{when .OpenedAt}}</dd></div>
-    <div><dt>Held by</dt><dd>{{if .Holder}}<span class="exact">{{.Holder}}</span>{{else}}nobody{{end}}</dd></div>
-    <div><dt>Project</dt><dd>{{if .Project}}{{.Project}}{{else}}–{{end}}</dd></div>
-    <div><dt>Key</dt><dd class="exact">{{.CanonicalKey}}</dd></div>
-  </dl>
-  {{end}}
-  <section class="card" aria-labelledby="plans-h">
-    <h2 id="plans-h">Plans</h2>
-    {{range .Plans}}
-    <div class="plan">
-      <p><span class="exact">{{.Action}}</span>{{range $k, $v := .Params}} <span class="exact">{{$k}}={{$v}}</span>{{end}}
-        <span class="{{chip .Outcome}}">{{.Outcome}}</span>
-        {{if .Would}}<span class="meta">would have been</span> <span class="{{chip .Would}}">{{.Would}}</span>{{end}}</p>
-      <dl class="facts">
-        <div><dt>Decided</dt><dd>{{when .DecidedAt}}</dd></div>
-        <div><dt>Autonomy</dt><dd>{{.Autonomy}}</dd></div>
-        <div><dt>Run</dt><dd><a class="exact" href="/runs/{{.RunID}}">{{short .RunID 40}}</a></dd></div>
-        <div><dt>Plan hash</dt><dd class="exact">{{short .PlanHash 16}}</dd></div>
-      </dl>
-      <ol class="reasons">{{range .Reasons}}<li>{{.}}</li>{{end}}</ol>
+<main class="page page--case">
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
+  {{with .Data}}{{$c := .Row}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/cases">Cases</a> / <span class="exact">{{$c.ID}}</span></nav>
+  <section class="head">
+    <div>
+      <h1>{{$c.Title}}</h1>
+      <p class="meta"><span class="exact">{{$c.ID}}</span> · opened {{.Opened}}{{if $c.FleetName}} · {{$c.FleetName}} fleet{{end}}{{if .Routine}}, routine <a class="exact" href="/fleets/{{$c.Fleet}}?sel={{.Routine}}">{{.Routine}}</a>{{end}} · <span class="{{$c.Chip}}">{{$c.StatusText}}</span>{{if $c.Resolution}} {{$c.Resolution}}{{end}}</p>
     </div>
-    {{else}}<p class="meta">No plan yet.</p>{{end}}
   </section>
-  <section class="card" aria-labelledby="timeline-h">
-    <h2 id="timeline-h">Timeline</h2>
-    <ol class="timeline">
-      {{range .Events}}<li>
-        <p><span class="meta">{{when .At}}</span> <span class="exact">{{.Kind}}</span>{{if .To}} <span class="meta">{{if .From}}{{.From}} → {{end}}{{.To}}</span>{{end}}</p>
-        <p class="meta">{{.Actor}}{{if .By}} · as {{.By}}{{end}}</p>
-        {{if .Detail}}<p class="timeline__detail">{{.Detail}}</p>{{end}}
-      </li>{{end}}
-    </ol>
-  </section>
+
+  {{with .Decision}}{{template "decision" (decisionCtx . $csrf $act (printf "/cases/%s" $c.ID))}}{{end}}
+
+  <div class="split split--tight">
+    <section class="main card card--edge" aria-labelledby="tl">
+      <h2 id="tl">Timeline</h2>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="dot" aria-hidden="true"></span>flotilla or code</li>
+        <li><span class="dot dot--agent" aria-hidden="true"></span>an agent step</li>
+        <li><span class="dot dot--you" aria-hidden="true"></span>waiting for you</li>
+      </ul>
+      <ol class="timeline">
+        {{range .Events}}<li>
+          <div class="timeline__rail"><span class="{{.Dot}}" aria-hidden="true"></span><span class="line" aria-hidden="true"></span></div>
+          <div class="timeline__body">
+            <div class="timeline__head">
+              <strong>{{.What}}</strong>
+              <span class="when">{{.When}} · {{.Actor}}</span>
+              {{if .Run}}<a href="/runs/{{.Run}}">run {{short .Run 28}}</a>{{end}}
+            </div>
+            {{if .Detail}}<span class="timeline__text">{{.Detail}}</span>{{end}}
+          </div>
+        </li>{{end}}
+      </ol>
+      {{if .CanFix}}<div class="actions">
+        <details class="decision__rejectwrap">
+          <summary class="btn btn--small">Hand back to its routine…</summary>
+          <form class="confirm" method="post" action="/cases/{{$c.ID}}/reassign">
+            {{template "csrf" $csrf}}
+            <strong>Hand {{$c.ID}} back to its routine?</strong>
+            <p>The target is released, and the routine checks and plans again.</p>
+            <label class="field field--strong">Why (kept with the case)<textarea name="reason" rows="2" required data-needs></textarea></label>
+            <div class="actions"><button class="btn btn--blue" type="submit">Hand it back</button></div>
+          </form>
+        </details>
+        <details class="decision__rejectwrap">
+          <summary class="btn btn--small">Close it…</summary>
+          <form class="confirm" method="post" action="/cases/{{$c.ID}}/close">
+            {{template "csrf" $csrf}}
+            <strong>Close {{$c.ID}}?</strong>
+            <p>The target is released and the case is closed as resolved by you.</p>
+            <label class="field field--strong">Why (kept with the case)<textarea name="reason" rows="2" required data-needs></textarea></label>
+            <div class="actions"><button class="btn btn--blue" type="submit">Close the case</button></div>
+          </form>
+        </details>
+      </div>{{end}}
+    </section>
+
+    <aside class="aside aside--narrow">
+      <section class="card card--edge" aria-labelledby="pol">
+        <h2 id="pol">Why policy {{if eq $c.Status "awaiting_approval"}}asked{{else}}decided{{end}}</h2>
+        {{if .Plan}}
+        <p class="panel-note">The autonomy used is the lowest of these:</p>
+        {{range .Levels}}<div class="kv kv--tight"><span>{{.What}}</span><span class="level-text level-text--{{.Level}}">{{.Level}}</span></div>{{end}}
+        <p class="panel-note">Plan <span class="exact">{{hash .Plan.PlanHash}}</span>, decided {{.Decided}}. Policy's result: <strong>{{.Result}}</strong>. Every reason is kept with the plan:</p>
+        <ul class="changes">{{range .Plan.Reasons}}<li><span>{{.}}</span></li>{{end}}</ul>
+        {{if .Record}}<a href="/autonomy">{{.Record}}</a>{{end}}
+        {{else}}
+        <p class="panel-note">No plan yet: policy has not decided anything on this case.</p>
+        {{end}}
+      </section>
+      <section class="card card--edge" aria-labelledby="looked">
+        <h2 id="looked">What the agent read</h2>
+        {{template "gap" (gap "G7" "The harness does not record the memory and sources a run read, or whether they were trusted.")}}
+      </section>
+      <section class="card card--edge" aria-labelledby="fb">
+        <h2 id="fb">After the check: was the diagnosis right?</h2>
+        {{template "gap" (gap "G8" "There is no place to keep your verdict on a diagnosis yet, so the Right / Wrong / note answers are not offered.")}}
+      </section>
+    </aside>
+  </div>
   {{end}}
 </main>
 {{template "foot" .}}

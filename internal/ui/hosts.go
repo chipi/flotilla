@@ -1,0 +1,180 @@
+package ui
+
+import (
+	"fmt"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/store"
+)
+
+type hostRow struct {
+	store.Host
+	Status, Lamp, Cap, Agent, Cert, Exec24, Contact string
+	Execs                                           int
+}
+
+func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
+	hosts, err := u.API.Store.Hosts(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	execs, err := u.API.Store.HostExecutionsSince(r.Context(), u.clockNow().Add(-24*time.Hour).UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	n := map[string]int{}
+	for _, x := range execs {
+		n[x.Host]++
+	}
+	out := make([]hostRow, 0, len(hosts))
+	for _, h := range hosts {
+		row := hostRow{Host: h, Cap: api.HostCeiling, Agent: orDash(h.Version), Execs: n[h.Name], Exec24: fmt.Sprint(n[h.Name])}
+		switch {
+		case h.RevokedAt != nil:
+			row.Status, row.Lamp, row.Cap, row.Cert = "revoked", "lamp lamp--idle", "–", "revoked "+u.clock(*h.RevokedAt)
+		case h.EnrolledAt == nil:
+			row.Status, row.Lamp, row.Cert = "not enrolled", "lamp lamp--idle", "–"
+		case h.Connected:
+			row.Status, row.Lamp = "connected", "lamp"
+		default:
+			row.Status, row.Lamp = "not connected", "lamp lamp--stop"
+		}
+		if row.Cert == "" {
+			if t, ok := parseTime(h.CertNotAfter); ok {
+				row.Cert = "expires in " + age(time.Until(t))
+				if time.Until(t) < 0 {
+					row.Cert = "expired " + u.clock(h.CertNotAfter)
+				}
+			} else {
+				row.Cert = "–"
+			}
+		}
+		row.Contact = "never"
+		if h.LastContact != "" {
+			row.Contact = u.ago(h.LastContact) + " ago"
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+type hostsData struct {
+	T     tableQ
+	Tabs  []pillLink
+	Heads []thCell
+	Rows  []hostRow
+	All   int
+}
+
+var hostSorts = map[string]bool{"host": true, "status": true, "exec": true, "agent": true, "cert": true}
+
+func (u *Server) hostsPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+	rows, err := u.hostRows(r)
+	if err != nil {
+		http.Error(w, "hosts failed", 500)
+		return
+	}
+	t := readTable(r, "host", false, func(c string) bool { return hostSorts[c] })
+	st, q := t.Get("status"), strings.ToLower(t.Get("q"))
+	d := hostsData{T: t, All: len(rows)}
+	count := map[string]int{}
+	var out []hostRow
+	for _, h := range rows {
+		count[h.Status]++
+		if (st == "" || h.Status == st) && (q == "" || strings.Contains(strings.ToLower(h.Name+" "+h.Version), q)) {
+			out = append(out, h)
+		}
+	}
+	for _, p := range [][2]string{{"", "All"}, {"connected", "Connected"}, {"not connected", "Not connected"}, {"revoked", "Revoked"}} {
+		n := count[p[0]]
+		if p[0] == "" {
+			n = len(rows)
+		}
+		d.Tabs = append(d.Tabs, pillLink{Label: p[1], Href: t.With("status", p[0]), N: n, HasN: true, On: st == p[0]})
+	}
+	key := func(h hostRow) string {
+		switch t.Sort {
+		case "status":
+			return h.Status
+		case "exec":
+			return fmt.Sprintf("%08d", h.Execs)
+		case "agent":
+			return h.Version
+		case "cert":
+			return h.CertNotAfter
+		}
+		return h.Name
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if t.Desc {
+			return key(out[i]) > key(out[j])
+		}
+		return key(out[i]) < key(out[j])
+	})
+	d.Rows = window(out, &t)
+	d.T = t
+	d.Heads = []thCell{t.Th("host", "Host"), t.Th("status", "Status"), t.Plain("Roles"), t.Plain("Autonomy cap"), t.Plain("CPU · mem · disk"),
+		t.Th("exec", "Executions 24h"), t.Th("agent", "Host agent"), t.Th("cert", "Certificate")}
+	u.render(w, "hosts.html", 200, u.pageFor(s, "Hosts", "Hosts", r, d))
+}
+
+type hostData struct {
+	Row   hostRow
+	Tab   string
+	Tabs  []pillLink
+	Execs []store.HostExecution
+	T     tableQ
+	Clock func(string) string
+}
+
+func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+	rows, err := u.hostRows(r)
+	if err != nil {
+		http.Error(w, "hosts failed", 500)
+		return
+	}
+	var row *hostRow
+	for i := range rows {
+		if rows[i].Name == r.PathValue("name") {
+			row = &rows[i]
+		}
+	}
+	if row == nil {
+		http.NotFound(w, r)
+		return
+	}
+	tab := r.URL.Query().Get("tab")
+	switch tab {
+	case "agent", "exec", "logs":
+	default:
+		tab = "over"
+	}
+	base := "/hosts/" + row.Name
+	d := hostData{Row: *row, Tab: tab}
+	for _, p := range [][2]string{{"over", "Observability"}, {"agent", "Host agent and allowlist"}, {"exec", "Executions"}, {"logs", "Logs"}} {
+		href := base
+		if p[0] != "over" {
+			href += "?tab=" + p[0]
+		}
+		d.Tabs = append(d.Tabs, pillLink{Label: p[1], Href: href, On: tab == p[0]})
+	}
+	if tab == "exec" {
+		xs, err := u.API.Store.HostExecutions(r.Context(), row.Name)
+		if err != nil {
+			http.Error(w, "executions failed", 500)
+			return
+		}
+		sort.Slice(xs, func(i, j int) bool { return xs[i].SentAt > xs[j].SentAt })
+		t := readTable(r, "", false, func(string) bool { return false })
+		d.Execs = window(xs, &t)
+		d.T = t
+		for i := range d.Execs {
+			d.Execs[i].SentAt = u.clock(d.Execs[i].SentAt)
+		}
+	}
+	u.render(w, "host.html", 200, u.pageFor(s, "Host "+row.Name, "Hosts", r, d))
+}

@@ -1,63 +1,46 @@
 package ui
 
 import (
-	"errors"
+	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/store"
 )
 
-// The pages of slice 1 (ADR-0014): every action goes through the api.Server functions the API uses,
-// with the signed-in person as the caller, so the table and every rule apply the same way.
-
-type navPage struct {
-	Label, Href string
-	Current     bool
-}
-
-type navGroup struct {
-	Label, Href string
-	Current     bool
-	Pages       []navPage
-}
-
-// nav is the four groups (DESIGN.md: Decide, Watch, Govern, Record) with the pages that exist today.
-func nav(active, role string) []navGroup {
-	groups := []navGroup{
-		{Label: "Decide", Pages: []navPage{{Label: "Now", Href: "/"}, {Label: "Cases", Href: "/cases"}}},
-		{Label: "Watch", Pages: []navPage{{Label: "Runs", Href: "/runs"}, {Label: "Fleets", Href: "/fleets"}}},
-		{Label: "Govern", Pages: []navPage{{Label: "Autonomy", Href: "/autonomy"}}},
-		{Label: "Record", Pages: []navPage{{Label: "History", Href: "/history"}}},
-	}
-	if role == api.RoleAdmin {
-		groups[2].Pages = append(groups[2].Pages, navPage{Label: "Users", Href: "/users"})
-	}
-	for i := range groups {
-		groups[i].Href = groups[i].Pages[0].Href
-		for j := range groups[i].Pages {
-			if groups[i].Pages[j].Label == active {
-				groups[i].Pages[j].Current, groups[i].Current = true, true
-			}
-		}
-	}
-	return groups
-}
+// The pages, built to mockup v3 (docs/wip/ui-mockup-parity.md). Every action goes through the
+// api.Server functions the API uses, with the signed-in person as the caller, so the table and every
+// rule apply the same way.
 
 func caller(s *store.Session) api.Caller {
 	return api.Caller{Name: "user:" + s.User, Role: s.Role, User: true}
 }
 
+// waitingCount is what the badge, Now's headline and Approvals count: cases a person must answer.
+func (u *Server) waitingCount(ctx context.Context) int {
+	n := 0
+	for _, st := range []string{cases.AwaitingApproval, cases.Escalated} {
+		cs, err := u.API.Store.Cases(ctx, store.CaseFilter{Status: st, Limit: 10000})
+		if err == nil {
+			n += len(cs)
+		}
+	}
+	return n
+}
+
 func (u *Server) pageFor(s *store.Session, title, active string, r *http.Request, data any) page {
-	p := page{Title: title, User: s.User, Role: s.Role, CSRF: s.CSRF, Active: active, Nav: nav(active, s.Role),
+	p := page{Title: title, User: s.User, Role: s.Role, CSRF: s.CSRF, Active: active,
+		Nav:    nav(active, u.waitingCount(r.Context())),
 		CanAct: s.Role == api.RoleOperator || s.Role == api.RoleAdmin, IsAdmin: s.Role == api.RoleAdmin,
-		Msg: r.URL.Query().Get("msg"), Error: r.URL.Query().Get("err"), Data: data}
+		Msg: r.URL.Query().Get("msg"), Error: r.URL.Query().Get("err"), Data: data, Version: u.API.Version,
+		Initial: strings.ToUpper(firstRune(s.User))}
 	fr, err := u.API.FreezeState(r.Context())
 	if err != nil {
 		u.Log.Error("reading the freeze", "err", err)
@@ -65,6 +48,13 @@ func (u *Server) pageFor(s *store.Session, title, active string, r *http.Request
 	}
 	p.Freeze = fr
 	return p
+}
+
+func firstRune(s string) string {
+	for _, r := range s {
+		return string(r)
+	}
+	return "?"
 }
 
 // done redirects back with the action's outcome, as a short message on the page.
@@ -79,7 +69,11 @@ func done(w http.ResponseWriter, r *http.Request, back string, err error, ok str
 	} else {
 		q.Set("msg", ok)
 	}
-	http.Redirect(w, r, back+"?"+q.Encode(), http.StatusSeeOther)
+	sep := "?"
+	if strings.Contains(back, "?") {
+		sep = "&"
+	}
+	http.Redirect(w, r, back+sep+q.Encode(), http.StatusSeeOther)
 }
 
 // safeBack keeps redirects on this site's own pages.
@@ -90,342 +84,344 @@ func safeBack(v, fallback string) string {
 	return fallback
 }
 
+// --- Now ---
+
+type wrongItem struct{ What, Detail, Go, Href string }
+
+type handledRow struct {
+	Time, Text, Href, Outcome string
+	OK                        bool
+}
+
+type hostNode struct {
+	Name, Roles, Note string
+	Up                bool
+}
+
 type nowData struct {
-	NeedYou   []store.Case // escalated, or awaiting an operator's approval
-	Wrong     []api.RoutineStatus
-	Fine      int
-	Failed    []store.Run
-	Workers   map[string]any
-	Unhealthy []string
+	DateLine, Headline string
+	Wrong              []wrongItem
+	Normal             string
+	First              *decision
+	Needs              []caseRow
+	PlansLink          string
+	Handled            []handledRow
+	HandledTotal       int
+	HandledWhen        string
+	Hosts              []hostNode
+	Spend24            string
+	Fleets             []fleetSum
 }
 
 func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	routines, workers, err := u.API.Status(r.Context())
+	ctx := r.Context()
+	now := u.clockNow()
+	since, err := u.API.Store.SeenNow(ctx, s.User)
 	if err != nil {
-		http.Error(w, "status failed", 500)
-		return
+		u.Log.Error("seen now", "err", err)
 	}
-	d := nowData{Workers: workers}
-	for _, x := range routines {
-		if x.Enabled && (x.Stale || x.Paused || x.Stopped) {
-			d.Wrong = append(d.Wrong, x)
-		} else if x.Enabled {
-			d.Fine++
-		}
+	sinceT, known := parseTime(since)
+	if !known {
+		sinceT = now.Add(-24 * time.Hour)
 	}
-	for name, h := range workers {
-		if m, ok := h.(map[string]any); ok && m["ok"] != true {
-			d.Unhealthy = append(d.Unhealthy, name)
-		}
-	}
-	sort.Strings(d.Unhealthy)
-	for _, st := range []string{cases.Escalated, cases.AwaitingApproval} {
-		cs, err := u.API.Store.Cases(r.Context(), store.CaseFilter{Status: st, Limit: 50})
-		if err != nil {
-			http.Error(w, "cases failed", 500)
-			return
-		}
-		d.NeedYou = append(d.NeedYou, cs...)
-	}
-	runs, _ := u.API.Store.Runs(r.Context(), "", 200)
-	cut := u.API.Sched.Now().Add(-24 * time.Hour).Format(time.RFC3339)
-	for _, x := range runs {
-		if x.StartedAt >= cut && (x.Status == store.StatusError || x.Status == store.StatusTimeout || x.Status == store.StatusInterrupted) {
-			d.Failed = append(d.Failed, x)
-		}
-	}
-	u.render(w, "now.html", 200, u.pageFor(s, "Now", "Now", r, d))
-}
-
-func (u *Server) runsPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	routine := r.URL.Query().Get("routine")
-	runs, err := u.API.Store.Runs(r.Context(), routine, 100)
-	if err != nil {
-		http.Error(w, "runs failed", 500)
-		return
-	}
-	u.render(w, "runs.html", 200, u.pageFor(s, "Runs", "Runs", r, map[string]any{"Runs": runs, "Routine": routine}))
-}
-
-func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	run, err := u.API.Store.Run(r.Context(), r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "run failed", 500)
-		return
-	}
-	if run == nil {
-		http.NotFound(w, r)
-		return
-	}
-	u.render(w, "run.html", 200, u.pageFor(s, "Run "+run.ID, "Runs", r, run))
-}
-
-type fleetView struct {
-	Name     string
-	Stopped  bool
-	Routines []api.RoutineStatus
-}
-
-func (u *Server) fleets(r *http.Request) ([]fleetView, error) {
-	routines, _, err := u.API.Status(r.Context())
-	if err != nil {
-		return nil, err
-	}
-	by := map[string]*fleetView{}
-	var order []string
-	for _, x := range routines {
-		f := by[x.Fleet]
-		if f == nil {
-			f = &fleetView{Name: x.Fleet, Stopped: x.Stopped}
-			by[x.Fleet] = f
-			order = append(order, x.Fleet)
-		}
-		f.Routines = append(f.Routines, x)
-	}
-	sort.Strings(order)
-	var out []fleetView
-	for _, n := range order {
-		out = append(out, *by[n])
-	}
-	return out, nil
-}
-
-func (u *Server) fleetsPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	fs, err := u.fleets(r)
-	if err != nil {
-		http.Error(w, "status failed", 500)
-		return
-	}
-	u.render(w, "fleets.html", 200, u.pageFor(s, "Fleets", "Fleets", r, fs))
-}
-
-func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	fs, err := u.fleets(r)
-	if err != nil {
-		http.Error(w, "status failed", 500)
-		return
-	}
-	for _, f := range fs {
-		if f.Name == r.PathValue("fleet") {
-			u.render(w, "fleet.html", 200, u.pageFor(s, "Fleet "+f.Name, "Fleets", r, f))
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
-
-type autonomyData struct {
-	Fleets  []fleetView
-	Actions []api.ActionStatus
-}
-
-func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	fs, err := u.fleets(r)
-	if err != nil {
-		http.Error(w, "status failed", 500)
-		return
-	}
-	as, err := u.API.Actions(r.Context())
-	if err != nil {
-		http.Error(w, "actions failed", 500)
-		return
-	}
-	u.render(w, "autonomy.html", 200, u.pageFor(s, "Autonomy", "Autonomy", r, autonomyData{Fleets: fs, Actions: as}))
-}
-
-// actionAutonomy promotes or demotes an action from the Autonomy page: the same rules as the API's.
-func (u *Server) actionAutonomy(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	name, level := r.PathValue("name"), r.PostFormValue("autonomy")
-	err := u.API.SetActionAutonomy(r.Context(), caller(s), "ui", name, level, r.PostFormValue("reason"))
-	done(w, r, "/autonomy", err, name+" is now "+level+".")
-}
-
-// routineAction is run, pause, resume or autonomy on a routine, from a form.
-func (u *Server) routineAction(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	id := r.PathValue("fleet") + "/" + r.PathValue("routine")
-	back := safeBack(r.PostFormValue("back"), "/fleets/"+r.PathValue("fleet"))
-	reason := r.PostFormValue("reason")
-	var err error
-	var ok string
-	switch r.PathValue("action") {
-	case "run":
-		err, ok = u.API.RunNow(r.Context(), caller(s), "ui", id), "Started "+id+"."
-	case "pause":
-		err, ok = u.API.SetPaused(r.Context(), caller(s), "ui", id, true, ""), "Paused "+id+"."
-	case "resume":
-		err, ok = u.API.SetPaused(r.Context(), caller(s), "ui", id, false, reason), "Resumed "+id+"."
-	case "autonomy":
-		level := r.PostFormValue("autonomy")
-		err, ok = u.API.SetAutonomy(r.Context(), caller(s), "ui", id, level, reason), id+" is now at "+level+"."
-	default:
-		http.NotFound(w, r)
-		return
-	}
-	done(w, r, back, err, ok)
-}
-
-func (u *Server) fleetAction(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	f := r.PathValue("fleet")
-	back := safeBack(r.PostFormValue("back"), "/fleets/"+f)
-	var err error
-	var ok string
-	switch r.PathValue("action") {
-	case "stop":
-		err, ok = u.API.SetStopped(r.Context(), caller(s), "ui", f, true, ""), "STOPped fleet "+f+"."
-	case "start":
-		err, ok = u.API.SetStopped(r.Context(), caller(s), "ui", f, false, r.PostFormValue("reason")), "Started fleet "+f+"."
-	default:
-		http.NotFound(w, r)
-		return
-	}
-	done(w, r, back, err, ok)
-}
-
-// freezeAction pulls the freeze, or lifts it with a reason; both from the Now page.
-func (u *Server) freezeAction(frozen bool) func(http.ResponseWriter, *http.Request, *store.Session, string) {
-	return func(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-		ok := "Frozen: every routine runs at shadow until the freeze is lifted."
-		if !frozen {
-			ok = "The freeze is lifted: each routine runs at its own autonomy again."
-		}
-		done(w, r, "/", u.API.SetFrozen(r.Context(), caller(s), "ui", frozen, r.PostFormValue("reason")), ok)
-	}
-}
-
-type casesData struct {
-	All   bool
-	Cases []store.Case
-}
-
-// casesPage lists the open cases, the most recently changed first; all=1 shows closed ones too.
-func (u *Server) casesPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	all := r.URL.Query().Get("all") == "1"
-	cs, err := u.API.Store.Cases(r.Context(), store.CaseFilter{Open: !all, Limit: 200})
+	rows, err := u.caseRows(ctx)
 	if err != nil {
 		http.Error(w, "cases failed", 500)
 		return
 	}
-	u.render(w, "cases.html", 200, u.pageFor(s, "Cases", "Cases", r, casesData{All: all, Cases: cs}))
+	fs, routines, workers, err := u.fleetSums(ctx, rows)
+	if err != nil {
+		http.Error(w, "status failed", 500)
+		return
+	}
+	d := nowData{}
+	n := now.In(u.loc())
+	d.DateLine = n.Format("Monday 2 January, 15:04")
+	if known {
+		d.DateLine += " · since you looked at " + u.clock(since)
+	} else {
+		d.DateLine += " · the last 24 hours"
+	}
+
+	// Needs you: the first waiting plan as a decision, then the rest as cards.
+	plans := 0
+	for _, c := range rows {
+		if !waiting(c.Status) {
+			continue
+		}
+		if c.Status == cases.AwaitingApproval {
+			plans++
+			if d.First == nil {
+				dec, ok, err := u.decisionFor(ctx, c, false)
+				if err != nil {
+					http.Error(w, "case failed", 500)
+					return
+				}
+				if ok {
+					d.First = &dec
+					continue
+				}
+			}
+		}
+		d.Needs = append(d.Needs, c)
+	}
+	switch {
+	case plans > 1 && d.First != nil:
+		d.PlansLink = fmt.Sprintf("All %d plans in Approvals", plans)
+	case plans > 0:
+		d.PlansLink = "Approvals"
+	}
+
+	// Handled since the last look.
+	var handled []caseRow
+	for _, c := range rows {
+		if c.ClosedAt != nil {
+			if t, ok := parseTime(*c.ClosedAt); ok && !t.Before(sinceT) {
+				handled = append(handled, c)
+			}
+		}
+	}
+	sort.Slice(handled, func(i, j int) bool { return *handled[i].ClosedAt > *handled[j].ClosedAt })
+	d.HandledTotal = len(handled)
+	for i, c := range handled {
+		if i == 5 {
+			break
+		}
+		res := strings.ReplaceAll(c.Resolution, "_", " ")
+		d.Handled = append(d.Handled, handledRow{Time: u.clock(*c.ClosedAt), Text: c.Title + " (" + c.ID + ")", Href: "/cases/" + c.ID,
+			Outcome: res, OK: c.Resolution == cases.Verified})
+	}
+	waitingN := 0
+	for _, c := range rows {
+		if waiting(c.Status) {
+			waitingN++
+		}
+	}
+	when := "since you looked"
+	if !known {
+		when = "in the last 24 hours"
+	}
+	d.HandledWhen = when
+	if d.HandledTotal == 0 {
+		d.Headline = "No case handled " + when + ". "
+	} else {
+		d.Headline = plural(d.HandledTotal, "case", "cases") + " handled " + when + ". "
+	}
+	switch waitingN {
+	case 0:
+		d.Headline += "Nothing needs you."
+	case 1:
+		d.Headline += "1 needs you."
+	default:
+		d.Headline += fmt.Sprintf("%d need you.", waitingN)
+	}
+
+	// Wrong right now, not a decision.
+	fr, _ := u.API.FreezeState(ctx)
+	if fr.Frozen {
+		d.Wrong = append(d.Wrong, wrongItem{What: "Autonomy is frozen", Detail: "since " + u.clock(fr.At) + " by " + fr.By + ": every routine runs at shadow",
+			Go: "Autonomy", Href: "/autonomy"})
+	}
+	stopped := map[string]bool{}
+	for _, x := range routines {
+		if x.Stopped && !stopped[x.Fleet] {
+			stopped[x.Fleet] = true
+			d.Wrong = append(d.Wrong, wrongItem{What: "Fleet " + title(x.Fleet) + " is STOPped", Detail: "none of its routines start",
+				Go: "Fleets", Href: "/fleets/" + x.Fleet})
+		}
+	}
+	for _, x := range routines {
+		if !x.Enabled || x.Stopped {
+			continue
+		}
+		href := "/fleets/" + x.Fleet + "?sel=" + url.QueryEscape(x.ID)
+		if x.Stale {
+			last := "it has never run ok"
+			if x.LastSuccess != "" {
+				last = "last ok " + u.clock(x.LastSuccess) + ", " + u.ago(x.LastSuccess) + " ago"
+			}
+			d.Wrong = append(d.Wrong, wrongItem{What: x.ID + " is stale", Detail: last + "; it runs every " + x.Every, Go: "Fleet", Href: href})
+		}
+		if x.Paused {
+			d.Wrong = append(d.Wrong, wrongItem{What: x.ID + " is paused", Detail: "it starts no runs until it is resumed", Go: "Fleet", Href: href})
+		}
+	}
+	for _, name := range sortedKeys(workers) {
+		if m, ok := workers[name].(map[string]any); ok && m["ok"] != true {
+			detail := "its health check fails"
+			if e, ok := m["error"].(string); ok && e != "" {
+				detail += ": " + e
+			}
+			d.Wrong = append(d.Wrong, wrongItem{What: "worker " + name + " is not healthy", Detail: detail, Go: "Fleets", Href: "/fleets"})
+		}
+	}
+	hosts, err := u.API.Store.Hosts(ctx)
+	if err != nil {
+		http.Error(w, "hosts failed", 500)
+		return
+	}
+	dayStart := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, u.loc())
+	execs, err := u.API.Store.HostExecutionsSince(ctx, dayStart.UTC().Format(time.RFC3339))
+	if err != nil {
+		http.Error(w, "executions failed", 500)
+		return
+	}
+	perHost := map[string]int{}
+	hourAgo := now.Add(-time.Hour)
+	execHour, badHour := 0, 0
+	for _, x := range execs {
+		perHost[x.Host]++
+		if t, ok := parseTime(x.SentAt); ok && t.After(hourAgo) {
+			execHour++
+			if x.Status == hostexec.Failed || x.Status == hostexec.Unknown {
+				badHour++
+			}
+		}
+	}
+	for _, h := range hosts {
+		if h.RevokedAt != nil || h.EnrolledAt == nil {
+			continue
+		}
+		node := hostNode{Name: h.Name, Roles: "host agent " + orDash(h.Version), Up: h.Connected,
+			Note: plural(perHost[h.Name], "execution today", "executions today")}
+		if !h.Connected {
+			node.Note = "down " + u.ago(h.LastContact)
+			d.Wrong = append(d.Wrong, wrongItem{What: h.Name + " host agent not connected", Go: "Hosts", Href: "/hosts/" + h.Name,
+				Detail: "for " + u.ago(h.LastContact) + "; nothing can run on " + h.Name + " until it reconnects"})
+		}
+		d.Hosts = append(d.Hosts, node)
+	}
+	failed, _, err := u.API.Store.RunsPage(ctx, store.RunQuery{Problems: true, Since: now.Add(-24 * time.Hour).UTC().Format(time.RFC3339), Limit: 10000, Desc: true})
+	if err != nil {
+		http.Error(w, "runs failed", 500)
+		return
+	}
+	type fail struct {
+		n            int
+		last, status string
+	}
+	byRoutine, order := map[string]*fail{}, []string{}
+	for _, x := range failed {
+		if x.Status == store.StatusSkipped {
+			continue
+		}
+		f := byRoutine[x.Routine]
+		if f == nil {
+			f = &fail{last: x.StartedAt, status: x.Status}
+			byRoutine[x.Routine] = f
+			order = append(order, x.Routine)
+		}
+		f.n++
+	}
+	for _, id := range order {
+		f := byRoutine[id]
+		d.Wrong = append(d.Wrong, wrongItem{What: id + " failed " + plural(f.n, "time", "times"), Go: "Runs",
+			Href:   "/runs?f=problems&routine=" + url.QueryEscape(id),
+			Detail: "in the last 24 hours; the last at " + u.clock(f.last) + " (" + f.status + ")"})
+	}
+	lim := u.API.Limits.WithDefaults()
+	spend := 0.0
+	for _, f := range fs {
+		spend += f.Spend24
+	}
+	d.Spend24 = usd2(spend)
+	breaker := "closed"
+	if badHour >= lim.BreakerFailures {
+		breaker = "open"
+	}
+	lead := "Everything else is normal"
+	if len(d.Wrong) == 0 {
+		lead = "Nothing is wrong right now"
+	}
+	d.Normal = fmt.Sprintf("%s: the circuit breaker is %s (%d of %d failures in the last hour), %d of %d executions are used this hour, and runs cost %s in 24 hours.",
+		lead, breaker, badHour, lim.BreakerFailures, execHour, lim.PlatformPerHour, d.Spend24)
+	d.Fleets = fs
+	u.render(w, "now.html", 200, u.pageFor(s, "Now", "Now", r, d))
 }
 
-type caseData struct {
-	Case   store.Case
-	Events []store.CaseEvent
-	Plans  []store.PlanRecord
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
-// casePage is one case's whole story (ADR-0005): its keys, its timeline, and each plan policy decided,
-// with every reason and, in shadow, what it would have done.
-func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
+func orDash(s string) string {
+	if s == "" {
+		return "–"
+	}
+	return s
+}
+
+// --- Approvals ---
+
+type decidedRow struct {
+	When, ID, Decision, From, Detail string
+}
+
+type approvalsData struct {
+	Summary  string
+	Queue    []decision
+	Items    []decision
+	Waiting  int
+	Recent   []decidedRow
+	SinceAt  string
+	Escalate int
+}
+
+func (u *Server) approvalsPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
 	ctx := r.Context()
-	c, err := u.API.Store.Case(ctx, r.PathValue("id"))
-	if errors.Is(err, store.ErrNoSuchCase) {
-		http.NotFound(w, r)
-		return
-	}
+	rows, err := u.caseRows(ctx)
 	if err != nil {
-		http.Error(w, "case failed", 500)
+		http.Error(w, "cases failed", 500)
 		return
 	}
-	ev, err := u.API.Store.CaseEvents(ctx, c.ID)
-	if err != nil {
-		http.Error(w, "case failed", 500)
-		return
+	d := approvalsData{}
+	for _, c := range rows {
+		switch c.Status {
+		case cases.AwaitingApproval:
+			dec, ok, err := u.decisionFor(ctx, c, false)
+			if err != nil {
+				http.Error(w, "case failed", 500)
+				return
+			}
+			if ok {
+				d.Items = append(d.Items, dec)
+			}
+		case cases.Escalated:
+			d.Escalate++
+		}
 	}
-	plans, err := u.API.Store.Plans(ctx, c.ID)
-	if err != nil {
-		http.Error(w, "case failed", 500)
-		return
+	d.Waiting = len(d.Items)
+	switch {
+	case d.Waiting == 0 && d.Escalate == 0:
+		d.Summary = "Nothing is waiting."
+	case d.Waiting == 0:
+		d.Summary = "No plan waits for you. " + plural(d.Escalate, "escalated case still needs", "escalated cases still need") + " you on Now."
+	default:
+		d.Summary = plural(d.Waiting, "plan waits", "plans wait") + " for you. Each answer binds to the plan shown; a changed plan needs a new answer."
 	}
-	u.render(w, "case.html", 200, u.pageFor(s, "Case "+c.ID, "Cases", r, caseData{Case: c, Events: ev, Plans: plans}))
-}
-
-type historyData struct {
-	Namespaces []string
-	NS         string
-	Decisions  []store.Decision
-	Older      int64
-}
-
-func (u *Server) historyPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	if err := u.API.Check(r.Context(), caller(s), api.ActLedgerRead); err != nil {
-		http.Error(w, "your role may not read the ledger", http.StatusForbidden)
-		return
+	since, _ := u.API.Store.LastLook(ctx, s.User)
+	t, ok := parseTime(since)
+	if !ok {
+		t = u.clockNow().Add(-24 * time.Hour)
+		d.SinceAt = "in the last 24 hours"
+	} else {
+		d.SinceAt = "since you last looked (" + u.clock(since) + ")"
 	}
-	nss, err := u.API.Store.Namespaces(r.Context())
+	evs, err := u.API.Store.CaseEventsSince(ctx, t.UTC().Format(time.RFC3339), 200)
 	if err != nil {
 		http.Error(w, "history failed", 500)
 		return
 	}
-	d := historyData{Namespaces: nss, NS: r.URL.Query().Get("ns")}
-	if d.NS == "" && len(nss) > 0 {
-		d.NS = nss[0]
-		for _, n := range nss {
-			if n == "triage/cycle" {
-				d.NS = n
-			}
+	for _, e := range evs {
+		if e.By != cases.ByOperator {
+			continue
 		}
+		d.Recent = append(d.Recent, decidedRow{When: u.clock(e.At), ID: e.CaseID, Decision: eventWhat(e),
+			From: strings.TrimPrefix(e.Actor, "user:"), Detail: e.Detail})
 	}
-	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
-	if d.NS != "" {
-		if d.Decisions, err = u.API.Store.RecentDecisions(r.Context(), d.NS, before, 50); err != nil {
-			http.Error(w, "history failed", 500)
-			return
-		}
-		if len(d.Decisions) == 50 {
-			d.Older = d.Decisions[49].Seq
-		}
-	}
-	u.render(w, "history.html", 200, u.pageFor(s, "History", "History", r, d))
-}
-
-// --- users (admin) ---
-
-func (u *Server) usersPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	if err := u.API.Check(r.Context(), caller(s), api.ActUsers); err != nil {
-		http.Error(w, "only an admin manages users", http.StatusForbidden)
-		return
-	}
-	us, err := u.API.Store.Users(r.Context())
-	if err != nil {
-		http.Error(w, "users failed", 500)
-		return
-	}
-	u.render(w, "users.html", 200, u.pageFor(s, "Users", "Users", r, us))
-}
-
-// showToken renders a new token once, never cached, never in a URL.
-func (u *Server) showToken(w http.ResponseWriter, r *http.Request, s *store.Session, name, tok string) {
-	u.render(w, "token.html", 200, u.pageFor(s, "New token for "+name, "Users", r, map[string]string{"Name": name, "Token": tok}))
-}
-
-func (u *Server) userAdd(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	name, tok, err := u.API.AddUser(r.Context(), caller(s), "ui", r.PostFormValue("name"), r.PostFormValue("role"))
-	if err != nil {
-		done(w, r, "/users", err, "")
-		return
-	}
-	u.showToken(w, r, s, name, tok)
-}
-
-func (u *Server) userAction(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-	name := r.PathValue("name")
-	switch r.PathValue("action") {
-	case "role":
-		role := r.PostFormValue("role")
-		done(w, r, "/users", u.API.SetUserRole(r.Context(), caller(s), "ui", name, role), name+" is now "+role+".")
-	case "rotate":
-		tok, err := u.API.RotateUser(r.Context(), caller(s), "ui", name)
-		if err != nil {
-			done(w, r, "/users", err, "")
-			return
-		}
-		u.showToken(w, r, s, name, tok)
-	case "revoke":
-		done(w, r, "/users", u.API.RevokeUser(r.Context(), caller(s), "ui", name), name+" is revoked; their sessions ended.")
-	case "sessions":
-		done(w, r, "/users", u.API.EndUserSessions(r.Context(), caller(s), "ui", name), name+"'s sessions ended.")
-	default:
-		http.NotFound(w, r)
-	}
+	u.render(w, "approvals.html", 200, u.pageFor(s, "Approvals", "Approvals", r, d))
 }

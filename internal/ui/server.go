@@ -59,19 +59,32 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("POST /signout", u.session(u.signout))
 	m.Handle("POST /signout-everywhere", u.session(u.signoutEverywhere))
 	m.Handle("GET /{$}", u.session(u.now))
+	m.Handle("GET /approvals", u.session(u.approvalsPage))
 	m.Handle("GET /cases", u.session(u.casesPage))
 	m.Handle("GET /cases/{id}", u.session(u.casePage))
+	m.Handle("POST /cases/{id}/{action}", u.session(u.caseAction))
 	m.Handle("GET /runs", u.session(u.runsPage))
 	m.Handle("GET /runs/{id}", u.session(u.runPage))
 	m.Handle("GET /fleets", u.session(u.fleetsPage))
+	m.Handle("POST /fleets/stop-all", u.session(u.stopAll(true)))
+	m.Handle("POST /fleets/release-all", u.session(u.stopAll(false)))
 	m.Handle("GET /fleets/{fleet}", u.session(u.fleetPage))
 	m.Handle("POST /routines/{fleet}/{routine}/{action}", u.session(u.routineAction))
 	m.Handle("POST /fleets/{fleet}/{action}", u.session(u.fleetAction))
+	m.Handle("GET /hosts", u.session(u.hostsPage))
+	m.Handle("GET /hosts/{name}", u.session(u.hostPage))
 	m.Handle("POST /actions/{name}/autonomy", u.session(u.actionAutonomy))
 	m.Handle("POST /freeze", u.session(u.freezeAction(true)))
 	m.Handle("POST /unfreeze", u.session(u.freezeAction(false)))
 	m.Handle("GET /autonomy", u.session(u.autonomyPage))
+	m.Handle("GET /models", u.session(u.notBuilt("Models and spend",
+		"each run's model calls and tokens (G1). Runs records what each run spent, and Runs shows it.")))
+	m.Handle("GET /knowledge", u.session(u.notBuilt("Knowledge",
+		"what each run read (its memory and sources) and the notes you activate (G7, G8).")))
+	m.Handle("GET /brief", u.session(u.notBuilt("Brief",
+		"a routine that writes the morning brief from the day's cases (G11). Now and History hold the same facts today.")))
 	m.Handle("GET /history", u.session(u.historyPage))
+	m.Handle("GET /account", u.session(u.accountPage))
 	m.Handle("GET /users", u.session(u.usersPage))
 	m.Handle("POST /users", u.session(u.userAdd))
 	m.Handle("POST /users/{name}/{action}", u.session(u.userAction))
@@ -142,6 +155,8 @@ type page struct {
 	Msg     string     // an action's outcome, from the redirect after it
 	Error   string
 	Data    any
+	Version string // flotillad's, in the navigation
+	Initial string // the avatar's letter
 }
 
 func (u *Server) render(w http.ResponseWriter, name string, code int, p page) {

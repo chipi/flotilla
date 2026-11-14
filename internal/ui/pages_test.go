@@ -11,11 +11,11 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-// csrfOf signs in and returns the cookie and the CSRF token from the home page.
+// csrfOf signs in and returns the cookie and the CSRF token from the account page (it always has a form).
 func (f *fixture) csrfOf(tok string) (string, string) {
 	f.t.Helper()
 	ck := f.signin(tok)
-	_, body := f.do("GET", "/", ck, nil, nil)
+	_, body := f.do("GET", "/account", ck, nil, nil)
 	m := csrfRe.FindStringSubmatch(body)
 	if m == nil {
 		f.t.Fatalf("no CSRF token: %s", body)

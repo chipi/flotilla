@@ -1,0 +1,24 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page page--narrow">
+  <section class="head">
+    <div>
+      <h1>Your account</h1>
+      <p class="sub">Signed in as <span class="exact">{{.User}}</span>, {{.Role}}. {{if .IsAdmin}}An admin manages people and decides who and what this installation trusts.{{else if .CanAct}}An operator answers plans and runs the day's work.{{else}}A viewer reads; an operator or an admin acts.{{end}}</p>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Sign out</h2>
+    <p class="panel-note">Signing out ends this browser's session. Signing out everywhere ends every session of yours, on every device.</p>
+    <div class="actions">
+      <form method="post" action="/signout" class="inline">{{template "csrf" .CSRF}}<button class="btn btn--edge" type="submit">Sign out</button></form>
+      <form method="post" action="/signout-everywhere" class="inline">{{template "csrf" .CSRF}}<button class="btn btn--edge" type="submit">Sign out everywhere</button></form>
+    </div>
+  </section>
+  {{if .IsAdmin}}<section class="card">
+    <h2>People</h2>
+    <p class="panel-note">Add people, change their role, give them a new token, or revoke them.</p>
+    <div class="actions"><a class="btn btn--edge" href="/users">Users</a></div>
+  </section>{{end}}
+</main>
+{{template "foot" .}}

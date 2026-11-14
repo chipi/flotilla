@@ -1,0 +1,40 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}{{$t := .T}}
+  <section class="head">
+    <div>
+      <h1>Hosts</h1>
+      <p class="sub">Every host runs flotilla-host: it connects out, runs only signed executions its own allowlist permits, and keeps its own audit log. An admin enrols one with <span class="exact">flotilla host enrol NAME</span>.</p>
+    </div>
+  </section>
+
+  <section class="filters" aria-label="Filters">
+    <nav class="pills" aria-label="Status">
+      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+    </nav>
+    {{template "search" (search $t "hosts" "Find" "host, version")}}
+  </section>
+
+  <div class="table-box">
+    <table class="data">
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}</tr></thead>
+      <tbody>
+        {{range .Rows}}<tr>
+          <td data-label="Host"><a href="/hosts/{{.Name}}"><strong>{{.Name}}</strong></a></td>
+          <td data-label="Status" class="nowrap"><span class="actions"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Status}}</span></td>
+          <td data-label="Roles" class="soft">–</td>
+          <td data-label="Autonomy cap" class="exact">{{.Cap}}</td>
+          <td data-label="CPU · mem · disk" class="soft">–</td>
+          <td data-label="Executions 24h">{{.Exec24}}</td>
+          <td data-label="Host agent" class="exact">{{.Agent}}</td>
+          <td data-label="Certificate" class="soft">{{.Cert}}</td>
+        </tr>{{else}}<tr><td colspan="8" class="empty">{{if eq $.Data.All 0}}No host is enrolled yet, so no execution can run anywhere. An admin mints an enrolment with <code>flotilla host enrol NAME</code> and installs flotilla-host on that machine.{{else}}No host matches these filters.{{end}}</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{template "pager" $t}}
+  <p class="footnote">Roles and CPU, memory and disk are not reported by the host agent yet (G4). Every host has the same autonomy cap today: each host's own reviewed config comes with the host agent.</p>
+  {{end}}
+</main>
+{{template "foot" .}}

@@ -266,3 +266,6 @@ func in(xs []string, x string) bool {
 	}
 	return false
 }
+
+// WithDefaults is the limits policy applies, with each unset one at its default.
+func (l Limits) WithDefaults() Limits { return l.withDefaults() }

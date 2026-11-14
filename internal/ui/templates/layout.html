@@ -6,33 +6,70 @@
 <title>{{.Title}} · flotilla</title>
 <link rel="stylesheet" href="/static/flotilla.css">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<script src="/static/flotilla.js" defer></script>
 </head>
 <body>{{end}}
 
 {{define "nav"}}<header class="nav">
   <div class="nav__top">
-    <a class="nav__brand" href="/">flotilla</a>
+    <a class="nav__brand" href="/">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l3 3h12l3-3"></path><path d="M6 17l1-6h10l1 6"></path><path d="M12 11V4"></path><path d="M12 4l5 4h-5"></path></svg>
+      flotilla
+    </a>
     <nav class="nav__groups" aria-label="Sections">
-      {{range .Nav}}<a class="nav__tab" href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
+      {{range .Nav}}<a class="nav__group" href="{{.Href}}" aria-current="{{if .Current}}true{{else}}false{{end}}">{{.Label}}{{if .Badge}}<span class="badge" aria-label="{{.Badge}} {{if eq .Badge 1}}thing waits{{else}}things wait{{end}} for you">{{.Badge}}</span>{{end}}</a>{{end}}
     </nav>
-    <span class="nav__meta">{{.User}} · {{.Role}}</span>
-    <form method="post" action="/signout" class="nav__signout">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <button class="btn btn--link nav__signout-btn" type="submit">Sign out</button>
-    </form>
+    <div class="nav__right">
+      <a href="/autonomy" class="autopill{{if .Freeze.Frozen}} autopill--frozen{{end}}" aria-label="Autonomy is {{if .Freeze.Frozen}}frozen{{else}}normal{{end}}. Open the brakes.">
+        <span class="lamp" aria-hidden="true"></span>Autonomy: {{if .Freeze.Frozen}}frozen{{else}}normal{{end}}
+      </a>
+      {{if .Version}}<span class="nav__ver">{{.Version}}</span>{{end}}
+      <a class="avatar" href="/account" aria-label="Signed in as {{.User}} ({{.Role}}): your account">{{.Initial}}</a>
+    </div>
   </div>
-  {{range .Nav}}{{if .Current}}<nav class="nav__pages" aria-label="{{.Label}} pages">
-    {{range .Pages}}<a class="nav__sub" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}
-  </nav>{{end}}{{end}}
+  {{range .Nav}}{{if .Current}}{{if gt (len .Pages) 1}}<nav class="nav__pages" aria-label="{{.Label}} pages">
+    {{range .Pages}}<a class="nav__sub" href="{{.Href}}" aria-current="{{if .Current}}page{{else}}false{{end}}">{{.Label}}</a>{{end}}
+  </nav>{{end}}{{end}}{{end}}
   <nav class="nav__bar" aria-label="Sections">
-    {{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
+    {{range .Nav}}<a href="{{.Href}}" aria-current="{{if .Current}}true{{else}}false{{end}}">
+      <span class="icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{.Icon}}"></path></svg>{{if .Badge}}<span class="badge" aria-label="{{.Badge}} {{if eq .Badge 1}}thing waits{{else}}things wait{{end}} for you">{{.Badge}}</span>{{end}}</span>
+      {{.Label}}
+    </a>{{end}}
   </nav>
 </header>
-{{if .Freeze.Frozen}}<p class="flash alert alert--stop" role="status"><strong>Frozen.</strong> Every routine runs at shadow: nothing outward happens. Since {{when .Freeze.At}}, by {{.Freeze.By}}.{{if and .CanAct (ne .Active "Now")}} <a href="/">Lift it on Now</a>.{{end}}</p>{{end}}
 {{if .Msg}}<p class="flash flash--ok" role="status">{{.Msg}}</p>{{end}}
 {{if .Error}}<p class="flash alert alert--stop" role="alert">{{.Error}}</p>{{end}}{{end}}
 
 {{define "csrf"}}<input type="hidden" name="csrf" value="{{.}}">{{end}}
+
+{{define "th"}}<th scope="col"{{if .On}} aria-sort="{{.AriaSort}}"{{end}}>{{if .Sortable}}<a href="{{.Href}}"{{if .On}} aria-current="true"{{end}}>{{.Label}} <span class="arrow" aria-hidden="true">{{.Arrow}}</span></a>{{else}}{{.Label}}{{end}}</th>{{end}}
+
+{{define "pager"}}<div class="pager">
+  <span>{{.Range}}</span>
+  {{if gt .Pages 1}}<nav class="pager__nav" aria-label="Pages">
+    {{if .PrevHref}}<a class="btn" href="{{.PrevHref}}" rel="prev">← Previous</a>{{else}}<span class="btn" aria-disabled="true">← Previous</span>{{end}}
+    {{if .NextHref}}<a class="btn" href="{{.NextHref}}" rel="next">Next →</a>{{else}}<span class="btn" aria-disabled="true">Next →</span>{{end}}
+  </nav>{{end}}
+</div>{{end}}
+
+{{define "search"}}<form class="search" method="get" action="{{.T.Path}}" role="search">
+  {{range .T.Hidden "q"}}<input type="hidden" name="{{.K}}" value="{{.V}}">{{end}}
+  <label for="q-{{.ID}}">{{.Label}}</label>
+  <input id="q-{{.ID}}" type="search" name="q" value="{{.T.Get "q"}}" placeholder="{{.Placeholder}}">
+</form>{{end}}
+
+{{define "score"}}<div class="score">
+  <span class="score__label">{{.Label}}</span>
+  <div class="score__value"><strong>{{.Value}}</strong><span>{{.Unit}}</span></div>
+  <svg viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label="{{.Spark.Label}}">
+    <polyline class="spark-area" points="{{.Spark.Area}}"></polyline>
+    <polyline class="spark-line" points="{{.Spark.Line}}" vector-effect="non-scaling-stroke"></polyline>
+    <line class="spark-avg" x1="0" x2="120" y1="{{.Spark.AvgY}}" y2="{{.Spark.AvgY}}" vector-effect="non-scaling-stroke"></line>
+  </svg>
+  <span class="score__delta score__delta--{{.Tone}}">{{.Arrow}} {{.Delta}}</span>
+</div>{{end}}
+
+{{define "gap"}}<p class="gap"><strong>Not recorded yet ({{.ID}}).</strong> {{.Text}}</p>{{end}}
 
 {{define "foot"}}</body>
 </html>{{end}}

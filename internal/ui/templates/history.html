@@ -1,35 +1,49 @@
 {{template "head" .}}
 {{template "nav" .}}
 <main class="page">
-  {{with .Data}}
-  <section>
-    <h1>History</h1>
-    <p class="meta">The decisions in a routine's ledger, newest first. Recurrences are counted on the decision they follow.</p>
-    {{if .Namespaces}}
-    <nav class="filters" aria-label="Ledgers">
-      {{$ns := .NS}}{{range .Namespaces}}<a class="btn{{if eq . $ns}} btn--current{{end}}" href="/history?ns={{.}}"{{if eq . $ns}} aria-current="page"{{end}}>{{.}}</a>{{end}}
-    </nav>
-    {{end}}
+  {{with .Data}}{{$t := .T}}
+  <section class="head">
+    <div>
+      <h1>History</h1>
+      <p class="sub">Everything that already happened: closed cases, your decisions, executions, and the triage fleet's ledger. Nothing here is deleted.</p>
+    </div>
   </section>
-  {{if .Namespaces}}
+
+  <section class="filters" aria-label="Filters">
+    <nav class="pills" aria-label="Period">
+      {{range .Periods}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
+    <nav class="pills" aria-label="Type">
+      {{range .Types}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
+    <form class="select" method="get" action="/history">
+      {{range $t.Hidden "fleet"}}<input type="hidden" name="{{.K}}" value="{{.V}}">{{end}}
+      <label for="fleet-f">Fleet</label>
+      <select id="fleet-f" name="fleet" data-autosubmit>
+        <option value="">All fleets</option>
+        {{range .Fleets}}<option value="{{.}}"{{if eq . $.Data.Fleet}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      <noscript><button class="btn btn--quiet" type="submit">Show</button></noscript>
+    </form>
+    {{template "search" (search $t "history" "Filter" "id, text, who, outcome")}}
+  </section>
+
   <div class="table-box">
     <table class="data">
-      <thead><tr><th>When</th><th>Decision</th><th>Signal</th><th>Why</th><th>Recurred</th></tr></thead>
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}</tr></thead>
       <tbody>
-        {{range .Decisions}}<tr>
-          <td data-label="When">{{when (index .Row "ts")}}</td>
-          <td data-label="Decision"><span class="{{chip (index .Row "disposition")}}">{{index .Row "disposition"}}</span></td>
-          <td data-label="Signal" class="stack"><span class="exact">{{short (index .Row "fingerprint") 48}}</span><br><span class="meta">{{short (index .Row "alertname") 80}}</span></td>
-          <td data-label="Why" class="stack">{{short (index .Row "reason") 160}}</td>
-          <td data-label="Recurred">{{if .Recurrences}}{{.Recurrences}}×{{else}}–{{end}}</td>
-        </tr>{{else}}<tr><td colspan="5">No decisions in this ledger.</td></tr>{{end}}
+        {{range .Rows}}<tr>
+          <td data-label="When" class="nowrap soft">{{.When}}</td>
+          <td data-label="Type"><span class="{{.TypeClass}}">{{.Type}}</span></td>
+          <td data-label="Case">{{if .CaseHref}}<a class="exact" href="{{.CaseHref}}">{{short .Case 28}}</a>{{else}}<span class="exact">{{short .Case 40}}</span>{{end}}</td>
+          <td data-label="What happened" class="stack">{{short .Text 140}}</td>
+          <td data-label="Who" class="soft">{{.Who}}</td>
+          <td data-label="Outcome" class="stack soft">{{short .Outcome 160}}</td>
+        </tr>{{else}}<tr><td colspan="6" class="empty">Nothing happened in this time{{if $.Data.Since}} (since {{$.Data.Since}}){{end}}. Try 7 days or All.</td></tr>{{end}}
       </tbody>
     </table>
   </div>
-  {{if .Older}}<p><a class="btn" href="/history?ns={{.NS}}&amp;before={{.Older}}">Older decisions</a></p>{{end}}
-  {{else}}
-  <p class="card">No routine keeps its ledger in flotilla yet.</p>
-  {{end}}
+  {{template "pager" $t}}
   {{end}}
 </main>
 {{template "foot" .}}

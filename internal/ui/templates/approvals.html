@@ -1,0 +1,48 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page page--narrow">
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
+  {{with .Data}}
+  <section class="head">
+    <div>
+      <h1>Approvals</h1>
+      <p class="sub">{{.Summary}}</p>
+    </div>
+  </section>
+
+  {{if .Items}}
+  <nav class="card card--edge" aria-labelledby="queue-h">
+    <h2 id="queue-h" class="label">Jump to a plan</h2>
+    <ul class="casecards">
+      {{range .Items}}<li><a class="fleetline" href="#dec-{{.ID}}">
+        <span class="exact">{{.ID}}</span>
+        <span class="risk risk--{{.Risk}}">{{.Risk}}</span>
+        <span class="name">{{.Title}}</span>
+        <span class="note">{{if .CLI}}laptop only{{else}}answer here{{end}} · waiting {{.Waiting}}</span>
+      </a></li>{{end}}
+    </ul>
+  </nav>
+  <section aria-label="Waiting for you" class="casecards">
+    {{range .Items}}{{template "decision" (decisionCtx . $csrf $act "/approvals")}}{{end}}
+  </section>
+  {{else}}
+  <section class="card card--edge">
+    <h2>Nothing needs you.</h2>
+    <p>{{if .Escalate}}{{plural .Escalate "escalated case waits" "escalated cases wait"}} for you on <a href="/">Now</a>. {{end}}Routines keep running at their own autonomy; anything new that needs you appears here and on Now.</p>
+    <a href="/history?type=decision">See what was decided</a>
+  </section>
+  {{end}}
+
+  <section aria-labelledby="recent" class="casecards">
+    <h2 id="recent">Decided {{.SinceAt}}</h2>
+    <div class="handled">
+      {{range .Recent}}<div class="handled__row">
+        <span class="handled__time">{{.When}}</span>
+        <span class="handled__text"><a class="exact" href="/cases/{{.ID}}">{{.ID}}</a> <strong>{{.Decision}}</strong> by {{.From}}{{if .Detail}}: {{.Detail}}{{end}}</span>
+      </div>{{else}}<p class="handled__empty">Nobody answered a plan in this time.</p>{{end}}
+      <a class="handled__more" href="/history?type=decision">All decisions in History</a>
+    </div>
+  </section>
+  {{end}}
+</main>
+{{template "foot" .}}

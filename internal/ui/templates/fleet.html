@@ -2,66 +2,124 @@
 {{template "nav" .}}
 <main class="page">
   {{$csrf := .CSRF}}{{$act := .CanAct}}
-  {{with .Data}}
-  <section>
-    <p class="meta"><a href="/fleets">Fleets</a> / {{.Name}}</p>
-    <h1>{{.Name}} {{if .Stopped}}<span class="chip chip--stop">STOPped</span>{{end}}</h1>
-  </section>
-  {{if $act}}
-  <section class="card" aria-labelledby="fleet-ctl">
-    <h2 id="fleet-ctl">The fleet</h2>
-    {{if .Stopped}}
-    <form method="post" action="/fleets/{{.Name}}/start" class="form-row">
-      {{template "csrf" $csrf}}
-      <label class="field">Why start it again (kept with the change)<input name="reason" required></label>
-      <button class="btn" type="submit">Start the fleet</button>
-    </form>
+  {{with .Data}}{{$f := .F}}{{$back := .Back}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/fleets">Fleets</a> / {{$f.Name}}</nav>
+  <section class="head">
+    <div>
+      <div class="actions"><span class="{{$f.Lamp}} lamp--big" aria-hidden="true"></span><h1>{{$f.Name}}</h1><span class="{{$f.Chip}}">{{$f.Note}}</span></div>
+      <p class="sub">{{$f.Purpose}} · {{if $f.Workers}}workers {{range $i, $w := $f.Workers}}{{if $i}}, {{end}}<span class="exact">{{$w}}</span>{{end}} · {{end}}budget {{printf "$%.2f" $f.Budget}} a day.</p>
+      <p class="meta">Pack: fleets have no pack of their own yet (G6); each routine's spec is in git, linked from its block.</p>
+    </div>
+    {{if $act}}{{if $f.Stopped}}
+    <details class="decision__rejectwrap">
+      <summary class="btn">Start fleet…</summary>
+      <form class="confirm" method="post" action="/fleets/{{$f.ID}}/start">
+        {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}">
+        <strong>Start {{$f.Name}} again?</strong>
+        <p>Its routines start on their triggers again.</p>
+        <label class="field field--strong">Why (kept with the change)<textarea name="reason" rows="2" required data-needs></textarea></label>
+        <div class="actions"><button class="btn btn--blue" type="submit">Start the fleet</button></div>
+      </form>
+    </details>
     {{else}}
-    <form method="post" action="/fleets/{{.Name}}/stop">
-      {{template "csrf" $csrf}}
-      <button class="btn" type="submit">STOP the fleet (no runs)</button>
+    <form method="post" action="/fleets/{{$f.ID}}/stop" class="inline">
+      {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}">
+      <button class="btn" type="submit">Pause fleet (STOP)</button>
     </form>
-    {{end}}
+    {{end}}{{end}}
+  </section>
+
+  <nav class="utabs" aria-label="Fleet views">
+    {{range .Tabs}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+  </nav>
+
+  {{if eq .Tab "workflow"}}
+  <div class="split split--tight">
+    <section class="board" aria-label="Workflow">
+      <div class="board__head"><strong>Workflow · live</strong><span>counts: last 24h · click a block for its details</span></div>
+      <div class="board__stages">
+        {{range .Stages}}<div class="stage">
+          <span class="stage__title">{{.Title}}</span>
+          {{range .Nodes}}<div class="stage__row">
+            {{if .Href}}<a class="node" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{else}}<span class="node">{{end}}
+              <span class="node__name"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Label}}</span>
+              <span class="node__sub">{{.Sub}}</span>
+              <span class="node__nums">{{if .A}}<span>{{.A}}</span>{{end}}{{if .B}}<span class="{{.BClass}}">{{.B}}</span>{{end}}</span>
+            {{if .Href}}</a>{{else}}</span>{{end}}
+            {{if .Arrow}}<span class="stage__arrow" aria-hidden="true">→</span>{{end}}
+          </div>{{end}}
+          {{if .None}}<span class="stage__none">{{.None}}</span>{{end}}
+        </div>{{end}}
+      </div>
+      <div class="board__legend">
+        <span><span class="blamp" aria-hidden="true"></span>running normally</span>
+        <span><span class="blamp blamp--wait" aria-hidden="true"></span>waiting (you, a lock, a check)</span>
+        <span><span class="blamp blamp--bad" aria-hidden="true"></span>failing or down</span>
+        <span><span class="blamp blamp--idle" aria-hidden="true"></span>paused or idle</span>
+      </div>
+    </section>
+
+    {{with .Sel}}<aside class="card selaside" aria-label="Selected block">
+      <h2><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Label}}</h2>
+      <p>{{.Desc}}</p>
+      <dl class="facts">{{range .Facts}}<div><dt>{{index . 0}}</dt><dd>{{index . 1}}</dd></div>{{end}}</dl>
+      <h3>Last runs</h3>
+      {{range .Runs}}<a class="lastrun" href="/runs/{{.ID}}"><span class="exact">{{short .ID 30}}</span><span>{{.When}}</span><span>{{.Result}}</span></a>{{else}}<p class="panel-note">No run yet.</p>{{end}}
+      <h3>Log, last lines</h3>
+      {{if .Log}}<pre class="log log--small">{{.Log}}</pre>{{else}}<p class="panel-note">The last run reported nothing.</p>{{end}}
+      <p class="panel-note">From the last run's own report; VictoriaLogs is not read yet (G5).</p>
+      {{if $act}}<div class="actions">
+        <form method="post" action="/routines/{{.ID}}/run" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}"><button class="btn btn--quiet" type="submit">Run now</button></form>
+        {{if .Routine.Paused}}
+        <details class="decision__rejectwrap">
+          <summary class="btn btn--quiet">Resume…</summary>
+          <form class="confirm" method="post" action="/routines/{{.ID}}/resume">
+            {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}">
+            <label class="field field--strong">Why resume (kept with the change)<textarea name="reason" rows="2" required data-needs></textarea></label>
+            <div class="actions"><button class="btn btn--blue" type="submit">Resume</button></div>
+          </form>
+        </details>
+        {{else}}
+        <form method="post" action="/routines/{{.ID}}/pause" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}"><button class="btn btn--quiet" type="submit">Pause</button></form>
+        {{end}}
+        <a class="btn btn--quiet" href="{{.SpecURL}}">Spec in git</a>
+        <a class="btn btn--quiet" href="/runs?routine={{.ID}}">All its runs</a>
+      </div>
+      <p class="panel-note">Its autonomy is changed on <a href="/autonomy#routines">Autonomy</a>. Dry run is not built.</p>{{end}}
+    </aside>{{end}}
+  </div>
+  {{end}}
+
+  {{if eq .Tab "routines"}}{{$t := .T}}
+  <div class="table-box">
+    <table class="data">
+      <thead><tr>{{template "th" ($t.Th "routine" "Routine")}}{{template "th" ($t.Th "worker" "Worker")}}{{template "th" ($t.Plain "Trigger")}}{{template "th" ($t.Th "autonomy" "Autonomy")}}{{template "th" ($t.Th "last" "Last run")}}{{template "th" ($t.Plain "7 days")}}{{template "th" ($t.Th "spend" "Spend 24h")}}</tr></thead>
+      <tbody>
+        {{range .Rows}}<tr>
+          <td data-label="Routine"><a class="exact" href="/fleets/{{$f.ID}}?sel={{.ID}}">{{.ID}}</a>{{if not .Enabled}} <span class="chip chip--neutral chip--small">disabled</span>{{end}}{{if .Paused}} <span class="chip chip--wait chip--small">paused</span>{{end}}{{if .Stale}} <span class="chip chip--stop chip--small">stale</span>{{end}}</td>
+          <td data-label="Worker" class="exact">{{.Worker}}</td>
+          <td data-label="Trigger">{{.Trigger}}</td>
+          <td data-label="Autonomy"><span class="{{level .Autonomy}}">{{.Autonomy}}</span></td>
+          <td data-label="Last run">{{if .LastHref}}<a href="{{.LastHref}}">{{.Last}}</a>{{else}}{{.Last}}{{end}}</td>
+          <td data-label="7 days">{{.Week}}</td>
+          <td data-label="Spend 24h">{{.Spend}}</td>
+        </tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{template "pager" $t}}
+  {{end}}
+
+  {{if eq .Tab "stats"}}
+  <section class="scores scores--wide" aria-label="Costs and stats">
+    {{range .Cards}}{{template "score" .}}{{end}}
   </section>
   {{end}}
-  {{range .Routines}}
-  <section class="card routine" aria-labelledby="r-{{.ID}}">
-    <h2 id="r-{{.ID}}" class="exact">{{.ID}}</h2>
-    <p>{{.Description}}</p>
-    <dl class="facts">
-      <div><dt>Autonomy</dt><dd><span class="{{chip .Autonomy}}">{{.Autonomy}}</span>{{if ne .Autonomy .AutonomySet}} <span class="meta">set {{.AutonomySet}}</span>{{end}}{{if .MaxAutonomy}} <span class="meta">cap {{.MaxAutonomy}}</span>{{end}}</dd></div>
-      <div><dt>Every</dt><dd>{{.Every}}</dd></div>
-      <div><dt>Last ok</dt><dd>{{if .LastSuccess}}{{when .LastSuccess}}{{else}}never{{end}}{{if .Stale}} <span class="chip chip--stop">stale</span>{{end}}</dd></div>
-      <div><dt>State</dt><dd>{{if not .Enabled}}disabled{{else if .Paused}}<span class="chip chip--wait">paused</span>{{else if .Running}}running{{else}}idle{{end}}</dd></div>
-      <div><dt>Spend today</dt><dd>{{usd .SpendToday}} of {{usd .BudgetDay}}</dd></div>
-      <div><dt>Runs</dt><dd><a href="/runs?routine={{.ID}}">the last 100</a></dd></div>
-    </dl>
-    {{if $act}}
-    <div class="controls">
-      <form method="post" action="/routines/{{.ID}}/run">{{template "csrf" $csrf}}<button class="btn" type="submit">Run now</button></form>
-      {{if .Paused}}
-      <form method="post" action="/routines/{{.ID}}/resume" class="form-row">
-        {{template "csrf" $csrf}}
-        <label class="field">Why resume (kept with the change)<input name="reason" required></label>
-        <button class="btn" type="submit">Resume</button>
-      </form>
-      {{else}}
-      <form method="post" action="/routines/{{.ID}}/pause">{{template "csrf" $csrf}}<button class="btn" type="submit">Pause</button></form>
-      {{end}}
-      <form method="post" action="/routines/{{.ID}}/autonomy" class="form-row">
-        {{template "csrf" $csrf}}
-        <label class="field">Autonomy
-          <select name="autonomy">
-            <option value="shadow"{{if eq .AutonomySet "shadow"}} selected{{end}}>shadow</option>
-            <option value="propose"{{if eq .AutonomySet "propose"}} selected{{end}}>propose</option>
-            <option value="auto"{{if eq .AutonomySet "auto"}} selected{{end}}>auto</option>
-          </select>
-        </label>
-        <label class="field">Why, if it raises it<input name="reason"></label>
-        <button class="btn" type="submit">Set autonomy</button>
-      </form>
-    </div>
-    {{end}}
+
+  {{if eq .Tab "logs"}}
+  <section class="casecards" aria-label="Logs">
+    <p class="meta">The fleet's last 30 runs, newest first, with the last lines each reported. VictoriaLogs is not read yet (G5); <a href="/runs?f=problems">Runs</a> filters the problems.</p>
+    {{if .Log}}<pre class="log">{{.Log}}</pre>{{else}}<p class="card">No run yet.</p>{{end}}
   </section>
   {{end}}
   {{end}}

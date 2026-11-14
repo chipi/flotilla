@@ -1,71 +1,105 @@
 {{template "head" .}}
 {{template "nav" .}}
-<main class="page">
-  {{$frozen := .Freeze.Frozen}}{{$csrf := .CSRF}}
-  <section>
-    <p class="meta">Signed in as {{.User}} ({{.Role}})</p>
-    {{with .Data}}
-    <h1>{{if or $frozen .NeedYou .Wrong .Failed .Unhealthy}}Something needs a look.{{else}}Nothing is wrong.{{end}}</h1>
-    {{end}}
-  </section>
-  {{if .CanAct}}
-  <section class="card" aria-labelledby="freeze-h">
-    <h2 id="freeze-h">The freeze</h2>
-    {{if $frozen}}
-    <p>Every routine runs at shadow. Each keeps its own autonomy, and gets it back when the freeze is lifted. A run that started before the freeze keeps the autonomy it started with.</p>
-    <form method="post" action="/unfreeze" class="form-row">
-      {{template "csrf" $csrf}}
-      <label class="field">Why lift it (kept with the change)<input name="reason" required></label>
-      <button class="btn" type="submit">Lift the freeze</button>
-    </form>
-    {{else}}
-    <p>Freezing runs every routine at shadow, so nothing outward happens, without changing any routine's own autonomy. STOP on a fleet is stronger: no runs at all.</p>
-    <form method="post" action="/freeze">
-      {{template "csrf" $csrf}}
-      <button class="btn btn--stop" type="submit">Freeze: everything to shadow</button>
-    </form>
-    {{end}}
-  </section>
-  {{end}}
+<main class="page page--now">
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
   {{with .Data}}
-  {{if .NeedYou}}
-  <section class="card" aria-labelledby="needyou-h">
-    <h2 id="needyou-h">Cases that need you</h2>
-    <ul class="list">
-      {{range .NeedYou}}<li>
-        <a href="/cases/{{.ID}}" class="exact">{{.Kind}} on {{.Target}}</a>
-        <span class="{{chip .Status}}">{{.Status}}</span>
-        <span class="meta">{{when .StatusAt}}</span>
-      </li>{{end}}
-    </ul>
+  <section class="head head--now">
+    <div>
+      <p class="meta">{{.DateLine}}</p>
+      <h1>{{.Headline}}</h1>
+    </div>
   </section>
+
+  <section class="wrongbox" aria-labelledby="status-h">
+    <h2 id="status-h">Wrong right now, not a decision</h2>
+    {{if .Wrong}}<ul>
+      {{range .Wrong}}<li><a href="{{.Href}}">
+        <span class="lamp lamp--stop" aria-hidden="true"></span>
+        <strong>{{.What}}</strong>
+        <span class="detail">{{.Detail}}</span>
+        <span class="go">{{.Go}}</span>
+      </a></li>{{end}}
+    </ul>{{end}}
+    <p>{{.Normal}} The numbers are in <a href="/cases">Cases</a> and <a href="/runs">Runs</a>.</p>
+  </section>
+
+  <div class="split">
+    <section class="main" aria-labelledby="needs">
+      <div class="row-head">
+        <h2 id="needs">Needs you</h2>
+        {{if .PlansLink}}<a href="/approvals">{{.PlansLink}}</a>{{end}}
+      </div>
+      {{with .First}}{{template "decision" (decisionCtx . $csrf $act "/")}}{{end}}
+      {{if .Needs}}<ul class="casecards">
+        {{range .Needs}}<li><a class="casecard" href="/cases/{{.ID}}">
+          <span class="casecard__top">
+            <span class="{{.Chip}}">{{.StatusText}}</span>
+            <span class="exact">{{.ID}}</span>
+            <span>{{kindWords .Kind}}{{if .FleetName}} · {{.FleetName}}{{end}}</span>
+            <span class="age">{{.Age}}</span>
+          </span>
+          <strong>{{.Title}}</strong>
+          <span class="casecard__why">{{whyWaiting .}}</span>
+        </a></li>{{end}}
+      </ul>{{else}}{{if not .First}}<p class="card">Nothing needs you. Routines keep running at their own autonomy; anything that needs a person appears here and in Approvals.</p>{{end}}{{end}}
+
+      <div class="row-head row-head--gap">
+        <h2>Handled {{.HandledWhen}}</h2>
+        <span class="meta">{{if gt .HandledTotal (len .Handled)}}showing {{len .Handled}} of {{.HandledTotal}}{{else}}{{.HandledTotal}} in all{{end}}</span>
+      </div>
+      <div class="handled">
+        {{range .Handled}}<div class="handled__row">
+          <span class="handled__time">{{.Time}}</span>
+          <span class="handled__text"><a href="{{.Href}}">{{.Text}}</a></span>
+          <span class="handled__out{{if .OK}} handled__out--ok{{end}}">{{.Outcome}}</span>
+        </div>{{else}}<p class="handled__empty">No case was closed in this time.</p>{{end}}
+        <a class="handled__more" href="/history">Show all handled cases in History</a>
+      </div>
+    </section>
+
+    <aside class="aside">
+      <section class="card" aria-labelledby="topo">
+        <div class="row-head"><h2 id="topo">Hosts</h2><a href="/hosts">All hosts</a></div>
+        <div class="topo">
+          <a class="topo__root" href="/hosts"><strong>flotillad</strong><span>control plane</span></a>
+          {{if .Hosts}}
+          <div class="topo__stem" aria-hidden="true"></div>
+          <div class="topo__bus" aria-hidden="true"></div>
+          <div class="topo__hosts">
+            {{range .Hosts}}<div class="topo__col">
+              <div class="topo__drop{{if not .Up}} topo__drop--down{{end}}" aria-hidden="true"></div>
+              <a class="topo__host{{if not .Up}} topo__host--down{{end}}" href="/hosts/{{.Name}}">
+                <span class="name"><span class="lamp{{if not .Up}} lamp--stop{{end}}" aria-hidden="true"></span>{{.Name}}</span>
+                <span class="roles">{{.Roles}}</span>
+                <span class="note">{{.Note}}</span>
+              </a>
+            </div>{{end}}
+          </div>
+          <p class="topo__legend">Lines are the agents' outbound connections. A dashed line is a connection that is down.</p>
+          {{else}}
+          <p class="topo__legend">No host agent is enrolled yet, so nothing can run on a host. An admin enrols one with <code>flotilla host enrol NAME</code>.</p>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="spend">
+        <div class="row-head"><h2 id="spend">Models, last 24h</h2><a href="/models">Models and spend</a></div>
+        <p class="kv kv--tight"><span>Runs cost</span><span><strong>{{.Spend24}}</strong></span></p>
+        {{template "gap" (gap "G1" "Which model each call used, and its tokens, are not recorded per run yet, so the local share and the engines cannot be drawn.")}}
+      </section>
+
+      <section class="card" aria-labelledby="fl">
+        <div class="row-head"><h2 id="fl">Fleets</h2><a href="/fleets">All fleets</a></div>
+        <div class="fleetlines">
+          {{range .Fleets}}<a class="fleetline" href="/fleets/{{.ID}}">
+            <span class="{{.Lamp}}" aria-hidden="true"></span>
+            <span class="name">{{.Name}}</span>
+            <span class="note">{{.Note}}</span>
+          </a>{{end}}
+        </div>
+      </section>
+    </aside>
+  </div>
   {{end}}
-  <section class="card" aria-labelledby="wrong-h">
-    <h2 id="wrong-h">Wrong right now</h2>
-    {{if or .Wrong .Unhealthy}}
-    <ul class="list">
-      {{range .Wrong}}<li>
-        <a href="/fleets/{{.Fleet}}" class="exact">{{.ID}}</a>
-        {{if .Stopped}}<span class="chip chip--stop">fleet STOPped</span>{{end}}
-        {{if .Paused}}<span class="chip chip--wait">paused</span>{{end}}
-        {{if .Stale}}<span class="chip chip--stop">stale</span> <span class="meta">last ok {{if .LastSuccess}}{{when .LastSuccess}}{{else}}never{{end}}</span>{{end}}
-      </li>{{end}}
-      {{range .Unhealthy}}<li><span class="exact">worker {{.}}</span> <span class="chip chip--stop">not healthy</span></li>{{end}}
-    </ul>
-    {{else}}<p>Every enabled routine is fresh and running ({{.Fine}}), and every worker is healthy.</p>{{end}}
-  </section>
-  <section class="card" aria-labelledby="failed-h">
-    <h2 id="failed-h">Failed runs, last 24 hours</h2>
-    {{if .Failed}}
-    <ul class="list">
-      {{range .Failed}}<li><a href="/runs/{{.ID}}" class="exact">{{.Routine}}</a> <span class="{{chip .Status}}">{{.Status}}</span> <span class="meta">{{when .StartedAt}}</span></li>{{end}}
-    </ul>
-    {{else}}<p>None.</p>{{end}}
-  </section>
-  {{end}}
-  <form method="post" action="/signout-everywhere">
-    {{template "csrf" .CSRF}}
-    <button class="btn" type="submit">Sign out everywhere</button>
-  </form>
 </main>
 {{template "foot" .}}

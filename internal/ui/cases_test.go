@@ -35,7 +35,7 @@ func TestCasesPages(t *testing.T) {
 	op := f.addOperator()
 	for _, who := range []struct{ name, tok string }{{"viewer", f.vic}, {"operator", op}, {"admin", f.admin}} {
 		ck := f.signin(who.tok)
-		for _, p := range []string{"/cases", "/cases?all=1", "/cases/" + id, "/"} {
+		for _, p := range []string{"/cases", "/cases?status=open", "/cases/" + id, "/cases/" + esc, "/", "/approvals", "/history?period=all"} {
 			resp, body := f.do("GET", p, ck, nil, nil)
 			if resp.StatusCode != 200 {
 				t.Fatalf("%s %s: %d", who.name, p, resp.StatusCode)
@@ -46,24 +46,38 @@ func TestCasesPages(t *testing.T) {
 		}
 	}
 	ck := f.signin(f.vic)
-	_, open := f.do("GET", "/cases", ck, nil, nil)
-	if strings.Contains(open, id) || !strings.Contains(open, esc) {
-		t.Fatal("/cases lists the closed case, or not the open one")
+	_, open := f.do("GET", "/cases?status=open", ck, nil, nil)
+	if strings.Contains(open, `href="/cases/`+id) || !strings.Contains(open, `href="/cases/`+esc) {
+		t.Fatal("/cases?status=open lists the closed case, or not the open one")
 	}
-	_, all := f.do("GET", "/cases?all=1", ck, nil, nil)
-	if !strings.Contains(all, id) {
-		t.Fatal("/cases?all=1 leaves out the closed case")
+	_, all := f.do("GET", "/cases", ck, nil, nil)
+	if !strings.Contains(all, `href="/cases/`+id) || !strings.Contains(all, `href="/cases/`+esc) {
+		t.Fatal("/cases (All) leaves out a case")
+	}
+	_, closed := f.do("GET", "/cases?status=closed", ck, nil, nil)
+	if !strings.Contains(closed, `href="/cases/`+id) || strings.Contains(closed, `href="/cases/`+esc) {
+		t.Fatal("/cases?status=closed is not only the closed case")
+	}
+	_, pivot := f.do("GET", "/cases?p=target%3Ahost%3Adgx", ck, nil, nil)
+	if strings.Contains(pivot, `href="/cases/`+id) || !strings.Contains(pivot, `href="/cases/`+esc) || !strings.Contains(pivot, "Clear all") {
+		t.Fatal("a target pivot does not keep only that target's cases")
 	}
 	_, page := f.do("GET", "/cases/"+id, ck, nil, nil)
 	for _, want := range []string{"backup.rerun_observability", "would have been", "propose", "shadow_plan_recorded",
-		"backup_age_above(20h): holds", "registry: ok", "case.planned", "as act", "abc123"} {
+		"backup_age_above(20h): holds", "registry: ok", "Planned", "(act)", "abc123"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the case page has no %q", want)
 		}
 	}
 	_, now := f.do("GET", "/", ck, nil, nil)
-	if !strings.Contains(now, "Cases that need you") || !strings.Contains(now, "/cases/"+esc) || strings.Contains(now, "/cases/"+id) {
-		t.Fatal("Now does not list the escalated case, or lists the closed one")
+	if !strings.Contains(now, "Needs you") || !strings.Contains(now, `class="casecard" href="/cases/`+esc+`"`) || strings.Contains(now, `class="casecard" href="/cases/`+id+`"`) {
+		t.Fatal("Now's Needs you does not list the escalated case, or lists the closed one")
+	}
+	if !strings.Contains(now, `<a href="/cases/`+id+`">`) {
+		t.Fatal("Now's Handled does not list the case closed today")
+	}
+	if !strings.Contains(now, "1 needs you.") {
+		t.Fatal("Now's headline does not count the escalated case")
 	}
 	if resp, _ := f.do("GET", "/cases/case-nope", ck, nil, nil); resp.StatusCode != 404 {
 		t.Fatalf("an unknown case: %d", resp.StatusCode)

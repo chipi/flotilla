@@ -112,6 +112,7 @@ nav:
     - Promotion plan: wip/promotion-plan.md
     - Pipeline v1 plan: wip/pipeline-v1-plan.md
     - Host agent plan: wip/host-agent-plan.md
+    - UI mockup parity: wip/ui-mockup-parity.md
   - History:
     - Overview: history/README.md
     - 0001 — Genesis: history/0001-genesis.md
