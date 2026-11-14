@@ -167,6 +167,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "skills:", err)
 		os.Exit(2)
 	}
+	fleets, err := spec.LoadFleets(cfg.SpecsDir, routines)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fleets:", err)
+		os.Exit(2)
+	}
 	callers, err := api.LoadCallers(cfg.CallersFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "callers:", err)
@@ -363,7 +368,7 @@ func main() {
 	}
 	var usrv *http.Server
 	if cfg.UIListen != "" {
-		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log, LogsURL: cfg.VLogsURL}
+		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log, LogsURL: cfg.VLogsURL, Fleets: fleets}
 		usrv = &http.Server{Addr: cfg.UIListen, Handler: u.Handler(), ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 		go func() {

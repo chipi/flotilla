@@ -57,12 +57,12 @@
         <span>runs a day, 14 days · {{.Runs24}} in 24h{{if .Failed24}}, {{.Failed24}} failed{{end}}</span>
       </span>
       <span class="fleetcard__foot">
-        <span>{{plural (len .Workers) "worker" "workers"}}</span>
+        <span class="exact" title="The pack hash: exactly the specs this fleet runs">{{if .Pack}}pack {{hash .Pack}}{{else}}{{plural (len .Workers) "worker" "workers"}}{{end}}</span>
         <span>{{.Note}}</span>
       </span>
     </a>{{else}}<p class="card">No fleet matches these filters.</p>{{end}}
   </section>
-  <p class="footnote">A fleet has no description or pack of its own yet (G6), so each card names its routines.</p>
+  <p class="footnote">The pack is the hash of a fleet's routine specs: any change to their text changes it. Approving a pack is not a concept in flotilla yet; a spec change goes through review and deploy.</p>
   {{end}}
 </main>
 {{template "foot" .}}

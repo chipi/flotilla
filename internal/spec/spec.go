@@ -222,6 +222,9 @@ func Load(dir string) ([]*Routine, error) {
 	seen := map[string]string{}
 	var errs []error
 	for _, p := range paths {
+		if filepath.Base(p) == FleetFile {
+			continue // the fleet's own description (LoadFleets), not a routine
+		}
 		j, err := LoadFile(p)
 		if err != nil {
 			errs = append(errs, err)
@@ -263,6 +266,56 @@ func Load(dir string) ([]*Routine, error) {
 		return nil, fmt.Errorf("no routine specs under %s", dir)
 	}
 	return routines, nil
+}
+
+// FleetFile is a fleet's own description beside its routines: fleets/<fleet>/fleet.yaml.
+const FleetFile = "fleet.yaml"
+
+// Fleet is what a fleet says about itself (G6): its name and what it is for, for people. Pack is the
+// hash of its routines' specs, so a change to any routine's text changes it.
+type Fleet struct {
+	Fleet       string `yaml:"fleet"`
+	Description string `yaml:"description"`
+	Pack        string `yaml:"-"`
+}
+
+// LoadFleets reads every fleets/<fleet>/fleet.yaml under dir (a fleet without one has none) and the
+// pack hash of each fleet's routines. Unknown fields and a name other than the folder's are errors.
+func LoadFleets(dir string, routines []*Routine) (map[string]Fleet, error) {
+	out := map[string]Fleet{}
+	paths, err := filepath.Glob(filepath.Join(dir, "*", FleetFile))
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		dec := yaml.NewDecoder(bytes.NewReader(raw))
+		dec.KnownFields(true)
+		var f Fleet
+		if err := dec.Decode(&f); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		if want := filepath.Base(filepath.Dir(p)); f.Fleet != want {
+			return nil, fmt.Errorf("%s: fleet %q, but the file is under %s/", p, f.Fleet, want)
+		}
+		f.Description = strings.Join(strings.Fields(f.Description), " ")
+		out[f.Fleet] = f
+	}
+	byFleet := map[string][]string{}
+	for _, j := range routines {
+		byFleet[j.Fleet] = append(byFleet[j.Fleet], j.Routine+"="+j.Hash)
+	}
+	for name, hs := range byFleet {
+		sort.Strings(hs)
+		sum := sha256.Sum256([]byte(strings.Join(hs, "\n")))
+		f := out[name]
+		f.Fleet, f.Pack = name, hex.EncodeToString(sum[:])
+		out[name] = f
+	}
+	return out, nil
 }
 
 // LoadFile parses and validates one spec. Unknown fields are errors: a typo must not become a

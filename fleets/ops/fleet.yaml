@@ -1,0 +1,4 @@
+fleet: ops
+description: >-
+  The SRE team: watches the operational estate and fixes what it can. Today one chain: the
+  off-box backup's age, a rerun planned when it is too old, and the check that a new backup landed.

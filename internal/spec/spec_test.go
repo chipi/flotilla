@@ -45,6 +45,38 @@ func TestLoadGood(t *testing.T) {
 	}
 }
 
+// A fleet's fleet.yaml is its description, not a routine (G6); its pack hash follows its specs.
+func TestLoadFleets(t *testing.T) {
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", good)
+	write(t, d, "triage/fleet.yaml", "fleet: triage\ndescription: >-\n  Reads alerts\n  and errors.\n")
+	routines, err := Load(d)
+	if err != nil || len(routines) != 1 {
+		t.Fatalf("fleet.yaml read as a routine: %v %d", err, len(routines))
+	}
+	fs, err := LoadFleets(d, routines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := fs["triage"]; f.Description != "Reads alerts and errors." || len(f.Pack) != 64 {
+		t.Fatalf("the fleet: %+v", f)
+	}
+	pack := fs["triage"].Pack
+	write(t, d, "triage/cycle.yaml", strings.Replace(good, "one pass", "one pass, changed", 1))
+	routines, _ = Load(d)
+	if fs2, _ := LoadFleets(d, routines); fs2["triage"].Pack == pack {
+		t.Fatal("a changed spec left the pack hash as it was")
+	}
+	write(t, d, "triage/fleet.yaml", "fleet: ops\ndescription: x\n")
+	if _, err := LoadFleets(d, routines); err == nil {
+		t.Fatal("a fleet.yaml naming another fleet was accepted")
+	}
+	write(t, d, "triage/fleet.yaml", "fleet: triage\ndescrption: typo\n")
+	if _, err := LoadFleets(d, routines); err == nil {
+		t.Fatal("an unknown field was accepted")
+	}
+}
+
 func TestRejects(t *testing.T) {
 	cases := map[string]struct{ rel, body, want string }{
 		"unknown field":             {"triage/cycle.yaml", good + "retries: 3\n", "field retries not found"},

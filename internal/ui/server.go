@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
 
@@ -27,8 +28,9 @@ const cookieName = "__Host-flotilla"
 
 type Server struct {
 	API     *api.Server
-	Host    string // the one Host the proxy forwards (flotilla.<tailnet>); "" accepts any, for tests
-	LogsURL string // VictoriaLogs (flotillad.yaml vlogs_url), for log lines on the run, fleet and host pages
+	Host    string                // the one Host the proxy forwards (flotilla.<tailnet>); "" accepts any, for tests
+	LogsURL string                // VictoriaLogs (flotillad.yaml vlogs_url), for log lines on the run, fleet and host pages
+	Fleets  map[string]spec.Fleet // each fleet's own description and pack hash (fleets/<fleet>/fleet.yaml)
 	Log     *slog.Logger
 
 	tmpl     *template.Template

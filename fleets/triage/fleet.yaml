@@ -1,0 +1,4 @@
+fleet: triage
+description: >-
+  Reads alerts and errors (GlitchTip, Grafana), decides what each one is, and files what needs a
+  fix as a GitHub issue through its ledger.

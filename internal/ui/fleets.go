@@ -30,6 +30,7 @@ type fleetSum struct {
 	Spark                    spark
 	Workers                  []string
 	Purpose                  string
+	Pack                     string // the hash of its routines' specs
 }
 
 func (f fleetSum) SpendText() string { return usd2(f.Spend24) }
@@ -138,8 +139,14 @@ func (u *Server) fleetSums(ctx context.Context, rows []caseRow) ([]fleetSum, []a
 				bad = x.ID + "'s last run failed"
 			}
 		}
-		// G6: fleets have no description of their own yet, so the purpose is what they are made of.
+		// A fleet's own words (fleets/<fleet>/fleet.yaml); one without them is named by its routines.
 		f.Purpose = plural(len(f.Routines), "routine", "routines") + ": " + strings.Join(names, ", ")
+		if fl, ok := u.Fleets[id]; ok {
+			if fl.Description != "" {
+				f.Purpose = fl.Description
+			}
+			f.Pack = fl.Pack
+		}
 		last := "no run yet"
 		if f.Last != "" {
 			last = "last run " + u.clock(f.Last)

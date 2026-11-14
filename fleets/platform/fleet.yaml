@@ -1,0 +1,4 @@
+fleet: platform
+description: >-
+  flotilla checking itself: the scheduler, a worker, the store, egress through the proxy and
+  telemetry, every 10 minutes.
