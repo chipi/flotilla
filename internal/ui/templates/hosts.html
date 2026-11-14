@@ -25,7 +25,7 @@
           <td data-label="Status" class="nowrap"><span class="actions"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Status}}</span></td>
           <td data-label="Roles" class="soft">–</td>
           <td data-label="Autonomy cap" class="exact">{{.Cap}}</td>
-          <td data-label="CPU · mem · disk" class="soft">–</td>
+          <td data-label="CPU · mem · disk" class="exact soft">{{.Load.CPU}} · {{.Load.Mem}} · {{.Load.Disk}}</td>
           <td data-label="Executions 24h">{{.Exec24}}</td>
           <td data-label="Host agent" class="exact">{{.Agent}}</td>
           <td data-label="Certificate" class="soft">{{.Cert}}</td>
@@ -34,7 +34,7 @@
     </table>
   </div>
   {{template "pager" $t}}
-  <p class="footnote">Roles and CPU, memory and disk are not reported by the host agent yet (G4). Every host has the same autonomy cap today: each host's own reviewed config comes with the host agent.</p>
+  <p class="footnote">CPU, memory and disk come from each host's node exporter in VictoriaMetrics (flotillad.yaml host_metrics). Roles are not reported yet. Every host has the same autonomy cap today: each host's own reviewed config comes with the host agent.</p>
   {{end}}
 </main>
 {{template "foot" .}}

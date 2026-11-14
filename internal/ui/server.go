@@ -32,7 +32,10 @@ type Server struct {
 	LogsURL  string                // VictoriaLogs (flotillad.yaml vlogs_url), for log lines on the run, fleet and host pages
 	Fleets   map[string]spec.Fleet // each fleet's own description and pack hash (fleets/<fleet>/fleet.yaml)
 	SpecsDir string                // the fleets' folder, for Knowledge's sources
-	Log      *slog.Logger
+	// VictoriaMetrics (vm_url) and each host's metrics instance (host_metrics), for host load (G4)
+	MetricsURL  string
+	HostMetrics map[string]string
+	Log         *slog.Logger
 
 	tmpl     *template.Template
 	once     sync.Once

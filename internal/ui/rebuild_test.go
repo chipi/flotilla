@@ -14,6 +14,58 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
+// A host's load comes from VictoriaMetrics by its metrics instance (G4): the Hosts column, the Host
+// page's charts; a host without an instance in host_metrics says so.
+func TestHostLoad(t *testing.T) {
+	var queries []string
+	vmsrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		q := r.PostFormValue("query")
+		queries = append(queries, q)
+		if !strings.Contains(q, `instance="homelab"`) || strings.Contains(q, "container_") {
+			fmt.Fprint(w, `{"status":"success","data":{"result":[]}}`)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "query_range") {
+			fmt.Fprint(w, `{"status":"success","data":{"result":[{"metric":{},"values":[[1700000000,"20"],[1700000060,"61"],[1700000120,"22"]]}]}}`)
+			return
+		}
+		fmt.Fprint(w, `{"status":"success","data":{"result":[{"metric":{},"value":[1700000000,"41.6"]}]}}`)
+	}))
+	defer vmsrv.Close()
+	f := setup(t)
+	ctx := context.Background()
+	for _, h := range []string{"mini", "dgx"} {
+		if _, err := f.st.AddEnrolment(ctx, h, "t-"+h, "user:ada", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.st.Enrol(ctx, h, "t-"+h, func() (string, time.Time, error) { return "c-" + h, time.Now().Add(720 * time.Hour), nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.ui.MetricsURL, f.ui.HostMetrics = vmsrv.URL, map[string]string{"mini": "homelab"}
+	ck := f.signin(f.vic)
+	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "42% · 42% · 42%") || !strings.Contains(page, "– · – · –") {
+		t.Error("the Hosts column: mini's load, dgx's dashes")
+	}
+	_, page := f.do("GET", "/hosts/mini", ck, nil, nil)
+	for _, want := range []string{"CPU", "Memory", "Disk IO", "peak 61% at", "runs no cAdvisor"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the Host page has no %q", want)
+		}
+	}
+	if _, dgx := f.do("GET", "/hosts/dgx", ck, nil, nil); !strings.Contains(dgx, "host_metrics names no metrics instance for dgx") {
+		t.Error("a host without a metrics instance does not say so")
+	}
+	found := false
+	for _, q := range queries {
+		found = found || strings.Contains(q, "node_memory_wired_bytes") && strings.Contains(q, "node_memory_MemAvailable_bytes")
+	}
+	if !found {
+		t.Error("the memory query does not cover both macOS and Linux exporters")
+	}
+}
+
 // The run and fleet pages read their lines from VictoriaLogs (G5): the run's lines oldest first, the
 // fleet's Logs tab with its level filter in the query; without an address the page says so.
 func TestLogLines(t *testing.T) {

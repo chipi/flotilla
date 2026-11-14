@@ -60,6 +60,8 @@ type Config struct {
 	OTLPTracesURL string `yaml:"otlp_traces_url"`
 	// VictoriaLogs, which the UI reads for a run's and a fleet's log lines; empty = the UI shows none
 	VLogsURL string `yaml:"vlogs_url"`
+	// each host's metrics instance in VictoriaMetrics (node exporter), for its load on the UI: {mini: homelab}
+	HostMetrics map[string]string `yaml:"host_metrics"`
 	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
 	ErrorsDSNFile string                  `yaml:"errors_dsn_file"`
 	CallersFile   string                  `yaml:"callers_file"`
@@ -368,7 +370,8 @@ func main() {
 	}
 	var usrv *http.Server
 	if cfg.UIListen != "" {
-		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log, LogsURL: cfg.VLogsURL, Fleets: fleets, SpecsDir: cfg.SpecsDir}
+		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log, LogsURL: cfg.VLogsURL, Fleets: fleets, SpecsDir: cfg.SpecsDir,
+			MetricsURL: cfg.VMURL, HostMetrics: cfg.HostMetrics}
 		usrv = &http.Server{Addr: cfg.UIListen, Handler: u.Handler(), ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 		go func() {

@@ -694,3 +694,5 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 .btn--verdict-right:hover { background: var(--ok-ink); color: var(--panel); }
 .btn--verdict-wrong { background: var(--stop-ink); border-color: var(--stop-ink); color: var(--panel); }
 .btn--verdict-wrong:hover { background: var(--stop-ink); color: var(--panel); }
+.hostcharts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-md); }
+.hostcharts .row-head strong { font-size: 18px; }

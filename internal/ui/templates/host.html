@@ -15,7 +15,26 @@
   </nav>
 
   {{if eq .Tab "over"}}
-  {{template "gap" (gap "G4" "CPU, memory, disk, network and the host's containers are not reported to flotilla yet; Grafana has them.")}}
+  {{if .Charts}}<section class="hostcharts" aria-label="Last hour">
+    {{range .Charts}}<div class="score">
+      <span class="row-head"><span class="score__label">{{.Label}}</span><strong>{{.Now}}</strong></span>
+      <svg viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label="{{.Spark.Label}}">
+        <polyline class="spark-area" points="{{.Spark.Area}}"></polyline>
+        <polyline class="spark-line" points="{{.Spark.Line}}" vector-effect="non-scaling-stroke"></polyline>
+      </svg>
+      <span class="meta">{{.Note}}</span>
+    </div>{{end}}
+  </section>
+  <section class="casecards" aria-labelledby="ct">
+    <h2 id="ct">Containers{{if .Containers}} ({{len .Containers}}){{end}}</h2>
+    {{if .Containers}}<div class="table-box">
+      <table class="data data--small">
+        <thead><tr><th scope="col">Container</th><th scope="col">Up</th><th scope="col">CPU</th><th scope="col">Memory</th></tr></thead>
+        <tbody>{{range .Containers}}<tr><td data-label="Container" class="exact">{{.Name}}</td><td data-label="Up">{{.Up}}</td><td data-label="CPU">{{.CPU}}</td><td data-label="Memory">{{.Mem}}</td></tr>{{end}}</tbody>
+      </table>
+    </div>{{else}}<p class="gap"><strong>No container metrics for {{$h.Name}}.</strong> This host runs no cAdvisor; its containers' numbers are not collected.</p>{{end}}
+  </section>
+  {{else}}<p class="gap"><strong>No load for {{$h.Name}}:</strong> {{.ChartsErr}}.</p>{{end}}
   {{end}}
 
   {{if eq .Tab "agent"}}

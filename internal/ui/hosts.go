@@ -12,6 +12,8 @@ import (
 )
 
 type hostRow struct {
+	Load     hostLoad
+	Instance string
 	store.Host
 	Status, Lamp, Cap, Agent, Cert, Exec24, Contact string
 	Execs                                           int
@@ -52,6 +54,10 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 			} else {
 				row.Cert = "–"
 			}
+		}
+		row.Instance = u.HostMetrics[h.Name]
+		if h.RevokedAt == nil {
+			row.Load = u.loadNow(r.Context(), row.Instance)
 		}
 		row.Contact = "never"
 		if h.LastContact != "" {
@@ -123,12 +129,15 @@ func (u *Server) hostsPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 }
 
 type hostData struct {
-	Row   hostRow
-	Tab   string
-	Tabs  []pillLink
-	Execs []store.HostExecution
-	T     tableQ
-	Clock func(string) string
+	Charts     []hostChart
+	ChartsErr  string
+	Containers []containerRow
+	Row        hostRow
+	Tab        string
+	Tabs       []pillLink
+	Execs      []store.HostExecution
+	T          tableQ
+	Clock      func(string) string
 }
 
 func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -161,6 +170,16 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 			href += "?tab=" + p[0]
 		}
 		d.Tabs = append(d.Tabs, pillLink{Label: p[1], Href: href, On: tab == p[0]})
+	}
+	if tab == "over" {
+		if row.Instance == "" {
+			d.ChartsErr = "flotillad.yaml host_metrics names no metrics instance for " + row.Name
+		} else if cs, err := u.hostCharts(r.Context(), row.Instance); err != nil {
+			d.ChartsErr = err.Error()
+		} else {
+			d.Charts = cs
+			d.Containers = u.containers(r.Context(), row.Instance)
+		}
 	}
 	if tab == "exec" {
 		xs, err := u.API.Store.HostExecutions(r.Context(), row.Name)
