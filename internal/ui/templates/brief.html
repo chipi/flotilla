@@ -1,0 +1,62 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{$csrf := .CSRF}}
+  {{with .Data}}
+  {{if .Archive}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/brief">Brief</a> / <span>Earlier briefs</span></nav>
+  <section class="head"><div><h1>Earlier briefs</h1>
+    <p class="sub">Each brief as it was written. Its facts link to cases, which may have changed since.</p></div></section>
+  <section class="card" aria-label="Every brief">
+    {{range .All}}<div class="kv"><a href="{{.Href}}"><strong>{{.Date}}</strong></a><span>{{.Headline}}</span></div>{{else}}<p class="panel-note">No brief has been written yet.</p>{{end}}
+  </section>
+  {{else}}
+  {{with .B}}
+  <div class="split">
+    <article class="main brief" aria-labelledby="brief-h">
+      <header class="head">
+        <div>
+          <p class="sub">Morning brief · {{$.Data.Date}} · written {{$.Data.Written}} by {{.WrittenBy}}</p>
+          <h1 id="brief-h">{{.Headline}}</h1>
+        </div>
+      </header>
+      <section class="card" aria-labelledby="sum-h">
+        <h2 id="sum-h">Summary</h2>
+        <p>{{.Summary}}</p>
+        {{template "gap" (gap "G11" "The mockup's summary is written by a brief model routine that reads the day and says what matters most; this one is flotillad's own sentence from its record.")}}
+      </section>
+      {{range $.Data.Sections}}<section class="brief-sec" aria-label="{{.Title}}">
+        <h2>{{.Title}}</h2>
+        <ul class="brief-items">
+          {{range .Lines}}<li class="brief-item">
+            <span class="brief-text">{{.Text}}{{if .Case}} <a class="exact" href="{{.Href}}">{{.Case}}</a>{{else if .Href}} <a href="{{.Href}}">Open</a>{{end}}</span>
+            <form method="post" action="/brief/{{$.Data.B.Day}}/mark" class="fb" aria-label="Shape this item">{{template "csrf" $csrf}}<input type="hidden" name="item" value="{{.N}}">
+              <button class="btn btn--small" type="submit" name="mark" value="more" aria-pressed="{{if eq .Mark "more"}}true{{else}}false{{end}}">More like this</button>
+              <button class="btn btn--small" type="submit" name="mark" value="less" aria-pressed="{{if eq .Mark "less"}}true{{else}}false{{end}}">Less</button>
+            </form>
+          </li>{{end}}
+        </ul>
+      </section>{{else}}<p class="panel-note">Nothing to report: no case open, none closed, nothing wrong.</p>{{end}}
+    </article>
+    <aside class="casecards">
+      <section class="card" aria-labelledby="past">
+        <h2 id="past">Earlier briefs</h2>
+        {{range $.Data.Earlier}}<a href="{{.Href}}">{{.Date}}: {{.Headline}}</a>{{else}}<span class="panel-note">This is the first brief.</span>{{end}}
+        <a href="/brief/archive"><strong>All briefs</strong></a>
+      </section>
+      <section class="card" aria-labelledby="shape">
+        <h2 id="shape">How your feedback shapes the brief</h2>
+        <p class="panel-note">Each "more" or "less" is recorded against that item's kind (for example a failed backup, or a stale routine).</p>
+        {{range $.Data.Marks}}<div class="kv"><span class="exact">{{.}}</span></div>{{else}}<span class="panel-note">No marks in the last 7 days.</span>{{end}}
+        {{template "gap" (gap "G11" "Turning the week's marks into a proposed change to the brief's playbook, which you accept or drop, comes with the brief model routine. The marks are kept for it.")}}
+      </section>
+    </aside>
+  </div>
+  {{else}}
+  <section class="head"><div><h1>Morning brief</h1>
+    <p class="sub">The first brief is written at {{.Next}}, from flotillad's own record: what needs you, what was handled, what to watch.</p></div></section>
+  {{end}}
+  {{end}}
+  {{end}}
+</main>
+{{template "foot" .}}

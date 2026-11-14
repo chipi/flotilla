@@ -39,7 +39,7 @@ Rules for the rebuild:
 | G8 | Diagnosis feedback (Right / Wrong / note) | Case aside | closed 2026-11-14 (82395d2): verdicts, notes, Knowledge | agents reading active notes (G7) |
 | G9 | Slack approvals and their daily cap | Approvals subtitle, Decision "Approve from" | Slack is not wired | the Slack connector |
 | G10 | A plan's host command | Decision "What would run" second line | closed 2026-11-14 (999ddc4): the agent reports its allowlist in hello | needs the agent upgraded to this build |
-| G11 | Models and spend, Knowledge, the morning brief | their pages | Models and spend and Knowledge built 2026-11-14 | the morning brief |
+| G11 | Models and spend, Knowledge, the morning brief | their pages | Models and spend, Knowledge (2026-11-14) and the brief (2026-11-15): written daily at `brief_at` by flotillad from its record, kept as written, an archive, more/less marks per kind | the brief's model-written summary and the playbook changes proposed from the marks (a brief model routine) |
 | G12 | Platform and per-host execution caps as numbers | Autonomy guardrails, Now status line | closed in the rebuild: read from `policy.Limits` | — |
 | G13 | The evidence a level needs | Autonomy "Evidence toward the next level" bar | closed 2026-11-14 (2ec5e43): ready after 5 clean plans in a row, no wrong verdict, failed execution or rejection in 7 days (the operator's rule) | promotion stays a person's click |
 | G14 | A recurrence rule per kind | Autonomy | closed 2026-11-14 (2ec5e43): same kind and target within 7 days of a close links to the earlier case (the operator's rule) | — |

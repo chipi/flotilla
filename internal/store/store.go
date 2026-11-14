@@ -299,6 +299,22 @@ var schema = []string{
 		sha256 TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX run_loaded_run ON run_loaded(run_id);`,
+	// G11: the morning brief, one per day as written, and people's marks on its items (briefs.go).
+	`CREATE TABLE briefs (
+		day TEXT PRIMARY KEY,
+		written_at TEXT NOT NULL,
+		body TEXT NOT NULL
+	);
+	CREATE TABLE brief_marks (
+		day TEXT NOT NULL,
+		item INTEGER NOT NULL,
+		kind TEXT NOT NULL,
+		user_name TEXT NOT NULL,
+		mark TEXT NOT NULL,
+		at TEXT NOT NULL,
+		PRIMARY KEY (day, item, user_name)
+	);
+	CREATE INDEX brief_marks_at ON brief_marks(at);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

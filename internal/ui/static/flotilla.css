@@ -707,3 +707,12 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 .readitem__head { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: baseline; }
 .readitem__src { font-family: var(--font-exact); font-size: 12px; color: var(--slate); overflow-wrap: anywhere; }
 .ok-note { margin: 0; font-size: 14px; color: var(--ok-ink); }
+/* The morning brief (G11) */
+.brief { display: flex; flex-direction: column; gap: var(--space-lg); }
+.brief-sec { display: flex; flex-direction: column; gap: var(--space-xs); border-top: 1px solid var(--hairline); padding-top: var(--space-lg); }
+.brief-sec h2 { margin: 0 0 4px; font-size: 18px; }
+.brief-items { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-xs); }
+.brief-item { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.brief-text { flex: 1 1 260px; font-size: 15px; line-height: 1.5; }
+.brief-item .fb { display: inline-flex; gap: 6px; }
+.brief-item .fb button[aria-pressed="true"] { background: var(--info-wash); color: var(--info-ink); }

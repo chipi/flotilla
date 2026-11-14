@@ -40,7 +40,5 @@ func nav(active string, waiting int) []navGroup {
 			}
 		}
 	}
-	// Record's first page, Brief, is not built (G11): the group opens on History.
-	groups[3].Href = "/history"
 	return groups
 }

@@ -218,108 +218,13 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 	}
 
 	// Wrong right now, not a decision.
-	fr, _ := u.API.FreezeState(ctx)
-	if fr.Frozen {
-		d.Wrong = append(d.Wrong, wrongItem{What: "Autonomy is frozen", Detail: "since " + u.clock(fr.At) + " by " + fr.By + ": every routine runs at shadow",
-			Go: "Autonomy", Href: "/autonomy"})
-	}
-	stopped := map[string]bool{}
-	for _, x := range routines {
-		if x.Stopped && !stopped[x.Fleet] {
-			stopped[x.Fleet] = true
-			d.Wrong = append(d.Wrong, wrongItem{What: "Fleet " + title(x.Fleet) + " is STOPped", Detail: "none of its routines start",
-				Go: "Fleets", Href: "/fleets/" + x.Fleet})
-		}
-	}
-	for _, x := range routines {
-		if !x.Enabled || x.Stopped {
-			continue
-		}
-		href := "/fleets/" + x.Fleet + "?sel=" + url.QueryEscape(x.ID)
-		if x.Stale {
-			last := "it has never run ok"
-			if x.LastSuccess != "" {
-				last = "last ok " + u.clock(x.LastSuccess) + ", " + u.agoText(x.LastSuccess)
-			}
-			d.Wrong = append(d.Wrong, wrongItem{What: x.ID + " is stale", Detail: last + "; it runs every " + x.Every, Go: "Fleet", Href: href})
-		}
-		if x.Paused {
-			d.Wrong = append(d.Wrong, wrongItem{What: x.ID + " is paused", Detail: "it starts no runs until it is resumed", Go: "Fleet", Href: href})
-		}
-	}
-	for _, name := range sortedKeys(workers) {
-		if m, ok := workers[name].(map[string]any); ok && m["ok"] != true {
-			detail := "its health check fails"
-			if e, ok := m["error"].(string); ok && e != "" {
-				detail += ": " + e
-			}
-			d.Wrong = append(d.Wrong, wrongItem{What: "worker " + name + " is not healthy", Detail: detail, Go: "Fleets", Href: "/fleets"})
-		}
-	}
-	hosts, err := u.API.Store.Hosts(ctx)
+	wn, err := u.wrongNow(ctx, now, routines, workers)
 	if err != nil {
-		http.Error(w, "hosts failed", 500)
+		http.Error(w, "status failed", 500)
 		return
 	}
-	dayStart := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, u.loc())
-	execs, err := u.API.Store.HostExecutionsSince(ctx, dayStart.UTC().Format(time.RFC3339))
-	if err != nil {
-		http.Error(w, "executions failed", 500)
-		return
-	}
-	perHost := map[string]int{}
-	hourAgo := now.Add(-time.Hour)
-	execHour, badHour := 0, 0
-	for _, x := range execs {
-		perHost[x.Host]++
-		if t, ok := parseTime(x.SentAt); ok && t.After(hourAgo) {
-			execHour++
-			if x.Status == hostexec.Failed || x.Status == hostexec.Unknown {
-				badHour++
-			}
-		}
-	}
-	for _, h := range hosts {
-		if h.RevokedAt != nil || h.EnrolledAt == nil {
-			continue
-		}
-		node := hostNode{Name: h.Name, Roles: "host agent " + orDash(h.Version), Up: h.Connected,
-			Note: plural(perHost[h.Name], "execution today", "executions today")}
-		if !h.Connected {
-			node.Note = "down " + u.ago(h.LastContact)
-			d.Wrong = append(d.Wrong, wrongItem{What: h.Name + " host agent not connected", Go: "Hosts", Href: "/hosts/" + h.Name,
-				Detail: "for " + u.ago(h.LastContact) + "; nothing can run on " + h.Name + " until it reconnects"})
-		}
-		d.Hosts = append(d.Hosts, node)
-	}
-	failed, _, err := u.API.Store.RunsPage(ctx, store.RunQuery{Problems: true, Since: now.Add(-24 * time.Hour).UTC().Format(time.RFC3339), Limit: 10000, Desc: true})
-	if err != nil {
-		http.Error(w, "runs failed", 500)
-		return
-	}
-	type fail struct {
-		n            int
-		last, status string
-	}
-	byRoutine, order := map[string]*fail{}, []string{}
-	for _, x := range failed {
-		if x.Status == store.StatusSkipped {
-			continue
-		}
-		f := byRoutine[x.Routine]
-		if f == nil {
-			f = &fail{last: x.StartedAt, status: x.Status}
-			byRoutine[x.Routine] = f
-			order = append(order, x.Routine)
-		}
-		f.n++
-	}
-	for _, id := range order {
-		f := byRoutine[id]
-		d.Wrong = append(d.Wrong, wrongItem{What: id + " failed " + plural(f.n, "time", "times"), Go: "Runs",
-			Href:   "/runs?f=problems&routine=" + url.QueryEscape(id),
-			Detail: "in the last 24 hours; the last at " + u.clock(f.last) + " (" + f.status + ")"})
-	}
+	d.Wrong, d.Hosts = wn.Items, wn.Hosts
+	execHour, badHour := wn.ExecHour, wn.BadHour
 	lim := u.API.Limits.WithDefaults()
 	spend := 0.0
 	for _, f := range fs {
@@ -429,4 +334,117 @@ func (u *Server) approvalsPage(w http.ResponseWriter, r *http.Request, s *store.
 			From: strings.TrimPrefix(e.Actor, "user:"), Detail: e.Detail})
 	}
 	u.render(w, "approvals.html", 200, u.pageFor(s, "Approvals", "Approvals", r, d))
+}
+
+// wrongNow is Now's "Wrong right now" (and the brief's): the freeze, STOPped fleets, stale and paused
+// routines, unhealthy workers, disconnected hosts and the last 24 hours' failed runs; with the hosts as
+// Now draws them and this hour's executions.
+type wrongState struct {
+	Items             []wrongItem
+	Hosts             []hostNode
+	ExecHour, BadHour int
+}
+
+func (u *Server) wrongNow(ctx context.Context, now time.Time, routines []api.RoutineStatus, workers map[string]any) (wrongState, error) {
+	var out wrongState
+	n := now.In(u.loc())
+	fr, _ := u.API.FreezeState(ctx)
+	if fr.Frozen {
+		out.Items = append(out.Items, wrongItem{What: "Autonomy is frozen", Detail: "since " + u.clock(fr.At) + " by " + fr.By + ": every routine runs at shadow",
+			Go: "Autonomy", Href: "/autonomy"})
+	}
+	stopped := map[string]bool{}
+	for _, x := range routines {
+		if x.Stopped && !stopped[x.Fleet] {
+			stopped[x.Fleet] = true
+			out.Items = append(out.Items, wrongItem{What: "Fleet " + title(x.Fleet) + " is STOPped", Detail: "none of its routines start",
+				Go: "Fleets", Href: "/fleets/" + x.Fleet})
+		}
+	}
+	for _, x := range routines {
+		if !x.Enabled || x.Stopped {
+			continue
+		}
+		href := "/fleets/" + x.Fleet + "?sel=" + url.QueryEscape(x.ID)
+		if x.Stale {
+			last := "it has never run ok"
+			if x.LastSuccess != "" {
+				last = "last ok " + u.clock(x.LastSuccess) + ", " + u.agoText(x.LastSuccess)
+			}
+			out.Items = append(out.Items, wrongItem{What: x.ID + " is stale", Detail: last + "; it runs every " + x.Every, Go: "Fleet", Href: href})
+		}
+		if x.Paused {
+			out.Items = append(out.Items, wrongItem{What: x.ID + " is paused", Detail: "it starts no runs until it is resumed", Go: "Fleet", Href: href})
+		}
+	}
+	for _, name := range sortedKeys(workers) {
+		if m, ok := workers[name].(map[string]any); ok && m["ok"] != true {
+			detail := "its health check fails"
+			if e, ok := m["error"].(string); ok && e != "" {
+				detail += ": " + e
+			}
+			out.Items = append(out.Items, wrongItem{What: "worker " + name + " is not healthy", Detail: detail, Go: "Fleets", Href: "/fleets"})
+		}
+	}
+	hosts, err := u.API.Store.Hosts(ctx)
+	if err != nil {
+		return out, err
+	}
+	dayStart := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, u.loc())
+	execs, err := u.API.Store.HostExecutionsSince(ctx, dayStart.UTC().Format(time.RFC3339))
+	if err != nil {
+		return out, err
+	}
+	perHost := map[string]int{}
+	hourAgo := now.Add(-time.Hour)
+	for _, x := range execs {
+		perHost[x.Host]++
+		if t, ok := parseTime(x.SentAt); ok && t.After(hourAgo) {
+			out.ExecHour++
+			if x.Status == hostexec.Failed || x.Status == hostexec.Unknown {
+				out.BadHour++
+			}
+		}
+	}
+	for _, h := range hosts {
+		if h.RevokedAt != nil || h.EnrolledAt == nil {
+			continue
+		}
+		node := hostNode{Name: h.Name, Roles: "host agent " + orDash(h.Version), Up: h.Connected,
+			Note: plural(perHost[h.Name], "execution today", "executions today")}
+		if !h.Connected {
+			node.Note = "down " + u.ago(h.LastContact)
+			out.Items = append(out.Items, wrongItem{What: h.Name + " host agent not connected", Go: "Hosts", Href: "/hosts/" + h.Name,
+				Detail: "for " + u.ago(h.LastContact) + "; nothing can run on " + h.Name + " until it reconnects"})
+		}
+		out.Hosts = append(out.Hosts, node)
+	}
+	failed, _, err := u.API.Store.RunsPage(ctx, store.RunQuery{Problems: true, Since: now.Add(-24 * time.Hour).UTC().Format(time.RFC3339), Limit: 10000, Desc: true})
+	if err != nil {
+		return out, err
+	}
+	type fail struct {
+		n            int
+		last, status string
+	}
+	byRoutine, order := map[string]*fail{}, []string{}
+	for _, x := range failed {
+		if x.Status == store.StatusSkipped {
+			continue
+		}
+		f := byRoutine[x.Routine]
+		if f == nil {
+			f = &fail{last: x.StartedAt, status: x.Status}
+			byRoutine[x.Routine] = f
+			order = append(order, x.Routine)
+		}
+		f.n++
+	}
+	for _, id := range order {
+		f := byRoutine[id]
+		out.Items = append(out.Items, wrongItem{What: id + " failed " + plural(f.n, "time", "times"), Go: "Runs",
+			Href:   "/runs?f=problems&routine=" + url.QueryEscape(id),
+			Detail: "in the last 24 hours; the last at " + u.clock(f.last) + " (" + f.status + ")"})
+	}
+	return out, nil
 }

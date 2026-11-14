@@ -35,6 +35,7 @@ type Server struct {
 	// VictoriaMetrics (vm_url) and each host's metrics instance (host_metrics), for host load (G4)
 	MetricsURL  string
 	HostMetrics map[string]string
+	BriefAt     string // when the morning brief is written, "07:00" (flotillad.yaml brief_at)
 	Log         *slog.Logger
 
 	tmpl     *template.Template
@@ -87,8 +88,9 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("GET /models", u.session(u.modelsPage))
 	m.Handle("GET /knowledge", u.session(u.knowledgePage))
 	m.Handle("POST /notes/{id}/{action}", u.session(u.noteAction))
-	m.Handle("GET /brief", u.session(u.notBuilt("Brief",
-		"a routine that writes the morning brief from the day's cases (G11). Now and History hold the same facts today.")))
+	m.Handle("GET /brief", u.session(u.briefPage))
+	m.Handle("GET /brief/archive", u.session(u.briefPage))
+	m.Handle("POST /brief/{day}/mark", u.session(u.briefMark))
 	m.Handle("GET /history", u.session(u.historyPage))
 	m.Handle("GET /account", u.session(u.accountPage))
 	m.Handle("GET /users", u.session(u.usersPage))

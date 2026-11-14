@@ -68,7 +68,7 @@ with sync_playwright() as pw:
     case_path = link.get_attribute("href") if link.count() else ""
     check(case_path != "", "the cases page lists the chain's case")
     for path in ["/", "/approvals", "/cases", "/runs", "/fleets", "/fleets/platform", "/fleets/platform?tab=stats", "/hosts",
-                 "/autonomy", "/history", "/account", "/users"] + ([case_path] if case_path else []):
+                 "/autonomy", "/models", "/knowledge", "/brief", "/brief/archive", "/history", "/account", "/users"] + ([case_path] if case_path else []):
         page.goto(BASE + path)
         page.evaluate("document.fonts.ready.then(() => 1)")
         wide = page.evaluate("document.documentElement.scrollWidth")

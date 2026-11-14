@@ -62,6 +62,8 @@ type Config struct {
 	VLogsURL string `yaml:"vlogs_url"`
 	// each host's metrics instance in VictoriaMetrics (node exporter), for its load on the UI: {mini: homelab}
 	HostMetrics map[string]string `yaml:"host_metrics"`
+	// when the UI's morning brief is written each day, HH:MM in timezone (default 07:00)
+	BriefAt string `yaml:"brief_at"`
 	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
 	ErrorsDSNFile string                  `yaml:"errors_dsn_file"`
 	CallersFile   string                  `yaml:"callers_file"`
@@ -113,6 +115,11 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.UIListen != "" && c.UIHost == "" {
 		errs = append(errs, errors.New("ui_listen needs ui_host: the one Host the UI answers (flotilla.<tailnet>)"))
+	}
+	if c.BriefAt != "" {
+		if _, err := time.Parse("15:04", c.BriefAt); err != nil {
+			errs = append(errs, fmt.Errorf("brief_at %q: HH:MM, the time of day the brief is written", c.BriefAt))
+		}
 	}
 	for name, w := range c.Workers {
 		if w.URL == "" || w.TokenFile == "" {
@@ -369,9 +376,28 @@ func main() {
 		defer link.CloseAll()
 	}
 	var usrv *http.Server
+	briefDone := make(chan struct{})
+	if cfg.UIListen == "" {
+		close(briefDone)
+	}
 	if cfg.UIListen != "" {
 		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log, LogsURL: cfg.VLogsURL, Fleets: fleets, SpecsDir: cfg.SpecsDir,
-			MetricsURL: cfg.VMURL, HostMetrics: cfg.HostMetrics}
+			MetricsURL: cfg.VMURL, HostMetrics: cfg.HostMetrics, BriefAt: cfg.BriefAt}
+		go func() {
+			defer close(briefDone)
+			t := time.NewTicker(time.Minute)
+			defer t.Stop()
+			for {
+				if err := u.WriteBriefIfDue(ctx); err != nil {
+					log.Error("writing the brief", "err", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+			}
+		}()
 		usrv = &http.Server{Addr: cfg.UIListen, Handler: u.Handler(), ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 		go func() {
@@ -393,6 +419,7 @@ func main() {
 	stop()
 	<-hbDone
 	<-dispDone
+	<-briefDone
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
