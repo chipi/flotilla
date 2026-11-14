@@ -72,6 +72,9 @@ type Routine struct {
 	// The case kinds this routine may open (pipeline v1 step 6): a monitor reports detections in its
 	// plan file and flotillad opens the cases; a kind not listed here is refused.
 	Detects []string `yaml:"detects"`
+	// The model aliases (flotillad.yaml models) this routine may call (security T4): its runs get only
+	// these in FLOTILLA_MODELS, so an alias it does not name does not exist for it. Default none.
+	Models []string `yaml:"models"`
 
 	// filled by Load
 	Path  string        `yaml:"-"`
@@ -441,6 +444,13 @@ func (j *Routine) validate() error {
 		}
 	default:
 		j.Every = dur("trigger.every", j.Trigger.Every, time.Minute)
+	}
+	seenModel := map[string]bool{}
+	for _, m := range j.Models {
+		if m == "" || seenModel[m] {
+			bad("models: %q is empty or named twice", m)
+		}
+		seenModel[m] = true
 	}
 	for _, k := range j.Detects {
 		if !caseFieldRe.MatchString(k) {

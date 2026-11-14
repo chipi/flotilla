@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""platform/model-contract (G15): run contract_check.py's checks on every alias in FLOTILLA_MODELS, once
-a day and on demand. Each check is one line in the run's calls file (FLOTILLA_CALLS_FILE) with its
+"""platform/model-contract (G15): run contract_check.py's checks on every alias in FLOTILLA_MODELS (the
+aliases its spec names, security T4), once a day and on demand. Each check is one line in the run's calls file (FLOTILLA_CALLS_FILE) with its
 alias, check, ok and detail plus the call's tokens and cost, so flotillad keeps them and the Models page
 shows the last checks. The checks' calls are not also logged as ordinary calls. Never prints a key.
 

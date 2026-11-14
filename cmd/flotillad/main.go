@@ -252,6 +252,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "specs: %s needs worker %q, which the config does not have\n", j.ID(), j.Worker)
 			os.Exit(2)
 		}
+		if len(j.Models) > 0 {
+			if cfg.Models == nil {
+				fmt.Fprintf(os.Stderr, "specs: %s names models %v, and the config has no models section\n", j.ID(), j.Models)
+				os.Exit(2)
+			}
+			if _, err := cfg.Models.Subset(j.Models); err != nil {
+				fmt.Fprintf(os.Stderr, "specs: %s: %v\n", j.ID(), err)
+				os.Exit(2)
+			}
+		}
 	}
 	if *check {
 		for _, j := range routines {
@@ -323,7 +333,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON,
+	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline

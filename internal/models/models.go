@@ -133,3 +133,24 @@ func (c *Config) JSON() (string, error) {
 	b, err := json.Marshal(c)
 	return string(b), err
 }
+
+// Subset is the config with only these aliases, their endpoints and their prices: what one routine's
+// runs get (security T4). An alias the config does not have is an error.
+func (c *Config) Subset(names []string) (*Config, error) {
+	out := &Config{Endpoints: map[string]Endpoint{}, Aliases: map[string]Alias{}}
+	for _, n := range names {
+		a, ok := c.Aliases[n]
+		if !ok {
+			return nil, fmt.Errorf("models: no alias %q in flotillad.yaml", n)
+		}
+		out.Aliases[n] = a
+		out.Endpoints[a.Endpoint] = c.Endpoints[a.Endpoint]
+		if p, ok := c.Prices[n]; ok {
+			if out.Prices == nil {
+				out.Prices = map[string]Price{}
+			}
+			out.Prices[n] = p
+		}
+	}
+	return out, nil
+}

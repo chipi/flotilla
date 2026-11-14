@@ -13,6 +13,7 @@ run:
   workdir: .
   timeout: 1m
 autonomy: auto
+models: [triage-flash, triage-pro]   # the aliases its runs get (security T4)
 budget:
   day_usd: 0
 freshness: 25m

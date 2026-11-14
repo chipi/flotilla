@@ -103,8 +103,11 @@ type State struct {
 	PlatformHour         int    // executions anywhere in the last hour
 	FailedHour           int    // failed or unknown executions in the last hour
 	HostNewCases         int    // cases opened on this host in the incident window
-	FleetStopped         bool
-	Holds                []string // active holds on the host or the target, as their descriptions
+	// The recurrence rule (G14, security T17): the earlier case this one came back after, when that case
+	// was closed as verified, i.e. a fix ran, was checked, and did not hold. "" otherwise.
+	RecursVerified string
+	FleetStopped   bool
+	Holds          []string // active holds on the host or the target, as their descriptions
 }
 
 // Decision is policy's answer, with every check's result in order.
@@ -204,6 +207,10 @@ func Decide(p Plan, s State, lim Limits) Decision {
 	if s.HostNewCases > lim.HostIncidentCases {
 		caps = append(caps, spec.AutonomyPropose)
 		say("host incident: %d new cases on %s: auto paused there", s.HostNewCases, HostOf(s.CaseTarget))
+	}
+	if s.RecursVerified != "" {
+		caps = append(caps, spec.AutonomyPropose)
+		say("recurrence: %s was fixed and verified, and the problem came back within 7 days: at most propose, a person decides", s.RecursVerified)
 	}
 	if s.Frozen {
 		caps = append(caps, spec.AutonomyShadow)

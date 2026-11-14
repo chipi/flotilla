@@ -103,14 +103,15 @@ models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
   aliases:
-    e2e-model: {endpoint: gateway, model: fleet-triage-flash}
+    triage-flash: {endpoint: gateway, model: fleet-triage-flash}
+    triage-pro: {endpoint: gateway, model: fleet-triage-pro}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
 ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
 ROUTINE_HEARTBEAT_DENIED_URL=http://forbidden:8080/
-ROUTINE_HEARTBEAT_MODEL_ALIAS=e2e-model
+ROUTINE_HEARTBEAT_MODEL_ALIAS=triage-flash
 ROUTINE_SF_SERVICE=triage-fleet
 ROUTINE_SF_GLITCHTIP_SYNC=1
 EOF
@@ -213,9 +214,9 @@ cli status | grep -E "^platform/heartbeat" | grep -q -E " false " && ok "status:
 
 echo "== the model client (runtime/), from the heartbeat's model step"
 L="$($D logs flotilla-worker-triage 2>&1)"
-echo "$L" | grep -q 'ok   model   e2e-model: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
+echo "$L" | grep -q 'ok   model   triage-flash: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
   && ok "a model call through the client: alias, deployment id, reported cost, traced" \
-  || bad "no model step line: $(echo "$L" | grep -o 'model   e2e-model[^"]*' | head -2)"
+  || bad "no model step line: $(echo "$L" | grep -o 'model   triage-flash[^"]*' | head -2)"
 $D logs e2e-litellm 2>&1 | grep -q "CHAT auth=bearer model=fleet-triage-flash" && ok "the endpoint got the key from the fleet's secrets file and the alias's model" \
   || bad "the LiteLLM stand-in saw no authorised chat call"
 T="$($D exec flotilla-worker-triage python3 /opt/flotilla/runtime/test_telemetry.py 2>&1)"

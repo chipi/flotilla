@@ -120,6 +120,15 @@ func (s *Server) planState(ctx context.Context, c store.Case, p policy.Plan) (po
 	if st.LockHeldBy == c.ID {
 		st.LockHeldBy = ""
 	}
+	if c.RecurrenceOf != "" {
+		prev, err := s.Store.Case(ctx, c.RecurrenceOf)
+		if err != nil {
+			return st, err
+		}
+		if prev.Resolution == cases.Verified {
+			st.RecursVerified = prev.ID
+		}
+	}
 	host := policy.HostOf(c.Target)
 	now := s.Sched.Clock()
 	y, m, d := now.In(s.Sched.Location).Date()

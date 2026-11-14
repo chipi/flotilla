@@ -55,6 +55,7 @@ func TestDecide(t *testing.T) {
 		{"the circuit breaker", nil, func(s *State) { s.FailedHour = 3 }, Propose, "propose", "", "circuit breaker"},
 		{"below the breaker", nil, func(s *State) { s.FailedHour = 2 }, Auto, "auto", "", ""},
 		{"a host incident", nil, func(s *State) { s.HostNewCases = 6 }, Propose, "propose", "", "host incident"},
+		{"a verified fix that came back", nil, func(s *State) { s.RecursVerified = "case-0" }, Propose, "propose", "", "came back within 7 days"},
 		{"the freeze is shadow, not propose", nil, func(s *State) { s.Frozen = true }, Shadow, "shadow", Auto, "frozen"},
 		{"an unknown autonomy word is shadow", nil, func(s *State) { s.ActionAutonomy = "yolo" }, Shadow, "shadow", Auto, ""},
 		// 3 and 4. Defer: the case goes back to handed_over.

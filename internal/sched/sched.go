@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
@@ -56,8 +57,10 @@ type Scheduler struct {
 	Location *time.Location
 	Log      *slog.Logger
 	Now      func() time.Time
-	// the installation's validated models section, as JSON: every run gets it in FLOTILLA_MODELS
+	// the installation's validated models section, as JSON, for the UI's Models page
 	ModelsJSON string
+	// the same, parsed: each run gets only the aliases its spec names (security T4)
+	Models *models.Config
 	// where a routine sends its own spans (flotillad's otlp_traces_url) and the environment label: every run
 	// gets them as FLOTILLA_OTLP_TRACES_URL and FLOTILLA_ENVIRONMENT (runtime/telemetry.py)
 	OTLPTracesURL string
@@ -220,8 +223,17 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	if tp := carrier.Get("traceparent"); tp != "" {
 		env["TRACEPARENT"] = tp
 	}
-	if s.ModelsJSON != "" {
-		env["FLOTILLA_MODELS"] = s.ModelsJSON
+	if s.Models != nil && len(j.Models) > 0 {
+		sub, err := s.Models.Subset(j.Models)
+		if err == nil {
+			var js string
+			if js, err = sub.JSON(); err == nil {
+				env["FLOTILLA_MODELS"] = js
+			}
+		}
+		if err != nil {
+			s.Log.Error("the routine's models", "routine", id, "err", err) // -check refuses this config
+		}
 	}
 	if sk := j.SkillsJSON(); sk != "" {
 		env["FLOTILLA_SKILLS"] = sk // the spec's skills.rule (ADR-0012), matched by the routine's code

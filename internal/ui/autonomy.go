@@ -205,7 +205,7 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 	days := int(store.RecurrenceWindow.Hours() / 24)
 	for _, k := range kinds {
 		d.Recur = append(d.Recur, recurRow{Kind: k,
-			Rule: fmt.Sprintf("same target within %d days of a close: linked to the earlier case; %d in 30 days", days, rec[k])})
+			Rule: fmt.Sprintf("same target within %d days of a close: linked to the earlier case, at most propose after a verified fix; %d in 30 days", days, rec[k])})
 	}
 	u.render(w, "autonomy.html", 200, u.pageFor(s, "Autonomy", "Autonomy", r, d))
 }

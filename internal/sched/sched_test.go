@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
@@ -145,12 +146,19 @@ func TestRunGetsTheModelsSection(t *testing.T) {
 	if _, ok := fr.got[0].Env["FLOTILLA_MODELS"]; ok {
 		t.Fatal("FLOTILLA_MODELS set without a models section")
 	}
-	s.ModelsJSON = `{"endpoints":{},"aliases":{}}`
+	// security T4: a run gets only the aliases its spec names, with their endpoints; none named, none
+	s.Models = &models.Config{Endpoints: map[string]models.Endpoint{"gw": {BaseURL: "http://gw/v1"}, "dgx": {BaseURL: "http://dgx/v1"}},
+		Aliases: map[string]models.Alias{"flash": {Endpoint: "gw", Model: "f"}, "local": {Endpoint: "dgx", Model: "l"}}}
 	s.OTLPTracesURL, s.Environment = "http://victoriatraces:10428/insert/opentelemetry/v1/traces", "operations"
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	e := fr.got[1].Env
-	if e["FLOTILLA_MODELS"] != s.ModelsJSON || e["FLOTILLA_OTLP_TRACES_URL"] != s.OTLPTracesURL || e["FLOTILLA_ENVIRONMENT"] != "operations" {
-		t.Fatalf("run env: %v", e)
+	if _, ok := e["FLOTILLA_MODELS"]; ok || e["FLOTILLA_OTLP_TRACES_URL"] != s.OTLPTracesURL || e["FLOTILLA_ENVIRONMENT"] != "operations" {
+		t.Fatalf("a routine that names no model got the models section, or the telemetry env is wrong: %v", e)
+	}
+	s.Routines[0].Models = []string{"flash"}
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if got := fr.got[2].Env["FLOTILLA_MODELS"]; got != `{"endpoints":{"gw":{"base_url":"http://gw/v1","defaults":{}}},"aliases":{"flash":{"endpoint":"gw","model":"f"}}}` {
+		t.Fatalf("the routine's models: %s", got)
 	}
 }
 
