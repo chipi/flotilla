@@ -12,7 +12,7 @@
       <span class="decision__lbl">What would run</span>
       <div class="well">
         <span>{{$d.Action}}</span>
-        <span class="on">on {{$d.On}}: the host agent's allowlisted command for it (not shown yet, G10)</span>
+        <span class="on">on {{$d.On}}: {{if $d.Command}}{{$d.Command}}{{else}}the host has not reported its command for this action{{end}}</span>
       </div>
     </section>
 

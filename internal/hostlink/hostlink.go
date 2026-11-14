@@ -40,13 +40,15 @@ type Auth interface {
 
 // HostState is what flotillad knows of a connected (or once connected) host.
 type HostState struct {
-	Host        string        `json:"host"`
-	Connected   bool          `json:"connected"`
-	Version     string        `json:"version"`
-	ConnectedAt time.Time     `json:"connected_at"`
-	LastContact time.Time     `json:"last_contact"`
-	ClockOffset time.Duration `json:"clock_offset_ns"` // the agent's clock minus flotillad's, at its last frame
-	ChainHead   string        `json:"chain_head"`
+	Host        string                   `json:"host"`
+	Connected   bool                     `json:"connected"`
+	Version     string                   `json:"version"`
+	ConnectedAt time.Time                `json:"connected_at"`
+	LastContact time.Time                `json:"last_contact"`
+	ClockOffset time.Duration            `json:"clock_offset_ns"` // the agent's clock minus flotillad's, at its last frame
+	ChainHead   string                   `json:"chain_head"`
+	Ceiling     string                   `json:"ceiling,omitempty"`
+	Allowlist   []hostwire.AllowedAction `json:"allowlist,omitempty"`
 }
 
 // Server is the endpoint.
@@ -169,7 +171,7 @@ func (s *Server) handle(tc *tls.Conn) {
 	}
 	s.conns[host] = c
 	s.state[host] = &HostState{Host: host, Connected: true, Version: hello.Version, ConnectedAt: at, LastContact: at,
-		ClockOffset: hello.Clock.Sub(at), ChainHead: hello.ChainHead}
+		ClockOffset: hello.Clock.Sub(at), ChainHead: hello.ChainHead, Ceiling: hello.Ceiling, Allowlist: hello.Allowlist}
 	s.mu.Unlock()
 	s.Log.Info("host connected", "host", host, "version", hello.Version, "clock_offset", hello.Clock.Sub(at))
 	s.report(host)

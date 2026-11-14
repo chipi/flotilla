@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -8,10 +10,12 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/hostwire"
 	"github.com/chipi/flotilla/internal/store"
 )
 
 type hostRow struct {
+	Allowed  []allowedRow
 	Load     hostLoad
 	Instance string
 	store.Host
@@ -54,6 +58,10 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 			} else {
 				row.Cert = "–"
 			}
+		}
+		row.Allowed = allowedOf(h.Allowlist)
+		if h.Ceiling != "" {
+			row.Cap = h.Ceiling
 		}
 		row.Instance = u.HostMetrics[h.Name]
 		if h.RevokedAt == nil {
@@ -196,4 +204,44 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		}
 	}
 	u.render(w, "host.html", 200, u.pageFor(s, "Host "+row.Name, "Hosts", r, d))
+}
+
+type allowedRow struct {
+	Name, Command, Timeout string
+	PerHour                int
+}
+
+// allowedOf reads a host's reported allowlist (G10); none when its agent reported none.
+func allowedOf(raw string) []allowedRow {
+	if raw == "" {
+		return nil
+	}
+	var as []hostwire.AllowedAction
+	if json.Unmarshal([]byte(raw), &as) != nil {
+		return nil
+	}
+	out := make([]allowedRow, len(as))
+	for i, a := range as {
+		out[i] = allowedRow{Name: a.Name, Command: strings.Join(a.Argv, " "), Timeout: a.Timeout, PerHour: a.PerHour}
+	}
+	return out
+}
+
+// hostCommand is the exact command a host's agent runs for an action, as it reported its config.
+func (u *Server) hostCommand(ctx context.Context, host, action string) string {
+	hosts, err := u.API.Store.Hosts(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, h := range hosts {
+		if h.Name != host || h.RevokedAt != nil {
+			continue
+		}
+		for _, a := range allowedOf(h.Allowlist) {
+			if a.Name == action {
+				return a.Command
+			}
+		}
+	}
+	return ""
 }

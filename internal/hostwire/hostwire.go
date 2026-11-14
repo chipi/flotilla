@@ -105,6 +105,10 @@ type HelloBody struct {
 	Version   string    `json:"version"`
 	Clock     time.Time `json:"clock"`
 	ChainHead string    `json:"chain_head"`
+	// What this host's own config allows (G10), for people to read on the UI: flotillad never trusts it
+	// for a decision (the host enforces its config whatever flotillad believes). Older agents send none.
+	Ceiling   string          `json:"ceiling,omitempty"`
+	Allowlist []AllowedAction `json:"allowlist,omitempty"`
 }
 
 type HeartbeatBody struct {
@@ -130,4 +134,12 @@ type ExecuteBody struct {
 
 type RefusalBody struct {
 	Detail string `json:"detail"`
+}
+
+// AllowedAction is one action a host's config allows: its exact command and limits.
+type AllowedAction struct {
+	Name    string   `json:"name"`
+	Argv    []string `json:"argv"`
+	PerHour int      `json:"per_hour"`
+	Timeout string   `json:"timeout"`
 }

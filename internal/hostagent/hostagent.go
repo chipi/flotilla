@@ -50,6 +50,8 @@ type Agent struct {
 	SaveChain  func([]byte) error     // a renewed one
 	Exec       Executor
 	Heartbeat  time.Duration
+	Ceiling    string                   // this host's own config, reported in hello (G10)
+	Allowlist  []hostwire.AllowedAction // likewise
 	Log        *slog.Logger
 	Now        func() time.Time
 }
@@ -209,7 +211,8 @@ func (a *Agent) session(ctx context.Context) error {
 	defer nc.Close()
 	stop := context.AfterFunc(ctx, func() { nc.Close() })
 	defer stop()
-	if err := s.write(hostwire.Hello, hostwire.HelloBody{Version: a.Version, Clock: a.now().UTC(), ChainHead: a.Exec.ChainHead()}); err != nil {
+	if err := s.write(hostwire.Hello, hostwire.HelloBody{Version: a.Version, Clock: a.now().UTC(), ChainHead: a.Exec.ChainHead(),
+		Ceiling: a.Ceiling, Allowlist: a.Allowlist}); err != nil {
 		return err
 	}
 	nc.SetReadDeadline(time.Now().Add(15 * time.Second))

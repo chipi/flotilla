@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -119,7 +120,8 @@ func watchHosts(ctx context.Context, st *store.Store, w *hostalert.Watcher, now 
 func recordContact(st *store.Store, log *slog.Logger) func(hostlink.HostState) {
 	return func(h hostlink.HostState) {
 		if err := st.RecordHostContact(context.Background(), store.HostContact{Host: h.Host, Connected: h.Connected, Version: h.Version,
-			ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead}); err != nil {
+			ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead,
+			Ceiling: h.Ceiling, Allowlist: allowlistJSON(h)}); err != nil {
 			log.Error("host contact: the store", "host", h.Host, "err", err)
 		}
 	}
@@ -155,4 +157,16 @@ func (s *serverCert) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	}
 	s.cur = &tls.Certificate{Certificate: [][]byte{c.Raw, s.ca.Cert.Raw}, PrivateKey: key, Leaf: c}
 	return s.cur, nil
+}
+
+// allowlistJSON is the host's reported allowlist as the store keeps it ("" when the agent sent none).
+func allowlistJSON(h hostlink.HostState) string {
+	if len(h.Allowlist) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(h.Allowlist)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

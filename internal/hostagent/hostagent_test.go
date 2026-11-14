@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -74,8 +75,14 @@ func newWorld(t *testing.T) world {
 		TLS: &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{srvCert.Raw, inter.Cert.Raw}, PrivateKey: key}}},
 		// as flotillad wires it (cmd/flotillad recordContact)
 		OnContact: func(h hostlink.HostState) {
+			allow := ""
+			if len(h.Allowlist) > 0 {
+				b, _ := json.Marshal(h.Allowlist)
+				allow = string(b)
+			}
 			st.RecordHostContact(context.Background(), store.HostContact{Host: h.Host, Connected: h.Connected, Version: h.Version,
-				ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead})
+				ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead,
+				Ceiling: h.Ceiling, Allowlist: allow})
 		}}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -172,6 +179,38 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	hs, _ := w.api.Store.Hosts(context.Background())
 	if h := hs[0]; !h.Connected || h.Version != "test" || h.LastContact == "" || h.ClockOffsetMS < 50000 || h.ClockOffsetMS > 61000 || h.ChainHead == "" {
 		t.Fatalf("the stored host: %+v", h)
+	}
+}
+
+// The agent reports its own config in hello (G10): flotillad keeps the ceiling and the allowlist for
+// people to read; an agent that reports none (older) leaves what was stored.
+func TestHelloReportsTheConfig(t *testing.T) {
+	w := newWorld(t)
+	a := w.agent(t, "mini", &fakeExec{})
+	a.Ceiling = "propose"
+	a.Allowlist = []hostwire.AllowedAction{{Name: "backup.rerun_observability", Argv: []string{"/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "x"},
+		PerHour: 1, Timeout: "30m0s"}}
+	cancel := run(t, a)
+	waitFor(t, "the agent to connect", connected(w, "mini"))
+	if st := w.link.Hosts()[0]; st.Ceiling != "propose" || len(st.Allowlist) != 1 || st.Allowlist[0].Argv[3] != "kickstart" {
+		t.Fatalf("the link's state: %+v", st)
+	}
+	waitFor(t, "the store to have it", func() bool {
+		hs, _ := w.api.Store.Hosts(context.Background())
+		return len(hs) == 1 && hs[0].Ceiling == "propose" && strings.Contains(hs[0].Allowlist, "kickstart")
+	})
+	cancel()
+	b := w.agent(t, "dgx", &fakeExec{})
+	run(t, b)
+	waitFor(t, "an agent without a report to connect", connected(w, "dgx"))
+	if err := w.api.Store.RecordHostContact(context.Background(), store.HostContact{Host: "mini", Connected: true}); err != nil {
+		t.Fatal(err)
+	}
+	hs, _ := w.api.Store.Hosts(context.Background())
+	for _, h := range hs {
+		if h.Name == "mini" && (h.Ceiling != "propose" || !strings.Contains(h.Allowlist, "kickstart")) {
+			t.Fatalf("a contact without a report erased the stored one: %+v", h)
+		}
 	}
 }
 

@@ -17,7 +17,7 @@ import (
 type decision struct {
 	ID, Href, KindLabel, Fleet, Waiting string
 	Title                               string
-	Action, On                          string
+	Action, On, Command                 string
 	Risk, Reversible, Channel           string
 	ProposedBy, Run                     string
 	Why                                 []string
@@ -50,6 +50,7 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	}
 	d.Action = p.Action + "(" + strings.Join(args, ", ") + ")"
 	d.On = c.Target
+	d.Command = u.hostCommand(ctx, hostOf(c.Target), p.Action)
 	d.Title = c.Title
 	d.Risk, d.Reversible, d.Channel = "unknown", "not declared", "here or the CLI"
 	if u.API.Registry != nil {

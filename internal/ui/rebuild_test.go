@@ -44,7 +44,18 @@ func TestHostLoad(t *testing.T) {
 		}
 	}
 	f.ui.MetricsURL, f.ui.HostMetrics = vmsrv.URL, map[string]string{"mini": "homelab"}
+	// G10: mini's agent reported its config; dgx's (older) did not
+	if err := f.st.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, Version: "v", Ceiling: "propose",
+		Allowlist: `[{"name":"backup.rerun_observability","argv":["/usr/bin/sudo","-n","/bin/launchctl","kickstart","system/com.homelab.db-backup"],"per_hour":1,"timeout":"30m0s"}]`}); err != nil {
+		t.Fatal(err)
+	}
 	ck := f.signin(f.vic)
+	if _, agent := f.do("GET", "/hosts/mini?tab=agent", ck, nil, nil); !strings.Contains(agent, "/bin/launchctl kickstart system/com.homelab.db-backup") || !strings.Contains(agent, "1 an hour") {
+		t.Error("the Host page does not show the reported allowlist")
+	}
+	if _, agent := f.do("GET", "/hosts/dgx?tab=agent", ck, nil, nil); !strings.Contains(agent, "No allowlist reported.") {
+		t.Error("an agent that reported no allowlist is not named")
+	}
 	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "42% · 42% · 42%") || !strings.Contains(page, "– · – · –") {
 		t.Error("the Hosts column: mini's load, dgx's dashes")
 	}

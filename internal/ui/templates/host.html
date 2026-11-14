@@ -47,7 +47,14 @@
       <div><dt>Audit chain head</dt><dd class="exact">{{if $h.ChainHead}}{{short $h.ChainHead 16}}{{else}}–{{end}}</dd></div>
       <div><dt>Connected since</dt><dd>{{if $h.ConnectedAt}}{{$h.ConnectedAt}}{{else}}–{{end}}</dd></div>
     </dl>
-    {{template "gap" (gap "G10" "The host's allowlist (each action's exact command and rate limit) lives in the host agent's own config and is not reported yet.")}}
+    {{if $h.Allowed}}<div class="table-box">
+      <table class="data data--small">
+        <thead><tr><th scope="col">Allowed action</th><th scope="col">Exact command</th><th scope="col">Rate limit</th><th scope="col">Timeout</th></tr></thead>
+        <tbody>{{range $h.Allowed}}<tr><td data-label="Allowed action" class="exact">{{.Name}}</td><td data-label="Exact command" class="exact stack">{{.Command}}</td><td data-label="Rate limit">{{.PerHour}} an hour</td><td data-label="Timeout">{{.Timeout}}</td></tr>{{end}}</tbody>
+      </table>
+    </div>
+    <p class="footnote">As the agent reported its own config when it connected. The host enforces it whatever flotillad believes; flotillad uses this only to show it.</p>
+    {{else}}<p class="gap"><strong>No allowlist reported.</strong> The agent on {{$h.Name}} is older than the report (it comes with its next upgrade).</p>{{end}}
   </section>
   {{end}}
 

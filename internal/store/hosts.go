@@ -30,6 +30,8 @@ type Host struct {
 	LastContact   string `json:"last_contact"`
 	ClockOffsetMS int64  `json:"clock_offset_ms"` // the agent's clock minus flotillad's
 	ChainHead     string `json:"chain_head"`
+	Ceiling       string `json:"ceiling,omitempty"`   // as the agent reported its config (G10)
+	Allowlist     string `json:"allowlist,omitempty"` // JSON, likewise
 }
 
 // HostContact is what flotillad heard from a host's agent (internal/hostlink).
@@ -41,13 +43,17 @@ type HostContact struct {
 	LastContact time.Time
 	ClockOffset time.Duration
 	ChainHead   string
+	Ceiling     string
+	Allowlist   string // JSON; "" leaves the stored one (an older agent reports none)
 }
 
 // RecordHostContact keeps a host's connection state; a host flotillad never enrolled is not added.
 func (s *Store) RecordHostContact(ctx context.Context, c HostContact) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET connected = ?, version = ?, connected_at = ?, last_contact = ?,
-		clock_offset_ms = ?, chain_head = ? WHERE name = ?`, c.Connected, c.Version, c.ConnectedAt.UTC().Format(ts),
-		c.LastContact.UTC().Format(ts), c.ClockOffset.Milliseconds(), c.ChainHead, c.Host)
+		clock_offset_ms = ?, chain_head = ?,
+		ceiling = CASE WHEN ? <> '' THEN ? ELSE ceiling END, allowlist = CASE WHEN ? <> '' THEN ? ELSE allowlist END
+		WHERE name = ?`, c.Connected, c.Version, c.ConnectedAt.UTC().Format(ts),
+		c.LastContact.UTC().Format(ts), c.ClockOffset.Milliseconds(), c.ChainHead, c.Ceiling, c.Ceiling, c.Allowlist, c.Allowlist, c.Host)
 	return err
 }
 
@@ -161,7 +167,7 @@ func (s *Store) HostCertCurrent(ctx context.Context, host, cert string) (bool, e
 // Hosts lists every host.
 func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT name, cert_sha256, cert_not_after, created_at, enrolled_at, revoked_at,
-		connected, version, connected_at, last_contact, clock_offset_ms, chain_head FROM hosts ORDER BY name`)
+		connected, version, connected_at, last_contact, clock_offset_ms, chain_head, ceiling, allowlist FROM hosts ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +176,7 @@ func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
 	for rows.Next() {
 		var h Host
 		if err := rows.Scan(&h.Name, &h.CertSHA256, &h.CertNotAfter, &h.CreatedAt, &h.EnrolledAt, &h.RevokedAt,
-			&h.Connected, &h.Version, &h.ConnectedAt, &h.LastContact, &h.ClockOffsetMS, &h.ChainHead); err != nil {
+			&h.Connected, &h.Version, &h.ConnectedAt, &h.LastContact, &h.ClockOffsetMS, &h.ChainHead, &h.Ceiling, &h.Allowlist); err != nil {
 			return nil, err
 		}
 		hs = append(hs, h)

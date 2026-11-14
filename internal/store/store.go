@@ -276,6 +276,9 @@ var schema = []string{
 		decided_by TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX notes_status ON notes(status, id);`,
+	// G10: what a host's agent reported of its own config at its last hello (for people only).
+	`ALTER TABLE hosts ADD COLUMN ceiling TEXT NOT NULL DEFAULT '';
+	ALTER TABLE hosts ADD COLUMN allowlist TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

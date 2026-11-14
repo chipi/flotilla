@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostcfg"
 	"github.com/chipi/flotilla/internal/hostexec"
+	"github.com/chipi/flotilla/internal/hostwire"
 )
 
 // set at build time: -ldflags "-X main.version=sha-<7>"
@@ -206,7 +208,7 @@ func run(o opts, log *slog.Logger) error {
 	a := &hostagent.Agent{Addr: o.addr, ServerName: o.serverName, Root: root, Host: cfg.Host, Version: version, Key: key,
 		LoadChain: func() ([]byte, error) { return os.ReadFile(chainPath(o.state)) },
 		SaveChain: func(b []byte) error { return saveChain(o.state, b) },
-		Exec:      x, Heartbeat: o.heartbeat, Log: log}
+		Exec:      x, Heartbeat: o.heartbeat, Log: log, Ceiling: cfg.Ceiling, Allowlist: allowlist(cfg)}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	log.Info("flotilla-host starting", "host", cfg.Host, "addr", o.addr, "ceiling", cfg.Ceiling, "actions", len(cfg.Actions))
@@ -215,4 +217,19 @@ func run(o opts, log *slog.Logger) error {
 	}
 	log.Info("flotilla-host stopped")
 	return nil
+}
+
+// allowlist is this host's config as hello reports it (G10), in a stable order.
+func allowlist(cfg *hostcfg.Config) []hostwire.AllowedAction {
+	names := make([]string, 0, len(cfg.Actions))
+	for n := range cfg.Actions {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]hostwire.AllowedAction, 0, len(names))
+	for _, n := range names {
+		a := cfg.Actions[n]
+		out = append(out, hostwire.AllowedAction{Name: n, Argv: a.Argv, PerHour: a.PerHour, Timeout: time.Duration(a.Timeout).String()})
+	}
+	return out
 }
