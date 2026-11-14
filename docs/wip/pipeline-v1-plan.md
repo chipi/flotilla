@@ -220,8 +220,15 @@ promotion to propose).
   - The second attempt ran the new flotillad's `-check` on the new config, with the live mounts,
     before stopping anything.
 
+  **The ops workers, live in shadow 2026-11-14 15:35Z** (operator's go): their tokens (mode 600),
+  `config/worker-ops.env` (`ROUTINE_BACKUP_INSTANCE=homelab`, `ROUTINE_BACKUP_TARGET=host:mini`),
+  both workers in `flotillad.yaml`, the ops routines out of `disabled_routines`, `COMPOSE_PROFILES`
+  with `ops`; backups `*.bak-ops-20261114`. `DEPLOY PASS (sha-83b641c)`, both workers healthy, and a
+  manual `ops/backup-monitor` run ok with no case (the newest offsite backup was 12 h old, under
+  the 20 h shadow threshold). Found: the monitor's first run at boot met `worker-ops-read` not yet
+  listening (connection refused); flotillad now waits for the ops workers when their profile runs.
+
   **Not done:**
-  - The ops workers (next).
   - The deploy caller and the stand-down.
   - The host agent on the mini.
   - Ending the candidate (`triage/cycle-shadow`).

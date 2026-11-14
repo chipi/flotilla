@@ -57,6 +57,10 @@ services:
     depends_on:
       egress: {condition: service_started}
       worker-triage: {condition: service_healthy}   # the first run starts at boot: the worker must be listening
+      # The ops workers too, when their profile runs (required: false leaves a host without it alone);
+      # 2026-11-14 the monitor's first run at boot met a worker not yet listening.
+      worker-ops-read: {condition: service_healthy, required: false}
+      worker-ops-act-host: {condition: service_healthy, required: false}
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
