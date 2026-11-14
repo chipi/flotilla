@@ -15,7 +15,8 @@ import (
 
 // Models and spend (mockup v3's Models page, G1): the installation's model aliases, and every model call
 // a run made as the model client recorded it. "Local" is an alias the installation declares with
-// cost: zero; "Last call" stands where the mockup draws a contract check (G15: none run yet).
+// cost: zero. "Check now" is the newest contract check (G15: platform/model-contract, daily and on
+// demand), or the newest real call while an alias has no check yet.
 
 func tokensText(n int64) string {
 	switch {
@@ -76,6 +77,18 @@ type invRow struct {
 	aliasInfo
 	Engine, LastCall, LastClass, P50, UsedBy, Effective string
 	Calls                                               int
+	Checks                                              []string // the last contract checks, newest first (G15)
+	CheckFailed                                         bool
+}
+
+// ContractRoutine runs the contract checks (fleets/platform/model-contract.yaml).
+const ContractRoutine = "platform/model-contract"
+
+// checkRun is one contract-check run's results for one alias.
+type checkRun struct {
+	At     string
+	Names  []string
+	Failed []string
 }
 
 type spendRow struct {
@@ -97,6 +110,7 @@ type modelsData struct {
 	ByModel       []spendRow
 	Unpriced      int
 	HasCalls      bool
+	CanCheck      bool // the contract routine is loaded
 }
 
 func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -122,6 +136,11 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 	}
 	t := readTable(r, "", false, func(string) bool { return false })
 	d := modelsData{Period: period, Tab: tab}
+	if u.API.Sched != nil {
+		for _, j := range u.API.Sched.Routines {
+			d.CanCheck = d.CanCheck || j.ID() == ContractRoutine
+		}
+	}
 	for _, p := range [][2]string{{"24h", "Last 24 hours"}, {"7d", "Last 7 days"}, {"30d", "Last 30 days"}, {"month", "This month"}} {
 		d.Periods = append(d.Periods, pillLink{Label: p[1], Href: t.With("period", p[0]), On: period == p[0]})
 	}
@@ -157,6 +176,8 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 		series        []float64
 	}
 	byAlias, byFleet := map[string]*acc{}, map[string]*acc{}
+	checks := map[string][]*checkRun{} // alias -> runs, in the order seen
+	runOf := map[string]*checkRun{}
 	get := func(m map[string]*acc, k string) *acc {
 		a := m[k]
 		if a == nil {
@@ -172,6 +193,22 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 		at, ok := parseTime(c.At)
 		if !ok {
 			continue
+		}
+		if c.Check != "" {
+			k := c.Alias + "\x00" + c.RunID
+			cr := runOf[k]
+			if cr == nil {
+				cr = &checkRun{At: c.At}
+				runOf[k] = cr
+				checks[c.Alias] = append(checks[c.Alias], cr)
+			}
+			if c.At > cr.At {
+				cr.At = c.At
+			}
+			cr.Names = append(cr.Names, c.Check)
+			if c.CheckOK == nil || !*c.CheckOK {
+				cr.Failed = append(cr.Failed, c.Check)
+			}
 		}
 		in, out := callTokens(c)
 		local := info[c.Alias].Local
@@ -219,7 +256,7 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 			if c.LatencyS != nil {
 				a.lat = append(a.lat, *c.LatencyS)
 			}
-			if c.At >= a.last.At {
+			if c.Check == "" && c.At >= a.last.At {
 				a.last = c
 			}
 			a.routines[c.Routine] += in + out
@@ -263,9 +300,12 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 		}
 		return fmt.Sprintf("%+.0f%% vs the period before", (cur-prev)/prev*100)
 	}
+	for _, runs := range checks {
+		sort.Slice(runs, func(i, j int) bool { return runs[i].At > runs[j].At })
+	}
 	down := 0
-	for _, a := range byAlias {
-		if a.last.Error != "" {
+	for n, a := range byAlias {
+		if runs := checks[n]; len(runs) > 0 && len(runs[0].Failed) > 0 || len(runs) == 0 && a.last.Error != "" {
 			down++
 		}
 	}
@@ -278,7 +318,7 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 		{Label: "Local share", Value: fmt.Sprintf("%.0f%%", share(float64(localTok), float64(tok))), Unit: "aliases declared cost: zero", Delta: "of the tokens in the period", Tone: "neutral", Arrow: "■", Spark: makeSpark(shareSeries)},
 		{Label: "Cloud spend", Value: usd2(cloud), Unit: unit, Delta: delta(cloud, prevCloud, true), Tone: "neutral", Arrow: "■", Spark: makeSpark(cloudSeries)},
 		{Label: "Cost per closed case", Value: perCase, Unit: plural(closed, "case closed", "cases closed"), Delta: "cloud spend over the cases closed in the period", Tone: "neutral", Arrow: "■", Spark: makeSpark(cloudSeries)},
-		{Label: "Models down", Value: fmt.Sprint(down), Unit: fmt.Sprintf("of %d with calls", len(byAlias)), Delta: "an alias whose last call failed", Tone: map[bool]string{true: "bad", false: "neutral"}[down > 0], Arrow: "■", Spark: makeSpark(nil)},
+		{Label: "Models down", Value: fmt.Sprint(down), Unit: fmt.Sprintf("of %d with calls", len(byAlias)), Delta: "an alias whose last contract check (or, without one, last call) failed", Tone: map[bool]string{true: "bad", false: "neutral"}[down > 0], Arrow: "■", Spark: makeSpark(nil)},
 	}
 
 	// Inventory: every configured alias, plus any alias a call named that the config no longer has.
@@ -315,6 +355,26 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 			if a.in+a.out > 0 && a.cost > 0 {
 				row.Effective = fmt.Sprintf("$%.2f", a.cost/float64(a.in+a.out)*1e6)
 			}
+		}
+		if runs := checks[n]; len(runs) > 0 {
+			last := runs[0]
+			if len(last.Failed) > 0 {
+				row.LastCall, row.LastClass, row.CheckFailed = "fail: "+strings.Join(last.Failed, ", ")+" at "+u.clock(last.At), "lamp lamp--stop", true
+			} else {
+				row.LastCall, row.LastClass = "pass at "+u.clock(last.At), "lamp"
+			}
+			for i, cr := range runs {
+				if i == 5 {
+					break
+				}
+				res := "pass"
+				if len(cr.Failed) > 0 {
+					res = "fail: " + strings.Join(cr.Failed, ", ")
+				}
+				row.Checks = append(row.Checks, u.clock(cr.At)+" · "+strings.Join(cr.Names, ", ")+" · "+res)
+			}
+		} else if a == nil {
+			row.LastCall = "no check or call in the period"
 		}
 		d.Inventory = append(d.Inventory, row)
 		if n == sel {

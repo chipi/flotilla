@@ -21,6 +21,9 @@ type ModelCall struct {
 	CostSource string   `json:"cost_source"`
 	LatencyS   *float64 `json:"latency_s"`
 	Error      string   `json:"error"`
+	Check      string   `json:"check,omitempty"`    // a contract check's name (G15); "" for an ordinary call
+	CheckOK    *bool    `json:"check_ok,omitempty"` // its result
+	Detail     string   `json:"detail,omitempty"`   // why it failed, or what it saw
 }
 
 // RecordCalls keeps a run's model calls, in one transaction.
@@ -39,16 +42,18 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 			at = s.now().Format(ts)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_calls (run_id, routine, at, alias, endpoint, model, deployment,
-			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.RunID, c.Routine, at, c.Alias, c.Endpoint, c.Model, c.Deployment, c.TokensIn, c.TokensOut, c.CostUSD,
-			c.CostSource, c.LatencyS, c.Error); err != nil {
+			c.CostSource, c.LatencyS, c.Error, c.Check, c.CheckOK, c.Detail); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
 }
 
-const callCols = `run_id, routine, at, alias, endpoint, model, deployment, tokens_in, tokens_out, cost_usd, cost_source, latency_s, error`
+const callCols = `run_id, routine, at, alias, endpoint, model, deployment, tokens_in, tokens_out, cost_usd, cost_source, latency_s, error,
+	check_name, check_ok, detail`
 
 func scanCalls(rows *sql.Rows) ([]ModelCall, error) {
 	defer rows.Close()
@@ -57,9 +62,13 @@ func scanCalls(rows *sql.Rows) ([]ModelCall, error) {
 		var c ModelCall
 		var tin, tout sql.NullInt64
 		var cost, lat sql.NullFloat64
+		var ok sql.NullBool
 		if err := rows.Scan(&c.RunID, &c.Routine, &c.At, &c.Alias, &c.Endpoint, &c.Model, &c.Deployment, &tin, &tout,
-			&cost, &c.CostSource, &lat, &c.Error); err != nil {
+			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail); err != nil {
 			return nil, err
+		}
+		if ok.Valid {
+			c.CheckOK = &ok.Bool
 		}
 		if tin.Valid {
 			c.TokensIn = &tin.Int64

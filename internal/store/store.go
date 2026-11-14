@@ -282,6 +282,10 @@ var schema = []string{
 	// G14: the recurrence rule (recurrence.go): the earlier case a new one comes back after.
 	`ALTER TABLE cases ADD COLUMN recurrence_of TEXT NOT NULL DEFAULT '';
 	CREATE INDEX cases_kind_target ON cases(kind, target, closed_at);`,
+	// G15: a contract check's result, kept on its call's row (runtime/contract_routine.py).
+	`ALTER TABLE run_calls ADD COLUMN check_name TEXT NOT NULL DEFAULT '';
+	ALTER TABLE run_calls ADD COLUMN check_ok INTEGER;
+	ALTER TABLE run_calls ADD COLUMN detail TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

@@ -1,0 +1,20 @@
+fleet: platform
+routine: model-contract
+description: >-
+  Contract checks (G15): every model alias in flotillad.yaml, once a day and on demand from Models and
+  spend. Does it still give JSON, call a tool when it claims native tools, honour max_tokens, report
+  its cost as its alias says, and fail an unknown model as an error rather than a retry? Each result
+  is kept on the run; Models and spend shows the last checks.
+enabled: true
+worker: triage
+trigger:
+  every: 24h
+run:
+  command: python3 /opt/flotilla/runtime/contract_routine.py --spend-file "$HOME/.model-contract-spend"
+  workdir: .
+  timeout: 10m
+  spend_file: .model-contract-spend
+autonomy: auto
+budget:
+  day_usd: 0.10
+freshness: 26h

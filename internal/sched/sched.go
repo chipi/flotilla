@@ -276,7 +276,7 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 			}
 			calls[i] = store.ModelCall{RunID: runID, Routine: id, At: at.Format(store.TimeFormat), Alias: c.Alias, Endpoint: c.Endpoint,
 				Model: c.Model, Deployment: c.Deployment, TokensIn: c.TokensIn, TokensOut: c.TokensOut, CostUSD: c.CostUSD,
-				CostSource: c.CostSource, LatencyS: c.LatencyS, Error: c.Error}
+				CostSource: c.CostSource, LatencyS: c.LatencyS, Error: c.Error, Check: c.Check, CheckOK: c.CheckOK, Detail: c.Detail}
 		}
 		// the calls are a record of the run, not its outcome: a failure to keep them is logged, not fatal
 		if err := s.Store.RecordCalls(fctx, calls); err != nil {

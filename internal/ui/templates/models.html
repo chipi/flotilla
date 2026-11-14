@@ -1,6 +1,7 @@
 {{template "head" .}}
 {{template "nav" .}}
 <main class="page">
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
   {{with .Data}}
   <section class="head">
     <div>
@@ -23,14 +24,14 @@
   {{if eq .Tab "inv"}}
   <div class="table-box">
     <table class="data">
-      <thead><tr><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Engine</th><th scope="col">Can do</th><th scope="col">Last call</th><th scope="col">p50</th><th scope="col">Used by</th><th scope="col">$ / 1M tokens</th></tr></thead>
+      <thead><tr><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Engine</th><th scope="col">Can do</th><th scope="col">Check now</th><th scope="col">p50</th><th scope="col">Used by</th><th scope="col">$ / 1M tokens</th></tr></thead>
       <tbody>
         {{range .Inventory}}<tr>
           <td data-label="Alias"><a class="exact" href="?tab=inv&amp;period={{$.Data.Period}}&amp;alias={{.Name}}"><strong>{{.Name}}</strong></a></td>
           <td data-label="Model" class="exact soft">{{.Model}}</td>
           <td data-label="Engine">{{.Engine}}</td>
           <td data-label="Can do" class="soft">{{.Caps}}</td>
-          <td data-label="Last call" class="nowrap"><span class="lampline"><span class="{{.LastClass}}" aria-hidden="true"></span>{{.LastCall}}</span></td>
+          <td data-label="Check now" class="nowrap"><span class="lampline"><span class="{{.LastClass}}" aria-hidden="true"></span>{{.LastCall}}</span></td>
           <td data-label="p50">{{.P50}}</td>
           <td data-label="Used by" class="exact">{{.UsedBy}}</td>
           <td data-label="$ / 1M tokens">{{if ne .PricePerM "–"}}{{.PricePerM}}{{else}}{{.Effective}}{{end}}</td>
@@ -43,13 +44,18 @@
       <div class="casecards">
         <h2 class="exact">{{.Name}}</h2>
         <span class="panel-note">{{.Engine}} · {{.Model}} · {{.Caps}}{{if .Calls}} · {{plural .Calls "call" "calls"}} in the period{{end}}</span>
+        {{if and $act $.Data.CanCheck}}<form method="post" action="/routines/platform/model-contract/run">{{template "csrf" $csrf}}<input type="hidden" name="back" value="/models?tab=inv&amp;alias={{.Name}}">
+          <button class="btn btn--small" type="submit">Run the contract check now</button></form>{{end}}
+      </div>
+      <div class="casecards">
+        <strong class="label">Last contract checks</strong>
+        {{range .Checks}}<span>{{.}}</span>{{else}}<span class="panel-note">No contract check in the last 14 days{{if not $.Data.CanCheck}} (platform/model-contract is not loaded){{end}}.</span>{{end}}
       </div>
       <div class="casecards">
         <strong class="label">By routine, this period</strong>
         {{range $.Data.SelRoutines}}<span>{{.}}</span>{{else}}<span class="panel-note">No call in the period.</span>{{end}}
       </div>
     </div>
-    {{template "gap" (gap "G15" "Contract checks (does the alias still do tools, JSON and report its cost?) do not run on a schedule yet; Last call is the newest real call instead.")}}
   </section>{{end}}
   {{end}}
 

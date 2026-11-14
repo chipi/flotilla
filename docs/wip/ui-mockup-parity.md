@@ -41,9 +41,9 @@ Rules for the rebuild:
 | G10 | A plan's host command | Decision "What would run" second line | closed 2026-11-14 (999ddc4): the agent reports its allowlist in hello | needs the agent upgraded to this build |
 | G11 | Models and spend, Knowledge, the morning brief | their pages | Models and spend and Knowledge built 2026-11-14 | the morning brief |
 | G12 | Platform and per-host execution caps as numbers | Autonomy guardrails, Now status line | closed in the rebuild: read from `policy.Limits` | — |
-| G13 | The evidence a level needs | Autonomy "Evidence toward the next level" bar | policy has no threshold: only a person promotes | a promotion rule in policy; the page shows the record without a bar until then |
-| G14 | A recurrence rule per kind | Autonomy | policy has none; a case that comes back is a new case | a recurrence rule in policy |
-| G15 | Contract checks on a schedule | Models "Check now", the selected model's checks | runtime/contract_check.py exists, no routine runs it | a platform routine that runs it daily |
+| G13 | The evidence a level needs | Autonomy "Evidence toward the next level" bar | closed 2026-11-14 (2ec5e43): ready after 5 clean plans in a row, no wrong verdict, failed execution or rejection in 7 days (the operator's rule) | promotion stays a person's click |
+| G14 | A recurrence rule per kind | Autonomy | closed 2026-11-14 (2ec5e43): same kind and target within 7 days of a close links to the earlier case (the operator's rule) | — |
+| G15 | Contract checks on a schedule | Models "Check now", the selected model's checks | closed 2026-11-14: `platform/model-contract` checks every alias daily and on demand; results on Models | a time of day (the trigger is every 24h from start) |
 
 ## Other deviations, named
 

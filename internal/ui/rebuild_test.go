@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
 
@@ -332,5 +333,47 @@ func TestCaseRecurs(t *testing.T) {
 	ck := f.signin(f.vic)
 	if _, page := f.do("GET", "/cases/"+again, ck, nil, nil); !strings.Contains(page, `recurs <a class="exact" href="/cases/`+first+`">`) {
 		t.Error("the case page does not link the case it recurs")
+	}
+}
+
+// G15: the newest contract check is "Check now"; the selected alias lists its last checks; an operator
+// can start the check.
+func TestContractChecksOnModels(t *testing.T) {
+	j := &spec.Routine{Fleet: "platform", Routine: "model-contract", Description: "d", Enabled: true, Worker: "triage", Autonomy: "auto",
+		Run: spec.Run{Command: "true"}, Every: 24 * time.Hour, Limit: time.Minute, Fresh: 26 * time.Hour}
+	f := setupWith(t, []*spec.Routine{j})
+	ctx := context.Background()
+	f.sch.ModelsJSON = `{"endpoints":{"gw":{"base_url":"http://gw/v1","kind":"litellm","defaults":{"tools":"native","json":"object","cost":"reported"}}},` +
+		`"aliases":{"good":{"endpoint":"gw","model":"m-good"},"bad":{"endpoint":"gw","model":"m-bad"}}}`
+	yes, no := true, false
+	at := func(d time.Duration) string { return time.Now().Add(-d).UTC().Format(store.TimeFormat) }
+	var calls []store.ModelCall
+	for _, c := range []struct {
+		run, alias, check string
+		ok                *bool
+		ago               time.Duration
+	}{{"r1", "good", "json_object", &yes, 25 * time.Hour}, {"r1", "good", "tools", &yes, 25 * time.Hour},
+		{"r2", "good", "json_object", &yes, time.Hour}, {"r2", "good", "tools", &yes, time.Hour},
+		{"r2", "bad", "json_object", &yes, time.Hour}, {"r2", "bad", "tools", &no, time.Hour}} {
+		calls = append(calls, store.ModelCall{RunID: c.run, Routine: "platform/model-contract", At: at(c.ago), Alias: c.alias,
+			Check: c.check, CheckOK: c.ok, Detail: "d"})
+	}
+	if err := f.st.RecordCalls(ctx, calls); err != nil {
+		t.Fatal(err)
+	}
+	op := f.addOperator()
+	ck, _ := f.csrfOf(op)
+	_, page := f.do("GET", "/models?tab=inv&alias=good", ck, nil, nil)
+	for _, want := range []string{"pass at ", "fail: tools at ", "json_object, tools · pass", `action="/routines/platform/model-contract/run"`, "Check now"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Models has no %q", want)
+		}
+	}
+	if strings.Count(page, "json_object, tools · pass") != 2 {
+		t.Error("the selected alias does not list both of its check runs")
+	}
+	if !strings.Contains(page, `<span class="score__label">Models down</span>
+  <div class="score__value"><strong>1</strong><span>of 2 with calls</span>`) {
+		t.Error("Models down does not count the alias whose last check failed")
 	}
 }

@@ -315,9 +315,10 @@ func TestRunWithACase(t *testing.T) {
 // A run's model calls, as its worker returned them, are kept with the run (G1).
 func TestRunRecordsItsModelCalls(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	in, cost := int64(120), 0.002
+	in, cost, no := int64(120), 0.002, false
 	fr.res.Calls = []worker.Call{{At: "2026-11-14T10:00:01Z", Alias: "triage-pro", Model: "m", TokensIn: &in, CostUSD: &cost},
-		{At: "not a time", Alias: "triage-flash", Error: "Transient"}}
+		{At: "not a time", Alias: "triage-flash", Error: "Transient"},
+		{At: "2026-11-14T10:00:02Z", Alias: "triage-flash", Check: "tools", CheckOK: &no, Detail: "no get_metric call"}}
 	r, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if err != nil {
 		t.Fatal(err)
@@ -327,10 +328,13 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	cs := got[r.ID]
-	if len(cs) != 2 || cs[0].Routine != "triage/cycle" || *cs[0].TokensIn != 120 || cs[0].At != "2026-11-14T10:00:01.000000000Z" {
+	if len(cs) != 3 || cs[0].Routine != "triage/cycle" || *cs[0].TokensIn != 120 || cs[0].At != "2026-11-14T10:00:01.000000000Z" {
 		t.Fatalf("the calls: %+v", cs)
 	}
 	if cs[1].Error != "Transient" || cs[1].At == "" {
 		t.Fatalf("a call with a bad time is kept, at the run's time: %+v", cs[1])
+	}
+	if cs[0].Check != "" || cs[0].CheckOK != nil || cs[2].Check != "tools" || cs[2].CheckOK == nil || *cs[2].CheckOK || cs[2].Detail != "no get_metric call" {
+		t.Fatalf("a contract check's result is kept on its row, an ordinary call has none (G15): %+v / %+v", cs[0], cs[2])
 	}
 }

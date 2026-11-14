@@ -56,6 +56,10 @@ type Call struct {
 	LatencyS   *float64 `json:"latency_s"`
 	Status     *int     `json:"status"`
 	Error      string   `json:"error"`
+	// set on a contract check's line (G15, runtime/contract_routine.py): which check, and its result
+	Check   string `json:"check,omitempty"`
+	CheckOK *bool  `json:"check_ok,omitempty"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 type Health struct {
