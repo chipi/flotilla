@@ -427,7 +427,7 @@ $D logs flotillad 2>&1 | grep -q '"msg":"host executions are signed".*"key_id":"
 hx -d flotilla-e2e-host sh -c 'sudo -u _flotilla /usr/local/libexec/flotilla-host/flotilla-host run -config /etc/flotilla-host/config.json -state /var/db/flotilla-host -audit /var/log/flotilla-host/audit.jsonl -root /etc/flotilla-host/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s 2>>/var/log/flotilla-host/agent.log'
 hseen '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected".*"host":"e2e-host"' \
   && ok "the installed agent connected as _flotilla; flotillad authenticated it as e2e-host" || bad "connect: $(hostlog | tail -3)"
-seen flotillad '"msg":"host log","host":"e2e-host","line":"connected to flotillad"' \
+seen flotillad '"msg":"host log".*"host":"e2e-host","line":"connected to flotillad"' \
   && ok "the agent's own log line reached flotillad's log (G5: host logs through the connection)" || bad "host log: $($D logs flotillad 2>&1 | grep '"host log' | tail -2)"
 sleep 8   # four heartbeats at 2s; silent for three, flotillad would drop it
 ! $D logs flotillad 2>&1 | grep -q '"msg":"host disconnected"' && ok "heartbeats keep the connection (8s, flotillad drops after 6s of silence)" \
