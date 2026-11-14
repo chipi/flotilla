@@ -21,6 +21,8 @@ prioritized task lists. Promotion targets:
 - [Host agent plan](host-agent-plan.md): `flotilla-host` v1 (ADR-0006 §12), after pipeline v1.
 - [UI mockup parity](ui-mockup-parity.md): every mockup v3 element against what is built,
   the overrides and the data gaps.
+- [Closing the initial vision](vision-plan.md): where the 2026-11-08 vision stands and the five
+  steps left, in the operator's order.
 - [Replay entry point](replay-entry-point.md): the versioned module evaluation projects call instead
   of patching internals (ADR-0013), agreed.
 
