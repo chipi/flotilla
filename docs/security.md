@@ -94,12 +94,13 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 - **Redaction** of flotillad's logs and routine traces is not built.
 
 - **Host agents are built (2026-11-13) and not yet deployed.** T13 to T15 are built, and the
-  security e2e passes: one real execution, approved by the operator, signed, run on an installed
-  stand-in host and audited (`make test-e2e`). Not covered there: a refusal for an action off the
-  host's allowlist and for its rate limit go through the Go tests only, because a case in checking
-  holds its target (the check step is not built). T15's automatic log comparison and alert are not
-  built, and whether the host's audit log is shipped off the host has not been checked. None of the
-  [key procedures](operations/host-keys.md) has been run on a real host.
+  security e2e passes (`make test-e2e`): on an installed stand-in host, an execution approved by the
+  operator, signed, run and verified; a second one refused by the host's rate limit; an action off
+  the host's allowlist refused; then the host's log audited against flotillad's record. Forged,
+  expired, another host's and auto-above-the-ceiling envelopes cannot come down flotillad's own path,
+  so they are covered by the Go tests over the real connection only. T15's automatic log comparison
+  and alert are not built, and whether the host's audit log is shipped off the host has not been
+  checked. None of the [key procedures](operations/host-keys.md) has been run on a real host.
 - **Image signing:** planned before any routine reaches `auto`, not built.
 - **The coding harness** used by the bugfix fleet runs code from the repos it fixes; its security
   review is due before that fleet acts.

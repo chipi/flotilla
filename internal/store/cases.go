@@ -376,8 +376,17 @@ func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) 
 // LeaseCase gives a handed-over case to a job until a time, if no one holds it (RFC-0004 §3.5): false
 // when another job holds it or it moved on. Atomic, so a case is never dispatched twice.
 func (s *Store) LeaseCase(ctx context.Context, id, holder string, until time.Time) (bool, error) {
+	return s.lease(ctx, id, cases.HandedOver, holder, until)
+}
+
+// LeaseCheck gives a case in checking to its check run, the same way.
+func (s *Store) LeaseCheck(ctx context.Context, id, holder string, until time.Time) (bool, error) {
+	return s.lease(ctx, id, cases.Checking, holder, until)
+}
+
+func (s *Store) lease(ctx context.Context, id, status, holder string, until time.Time) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = ?, lease_until = ? WHERE id = ? AND holder = '' AND status = ?`,
-		holder, until.UTC().Format(ts), id, cases.HandedOver)
+		holder, until.UTC().Format(ts), id, status)
 	if err != nil {
 		return false, err
 	}
@@ -391,13 +400,13 @@ func (s *Store) ReleaseCase(ctx context.Context, id, holder string) error {
 	return err
 }
 
-// ExpireLeases returns cases whose lease ended to no one, unless an execution is open on them (executing
-// or checking): then the check resumes and the action never runs again (RFC-0004 §3.5). It returns how
-// many it freed.
+// ExpireLeases returns cases whose lease ended to no one, unless an execution is in flight on them
+// (executing): the action never runs again (RFC-0004 §3.5). A case in checking is freed, so the check
+// resumes: what a lease starts there is a check run, never the action. It returns how many it freed.
 func (s *Store) ExpireLeases(ctx context.Context, now time.Time) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = '', lease_until = ''
-		WHERE holder <> '' AND lease_until <> '' AND lease_until < ? AND status NOT IN (?, ?)`,
-		now.UTC().Format(ts), cases.Executing, cases.Checking)
+		WHERE holder <> '' AND lease_until <> '' AND lease_until < ? AND status <> ?`,
+		now.UTC().Format(ts), cases.Executing)
 	if err != nil {
 		return 0, err
 	}

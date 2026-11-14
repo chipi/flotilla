@@ -70,9 +70,11 @@ func setup(t *testing.T) *fixture {
 		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	mon := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
 		Trigger: spec.Trigger{Every: "10m"}, Every: 10 * time.Minute, Detects: []string{"failed_backup"}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
+	chk := &spec.Routine{Fleet: "ops", Routine: "verify-backup", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
+		Trigger: spec.Trigger{Check: &spec.CheckTrigger{Verify: "backup_newer_than_execution"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	w := &fakeWorker{status: "ok"}
 	f := &fixture{st: st, w: w, now: time.Now(), logs: &bytes.Buffer{}}
-	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j, mon}, Workers: map[string]sched.Runner{"ops": w},
+	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j, mon, chk}, Workers: map[string]sched.Runner{"ops": w},
 		Now: func() time.Time { return f.now }}
 	log := slog.New(slog.NewTextHandler(f.logs, nil))
 	f.d = &Dispatcher{API: &api.Server{Sched: s, Store: st, Registry: reg, Log: log}, Log: log}
@@ -207,7 +209,8 @@ func TestOneRunPerCase(t *testing.T) {
 	}
 }
 
-// An expired lease frees a handed-over case, never one with an execution open.
+// An expired lease frees a handed-over case, never one with an execution in flight; one in checking is
+// freed, so its check resumes.
 func TestExpiredLeases(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
@@ -227,9 +230,17 @@ func TestExpiredLeases(t *testing.T) {
 		Params: map[string]string{"host": "mini"}, Outcome: "auto", Autonomy: "auto"}, cases.Executing, "", "host:mini#b", true); err != nil {
 		t.Fatal(err)
 	}
+	// c: in checking, its check run's lease run out (flotillad restarted mid-check)
+	c := f.checking(t, "#c")
+	if ok, _ := f.st.LeaseCheck(ctx, c, "ops/verify-backup", f.now.Add(-time.Minute)); !ok {
+		t.Fatal("check lease")
+	}
+	if ok, _ := f.st.LeaseCheck(ctx, a, "ops/verify-backup", f.now.Add(time.Hour)); ok {
+		t.Fatal("a check lease on a case that is not in checking")
+	}
 	n, _ := f.st.ExpireLeases(ctx, f.now)
-	if n != 1 || f.cs(t, a).Holder != "" {
-		t.Fatalf("expired lease kept: %d, holder %q", n, f.cs(t, a).Holder)
+	if n != 2 || f.cs(t, a).Holder != "" || f.cs(t, c).Holder != "" {
+		t.Fatalf("expired leases kept: %d, holders %q %q", n, f.cs(t, a).Holder, f.cs(t, c).Holder)
 	}
 	if f.cs(t, b).Holder != "ops/rerun" {
 		t.Fatal("an executing case lost its holder: the action could run again")
@@ -388,5 +399,180 @@ func TestResolvedEndsTheIncident(t *testing.T) {
 	f.monitor(t, "ok", old)
 	if n := len(f.all(t)); n != 2 {
 		t.Fatalf("a detection after a resolved case: %d cases, want a new one", n)
+	}
+}
+
+// checking is a case whose backup.rerun_observability ran and came back done: in checking, the target
+// locked (registry: check backup_newer_than_execution within 60m).
+func (f *fixture) checking(t *testing.T, key string) string {
+	t.Helper()
+	return f.checkingAction(t, key, "backup.rerun_observability")
+}
+
+func (f *fixture) checkingAction(t *testing.T, key, action string) string {
+	t.Helper()
+	ctx := context.Background()
+	id := f.handOver(t, key)
+	if err := f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun", "run r1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: action,
+		Params: map[string]string{"host": "mini"}, PlanHash: "h-" + key, Outcome: "auto", Autonomy: "auto"},
+		cases.Executing, "", "host:mini", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.MoveCase(ctx, id, cases.Checking, cases.ByAct, "", "flotillad", "on mini: done"); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func (f *fixture) result(plan string) {
+	f.w.mu.Lock()
+	f.w.plan = plan
+	f.w.mu.Unlock()
+}
+
+func (f *fixture) holder(t *testing.T) string {
+	t.Helper()
+	h, err := f.st.LockHolder(context.Background(), "host:mini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+// The check step closes a verified case and releases its target; the run gets the case and what to
+// verify, with the window's end.
+func TestCheckVerifiedCloses(t *testing.T) {
+	f := setup(t)
+	id := f.checking(t, "#v")
+	f.result(`{"outcome": "verified", "detail": "backup at 10:42, after 10:31"}`)
+	f.pass(t)
+	c := f.cs(t, id)
+	if c.Status != cases.Closed || c.Resolution != cases.Verified || c.Holder != "" {
+		t.Fatalf("case %+v", c)
+	}
+	if e := lastEvent(t, f, id); e.By != cases.ByCheck || e.Actor != "ops/verify-backup" || !strings.Contains(e.Detail, "after 10:31") {
+		t.Fatalf("the close: %+v", e)
+	}
+	if h := f.holder(t); h != "" {
+		t.Fatalf("a verified case still holds the target: %q", h)
+	}
+	if f.w.runs() != 1 {
+		t.Fatalf("%d runs, want 1", f.w.runs())
+	}
+	var kj checkJSON
+	if err := json.Unmarshal([]byte(f.w.got[0].Env["FLOTILLA_CHECK"]), &kj); err != nil || kj.Verify != "backup_newer_than_execution" ||
+		kj.Action != "backup.rerun_observability" || kj.Params["host"] != "mini" || kj.Since != c.StatusAt && kj.Since == "" {
+		t.Fatalf("FLOTILLA_CHECK %q", f.w.got[0].Env["FLOTILLA_CHECK"])
+	}
+	since, _ := time.Parse(time.RFC3339Nano, kj.Since)
+	if dl, err := time.Parse(time.RFC3339, kj.Deadline); err != nil || dl.Sub(since) < 59*time.Minute || dl.Sub(since) > 61*time.Minute {
+		t.Fatalf("deadline %q for since %q, want 60m after", kj.Deadline, kj.Since)
+	}
+	if !strings.Contains(f.w.got[0].Env["FLOTILLA_CASE"], id) {
+		t.Fatalf("FLOTILLA_CASE %q", f.w.got[0].Env["FLOTILLA_CASE"])
+	}
+}
+
+// "Not yet" keeps the case in checking, the target held, and it is looked at again after the backoff.
+func TestCheckNotYetLooksAgain(t *testing.T) {
+	f := setup(t)
+	id := f.checking(t, "#n")
+	f.result(`{"outcome": "not_yet", "detail": "newest backup 09:00"}`)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Checking || c.Holder != "" {
+		t.Fatalf("after not yet: %+v", c)
+	}
+	if e := lastEvent(t, f, id); e.Kind != notYetEvent || !strings.Contains(e.Detail, "09:00") {
+		t.Fatalf("event %+v", e)
+	}
+	if h := f.holder(t); h != id {
+		t.Fatalf("target held by %q, want %s", h, id)
+	}
+	f.pass(t)
+	if f.w.runs() != 1 {
+		t.Fatalf("looked again inside the backoff: %d runs", f.w.runs())
+	}
+	f.now = f.now.Add(DefaultBackoff + time.Minute)
+	f.result(`{"outcome": "verified", "detail": "backup at 10:42"}`)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Closed || c.Resolution != cases.Verified || f.w.runs() != 2 {
+		t.Fatalf("after the backoff: %+v, %d runs", c, f.w.runs())
+	}
+}
+
+// Past the window the case is not verified: the timer escalates it, the target stays held, and no check
+// runs.
+func TestCheckWindowEscalates(t *testing.T) {
+	f := setup(t)
+	id := f.checking(t, "#w")
+	f.now = f.now.Add(61 * time.Minute)
+	f.result(`{"outcome": "verified"}`)
+	f.pass(t)
+	c := f.cs(t, id)
+	if c.Status != cases.Escalated || f.w.runs() != 0 {
+		t.Fatalf("past the window: %+v, %d runs", c, f.w.runs())
+	}
+	if e := lastEvent(t, f, id); e.By != cases.ByTimer || !strings.Contains(e.Detail, "not verified: backup_newer_than_execution did not hold within 1h0m0s") {
+		t.Fatalf("event %+v", e)
+	}
+	if h := f.holder(t); h != id {
+		t.Fatalf("a not verified case's target: held by %q, want %s", h, id)
+	}
+}
+
+// Without a check routine nothing runs; the window still ends it. Anything but verified or not_yet is no
+// decision: the case stays in checking.
+func TestCheckWithoutRoutineOrDecision(t *testing.T) {
+	f := setup(t)
+	f.d.API.Sched.Routines[2].Enabled = false
+	id := f.checking(t, "#x")
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Checking || f.w.runs() != 0 {
+		t.Fatalf("no check routine: %+v, %d runs", c, f.w.runs())
+	}
+	f.now = f.now.Add(61 * time.Minute)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Escalated {
+		t.Fatalf("no check routine, past the window: %+v", c)
+	}
+
+	g := setup(t)
+	b := g.checking(t, "#y")
+	g.result(`{"outcome": "resolved_itself"}`)
+	g.pass(t)
+	if c := g.cs(t, b); c.Status != cases.Checking {
+		t.Fatalf("a check outcome that is not one: %+v", c)
+	}
+	if e := lastEvent(t, g, b); e.Kind != "run.no_decision" || !strings.Contains(e.Detail, `"resolved_itself" is not verified or not_yet`) {
+		t.Fatalf("event %+v", e)
+	}
+
+	// a check run's "verified" for another case verifies nothing
+	h := setup(t)
+	x := h.checking(t, "#z")
+	h.result(`{"outcome": "verified", "case_id": "case-20261114-someoneelse"}`)
+	h.pass(t)
+	if c := h.cs(t, x); c.Status != cases.Checking {
+		t.Fatalf("verified by a result for another case: %+v", c)
+	}
+	if e := lastEvent(t, h, x); e.Kind != "run.no_decision" || !strings.Contains(e.Detail, "not this one") {
+		t.Fatalf("event %+v", e)
+	}
+}
+
+// An action the registry no longer declares has no check: nothing can verify the case, so it is
+// escalated at once rather than left to wait.
+func TestCheckActionGoneEscalates(t *testing.T) {
+	f := setup(t)
+	id := f.checkingAction(t, "#g", "gone.action")
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Escalated || f.w.runs() != 0 {
+		t.Fatalf("an action without a check: %+v, %d runs", c, f.w.runs())
+	}
+	if e := lastEvent(t, f, id); e.By != cases.ByTimer || !strings.Contains(e.Detail, `the registry declares no check for "gone.action"`) {
+		t.Fatalf("event %+v", e)
 	}
 }

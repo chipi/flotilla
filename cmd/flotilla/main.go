@@ -10,6 +10,7 @@
 //	flotilla stop fleet
 //	flotilla start fleet --reason "..."                 (operator)
 //	flotilla case approve ID | reject ID --reason "..." (operator: a proposed plan)
+//	flotilla case close ID --reason "..."               (operator: an escalated case; releases its target)
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
@@ -181,7 +182,7 @@ func main() {
 		need(args, 1, `start fleet --reason "..."`)
 		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
 	case "case":
-		if len(args) > 0 && (args[0] == "approve" || args[0] == "reject") {
+		if len(args) > 0 && (args[0] == "approve" || args[0] == "reject" || args[0] == "close") {
 			caseDecision(args, reason)
 			return
 		}
@@ -199,15 +200,17 @@ func main() {
 	}
 }
 
-// caseDecision is `flotilla case approve ID | case reject ID --reason "..."` (RFC-0004 §5): an operator's
-// answer to a proposed plan. Approving sends it on to its host, signed; rejecting escalates the case.
+// caseDecision is `flotilla case approve ID | case reject ID --reason "..." | case close ID --reason "..."`
+// (RFC-0004 §5): an operator's answer to a proposed plan, or their resolution of an escalated case.
+// Approving sends it on to its host, signed; rejecting escalates the case; closing an escalated case
+// releases its target.
 func caseDecision(args []string, reason string) {
-	need(args, 2, `case approve ID | case reject ID --reason "..."`)
+	need(args, 2, `case approve ID | case reject ID --reason "..." | case close ID --reason "..."`)
 	if args[0] == "approve" {
 		post("/v1/cases/"+args[1]+"/approve", nil)
 		return
 	}
-	post("/v1/cases/"+args[1]+"/reject", map[string]string{"reason": reason})
+	post("/v1/cases/"+args[1]+"/"+args[0], map[string]string{"reason": reason})
 }
 
 // caseCmd is `flotilla case list [--all] | show ID` (ADR-0005): the open cases, or one case's whole story.
@@ -434,7 +437,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID | case reject|close ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

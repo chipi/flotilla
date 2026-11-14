@@ -110,3 +110,44 @@ func TestReject(t *testing.T) {
 		t.Fatalf("the action after a rejection: %q, want shadow", v)
 	}
 }
+
+// An escalated case holds its target (a failed, unknown or not verified execution) until a person
+// closes it, with a reason; nothing else can close it, and nothing else is closed this way.
+func TestCloseEscalated(t *testing.T) {
+	ctx := context.Background()
+	s := newServer(t, func(*spec.Routine) {})
+	if err := s.SetActionAutonomy(ctx, opCaller, "test", rerun, "propose", "e2e"); err != nil {
+		t.Fatal(err)
+	}
+	id := proposedCase(t, s, "d")
+	if err := s.CloseCase(ctx, opCaller, "test", id, "early"); err == nil || AsProblem(err).Code != 409 {
+		t.Fatalf("closed a case awaiting approval: %v", err)
+	}
+	if _, err := s.ApproveCase(ctx, opCaller, "test", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Escalated, cases.ByAct, "", "flotillad", "on mini: failed"); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != id {
+		t.Fatalf("an escalated execution's target: held by %q, want %s", h, id)
+	}
+	if err := s.CloseCase(ctx, opCaller, "test", id, " "); err == nil || AsProblem(err).Code != 400 {
+		t.Fatalf("closed without a reason: %v", err)
+	}
+	if err := s.CloseCase(ctx, agentCaller, "test", id, "fine"); err == nil {
+		t.Fatal("an agent closed a case")
+	}
+	if err := s.CloseCase(ctx, opCaller, "test", "case-nope", "fine"); err == nil || AsProblem(err).Code != 404 {
+		t.Fatalf("an unknown case: %v", err)
+	}
+	if err := s.CloseCase(ctx, opCaller, "test", id, "reran the backup by hand"); err != nil {
+		t.Fatal(err)
+	}
+	if c := caseStatus(t, s, id); c.Status != cases.Closed || c.Resolution != cases.OperatorResolved {
+		t.Fatalf("after close: %s %s", c.Status, c.Resolution)
+	}
+	if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != "" {
+		t.Fatalf("a closed case still holds the target: %q", h)
+	}
+}

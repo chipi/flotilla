@@ -150,6 +150,24 @@ promotion to propose).
   rejection (awaiting_approval → escalated by the operator) lowers it to shadow, on the first one
   (RFC-0004 §5.2 says "rejected proposals" without a count; the cautious reading). An expiry is not
   a rejection; a demotion never raises; an `action.demoted` event goes on the case. 4 mutants killed.
+- **The check step and the way out of escalated** (before the first promotion to propose): built
+  2026-11-14. Until then a case in `checking` had no exit and held its target for good. A routine
+  with `trigger: {check: {verify: NAME}}` (one per registry check condition) runs while a case is in
+  checking, with `FLOTILLA_CHECK` (the condition, the action and its parameters, when checking began,
+  the window's end) beside `FLOTILLA_CASE`, leased like an acting run (`store.LeaseCheck`). Its result
+  file says `verified` (closed verified by check: the target released) or `not_yet` (a
+  `check.not_yet` event, looked at again after the dispatcher's backoff); anything else is
+  `run.no_decision`. Past the action's `check.within`, counted from the move into checking, the timer
+  escalates it as not verified, target held; an action the registry no longer declares is escalated
+  at once. An expired lease on a case in checking is now freed, so the check resumes (only
+  `executing` keeps its holder: the action never runs twice). `flotilla case close ID --reason`
+  (`POST /v1/cases/{id}/close`, operator and admin) closes an escalated case, operator resolved, and
+  releases its target. 18 mutants killed (2 survivors of the first round: one my own equivalent
+  mutant, redone; one a missing test, added). The e2e now runs three executions on its stand-in host.
+  Not built: the `executing` deadline from an action's timeout (a host execution ends with its result
+  or as unknown), the outcome check (days), `escalated -> handed_over` (reassign), and a check
+  routine for `backup_newer_than_execution`, the mini's real action: its cases escalate at 60m until
+  one is written.
 - **Deploy checklist** for the mini, with the UI and v1: **Saturday 2026-11-21, after the scheduled
   weekly freeze and check pass on the promoted code** (operator, asked again; the first answer,
   "Saturday 11-15", rested on a wrong calendar of mine: 11-14 is the Saturday, its freeze runs before

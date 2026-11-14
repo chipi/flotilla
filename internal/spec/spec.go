@@ -81,17 +81,24 @@ type Routine struct {
 	Fresh time.Duration `yaml:"-"`
 }
 
-// Trigger is what starts the routine (ADR-0007): time (every) or an event on a case (RFC-0004 §3.7),
-// exactly one of them.
+// Trigger is what starts the routine (ADR-0007): time (every) or an event on a case (RFC-0004 §3.7):
+// its hand-over (case) or its check after an execution (check). Exactly one of them.
 type Trigger struct {
-	Every string       `yaml:"every"`
-	Case  *CaseTrigger `yaml:"case"`
+	Every string        `yaml:"every"`
+	Case  *CaseTrigger  `yaml:"case"`
+	Check *CheckTrigger `yaml:"check"`
 }
 
 // CaseTrigger starts the routine when a case of its kind is handed over: it is that kind's acting
 // routine (pipeline v1 step 5). One routine per kind.
 type CaseTrigger struct {
 	Kind string `yaml:"kind"`
+}
+
+// CheckTrigger starts the routine while a case is in checking, for an action whose registry check is
+// this verify condition (RFC-0004 §7: verify within minutes). One routine per condition.
+type CheckTrigger struct {
+	Verify string `yaml:"verify"`
 }
 
 // OnCase is the case kind the routine acts on, "" for a routine on time.
@@ -101,6 +108,17 @@ func (j *Routine) OnCase() string {
 	}
 	return j.Trigger.Case.Kind
 }
+
+// OnCheck is the verify condition the routine checks, "" for any other routine.
+func (j *Routine) OnCheck() string {
+	if j.Trigger.Check == nil {
+		return ""
+	}
+	return j.Trigger.Check.Verify
+}
+
+// OnEvent: the routine runs when a case calls for it, never on time.
+func (j *Routine) OnEvent() bool { return j.Trigger.Case != nil || j.Trigger.Check != nil }
 
 // Skills (ADR-0012, RFC-0005 §4): rules the routine's code matches against its case's structured fields;
 // every rule that matches loads its skills, in spec order. On-demand loading comes with RFC-0002 §9 step 4.
@@ -117,6 +135,7 @@ type SkillRule struct {
 var (
 	skillNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 	caseFieldRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+	verifyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\([^()]*\))?$`) // as the registry's conditions
 )
 
 // Harness (RFC-0002 §4) configures the routine's model-driven step: its protocol, the tools offered, the
@@ -227,6 +246,13 @@ func Load(dir string) ([]*Routine, error) {
 				continue
 			}
 			seen["case:"+k] = p
+		}
+		if v := j.OnCheck(); v != "" {
+			if prev, dup := seen["check:"+v]; dup {
+				errs = append(errs, fmt.Errorf("%s: %s already has a check routine in %s", p, v, prev))
+				continue
+			}
+			seen["check:"+v] = p
 		}
 		routines = append(routines, j)
 	}
@@ -343,12 +369,22 @@ func (j *Routine) validate() error {
 		}
 		return d
 	}
+	n := 0
+	for _, set := range []bool{j.Trigger.Every != "", j.Trigger.Case != nil, j.Trigger.Check != nil} {
+		if set {
+			n++
+		}
+	}
 	switch {
-	case j.Trigger.Case != nil && j.Trigger.Every != "":
-		bad("trigger: every or case, not both")
+	case n > 1:
+		bad("trigger: one of every, case and check")
 	case j.Trigger.Case != nil:
 		if !caseFieldRe.MatchString(j.Trigger.Case.Kind) {
 			bad("trigger.case.kind %q: a case kind such as failed_backup", j.Trigger.Case.Kind)
+		}
+	case j.Trigger.Check != nil:
+		if !verifyRe.MatchString(j.Trigger.Check.Verify) {
+			bad("trigger.check.verify %q: a registry check condition such as backup_newer_than_execution", j.Trigger.Check.Verify)
 		}
 	default:
 		j.Every = dur("trigger.every", j.Trigger.Every, time.Minute)
@@ -358,11 +394,11 @@ func (j *Routine) validate() error {
 			bad("detects: %q is not a case kind", k)
 		}
 	}
-	if len(j.Detects) > 0 && j.Trigger.Case != nil {
+	if len(j.Detects) > 0 && j.OnEvent() {
 		bad("detects: a routine on cases acts on them; a monitor runs on time")
 	}
 	j.Limit = dur("run.timeout", j.Run.Timeout, 10*time.Second)
-	if j.Freshness != "" || j.Trigger.Case == nil { // a routine on cases runs when there is work: no freshness
+	if j.Freshness != "" || !j.OnEvent() { // a routine on cases runs when there is work: no freshness
 		j.Fresh = dur("freshness", j.Freshness, time.Minute)
 	}
 	if j.Every > 0 && j.Limit > j.Every*3 {

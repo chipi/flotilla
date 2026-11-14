@@ -1,0 +1,17 @@
+fleet: e2e
+routine: host-true-verify
+description: >-
+  The security e2e's check routine, never shipped: verifies an execution of the e2e registry's actions
+  (check e2e_nothing) at once, so the case closes verified and its target is released.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: e2e_nothing}
+run:
+  command: >-
+    printf '{"outcome": "verified", "detail": "e2e: nothing to verify"}' > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: shadow
+budget:
+  day_usd: 0

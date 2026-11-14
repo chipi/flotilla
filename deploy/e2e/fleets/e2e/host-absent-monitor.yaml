@@ -1,0 +1,21 @@
+fleet: e2e
+routine: host-absent-monitor
+description: >-
+  The security e2e's second monitor, never shipped: run by hand, it reports one e2e_host_absent
+  detection on host:e2e-host, whose acting routine plans host.absent, an action the e2e registry
+  declares and the stand-in host's allowlist does not: the host must refuse it.
+enabled: false
+worker: ops-read
+trigger:
+  every: 60m
+detects: [e2e_host_absent]
+run:
+  command: >-
+    printf '{"outcome": "detections", "detections": [{"kind": "e2e_host_absent", "target": "host:e2e-host", "detail": "e2e"}]}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 120m

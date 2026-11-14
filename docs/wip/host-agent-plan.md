@@ -263,6 +263,13 @@ VPS.
     exit. Until then they, and the forged, expired, another host's and auto-above-the-ceiling
     envelopes (which cannot come down flotillad's legitimate path at all), are covered by the Go
     tests over the real connection (internal/hostagent, internal/hostexec).
+    **Closed 2026-11-14** with the check step (pipeline-v1-plan, "The check step"): an e2e check
+    routine verifies the first `host.true`, which releases the target; a second `host.true` is
+    refused by the host (`per_hour` 1 there: "host.true ran 1 times in the last hour here, its
+    limit"); `host.absent`, declared by the e2e registry and not by the host, is refused ("is not
+    allowed on this host"); the operator closes both escalations (`case close`); the audit passes over
+    the 3 executions. `make test-e2e`: E2E PASS, 131 checks. The forged, expired, another host's and
+    auto-above-the-ceiling envelopes stay with the Go tests.
 - **H10, the procedures (written):** [Host keys and certificates](../operations/host-keys.md): the
   execution key's rotation (two-key window), the intermediate's, the root's replacement, a host's
   certificate (renewal, expiry, revocation), and what to do when each key leaks. Writing them found

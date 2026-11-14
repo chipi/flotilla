@@ -66,7 +66,10 @@ func TestRejects(t *testing.T) {
 		"bad skill name":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}, load: [Bad_Name]}]}\n", `skill name "Bad_Name"`},
 		"bad case field":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {Class: a}, load: [x]}]}\n", `field "Class"`},
 		"unknown skills field":      {"triage/cycle.yaml", good + "skills: {rules: []}\n", "field rules not found"},
-		"every and case":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {every: 10m, case: {kind: failed_backup}}", 1), "every or case, not both"},
+		"every and case":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {every: 10m, case: {kind: failed_backup}}", 1), "one of every, case and check"},
+		"case and check":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}, check: {verify: a_b}}", 1), "one of every, case and check"},
+		"a bad verify":              {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: Not-One}}", 1), "trigger.check.verify"},
+		"a check routine detecting": {"triage/cycle.yaml", strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: a_b}}", 1), "freshness: 35m\n", "", 1) + "detects: [failed_backup]\n", "a monitor runs on time"},
 		"a bad case kind":           {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: Failed-Backup}}", 1), "trigger.case.kind"},
 		"no trigger":                {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}\n", "", 1), "trigger.every"},
 		"a bad detected kind":       {"triage/cycle.yaml", good + "detects: [Disk Full]\n", "detects: \"Disk Full\""},
@@ -130,6 +133,25 @@ func TestCaseTrigger(t *testing.T) {
 	write(t, d, "ops/rerun2.yaml", strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: rerun2").Replace(onCase))
 	if _, err := Load(d); err == nil || !strings.Contains(err.Error(), "already have an acting routine") {
 		t.Fatalf("two acting routines for one kind: %v", err)
+	}
+}
+
+// A check routine (RFC-0004 §7): runs on cases in checking, never on time; one per verify condition.
+func TestCheckTrigger(t *testing.T) {
+	onCheck := strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: backup_newer_than_execution}}", 1),
+		"freshness: 35m\n", "", 1)
+	d := t.TempDir()
+	write(t, d, "ops/verify.yaml", strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: verify").Replace(onCheck))
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := routines[0]; j.OnCheck() != "backup_newer_than_execution" || j.OnCase() != "" || !j.OnEvent() || j.Every != 0 || j.Fresh != 0 {
+		t.Fatalf("a check routine: verify %q case %q every %s fresh %s", j.OnCheck(), j.OnCase(), j.Every, j.Fresh)
+	}
+	write(t, d, "ops/verify2.yaml", strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: verify2").Replace(onCheck))
+	if _, err := Load(d); err == nil || !strings.Contains(err.Error(), "already has a check routine") {
+		t.Fatalf("two check routines for one condition: %v", err)
 	}
 }
 

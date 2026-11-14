@@ -20,6 +20,34 @@ import (
 func (s *Server) caseRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/cases/{id}/approve", s.auth(ActApprove, s.caseApprove))
 	m.Handle("POST /v1/cases/{id}/reject", s.auth(ActApprove, s.caseReject))
+	m.Handle("POST /v1/cases/{id}/close", s.auth(ActApprove, s.caseClose))
+}
+
+// CloseCase is a person resolving an escalated case (RFC-0004 §3.5: escalated -> closed, operator
+// resolved), with the caller's reason. It releases the target: an escalation (not verified, failed,
+// unknown) holds it until then.
+func (s *Server) CloseCase(ctx context.Context, c Caller, via, id, why string) error {
+	if err := s.Check(ctx, c, ActApprove); err != nil {
+		return err
+	}
+	if strings.TrimSpace(why) == "" {
+		return problem(400, "closing a case needs a reason (--reason)")
+	}
+	cs, err := s.Store.Case(ctx, id)
+	if errors.Is(err, store.ErrNoSuchCase) {
+		return problem(404, "no such case")
+	}
+	if err != nil {
+		return err
+	}
+	if cs.Status != cases.Escalated {
+		return problem(409, "case %s is %s: only an escalated case is closed by a person", id, cs.Status)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Closed, cases.ByOperator, cases.OperatorResolved, c.Name, why); err != nil {
+		return err
+	}
+	s.Log.Info("case closed", "case", id, "by", c.Name, "reason", why, "via", via)
+	return nil
 }
 
 func (s *Server) awaiting(ctx context.Context, id string) (store.Case, error) {
@@ -111,4 +139,9 @@ func (s *Server) caseApprove(w http.ResponseWriter, r *http.Request, c Caller) {
 func (s *Server) caseReject(w http.ResponseWriter, r *http.Request, c Caller) {
 	err := s.RejectCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
 	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "rejected_by": c.Name})
+}
+
+func (s *Server) caseClose(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.CloseCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
+	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "closed_by": c.Name})
 }

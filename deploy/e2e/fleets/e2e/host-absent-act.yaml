@@ -1,0 +1,19 @@
+fleet: e2e
+routine: host-absent-act
+description: >-
+  The security e2e's second acting routine, never shipped: plans host.absent for an e2e_host_absent
+  case. Capped at propose, so the case waits for an operator's approval.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: e2e_host_absent}
+run:
+  command: >-
+    printf '{"outcome": "plan", "action": "host.absent", "params": {"host": "e2e-host"}, "detail": "e2e: plan host.absent"}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0

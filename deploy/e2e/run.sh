@@ -196,8 +196,9 @@ STORE="$(python3 "$ROOT/deploy/e2e/old_store.py" check "$WORK/storecopy/flotilla
 echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if "error" not in d and d["schema"] == d["latest"] and d["old_runs"] == 5000 and d["old_auto"] == 2500 and d["live_left"] == 0 and d["stage_controls"] == 0 and d["heartbeat_autonomy"] == "auto" else 1)' \
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | grep -q "^action host.true$" && echo "$OUT" | grep -q "^CHECK PASS.*, 2 actions$" \
-  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, host.true)" || bad "-check: $OUT"
+echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | grep -q "^action host.true$" && echo "$OUT" | grep -q "^action host.absent$" \
+  && echo "$OUT" | grep -q "^CHECK PASS.*, 3 actions$" \
+  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
@@ -376,12 +377,13 @@ N="$(agent case list --all 2>&1 | grep -c failed_backup)"
 echo "== the host agent (ADR-0006): installed by deploy/host/remote-install.sh; enrol, connect, heartbeat, a flotillad restart, revocation, remove"
 mkdir -p "$WORK/host"
 cp "$WORK/config/host-ca/root.crt" "$WORK/host/root.crt"
-# one harmless unprivileged action and one privileged (sudo /bin/true), so the sudoers path runs too
+# one harmless unprivileged action and one privileged (sudo /bin/true), so the sudoers path runs too;
+# host.true once an hour, so H9c's second one is refused by the host's own rate limit
 cat > "$WORK/host/config.json" <<EOF
 {"host": "e2e-host", "user": "_flotilla", "ceiling": "propose",
  "signing_keys": {"e2e1": "$SIGNPUB"},
  "actions": {
-   "host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"},
+   "host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 1, "timeout": "10s"},
    "host.true_root": {"argv": ["/usr/bin/sudo", "-n", "/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"}}}
 EOF
 printf 'FLOTILLA_ADDR=flotillad:8487\nFLOTILLA_SERVER_NAME=flotillad\nFLOTILLA_HEARTBEAT=2s\n' > "$WORK/host/agent.env"
@@ -433,30 +435,62 @@ HL="$(cli host list 2>&1)"
 echo "$HL" | grep -q "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
   && ok "host list: connected, its version, last contact and clock offset, from the store (no chain head: nothing ran)" || bad "host list while connected: $HL"
 ! $D logs flotillad 2>&1 | grep -q '"msg":"host alert"' && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
-# H9c, one real execution through the whole path: a detection, a case, the acting routine's plan,
-# policy (propose: the action promoted, the routine capped at propose), an operator's approval, the
-# envelope signed and sent, the host's own checks, /bin/true, the result, the case in checking; then the
+# H9c, real executions through the whole path: a detection, a case, the acting routine's plan, policy
+# (propose: the action promoted, the routine capped at propose), an operator's approval, the envelope
+# signed and sent, the host's own checks, the result. The first runs /bin/true and is verified by the
+# check routine, which closes it and releases the target; the second is refused by the host's rate
+# limit and the third by its allowlist, each escalated and then closed by the operator. Then the
 # host's audit log against flotillad's record.
+proposed() {  # proposed KIND MONITOR: run the monitor, print the case it opened once it awaits approval
+  local id=""
+  cli run "e2e/$2" >/dev/null
+  for _ in $(seq 1 45); do
+    id="$(cli case list --all 2>&1 | awk -v k="$1" '$2 == k && /host:e2e-host/ && /awaiting_approval/ {print $1; exit}')"
+    [ -n "$id" ] && break; sleep 2
+  done
+  echo "$id"
+}
+status_is() {  # status_is CASE STATUS: wait for it
+  for _ in $(seq 1 45); do cli case list --all 2>&1 | grep -q "^$1 .* $2 " && return 0; sleep 2; done
+  return 1
+}
 cli action autonomy host.true propose --reason "e2e: the security e2e's harmless action" >/dev/null 2>&1
 cli action list 2>&1 | grep -q "^host.true  *propose " && ok "host.true promoted to propose (operator, with a reason)" || bad "promote: $(cli action list 2>&1)"
-cli run e2e/host-true-monitor >/dev/null
-for i in $(seq 1 45); do
-  HC="$(cli case list --all 2>&1 | awk '/e2e_host_true .*host:e2e-host .*awaiting_approval/ {print $1; exit}')"
-  [ -n "$HC" ] && break; sleep 2
-done
+HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
   || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
 OUT="$(cli case approve "$HC" 2>&1)"
 echo "$OUT" | grep -q '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"
-for i in $(seq 1 30); do cli case list --all 2>&1 | grep -q "^$HC .* checking " && break; sleep 2; done
+status_is "$HC" closed
 SHOW="$(cli case show "$HC" 2>&1)"
 echo "$SHOW" | grep -q "case.executing .*operator .*by operator .*approved host.true on host:e2e-host" \
   && echo "$SHOW" | grep -q "case.checking .*flotillad .*by act .*on e2e-host: done" \
-  && ok "signed, sent, run on the host as _flotilla (/bin/true), done: the case is in checking" || bad "the execution: $SHOW"
+  && ok "signed, sent, run on the host as _flotilla (/bin/true), done: the case went to checking" || bad "the execution: $SHOW"
+echo "$SHOW" | grep -q "case.closed .*e2e/host-true-verify .*by check .*e2e: nothing to verify" \
+  && ok "the check routine verified it: closed verified, the target released" || bad "the check: $SHOW"
+# the target is free again: a second host.true reaches the host, which refuses it (per_hour 1)
+H2="$(proposed e2e_host_true host-true-monitor)"
+[ -n "$H2" ] && cli case approve "$H2" >/dev/null 2>&1 && status_is "$H2" escalated \
+  && cli case show "$H2" 2>&1 | grep -q "case.escalated .*flotillad .*by act .*on e2e-host: refused: host.true ran 1 times in the last hour here, its limit" \
+  && ok "a second host.true on the released target: the host refused it, its own rate limit ($H2 escalated)" \
+  || bad "the rate limit: $H2 $(cli case show "$H2" 2>&1 | tail -3)"
+OUT="$(cli case close "$H2" 2>&1)"
+echo "$OUT" | grep -q "reason" && ok "closing an escalated case needs a reason" || bad "close without a reason: $OUT"
+cli case close "$H2" --reason "e2e: refused by the host, as it should" >/dev/null 2>&1 && status_is "$H2" closed \
+  && ok "the operator closed it; the target is released" || bad "close: $(cli case show "$H2" 2>&1 | tail -2)"
+# an action flotillad's registry declares and the host's allowlist does not
+cli action autonomy host.absent propose --reason "e2e: an action the host does not allow" >/dev/null 2>&1
+H3="$(proposed e2e_host_absent host-absent-monitor)"
+[ -n "$H3" ] && cli case approve "$H3" >/dev/null 2>&1 && status_is "$H3" escalated \
+  && cli case show "$H3" 2>&1 | grep -q "case.escalated .*flotillad .*by act .*on e2e-host: refused: .*host.absent is not allowed on this host" \
+  && ok "host.absent, signed and approved: the host refused it, not on its allowlist ($H3 escalated)" \
+  || bad "the allowlist: $H3 $(cli case show "$H3" 2>&1 | tail -3)"
+cli case close "$H3" --reason "e2e: refused by the host, as it should" >/dev/null 2>&1 && status_is "$H3" closed \
+  || bad "close $H3: $(cli case show "$H3" 2>&1 | tail -2)"
 hx flotilla-e2e-host cat /var/log/flotilla-host/audit.jsonl > "$WORK/host-audit.jsonl" 2>/dev/null
 AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit.jsonl" 2>&1)"; ARC=$?
-[ $ARC = 0 ] && echo "$AUD" | grep -q "^AUDIT PASS: e2e-host, 1 executions on record" && echo "$AUD" | grep -q "done on both sides" \
-  && ok "flotilla host audit: the host's real log matches flotillad's record (AUDIT PASS)" || bad "audit: rc=$ARC $AUD"
+[ $ARC = 0 ] && echo "$AUD" | grep -q "^AUDIT PASS: e2e-host, 3 executions on record" && echo "$AUD" | grep -q "done on both sides" \
+  && ok "flotilla host audit: the host's real log matches flotillad's record (AUDIT PASS, 3 executions)" || bad "audit: rc=$ARC $AUD"
 sed '0,/"status":"done"/s//"status":"failed"/' "$WORK/host-audit.jsonl" > "$WORK/host-audit-tampered.jsonl"
 AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit-tampered.jsonl" 2>&1)"; ARC=$?
 [ $ARC = 1 ] && echo "$AUD" | grep -q "^AUDIT FAIL" && ok "a rewritten copy of the host's log fails the audit" || bad "tampered audit: rc=$ARC $AUD"

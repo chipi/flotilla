@@ -13,6 +13,15 @@
 // run, no file, a bad file, an unknown outcome, another case's id) leaves the case handed over with a
 // run.no_decision event, and the case waits out the backoff before it is tried again; the stuck-state
 // timer escalates it if that goes on (internal/casetimer).
+//
+// A case in checking goes the same way to its action's check routine (trigger `check: {verify: ...}`),
+// with FLOTILLA_CHECK beside FLOTILLA_CASE; its result file is
+//
+//	{"outcome": "verified", "detail": "backup at 10:42, after the execution at 10:31"}
+//	{"outcome": "not_yet", "detail": "the newest backup is still 09:00"}
+//
+// verified closes the case; not_yet waits for the backoff and looks again; the check's window ending
+// first escalates it as not verified (checks).
 package dispatch
 
 import (
@@ -28,6 +37,7 @@ import (
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/policy"
+	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -128,7 +138,151 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 			}
 		}(c, j)
 	}
+	return d.checks(ctx, now)
+}
+
+// checks is the check step (RFC-0004 §3.5 and §7): a case in checking is verified by its action's check
+// routine (the registry's `check.verify`), run again after each "not yet" at the backoff, until it reports
+// verified, which closes the case and releases its target. Past the check's window (`check.within`,
+// counted from the move into checking) the case is not verified: the timer escalates it, target held.
+func (d *Dispatcher) checks(ctx context.Context, now time.Time) error {
+	st := d.API.Store
+	open, err := st.Cases(ctx, store.CaseFilter{Status: cases.Checking, Limit: 500})
+	if err != nil {
+		return err
+	}
+	for _, c := range open {
+		if c.Holder != "" {
+			continue
+		}
+		chk, p, err := d.checkFor(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		since, err := time.Parse(time.RFC3339Nano, c.StatusAt)
+		if err != nil {
+			return fmt.Errorf("case %s: status_at %q: %w", c.ID, c.StatusAt, err)
+		}
+		if chk == nil {
+			// no check declared for the action (a registry changed under it): nothing can verify it
+			if err := st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByTimer, "", "flotillad",
+				fmt.Sprintf("not verified: the registry declares no check for %q", p.Action)); err != nil {
+				return err
+			}
+			continue
+		}
+		if now.Sub(since) >= time.Duration(chk.Within) {
+			detail := fmt.Sprintf("not verified: %s did not hold within %s of the execution", chk.Verify, time.Duration(chk.Within))
+			if err := st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByTimer, "", "flotillad", detail); err != nil {
+				return err
+			}
+			d.Log.Warn("case escalated: not verified in its window", "case", c.ID, "action", p.Action, "verify", chk.Verify)
+			continue
+		}
+		j := checkRoutine(d.API.Sched.Routines, chk.Verify)
+		if j == nil {
+			continue // no routine checks this here: the window's end escalates it
+		}
+		if wait, err := d.backingOff(ctx, c.ID, now); err != nil || wait {
+			continue
+		}
+		ok, err := st.LeaseCheck(ctx, c.ID, j.ID(), now.Add(j.Limit+2*time.Minute))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		d.wg.Add(1)
+		go func(c store.Case, j *spec.Routine, chk registry.Check, p store.PlanRecord) {
+			defer d.wg.Done()
+			bg := context.WithoutCancel(ctx)
+			defer st.ReleaseCase(bg, c.ID, j.ID())
+			if err := d.check(bg, c, j, chk, p); err != nil {
+				d.Log.Error("check run", "case", c.ID, "routine", j.ID(), "err", err)
+			}
+		}(c, j, *chk, p)
+	}
 	return nil
+}
+
+// checkFor is the check of the action the case executed: its latest plan's (as the execution's).
+func (d *Dispatcher) checkFor(ctx context.Context, id string) (*registry.Check, store.PlanRecord, error) {
+	plans, err := d.API.Store.Plans(ctx, id)
+	if err != nil || len(plans) == 0 {
+		return nil, store.PlanRecord{}, err
+	}
+	p := plans[len(plans)-1]
+	if d.API.Registry == nil {
+		return nil, p, nil
+	}
+	a, ok := d.API.Registry.Action(p.Action)
+	if !ok || a.Check.Verify == "" {
+		return nil, p, nil
+	}
+	return &a.Check, p, nil
+}
+
+func checkRoutine(rs []*spec.Routine, verify string) *spec.Routine {
+	for _, j := range rs {
+		if j.Enabled && j.OnCheck() == verify {
+			return j
+		}
+	}
+	return nil
+}
+
+// The check run's view of what it verifies: FLOTILLA_CHECK.
+type checkJSON struct {
+	Verify   string            `json:"verify"`
+	Action   string            `json:"action"`
+	Params   map[string]string `json:"params"`
+	Since    string            `json:"since"` // when the case went to checking (the actuator's done)
+	Deadline string            `json:"deadline"`
+}
+
+const notYetEvent = "check.not_yet"
+
+func (d *Dispatcher) check(ctx context.Context, c store.Case, j *spec.Routine, chk registry.Check, p store.PlanRecord) error {
+	st := d.API.Store
+	full, err := st.Case(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	since, _ := time.Parse(time.RFC3339Nano, c.StatusAt)
+	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys})
+	kj, _ := json.Marshal(checkJSON{Verify: chk.Verify, Action: p.Action, Params: p.Params, Since: c.StatusAt,
+		Deadline: since.Add(time.Duration(chk.Within)).UTC().Format(time.RFC3339)})
+	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "check", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj), "FLOTILLA_CHECK": string(kj)})
+	if err != nil {
+		return d.noDecision(ctx, c.ID, j.ID(), "the check run did not start: "+err.Error())
+	}
+	if r.Status != store.StatusOK || out == nil {
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s ended %s", r.ID, r.Status))
+	}
+	if out.PlanError != "" || len(out.Plan) == 0 {
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s wrote no result %s", r.ID, out.PlanError))
+	}
+	var dec Decision
+	if err := json.Unmarshal(out.Plan, &dec); err != nil {
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s: result file: %v", r.ID, err))
+	}
+	if dec.CaseID != "" && dec.CaseID != c.ID {
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s reported for case %s, not this one", r.ID, dec.CaseID))
+	}
+	switch dec.Outcome {
+	case "verified":
+		if err := st.MoveCase(ctx, c.ID, cases.Closed, cases.ByCheck, cases.Verified, j.ID(), strings.TrimSpace("run "+r.ID+": "+dec.Detail)); err != nil {
+			return err
+		}
+		d.Log.Info("case verified", "case", c.ID, "run_id", r.ID, "verify", chk.Verify)
+		return nil
+	case "not_yet":
+		// the window decides "not verified", not one look: checked again after the backoff
+		return st.AddCaseEvent(ctx, c.ID, notYetEvent, j.ID(), strings.TrimSpace("run "+r.ID+": "+dec.Detail))
+	default:
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s: outcome %q is not verified or not_yet", r.ID, dec.Outcome))
+	}
 }
 
 func actingRoutine(rs []*spec.Routine, kind string) *spec.Routine {
@@ -140,15 +294,15 @@ func actingRoutine(rs []*spec.Routine, kind string) *spec.Routine {
 	return nil
 }
 
-// backingOff: a case's last word was a defer (planned -> handed_over) or a run with no decision, less
-// than the backoff ago.
+// backingOff: a case's last word was a defer (planned -> handed_over), a run with no decision or a check
+// that said not yet, less than the backoff ago.
 func (d *Dispatcher) backingOff(ctx context.Context, id string, now time.Time) (bool, error) {
 	ev, err := d.API.Store.CaseEvents(ctx, id)
 	if err != nil || len(ev) == 0 {
 		return false, err
 	}
 	last := ev[len(ev)-1]
-	if last.Kind != "run.no_decision" && !(last.Kind == "case."+cases.HandedOver && last.From == cases.Planned) {
+	if last.Kind != "run.no_decision" && last.Kind != notYetEvent && !(last.Kind == "case."+cases.HandedOver && last.From == cases.Planned) {
 		return false, nil
 	}
 	at, err := time.Parse(time.RFC3339Nano, last.At)
