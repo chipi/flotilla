@@ -80,6 +80,19 @@ func TestHostLoad(t *testing.T) {
 	if !found {
 		t.Error("the memory query does not cover both macOS and Linux exporters")
 	}
+	// the agent's own lines, as flotillad logged them ("host log"), on the Logs tab
+	var lq string
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		lq = r.PostFormValue("query")
+		fmt.Fprintln(w, `{"_time":"2026-11-15T07:00:00Z","level":"WARN","msg":"host log","host":"mini","line":"the backup job is slow","service":"flotillad"}`)
+	}))
+	defer vl.Close()
+	f.ui.LogsURL = vl.URL
+	_, logs := f.do("GET", "/hosts/mini?tab=logs&level=warn", ck, nil, nil)
+	if !strings.Contains(lq, `"host log" host:"mini"`) || !strings.Contains(lq, "warn") || !strings.Contains(logs, "the backup job is slow") {
+		t.Errorf("the Logs tab: query %q", lq)
+	}
 }
 
 // The run and fleet pages read their lines from VictoriaLogs (G5): the run's lines oldest first, the

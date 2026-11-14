@@ -26,6 +26,7 @@ const (
 	Heartbeat = "heartbeat" // {clock, chain_head}
 	Result    = "result"    // hostexec.Result
 	Renew     = "renew"     // {csr}: a request for the agent's next certificate
+	Log       = "log"       // {at, level, msg, attrs}: one of the agent's own log lines (flotillad logs it)
 	// flotillad -> agent
 	Welcome  = "welcome"  // {clock}
 	Enrolled = "enrolled" // {chain}: the certificate and the intermediate, PEM
@@ -109,6 +110,15 @@ type HelloBody struct {
 	// for a decision (the host enforces its config whatever flotillad believes). Older agents send none.
 	Ceiling   string          `json:"ceiling,omitempty"`
 	Allowlist []AllowedAction `json:"allowlist,omitempty"`
+}
+
+// LogBody is one of the agent's own log lines. flotillad logs it as "host log" with the host's name; it
+// is the agent's word about itself, never trusted for a decision.
+type LogBody struct {
+	At    time.Time         `json:"at"`
+	Level string            `json:"level"`
+	Msg   string            `json:"msg"`
+	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
 type HeartbeatBody struct {

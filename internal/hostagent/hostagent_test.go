@@ -1,6 +1,7 @@
 package hostagent
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -56,8 +57,12 @@ type world struct {
 	root *hostca.CA
 }
 
-func newWorld(t *testing.T) world {
+func newWorld(t *testing.T, linkLog ...*slog.Logger) world {
 	t.Helper()
+	ll := quiet
+	if len(linkLog) > 0 {
+		ll = linkLog[0]
+	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "f.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +76,7 @@ func newWorld(t *testing.T) world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := &hostlink.Server{Auth: a, Log: quiet, Heartbeat: 200 * time.Millisecond,
+	link := &hostlink.Server{Auth: a, Log: ll, Heartbeat: 200 * time.Millisecond,
 		TLS: &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{srvCert.Raw, inter.Cert.Raw}, PrivateKey: key}}},
 		// as flotillad wires it (cmd/flotillad recordContact)
 		OnContact: func(h hostlink.HostState) {
@@ -416,4 +421,41 @@ func TestSilentAgentDropped(t *testing.T) {
 	run(t, a)
 	waitFor(t, "the agent to connect", connected(w, "mini"))
 	waitFor(t, "the silent agent to be dropped", func() bool { return !connected(w, "mini")() })
+}
+
+// lockedBuf is a log sink two goroutines can share.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+// The agent's own log lines reach flotillad's log while it is connected (Info and above, its
+// attributes kept), and lines logged while it was disconnected follow once it connects.
+func TestAgentLogLinesReachFlotillad(t *testing.T) {
+	var sink lockedBuf
+	w := newWorld(t, slog.New(slog.NewJSONHandler(&sink, nil)))
+	a := w.agent(t, "mini", &fakeExec{})
+	a.Forward = NewForwarder(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	a.Log = slog.New(a.Forward)
+	a.Log.Info("logged before it connected", "job", "backup")
+	a.Log.Debug("a debug line stays on the host")
+	run(t, a)
+	waitFor(t, "the agent to connect", connected(w, "mini"))
+	a.Log.Warn("the backup job is slow", "minutes", 42)
+	waitFor(t, "the lines in flotillad's log", func() bool {
+		s := sink.String()
+		return strings.Contains(s, `"msg":"host log","host":"mini","line":"logged before it connected"`) &&
+			strings.Contains(s, `"a_job":"backup"`) && strings.Contains(s, `"level":"WARN","msg":"host log","host":"mini","line":"the backup job is slow"`) &&
+			strings.Contains(s, `"a_minutes":"42"`)
+	})
+	if strings.Contains(sink.String(), "a debug line") {
+		t.Error("a debug line was forwarded")
+	}
 }

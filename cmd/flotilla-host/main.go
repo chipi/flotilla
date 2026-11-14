@@ -179,6 +179,9 @@ func run(o opts, log *slog.Logger) error {
 	if err := o.need(); err != nil {
 		return err
 	}
+	// the agent's own lines also go to flotillad while connected (the file stays the full record)
+	fw := hostagent.NewForwarder(log.Handler())
+	log = slog.New(fw)
 	cfg, err := hostcfg.Load(o.config)
 	if err != nil {
 		return err
@@ -208,7 +211,7 @@ func run(o opts, log *slog.Logger) error {
 	a := &hostagent.Agent{Addr: o.addr, ServerName: o.serverName, Root: root, Host: cfg.Host, Version: version, Key: key,
 		LoadChain: func() ([]byte, error) { return os.ReadFile(chainPath(o.state)) },
 		SaveChain: func(b []byte) error { return saveChain(o.state, b) },
-		Exec:      x, Heartbeat: o.heartbeat, Log: log, Ceiling: cfg.Ceiling, Allowlist: allowlist(cfg)}
+		Exec:      x, Heartbeat: o.heartbeat, Log: log, Forward: fw, Ceiling: cfg.Ceiling, Allowlist: allowlist(cfg)}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	log.Info("flotilla-host starting", "host", cfg.Host, "addr", o.addr, "ceiling", cfg.Ceiling, "actions", len(cfg.Actions))

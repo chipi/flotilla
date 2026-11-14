@@ -146,6 +146,11 @@ type hostData struct {
 	Execs      []store.HostExecution
 	T          tableQ
 	Clock      func(string) string
+	// the agent's own lines, as flotillad logged them on arrival ("host log"), from VictoriaLogs
+	Level   string
+	Levels  []pillLink
+	Log     string
+	LogsErr string
 }
 
 func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -201,6 +206,21 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		d.T = t
 		for i := range d.Execs {
 			d.Execs[i].SentAt = u.clock(d.Execs[i].SentAt)
+		}
+	}
+	if tab == "logs" {
+		d.Level = r.URL.Query().Get("level")
+		for _, p := range [][2]string{{"", "All levels"}, {"warn", "Warnings and errors"}, {"error", "Errors"}} {
+			href := base + "?tab=logs"
+			if p[0] != "" {
+				href += "&level=" + p[0]
+			}
+			d.Levels = append(d.Levels, pillLink{Label: p[1], Href: href, On: d.Level == p[0]})
+		}
+		if lines, err := u.logsQuery(r.Context(), `_time:24h "host log" host:`+logsQuote(row.Name)+levelFilter(d.Level), 300); err != nil {
+			d.LogsErr = err.Error()
+		} else {
+			d.Log = logsText(lines, false)
 		}
 	}
 	u.render(w, "host.html", 200, u.pageFor(s, "Host "+row.Name, "Hosts", r, d))

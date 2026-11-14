@@ -53,6 +53,7 @@ type Agent struct {
 	Ceiling    string                   // this host's own config, reported in hello (G10)
 	Allowlist  []hostwire.AllowedAction // likewise
 	Log        *slog.Logger
+	Forward    *Forwarder // the agent's log lines, sent to flotillad while connected (nil: none)
 	Now        func() time.Time
 }
 
@@ -235,6 +236,10 @@ func (a *Agent) session(ctx context.Context) error {
 		}
 	}
 	beats := make(chan error, 1)
+	var logs <-chan hostwire.LogBody
+	if a.Forward != nil {
+		logs = a.Forward.C
+	}
 	go func() {
 		t := time.NewTicker(a.Heartbeat)
 		defer t.Stop()
@@ -242,6 +247,12 @@ func (a *Agent) session(ctx context.Context) error {
 			select {
 			case <-t.C:
 				if err := s.write(hostwire.Heartbeat, hostwire.HeartbeatBody{Clock: a.now().UTC(), ChainHead: a.Exec.ChainHead()}); err != nil {
+					beats <- err
+					nc.Close()
+					return
+				}
+			case l := <-logs:
+				if err := s.write(hostwire.Log, l); err != nil {
 					beats <- err
 					nc.Close()
 					return

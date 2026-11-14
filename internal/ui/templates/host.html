@@ -78,7 +78,13 @@
   {{end}}
 
   {{if eq .Tab "logs"}}
-  {{template "gap" (gap "G5" "The host agent writes /var/log/flotilla-host/agent.log on the host; the homelab's Alloy runs in a container that sees only container logs, so these lines do not reach VictoriaLogs. They come with the agent reporting to flotillad (G4, G10).")}}
+  <section class="casecards" aria-label="Logs">
+    <div class="filters">
+      <span class="meta">The host agent's own lines, the last 24 hours, newest first: sent to flotillad while connected and logged by it, from VictoriaLogs. The full record stays in the host's own log file.</span>
+      <nav class="pills" aria-label="Level">{{range .Levels}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}</nav>
+    </div>
+    {{if .LogsErr}}<p class="gap"><strong>No log lines from VictoriaLogs:</strong> {{.LogsErr}}.</p>{{else if .Log}}<pre class="log">{{.Log}}</pre>{{else}}<p class="card">No line in the last 24 hours at this level. An agent older than this build sends none.</p>{{end}}
+  </section>
   {{end}}
   {{end}}
 </main>

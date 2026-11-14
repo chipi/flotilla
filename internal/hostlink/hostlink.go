@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -177,6 +178,7 @@ func (s *Server) handle(tc *tls.Conn) {
 	s.report(host)
 	defer s.drop(c)
 	cert := hostca.Fingerprint(chain[0])
+	logBudget := budget{}
 	for {
 		tc.SetReadDeadline(time.Now().Add(3 * s.Heartbeat))
 		f, err := hostwire.Read(tc)
@@ -223,6 +225,13 @@ func (s *Server) handle(tc *tls.Conn) {
 				continue
 			}
 			ch <- r
+		case hostwire.Log:
+			var lb hostwire.LogBody
+			if err := f.Decode(&lb); err != nil {
+				refuse(tc, err.Error())
+				return
+			}
+			s.hostLog(ctx, host, &logBudget, lb)
 		case hostwire.Renew:
 			var rb hostwire.RenewBody
 			if err := f.Decode(&rb); err != nil {
@@ -341,5 +350,70 @@ func (s *Server) Hosts() []HostState {
 		out = append(out, *st)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Host < out[j].Host })
+	return out
+}
+
+// A host's log lines (hostwire.Log): logged by flotillad as "host log" with the host's name, so they are
+// collected with flotillad's own. An agent may send at most hostLogPerMinute a minute; the rest are
+// counted and the count logged once the minute is over. Text is cut to hostLogText.
+const (
+	hostLogPerMinute = 120
+	hostLogText      = 2000
+	hostLogAttrs     = 20
+)
+
+type budget struct {
+	start         time.Time
+	used, dropped int
+}
+
+func (s *Server) hostLog(ctx context.Context, host string, b *budget, l hostwire.LogBody) {
+	now := s.now()
+	if now.Sub(b.start) >= time.Minute {
+		if b.dropped > 0 {
+			s.Log.Warn("host log lines dropped", "host", host, "dropped", b.dropped, "per_minute", hostLogPerMinute)
+		}
+		*b = budget{start: now}
+	}
+	if b.used >= hostLogPerMinute {
+		b.dropped++
+		return
+	}
+	b.used++
+	level := slog.LevelInfo
+	switch strings.ToUpper(l.Level) {
+	case "WARN":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	}
+	args := []any{"host", host, "line", cut(l.Msg, hostLogText), "host_time", l.At}
+	n := 0
+	for _, k := range sortedAttrKeys(l.Attrs) {
+		if n == hostLogAttrs {
+			break
+		}
+		if k == "host" || k == "line" || k == "host_time" || k == "msg" || k == "level" {
+			continue
+		}
+		args = append(args, "a_"+cut(k, 64), cut(l.Attrs[k], hostLogText))
+		n++
+	}
+	s.Log.Log(ctx, level, "host log", args...)
+}
+
+func cut(v string, n int) string {
+	if len(v) <= n {
+		return v
+	}
+	return v[:n]
+}
+
+func sortedAttrKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
 	return out
 }

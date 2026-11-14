@@ -178,3 +178,6 @@ new token), so that it enrols with a new key.
   the version the host already runs.
 - After a signing-key rotation, nothing shows which key signed a given execution in `flotilla host
   list` or `flotilla case show`.
+- **Upgrade flotillad before the agents.** A flotillad refuses a frame type it does not know and
+  closes the connection. An agent from 2026-11-15 on sends its own log lines (`log` frames), so it
+  cannot stay connected to an older flotillad.
