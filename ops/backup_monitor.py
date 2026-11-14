@@ -22,11 +22,18 @@ def threshold_hours(a, stage):
     raise common.ConfigError(f"{a['name']} has no backup_age_above precondition")
 
 
+def host_of(target):
+    """host:mini -> mini, for the case's title."""
+    return target.split(":", 1)[-1].split("/", 1)[0]
+
+
 def detect(age, limit, target):
     if age is None:
-        return [{"kind": "failed_backup", "target": target, "detail": "no successful off-box backup in 30 days"}]
+        return [{"kind": "failed_backup", "target": target, "detail": "no successful off-box backup in 30 days",
+                 "title": f"No successful off-box backup on {host_of(target)} in 30 days"}]
     if age > limit:
-        return [{"kind": "failed_backup", "target": target, "detail": f"backup {age:.1f}h old, above {limit}h"}]
+        return [{"kind": "failed_backup", "target": target, "detail": f"backup {age:.1f}h old, above {limit}h",
+                 "title": f"The newest offsite backup on {host_of(target)} is {age:.0f} hours old"}]
     return []
 
 

@@ -253,6 +253,8 @@ var schema = []string{
 	);
 	CREATE INDEX run_calls_run ON run_calls(run_id);
 	CREATE INDEX run_calls_at ON run_calls(at);`,
+	// G3: a detection's one-line problem sentence, which the UI shows as the case's title.
+	`ALTER TABLE cases ADD COLUMN title TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

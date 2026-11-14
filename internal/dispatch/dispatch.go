@@ -438,6 +438,20 @@ type Detection struct {
 	Kind   string `json:"kind"`
 	Target string `json:"target"`
 	Detail string `json:"detail"`
+	// Title is the problem in one sentence, for people (G3): "The newest offsite backup on mini is 27
+	// hours old". Optional; cut to one line of maxTitle runes.
+	Title string `json:"title,omitempty"`
+}
+
+const maxTitle = 200
+
+// oneLine keeps a title to one line of at most maxTitle runes.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > maxTitle {
+		s = string(r[:maxTitle-1]) + "…"
+	}
+	return s
 }
 
 // maxDetections bounds one run's report: a monitor gone wrong cannot flood the store.
@@ -482,7 +496,7 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 		k := store.Key{Kind: "target", Value: x.Kind + "/" + x.Target}
 		present[k.String()] = true
 		detail := strings.TrimSpace("run " + r.ID + ": " + x.Detail)
-		id, how, err := d.API.Store.DetectIncident(ctx, store.NewCase{Kind: x.Kind, Target: x.Target, Project: j.Fleet,
+		id, how, err := d.API.Store.DetectIncident(ctx, store.NewCase{Title: oneLine(x.Title), Kind: x.Kind, Target: x.Target, Project: j.Fleet,
 			Keys: []store.Key{k}, Canonical: k}, j.ID(), detail)
 		if err != nil {
 			d.Log.Error("open case", "routine", j.ID(), "kind", x.Kind, "target", x.Target, "err", err)

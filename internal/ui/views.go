@@ -174,6 +174,9 @@ func splitRun(detail string) (run, rest string) {
 // problem is a case's sentence (G3: detections carry no title yet): the detection's own words, or the
 // kind on the target.
 func problem(c store.Case, first store.CaseEvent) string {
+	if c.Title != "" {
+		return c.Title
+	}
 	if _, rest := splitRun(first.Detail); rest != "" {
 		r := []rune(rest)
 		r[0] = unicode.ToUpper(r[0])

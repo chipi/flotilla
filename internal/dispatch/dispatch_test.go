@@ -283,11 +283,15 @@ func (f *fixture) open(t *testing.T) []store.Case {
 // detection again is one case.
 func TestDetectionOpensAndHandsOver(t *testing.T) {
 	f := setup(t)
-	rep := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h"}]}`
+	rep := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h",
+		"title": "The newest offsite backup\non mini is 20 hours old"}]}`
 	f.monitor(t, "ok", rep)
 	cs := f.open(t)
 	if len(cs) != 1 || cs[0].Status != cases.HandedOver || cs[0].Project != "ops" || cs[0].CanonicalKey != "target=failed_backup/host:mini" {
 		t.Fatalf("cases %+v", cs)
+	}
+	if cs[0].Title != "The newest offsite backup on mini is 20 hours old" {
+		t.Fatalf("the detection's title, on one line (G3): %q", cs[0].Title)
 	}
 	ev, _ := f.st.CaseEvents(context.Background(), cs[0].ID)
 	if ev[0].Actor != "ops/backup-monitor" || !strings.Contains(ev[0].Detail, "age 20.4h") || ev[1].By != cases.ByDetector {

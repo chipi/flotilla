@@ -28,6 +28,7 @@ func (k Key) String() string { return k.Kind + "=" + k.Value }
 
 // NewCase is a detection: what opens a case, or attaches to the open one with the same canonical key.
 type NewCase struct {
+	Title     string // the detection's problem sentence (G3); "" leaves it to the UI to word
 	Kind      string
 	Target    string
 	Project   string
@@ -49,6 +50,7 @@ type Case struct {
 	OpenedAt     string  `json:"opened_at"`
 	StatusAt     string  `json:"status_at"`
 	ClosedAt     *string `json:"closed_at"`
+	Title        string  `json:"title,omitempty"`
 	Keys         []Key   `json:"keys,omitempty"`
 }
 
@@ -124,8 +126,8 @@ func insertCase(ctx context.Context, tx *sql.Tx, n NewCase, now time.Time, actor
 		return "", err
 	}
 	at := now.Format(ts)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, n.Kind, n.Target, n.Canonical.String(), n.Project, n.Urgency, cases.Detected, at, at); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at, title)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, n.Kind, n.Target, n.Canonical.String(), n.Project, n.Urgency, cases.Detected, at, at, n.Title); err != nil {
 		return "", err
 	}
 	for _, k := range n.Keys {
@@ -272,13 +274,13 @@ func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
 	return err
 }
 
-const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at`
+const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title`
 
 func scanCase(sc interface{ Scan(...any) error }) (Case, error) {
 	var c Case
 	var closed sql.NullString
 	err := sc.Scan(&c.ID, &c.Kind, &c.Target, &c.CanonicalKey, &c.Project, &c.Urgency, &c.Status, &c.Resolution, &c.Holder,
-		&c.OpenedAt, &c.StatusAt, &closed)
+		&c.OpenedAt, &c.StatusAt, &closed, &c.Title)
 	if closed.Valid {
 		c.ClosedAt = &closed.String
 	}

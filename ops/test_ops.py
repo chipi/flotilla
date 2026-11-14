@@ -81,7 +81,9 @@ class TestMonitor(unittest.TestCase):
         d = backup_monitor.detect(20.4, 20, "host:mini")
         self.assertEqual([(x["kind"], x["target"]) for x in d], [("failed_backup", "host:mini")])
         self.assertIn("20.4h", d[0]["detail"])
+        self.assertEqual(d[0]["title"], "The newest offsite backup on mini is 20 hours old", "the case's title (G3)")
         self.assertIn("30 days", backup_monitor.detect(None, 20, "host:mini")[0]["detail"])
+        self.assertEqual(backup_monitor.detect(None, 20, "host:mini")[0]["title"], "No successful off-box backup on mini in 30 days")
 
 
 class TestDecide(unittest.TestCase):
