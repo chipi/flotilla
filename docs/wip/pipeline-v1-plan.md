@@ -164,10 +164,24 @@ promotion to propose).
   (`POST /v1/cases/{id}/close`, operator and admin) closes an escalated case, operator resolved, and
   releases its target. 18 mutants killed (2 survivors of the first round: one my own equivalent
   mutant, redone; one a missing test, added). The e2e now runs three executions on its stand-in host.
-  Not built: the `executing` deadline from an action's timeout (a host execution ends with its result
-  or as unknown), the outcome check (days), `escalated -> handed_over` (reassign), and a check
-  routine for `backup_newer_than_execution`, the mini's real action: its cases escalate at 60m until
-  one is written.
+  Then, the same day (operator: "build what we should before the switch"):
+  - **`ops/verify-backup`**, the check routine for `backup_newer_than_execution` (the mini's
+    `backup.rerun_observability`): verified once the off-box backup's last success
+    (`homelab_backup_offsite_last_success_timestamp`, VictoriaMetrics) is at or after the rerun's
+    done, not yet before; a check that is not its own is a configuration error (exit 2, no result).
+    Unit tests and a run as the worker runs it; a test that the registry's check is the routine's.
+  - **The executing deadline:** a case still executing past its action's timeout (the registry's,
+    30m by default) plus 15m of grace, with no execution in flight, is unknown: escalated by the
+    timer, target held. It ends what nothing else would: a target that is not a host, an
+    installation without a signing key, a result lost.
+  - **Reassign:** `flotilla case reassign ID --reason` (`POST /v1/cases/{id}/reassign`, operator and
+    admin): escalated -> handed_over, the target released, the hand-over clock restarted; the acting
+    routine re-checks and plans again. In the e2e the re-plan is deferred by policy's per-host cap
+    ("3 of 3 executions on this host this hour"), which the run's three executions reached.
+  12 more mutants: 11 killed (2 of them after tests were added: the registry's timeout over the
+  default, the boundary of "at or after"); 1 equivalent (dropping verify-backup's `Z` check: a time
+  with an offset fails to parse either way).
+  Not built: the outcome check (days, "did it help"): nothing before the switch depends on it.
 - **Deploy checklist** for the mini, with the UI and v1: **Saturday 2026-11-21, after the scheduled
   weekly freeze and check pass on the promoted code** (operator, asked again; the first answer,
   "Saturday 11-15", rested on a wrong calendar of mine: 11-14 is the Saturday, its freeze runs before

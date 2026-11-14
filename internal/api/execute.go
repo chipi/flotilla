@@ -91,6 +91,9 @@ func (s *Server) SendExecutions(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// ExecutionID is a case's execution of one plan: sent once, under this id (the host refuses a second).
+func ExecutionID(caseID string, planID int64) string { return fmt.Sprintf("%s-p%d", caseID, planID) }
+
 // sendOne signs and records the case's execution and starts it; false when there is nothing to send.
 func (s *Server) sendOne(ctx context.Context, c store.Case) (bool, error) {
 	plans, err := s.Store.Plans(ctx, c.ID)
@@ -98,7 +101,7 @@ func (s *Server) sendOne(ctx context.Context, c store.Case) (bool, error) {
 		return false, err
 	}
 	p := plans[len(plans)-1]
-	id := fmt.Sprintf("%s-p%d", c.ID, p.ID)
+	id := ExecutionID(c.ID, p.ID)
 	approved, err := s.approvedBy(ctx, c, p)
 	if err != nil {
 		return false, err

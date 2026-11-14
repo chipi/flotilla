@@ -17,9 +17,13 @@ os.environ["FLOTILLA_REGISTRY"] = os.path.join(HERE, "..", "host", "registry.jso
 import common  # noqa: E402
 import backup_monitor  # noqa: E402
 import rerun_backup  # noqa: E402
+import verify_backup  # noqa: E402
 
 common.REGISTRY = os.environ["FLOTILLA_REGISTRY"]
 CASE = {"id": "case-1", "kind": "failed_backup", "target": "host:mini"}
+# the rerun reported done at 2026-11-14T10:31:00Z (1794652260), as flotillad writes the time
+SINCE = "2026-11-14T10:31:00.123456789Z"
+SINCE_S = 1794652260.123456789
 
 
 class TestRegistryAndCode(unittest.TestCase):
@@ -35,6 +39,39 @@ class TestRegistryAndCode(unittest.TestCase):
         self.assertEqual(backup_monitor.threshold_hours(a, "shadow"), 20)
         self.assertEqual(backup_monitor.threshold_hours(a, "propose"), 26)
         self.assertEqual(backup_monitor.threshold_hours(a, "live"), 26)
+
+    def test_the_check_is_the_one_verify_backup_does(self):
+        self.assertEqual(common.action(common.RERUN)["check"]["verify"], verify_backup.VERIFY)
+
+
+class TestVerify(unittest.TestCase):
+    CHECK = {"verify": "backup_newer_than_execution", "action": "backup.rerun_observability", "since": SINCE}
+
+    def test_since_as_flotillad_writes_it(self):
+        self.assertAlmostEqual(verify_backup.parse_time(SINCE), SINCE_S, places=3)
+        self.assertEqual(verify_backup.parse_time("2026-11-14T10:31:00Z"), 1794652260)
+        for bad in ("2026-11-14T10:31:00+01:00", "yesterday", "", None, "2026-11-14T10:31:00.x1Z"):
+            with self.assertRaises(common.ConfigError, msg=repr(bad)):
+                verify_backup.parse_time(bad)
+
+    def test_verified_once_the_backup_is_after_the_rerun(self):
+        out = verify_backup.decide(self.CHECK, SINCE_S + 600)
+        self.assertEqual(out["outcome"], "verified")
+        self.assertIn("backup succeeded at 2026-11-14T10:41:00Z, after the rerun at 2026-11-14T10:31:00Z", out["detail"])
+        # the boundary: a backup that succeeded at the rerun's own moment, or a moment after, counts
+        self.assertEqual(verify_backup.decide(self.CHECK, verify_backup.parse_time(SINCE))["outcome"], "verified")
+        self.assertEqual(verify_backup.decide(self.CHECK, verify_backup.parse_time(SINCE) + 0.5)["outcome"], "verified")
+
+    def test_not_yet_before_it_or_without_one(self):
+        self.assertEqual(verify_backup.decide(self.CHECK, SINCE_S - 3600)["outcome"], "not_yet")
+        self.assertEqual(verify_backup.decide(self.CHECK, SINCE_S - 0.5)["outcome"], "not_yet")
+        out = verify_backup.decide(self.CHECK, None)
+        self.assertEqual(out["outcome"], "not_yet")
+        self.assertIn("no successful backup in 30 days", out["detail"])
+
+    def test_another_check_is_not_this_routines(self):
+        with self.assertRaises(common.ConfigError):
+            verify_backup.decide({**self.CHECK, "verify": "something_else"}, SINCE_S + 600)
 
 
 class TestMonitor(unittest.TestCase):
@@ -129,6 +166,22 @@ class TestRuns(unittest.TestCase):
         p, out = self.run_script("rerun_backup.py", {"FLOTILLA_CASE": json.dumps(CASE)})
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(out["outcome"], "plan")
+
+    def test_verify_reports(self):
+        case = json.dumps(CASE)
+        check = json.dumps(TestVerify.CHECK)
+        VM.value = str(SINCE_S + 600)
+        p, out = self.run_script("verify_backup.py", {"FLOTILLA_CASE": case, "FLOTILLA_CHECK": check})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(out["outcome"], "verified")
+        self.assertIn("VERIFY BACKUP case=case-1 outcome=verified", p.stdout)
+        VM.value = str(SINCE_S - 3600)
+        _, out = self.run_script("verify_backup.py", {"FLOTILLA_CASE": case, "FLOTILLA_CHECK": check})
+        self.assertEqual(out["outcome"], "not_yet")
+        p, out = self.run_script("verify_backup.py", {"FLOTILLA_CASE": case})
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("FLOTILLA_CHECK is not set", p.stderr)
+        self.assertIsNone(out, "no result from a run without its check")
 
     def test_missing_config_fails_loudly(self):
         p, out = self.run_script("backup_monitor.py", {"BACKUP_INSTANCE": ""})

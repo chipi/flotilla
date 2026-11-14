@@ -151,3 +151,39 @@ func TestCloseEscalated(t *testing.T) {
 		t.Fatalf("a closed case still holds the target: %q", h)
 	}
 }
+
+// Reassigning hands an escalated case back to its acting routine: handed over again, the target
+// released, by a person with a reason.
+func TestReassignEscalated(t *testing.T) {
+	ctx := context.Background()
+	s := newServer(t, func(*spec.Routine) {})
+	if err := s.SetActionAutonomy(ctx, opCaller, "test", rerun, "propose", "e2e"); err != nil {
+		t.Fatal(err)
+	}
+	id := proposedCase(t, s, "e")
+	if err := s.ReassignCase(ctx, opCaller, "test", id, "again"); err == nil || AsProblem(err).Code != 409 {
+		t.Fatalf("reassigned a case awaiting approval: %v", err)
+	}
+	if _, err := s.ApproveCase(ctx, opCaller, "test", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Escalated, cases.ByAct, "", "flotillad", "on mini: failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReassignCase(ctx, opCaller, "test", id, ""); err == nil || AsProblem(err).Code != 400 {
+		t.Fatalf("reassigned without a reason: %v", err)
+	}
+	if err := s.ReassignCase(ctx, agentCaller, "test", id, "again"); err == nil {
+		t.Fatal("an agent reassigned a case")
+	}
+	if err := s.ReassignCase(ctx, opCaller, "test", id, "the host is back; try again"); err != nil {
+		t.Fatal(err)
+	}
+	if c := caseStatus(t, s, id); c.Status != cases.HandedOver {
+		t.Fatalf("after reassign: %s", c.Status)
+	}
+	if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != "" {
+		t.Fatalf("a reassigned case still holds the target: %q", h)
+	}
+	// that its acting routine then plans again is internal/dispatch's TestReassignedCasePlansAgain
+}

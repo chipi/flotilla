@@ -21,17 +21,16 @@ func (s *Server) caseRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/cases/{id}/approve", s.auth(ActApprove, s.caseApprove))
 	m.Handle("POST /v1/cases/{id}/reject", s.auth(ActApprove, s.caseReject))
 	m.Handle("POST /v1/cases/{id}/close", s.auth(ActApprove, s.caseClose))
+	m.Handle("POST /v1/cases/{id}/reassign", s.auth(ActApprove, s.caseReassign))
 }
 
-// CloseCase is a person resolving an escalated case (RFC-0004 §3.5: escalated -> closed, operator
-// resolved), with the caller's reason. It releases the target: an escalation (not verified, failed,
-// unknown) holds it until then.
-func (s *Server) CloseCase(ctx context.Context, c Caller, via, id, why string) error {
+// escalated is a person's move out of escalated (RFC-0004 §3.5): with a reason, on an escalated case.
+func (s *Server) escalated(ctx context.Context, c Caller, id, why, what string) error {
 	if err := s.Check(ctx, c, ActApprove); err != nil {
 		return err
 	}
 	if strings.TrimSpace(why) == "" {
-		return problem(400, "closing a case needs a reason (--reason)")
+		return problem(400, "%s a case needs a reason (--reason)", what)
 	}
 	cs, err := s.Store.Case(ctx, id)
 	if errors.Is(err, store.ErrNoSuchCase) {
@@ -41,12 +40,36 @@ func (s *Server) CloseCase(ctx context.Context, c Caller, via, id, why string) e
 		return err
 	}
 	if cs.Status != cases.Escalated {
-		return problem(409, "case %s is %s: only an escalated case is closed by a person", id, cs.Status)
+		return problem(409, "case %s is %s: only an escalated case is %s by a person", id, cs.Status, what)
+	}
+	return nil
+}
+
+// CloseCase is a person resolving an escalated case (escalated -> closed, operator resolved), with the
+// caller's reason. It releases the target: an escalation (not verified, failed, unknown) holds it
+// until then.
+func (s *Server) CloseCase(ctx context.Context, c Caller, via, id, why string) error {
+	if err := s.escalated(ctx, c, id, why, "closing"); err != nil {
+		return err
 	}
 	if err := s.Store.MoveCase(ctx, id, cases.Closed, cases.ByOperator, cases.OperatorResolved, c.Name, why); err != nil {
 		return err
 	}
 	s.Log.Info("case closed", "case", id, "by", c.Name, "reason", why, "via", via)
+	return nil
+}
+
+// ReassignCase is a person handing an escalated case back to its acting routine (escalated ->
+// handed_over), with the caller's reason: it releases the target, the routine re-checks and plans
+// again, and the hand-over clock starts anew.
+func (s *Server) ReassignCase(ctx context.Context, c Caller, via, id, why string) error {
+	if err := s.escalated(ctx, c, id, why, "reassigning"); err != nil {
+		return err
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.HandedOver, cases.ByOperator, "", c.Name, "reassigned: "+why); err != nil {
+		return err
+	}
+	s.Log.Info("case reassigned", "case", id, "by", c.Name, "reason", why, "via", via)
 	return nil
 }
 
@@ -144,4 +167,9 @@ func (s *Server) caseReject(w http.ResponseWriter, r *http.Request, c Caller) {
 func (s *Server) caseClose(w http.ResponseWriter, r *http.Request, c Caller) {
 	err := s.CloseCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
 	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "closed_by": c.Name})
+}
+
+func (s *Server) caseReassign(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.ReassignCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
+	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "reassigned_by": c.Name})
 }

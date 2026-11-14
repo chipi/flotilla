@@ -485,8 +485,16 @@ H3="$(proposed e2e_host_absent host-absent-monitor)"
   && cli case show "$H3" 2>&1 | grep -q "case.escalated .*flotillad .*by act .*on e2e-host: refused: .*host.absent is not allowed on this host" \
   && ok "host.absent, signed and approved: the host refused it, not on its allowlist ($H3 escalated)" \
   || bad "the allowlist: $H3 $(cli case show "$H3" 2>&1 | tail -3)"
-cli case close "$H3" --reason "e2e: refused by the host, as it should" >/dev/null 2>&1 && status_is "$H3" closed \
-  || bad "close $H3: $(cli case show "$H3" 2>&1 | tail -2)"
+# reassigned, it goes back to its acting routine, which plans again; the three executions above are
+# the host's hourly limit (policy's per-host cap), so policy defers the new plan
+cli case reassign "$H3" --reason "e2e: hand it back" >/dev/null 2>&1
+for _ in $(seq 1 45); do cli case show "$H3" 2>&1 | grep -q "by policy .*planned->handed_over .*defer" && break; sleep 2; done
+SHOW="$(cli case show "$H3" 2>&1)"
+echo "$SHOW" | grep -q "case.handed_over .*operator .*by operator .*escalated->handed_over .*reassigned: e2e: hand it back" \
+  && echo "$SHOW" | grep -q "case.planned .*e2e/host-absent-act .*by act .*handed_over->planned" \
+  && echo "$SHOW" | grep -q "case.handed_over .*by policy .*planned->handed_over .*defer at propose.*3 of 3 executions on this host this hour" \
+  && ok "the operator reassigned it: its acting routine planned again, and policy deferred it at the host's hourly cap (3 of 3)" \
+  || bad "reassign $H3: $(echo "$SHOW" | tail -4) flotillad: $($D logs flotillad 2>&1 | grep "$H3" | tail -4)"
 hx flotilla-e2e-host cat /var/log/flotilla-host/audit.jsonl > "$WORK/host-audit.jsonl" 2>/dev/null
 AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit.jsonl" 2>&1)"; ARC=$?
 [ $ARC = 0 ] && echo "$AUD" | grep -q "^AUDIT PASS: e2e-host, 3 executions on record" && echo "$AUD" | grep -q "done on both sides" \

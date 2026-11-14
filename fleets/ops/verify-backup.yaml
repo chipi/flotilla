@@ -1,0 +1,19 @@
+fleet: ops
+routine: verify-backup
+description: >-
+  The check routine for backup.rerun_observability (RFC-0004 §7, the registry's check
+  backup_newer_than_execution): while a case is in checking, it reads when the mini's off-box backup
+  last succeeded and reports verified once that is after the rerun, not yet before. flotillad looks
+  again after its backoff and escalates the case as not verified when the check's window (60m) ends
+  first. A read only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: backup_newer_than_execution}
+run:
+  command: python3 /opt/flotilla/ops/verify_backup.py
+  workdir: .
+  timeout: 1m
+autonomy: shadow
+budget:
+  day_usd: 0

@@ -138,7 +138,70 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 			}
 		}(c, j)
 	}
+	if err := d.deadlines(ctx, now); err != nil {
+		return err
+	}
 	return d.checks(ctx, now)
+}
+
+// ExecutingGrace is how long, beyond its action's timeout, an executing case waits for a result: the
+// host's not-connected limit (api.NotConnectedLimit, 10m) and the answer's own margin, with room.
+const ExecutingGrace = 15 * time.Minute
+
+// defaultActionTimeout is the timeout of an action the registry gives none (as api.sendOne's).
+const defaultActionTimeout = 30 * time.Minute
+
+// deadlines is RFC-0004 §3.5's executing deadline: a case still executing past its action's timeout
+// and ExecutingGrace, with no execution in flight, has had no result that anyone will deliver (no
+// executor for its target, no signing key, a result lost): it is unknown. The timer escalates it, and
+// the target stays held until a person closes it. An execution still in flight is left to its own
+// bound, which ends it first.
+func (d *Dispatcher) deadlines(ctx context.Context, now time.Time) error {
+	st := d.API.Store
+	open, err := st.Cases(ctx, store.CaseFilter{Status: cases.Executing, Limit: 500})
+	if err != nil {
+		return err
+	}
+	for _, c := range open {
+		plans, err := st.Plans(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		timeout, action, execID := defaultActionTimeout, "", ""
+		if len(plans) > 0 {
+			p := plans[len(plans)-1]
+			action, execID = p.Action, api.ExecutionID(c.ID, p.ID)
+			if d.API.Registry != nil {
+				if a, ok := d.API.Registry.Action(p.Action); ok && a.Timeout > 0 {
+					timeout = time.Duration(a.Timeout)
+				}
+			}
+		}
+		since, err := time.Parse(time.RFC3339Nano, c.StatusAt)
+		if err != nil {
+			return fmt.Errorf("case %s: status_at %q: %w", c.ID, c.StatusAt, err)
+		}
+		limit := timeout + ExecutingGrace
+		if now.Sub(since) < limit {
+			continue
+		}
+		if execID != "" {
+			x, err := st.HostExecution(ctx, execID)
+			if err != nil {
+				return err
+			}
+			if x != nil && x.Status == store.ExecSent {
+				continue // in flight: its result, or its own bound, ends it
+			}
+		}
+		detail := fmt.Sprintf("unknown: no result for %s within %s of its start (its timeout %s and %s); the target stays held",
+			action, limit, timeout, ExecutingGrace)
+		if err := st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByTimer, "", "flotillad", detail); err != nil {
+			return err
+		}
+		d.Log.Error("a case had no result past its executing deadline", "case", c.ID, "action", action, "target", c.Target, "limit", limit.String())
+	}
+	return nil
 }
 
 // checks is the check step (RFC-0004 §3.5 and §7): a case in checking is verified by its action's check

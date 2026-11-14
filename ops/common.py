@@ -45,14 +45,23 @@ def query(expr, timeout=20):
     return float(result[0]["value"][1])
 
 
-def backup_age_hours():
-    """Hours since the mini's off-box backup last succeeded, or None when it has not in 30 days. The
-    same expression as the homelab's homelab-backup-offsite-stale alert."""
+def _instance():
     inst = env("BACKUP_INSTANCE")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", inst):
         raise ConfigError("BACKUP_INSTANCE: a label value such as homelab")
-    v = query(f'time() - max(last_over_time(homelab_backup_offsite_last_success_timestamp{{instance="{inst}"}}[30d]))')
+    return inst
+
+
+def backup_age_hours():
+    """Hours since the mini's off-box backup last succeeded, or None when it has not in 30 days. The
+    same expression as the homelab's homelab-backup-offsite-stale alert."""
+    v = query(f'time() - max(last_over_time(homelab_backup_offsite_last_success_timestamp{{instance="{_instance()}"}}[30d]))')
     return None if v is None else v / 3600
+
+
+def backup_last_success():
+    """When the mini's off-box backup last succeeded (Unix seconds), or None when it has not in 30 days."""
+    return query(f'max(last_over_time(homelab_backup_offsite_last_success_timestamp{{instance="{_instance()}"}}[30d]))')
 
 
 def action(name, path=REGISTRY):

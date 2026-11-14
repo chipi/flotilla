@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -574,5 +575,122 @@ func TestCheckActionGoneEscalates(t *testing.T) {
 	}
 	if e := lastEvent(t, f, id); e.By != cases.ByTimer || !strings.Contains(e.Detail, `the registry declares no check for "gone.action"`) {
 		t.Fatalf("event %+v", e)
+	}
+}
+
+// executing is a case whose backup.rerun_observability policy let run: executing, the target locked,
+// nothing sent yet. It returns the case and its plan's id.
+func (f *fixture) executing(t *testing.T, key string) (string, int64) {
+	t.Helper()
+	ctx := context.Background()
+	id := f.handOver(t, key)
+	if err := f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun", "run r1"); err != nil {
+		t.Fatal(err)
+	}
+	pid, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun_observability",
+		Params: map[string]string{"host": "mini"}, PlanHash: "h-" + key, Outcome: "auto", Autonomy: "auto"},
+		cases.Executing, "", "host:mini"+key, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id, pid
+}
+
+// The deadline is the registry's timeout for the action, not the default: 5m there, so 20m in all.
+func TestExecutingDeadlineFromTheRegistry(t *testing.T) {
+	f := setup(t)
+	raw, err := os.ReadFile(filepath.Join("..", "..", "host", "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	five := strings.Replace(string(raw), `"timeout": "30m"`, `"timeout": "5m"`, 1)
+	if five == string(raw) {
+		t.Fatal("the registry's timeout line moved: update this test")
+	}
+	p := filepath.Join(t.TempDir(), "registry.json")
+	if err := os.WriteFile(p, []byte(five), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if f.d.API.Registry, err = registry.Load(p); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := f.executing(t, "#t")
+	f.now = f.now.Add(19 * time.Minute)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Executing {
+		t.Fatalf("inside a 5m action's deadline: %+v", c)
+	}
+	f.now = f.now.Add(2 * time.Minute)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Escalated || !strings.Contains(lastEvent(t, f, id).Detail, "within 20m0s") {
+		t.Fatalf("past a 5m action's deadline: %+v %+v", c, lastEvent(t, f, id))
+	}
+}
+
+// The executing deadline (RFC-0004 §3.5): past the action's timeout (30m) and the grace (15m) with no
+// execution in flight, a case is unknown: escalated by the timer, target held. Before it, or with its
+// execution still in flight, it is left alone.
+func TestExecutingDeadline(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	a, _ := f.executing(t, "#a")
+	b, pb := f.executing(t, "#b")
+	if err := f.st.StartHostExecution(ctx, store.HostExecution{ID: api.ExecutionID(b, pb), CaseID: b, PlanID: pb, Host: "mini",
+		Action: "backup.rerun_observability", Approved: "auto", Envelope: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(44 * time.Minute)
+	f.pass(t)
+	if c := f.cs(t, a); c.Status != cases.Executing {
+		t.Fatalf("inside the deadline: %+v", c)
+	}
+	f.now = f.now.Add(2 * time.Minute)
+	f.pass(t)
+	c := f.cs(t, a)
+	if c.Status != cases.Escalated {
+		t.Fatalf("past the deadline: %+v", c)
+	}
+	if e := lastEvent(t, f, a); e.By != cases.ByTimer || !strings.Contains(e.Detail, "unknown: no result for backup.rerun_observability within 45m0s") {
+		t.Fatalf("event %+v", e)
+	}
+	if h, _ := f.st.LockHolder(ctx, "host:mini#a"); h != a {
+		t.Fatalf("an unknown case's target: held by %q, want %s", h, a)
+	}
+	if c := f.cs(t, b); c.Status != cases.Executing {
+		t.Fatalf("an execution in flight was escalated by the timer: %+v", c)
+	}
+	if f.w.runs() != 0 {
+		t.Fatalf("%d runs: the deadline runs nothing", f.w.runs())
+	}
+}
+
+// A reassigned case goes round again: its acting routine plans, policy proposes, as the first time.
+func TestReassignedCasePlansAgain(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	op := api.Caller{Name: "operator", Role: api.RoleOperator}
+	f.d.API.Sched.Routines[0].Autonomy = "propose"
+	if err := f.d.API.SetActionAutonomy(ctx, op, "test", "backup.rerun_observability", "propose", "test"); err != nil {
+		t.Fatal(err)
+	}
+	f.result(`{"outcome": "plan", "action": "backup.rerun_observability", "params": {"host": "mini"}, "detail": "age 30h"}`)
+	id := f.handOver(t, "#r")
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.AwaitingApproval {
+		t.Fatalf("the first plan: %+v; logs: %s", c, f.logs)
+	}
+	if _, err := f.d.API.ApproveCase(ctx, op, "test", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.MoveCase(ctx, id, cases.Escalated, cases.ByAct, "", "flotillad", "on mini: refused"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.API.ReassignCase(ctx, op, "test", id, "try again"); err != nil {
+		t.Fatal(err)
+	}
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.AwaitingApproval {
+		ev, _ := f.st.CaseEvents(ctx, id)
+		t.Fatalf("the second plan: %+v\nevents: %+v\nlogs: %s", c, ev, f.logs)
 	}
 }
