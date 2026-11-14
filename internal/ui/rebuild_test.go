@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -11,6 +13,45 @@ import (
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/store"
 )
+
+// The run page reads its trace from VictoriaTraces (G2): spans nested under their parent, the selected
+// span's attributes; a trace VictoriaTraces does not have, or no trace id, says why instead.
+func TestRunTrace(t *testing.T) {
+	vt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/jaeger/api/traces/aaaa1111" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"data":[{"spans":[
+			{"spanID":"s1","operationName":"run platform/heartbeat","references":[],"startTime":1000000,"duration":3000000,"tags":[{"key":"flotilla.status","value":"ok"}],"processID":"p1"},
+			{"spanID":"s2","operationName":"model.chat","references":[{"refType":"CHILD_OF","spanID":"s1"}],"startTime":1500000,"duration":1200000,"tags":[{"key":"gen_ai.request.model","value":"triage-pro"}],"processID":"p2"}],
+			"processes":{"p1":{"serviceName":"flotillad"},"p2":{"serviceName":"flotilla-platform"}}}]}`)
+	}))
+	defer vt.Close()
+	f := setup(t)
+	f.sch.OTLPTracesURL = vt.URL + "/insert/opentelemetry/v1/traces"
+	ctx := context.Background()
+	for _, r := range []store.Run{{ID: "run-t", TraceID: "aaaa1111"}, {ID: "run-gone", TraceID: "bbbb2222"}, {ID: "run-none"}} {
+		r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.Status = "platform/heartbeat", "h", "schedule", "flotillad", "auto", "running"
+		r.StartedAt = time.Now().UTC().Format(store.TimeFormat)
+		if err := f.st.StartRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ck := f.signin(f.vic)
+	_, page := f.do("GET", "/runs/run-t?span=s2", ck, nil, nil)
+	for _, want := range []string{"run platform/heartbeat", `class="trace__name depth-1"`, "gen_ai.request.model", "2 spans in 3.0 s"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the trace page has no %q", want)
+		}
+	}
+	if _, gone := f.do("GET", "/runs/run-gone", ck, nil, nil); !strings.Contains(gone, "No spans.") {
+		t.Error("a trace VictoriaTraces does not have is not named")
+	}
+	if _, none := f.do("GET", "/runs/run-none", ck, nil, nil); !strings.Contains(none, "no trace id") {
+		t.Error("a run without a trace id is not named")
+	}
+}
 
 // The Decision box binds an answer to the plan it showed: an approval of another plan is refused, the
 // shown plan's is accepted, and the note is kept with the answer.

@@ -129,6 +129,7 @@ type runData struct {
 	Row    runRow
 	Ended  string
 	Detail string
+	Trace  traceView
 }
 
 func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -146,7 +147,8 @@ func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Sessio
 		http.Error(w, "run failed", 500)
 		return
 	}
-	d := runData{Row: rows[0], Ended: "still running", Detail: strings.TrimRight(run.Detail, "\n")}
+	d := runData{Row: rows[0], Ended: "still running", Detail: strings.TrimRight(run.Detail, "\n"),
+		Trace: u.runTrace(r.Context(), run.TraceID, run.ID, r.URL.Query().Get("span"))}
 	if run.EndedAt != nil {
 		d.Ended = u.clock(*run.EndedAt)
 	}

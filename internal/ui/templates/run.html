@@ -10,6 +10,25 @@
     </div>
   </section>
 
+  {{with .Trace}}{{if .Spans}}
+  <div class="split split--tight">
+    <section class="main trace" aria-label="Spans">
+      <div class="trace__head"><span>Span</span><span class="trace__ticks">{{range .Ticks}}<span>{{.}}</span>{{end}}</span><span>took</span></div>
+      {{range .Spans}}<a class="trace__row{{if .On}} is-on{{end}}" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">
+        <span class="trace__name depth-{{.Depth}}"><span class="swatch kind--{{.Kind}}" aria-hidden="true"></span>{{.Name}}</span>
+        <svg class="trace__bar" viewBox="0 0 1000 14" preserveAspectRatio="none" aria-hidden="true"><rect x="{{printf "%.1f" .X}}" y="2" width="{{printf "%.1f" .W}}" height="10" rx="2" class="kind--{{.Kind}}"></rect></svg>
+        <span class="trace__took">{{.Took}}</span>
+      </a>{{end}}
+    </section>
+    {{with .Sel}}<aside class="card selaside" aria-label="Span details">
+      <h2>{{.Name}}</h2>
+      <p>{{.Service}} · starts at {{.StartText}} · {{.Took}}</p>
+      <dl class="facts facts--plain">{{range .Attrs}}<div><dt class="exact">{{index . 0}}</dt><dd>{{short (index . 1) 200}}</dd></div>{{end}}</dl>
+    </aside>{{end}}
+  </div>
+  <p class="footnote">{{len .Spans}} spans in {{.Total}} from {{range $i, $s := .Services}}{{if $i}}, {{end}}{{$s}}{{end}}. A routine that sends no spans of its own shows only flotillad's run span.</p>
+  {{else}}<p class="gap"><strong>No spans.</strong> {{.Err}}</p>{{end}}{{end}}
+
   <div class="split split--tight">
     <section class="main card" aria-labelledby="calls-h">
       <h2 id="calls-h">Model calls</h2>
@@ -30,7 +49,6 @@
     </section>
     <section class="main card" aria-labelledby="rep-h">
       <h2 id="rep-h">What it reported</h2>
-      {{template "gap" (gap "G2" "The span waterfall needs flotillad to read the run's trace from VictoriaTraces; until then this is the run's own report.")}}
       {{if .Detail}}<pre class="log">{{.Detail}}</pre>{{else}}<p class="panel-note">The run reported nothing.</p>{{end}}
     </section>
     <aside class="aside aside--narrow">
