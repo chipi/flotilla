@@ -415,7 +415,8 @@ type caseData struct {
 	PlanCount int
 	Decided   string
 	Verdicts  []store.Feedback
-	Mine      string // the signed-in person's verdict
+	RunsRead  []caseRunRead // the case's runs: what each called (G1), for "What the agent read"
+	Mine      string        // the signed-in person's verdict
 	Notes     []store.Note
 }
 
@@ -497,6 +498,30 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 			d.Record = fmt.Sprintf("%s: %s, %d verified, %d failed", p.Action, plural(rec.Plans, "plan", "plans"), rec.Verified, rec.Failed)
 		}
 	}
+	// The runs on this case: those named in its timeline and its plans.
+	var runIDs []string
+	seenRun := map[string]bool{}
+	for _, e := range ev {
+		if run, _ := splitRun(e.Detail); run != "" && !seenRun[run] {
+			seenRun[run] = true
+			runIDs = append(runIDs, run)
+		}
+	}
+	for _, p := range plans {
+		if !seenRun[p.RunID] {
+			seenRun[p.RunID] = true
+			runIDs = append(runIDs, p.RunID)
+		}
+	}
+	calls, err := u.API.Store.RunCalls(ctx, runIDs)
+	if err != nil {
+		http.Error(w, "case failed", 500)
+		return
+	}
+	for _, id := range runIDs {
+		m, tok := modelText(calls[id])
+		d.RunsRead = append(d.RunsRead, caseRunRead{Run: id, Models: m, Tokens: tok})
+	}
 	if d.Verdicts, err = u.API.Store.CaseFeedback(ctx, c.ID); err != nil {
 		http.Error(w, "case failed", 500)
 		return
@@ -549,3 +574,5 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 	}
 	done(w, r, back, err, ok)
 }
+
+type caseRunRead struct{ Run, Models, Tokens string }
