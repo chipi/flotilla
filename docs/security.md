@@ -52,7 +52,7 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents).
 | T12 | **Denial of wallet** | Budgets per routine and fleet checked before and during runs; endpoint key budgets as a second limit; turn, call and token limits per harness step. | Triggers, Runner, harness |
 | T13 | **A forged or replayed execution** | Every execution is signed (Ed25519) over the exact bytes sent and bound to host id, action, parameters, plan hash and a 10-minute expiry. The host agent refuses a bad signature, another host, an expired envelope, and a seen id whose envelope differs (an identical resend returns the recorded result). | Signer, host agent |
 | T14 | **A compromised flotillad signs harmful executions** | Each host agent enforces its own reviewed allowlist (exact command templates, parameter checks), rate limits and autonomy cap, whatever is signed. The allowlist, binary and sudoers are root-owned, so the agent cannot widen them; privileged parameters are enums, one sudoers line each, no wildcards. Commands run without a shell, as a dedicated user, with a generated sudoers limited to the templates. Its audit log shows what ran. | host agent, sudoers |
-| T15 | **A rogue or compromised host agent** | Enrolment by a single-use token bound to the host name, valid 15 minutes; short-lived certificates; revocation in flotillad alone (`flotilla host revoke`). An agent can only report on its own host's executions. The host's hash-chained log and flotillad's record are compared; a mismatch raises an alert. | host gateway, policy |
+| T15 | **A rogue or compromised host agent** | Enrolment by a single-use token bound to the host name, valid 15 minutes; short-lived certificates; flotillad accepts only the exact certificate it issued and recorded (not any with its serial); revocation in flotillad alone (`flotilla host revoke`). An agent can only report on its own host's executions. `flotilla host audit` compares the host's hash-chained log with flotillad's record (by hand: an automatic comparison and its alert are not built). Key and certificate procedures: [Host keys and certificates](operations/host-keys.md). | host gateway, policy |
 | T16 | **A taken-over Slack account approves** | Slack approval only from the pinned workspace and user, only for low and medium risk that is reversible or regenerable, bound to the plan's hash and a nonce, with a daily cap. High-risk or irreversible writes need the CLI. | Approvals, connector |
 | T17 | **Runaway autonomy** (many actions, fast) | Per-host and platform caps on executions; the circuit breaker drops every auto action to propose; the host incident rule pauses auto on a host; `flotilla autonomy freeze`; the recurrence rule escalates a fix that keeps coming back. | Guardrails |
 
@@ -93,8 +93,13 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
   checks and its `shadow` autonomy, and T10 by the append-only `events` table.
 - **Redaction** of flotillad's logs and routine traces is not built.
 
-- **Host agents are accepted, not built.** T13 to T15 are design until the agent is built and its
-  security e2e passes.
+- **Host agents are built (2026-11-13) and not yet deployed.** T13 to T15 are built, and the
+  security e2e passes: one real execution, approved by the operator, signed, run on an installed
+  stand-in host and audited (`make test-e2e`). Not covered there: a refusal for an action off the
+  host's allowlist and for its rate limit go through the Go tests only, because a case in checking
+  holds its target (the check step is not built). T15's automatic log comparison and alert are not
+  built, and whether the host's audit log is shipped off the host has not been checked. None of the
+  [key procedures](operations/host-keys.md) has been run on a real host.
 - **Image signing:** planned before any routine reaches `auto`, not built.
 - **The coding harness** used by the bugfix fleet runs code from the repos it fixes; its security
   review is due before that fleet acts.

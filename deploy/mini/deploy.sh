@@ -106,7 +106,10 @@ fi
 # a models section added to flotillad.yaml reached -check, but not the running flotillad).
 cfghash() { for f in "$@"; do printf '%s\n' "$f"; cat "$f" 2>/dev/null; done | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-16; }
 CFG="$(envget FLOTILLA_CONFIG)"
-FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)")"
+# host-ca/: flotillad reads the intermediate and the signing key only at start, so a rotated one
+# (docs/operations/host-keys.md) must recreate it too
+FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)" \
+  "$CFG/host-ca/intermediate.crt" "$CFG/host-ca/root.crt" "$CFG/host-ca/signing.key")"
 FLOTILLA_CONFIG_HASH_EGRESS="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-acl.yaml")"
 export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'

@@ -88,8 +88,9 @@ its routines may plan.
 | Fleet credentials | each role's worker, mode-600 files | that role's reads and repo writes |
 
 Revocation needs no access to the host (`flotilla host revoke`). The rotation procedures (the
-execution key with a two-key window, the intermediate CA, a host's certificate) are written before
-the first write at propose (ADR-0006 §11).
+execution key with a two-key window, the intermediate CA, the root, a host's certificate) are in
+[Host keys and certificates](../operations/host-keys.md), written before the first write at propose
+(ADR-0006 §11).
 
 ## Hardening, every container
 

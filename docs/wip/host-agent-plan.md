@@ -260,7 +260,14 @@ VPS.
     and the host's rate limit. An execution goes only to its case's target host (`host:NAME`), and
     the first case stays in checking holding that target's lock (H7b: the check step is not
     built), so a second case on the stand-in host never reaches it; they come with the checking
-    exit. Until then they, and the
-    forged, expired, another host's and auto-above-the-ceiling envelopes (which cannot come down
-    flotillad's legitimate path at all), are covered by the Go tests over the real connection
-    (internal/hostagent, internal/hostexec).
+    exit. Until then they, and the forged, expired, another host's and auto-above-the-ceiling
+    envelopes (which cannot come down flotillad's legitimate path at all), are covered by the Go
+    tests over the real connection (internal/hostagent, internal/hostexec).
+- **H10, the procedures (written):** [Host keys and certificates](../operations/host-keys.md): the
+  execution key's rotation (two-key window), the intermediate's, the root's replacement, a host's
+  certificate (renewal, expiry, revocation), and what to do when each key leaks. Writing them found
+  two faults, both fixed: flotillad accepted any certificate with a host's current serial (see H5b's
+  amendment), and a deploy did not recreate flotillad when only `host-ca/` changed, so a rotated
+  intermediate or signing key would not have been loaded (`deploy.sh` now hashes `intermediate.crt`,
+  `root.crt` and `signing.key` into flotillad's config hash). security.md T13 to T15 marked built,
+  with what is not. None of the procedures has been run on a real host.

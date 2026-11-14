@@ -77,6 +77,8 @@ nav:
     - Data: architecture/data.md
     - Deployment: architecture/deployment.md
   - Security: security.md
+  - Operations:
+    - Host keys and certificates: operations/host-keys.md
   - Testing and validation: testing.md
   - Decisions (ADR):
     - Overview: adr/README.md
