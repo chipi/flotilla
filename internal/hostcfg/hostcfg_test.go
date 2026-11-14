@@ -22,6 +22,28 @@ func TestGoodConfig(t *testing.T) {
 	}
 }
 
+// The Slack connector section (G9): two absolute token files and a channel id, or it is refused.
+func TestSlackSection(t *testing.T) {
+	good, _ := os.ReadFile("testdata/mini.json")
+	with := func(slack string) string {
+		return strings.Replace(string(good), `"host": "mini",`, `"host": "mini", "slack": `+slack+`,`, 1)
+	}
+	c, err := Parse([]byte(with(`{"bot_token_file": "/etc/flotilla-host/slack-bot.token", "app_token_file": "/etc/flotilla-host/slack-app.token", "channel": "C0123456789"}`)))
+	if err != nil || c.Slack == nil || c.Slack.Channel != "C0123456789" {
+		t.Fatalf("a good slack section: %+v %v", c, err)
+	}
+	for what, s := range map[string]string{
+		"a relative token file": `{"bot_token_file": "slack-bot.token", "app_token_file": "/a", "channel": "C0123456789"}`,
+		"one file for both":     `{"bot_token_file": "/a", "app_token_file": "/a", "channel": "C0123456789"}`,
+		"a channel name":        `{"bot_token_file": "/a", "app_token_file": "/b", "channel": "#flotilla"}`,
+		"a token in the config": `{"bot_token_file": "/a", "app_token_file": "/b", "channel": "C0123456789", "bot_token": "xoxb-1"}`,
+	} {
+		if _, err := Parse([]byte(with(s))); err == nil {
+			t.Errorf("%s: accepted", what)
+		}
+	}
+}
+
 // The sudoers lines: one per privileged action and enum value, the run-as user, "" for a command with
 // no arguments (alone it would allow any), nothing for an unprivileged action.
 func TestSudoers(t *testing.T) {

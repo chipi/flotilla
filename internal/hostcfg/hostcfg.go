@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -77,9 +78,21 @@ type Config struct {
 	Ceiling     string            `json:"ceiling"`      // the highest autonomy this host accepts
 	SigningKeys map[string]string `json:"signing_keys"` // key id -> base64 Ed25519 public key (two during a rotation)
 	Actions     map[string]Action `json:"actions"`
+	// The Slack connector (ADR-0006 §1, decided 4): only on the host flotillad names connector_host.
+	Slack *SlackConnector `json:"slack,omitempty"`
 
 	keys map[string]ed25519.PublicKey
 }
+
+// SlackConnector is where the connector's credentials are (mode-600 files the agent's user reads) and
+// the channel it posts plans in. The tokens never enter the config itself.
+type SlackConnector struct {
+	BotTokenFile string `json:"bot_token_file"` // xoxb-…, for chat.postMessage and chat.update
+	AppTokenFile string `json:"app_token_file"` // xapp-…, connections:write, for Socket Mode
+	Channel      string `json:"channel"`        // the channel id (C…)
+}
+
+var channelRe = regexp.MustCompile(`^[CG][A-Z0-9]{6,20}$`)
 
 var (
 	nameRe   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -142,6 +155,14 @@ func (c *Config) validate() error {
 	}
 	if len(c.Actions) == 0 {
 		bad("actions: none allowed")
+	}
+	if sc := c.Slack; sc != nil {
+		if !filepath.IsAbs(sc.BotTokenFile) || !filepath.IsAbs(sc.AppTokenFile) || sc.BotTokenFile == sc.AppTokenFile {
+			bad("slack: bot_token_file and app_token_file are two absolute paths")
+		}
+		if !channelRe.MatchString(sc.Channel) {
+			bad("slack: channel %q: a channel id such as C0123456789", sc.Channel)
+		}
 	}
 	for name, a := range c.Actions {
 		if err := validAction(name, a); err != nil {

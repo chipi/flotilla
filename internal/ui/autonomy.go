@@ -168,7 +168,7 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		{"Circuit breaker", fmt.Sprintf("opens at %d failed or unknown results in 1h: every auto drops to propose", lim.BreakerFailures)},
 		{"Host incident rule", fmt.Sprintf("%d new cases on one host in %s: auto paused on that host", lim.HostIncidentCases, words(api.IncidentWindow))},
 		{"Autonomy freeze", freeze},
-		{"Slack approvals", "not wired yet (G9): approve here or with the CLI"},
+		{"Slack approvals", u.slackGuard(ctx)},
 	}
 	hosts, err := u.hostRows(r)
 	if err != nil {

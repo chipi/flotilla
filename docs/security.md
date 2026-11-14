@@ -59,8 +59,12 @@ approvals) and [ADR-0006](adr/ADR-0006-node-agent.md) (host agents).
 **Accepted trade-off** ([ADR-0006](adr/ADR-0006-node-agent.md), decided 4): on a host whose agent
 has both roles, a breach of that process exposes the host's allowed writes, the Slack tokens and,
 once the connector relays approvals, forged approvals for any write Slack may approve, on any host.
-T16's limits bound it; only the configured connector host may relay approvals. v1's connector is
-outbound only.
+T16's limits bound it; only the configured connector host may relay approvals. The connector posts
+plans and relays clicks since 2026-11-14 (G9, `internal/api/slack.go`): flotillad checks each relayed
+click again (connector host, pinned workspace, pinned Slack user mapped to an active operator, a nonce
+it made and not yet used, the plan unchanged, low or medium risk and reversible or regenerable, the
+daily cap), and each check is tested with a mutant that removes it. A second instance under its own
+user remains the fix for the shared process, decided again at the first promotion to propose.
 
 ## Rules for contributors (also in AGENTS.md)
 

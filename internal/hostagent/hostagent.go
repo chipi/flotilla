@@ -23,6 +23,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/hostwire"
+	"github.com/chipi/flotilla/internal/slackconn"
 )
 
 // errRenewed ends a session after a renewal: flotillad closes it, and the agent reconnects at once
@@ -54,7 +55,9 @@ type Agent struct {
 	Allowlist  []hostwire.AllowedAction // likewise
 	Log        *slog.Logger
 	Forward    *Forwarder // the agent's log lines, sent to flotillad while connected (nil: none)
-	Now        func() time.Time
+	// The Slack connector role (G9), on the host flotillad names its connector; nil: not this host.
+	Slack *slackconn.Connector
+	Now   func() time.Time
 }
 
 func (a *Agent) now() time.Time {
@@ -151,6 +154,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	if a.Heartbeat <= 0 {
 		a.Heartbeat = 30 * time.Second
 	}
+	if a.Slack != nil {
+		go a.Slack.Run(ctx) // its own connection to Slack, whether flotillad is reachable or not
+	}
 	backoff := time.Second
 	for {
 		start := time.Now()
@@ -240,6 +246,10 @@ func (a *Agent) session(ctx context.Context) error {
 	if a.Forward != nil {
 		logs = a.Forward.C
 	}
+	var clicks <-chan hostwire.ApprovalBody
+	if a.Slack != nil {
+		clicks = a.Slack.Clicks
+	}
 	go func() {
 		t := time.NewTicker(a.Heartbeat)
 		defer t.Stop()
@@ -253,6 +263,13 @@ func (a *Agent) session(ctx context.Context) error {
 				}
 			case l := <-logs:
 				if err := s.write(hostwire.Log, l); err != nil {
+					beats <- err
+					nc.Close()
+					return
+				}
+			case cl := <-clicks:
+				if err := s.write(hostwire.Approval, cl); err != nil {
+					a.Log.Warn("a Slack answer could not be relayed; answer again", "err", err)
 					beats <- err
 					nc.Close()
 					return
@@ -302,6 +319,32 @@ func (a *Agent) session(ctx context.Context) error {
 			}
 			a.Log.Info("certificate renewed", "until", next[0].NotAfter)
 			return errRenewed
+		case hostwire.Notify:
+			var n hostwire.NotifyBody
+			if err := f.Decode(&n); err != nil {
+				return err
+			}
+			if a.Slack == nil {
+				a.Log.Warn("flotillad sent a plan to post, but this host is not its Slack connector", "case", n.Case)
+				continue
+			}
+			go func() {
+				if err := a.Slack.Post(ctx, n); err != nil {
+					a.Log.Warn("a plan could not be posted in Slack", "case", n.Case, "err", err)
+				}
+			}()
+		case hostwire.Answered:
+			var an hostwire.AnsweredBody
+			if err := f.Decode(&an); err != nil {
+				return err
+			}
+			if a.Slack != nil {
+				go func() {
+					if err := a.Slack.Answer(ctx, an); err != nil {
+						a.Log.Warn("an answer could not be shown in Slack", "err", err)
+					}
+				}()
+			}
 		case hostwire.Refusal:
 			return refusal(f)
 		default:

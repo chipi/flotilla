@@ -35,6 +35,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostcfg"
 	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/hostwire"
+	"github.com/chipi/flotilla/internal/slackconn"
 )
 
 // set at build time: -ldflags "-X main.version=sha-<7>"
@@ -212,6 +213,17 @@ func run(o opts, log *slog.Logger) error {
 		LoadChain: func() ([]byte, error) { return os.ReadFile(chainPath(o.state)) },
 		SaveChain: func(b []byte) error { return saveChain(o.state, b) },
 		Exec:      x, Heartbeat: o.heartbeat, Log: log, Forward: fw, Ceiling: cfg.Ceiling, Allowlist: allowlist(cfg)}
+	if sc := cfg.Slack; sc != nil {
+		bot, err := readToken(sc.BotTokenFile, "xoxb-")
+		if err != nil {
+			return err
+		}
+		app, err := readToken(sc.AppTokenFile, "xapp-")
+		if err != nil {
+			return err
+		}
+		a.Slack = slackconn.New(bot, app, sc.Channel, log.With("role", "slack connector"))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	log.Info("flotilla-host starting", "host", cfg.Host, "addr", o.addr, "ceiling", cfg.Ceiling, "actions", len(cfg.Actions))
@@ -235,4 +247,24 @@ func allowlist(cfg *hostcfg.Config) []hostwire.AllowedAction {
 		out = append(out, hostwire.AllowedAction{Name: n, Argv: a.Argv, PerHour: a.PerHour, Timeout: time.Duration(a.Timeout).String()})
 	}
 	return out
+}
+
+// readToken reads a Slack token from a file only the agent's user may read (mode 600 or stricter).
+func readToken(path, prefix string) (string, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("slack: %w", err)
+	}
+	if st.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("slack: %s is mode %o: a token file is readable by its owner only (600)", path, st.Mode().Perm())
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("slack: %w", err)
+	}
+	tok := strings.TrimSpace(string(raw))
+	if !strings.HasPrefix(tok, prefix) || strings.ContainsAny(tok, " \n\t") {
+		return "", fmt.Errorf("slack: %s does not hold one %s… token", path, prefix)
+	}
+	return tok, nil
 }

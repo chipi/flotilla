@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -64,6 +65,8 @@ type Config struct {
 	HostMetrics map[string]string `yaml:"host_metrics"`
 	// when the UI's morning brief is written each day, HH:MM in timezone (default 07:00)
 	BriefAt string `yaml:"brief_at"`
+	// approvals in Slack through one host's connector (G9, internal/api/slack.go); empty = none
+	Slack *api.SlackConfig `yaml:"slack"`
 	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
 	ErrorsDSNFile string                  `yaml:"errors_dsn_file"`
 	CallersFile   string                  `yaml:"callers_file"`
@@ -115,6 +118,22 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.UIListen != "" && c.UIHost == "" {
 		errs = append(errs, errors.New("ui_listen needs ui_host: the one Host the UI answers (flotilla.<tailnet>)"))
+	}
+	if sl := c.Slack; sl != nil {
+		if c.Hosts.Listen == "" {
+			errs = append(errs, errors.New("slack needs hosts: its connector is a host agent"))
+		}
+		if sl.ConnectorHost == "" || sl.TeamID == "" || len(sl.Users) == 0 || sl.UIURL == "" {
+			errs = append(errs, errors.New("slack needs connector_host, team_id, ui_url and at least one pinned user"))
+		}
+		for id, name := range sl.Users {
+			if !slackUserRe.MatchString(id) || name == "" {
+				errs = append(errs, fmt.Errorf("slack users: %q -> %q: a Slack user id (U…) and a flotilla user name", id, name))
+			}
+		}
+		if sl.DailyCap < 0 || sl.DailyCap > 100 {
+			errs = append(errs, fmt.Errorf("slack daily_cap %d: 0 (the default, 10) to 100", sl.DailyCap))
+		}
 	}
 	if c.BriefAt != "" {
 		if _, err := time.Parse("15:04", c.BriefAt); err != nil {
@@ -347,6 +366,12 @@ func main() {
 		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
 		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}, Heartbeat: cfg.Hosts.Heartbeat,
 			OnContact: recordContact(st, log)}
+		if cfg.Slack != nil {
+			apiSrv.Slack = cfg.Slack
+			link.OnApproval = apiSrv.RelayedApproval
+			go slackNotices(ctx, apiSrv, link, cfg.Slack.ConnectorHost, log)
+			log.Info("approvals in Slack", "connector", cfg.Slack.ConnectorHost, "users", len(cfg.Slack.Users), "daily_cap", cfg.Slack.Cap())
+		}
 		if cfg.Hosts.SigningKeyFile != "" {
 			key, err := loadSigningKey(cfg.Hosts.SigningKeyFile)
 			if err != nil {
@@ -505,5 +530,34 @@ func backup(ctx context.Context, st *store.Store, stateDir, day string, log *slo
 	for len(old) > 7 {
 		_ = os.Remove(old[0])
 		old = old[1:]
+	}
+}
+
+var slackUserRe = regexp.MustCompile(`^[UW][A-Z0-9]{6,20}$`)
+
+// slackNotices sends each plan waiting for a person to the Slack connector, every 15 seconds; a plan is
+// marked sent only once its host took it.
+func slackNotices(ctx context.Context, a *api.Server, link *hostlink.Server, host string, log *slog.Logger) {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		ns, err := a.SlackNotices(ctx)
+		if err != nil {
+			log.Error("slack notices", "err", err)
+			continue
+		}
+		for _, n := range ns {
+			if err := link.Notify(host, n); err != nil {
+				break // the connector is not connected: the next tick tries again
+			}
+			if err := a.Store.MarkAskSent(ctx, n.Nonce); err != nil {
+				log.Error("slack notices", "err", err)
+			}
+		}
 	}
 }

@@ -2,7 +2,7 @@
 
 **Status:** Accepted (operator, 2026-11-08). *Pending additions from [ADR-0005](ADR-0005-agent-pipeline.md)
 (2026-11-09), each approved when it is built: `jsonschema` and what it pulls, pinned by hash; a vector
-store for semantic search; a Slack Socket Mode client.*
+store for semantic search; a Slack Socket Mode client (approved and built 2026-11-14, below).*
 **Date:** 2026-11-08
 
 ## Context
@@ -24,6 +24,7 @@ base images for the containers.
 | Images | build: `golang:1.26`; run: `gcr.io/distroless/static-debian12:nonroot` (flotillad, Smokescreen); workers: `python:3.12-slim` | official, small, non-root; glibc for later Python wheels (DuckDB, Parquet). All pinned by digest in the Dockerfiles |
 | Egress proxy | Smokescreen, built from a pinned commit (ADR-0002) | |
 | UI fonts ([ADR-0014](ADR-0014-operator-ui.md)) | Inter 4.1 (`InterVariable.woff2`) and JetBrains Mono 2.304 (Regular, SemiBold), from the upstream release zips, under the SIL OFL 1.1, embedded in flotillad (`internal/ui/static/fonts/`, whose README has the zips' sha256) | served by flotillad itself: nothing fetched from a third party; about 540 KB |
+| Slack Socket Mode (operator, 2026-11-14; G9) | `github.com/coder/websocket` v1.8.15 in the host agent's connector (`internal/slackconn`), one module with no dependencies of its own; Slack's Web API calls (`apps.connections.open`, `chat.postMessage`, `chat.update`) are plain `net/http` | Go's standard library has no websocket client. Chosen over `slack-go/slack` (a whole SDK and `gorilla/websocket`, far more than three calls need) and over writing RFC 6455 ourselves (protocol code we would own) |
 | The e2e's browser check (operator, 2026-11-13; ADR-0014) | Playwright for Python 1.65.1 on Microsoft's `mcr.microsoft.com/playwright/python` v1.65.1-noble image, pinned by digest (`deploy/e2e/browser.Dockerfile`); Caddy 2.11.9 by digest as its TLS front (`deploy/e2e/Caddyfile`) | e2e only, never in a shipped image. A real Chromium shows what HTTP checks cannot (the Secure cookie kept, forms with their CSRF field, the CSP, the fonts); Caddy stands in for the homelab's caddy-tailscale, so the browser meets the deployment's shape (https, Host without a port) |
 
 What `go mod tidy` brought (2026-11-08): the three direct modules above, plus 27 indirect ones. The

@@ -315,6 +315,19 @@ var schema = []string{
 		PRIMARY KEY (day, item, user_name)
 	);
 	CREATE INDEX brief_marks_at ON brief_marks(at);`,
+	// G9: each plan asked in Slack, with its single-use nonce and the answer (slack.go).
+	`CREATE TABLE slack_asks (
+		nonce TEXT PRIMARY KEY,
+		case_id TEXT NOT NULL,
+		plan_hash TEXT NOT NULL,
+		asked_at TEXT NOT NULL,
+		sent_at TEXT NOT NULL DEFAULT '',
+		decided_at TEXT NOT NULL DEFAULT '',
+		decided_by TEXT NOT NULL DEFAULT '',
+		outcome TEXT NOT NULL DEFAULT '',
+		UNIQUE (case_id, plan_hash)
+	);
+	CREATE INDEX slack_asks_decided ON slack_asks(outcome, decided_at);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

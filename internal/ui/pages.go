@@ -313,6 +313,12 @@ func (u *Server) approvalsPage(w http.ResponseWriter, r *http.Request, s *store.
 	default:
 		d.Summary = plural(d.Waiting, "plan waits", "plans wait") + " for you. Each answer binds to the plan shown; a changed plan needs a new answer."
 	}
+	if line, err := u.slackToday(ctx); err != nil {
+		http.Error(w, "slack failed", 500)
+		return
+	} else if line != "" {
+		d.Summary += " " + line
+	}
 	since, _ := u.API.Store.LastLook(ctx, s.User)
 	t, ok := parseTime(since)
 	if !ok {

@@ -57,12 +57,9 @@ type world struct {
 	root *hostca.CA
 }
 
-func newWorld(t *testing.T, linkLog ...*slog.Logger) world {
+func newWorld(t *testing.T, opts ...func(*hostlink.Server)) world {
 	t.Helper()
 	ll := quiet
-	if len(linkLog) > 0 {
-		ll = linkLog[0]
-	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "f.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +86,9 @@ func newWorld(t *testing.T, linkLog ...*slog.Logger) world {
 				ConnectedAt: h.ConnectedAt, LastContact: h.LastContact, ClockOffset: h.ClockOffset, ChainHead: h.ChainHead,
 				Ceiling: h.Ceiling, Allowlist: allow})
 		}}
+	for _, o := range opts {
+		o(link)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -440,7 +440,7 @@ func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l
 // attributes kept), and lines logged while it was disconnected follow once it connects.
 func TestAgentLogLinesReachFlotillad(t *testing.T) {
 	var sink lockedBuf
-	w := newWorld(t, slog.New(slog.NewJSONHandler(&sink, nil)))
+	w := newWorld(t, func(l *hostlink.Server) { l.Log = slog.New(slog.NewJSONHandler(&sink, nil)) })
 	a := w.agent(t, "mini", &fakeExec{})
 	a.Forward = NewForwarder(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	a.Log = slog.New(a.Forward)

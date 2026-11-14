@@ -119,6 +119,8 @@ type Server struct {
 	HostRoot *x509.Certificate
 	// Sending decided executions to hosts (ADR-0006 §4); nil: none are sent.
 	Exec *Executions
+	// Approvals in Slack through the connector (slack.go); nil: Slack is not wired.
+	Slack *SlackConfig
 }
 
 type ctxKey struct{}

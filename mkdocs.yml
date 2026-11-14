@@ -79,6 +79,7 @@ nav:
   - Security: security.md
   - Operations:
     - Host keys and certificates: operations/host-keys.md
+    - Slack approvals: operations/slack.md
   - Testing and validation: testing.md
   - Decisions (ADR):
     - Overview: adr/README.md

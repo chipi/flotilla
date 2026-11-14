@@ -77,6 +77,9 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	if d.After == "" {
 		d.After = "flotillad signs the plan and the host agent on " + hostOf(c.Target) + " runs it once."
 	}
+	if ok, _ := u.API.SlackApprovable(p.Action); !d.CLI && ok && u.API.Slack != nil {
+		d.Channel = "here, the CLI or Slack"
+	}
 	d.CLICommand = "flotilla case approve " + c.ID + " --plan " + p.PlanHash
 	d.Run = p.RunID
 	if r, err := u.API.Store.Run(ctx, p.RunID); err == nil && r != nil {

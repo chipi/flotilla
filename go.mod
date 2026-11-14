@@ -3,6 +3,7 @@ module github.com/chipi/flotilla
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/getsentry/sentry-go v0.50.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0

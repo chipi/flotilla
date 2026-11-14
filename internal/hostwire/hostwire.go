@@ -27,12 +27,15 @@ const (
 	Result    = "result"    // hostexec.Result
 	Renew     = "renew"     // {csr}: a request for the agent's next certificate
 	Log       = "log"       // {at, level, msg, attrs}: one of the agent's own log lines (flotillad logs it)
+	Approval  = "approval"  // {nonce, team, user, action}: a person's answer in Slack, relayed by the connector
 	// flotillad -> agent
 	Welcome  = "welcome"  // {clock}
 	Enrolled = "enrolled" // {chain}: the certificate and the intermediate, PEM
 	Renewed  = "renewed"  // {chain}
 	Execute  = "execute"  // {envelope}: the signed execution, its exact bytes
 	Refusal  = "refusal"  // {detail}: and the connection closes
+	Notify   = "notify"   // {nonce, case, ...}: a plan waiting for a person, for the connector to post
+	Answered = "answered" // {nonce, ok, text}: what became of a relayed approval
 )
 
 type Frame struct {
@@ -119,6 +122,36 @@ type LogBody struct {
 	Level string            `json:"level"`
 	Msg   string            `json:"msg"`
 	Attrs map[string]string `json:"attrs,omitempty"`
+}
+
+// NotifyBody is a plan that waits for a person, for the connector to post in Slack (ADR-0006 §1,
+// decided 4). Approvable is whether policy lets Slack approve it at all (low or medium risk, reversible
+// or regenerable); without it the message only says where to answer.
+type NotifyBody struct {
+	Nonce      string `json:"nonce"`
+	Case       string `json:"case"`
+	Title      string `json:"title"`
+	Plan       string `json:"plan"` // the action and its target, as a person reads it
+	PlanHash   string `json:"plan_hash"`
+	URL        string `json:"url"`
+	Approvable bool   `json:"approvable"`
+	Why        string `json:"why,omitempty"` // why it is not approvable from Slack
+}
+
+// ApprovalBody is a click in Slack as the connector saw it. flotillad decides everything from it again:
+// the workspace and user must be pinned, the nonce unused and the plan unchanged.
+type ApprovalBody struct {
+	Nonce  string `json:"nonce"`
+	Team   string `json:"team"`
+	User   string `json:"user"`
+	Action string `json:"action"` // approve | reject
+}
+
+// AnsweredBody is flotillad's answer to a relayed approval, for the connector to show on the message.
+type AnsweredBody struct {
+	Nonce string `json:"nonce"`
+	OK    bool   `json:"ok"`
+	Text  string `json:"text"`
 }
 
 type HeartbeatBody struct {

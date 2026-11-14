@@ -63,6 +63,9 @@ type Server struct {
 	// OnContact, when set, gets a host's state after each change (connect, heartbeat, result, drop):
 	// flotillad keeps it in its store for `host list` and the alerts.
 	OnContact func(HostState)
+	// OnApproval, when set, answers a click a connector relayed (api.RelayedApproval); without it a relayed
+	// approval is refused.
+	OnApproval func(ctx context.Context, host string, b hostwire.ApprovalBody) hostwire.AnsweredBody
 
 	mu    sync.Mutex
 	conns map[string]*conn
@@ -225,6 +228,19 @@ func (s *Server) handle(tc *tls.Conn) {
 				continue
 			}
 			ch <- r
+		case hostwire.Approval:
+			var ab hostwire.ApprovalBody
+			if err := f.Decode(&ab); err != nil {
+				refuse(tc, err.Error())
+				return
+			}
+			ans := hostwire.AnsweredBody{Nonce: ab.Nonce, Text: "refused: this flotillad takes no approvals from Slack"}
+			if s.OnApproval != nil {
+				ans = s.OnApproval(ctx, host, ab)
+			}
+			if err := c.write(hostwire.Answered, ans); err != nil {
+				s.Log.Warn("host: the answer to a relayed approval was not sent", "host", host, "err", err)
+			}
 		case hostwire.Log:
 			var lb hostwire.LogBody
 			if err := f.Decode(&lb); err != nil {
@@ -416,4 +432,15 @@ func sortedAttrKeys(m map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Notify sends a plan that waits for a person to a connected host's connector.
+func (s *Server) Notify(host string, n hostwire.NotifyBody) error {
+	s.mu.Lock()
+	c := s.conns[host]
+	s.mu.Unlock()
+	if c == nil {
+		return ErrNotConnected
+	}
+	return c.write(hostwire.Notify, n)
 }
