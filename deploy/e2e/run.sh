@@ -39,6 +39,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
+  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
   for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit; do
     $D volume rm "$v" >/dev/null 2>&1
   done
@@ -102,6 +103,7 @@ workers:
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
+  remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
 # triage's cycle and the bugfix fleet's intake and fix reach GitHub and real models: not in the e2e
 disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix]
 models:
@@ -565,6 +567,37 @@ done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 echo "== hardening"
+echo "== a remote worker (RFC-0011): its link dials the host endpoint, flotillad's network never reaches it"
+acli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # the first admin has retired the operator token
+R="$(acli run e2e/remote-echo 2>&1)"
+acli runs e2e/remote-echo 2>&1 | grep -q "skipped.*worker remote-e2e is not connected" \
+  && ok "before its link connects, the remote worker's routine is skipped: not connected" || bad "not connected: $R $(acli runs e2e/remote-echo 2>&1 | head -3)"
+mkdir -p "$WORK/remote" && tok > "$WORK/remote/worker.token" && chmod 600 "$WORK/remote/worker.token" \
+  && cp "$WORK/config/host-ca/root.crt" "$WORK/remote/root.crt"
+RT="$(acli host enrolment w-remote-e2e 2>&1 | sed -n 's/.*"token":"\(fle_[0-9a-f]*\)".*/\1/p')"
+RW=(--label $LABEL --network ${P}_flotilla --memory 256m --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$WORK/remote:/remote")
+$D run -d --name flotilla-e2e-remote-worker "${RW[@]}" -e FLOTILLA_WORKER=remote-e2e -e FLOTILLA_WORKER_TOKEN_FILE=/remote/worker.token \
+  -e FLOTILLA_WORKER_LISTEN=0.0.0.0:8081 local/flotilla-worker-bugfix:$TAG >/dev/null || bad "the remote worker did not start"
+mkdir -p "$WORK/remote/state" && chmod 700 "$WORK/remote/state"
+OUT="$(printf '%s\n' "$RT" | $D run --rm -i "${RW[@]}" --entrypoint /usr/local/bin/flotilla-host local/flotilla-worker-bugfix:$TAG \
+  enrol -identity w-remote-e2e -state /remote/state -root /remote/root.crt -addr flotillad:8487 -server-name flotillad 2>&1)"
+echo "$OUT" | grep -q "^enrolled w-remote-e2e" && ok "the link enrolled under the worker's identity ($OUT)" || bad "link enrol: $OUT"
+$D run -d --name flotilla-e2e-remote-link "${RW[@]}" --entrypoint /usr/local/bin/flotilla-host local/flotilla-worker-bugfix:$TAG \
+  link -identity w-remote-e2e -worker remote-e2e -worker-url http://flotilla-e2e-remote-worker:8081 -worker-token-file /remote/worker.token \
+  -state /remote/state -root /remote/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s >/dev/null || bad "the link did not start"
+seen flotillad '"msg":"remote worker connected".*"worker":"remote-e2e"' \
+  && ok "flotillad authenticated the link as remote-e2e's (identity w-remote-e2e, version $TAG)" || bad "link connect: $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
+acli run e2e/remote-echo >/dev/null
+for _ in $(seq 1 20); do acli runs e2e/remote-echo 2>&1 | grep -q " ok " && break; sleep 1; done
+acli runs e2e/remote-echo 2>&1 | grep -q " ok " && $D logs flotilla-e2e-remote-link 2>&1 | grep -q '"msg":"run ended"' \
+  && ok "a run went to the remote worker through its link and came back ok" || bad "remote run: $(acli runs e2e/remote-echo 2>&1 | head -3) $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
+$D rm -f flotilla-e2e-remote-link >/dev/null
+for _ in $(seq 1 15); do $D logs flotillad 2>&1 | grep -q '"msg":"remote worker disconnected".*"worker":"remote-e2e"' && break; sleep 1; done
+acli run e2e/remote-echo >/dev/null 2>&1
+acli runs e2e/remote-echo 2>&1 | head -2 | grep -q "skipped.*not connected" \
+  && ok "with its link gone, the remote worker's routine is skipped again" || bad "after the link: $(acli runs e2e/remote-echo 2>&1 | head -3)"
+$D rm -f flotilla-e2e-remote-worker >/dev/null
+
 for w in flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act; do
   NW="$($D inspect $w --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
   [ "$NW" = "${P}_flotilla " ] && ok "$w is on the internal network only" || bad "$w networks: '$NW'"

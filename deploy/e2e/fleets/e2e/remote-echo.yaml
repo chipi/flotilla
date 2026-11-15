@@ -1,0 +1,17 @@
+fleet: e2e
+routine: remote-echo
+description: >-
+  The e2e's remote worker check (RFC-0011), never shipped: run by hand on the worker remote-e2e, which
+  runs in its own container and is reached through its link, not by flotillad's network.
+enabled: true
+worker: remote-e2e
+trigger:
+  every: 60m
+run:
+  command: echo remote ok
+  workdir: .
+  timeout: 1m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 120m

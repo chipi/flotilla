@@ -1,0 +1,121 @@
+# flotilla's remote workers on one machine (RFC-0011): the workers placed here, a link beside each (it dials
+# flotillad's host endpoint over the tailnet under the worker's own identity), and this machine's egress
+# proxy. Nothing is published: the links dial out, the workers are reached by their links only.
+#
+# Today: the bugfix fleet's fix and push workers on the X3. Installation paths come from the environment
+# (FLOTILLA_REMOTE/.env, never in git); README.md says what goes where. Run from a checkout of main
+# (the X3's rule: ~/deploy/flotilla), as a user unit.
+#
+# Networks:
+#   inner  internal: no route out. The workers, their links and the proxy.
+#   out    the proxy's and the links' way out: the tailnet (flotillad, LiteLLM) and the internet.
+name: flotilla-remote
+
+x-hardening: &hardening
+  read_only: true
+  init: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  user: "${FLOTILLA_UID:?set FLOTILLA_UID}:${FLOTILLA_GID:?set FLOTILLA_GID}"   # the files below are this user's, mode 600
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+x-link: &link
+  <<: *hardening
+  image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG:?set FLOTILLA_TAG}
+  entrypoint: ["/usr/local/bin/flotilla-host"]
+  mem_limit: 64m
+  cpus: 0.25
+  dns: [100.100.100.100]   # the tailnet's resolver, for flotilla-hosts.<tailnet>
+  networks: [inner, out]
+
+services:
+  worker-bugfix:
+    <<: *hardening
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG}
+    container_name: flotilla-remote-worker-bugfix
+    mem_limit: ${BUGFIX_MEM:-8g}
+    cpus: ${BUGFIX_CPUS:-4}
+    tmpfs: ["/tmp:size=512m", "/home/worker:size=64m"]
+    environment:
+      HOME: /home/worker
+      FLOTILLA_WORKER: bugfix
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker-bugfix.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_NODE_USE_ENV_PROXY: "1"
+      ROUTINE_BUGFIX_SCRATCH: /scratch
+    volumes:
+      - ${FLOTILLA_REMOTE:?set FLOTILLA_REMOTE}/secrets/worker-bugfix.token:/run/flotilla/worker-bugfix.token:ro
+      - ${FLOTILLA_REMOTE}/secrets/bugfix-model.key:/run/flotilla/model.key:ro
+      - ${FLOTILLA_REMOTE}/scratch:/scratch
+    networks: [inner]
+
+  worker-bugfix-act:
+    <<: *hardening
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG}
+    container_name: flotilla-remote-worker-bugfix-act
+    mem_limit: 512m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=256m", "/home/worker:size=16m"]
+    environment:
+      HOME: /home/worker
+      FLOTILLA_WORKER: bugfix-act
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker-bugfix-act.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_GITHUB_APP_ID: ${BUGFIX_GITHUB_APP_ID:-}
+      ROUTINE_GITHUB_APP_INSTALLATION_ID: ${BUGFIX_GITHUB_APP_INSTALLATION_ID:-}
+      ROUTINE_GITHUB_APP_KEY_FILE: /run/flotilla/app/github-app.pem
+    volumes:
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-act.token:/run/flotilla/worker-bugfix-act.token:ro
+      # only the GitHub App's key, in its own directory (empty until the operator has made the App; then
+      # open-pr escalates "no GitHub App configured"): never the other secrets
+      - ${FLOTILLA_REMOTE}/app:/run/flotilla/app:ro
+    networks: [inner]
+
+  link-bugfix:
+    <<: *link
+    container_name: flotilla-remote-link-bugfix
+    command: ["link", "-identity", "w-bugfix-${FLOTILLA_NODE:?set FLOTILLA_NODE}", "-worker", "bugfix",
+              "-worker-url", "http://worker-bugfix:8081", "-worker-token-file", "/run/flotilla/worker.token",
+              "-state", "/state", "-root", "/run/flotilla/root.crt",
+              "-addr", "${FLOTILLA_HOSTS_ADDR:?set FLOTILLA_HOSTS_ADDR}", "-server-name", "${FLOTILLA_HOSTS_NAME:?set FLOTILLA_HOSTS_NAME}"]
+    volumes:
+      - ${FLOTILLA_REMOTE}/state/w-bugfix:/state
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix.token:/run/flotilla/worker.token:ro
+      - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
+
+  link-bugfix-act:
+    <<: *link
+    container_name: flotilla-remote-link-bugfix-act
+    command: ["link", "-identity", "w-bugfix-act-${FLOTILLA_NODE}", "-worker", "bugfix-act",
+              "-worker-url", "http://worker-bugfix-act:8081", "-worker-token-file", "/run/flotilla/worker.token",
+              "-state", "/state", "-root", "/run/flotilla/root.crt",
+              "-addr", "${FLOTILLA_HOSTS_ADDR}", "-server-name", "${FLOTILLA_HOSTS_NAME}"]
+    volumes:
+      - ${FLOTILLA_REMOTE}/state/w-bugfix-act:/state
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-act.token:/run/flotilla/worker.token:ro
+      - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
+
+  egress:
+    <<: *hardening
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-remote-egress
+    mem_limit: 128m
+    cpus: 0.5
+    dns: [100.100.100.100]   # tailnet names (the LiteLLM gateway) and the internet's
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    volumes:
+      - ${FLOTILLA_REMOTE}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_REMOTE}/egress-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [inner, out]
+
+networks:
+  inner:
+    internal: true
+  out: {}
