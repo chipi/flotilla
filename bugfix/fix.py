@@ -267,10 +267,32 @@ class Chain:
         self.base = base.strip()
         self.env["TRIAGE_BASE"] = self.base  # the leaves reset to it
         self.note("base", self.base[:12])
+        # The worktrees share the cache's config, and a repo's own scripts write to it: orrery's `prepare`
+        # runs `git config core.hooksPath .husky` on every npm ci (8 runs escalated by the check above on
+        # the X3, 2026-11-15). Nothing runs from it (GIT_CONFIG_* pins hooksPath for every git the run
+        # starts); what must not happen is that it stays for the next run. So the config checked above is
+        # put back after the setup and when the run ends, and the check above stays for what got past.
+        self.cfg_path = os.path.join(cache, ".git", "config")
+        with open(self.cfg_path) as f:
+            self.cfg_good = f.read()
         if self.a.setup:
             code, out = sh(self.a.setup, self.wt, self.env, self.a.setup_timeout)
+            self.restore_config("setup")
             if code != 0:
                 raise Stop(f"the repo's setup failed on the base (exit {code}): {errors_of(out)}")
+
+    def restore_config(self, when):
+        """The cache's config back to what checkout() checked; the lines that differed are noted."""
+        if not getattr(self, "cfg_path", None):
+            return
+        with open(self.cfg_path) as f:
+            now = f.read()
+        if now == self.cfg_good:
+            return
+        changed = sorted(set(now.splitlines()) ^ set(self.cfg_good.splitlines()))
+        with open(self.cfg_path, "w") as f:
+            f.write(self.cfg_good)
+        self.note(f"{when} changed the repo cache's config; put back", "; ".join(ln.strip() for ln in changed)[:200])
 
     def reset(self):
         sh(["git", "-C", self.wt, "reset", "-q", "--hard", self.base], self.run_dir, self.env, 60, check=True)
@@ -509,6 +531,8 @@ def main(argv=None, environ=None):
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
     finally:
+        if chain is not None:
+            chain.restore_config("the run")
         shutil.rmtree(run_dir, ignore_errors=True)
         if chain is not None and getattr(chain, "cache", None):
             sh(["git", "-C", chain.cache, "worktree", "prune"], a.scratch, environ, 60)

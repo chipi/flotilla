@@ -283,6 +283,20 @@ class Chain(unittest.TestCase):
         f.run()
         self.assertFalse(os.path.exists(marker), "a hook in the shared cache ran")
 
+    def test_the_repo_s_setup_writing_the_cache_config_is_put_back(self):
+        """orrery's `prepare` writes core.hooksPath into the shared cache's config on every npm ci: the run puts
+        the config back, so the next run is not refused (8 escalations on the X3, 2026-11-15). The fix's own
+        change made after the setup is put back too, when the run ends."""
+        f = self.fixture(["needs-info", "needs-info"], [])
+        plan, _ = f.run("--setup", "git config core.hooksPath .husky")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertNotIn("config was changed", plan["detail"])
+        cache = os.path.join(f.scratch, "repos", "chipi__orrery.git")
+        got = subprocess.run(["git", "-C", cache, "config", "--local", "--get", "core.hooksPath"], capture_output=True, text=True)
+        self.assertEqual(got.returncode, 1, f"core.hooksPath stayed in the cache: {got.stdout!r}")
+        plan2, _ = f.run("--setup", "git config core.hooksPath .husky")
+        self.assertIn("needs info", plan2["detail"], "the second run is not refused by the cache check")
+
     def test_not_actionable_escalates_with_the_reason(self):
         f = self.fixture(["needs-info"], [])
         plan, _ = f.run()
