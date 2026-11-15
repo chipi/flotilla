@@ -355,3 +355,17 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 		t.Fatalf("what the run read (G7): %+v", l)
 	}
 }
+
+type offline struct{ fakeRunner }
+
+func (offline) Available() bool { return false }
+
+// RFC-0011: a routine whose remote worker is not connected is skipped, with the reason.
+func TestRemoteWorkerNotConnectedSkips(t *testing.T) {
+	s, _, _ := setup(t, 0)
+	s.Workers["triage"] = &offline{}
+	why, err := s.SkipReason(context.Background(), s.Routines[0])
+	if err != nil || why != "worker triage is not connected" {
+		t.Fatalf("skip reason %q %v", why, err)
+	}
+}

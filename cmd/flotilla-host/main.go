@@ -4,6 +4,8 @@
 //	flotilla-host enrol   [flags] < token   once, at install: makes the key here, gets the certificate
 //	flotilla-host run     [flags]           the service
 //	flotilla-host sudoers -config FILE       the sudoers lines for this host's privileged actions
+//	flotilla-host link    [flags]           a remote worker's link (RFC-0011): -identity, -worker,
+//	                                        -worker-url, -worker-token-file; enrol with -identity first
 //
 // Flags: -config (the host's config, root-owned), -state (the key, the certificate and the executions
 // store), -audit (the audit log, in a root-owned directory), -addr (flotillad's host endpoint), -server-name
@@ -36,6 +38,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/hostwire"
 	"github.com/chipi/flotilla/internal/slackconn"
+	"github.com/chipi/flotilla/internal/worker"
 )
 
 // set at build time: -ldflags "-X main.version=sha-<7>"
@@ -44,6 +47,8 @@ var version = "dev"
 type opts struct {
 	config, state, audit, addr, serverName, root string
 	heartbeat                                    time.Duration
+	// a remote worker's link (RFC-0011)
+	identity, worker, workerURL, workerToken string
 }
 
 func main() {
@@ -61,6 +66,10 @@ func main() {
 	fs.StringVar(&o.serverName, "server-name", "", "flotillad's name in its certificate")
 	fs.StringVar(&o.root, "root", "/etc/flotilla-host/root.crt", "the root CA's certificate")
 	fs.DurationVar(&o.heartbeat, "heartbeat", 30*time.Second, "the heartbeat interval (flotillad's hosts.heartbeat must match)")
+	fs.StringVar(&o.identity, "identity", "", "a remote worker's identity, w-<worker>-<node> (link, and enrol for a link)")
+	fs.StringVar(&o.worker, "worker", "", "the worker the link serves, as flotillad.yaml names it")
+	fs.StringVar(&o.workerURL, "worker-url", "", "the worker's own API beside the link, http://...:8081")
+	fs.StringVar(&o.workerToken, "worker-token-file", "", "the worker's token file")
 	fs.Parse(os.Args[2:])
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("service", "flotilla-host", "version", version)
 	var err error
@@ -69,6 +78,8 @@ func main() {
 		err = enrol(o, os.Stdin)
 	case "run":
 		err = run(o, log)
+	case "link":
+		err = link(o, log)
 	case "sudoers":
 		var cfg *hostcfg.Config
 		if cfg, err = hostcfg.Load(o.config); err == nil {
@@ -137,9 +148,13 @@ func enrol(o opts, stdin *os.File) error {
 	if err := o.need(); err != nil {
 		return err
 	}
-	cfg, err := hostcfg.Load(o.config)
-	if err != nil {
-		return err
+	name := o.identity // a link enrols under its worker identity, with no host config
+	if name == "" {
+		cfg, err := hostcfg.Load(o.config)
+		if err != nil {
+			return err
+		}
+		name = cfg.Host
 	}
 	root, err := readRoot(o.root)
 	if err != nil {
@@ -157,14 +172,49 @@ func enrol(o opts, stdin *os.File) error {
 	if err != nil {
 		return err
 	}
-	chain, err := hostagent.Enrol(context.Background(), o.addr, o.serverName, root, cfg.Host, tok, key)
+	chain, err := hostagent.Enrol(context.Background(), o.addr, o.serverName, root, name, tok, key)
 	if err != nil {
 		return err
 	}
 	if err := saveChain(o.state, chain); err != nil {
 		return err
 	}
-	fmt.Printf("enrolled %s with %s\n", cfg.Host, o.addr)
+	fmt.Printf("enrolled %s with %s\n", name, o.addr)
+	return nil
+}
+
+// link runs a remote worker's link: it holds the worker identity's key and certificate in -state, and
+// the worker's token in -worker-token-file (the worker's own), and nothing else of the host.
+func link(o opts, log *slog.Logger) error {
+	if err := o.need(); err != nil {
+		return err
+	}
+	if o.identity == "" || o.worker == "" || o.workerURL == "" || o.workerToken == "" {
+		return errors.New("link needs -identity, -worker, -worker-url and -worker-token-file")
+	}
+	root, err := readRoot(o.root)
+	if err != nil {
+		return err
+	}
+	key, err := loadKey(o.state, false)
+	if err != nil {
+		return fmt.Errorf("the link's key (enrol with -identity first): %w", err)
+	}
+	tok, err := readToken(o.workerToken, "")
+	if err != nil {
+		return err
+	}
+	l := &hostagent.Link{Addr: o.addr, ServerName: o.serverName, Root: root, Identity: o.identity, Worker: o.worker,
+		Version: version, Key: key, Heartbeat: o.heartbeat, Log: log.With("role", "worker link", "worker", o.worker),
+		LoadChain: func() ([]byte, error) { return os.ReadFile(chainPath(o.state)) },
+		SaveChain: func(b []byte) error { return saveChain(o.state, b) },
+		Local:     worker.New(o.workerURL, tok)}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	log.Info("worker link starting", "identity", o.identity, "worker", o.worker, "addr", o.addr)
+	if err := l.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
 	return nil
 }
 
@@ -253,18 +303,18 @@ func allowlist(cfg *hostcfg.Config) []hostwire.AllowedAction {
 func readToken(path, prefix string) (string, error) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("slack: %w", err)
+		return "", fmt.Errorf("token: %w", err)
 	}
 	if st.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("slack: %s is mode %o: a token file is readable by its owner only (600)", path, st.Mode().Perm())
+		return "", fmt.Errorf("token: %s is mode %o: a token file is readable by its owner only (600)", path, st.Mode().Perm())
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("slack: %w", err)
+		return "", fmt.Errorf("token: %w", err)
 	}
 	tok := strings.TrimSpace(string(raw))
 	if !strings.HasPrefix(tok, prefix) || strings.ContainsAny(tok, " \n\t") {
-		return "", fmt.Errorf("slack: %s does not hold one %s… token", path, prefix)
+		return "", fmt.Errorf("token: %s does not hold one %s… token", path, prefix)
 	}
 	return tok, nil
 }

@@ -66,10 +66,18 @@ type Server struct {
 	// OnApproval, when set, answers a click a connector relayed (api.RelayedApproval); without it a relayed
 	// approval is refused.
 	OnApproval func(ctx context.Context, host string, b hostwire.ApprovalBody) hostwire.AnsweredBody
+	// Workers maps a remote worker's identity (its certificate name) to the worker it serves (RFC-0011);
+	// a connection under such an identity speaks only the worker frames.
+	Workers map[string]string
+	// Version is flotillad's: a remote worker at another version is refused, loudly.
+	Version string
 
-	mu    sync.Mutex
-	conns map[string]*conn
-	state map[string]*HostState
+	mu     sync.Mutex
+	conns  map[string]*conn
+	state  map[string]*HostState
+	wconns map[string]*conn
+	wstate map[string]*WorkerState
+	runs   map[string]*remoteRun
 }
 
 type conn struct {
@@ -150,6 +158,10 @@ func (s *Server) handle(tc *tls.Conn) {
 	if err != nil {
 		s.Log.Warn("host endpoint: refused", "remote", tc.RemoteAddr().String(), "err", err)
 		refuse(tc, "refused: "+err.Error())
+		return
+	}
+	if name, ok := s.Workers[host]; ok {
+		s.handleWorker(ctx, tc, hostca.Fingerprint(chain[0]), host, name)
 		return
 	}
 	f, err := hostwire.Read(tc)

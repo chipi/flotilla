@@ -28,6 +28,9 @@ const (
 	Renew     = "renew"     // {csr}: a request for the agent's next certificate
 	Log       = "log"       // {at, level, msg, attrs}: one of the agent's own log lines (flotillad logs it)
 	Approval  = "approval"  // {nonce, team, user, action}: a person's answer in Slack, relayed by the connector
+	// a remote worker's link (RFC-0011) -> flotillad
+	WorkerHello = "worker_hello" // {version, worker}: first on a worker identity's connection
+	RunResult   = "run_result"   // {run_id, result | error}: a run's result, on any connection of its worker
 	// flotillad -> agent
 	Welcome  = "welcome"  // {clock}
 	Enrolled = "enrolled" // {chain}: the certificate and the intermediate, PEM
@@ -36,6 +39,9 @@ const (
 	Refusal  = "refusal"  // {detail}: and the connection closes
 	Notify   = "notify"   // {nonce, case, ...}: a plan waiting for a person, for the connector to post
 	Answered = "answered" // {nonce, ok, text}: what became of a relayed approval
+	// flotillad -> a remote worker's link (RFC-0011)
+	Run    = "run"    // {run_id, request}: the worker's run request, as its HTTP API takes it
+	Cancel = "cancel" // {run_id}: the run's time is up; the link stops it
 )
 
 type Frame struct {
@@ -185,4 +191,27 @@ type AllowedAction struct {
 	Argv    []string `json:"argv"`
 	PerHour int      `json:"per_hour"`
 	Timeout string   `json:"timeout"`
+}
+
+// WorkerHelloBody opens a remote worker link's connection (RFC-0011 §2): its version must be flotillad's.
+type WorkerHelloBody struct {
+	Version string `json:"version"`
+	Worker  string `json:"worker"`
+}
+
+// RunBody is one run for a remote worker: the request exactly as the worker's /v1/runs takes it.
+type RunBody struct {
+	RunID   string          `json:"run_id"`
+	Request json.RawMessage `json:"request"`
+}
+
+// RunResultBody is a run's result as the worker's /v1/runs answered it, or why the link has none.
+type RunResultBody struct {
+	RunID  string          `json:"run_id"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  string          `json:"error,omitempty"`
+}
+
+type CancelBody struct {
+	RunID string `json:"run_id"`
 }

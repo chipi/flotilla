@@ -67,3 +67,27 @@ func TestSlackAndBriefConfig(t *testing.T) {
 		t.Fatal("a misspelled key was accepted")
 	}
 }
+
+// RFC-0011: a remote worker is an identity w-<worker>-<node> and needs the host endpoint; never both a
+// url and remote; one identity per worker.
+func TestRemoteWorkersConfig(t *testing.T) {
+	hosts := "hosts: {listen: ':8487', ca_dir: /ca, server_names: [f]}\n"
+	c, err := load(t, hosts+"workers:\n  bugfix: {remote: w-bugfix-x3}\n  ops: {url: 'http://o:8081', token_file: /t}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Workers["bugfix"].Remote != "w-bugfix-x3" || c.Workers["ops"].URL == "" {
+		t.Fatalf("parsed: %+v", c.Workers)
+	}
+	for what, extra := range map[string]string{
+		"remote without hosts": "workers:\n  bugfix: {remote: w-bugfix-x3}\n",
+		"not a w- identity":    hosts + "workers:\n  bugfix: {remote: x3}\n",
+		"remote and a url":     hosts + "workers:\n  bugfix: {remote: w-bugfix-x3, url: 'http://b:8081'}\n",
+		"one identity twice":   hosts + "workers:\n  a: {remote: w-a-x3}\n  b: {remote: w-a-x3}\n",
+		"neither":              "workers:\n  bugfix: {}\n",
+	} {
+		if _, err := load(t, extra); err == nil {
+			t.Errorf("%s: accepted", what)
+		}
+	}
+}

@@ -94,7 +94,12 @@ var defaultRegistry = []string{"/opt/flotilla/host/registry.json"}
 type WorkerConfig struct {
 	URL       string `yaml:"url"`
 	TokenFile string `yaml:"token_file"`
+	// Remote is a remote worker's identity (RFC-0011): the certificate name its link connects under,
+	// w-<worker>-<node>. A remote worker has no url or token: it dials the host endpoint.
+	Remote string `yaml:"remote"`
 }
+
+var remoteIdentityRe = regexp.MustCompile(`^w-[a-z0-9-]{1,60}$`)
 
 func loadConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
@@ -141,9 +146,24 @@ func loadConfig(path string) (*Config, error) {
 			errs = append(errs, fmt.Errorf("brief_at %q: HH:MM, the time of day the brief is written", c.BriefAt))
 		}
 	}
+	seenIdentity := map[string]string{}
 	for name, w := range c.Workers {
-		if w.URL == "" || w.TokenFile == "" {
-			errs = append(errs, fmt.Errorf("worker %s: url and token_file are required", name))
+		switch {
+		case w.Remote != "" && (w.URL != "" || w.TokenFile != ""):
+			errs = append(errs, fmt.Errorf("worker %s: remote, or url and token_file, not both", name))
+		case w.Remote != "":
+			if !remoteIdentityRe.MatchString(w.Remote) {
+				errs = append(errs, fmt.Errorf("worker %s: remote %q: an identity w-<worker>-<node>", name, w.Remote))
+			}
+			if c.Hosts.Listen == "" {
+				errs = append(errs, fmt.Errorf("worker %s: a remote worker needs hosts: its link dials the host endpoint", name))
+			}
+			if other, dup := seenIdentity[w.Remote]; dup {
+				errs = append(errs, fmt.Errorf("workers %s and %s: one identity %s", other, name, w.Remote))
+			}
+			seenIdentity[w.Remote] = name
+		case w.URL == "" || w.TokenFile == "":
+			errs = append(errs, fmt.Errorf("worker %s: url and token_file are required (or remote)", name))
 		}
 	}
 	if c.CaseTimers.DetectedAlert < 0 || c.CaseTimers.HandedOverEscalate < 0 {
@@ -225,7 +245,17 @@ func main() {
 	clients := map[string]*worker.Client{}
 	runners := map[string]sched.Runner{}
 	workerTokens := map[string]string{}
+	var link *hostlink.Server // the host endpoint, made here so remote workers can be its runners
+	remotes := map[string]string{}
+	if cfg.Hosts.Listen != "" {
+		link = &hostlink.Server{}
+	}
 	for name, w := range cfg.Workers {
+		if w.Remote != "" {
+			runners[name] = hostlink.RemoteRunner{S: link, Worker: name}
+			remotes[w.Remote] = name
+			continue
+		}
 		tok, err := readToken(w.TokenFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "worker", name+":", err)
@@ -375,8 +405,11 @@ func main() {
 		}
 		hostWatch = &hostalert.Watcher{}
 		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
-		link := &hostlink.Server{Auth: apiSrv, Log: log, TLS: &tls.Config{GetCertificate: sc.get}, Heartbeat: cfg.Hosts.Heartbeat,
-			OnContact: recordContact(st, log)}
+		link.Auth, link.Log, link.TLS, link.Heartbeat = apiSrv, log, &tls.Config{GetCertificate: sc.get}, cfg.Hosts.Heartbeat
+		link.OnContact, link.Workers, link.Version = recordContact(st, log), remotes, version
+		for id, name := range remotes {
+			log.Info("remote worker expected", "worker", name, "identity", id)
+		}
 		if cfg.Slack != nil {
 			apiSrv.Slack = cfg.Slack
 			link.OnApproval = apiSrv.RelayedApproval

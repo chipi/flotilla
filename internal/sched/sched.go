@@ -389,6 +389,10 @@ func (s *Scheduler) skipReason(ctx context.Context, j *spec.Routine) (string, er
 	} else if v == "1" {
 		return "routine is paused", nil
 	}
+	// a remote worker (RFC-0011) whose machine is off or unreachable: its routines wait
+	if r, ok := s.Workers[j.Worker].(interface{ Available() bool }); ok && !r.Available() {
+		return "worker " + j.Worker + " is not connected", nil
+	}
 	if j.Budget.DayUSD > 0 {
 		day := s.Now().In(s.Location).Format("2006-01-02")
 		spent, err := s.Store.Spend(ctx, day, j.ID())
