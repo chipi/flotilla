@@ -38,7 +38,7 @@ services:
     container_name: flotilla-remote-worker-bugfix
     mem_limit: ${BUGFIX_MEM:-8g}
     cpus: ${BUGFIX_CPUS:-4}
-    tmpfs: ["/tmp:size=512m", "/home/worker:size=64m"]
+    tmpfs: ["/tmp:size=512m", "/home/worker:size=64m,uid=${FLOTILLA_UID},gid=${FLOTILLA_GID},mode=0700"]
     environment:
       HOME: /home/worker
       FLOTILLA_WORKER: bugfix
@@ -60,7 +60,7 @@ services:
     container_name: flotilla-remote-worker-bugfix-act
     mem_limit: 512m
     cpus: 0.5
-    tmpfs: ["/tmp:size=256m", "/home/worker:size=16m"]
+    tmpfs: ["/tmp:size=256m", "/home/worker:size=16m,uid=${FLOTILLA_UID},gid=${FLOTILLA_GID},mode=0700"]
     environment:
       HOME: /home/worker
       FLOTILLA_WORKER: bugfix-act
