@@ -1,6 +1,6 @@
 """ops/backup-monitor: the code-only Ops monitor of pipeline v1 (RFC-0004 §10). Reads the age of the
 mini's off-box backup and reports a failed_backup detection on BACKUP_TARGET when it is above the
-threshold of backup.rerun_observability's backup_age_above precondition for the run's stage (20h in
+threshold of backup.rerun_observability's backup_age_above precondition for the run's stage (25h in
 shadow, 26h otherwise): the case is opened at the same threshold its re-check uses, so a shadow case is
 planned rather than closed as resolved (RFC-0004 §10).
 

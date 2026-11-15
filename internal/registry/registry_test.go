@@ -26,7 +26,7 @@ func TestTheHostAgentsDeclaration(t *testing.T) {
 	}
 	if !a.For("failed_backup") || a.For("memory_growth") || a.Risk != "low" || a.Reversible != "regenerable" ||
 		time.Duration(a.Check.Within) != time.Hour || a.Limits.PerTargetPerDay != 2 || a.Params["host"].Kind != "target_host" ||
-		strings.Join(a.Pre, ",") != "backup_age_above(26h),not_running" || strings.Join(a.PreShadow, ",") != "backup_age_above(20h),not_running" {
+		strings.Join(a.Pre, ",") != "backup_age_above(26h),not_running" || strings.Join(a.PreShadow, ",") != "backup_age_above(25h),not_running" {
 		t.Fatalf("backup.rerun_observability: %+v", a)
 	}
 }

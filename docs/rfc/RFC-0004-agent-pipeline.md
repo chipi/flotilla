@@ -540,7 +540,10 @@ and a Grafana annotation; the `notifications` channel posts it to Slack.
   than 20 h), and the capability's `pre_shadow` uses the same threshold, so the re-check plans
   instead of closing every case as resolved. The gate: 5 shadow plans that match what the operator
   would have done, each with its target equal to the case's, then propose (with the 26 h threshold),
-  then auto.
+  then auto. *Amended 2026-11-15 (operator):* the shadow threshold is 25 h, not 20 h. The daily backup
+  runs about every 24 h, so at 20 h a case opened every night on a healthy backup and cleared when the
+  backup landed. A verdict on a shadow plan judges the chain at its threshold (the action, the target,
+  one case for the incident), not whether the backup needed a rerun.
 - **Prerequisites:** the actuator's ADR accepted before the first write; the `ops-act-host` worker image.
 - **Kept as code, not proven by v1:** the host incident rule, the per-target lock (one kind and one
   write cannot exercise them), and loop bounding (`caused_by`, the hourly cap: a backup rerun fires

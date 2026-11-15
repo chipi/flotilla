@@ -32,7 +32,7 @@ class H(BaseHTTPRequestHandler):
             # As VictoriaMetrics, for the ops monitor: the backup's age, which the e2e sets (STUB_QUERY_VALUE,
             # seconds); the query itself is printed so the e2e can read what was asked.
             print(f"{NAME} QUERY {body.decode('utf-8', 'replace')}", flush=True)
-            value = os.environ.get("STUB_QUERY_VALUE", "73800")
+            value = os.environ.get("STUB_QUERY_VALUE", "91800")
             out = json.dumps({"status": "success", "data": {"resultType": "vector",
                               "result": [{"metric": {}, "value": [0, value]}]}}).encode()
             self._done(200, out)

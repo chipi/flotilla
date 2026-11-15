@@ -115,7 +115,7 @@ ROUTINE_HEARTBEAT_MODEL_ALIAS=triage-flash
 ROUTINE_SF_SERVICE=triage-fleet
 ROUTINE_SF_GLITCHTIP_SYNC=1
 EOF
-# the ops workers' installation facts; the VictoriaMetrics stand-in answers the backup's age (20.5h)
+# the ops workers' installation facts; the VictoriaMetrics stand-in answers the backup's age (25.5h)
 cat > "$WORK/config/worker-ops.env" <<EOF
 ROUTINE_VM_URL=http://victoriametrics:8080
 ROUTINE_BACKUP_INSTANCE=homelab
@@ -240,7 +240,7 @@ seen e2e-victoriatraces "SPAN model.chat" && ok "the routine's model.chat span r
   || bad "no model.chat span at the VictoriaTraces stand-in"
 
 echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
-# The monitor runs at start; the stand-in says the backup is 20.5h old, above shadow's 20h. The dispatcher
+# The monitor runs at start; the stand-in says the backup is 25.5h old, above shadow's 25h. The dispatcher
 # (every 15s) hands the case to ops/rerun-backup, whose plan policy records in shadow, closing the case.
 for i in $(seq 1 45); do
   CASES="$(cli case list --all 2>&1)"
@@ -251,7 +251,7 @@ echo "$CASES" | grep -q "failed_backup .*host:mini .*closed .*shadow_plan_record
 CID="$(echo "$CASES" | awk '/failed_backup/ {print $1; exit}')"
 SHOW="$(cli case show "$CID" 2>&1)"
 echo "$SHOW" | grep -q "case.handed_over .*ops/backup-monitor .*by detector" && ok "opened by ops/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
-echo "$SHOW" | grep -q "case.planned .*ops/rerun-backup .*by act .*backup_age_above(20h): holds" \
+echo "$SHOW" | grep -q "case.planned .*ops/rerun-backup .*by act .*backup_age_above(25h): holds" \
   && ok "planned by ops/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
 echo "$SHOW" | grep -q "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"

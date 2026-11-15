@@ -235,3 +235,14 @@ promotion to propose).
 
   **Found:** flotillad exits at once when every routine is disabled (the scheduler's loop returns).
   Production always has the heartbeat, but the API and the UI should keep serving without routines.
+
+  **The first shadow case, 2026-11-14 23:45Z** (`case-20261114-6983646f65`): the backup was 20.1 h old,
+  the chain planned `backup.rerun_observability` on the mini in shadow (would propose), absorbed every
+  later detection into the one case, and cleared at 03:54Z when the daily backup landed (24.1 h at its
+  oldest). The chain was right; the threshold was not: at 20 h a case opens every night on a healthy
+  backup. The operator, 2026-11-15:
+  - **The shadow threshold is 25 h** (`host/registry.json` `pre_shadow`), past the daily backup's
+    ~24 h, so a shadow case means a backup really late; propose and live stay at 26 h.
+  - **A verdict on a shadow plan judges the chain at its threshold:** the action and the target you
+    would have chosen, one case for the incident; not whether the backup needed a rerun. The case page
+    says so; RFC-0004 §10 is amended.

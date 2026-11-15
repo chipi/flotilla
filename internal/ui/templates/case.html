@@ -83,6 +83,7 @@
       <section class="card card--edge" aria-labelledby="fb">
         <h2 id="fb">After the check: was the diagnosis right?</h2>
         <p class="panel-note">Answer once the check has run. It feeds this action's record on Autonomy; a note takes effect only once it is activated in <a href="/knowledge">Knowledge</a>.</p>
+        {{if eq $c.Resolution "shadow_plan_recorded"}}<p class="panel-note">A shadow plan: judge the chain at its threshold. Right means the plan is what you would have done (this action, this target), with one case for the incident; the fault does not have to have needed fixing.</p>{{end}}
         {{if $act}}<div class="actions">
           <form method="post" action="/cases/{{$c.ID}}/right" class="inline">{{template "csrf" $csrf}}<button class="btn{{if eq .Mine "right"}} btn--verdict-right{{else}} btn--edge{{end}}" type="submit" aria-pressed="{{if eq .Mine "right"}}true{{else}}false{{end}}">Right</button></form>
           <form method="post" action="/cases/{{$c.ID}}/wrong" class="inline">{{template "csrf" $csrf}}<button class="btn{{if eq .Mine "wrong"}} btn--verdict-wrong{{else}} btn--edge{{end}}" type="submit" aria-pressed="{{if eq .Mine "wrong"}}true{{else}}false{{end}}">Wrong</button></form>

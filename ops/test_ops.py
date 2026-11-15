@@ -36,7 +36,7 @@ class TestRegistryAndCode(unittest.TestCase):
 
     def test_thresholds_come_from_the_registry(self):
         a = common.action(common.RERUN)
-        self.assertEqual(backup_monitor.threshold_hours(a, "shadow"), 20)
+        self.assertEqual(backup_monitor.threshold_hours(a, "shadow"), 25)
         self.assertEqual(backup_monitor.threshold_hours(a, "propose"), 26)
         self.assertEqual(backup_monitor.threshold_hours(a, "live"), 26)
 
@@ -90,16 +90,18 @@ class TestDecide(unittest.TestCase):
     def setUp(self):
         self.a = common.action(common.RERUN)
 
-    def test_plan_in_shadow_above_20h(self):
-        out = rerun_backup.decide(CASE, self.a, "shadow", 20.4)
+    def test_plan_in_shadow_above_25h(self):
+        out = rerun_backup.decide(CASE, self.a, "shadow", 25.4)
         self.assertEqual((out["outcome"], out["action"], out["params"]), ("plan", common.RERUN, {"host": "mini"}))
-        self.assertIn("backup_age_above(20h): holds", out["detail"])
+        self.assertIn("backup_age_above(25h): holds", out["detail"])
         self.assertIn("not_running: the host's to check", out["detail"])
 
     def test_resolved_when_it_no_longer_holds(self):
         self.assertEqual(rerun_backup.decide(CASE, self.a, "shadow", 3.0)["outcome"], "resolved_itself")
-        # 21h is above shadow's 20h but under propose's 26h
-        self.assertEqual(rerun_backup.decide(CASE, self.a, "propose", 21.0)["outcome"], "resolved_itself")
+        # a healthy daily backup is up to ~24h old: shadow (25h) does not plan on it (2026-11-15)
+        self.assertEqual(rerun_backup.decide(CASE, self.a, "shadow", 24.1)["outcome"], "resolved_itself")
+        # 25.5h is above shadow's 25h but under propose's 26h
+        self.assertEqual(rerun_backup.decide(CASE, self.a, "propose", 25.5)["outcome"], "resolved_itself")
         self.assertEqual(rerun_backup.decide(CASE, self.a, "propose", 27.0)["outcome"], "plan")
 
     def test_no_backup_at_all_plans(self):
@@ -113,7 +115,7 @@ class TestDecide(unittest.TestCase):
 
 
 class VM(BaseHTTPRequestHandler):
-    value = "73800"  # 20.5h in seconds; None answers an empty result
+    value = "91800"  # 25.5h in seconds; None answers an empty result
 
     def do_POST(self):
         self.rfile.read(int(self.headers.get("Content-Length") or 0))
@@ -153,18 +155,18 @@ class TestRuns(unittest.TestCase):
         return p, out
 
     def test_monitor_reports(self):
-        VM.value = "73800"
+        VM.value = "91800"
         p, out = self.run_script("backup_monitor.py")
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(out["outcome"], "detections")
         self.assertEqual(len(out["detections"]), 1)
-        self.assertIn("BACKUP MONITOR age=20.5h threshold=20h", p.stdout)
+        self.assertIn("BACKUP MONITOR age=25.5h threshold=25h", p.stdout)
         VM.value = "3600"
         _, out = self.run_script("backup_monitor.py")
         self.assertEqual(out, {"outcome": "detections", "detections": []})
 
     def test_rerun_plans(self):
-        VM.value = "73800"
+        VM.value = "91800"
         p, out = self.run_script("rerun_backup.py", {"FLOTILLA_CASE": json.dumps(CASE)})
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(out["outcome"], "plan")

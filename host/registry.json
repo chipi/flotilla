@@ -8,7 +8,7 @@
       "risk": "low",
       "reversible": "regenerable",
       "pre": ["backup_age_above(26h)", "not_running"],
-      "pre_shadow": ["backup_age_above(20h)", "not_running"],
+      "pre_shadow": ["backup_age_above(25h)", "not_running"],
       "check": {"verify": "backup_newer_than_execution", "within": "60m"},
       "limits": {"per_target_per_day": 2},
       "timeout": "30m"

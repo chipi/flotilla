@@ -422,3 +422,24 @@ func TestWhatTheAgentRead(t *testing.T) {
 		t.Error("a run with only sources does not say nothing untrusted entered")
 	}
 }
+
+// The v1 gate (operator, 2026-11-15): a shadow plan's case says what its verdict judges.
+func TestShadowVerdictMeaning(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	k := store.Key{Kind: "target", Value: "failed_backup/host:mini#s"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k, Title: "t"}, "m", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
+	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "a", "")
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "backup.rerun_observability", Params: map[string]string{"host": "mini"},
+		PlanHash: "h", Outcome: "shadow", Autonomy: "shadow", Would: "propose"}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
+		t.Fatal(err)
+	}
+	ck, _ := f.csrfOf(f.addOperator())
+	if _, page := f.do("GET", "/cases/"+id, ck, nil, nil); !strings.Contains(page, "A shadow plan: judge the chain at its threshold.") {
+		t.Error("a shadow plan's case does not say what its verdict judges")
+	}
+}
