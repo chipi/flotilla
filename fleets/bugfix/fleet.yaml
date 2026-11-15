@@ -1,5 +1,6 @@
 fleet: bugfix
 description: >-
   The developers: fix bugs filed against the repos they cover. Today orrery: a case per open bug,
-  a fix with a reproducing test and the repo's suite as gates, and a draft PR the operator merges
-  (RFC-0010). In beta evaluation: whether its fixes are good is measured separately (§8).
+  a fix whose tests reproduce the bug and whose related tests stay green, and a draft PR the operator
+  merges (RFC-0010). Its workers run on the X3. In beta evaluation: whether its fixes are good is
+  measured separately (§8).

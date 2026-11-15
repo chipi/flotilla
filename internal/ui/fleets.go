@@ -321,6 +321,8 @@ func triggerText(j *spec.Routine) string {
 		return "case handed over: " + j.Trigger.Case.Kind
 	case j.Trigger.Check != nil:
 		return "case check due: " + j.Trigger.Check.Verify
+	case j.Trigger.Execute != nil:
+		return "plan approved: " + j.Trigger.Execute.Action
 	case j.Trigger.Every != "":
 		return "every " + j.Trigger.Every
 	}
