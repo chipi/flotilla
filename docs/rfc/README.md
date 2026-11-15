@@ -49,6 +49,10 @@ landed on an answer.
 - [RFC-0008 — The MCP server: other agents see and steer flotilla](RFC-0008-mcp-server.md)
   (Accepted → ADR-0015, 2026-11-15)
 - [RFC-0009 — Post-incident review: learning from every closed case](RFC-0009-post-incident-review.md)
-- [RFC-0010 — Bugfix on the platform: from a bug to a draft PR, as a case](RFC-0010-bugfix-on-the-platform.md)
-- [RFC-0011 — Remote workers: routines on any machine, the mini orchestrating](RFC-0011-remote-workers.md)
   (Accepted → ADR-0016, 2026-11-15)
+- [RFC-0010 — Bugfix on the platform: from a bug to a draft PR, as a case](RFC-0010-bugfix-on-the-platform.md)
+  (Accepted, 2026-11-15)
+- [RFC-0011 — Remote workers: routines on any machine, the mini orchestrating](RFC-0011-remote-workers.md)
+  (Accepted, 2026-11-15)
+- [RFC-0012 — The SEO fleet: Orrery's search presence, measured](RFC-0012-seo-fleet.md) (Proposed,
+  2026-11-15)

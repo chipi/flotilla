@@ -115,6 +115,7 @@ nav:
     - RFC-0009 — Post-incident review: rfc/RFC-0009-post-incident-review.md
     - RFC-0010 — Bugfix on the platform: rfc/RFC-0010-bugfix-on-the-platform.md
     - RFC-0011 — Remote workers: rfc/RFC-0011-remote-workers.md
+    - RFC-0012 — The SEO fleet: rfc/RFC-0012-seo-fleet.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md
