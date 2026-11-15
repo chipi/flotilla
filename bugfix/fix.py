@@ -116,6 +116,20 @@ def assistant_text(stream):
     return text.strip()
 
 
+def stream_error(stream):
+    """The error of a pi stream's last assistant message, "" when it did not end in one."""
+    err = ""
+    for line in (stream or "").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        m = e.get("message") or {}
+        if e.get("type") == "message_end" and m.get("role") == "assistant":
+            err = (m.get("errorMessage") or "error") if m.get("stopReason") == "error" else ""
+    return err
+
+
 def usage(stream):
     """turns and output tokens of a pi stream (chain.go's parseUsageFull), for the record."""
     turns = out = 0
@@ -259,7 +273,10 @@ class Chain:
         code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer, prompt],
                           self.wt, self.env, self.a.review_timeout)
         text = assistant_text(stream)
-        return text if text else f"(no review: the reviewer episode ended {code} with no text)"
+        if text:
+            return text
+        err = stream_error(stream)
+        return f"(no review: {tail(err, 300)})" if err else f"(no review: the reviewer episode ended {code} with no text)"
 
     def run(self):
         self.checkout()

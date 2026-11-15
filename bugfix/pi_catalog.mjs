@@ -19,7 +19,10 @@ for (const id of process.argv.slice(2)) {
   }
   // not thinkingFormat or the thinking levels: those shape OpenRouter's own request fields, and LiteLLM is
   // in between
-  const { thinkingFormat, ...compat } = m.compat || {};
+  // nor reasoning_effort: LiteLLM refuses it for glm-5.2 through OpenRouter (UnsupportedParamsError,
+  // 2026-11-15): the review came back empty, and the advisor, on the same model, would have too
+  const { thinkingFormat, ...rest } = m.compat || {};
+  const compat = { ...rest, supportsReasoningEffort: false };
   out[id] = { reasoning: m.reasoning, input: m.input, cost: m.cost, contextWindow: m.contextWindow, maxTokens: m.maxTokens, compat };
 }
 process.stdout.write(JSON.stringify(out));

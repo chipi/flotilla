@@ -152,6 +152,15 @@ class Fixture:
         shutil.rmtree(self.d, ignore_errors=True)
 
 
+class Streams(unittest.TestCase):
+    def test_the_last_message_s_text_or_error(self):
+        ok = '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"VERDICT: approve"}],"stopReason":"stop"}}'
+        bad = ('{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error",'
+               '"errorMessage":"400: UnsupportedParamsError reasoning_effort"}}')
+        self.assertEqual((fix.assistant_text(ok), fix.stream_error(ok)), ("VERDICT: approve", ""))
+        self.assertEqual((fix.assistant_text(bad), fix.stream_error(bad)), ("", "400: UnsupportedParamsError reasoning_effort"))
+
+
 class Chain(unittest.TestCase):
     def fixture(self, verdicts, fixes):
         f = Fixture(verdicts, fixes)
