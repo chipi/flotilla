@@ -17,7 +17,7 @@ go.
 ## Status (2026-11-15)
 
 - **Built and tested, not yet deployed:** A1 (`9935b11`), A2 (`467a29d`, `7606dfd`), A3 (`d86e326`),
-  A4 (`1b8d017`), A5 (`b08161b`), A6 (`988c78a`). A7: the e2e configuration, the bugfix workers' own
+  A4 (`1b8d017`), A5 (`b08161b`), A6 (`368d340`). A7: the e2e configuration, the bugfix workers' own
   egress proxy (`egress-bugfix`) and [the operations page](../operations/bugfix.md).
 - **Changed while building:**
   - Pushing is a second worker, `bugfix-act`, so no fix run (which runs repo code) can read the
