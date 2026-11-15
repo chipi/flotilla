@@ -49,4 +49,4 @@ landed on an answer.
 - [RFC-0008 — The MCP server: other agents see and steer flotilla](RFC-0008-mcp-server.md)
   (Accepted → ADR-0015, 2026-11-15)
 - [RFC-0009 — Post-incident review: learning from every closed case](RFC-0009-post-incident-review.md)
-  (Proposed, 2026-11-15)
+  (Accepted → ADR-0016, 2026-11-15)

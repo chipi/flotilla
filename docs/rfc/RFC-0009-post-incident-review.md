@@ -1,6 +1,7 @@
 # RFC-0009 — Post-incident review: learning from every closed case
 
-**Status:** Proposed (2026-11-15). Step 3 of the [vision plan](../wip/vision-plan.md).
+**Status:** Accepted → [ADR-0016](../adr/ADR-0016-post-incident-review.md) (operator, 2026-11-15:
+the four questions as proposed). Step 3 of the [vision plan](../wip/vision-plan.md).
 **Builds on:** [RFC-0004](RFC-0004-agent-pipeline.md) (cases, policy, the memory loop: notes proposed
 from cases), [ADR-0010](../adr/ADR-0010-memory-and-knowledge.md) (memory and knowledge), G8 (verdicts
 and notes), G14 and T17 (the recurrence rule).
