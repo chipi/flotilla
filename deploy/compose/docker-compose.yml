@@ -210,7 +210,8 @@ services:
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
       ROUTINE_HTTP_PROXY: http://egress-bugfix:4750
       ROUTINE_HTTPS_PROXY: http://egress-bugfix:4750
-      ROUTINE_NO_PROXY: flotillad
+      # the target repo's tests serve on loopback; Node sends everything else to the proxy
+      ROUTINE_NO_PROXY: flotillad,localhost,127.0.0.1,::1
       ROUTINE_NODE_USE_ENV_PROXY: "1"
       ROUTINE_BUGFIX_SCRATCH: /scratch
       # no ROUTINE_FLOTILLA_API_*: no bugfix routine reads flotillad's worker API, and pi's tools, steered

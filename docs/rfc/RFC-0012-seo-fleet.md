@@ -1,6 +1,9 @@
 # RFC-0012 — The SEO fleet: Orrery's search presence, measured
 
-**Status:** Proposed (2026-11-15). Step 5 of the [vision plan](../wip/vision-plan.md).
+**Status:** Accepted (operator, 2026-11-15: fleet `seo` with worker `marketing`; Search Console
+through a service account, the token signed with `openssl`; a view-only Umami user; the starting
+thresholds as proposed; the Search section weekly; the scope is the operator's production Orrery
+properties). Step 5 of the [vision plan](../wip/vision-plan.md).
 **Builds on:** [RFC-0001](RFC-0001-fleet-platform.md) (fleets in one platform; the SEO fleet named
 there as RFC-0003, a number never used), [RFC-0004](RFC-0004-agent-pipeline.md) (detections, cases,
 plans, autonomy levels), [RFC-0009](RFC-0009-post-incident-review.md) (a detection's `measure`).
@@ -142,3 +145,8 @@ locales a week is not.
 - 2026-11-15 — drafted. Not found on the X3 or the mini: a Search Console key or a PageSpeed key
   (searched `~/.config` and the home directories on both); the brief records that both wait on the
   operator.
+- 2026-11-15 — accepted with the answers in the status line. Made: the Umami team `seo-read`,
+  which now owns the Orrery website, and the view-only user `flotilla-seo` in it (role
+  `team-view-only`). Logged in as that user, it read Orrery's 7-day stats (200); editing the
+  website and reading another site's stats were refused (401). Its password is in
+  `~/flotilla/marketing/umami.env` on the mini (mode 600).

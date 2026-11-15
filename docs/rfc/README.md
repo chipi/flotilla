@@ -54,5 +54,5 @@ landed on an answer.
   (Accepted, 2026-11-15)
 - [RFC-0011 — Remote workers: routines on any machine, the mini orchestrating](RFC-0011-remote-workers.md)
   (Accepted, 2026-11-15)
-- [RFC-0012 — The SEO fleet: Orrery's search presence, measured](RFC-0012-seo-fleet.md) (Proposed,
+- [RFC-0012 — The SEO fleet: Orrery's search presence, measured](RFC-0012-seo-fleet.md) (Accepted,
   2026-11-15)
