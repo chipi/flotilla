@@ -58,9 +58,11 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 		executor = u.executorOf(p.Action)
 		d.Action, d.Change = p.Action+" on "+p.Params["file"], p.Params["change"]
 		d.Command = "nothing runs by itself: once you approve, apply the change and record its commit on the case"
-		if executor != "" {
+		if p.Params["diff"] != "" {
 			d.Action = fmt.Sprintf("%s on %s at %s", p.Action, p.Params["repo"], p.Params["base"])
 			d.Change = strings.TrimSpace(p.Params["title"] + "\n\n" + p.Params["diff"])
+		}
+		if executor != "" {
 			d.Command = "once you approve, " + executor + " opens it as a draft PR, once; you merge it"
 		}
 	}

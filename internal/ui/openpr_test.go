@@ -53,3 +53,34 @@ func TestOpenPRInTheUI(t *testing.T) {
 		t.Fatal("the case page does not show the diff")
 	}
 }
+
+// Without an executing routine (the bugfix fleet not running), a PR plan still shows its diff, and a
+// person applies it and records the commit.
+func TestOpenPRByHandWithoutItsRoutine(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	target := "repo:host/registry.json/backup.rerun_observability/pre_shadow"
+	k := store.Key{Kind: "target", Value: "process_change/" + target}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "process_change", Target: target, Keys: []store.Key{k}, Canonical: k}, "ops/case-review", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/case-review", "")
+	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/process-change", "")
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "github.open_pr",
+		Params:   map[string]string{"repo": "chipi/flotilla", "base": "abc1234", "title": "pre_shadow: 20h -> 25h", "body": "why", "diff": "+ the diff line"},
+		PlanHash: "h-pr-hand-0123456789", Outcome: "propose", Autonomy: "propose"}, cases.AwaitingApproval, "", target, true); err != nil {
+		t.Fatal(err)
+	}
+	ck, csrf := f.csrfOf(f.addOperator())
+	_, page := f.do("GET", "/approvals", ck, nil, nil)
+	for _, want := range []string{"github.open_pr on chipi/flotilla at abc1234", "&#43; the diff line", "nothing runs by itself"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Approvals has no %q", want)
+		}
+	}
+	f.do("POST", "/cases/"+id+"/approve", ck, url.Values{"csrf": {csrf}, "plan": {"h-pr-hand-0123456789"}}, nil)
+	if _, page = f.do("GET", "/cases/"+id, ck, nil, nil); !strings.Contains(page, `action="/cases/`+id+`/applied"`) {
+		t.Fatal("without its routine, the approved PR plan does not ask for the commit")
+	}
+}
