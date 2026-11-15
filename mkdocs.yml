@@ -108,6 +108,7 @@ nav:
     - RFC-0006 — Fleet packs: rfc/RFC-0006-fleet-packs.md
     - RFC-0007 — The operator UI: rfc/RFC-0007-operator-ui.md
     - RFC-0008 — The MCP server: rfc/RFC-0008-mcp-server.md
+    - RFC-0009 — Post-incident review: rfc/RFC-0009-post-incident-review.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md
