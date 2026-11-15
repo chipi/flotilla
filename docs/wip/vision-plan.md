@@ -53,7 +53,36 @@ flotilla through the same API as the CLI and the UI.
 Done when a Claude session lists open cases and runs a routine through it, and a refused approve is
 tested.
 
-### 3. Bugfix onto the platform
+### 3. Post-incident review (Ops)
+
+The operator, 2026-11-15: after a case closes, a review looks at what happened and what to learn, as
+a post-mortem would. Found by the first shadow case (`case-20261114-6983646f65`): the chain was right
+within its preconditions, but the check itself was wrong (a 20 h threshold on a backup that runs
+about every 24 h), and nothing in flotilla said so.
+
+- **A review routine on closed cases** (`ops/case-review`), starting with code rules, each citing the
+  case's evidence:
+  - a case that cleared itself inside the source's normal interval (a threshold below that interval);
+  - the same fix coming back (G14's recurrence, T17);
+  - a Wrong verdict; an escalation; a plan the operator rejected.
+- **Two outputs:**
+  - **Knowledge:** a note proposed in Knowledge (proposed, then active or dropped by a person), which
+    agents read in later cases.
+  - **A process change:** a new case kind, `process_change`, whose plan is a change to a check, a
+    threshold, a spec or the registry, shown as a diff. Always at propose, never auto; approving it
+    opens a PR on the repo, so the change goes through review, CI and deploy like any other. The
+    system never edits its own config in place.
+- **Later:** a model-written post-mortem from the case's timeline, as untrusted input that only
+  proposes.
+- **It feeds the record:** approved and rejected `process_change` plans count on Autonomy; rejections
+  teach the review what not to propose.
+- An RFC first, short: the rules, the `process_change` kind and its action (`github.open_pr` on the
+  repo), who may approve.
+
+Done when last night's pattern, replayed, produces a `process_change` proposing 25 h with its evidence,
+and a rejected proposal is recorded.
+
+### 4. Bugfix onto the platform
 
 - Its routines as specs in `fleets/bugfix/`, on its own worker (repo write credentials, nothing else).
 - Its decisions in the ledger; its PRs as cases with a plan, so autonomy, the evidence bar and Slack
@@ -62,7 +91,7 @@ tested.
 
 Done when bugfix runs in shadow on the mini and its runs show on its fleet page.
 
-### 4. SEO, the digital-marketing fleet
+### 5. SEO, the digital-marketing fleet
 
 - Design first: Orrery as the first site; Google Search Console and Umami as sources (GA4 is out);
   what a finding is, how often, what it may do (propose only to start).
@@ -70,7 +99,7 @@ Done when bugfix runs in shadow on the mini and its runs show on its fleet page.
 
 Done when the design is accepted and the first routine runs in shadow.
 
-### 5. Move the fleet code out of agentic-ai-homelab
+### 6. Move the fleet code out of agentic-ai-homelab
 
 - Check that nothing on the mini or the DGX runs the homelab copies (launchd jobs, crontabs, deploy
   scripts reading them).
