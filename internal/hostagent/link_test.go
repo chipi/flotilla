@@ -174,4 +174,3 @@ func TestRemoteTimeoutCancels(t *testing.T) {
 	}
 	waitFor(t, "the cancel at the worker", func() bool { local.mu.Lock(); defer local.mu.Unlock(); return local.cancelled == 1 })
 }
-
