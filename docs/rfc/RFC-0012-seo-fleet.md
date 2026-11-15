@@ -48,7 +48,7 @@ Credentials, each its own file in the worker's secrets volume, read by path:
 | Search Console | a Google Cloud service account's JSON key; the account added to the property as a Restricted user | the operator (Google console) |
 | PageSpeed Insights (v2) | an API key restricted to that API | the operator |
 
-The egress proxy allows only: `www.orrerylearn.com`, `chipi.github.io` (the mirror's noindex check),
+The egress proxy allows only: `www.orrerylearn.com`, `chipi.github.io` (the retired mirror's check),
 the Umami host, and for Search Console `oauth2.googleapis.com` and `searchconsole.googleapis.com`.
 
 ### 1a. The sites (operator, 2026-11-15)
@@ -59,21 +59,24 @@ its Umami website moved into `seo-read` and the service account added to its pro
 
 | Site | Search Console | Umami website |
 | --- | --- | --- |
-| `www.orrerylearn.com` (14 locales; the mirror `chipi.github.io/orrery` checked for `noindex`) | `sc-domain:orrerylearn.com` | Orrery |
+| `www.orrerylearn.com` (14 locales; retired host: the staging mirror `chipi.github.io/orrery`) | `sc-domain:orrerylearn.com` | Orrery |
 | `www.humancopilot.eu` and `evals.humancopilot.eu` | `sc-domain:humancopilot.eu` | humancopilot.eu, Eval Harness |
 | `www.devwhateverops.com` | `sc-domain:devwhateverops.com` | devwhateverops.com |
 | `www.markodragoljevic.com` (Format) | `sc-domain:markodragoljevic.com` | markodragoljevic.com |
 | `airandspacehistory.com` (Adobe Portfolio) | `sc-domain:airandspacehistory.com` | airandspacehistory.com |
 
-The two hosted photo sites are not built by the operator, so a finding there can only be a setting
-in Format or Adobe Portfolio, never a PR. The Orrery-specific checks (locales, hreflang, the
-mirror) apply where a site declares them.
+The two photo sites are hosted by Format and Adobe Portfolio today, so a finding there can only be
+a setting there, never a PR. The operator is moving them to self-hosted sites of their own (a
+separate project, over the next 4 weeks, from 2026-11-15); after the move their entries gain a repo
+and are treated like the others. Their history in Search Console and Umami carries over the move,
+which site-check and traffic should make visible (redirects, lost pages). The Orrery-specific
+checks (locales, hreflang) apply where a site declares them, and so does a list of retired hosts.
 
 ### 2. The routines (v1)
 
 | Routine | Trigger | Reads | Reports |
 | --- | --- | --- | --- |
-| `seo/site-check` | daily | `robots.txt`, the sitemap index and its 14 locale sitemaps, a fixed sample of routes per locale (home, the hubs, one entity page of each kind), the mirror's home | detections when the live site breaks what the build guarantees |
+| `seo/site-check` | daily | `robots.txt`, the sitemap index and its 14 locale sitemaps, a fixed sample of routes per locale (home, the hubs, one entity page of each kind), each retired host's home | detections when the live site breaks what the build guarantees |
 | `seo/traffic` | weekly | Umami: visits by referrer, search engine, landing path, locale, country, week over week | the week's numbers; detections on a drop |
 | `seo/search-console` | weekly, once access exists | Search Console: queries and pages (clicks, impressions, CTR, position) per locale and country; sitemap acceptance; the URL Inspection API for the sample | the week's numbers; detections on opportunities, drops and exclusions |
 
@@ -82,7 +85,8 @@ live site the checks `check-seo.mjs` runs on the build, for the sample: status 2
 not the bare brand, a description, a self canonical, complete hreflang pointing at pages that answer
 200, no `noindex`, JSON-LD that parses; plus what only the live site shows: `robots.txt` allows
 Googlebot, Bingbot and Baiduspider (the operator allowed Baidu on 2026-11-08), every sitemap answers
-and lists URLs, the mirror serves `noindex`.
+and lists URLs, and a retired host answers 404 or serves `noindex`. (Orrery's staging mirror is
+retired: it serves `noindex` today and goes with Orrery's next deploy, operator 2026-11-15.)
 
 ### 3. What a finding is
 
@@ -124,8 +128,8 @@ locales a week is not.
 ### 6. Tests
 
 - site-check against recorded pages (a good page, each failure shape, a `robots.txt` that blocks
-  Baiduspider, a mirror without `noindex`), so every detection kind has a case that fires and one
-  that does not.
+  Baiduspider, a retired host that serves an indexable page), so every detection kind has a case
+  that fires and one that does not.
 - traffic and search-console against recorded API responses, with the thresholds' edges.
 - The e2e stack runs site-check against a local fixture site.
 
