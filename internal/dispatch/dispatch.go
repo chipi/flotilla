@@ -590,6 +590,38 @@ func (d *Dispatcher) execute(ctx context.Context, c store.Case, j *spec.Routine,
 	}
 }
 
+// vanished closes, as resolved itself, each handed-over case this monitor opened whose kind no routine
+// acts on (none in the specs, enabled or not) and whose key its run no longer reports: nothing else
+// would ever move it, and the monitor's own check now passes (operator, 2026-11-15). A case a routine
+// acts on is left to that routine; a held case is left alone.
+func (d *Dispatcher) vanished(ctx context.Context, j *spec.Routine, r *store.Run, present map[string]bool) {
+	open, err := d.API.Store.HandedOverBy(ctx, j.ID())
+	if err != nil {
+		d.Log.Error("vanished", "routine", j.ID(), "err", err)
+		return
+	}
+	for _, c := range open {
+		if present[c.Key] || c.Holder != "" || !contains(j.Detects, c.Kind) || anyActs(d.API.Sched.Routines, c.Kind) {
+			continue
+		}
+		if err := d.API.Store.MoveCase(ctx, c.ID, cases.Closed, cases.ByDetector, cases.ResolvedItself, j.ID(),
+			"run "+r.ID+": the monitor no longer finds it"); err != nil {
+			d.Log.Error("vanished", "case", c.ID, "err", err)
+			continue
+		}
+		d.Log.Info("case resolved itself", "case", c.ID, "kind", c.Kind, "routine", j.ID(), "run_id", r.ID)
+	}
+}
+
+func anyActs(rs []*spec.Routine, kind string) bool {
+	for _, j := range rs {
+		if j.OnCase() == kind {
+			return true
+		}
+	}
+	return false
+}
+
 func actingRoutine(rs []*spec.Routine, kind string) *spec.Routine {
 	for _, j := range rs {
 		if j.Enabled && j.OnCase() == kind {
@@ -779,6 +811,7 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 		d.Log.Info("case opened", "case", id, "kind", x.Kind, "target", x.Target, "routine", j.ID(), "run_id", r.ID)
 	}
 	d.summary(ctx, j, r, rep.Summary)
+	d.vanished(ctx, j, r, present)
 	cleared, err := d.API.Store.ClearIncidents(ctx, j.ID(), present)
 	if err != nil {
 		d.Log.Error("clear incidents", "routine", j.ID(), "err", err)

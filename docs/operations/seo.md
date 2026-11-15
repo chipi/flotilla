@@ -39,9 +39,8 @@ checks: `robots`, `robots-<bot>`, `sitemap`, `status`, `redirect`, `html`, `noin
 `description`, `canonical`, `json-ld`, `hreflang`, `retired`. traffic's: `visits`, `search-visits`.
 search-console's: `clicks`, `opportunity` (`<path>/<query>`), `index`. The case's data carries the
 URL and a `measure` (the value found and the one expected). A repeated finding attaches to its open
-case. These kinds have no acting routine, so their cases wait in Needs you until a person closes them:
-flotillad clears an incident on its own only for a case closed as a shadow plan (an acting routine's),
-so a check that passes again does not close its case.
+case. These kinds have no acting routine, so the monitor that opened a case closes it, as resolved itself,
+on its first run that no longer finds it (operator, 2026-11-15).
 
 The thresholds (`seo/common.py`, the operator's starting values): a drop is more than 30 % below the
 week before, from at least 50; an opportunity ranks 8 to 20 with at least 100 impressions in 28 days

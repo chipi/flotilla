@@ -367,6 +367,35 @@ func TestDetectionOpensAndHandsOver(t *testing.T) {
 	}
 }
 
+// A monitor closes, as resolved itself, its handed-over case of a kind no routine acts on once its run
+// stops reporting it; a kind with an acting routine (failed_backup here) is left to that routine.
+func TestVanishedCaseResolvesItself(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	f.d.API.Sched.Routines[1].Detects = []string{"failed_backup", "seo_live_regression"}
+	both := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini"},
+		{"kind": "seo_live_regression", "target": "site:robots/www.example.org/robots.txt"}]}`
+	f.monitor(t, "ok", both)
+	if cs := f.open(t); len(cs) != 2 {
+		t.Fatalf("open %d", len(cs))
+	}
+	f.monitor(t, "ok", both)
+	if cs := f.open(t); len(cs) != 2 {
+		t.Fatal("a case still found was closed")
+	}
+	f.monitor(t, "ok", `{"outcome": "detections", "detections": []}`)
+	cs := f.open(t)
+	if len(cs) != 1 || cs[0].Kind != "failed_backup" {
+		t.Fatalf("open after the run that found nothing: %+v", cs)
+	}
+	all, _ := f.st.Cases(ctx, store.CaseFilter{})
+	for _, c := range all {
+		if c.Kind == "seo_live_regression" && (c.Status != cases.Closed || c.Resolution != cases.ResolvedItself) {
+			t.Fatalf("the vanished case: %s %s", c.Status, c.Resolution)
+		}
+	}
+}
+
 // RFC-0012 §4: a monitor's summary lines are kept as one event when its spec names a brief section,
 // cut to 20 lines of one line each; without a section they are dropped, and said so.
 func TestSummaryKept(t *testing.T) {

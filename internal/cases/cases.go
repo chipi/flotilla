@@ -51,13 +51,15 @@ var table = map[move]struct {
 	// only, when set, pins a role to the resolutions it alone may close with
 	only map[string][]string
 }{
-	{Detected, Diagnosed}:         {by: []string{ByDiagnose}},
-	{Detected, HandedOver}:        {by: []string{ByDetector}},
-	{Diagnosed, Closed}:           {by: []string{ByDiagnose}, resolutions: []string{Dismissed, Reported}},
-	{Diagnosed, HandedOver}:       {by: []string{ByDiagnose}},
-	{Diagnosed, Escalated}:        {by: []string{ByDiagnose}},
-	{HandedOver, Planned}:         {by: []string{ByAct}},
-	{HandedOver, Closed}:          {by: []string{ByAct}, resolutions: []string{ResolvedItself}},
+	{Detected, Diagnosed}:   {by: []string{ByDiagnose}},
+	{Detected, HandedOver}:  {by: []string{ByDetector}},
+	{Diagnosed, Closed}:     {by: []string{ByDiagnose}, resolutions: []string{Dismissed, Reported}},
+	{Diagnosed, HandedOver}: {by: []string{ByDiagnose}},
+	{Diagnosed, Escalated}:  {by: []string{ByDiagnose}},
+	{HandedOver, Planned}:   {by: []string{ByAct}},
+	// the monitor that opened it closes a case of a kind no routine acts on, once it stops finding it
+	// (operator, 2026-11-15: RFC-0012's findings)
+	{HandedOver, Closed}:          {by: []string{ByAct, ByDetector}, resolutions: []string{ResolvedItself}},
 	{HandedOver, Escalated}:       {by: []string{ByAct, ByPolicy, ByTimer}},
 	{Planned, Closed}:             {by: []string{ByPolicy}, resolutions: []string{ShadowPlan}},
 	{Planned, AwaitingApproval}:   {by: []string{ByPolicy}},

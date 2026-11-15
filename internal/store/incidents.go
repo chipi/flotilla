@@ -69,6 +69,29 @@ func (s *Store) DetectIncident(ctx context.Context, n NewCase, actor, detail str
 	return id, Opened, tx.Commit()
 }
 
+// MonitorCase is a handed-over case a monitor opened (Vanished's input).
+type MonitorCase struct{ ID, Kind, Key, Holder string }
+
+// HandedOverBy lists the handed-over cases whose case.detected event the monitor wrote.
+func (s *Store) HandedOverBy(ctx context.Context, monitor string) ([]MonitorCase, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id, c.kind, c.canonical_key, c.holder FROM cases c WHERE c.status = ?
+		AND EXISTS (SELECT 1 FROM case_events d WHERE d.case_id = c.id AND d.kind = 'case.detected' AND d.actor = ?)
+		ORDER BY c.id`, cases.HandedOver, monitor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MonitorCase
+	for rows.Next() {
+		var m MonitorCase
+		if err := rows.Scan(&m.ID, &m.Kind, &m.Key, &m.Holder); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ClearIncidents ends the incidents a monitor opened whose keys its latest successful run no longer
 // reports: each case it opened, closed as a shadow plan and not cleared, whose key is not in present,
 // gets an incident.cleared event (a kind the monitor stopped detecting is no longer reported, so its

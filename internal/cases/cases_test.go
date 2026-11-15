@@ -11,7 +11,7 @@ var diagram = map[[2]string][]string{
 	{Diagnosed, HandedOver}:       {ByDiagnose},
 	{Diagnosed, Escalated}:        {ByDiagnose},
 	{HandedOver, Planned}:         {ByAct},
-	{HandedOver, Closed}:          {ByAct},
+	{HandedOver, Closed}:          {ByAct, ByDetector},
 	{HandedOver, Escalated}:       {ByAct, ByPolicy, ByTimer},
 	{Planned, Closed}:             {ByPolicy},
 	{Planned, AwaitingApproval}:   {ByPolicy},

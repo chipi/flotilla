@@ -17,7 +17,7 @@ stateDiagram-v2
     diagnosed --> handed_over: needs a fix
     diagnosed --> escalated: unsure
     handed_over --> planned: acting routine, after a code re-check
-    handed_over --> closed: resolved itself
+    handed_over --> closed: resolved itself (its acting routine, or for a kind no routine acts on, the monitor that no longer finds it)
     handed_over --> escalated: the re-check contradicts the diagnosis, or the recurrence rule is reached
     planned --> closed: shadow, plan recorded
     planned --> awaiting_approval: policy says propose
