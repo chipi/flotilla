@@ -78,6 +78,11 @@ if [ -s "$FLOTILLA_CONFIG/worker-bugfix-act.token" ]; then
     put $V-worker-bugfix-act-secrets github-app.pem 10001 "$FLOTILLA_CONFIG/bugfix-github-app.pem"
   fi
 fi
+# the marketing worker (compose profile seo, RFC-0012), where its token exists
+if [ -s "$FLOTILLA_CONFIG/worker-marketing.token" ]; then
+  put $V-flotillad-secrets worker-marketing.token 65532 "$FLOTILLA_CONFIG/worker-marketing.token"
+  put $V-worker-marketing-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-marketing.token"
+fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"

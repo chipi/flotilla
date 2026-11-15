@@ -1,0 +1,37 @@
+[
+  {
+    "name": "orrery",
+    "base": "https://www.orrerylearn.com",
+    "brand": "Orrery",
+    "bots": ["Googlebot", "Bingbot", "Baiduspider"],
+    "pages": ["/", "/missions", "/fleet", "/explore", "/plan", "/lab", "/science", "/de/"],
+    "sample_prefixes": ["/missions/", "/fleet/", "/science/", "/lab/", "/explore/", "/programs/", "/moon/", "/mars/", "/essays/"],
+    "json_ld": ["/", "/missions/", "/fleet/", "/lab/", "/explore/", "/programs/", "/moon/", "/mars/", "/essays/"],
+    "hreflang": true,
+    "locales": 14,
+    "retired": ["https://chipi.github.io/orrery/"]
+  },
+  {
+    "name": "humancopilot",
+    "base": "https://www.humancopilot.eu",
+    "json_ld": true
+  },
+  {
+    "name": "evals",
+    "base": "https://evals.humancopilot.eu",
+    "pages": ["/", "/docs/"]
+  },
+  {
+    "name": "devwhateverops",
+    "base": "https://www.devwhateverops.com",
+    "json_ld": true
+  },
+  {
+    "name": "markodragoljevic",
+    "base": "https://www.markodragoljevic.com"
+  },
+  {
+    "name": "airandspacehistory",
+    "base": "https://airandspacehistory.com"
+  }
+]

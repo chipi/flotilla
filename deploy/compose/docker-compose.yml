@@ -44,7 +44,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,worker-triage-candidate,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
@@ -63,6 +63,7 @@ services:
       worker-ops-act-host: {condition: service_healthy, required: false}
       worker-bugfix: {condition: service_healthy, required: false}
       worker-bugfix-act: {condition: service_healthy, required: false}
+      worker-marketing: {condition: service_healthy, required: false}
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
@@ -250,6 +251,28 @@ services:
     healthcheck: *ops-health
     networks: [flotilla]
 
+  # The seo fleet's worker (profile seo, RFC-0012): it reads the operator's websites and, later, their
+  # Search Console and Umami data. Read only; its worker token is its only secret until then.
+  worker-marketing:
+    <<: *hardening
+    profiles: [seo]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-marketing:${FLOTILLA_TAG}
+    container_name: flotilla-worker-marketing
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=16m", "/home/worker:size=32m,uid=10001,gid=10001,mode=0700"]
+    environment:
+      FLOTILLA_WORKER: marketing
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress-seo:4750
+      ROUTINE_HTTPS_PROXY: http://egress-seo:4750
+      ROUTINE_NO_PROXY: flotillad
+    volumes:
+      - worker-marketing-secrets:/run/flotilla:ro
+    healthcheck: *ops-health
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -282,6 +305,23 @@ services:
       - ${FLOTILLA_CONFIG}/egress-bugfix-acl.yaml:/etc/smokescreen/acl.yaml:ro
     networks: [flotilla, out, litellm]
 
+  # The seo fleet's own egress proxy (profile seo): its allowlist (FLOTILLA_CONFIG/egress-seo-acl.yaml: the
+  # sites it checks, later Google's APIs and Umami) is its alone. The same image and settings as egress.
+  egress-seo:
+    <<: *hardening
+    profiles: [seo]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-egress-seo
+    mem_limit: 128m
+    cpus: 0.5
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    environment:
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS_SEO:-}
+    volumes:
+      - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/egress-seo-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [flotilla, out]
+
 # Named so that a compose project rename can never strand them. TRIAGE_STATE_VOLUME picks the
 # triage fleet's state: a shadow copy beside fleetd, or the live state after the switch.
 volumes:
@@ -312,6 +352,10 @@ volumes:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-bugfix-scratch
   worker-bugfix-act-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-bugfix-act-secrets
+    external: true
+  # the marketing worker's token (profile seo), filled by secrets.sh
+  worker-marketing-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-marketing-secrets
     external: true
   # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
   triage-candidate-state:

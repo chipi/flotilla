@@ -49,7 +49,7 @@ its routines may plan.
 | `ops-read` | read-only metrics, logs, traces; read-only database queries | Ops diagnosis, briefs, reviews |
 | `ops-act-host` | none for hosts: the only role whose routines may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation routines |
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
-| `marketing` | Search Console, web analytics read | the digital marketing fleet |
+| `marketing` | the sites it checks (its own proxy, `egress-seo`); later Search Console and Umami read | the seo fleet (RFC-0012) |
 | `bugfix` | its model key (LiteLLM's fleet-bugfix); git, Node and pi; no GitHub write; its own egress proxy (`egress-bugfix`: GitHub, the npm registry, LiteLLM) | the bugfix fleet's intake, fix and PR check ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) |
 | `bugfix-act` | the bugfix GitHub App's key; no model key, runs no repo code | the bugfix fleet's `open-pr`, after a person approved a PR |
 | `knowledge-refresh` | read access to knowledge sources | refreshing and indexing knowledge |
@@ -141,7 +141,7 @@ commit to this page, with the reason.
 | **Bugfix worker** | Builds and tests inside its own container, with its toolchain baked into the image. No Docker inside it, so repos whose tests need Docker are out of scope for now. Each run's worktree is on a scratch volume and deleted when the run ends. |
 | **Images** | `ghcr.io/chipi/flotilla-<role>`, public (they hold no secrets or config), built in CI, tagged `sha-<7>`, deployed by digest. Signing (cosign) is added before any routine reaches `auto`. |
 | **Credentials** | A GitHub App per role instead of personal tokens (installation tokens expire within an hour). A model key per role with a budget where the endpoint supports it. Other credentials are rotated every 90 days and at once on any suspicion. |
-| **Resource limits** | flotillad 256 MiB and 0.5 CPU; the egress proxy 128 MiB; the triage, ops and marketing workers 1 GiB and 1 CPU each; the bugfix worker 4 GiB and 2 CPUs. Limits, not reservations, revised from measurements. |
+| **Resource limits** | flotillad 256 MiB and 0.5 CPU; each egress proxy 128 MiB; the triage workers 1 GiB and 1 CPU each; the ops and marketing workers 256 MiB and 0.5 CPU each; the bugfix worker 4 GiB and 2 CPUs, its pusher 512 MiB. Limits, not reservations, revised from measurements. |
 | **State backup** | flotillad writes one copy of the store per day (`VACUUM INTO`) into the state volume, 7 kept. Copying it off the host, a "backup older than 26 h" alert and a tested restore are up to the installation. |
 
 ## Reference installation
