@@ -1,0 +1,219 @@
+# RFC-0010 — Bugfix on the platform: from a bug to a draft PR, as a case
+
+**Status:** Proposed; the six questions taken as proposed, as starting points the evaluation (§7)
+may overturn (operator, 2026-11-15). Bugfix is in beta evaluation, not a fleet known to work. Step 4
+of the [vision plan](../wip/vision-plan.md).
+**Builds on:** [RFC-0002](RFC-0002-job-runtime.md) (the `external` step),
+[RFC-0004](RFC-0004-agent-pipeline.md) §8.4 (the `code_bug` case),
+[ADR-0016](../adr/ADR-0016-post-incident-review.md) (repo actions, capped at propose),
+[ADR-0008](../adr/ADR-0008-autonomy.md) (shadow, propose, the evidence bar).
+
+## What exists (checked 2026-11-15)
+
+- **Two codebases, neither running.** `fleetd chain` (`fleetd/chain.go`) is the deterministic
+  orchestrator: it reads issues labelled `triage-fleet/routed:bugfix`, runs the bake-off's `pi` leaves,
+  gates the diff, and opens a draft PR at stage `propose`. Its fleetd entry is disabled. The TypeScript
+  MVP (`bugfix-fleet/src/`) ran one batch against a sandbox repo and is retired (RFC-0001 §7).
+- **The production chain has never run.**
+  - The mini has no `~/.bugfix-fleet/real/` (its ledger directory).
+  - `chipi/orrery` has no `fleet/fix-*` PR.
+  - No issue in orrery, podcast_scraper or flotilla has ever carried the routed label. The label is
+    `ROUTE_LABEL` in `signal-fleet/mvp/filing.py`.
+  - orrery has 11 open `bug` issues, and podcast_scraper has 35.
+- **The bake-off** (`bugfix-fleet/BAKEOFF.md` §8, the 2026-07-26 seat auction):
+  - The harness is not the lever. pi and opencode had identical success on every cell (k=3).
+  - Claude sonnet-4.6 had the same outcomes at about 20 times the cost. The hard bugs are bounded by
+    the spec (ticket quality), not by the model or the harness.
+  - The seats chosen were: worker pi + deepseek-v4-flash (the closed loop shipped 3/3), advisor
+    glm-5.2, and Claude as the reviewer.
+  - pi stops its own grinds. opencode ran to the 1200 s cap and needs an outside budget. pi reports
+    zero cost; opencode reports real cost.
+  - The closed loop has been measured on pi only.
+- **Not built in flotilla:**
+  - no `external` step;
+  - no `code_bug` kind;
+  - no `fleets/bugfix/` directory;
+  - no bugfix worker;
+  - no `github.open_pr` action.
+
+  The LiteLLM aliases `fleet-bugfix-flash`, `-pro` and `-reviewer` (glm-5.2) exist, under their own
+  key with a $100 budget.
+
+## Proposal
+
+### 1. `code_bug` cases from issues
+
+`bugfix/intake` is code only. It runs every hour, reads the open issues with the intake label in each
+configured repo, and opens one case per repo and issue (target `repo:chipi/orrery#123`).
+
+- A known issue is absorbed into its case.
+- A closed issue closes its case (RFC-0004's mirror).
+
+The issue body is untrusted evidence. v1 configures orrery only, because the bake-off corpus and the
+gates were built on it.
+
+### 2. `bugfix/fix`: the chain as a routine
+
+A case trigger on `code_bug`, on the `bugfix` worker. It ports `chain.go`'s steps, keeping its order
+and its gates:
+
+1. **Verdict** (flash): actionable, needs-info or rejected, with the reason. needs-info and rejected
+   close the case with that reason; nothing is written to GitHub in v1.
+2. **Fix** (an `external` step, pi + flash through LiteLLM, in the worker's container): a scratch
+   worktree at the issue's base commit. The step is limited by a 20-minute wall clock per episode.
+3. **Gates**, mechanical, as `chain.go` has them:
+   - **repro first:** the diff adds a test that fails on the base and passes on the fix;
+   - **the delta suite:** no new failures against the base's red set;
+   - **the scope:** the diff stays inside the repo, with no CI or workflow files.
+4. **Kick-back:** up to 3 rounds with the advisor (glm-5.2) on a failing gate, then the acceptance
+   transition (at the advisor's pin and still failing, the case escalates as stuck).
+5. **Review** (`fleet-bugfix-reviewer`): a comment on the diff. It goes in the plan and is shown in
+   Approvals; it never blocks.
+6. **Plan:** `github.open_pr` with the repo, the base commit, the diff (stored and bound by the plan's
+   hash), the title and a body (the reproduction, the gate results, the review).
+
+The budgets are $3 a chain and $5 a day, the spend measured by LiteLLM under the fleet's key (pi's own
+zero cost is not used).
+
+### 3. `github.open_pr`: the repo write
+
+This is a registry action with `executor: repo`. ADR-0016 caps every repo action at propose, so a
+person always approves a PR. Approving it sends the execution to the `bugfix` worker, the only role
+with repo write, which:
+
+1. checks the base commit still exists and the diff still applies (otherwise it escalates);
+2. pushes `fleet/fix-<issue>-<case>` and opens a **draft** PR with exactly the approved diff;
+3. records the PR on the case.
+
+The check is the PR's head commit against the plan's hash. The outcome is a merged PR (verified) or
+a closed one (recorded as rejected, with the reason when given). **The operator merges, always**:
+there is no merge action, now or later.
+
+`repo.process_change` uses the same action. An approved process change opens a draft PR on
+`chipi/flotilla` instead of waiting to be applied by hand. Its "Applied in commit" form stays as the
+fallback.
+
+### 4. The worker and its credentials
+
+- **Image:** `bugfix` with git, Node (orrery's toolchain) and a pinned `pi`. 4 GiB and 2 CPUs. The
+  worktree is on a scratch volume, deleted at the end of every run. It has no Docker inside.
+- **Egress allowlist:**
+  - `github.com:443` and `codeload.github.com:443` for clone and push;
+  - `registry.npmjs.org:443` for `npm ci`;
+  - the LiteLLM gateway.
+- **The fix step holds no GitHub credential.** It runs the repo's code (installs, tests) and reads an
+  untrusted issue, so it gets only the model key. The GitHub token is minted only to execute an
+  approved `open_pr`.
+- **GitHub:** a GitHub App `flotilla-bugfix` installed on the target repos (contents, pull requests:
+  write; issues, metadata: read). Its private key is a mode-600 file mounted into the `bugfix` worker
+  only, with installation tokens minted per execution (they expire within an hour).
+- **Shadow needs no GitHub credential at all:** orrery is public.
+
+### 5. Shadow first, then the evidence bar
+
+`github.open_pr` starts at shadow like every action. The plans, the diffs and the reviews show on the
+case page and the bugfix fleet page, and nothing leaves the mini. Promotion to propose is the
+operator's, on Autonomy, after the coding harness's security review (T-row in
+[security.md](../security.md): it is due before this fleet acts).
+
+### 6. Tests and the replay
+
+- **The port reproduces the chain.** The bake-off's orrery bugs (`bugfix-fleet/bakeoff/bugs/`, with
+  hidden oracles) are run through `bugfix/fix`. The gate rows must match the seat auction's flashchain
+  results before shadow on real issues.
+- **Gate mutants:**
+  - a diff with no test;
+  - a test that passes on the base;
+  - a new failure in the suite;
+  - a workflow file in the diff.
+
+  Each must stop the plan.
+- **`open_pr` tests:**
+  - against a fake GitHub: the approved diff is exactly what is pushed;
+  - a changed diff is refused by its hash;
+  - a base commit that is gone escalates.
+- **Done** (the vision plan): bugfix runs in shadow on the mini on orrery's open bugs, its runs on its
+  fleet page.
+
+### 7. The evaluation: does the loop work, and what moves it
+
+The bake-off found every harness and model equal, Claude included. That is not evidence that they are
+equal: it measured 5 orrery bug families (with description variants of each) at k of 1 to 3, every cell
+was all pass or all fail, and every arm used the same generic 7-line prompt (`BAKEOFF.md` §4.3). A
+benchmark like that cannot tell arms apart. Not shown different is not the same as equal. So nothing
+the bake-off chose is assumed to work; each is an arm to measure.
+
+The evaluation runs in [eval-harness](https://github.com/chipi/eval-harness), as the triage fleet's
+does (`examples/triage-fleet`: a frozen dataset, arms, k runs, paired tests, cost per arm):
+
+- **The dataset: `orrery-bugfix`.**
+  - Orrery's closed `bug` issues (40 on 2026-11-15), each with the commit that fixed it where one is
+    linked (how many have one is not yet counted).
+  - The fix commit's own tests are the hidden oracle, and its parent is the base.
+  - Items whose fix has no test are kept for the verdict step only.
+  - It is frozen in the private fleet-eval-data, with the bake-off's 5 families as a subset.
+  - podcast_scraper's closed bugs follow as a second repo.
+- **The adapter** runs `bugfix/fix` itself, the ported code, on an item, with GitHub stubbed. The
+  routine and the evaluation are the same code, so a result in the evaluation is a result for the
+  fleet.
+- **Metrics per item:**
+  - the verdict (against the issue's real outcome);
+  - the repro gate;
+  - the hidden oracle passing;
+  - no new suite failures;
+  - kick-backs used;
+  - cost and wall clock from LiteLLM;
+  - for the shipped diffs, a judged comparison with the real fix.
+- **Arms, one change each, on the baseline:**
+  - baseline: the port as built (pi, flash, the glm advisor, the glm reviewer, the generic prompt);
+  - the specialist prompts in `bugfix-fleet/agents/` (written, never measured);
+  - opencode;
+  - deepseek-v4-pro, and Claude as the worker;
+  - no advisor;
+  - the ticket's level (as filed vs rewritten by the verdict step).
+- **The rule:** an arm replaces the baseline only when the harness shows it better on the primary
+  metric (hidden oracle passing, at the same or lower cost), not on a point estimate.
+
+Shadow on live issues (§5) runs beside the evaluation and feeds it: each shadow case whose issue is
+later fixed by a person becomes a new item.
+
+## Open questions (the operator's)
+
+1. **Intake label.** The routed label has never been applied, so triage hands nothing over today.
+   **Proposed:** the `bug` label (the original RFC-0002 trigger, 11 open in orrery), plus the routed
+   label when triage starts applying it. The alternative is the routed label only, which gives shadow
+   no input until triage routes something.
+2. **Harness.** **Proposed:** pi. The success rates are identical; pi stops its own grinds; the
+   closed loop and the advisor were measured only on pi; cost comes from LiteLLM, so pi's zero
+   report does not matter. The alternative is opencode (real cost reports, less adapter work, needs
+   the outside cap).
+3. **Reviewer.** **Proposed:** `fleet-bugfix-reviewer` (glm-5.2) through LiteLLM, so the worker
+   holds only its own key. The alternative is Claude (`claude -p` on your account), the bake-off's
+   choice: it would put your Claude login inside a container that runs repo code.
+4. **GitHub credential.** **Proposed:** a new App `flotilla-bugfix`, which you create (Settings →
+   Developer settings), installed on orrery and flotilla. The alternatives:
+   - reuse the July App, whose key is `~/.bugfix-fleet/reviewer.pem` on the mini, made for the sandbox;
+   - a fine-grained PAT (one token for every repo, no expiry per execution).
+5. **`process_change` through `open_pr`.** **Proposed:** in this step (flotilla in the App's
+   installation). The alternative is to keep the hand-applied form until bugfix's PRs have a record.
+6. **Writing to issues.** `chain.go` labelled issues and commented its verdict. **Proposed:** not in
+   v1; the verdict lives on the case. A `github.comment_issue` action (for needs-info questions)
+   comes later, at propose too.
+
+## Alternatives considered
+
+- **Run `fleetd chain` as a wrapped command** (as triage's cycle was in phase 2): faster, but its PR
+  is opened by the chain itself, not as a plan, so neither autonomy nor approvals would apply. That
+  is the point of this step.
+- **Port the TypeScript MVP:** it is retired; its harness adapters are stubs.
+- **Let the fix step push its own branch:** puts a write token next to untrusted repo code and an
+  untrusted issue.
+
+## Discussion
+
+- 2026-11-15: drafted after the operator's go on step 4 ("Yes"), from the bake-off results and the
+  checks above.
+- 2026-11-15, the operator: "let's not assume that the bug fix fleet works fine … it's in some kind
+  of beta evaluation … move what we can and then fully review how it works and actually use the
+  tools we have, including Eval Harness, to figure out how to close this loop", and the six
+  questions taken as proposed as the starting ground. §7 added.

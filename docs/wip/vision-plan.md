@@ -98,8 +98,13 @@ and a rejected proposal is recorded.
 - Its decisions in the ledger; its PRs as cases with a plan, so autonomy, the evidence bar and Slack
   apply (`github.open_pr` in the registry).
 - The bake-off results in `bugfix-fleet/` decide the harness; read them before designing.
+- **In beta evaluation** (operator, 2026-11-15): the bake-off found every arm equal on 5 bug families,
+  which cannot tell arms apart. Nothing it chose is assumed to work. The port is measured in
+  eval-harness on a frozen `orrery-bugfix` dataset (orrery's closed bugs, their fix commits' tests as
+  the oracle), one arm per change ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md) §7).
 
-Done when bugfix runs in shadow on the mini and its runs show on its fleet page.
+Done when bugfix runs in shadow on the mini and its runs show on its fleet page, and the baseline arm
+has a measured result on `orrery-bugfix`.
 
 ### 5. SEO, the digital-marketing fleet
 
