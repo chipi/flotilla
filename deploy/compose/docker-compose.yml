@@ -208,8 +208,8 @@ services:
       FLOTILLA_WORKER: bugfix
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
-      ROUTINE_HTTP_PROXY: http://egress:4750
-      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_HTTP_PROXY: http://egress-bugfix:4750
+      ROUTINE_HTTPS_PROXY: http://egress-bugfix:4750
       ROUTINE_NO_PROXY: flotillad
       ROUTINE_NODE_USE_ENV_PROXY: "1"
       ROUTINE_BUGFIX_SCRATCH: /scratch
@@ -238,8 +238,8 @@ services:
       FLOTILLA_WORKER: bugfix-act
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
-      ROUTINE_HTTP_PROXY: http://egress:4750
-      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_HTTP_PROXY: http://egress-bugfix:4750
+      ROUTINE_HTTPS_PROXY: http://egress-bugfix:4750
       ROUTINE_NO_PROXY: flotillad
       ROUTINE_GITHUB_APP_ID: ${BUGFIX_GITHUB_APP_ID:-}
       ROUTINE_GITHUB_APP_INSTALLATION_ID: ${BUGFIX_GITHUB_APP_INSTALLATION_ID:-}
@@ -262,6 +262,24 @@ services:
       - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-acl.yaml:/etc/smokescreen/acl.yaml:ro
     networks: [flotilla, out, backend, litellm, glitchtip, langfuse]
+
+  # The bugfix workers' own egress proxy (profile bugfix): its allowlist (FLOTILLA_CONFIG/egress-bugfix-acl.yaml:
+  # GitHub, the npm registry, LiteLLM) is theirs alone, so opening GitHub's git and npm to a fleet that
+  # runs repo code opens them to no other worker. The same image and settings as egress.
+  egress-bugfix:
+    <<: *hardening
+    profiles: [bugfix]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-egress-bugfix
+    mem_limit: 128m
+    cpus: 0.5
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    environment:
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX:-}
+    volumes:
+      - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/egress-bugfix-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [flotilla, out, litellm]
 
 # Named so that a compose project rename can never strand them. TRIAGE_STATE_VOLUME picks the
 # triage fleet's state: a shadow copy beside fleetd, or the live state after the switch.

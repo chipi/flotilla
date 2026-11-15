@@ -81,6 +81,7 @@ nav:
     - Host keys and certificates: operations/host-keys.md
     - Slack approvals: operations/slack.md
     - MCP for other agents: operations/mcp.md
+    - The bugfix fleet: operations/bugfix.md
   - Testing and validation: testing.md
   - Decisions (ADR):
     - Overview: adr/README.md

@@ -14,6 +14,22 @@ go.
 | A6 | **`bugfix/open-pr`** (execute on `github.open_pr`) and **`bugfix/pr-check`** (check on `pr_resolved`): apply the approved diff at its base, push `fleet/fix-…`, open a draft PR with a GitHub App installation token minted for this execution only. | tests against a fake GitHub: the pushed diff is the approved one; a changed diff is refused by its hash; a missing base escalates |
 | A7 | **The fleet** `fleets/bugfix/fleet.yaml`; the case page shows the diff; e2e; deploy to the mini at shadow. | bugfix runs in shadow on the mini on orrery's open bugs, its runs on its fleet page |
 
+## Status (2026-11-15)
+
+- **Built and tested, not yet deployed:** A1 (`9935b11`), A2 (`467a29d`, `7606dfd`), A3 (`d86e326`),
+  A4 (`1b8d017`), A5 (`b08161b`), A6 (`988c78a`). A7: the e2e configuration, the bugfix workers' own
+  egress proxy (`egress-bugfix`) and [the operations page](../operations/bugfix.md).
+- **Changed while building:**
+  - Pushing is a second worker, `bugfix-act`, so no fix run (which runs repo code) can read the
+    GitHub key.
+  - The bugfix workers have their own egress proxy: the shared allowlist is one list for every
+    worker, and GitHub and npm should not be opened to the others.
+  - A fix run clones one commit deep, without blobs, sparse: orrery's history is 14 GB and a full
+    mirror timed out.
+  - The dispatcher no longer records a no-decision for a case whose routine is busy.
+- **End to end on the dev engine:** orrery #661, a real open bug, went through the image to a
+  reasoned escalation in 3.5 minutes (needs info: a stale dev cache or a real defect).
+
 ## Not in phase A
 
 - whether the fixes are any good: the dataset, the oracle check, the baseline's result, the arms (§8);

@@ -50,7 +50,8 @@ its routines may plan.
 | `ops-act-host` | none for hosts: the only role whose routines may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation routines |
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
 | `marketing` | Search Console, web analytics read | the digital marketing fleet |
-| `bugfix` | a GitHub App for branches and PRs; git and build toolchains | the bugfix fleet |
+| `bugfix` | its model key (LiteLLM's fleet-bugfix); git, Node and pi; no GitHub write; its own egress proxy (`egress-bugfix`: GitHub, the npm registry, LiteLLM) | the bugfix fleet's intake, fix and PR check ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) |
+| `bugfix-act` | the bugfix GitHub App's key; no model key, runs no repo code | the bugfix fleet's `open-pr`, after a person approved a PR |
 | `knowledge-refresh` | read access to knowledge sources | refreshing and indexing knowledge |
 
 - **No Docker socket in any container.** The host agent reaches its host's Docker through the

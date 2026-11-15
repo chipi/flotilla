@@ -111,7 +111,8 @@ CFG="$(envget FLOTILLA_CONFIG)"
 FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$CFG/worker-bugfix.token" "$CFG/worker-bugfix-act.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)" \
   "$CFG/host-ca/intermediate.crt" "$CFG/host-ca/root.crt" "$CFG/host-ca/signing.key")"
 FLOTILLA_CONFIG_HASH_EGRESS="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-acl.yaml")"
-export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS
+FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-bugfix-acl.yaml")"
+export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
 triage_deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'
 ok=0

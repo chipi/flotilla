@@ -31,7 +31,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
-  COMPOSE_PROFILES=candidate,ops TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
+  COMPOSE_PROFILES=candidate,ops,bugfix TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" -f "$ROOT/deploy/e2e/docker-compose.e2e.yml" "$@"; }
@@ -39,7 +39,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-host-state flotilla-e2e-host-audit; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -49,7 +49,7 @@ if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
 down
 
 echo "== build"
-for i in flotillad worker-triage worker-ops smokescreen; do
+for i in flotillad worker-triage worker-ops worker-bugfix smokescreen; do
   $D build -q -f "$ROOT/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$ROOT" >/dev/null \
     || { echo "BUILD FAIL $i"; exit 1; }
 done
@@ -71,6 +71,8 @@ OP=$(tok); AGENT=$(tok); WT=$(tok)
 hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
 printf %s "$WT" > "$WORK/config/worker-triage.token"
 tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"
+tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"
+tok > "$WORK/config/bugfix-model.key"   # a stand-in: the e2e's bugfix routines that would use it are disabled
 printf %s "$OP" > "$WORK/config/cli.token"          # the CLI inside flotillad acts as the operator here
 printf %s "$AGENT" > "$WORK/agent.token"
 DEPLOYTOK=$(tok); printf %s "$DEPLOYTOK" > "$WORK/config/deploy.token"   # the deploy stand-down's caller
@@ -98,13 +100,19 @@ workers:
   triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage.token}
   ops-read: {url: "http://worker-ops-read:8081", token_file: /run/flotilla/worker-ops-read.token}
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
-disabled_routines: [triage/cycle, triage/cycle-shadow]
+  bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
+  bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
+# triage's cycle and the bugfix fleet's intake and fix reach GitHub and real models: not in the e2e
+disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
+    gateway-bugfix: {base_url: "http://litellm:8080/v1", kind: litellm, key_file: /run/flotilla/model.key}
   aliases:
     triage-flash: {endpoint: gateway, model: fleet-triage-flash}
     triage-pro: {endpoint: gateway, model: fleet-triage-pro}
+    bugfix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
+    bugfix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
@@ -135,6 +143,14 @@ default:
   project: flotilla
   action: ${E2E_ACL_ACTION:-enforce}   # E2E_ACL_ACTION=open is the mutation check: the run must FAIL
   allowed_domains: [victoriametrics, victoriatraces, litellm]
+EOF
+cat > "$WORK/config/egress-bugfix-acl.yaml" <<EOF
+version: v1
+services: []
+default:
+  project: flotilla-bugfix
+  action: enforce
+  allowed_domains: [litellm]
 EOF
 find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
 chmod -R a+rX "$WORK/config/specs"
@@ -549,11 +565,11 @@ done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 echo "== hardening"
-for w in flotilla-worker-ops-read flotilla-worker-ops-act-host; do
+for w in flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act; do
   NW="$($D inspect $w --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
   [ "$NW" = "${P}_flotilla " ] && ok "$w is on the internal network only" || bad "$w networks: '$NW'"
 done
-for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-egress; do
+for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act flotilla-egress flotilla-egress-bugfix; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
   case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
 done

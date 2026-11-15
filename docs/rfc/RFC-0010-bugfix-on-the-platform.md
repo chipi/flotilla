@@ -58,11 +58,15 @@ A case trigger on `code_bug`, on the `bugfix` worker. It ports `chain.go`'s step
 and its gates:
 
 1. **Verdict** (flash): actionable, needs-info or rejected, with the reason. needs-info and rejected
-   close the case with that reason; nothing is written to GitHub in v1.
-2. **Fix** (an `external` step, pi + flash through LiteLLM, in the worker's container): a scratch
-   worktree at the issue's base commit. The step is limited by a 20-minute wall clock per episode.
+   escalate the case with that reason (a person answers the reporter or closes it); nothing is
+   written to GitHub in v1.
+2. **Fix** (pi + flash through LiteLLM, in the worker's container): a scratch worktree of the repo's
+   main, cloned one commit deep, without blobs it does not check out, and sparse (orrery's images,
+   audio and LFS masters left out: its history is 14 GB and its tree 6.8 GB). The step is limited by
+   a 20-minute wall clock per episode.
 3. **Gates**, mechanical, as `chain.go` has them:
-   - **repro first:** the diff adds a test that fails on the base and passes on the fix;
+   - **repro first:** the diff adds or changes a test file (chain.go's check; that the test fails on
+     the base is not checked, as chain.go did not);
    - **the delta suite:** no new failures against the base's red set;
    - **the scope:** the diff stays inside the repo, with no CI or workflow files.
 4. **Kick-back:** up to 3 rounds with the advisor (glm-5.2) on a failing gate, then the acceptance
@@ -72,41 +76,46 @@ and its gates:
 6. **Plan:** `github.open_pr` with the repo, the base commit, the diff (stored and bound by the plan's
    hash), the title and a body (the reproduction, the gate results, the review).
 
-The budgets are $3 a chain and $5 a day, the spend measured by LiteLLM under the fleet's key (pi's own
-zero cost is not used).
+The day's budget is $5 in the spec. pi reports no cost through a custom provider, so no chain dollar
+budget is kept in the routine: LiteLLM's budget on the fleet's key ($100) is the hard bound, and the
+rounds (1 + 3) and wall clocks bound a chain.
 
 ### 3. `github.open_pr`: the repo write
 
 This is a registry action with `executor: repo`. ADR-0016 caps every repo action at propose, so a
-person always approves a PR. Approving it sends the execution to the `bugfix` worker, the only role
+person always approves a PR. Approving it starts the action's executing routine (a routine trigger
+`execute: {action}`, run once per plan), `bugfix/open-pr` on the `bugfix-act` worker, the only role
 with repo write, which:
 
-1. checks the base commit still exists and the diff still applies (otherwise it escalates);
-2. pushes `fleet/fix-<issue>-<case>` and opens a **draft** PR with exactly the approved diff;
-3. records the PR on the case.
+1. recomputes the plan's hash and refuses a plan that is not the approved one;
+2. checks the base commit still exists and the diff still applies (otherwise it escalates);
+3. pushes `flotilla/<case>` and opens a **draft** PR with exactly the approved diff;
+4. reports the PR, and the case moves to checking.
 
-The check is the PR's head commit against the plan's hash. The outcome is a merged PR (verified) or
-a closed one (recorded as rejected, with the reason when given). **The operator merges, always**:
-there is no merge action, now or later.
+`bugfix/pr-check` then reads the PR: merged is verified; closed without merging escalates the case;
+open looks again, for 14 days. **The operator merges, always**: there is no merge action, now or
+later. A run of the executing routine that ends without a result is escalated as unknown and never
+run again (it may have pushed).
 
 `repo.process_change` uses the same action. An approved process change opens a draft PR on
-`chipi/flotilla` instead of waiting to be applied by hand. Its "Applied in commit" form stays as the
-fallback.
+`chipi/flotilla` instead of waiting to be applied by hand. Without an executing routine (the bugfix
+fleet not running), the "Applied in commit" form is the fallback.
 
 ### 4. The worker and its credentials
 
 - **Image:** `bugfix` with git, Node (orrery's toolchain) and a pinned `pi`. 4 GiB and 2 CPUs. The
   worktree is on a scratch volume, deleted at the end of every run. It has no Docker inside.
-- **Egress allowlist:**
-  - `github.com:443` and `codeload.github.com:443` for clone and push;
-  - `registry.npmjs.org:443` for `npm ci`;
-  - the LiteLLM gateway.
+- **Egress:** the bugfix workers' own proxy, `egress-bugfix`, with its own allowlist (GitHub's
+  github.com, codeload and api, `registry.npmjs.org` for `npm ci`, the LiteLLM gateway). The other
+  workers' allowlist is unchanged: opening git and npm to a fleet that runs repo code opens them to
+  no one else.
 - **The fix step holds no GitHub credential.** It runs the repo's code (installs, tests) and reads an
-  untrusted issue, so it gets only the model key. The GitHub token is minted only to execute an
-  approved `open_pr`.
-- **GitHub:** a GitHub App `flotilla-bugfix` installed on the target repos (contents, pull requests:
-  write; issues, metadata: read). Its private key is a mode-600 file mounted into the `bugfix` worker
-  only, with installation tokens minted per execution (they expire within an hour).
+  untrusted issue, so the `bugfix` worker gets only the model key. Pushing is a second worker,
+  `bugfix-act`, which holds the GitHub App's key and no model key, and runs no repo code (it fetches
+  the base without a checkout and applies the diff to the index).
+- **GitHub:** a GitHub App installed on the target repos (contents, pull requests: write; metadata:
+  read). Its private key is a mode-600 file in the `bugfix-act` worker's volume only, with an
+  installation token minted per execution (it expires within an hour).
 - **Shadow needs no GitHub credential at all:** orrery is public.
 
 ### 5. Shadow first, then the evidence bar
