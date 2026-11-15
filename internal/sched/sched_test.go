@@ -358,7 +358,7 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 
 type offline struct{ fakeRunner }
 
-func (offline) Available() bool { return false }
+func (*offline) Available() bool { return false }
 
 // RFC-0011: a routine whose remote worker is not connected is skipped, with the reason.
 func TestRemoteWorkerNotConnectedSkips(t *testing.T) {
