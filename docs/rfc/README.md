@@ -46,3 +46,5 @@ landed on an answer.
   (Accepted → ADR-0013, 2026-11-12)
 - [RFC-0007 — The operator UI: from mockup v3 to pages flotillad serves](RFC-0007-operator-ui.md)
   (Accepted → ADR-0014, 2026-11-13)
+- [RFC-0008 — The MCP server: other agents see and steer flotilla](RFC-0008-mcp-server.md)
+  (Proposed, 2026-11-15)
