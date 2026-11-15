@@ -1,0 +1,23 @@
+fleet: bugfix
+routine: fix
+description: >-
+  The acting routine for code_bug cases (RFC-0010 §2): fleetd's chain on the platform. A verdict on
+  the issue, then fixes on orrery's main with the gates (a test in the diff, no new failure in the
+  suite, nothing in CI or hooks), up to three kick-backs with the advisor, a review, and a
+  github.open_pr plan with the diff, or an escalation with the reason. Its models are LiteLLM's
+  fleet-bugfix aliases; it holds no GitHub credential.
+enabled: true
+worker: bugfix
+trigger:
+  case: {kind: code_bug}
+models: [bugfix-flash, bugfix-reviewer]
+run:
+  command: >-
+    python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model bugfix-flash
+    --advisor-model bugfix-reviewer --reviewer-model bugfix-reviewer
+  workdir: .
+  timeout: 3h
+autonomy: shadow
+max_autonomy: propose
+budget:
+  day_usd: 5

@@ -69,6 +69,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@python3 ops/test_ops.py >/tmp/flotilla-test_ops.log 2>&1 && echo "PASS ops/test_ops.py" || { echo "FAIL ops/test_ops.py"; tail -30 /tmp/flotilla-test_ops.log; exit 1; }
 	@python3 ops/test_case_review.py >/tmp/flotilla-test_case_review.log 2>&1 && echo "PASS ops/test_case_review.py" || { echo "FAIL ops/test_case_review.py"; tail -30 /tmp/flotilla-test_case_review.log; exit 1; }
 	@python3 bugfix/test_bugfix.py >/tmp/flotilla-test_bugfix.log 2>&1 && echo "PASS bugfix/test_bugfix.py" || { echo "FAIL bugfix/test_bugfix.py"; tail -30 /tmp/flotilla-test_bugfix.log; exit 1; }
+	@timeout 300 python3 bugfix/test_fix.py >/tmp/flotilla-test_fix.log 2>&1 && echo "PASS bugfix/test_fix.py" || { echo "FAIL bugfix/test_fix.py"; tail -30 /tmp/flotilla-test_fix.log; exit 1; }
 	@python3 deploy/mini/test_mirror.py >/tmp/flotilla-test_mirror.log 2>&1 && echo "PASS deploy/mini/test_mirror.py" || { echo "FAIL deploy/mini/test_mirror.py"; tail -30 /tmp/flotilla-test_mirror.log; exit 1; }
 	@python3 deploy/mini/test_shadow_compare.py >/tmp/flotilla-test_shadow_compare.log 2>&1 && echo "PASS deploy/mini/test_shadow_compare.py" || { echo "FAIL deploy/mini/test_shadow_compare.py"; tail -30 /tmp/flotilla-test_shadow_compare.log; exit 1; }
 	@python3 deploy/mini/test_triage_hooks.py >/tmp/flotilla-test_triage_hooks.log 2>&1 && echo "PASS deploy/mini/test_triage_hooks.py" || { echo "FAIL deploy/mini/test_triage_hooks.py"; tail -30 /tmp/flotilla-test_triage_hooks.log; exit 1; }
