@@ -44,10 +44,14 @@ PI_HARNESS = POP + textwrap.dedent('''\
     echo "fix $F model=$PI_MODEL" >> "$FAKE_STATE/calls"
     cd "$WT"
     case "$F" in
-      good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect value 2' > src/a.test.js ;;
+      good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
-      breaks)   echo 'module.exports = () => 2;' > src/a.js; echo 'expect value 2' > src/a.test.js; echo FAIL > old.test.js ;;
-      workflow) echo 'expect value 2' > src/a.test.js; mkdir -p .github/workflows; echo on: push > .github/workflows/x.yml ;;
+      breaks)   echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo 'module.exports = () => 2;' > src/b.js ;;
+      norepro)  echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/b.js 1' > src/a.test.js ;;
+      halffix)  echo 'module.exports = () => 3;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
+      newmod)   echo 'module.exports = () => 3;' > src/c.js; printf 'import src/c.js\nexpect src/c.js 3\n' > src/c.test.js ;;
+      lockfile) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo '{}' > package-lock.json ;;
+      workflow) echo 'expect src/a.js 2' > src/a.test.js; mkdir -p .github/workflows; echo on: push > .github/workflows/x.yml ;;
       nothing)  ;;
     esac
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output":7}}}\\n'
@@ -64,19 +68,39 @@ PI_BIN = textwrap.dedent('''\
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Fine.\\\\nVERDICT: approve"}]}}\\n'
     ''')
 
-# a vitest-shaped report: every *.test.js is one test, failed when it says FAIL
+# a vitest-shaped runner. `run REPORT FILES`: those test files; `related REPORT SOURCES`: every *.test.js
+# that names one of the sources. A test file's lines: "import F" (a missing F: the file fails to load),
+# "expect F N" (passes when F returns N), "FAIL" (always fails).
 SUITE = textwrap.dedent('''\
     import json, os, sys
+    mode, report, args = sys.argv[1], sys.argv[2], sys.argv[3:]
+    def all_tests():
+        for root, _, files in os.walk("."):
+            if ".git" not in root:
+                for f in files:
+                    if f.endswith(".test.js"):
+                        yield os.path.relpath(os.path.join(root, f))
+    if mode == "run":
+        files = args
+    else:
+        files = [t for t in all_tests() if any(a in open(t).read() for a in args)]
     res = []
-    for root, _, files in os.walk("."):
-        if ".git" in root:
+    for f in files:
+        p = os.path.abspath(f)
+        lines = open(p).read().splitlines()
+        if any(ln.startswith("import ") and not os.path.exists(ln.split()[1]) for ln in lines):
+            res.append({"name": p, "status": "failed", "assertionResults": []})
             continue
-        for f in files:
-            if f.endswith(".test.js"):
-                p = os.path.abspath(os.path.join(root, f))
-                st = "failed" if "FAIL" in open(p).read() else "passed"
-                res.append({"name": p, "assertionResults": [{"status": st, "fullName": f}]})
-    json.dump({"testResults": res}, open(sys.argv[1], "w"))
+        st = "passed"
+        for ln in lines:
+            if ln == "FAIL":
+                st = "failed"
+            elif ln.startswith("expect "):
+                _, target, n = ln.split()
+                if not os.path.exists(target) or f"=> {n};" not in open(target).read():
+                    st = "failed"
+        res.append({"name": p, "status": st, "assertionResults": [{"status": st, "fullName": f}]})
+    json.dump({"testResults": res}, open(report, "w"))
     ''')
 
 
@@ -110,7 +134,8 @@ class Fixture:
         src = os.path.join(self.d, "src")
         os.makedirs(os.path.join(src, "src"))
         os.makedirs(os.path.join(src, "static", "images"))
-        for rel, text in (("src/a.js", "module.exports = () => 1;\n"), ("old.test.js", "fine\n"), ("red.test.js", "FAIL\n"),
+        for rel, text in (("src/a.js", "module.exports = () => 1;\n"), ("src/b.js", "module.exports = () => 1;\n"),
+                          ("keep.test.js", "expect src/b.js 1\n"), ("red.test.js", "expect src/a.js 9\n"),
                           ("static/images/x.png", "a big image\n")):
             with open(os.path.join(src, rel), "w") as f:
                 f.write(text)
@@ -137,7 +162,8 @@ class Fixture:
         fix.BAKEOFF = self.bakeoff
         try:
             out = fix.main(["--repo", "chipi/orrery", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
-                            "--reviewer-model", "bugfix-reviewer", "--setup", "true", "--suite-cmd", f"python3 {self.suite} %s",
+                            "--reviewer-model", "bugfix-reviewer", "--setup", "true", "--test-cmd", f"python3 {self.suite} run %s",
+                            "--related-cmd", f"python3 {self.suite} related %s",
                             "--scratch", self.scratch, *extra], environ=env)
         finally:
             fix.BAKEOFF = old
@@ -203,7 +229,8 @@ class Chain(unittest.TestCase):
         self.assertIn("+++ b/src/a.test.js", p["diff"])
         self.assertIn("+module.exports = () => 2;", p["diff"])
         self.assertNotIn("flotilla-suite", p["diff"])
-        self.assertIn("1 failing on the base", p["body"], "red.test.js is the base's red set, not a new failure")
+        self.assertIn("1 test files fail on the base and pass with the fix", p["body"])
+        self.assertIn("none newly failing", p["body"], "red.test.js fails on the base too: not a new failure")
         self.assertIn("VERDICT: approve", p["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "review"])
         self.assertEqual(os.listdir(os.path.join(f.scratch, "runs")), [], "the run's directory is deleted")
@@ -237,8 +264,9 @@ class Chain(unittest.TestCase):
         self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage", "fix", "review"])
 
     def test_a_new_failure_kicks_back_and_needs_info_escalates(self):
+        """The fix breaks src/b.js, which keep.test.js (related, passing on the base) checks."""
         f = self.fixture(["actionable", "needs-info"], ["breaks"])
-        plan, _ = f.run()
+        plan, out = f.run()
         self.assertEqual(plan["outcome"], "escalate")
         self.assertIn("after round 0", plan["detail"])
         with open(os.path.join(f.state, "calls")) as fh:
@@ -254,6 +282,34 @@ class Chain(unittest.TestCase):
         self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage", "fix", "triage"])
         with open(os.path.join(f.state, "calls")) as fh:
             self.assertIn("gap=1", fh.read().splitlines()[-1])
+
+    def test_scope_of_the_tests(self):
+        """RFC-0010 §9: a test that passes on the base does not reproduce; a new failure in a related test
+        stops the fix; a test that cannot load on the base (it imports what the fix adds) is noted and the
+        fix goes on; a lockfile is out of scope."""
+        cases = {"norepro": "repro: src/a.test.js passes on the base without the fix",
+                 "breaks": "new failures in the related tests: keep.test.js",
+                 "lockfile": "out of scope: the diff touches package-lock.json",
+                 "halffix": "the fix's own tests fail with the fix: src/a.test.js"}
+        for fix_, want in cases.items():
+            f = self.fixture(["actionable"], [fix_])
+            plan, _ = f.run("--kickback-max", "0")
+            self.assertEqual(plan["outcome"], "escalate", fix_)
+            self.assertIn(want, plan["detail"], fix_)
+        f = self.fixture(["actionable"], ["newmod"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("Not loadable on the base (they import what the fix adds): src/c.test.js", plan["params"]["body"])
+
+    def test_base_and_harness_seams(self):
+        """Phase B's seams: --base fixes a given commit; --harness picks harnesses/<name>.sh."""
+        f = self.fixture(["actionable"], ["good"])
+        shutil.copy(os.path.join(f.bakeoff, "harnesses", "pi.sh"), os.path.join(f.bakeoff, "harnesses", "other.sh"))
+        plan, _ = f.run("--base", f.base, "--harness", "other")
+        self.assertEqual((plan["outcome"], plan["params"]["base"]), ("plan", f.base), plan)
+        g = self.fixture(["actionable"], ["good"])
+        plan, _ = g.run("--harness", "missing")
+        self.assertEqual(plan["outcome"], "escalate", "a harness that is not there")
 
     def test_the_kickback_limit(self):
         f = self.fixture(["actionable", "actionable"], ["notest", "nothing"])

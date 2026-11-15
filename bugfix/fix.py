@@ -4,11 +4,14 @@ Started by flotillad with the case (FLOTILLA_CASE, the issue in its data). It ru
 chain.go's order, calling the bake-off's leaves through LiteLLM, and decides:
 
   1. verdict (triage_run.sh): actionable, or it escalates (needs-info, rejected: with the reason)
-  2. the base: the repo at origin/main, its suite run once for the red set it already has
-  3. up to 1 + kickback_max rounds of: a fix (harnesses/pi.sh) from the base, then the gates
-       repro first: the diff adds or changes a test file
-       the delta suite: no failure the base did not have
-       the scope: no CI, workflow or hook file in the diff
+  2. the base: the repo at main (or --base), installed
+  3. up to 1 + kickback_max rounds of: a fix (harnesses/<--harness>.sh) from the base, then the gates,
+     which run only what the fix touches (RFC-0010 §9: the PR's CI runs the whole suite)
+       the scope: a test file in the diff; nothing in CI, hooks, the repo's config, manifest or lockfile
+       repro: the fix's test files, on the base with the fix's source left out, load and fail; with the
+         fix they pass (a test that cannot load on the base, because it imports what the fix adds, is
+         noted, not counted as a failure)
+       related: the tests related to the changed source files show no failure the base did not have
      a failing gate kicks it back: the advisor (advisor_run.sh) pins the owner once per round unless the
      fix was already at a pin (the acceptance transition), then the verdict is asked again with that
      evidence; needs-info or rejected escalates
@@ -32,6 +35,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -44,7 +48,11 @@ import pi_config  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE), "bugfix-fleet", "bakeoff"))
 TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/]*\.py$")
-OUT_OF_SCOPE = re.compile(r"^(\.github/|\.husky/|\.gitlab-ci|\.circleci/)")
+# CI and hooks, and what `vitest related` cannot see: the repo's config, manifest and lockfile (the
+# advisor's review, 2026-11-15); a spec adds its repo's own with --out-of-scope
+OUT_OF_SCOPE = re.compile(r"^(\.github/|\.husky/|\.gitlab-ci|\.circleci/)|(^|/)(package\.json|package-lock\.json|"
+                          r"npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig[^/]*\.json|"
+                          r"(vitest|vite|svelte|playwright)\.config\.[cm]?[tj]s)$")
 DIFF_MAX = 16000   # the registry's max for github.open_pr's diff
 BODY_MAX = 8000
 TITLE_MAX = 200
@@ -93,27 +101,43 @@ def errors_of(out, n=400):
     return tail(" | ".join(lines), n) if lines else tail(out, n)
 
 
-def suite_failures(wt, suite_cmd, env, timeout):
-    """The failed-test set (file::name) from the suite's JSON report (vitest's, as chain.go reads it). A red
-    suite is data, not an error; a missing or unreadable report is an error."""
+class Tests:
+    """One test run's result from a vitest-shaped JSON report: the failed tests (file::name), the files that
+    failed to load (no assertions, a failed status), and the files that ran."""
+
+    def __init__(self, fails, unloaded, ran):
+        self.fails, self.unloaded, self.ran = fails, unloaded, ran
+
+
+def run_tests(wt, cmd, files, env, timeout):
+    """cmd with %s for the report and the files appended. A red run is data, not an error; a run that did
+    not finish, or wrote no readable report, is an error (it names which)."""
     report = os.path.join(wt, ".flotilla-suite.json")
     if os.path.exists(report):
         os.remove(report)
-    sh(suite_cmd.replace("%s", report), wt, env, timeout)
+    code, out = sh(cmd.replace("%s", report) + "".join(" " + shlex.quote(f) for f in files), wt, env, timeout)
     try:
-        with open(report) as f:
-            rep = json.load(f)
-    except (OSError, ValueError) as e:
-        raise Stop(f"the suite wrote no readable report ({e})")
+        if code == 124:
+            raise Stop(f"the tests did not finish in {timeout} s: {' '.join(files)[:200]}")
+        try:
+            with open(report) as f:
+                rep = json.load(f)
+        except (OSError, ValueError) as e:
+            raise Stop(f"the tests wrote no readable report (exit {code}, {e}): {errors_of(out, 300)}")
     finally:
         if os.path.exists(report):
             os.remove(report)
-    fails = set()
+    fails, unloaded, ran = set(), set(), set()
     for tr in rep.get("testResults") or []:
-        for ar in tr.get("assertionResults") or []:
+        name = os.path.relpath(tr.get("name", ""), wt)
+        ran.add(name)
+        assertions = tr.get("assertionResults") or []
+        if not assertions and tr.get("status") == "failed":
+            unloaded.add(name)
+        for ar in assertions:
             if ar.get("status") == "failed":
-                fails.add(os.path.relpath(tr.get("name", ""), wt) + "::" + ar.get("fullName", ""))
-    return fails
+                fails.add(name + "::" + ar.get("fullName", ""))
+    return Tests(fails, unloaded, ran)
 
 
 def assistant_text(stream):
@@ -187,7 +211,7 @@ class Chain:
         self.env = dict(environ)
         self.env.update({"PI_CODING_AGENT_DIR": os.path.join(run_dir, "pi"), "PI_PROVIDER": self.provider,
                          "BAKEOFF_ROOT": self.root, "BAKEOFF_WT": self.wt, "BAKEOFF_TRIAGED_DIR": self.triaged,
-                         "TRIAGE_BASE": "origin/main", "TRIAGE_MODEL": self.worker, "ADVISOR_MODEL": self.advisor,
+                         "TRIAGE_MODEL": self.worker, "ADVISOR_MODEL": self.advisor,
                          "PI_MODEL": self.worker, "npm_config_cache": os.path.join(a.scratch, "npm-cache"),
                          "HOME": run_dir})
         self.env.pop("FLOTILLA_PLAN_FILE", None)  # the leaves write nothing of the run's own
@@ -203,18 +227,22 @@ class Chain:
         14 GB and its tree 6.8 GB, most of it images the suite does not read. --exclude-path leaves such trees out;
         a test that needs them fails on the base too, so it is in the base's red set, not a new failure."""
         remote = self.env.get("GIT_REMOTE_BASE", "https://github.com").rstrip("/") + "/" + self.repo
+        ref = self.a.base or "main"
         # blob:limit, not blob:none: with no blobs at all, the checkout asks for every file it needs in one
         # batch, and GitHub answered such a request (1.3 MB of object ids, orrery case #643 on the mini,
         # 2026-11-15) with HTTP 400. Blobs under the limit come in the clone's own pack (orrery: 852 MB, about
         # 2 minutes); only the larger ones outside the excluded trees are fetched at the checkout.
-        sh(["git", "clone", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "--no-checkout", "--branch", "main", remote, self.wt],
+        sh(["git", "init", "-q", self.wt], self.run_dir, self.env, 60, check=True)
+        sh(["git", "-C", self.wt, "remote", "add", "origin", remote], self.run_dir, self.env, 60, check=True)
+        sh(["git", "-C", self.wt, "fetch", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "origin", ref],
            self.run_dir, self.env, 1200, check=True)
         if self.a.exclude_path:
             sh(["git", "-C", self.wt, "sparse-checkout", "set", "--no-cone", "/*"] + [f"!/{x.strip('/')}/" for x in self.a.exclude_path],
                self.run_dir, self.env, 60, check=True)
-        sh(["git", "-C", self.wt, "checkout", "-q", "--detach", "origin/main"], self.run_dir, self.env, 1200, check=True)
+        sh(["git", "-C", self.wt, "checkout", "-q", "--detach", "FETCH_HEAD"], self.run_dir, self.env, 1200, check=True)
         _, base = sh(["git", "-C", self.wt, "rev-parse", "HEAD"], self.run_dir, self.env, 30, check=True)
         self.base = base.strip()
+        self.env["TRIAGE_BASE"] = self.base  # the leaves reset to it
         self.note("base", self.base[:12])
         if self.a.setup:
             code, out = sh(self.a.setup, self.wt, self.env, self.a.setup_timeout)
@@ -262,26 +290,62 @@ class Chain:
             desc = json.load(f)["description"]
         desc += "\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
         self.reset()
-        code, stream = sh([os.path.join(BAKEOFF, "harnesses", "pi.sh"), self.wt, desc], BAKEOFF, self.env, self.a.episode_timeout)
+        harness = os.path.join(BAKEOFF, "harnesses", self.a.harness + ".sh")
+        if not re.fullmatch(r"[a-z0-9-]+", self.a.harness) or not os.path.exists(harness):
+            raise Stop(f"no harness {self.a.harness!r} in {os.path.dirname(harness)}")
+        code, stream = sh([harness, self.wt, desc], BAKEOFF, self.env, self.a.episode_timeout)
         turns, out_tok = usage(stream)
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
         _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", self.base], self.run_dir, self.env, 60, check=True)
         files = [x for x in names.splitlines() if x.strip() and not x.startswith(".flotilla-suite")]
+        stats = (turns, out_tok)
         if code == 124 and not files:
-            return "the fix episode ran out of time with no change", files, stream, (turns, out_tok)
+            return "the fix episode ran out of time with no change", files, stream, stats
         if not files:
-            return "the fix changed nothing", files, stream, (turns, out_tok)
-        if not any(TEST_FILE.search(x) for x in files):
-            return "repro-first violated: no test in the diff", files, stream, (turns, out_tok)
-        bad = [x for x in files if OUT_OF_SCOPE.search(x)]
+            return "the fix changed nothing", files, stream, stats
+        tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
+        if not tests:
+            return "repro-first violated: no test in the diff", files, stream, stats
+        bad = [x for x in files if OUT_OF_SCOPE.search(x) or any(re.search(o, x) for o in self.a.out_of_scope)]
         if bad:
-            return f"out of scope: the diff touches {', '.join(bad)}", files, stream, (turns, out_tok)
-        sh(["git", "-C", self.wt, "reset", "-q"], self.run_dir, self.env, 60, check=True)
-        after = suite_failures(self.wt, self.a.suite_cmd, self.env, self.a.suite_timeout)
-        new = sorted(after - self.base_fails)
+            return f"out of scope: the diff touches {', '.join(bad)}", files, stream, stats
+        return self.gates(files, tests), files, stream, stats
+
+    def gates(self, files, tests):
+        """RFC-0010 §9: repro (the tests fail on the base, pass with the fix) and related (no failure the base
+        did not have, in the tests related to the changed source files). Leaves the tree as the fix made it."""
+        patch = os.path.join(self.run_dir, "fix.patch")
+        _, d = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", self.base], self.run_dir, self.env, 60, check=True)
+        with open(patch, "w") as f:
+            f.write(d)
+        src = [x for x in files if not TEST_FILE.search(x)]
+        t, rt = self.a.test_timeout, self.a.related_cmd
+
+        def tree(with_source):
+            self.reset()
+            args = ["git", "-C", self.wt, "apply", "--binary"]
+            if not with_source:
+                args += [f"--include={x}" for x in tests]
+            sh(args + [patch], self.run_dir, self.env, 60, check=True)
+
+        tree(with_source=False)
+        base = run_tests(self.wt, self.a.test_cmd, tests, self.env, t)
+        base_src = [x for x in src if os.path.exists(os.path.join(self.wt, x))]
+        base_rel = run_tests(self.wt, rt, base_src, self.env, t) if base_src else Tests(set(), set(), set())
+        tree(with_source=True)
+        fixed = run_tests(self.wt, self.a.test_cmd, tests, self.env, t)
+        rel = run_tests(self.wt, rt, src, self.env, t) if src else Tests(set(), set(), set())
+        self.unloaded_on_base = sorted(base.unloaded)
+        for x in tests:
+            if x not in base.unloaded and not any(f.startswith(x + "::") for f in base.fails):
+                return f"repro: {x} passes on the base without the fix: it does not reproduce the bug"
+        if fixed.unloaded or fixed.fails:
+            return f"the fix's own tests fail with the fix: {tail('; '.join(sorted(fixed.unloaded | fixed.fails)), 300)}"
+        new = sorted((rel.fails | rel.unloaded) - (base_rel.fails | base_rel.unloaded))
         if new:
-            return f"{len(new)} new failures (delta gate): {tail('; '.join(new), 300)}", files, stream, (turns, out_tok)
-        return "", files, stream, (turns, out_tok)
+            return f"{len(new)} new failures in the related tests: {tail('; '.join(new), 300)}"
+        self.checked = f"{len(tests)} test files fail on the base and pass with the fix; {len(rel.ran)} related files, none newly failing"
+        return ""
 
     def diff(self):
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
@@ -309,15 +373,12 @@ class Chain:
         if v.get("verdict") != "actionable":
             raise Stop(self.not_actionable(v))
         manifest = os.path.join(self.triaged, f"{self.tid}-triaged.json")
-        self.reset()
-        self.base_fails = suite_failures(self.wt, self.a.suite_cmd, self.env, self.a.suite_timeout)
-        self.note("baseline", f"{len(self.base_fails)} failing on the base")
         pins, prior = [], vpath
         for rnd in range(self.a.kickback_max + 1):
             if not os.path.exists(manifest):
                 raise Stop(f"stuck: the verdict step wrote no triaged manifest for round {rnd}")
             reason, files, stream, (turns, out_tok) = self.attempt(manifest)
-            self.note(f"round {rnd}", reason or f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens)")
+            self.note(f"round {rnd}", reason or f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
             if not reason:
                 return self.plan(rnd)
             if rnd == self.a.kickback_max:
@@ -372,8 +433,10 @@ class Chain:
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
         body = "\n".join([
             f"An automated fix for {self.repo}#{self.n} by flotilla's bugfix fleet (RFC-0010), in beta evaluation.",
-            "", "Gates: repro first (a test in the diff), the suite with no failure the base did not have "
-            f"({len(self.base_fails)} failing on the base {self.base[:12]}), nothing in CI or hooks. Round {rnd}.",
+            "", f"Gates (base {self.base[:12]}, round {rnd}): {self.checked}; nothing in CI, hooks, config or the lockfile. "
+            "The whole suite is this PR's CI.",
+            *([f"Not loadable on the base (they import what the fix adds): {', '.join(self.unloaded_on_base)}."]
+              if self.unloaded_on_base else []),
             "", "The chain:", *[f"- {x}" for x in self.log],
             "", "Review (fleet reviewer, comment only):", tail(review, 3000),
             "", "The operator merges, always: the fleet never does."])
@@ -389,7 +452,11 @@ def parse(argv):
     ap.add_argument("--advisor-model", required=True)
     ap.add_argument("--reviewer-model", required=True)
     ap.add_argument("--setup", default="npm ci --no-audit --no-fund && (npm run --if-present i18n:compile)")
-    ap.add_argument("--suite-cmd", default="npx vitest run --reporter=json --outputFile=%s")
+    ap.add_argument("--test-cmd", default="npx vitest run --reporter=json --outputFile=%s", help="%%s: the report; the files follow")
+    ap.add_argument("--related-cmd", default="npx vitest related --run --reporter=json --outputFile=%s")
+    ap.add_argument("--out-of-scope", action="append", default=[], help="a regex of paths a fix may not touch")
+    ap.add_argument("--base", default="", help="the commit to fix (default: main), for replays (phase B)")
+    ap.add_argument("--harness", default="pi", help="harnesses/<name>.sh (phase B arms)")
     ap.add_argument("--exclude-path", action="append", default=[], help="a tree of the repo not to check out (sparse)")
     ap.add_argument("--blob-limit", default="256k", help="blobs up to this size come with the clone (git --filter=blob:limit)")
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
@@ -397,7 +464,7 @@ def parse(argv):
     ap.add_argument("--kickback-max", type=int, default=3)
     ap.add_argument("--no-advisor", dest="advisor", action="store_false")
     ap.add_argument("--episode-timeout", type=int, default=1200)
-    ap.add_argument("--suite-timeout", type=int, default=1200)
+    ap.add_argument("--test-timeout", type=int, default=900)
     ap.add_argument("--setup-timeout", type=int, default=1200)
     ap.add_argument("--review-timeout", type=int, default=600)
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
