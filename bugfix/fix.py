@@ -146,7 +146,8 @@ class Chain:
         self.wt = os.path.join(run_dir, "wt")              # BAKEOFF_WT: the worktree
         self.triaged = os.path.join(run_dir, "triaged")    # BAKEOFF_TRIAGED_DIR: the manifests
         self.log = []
-        cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ)
+        upstream = dict(x.split("=", 1) for x in a.upstream)
+        cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ, upstream)
         self.provider, self.worker = pi_config.pick(cfg, a.worker_model)
         _, self.advisor = pi_config.pick(cfg, a.advisor_model)
         _, self.reviewer = pi_config.pick(cfg, a.reviewer_model)
@@ -350,6 +351,8 @@ def parse(argv):
     ap.add_argument("--setup", default="npm ci --no-audit --no-fund && (npm run --if-present i18n:compile)")
     ap.add_argument("--suite-cmd", default="npx vitest run --reporter=json --outputFile=%s")
     ap.add_argument("--exclude-path", action="append", default=[], help="a tree of the repo not to check out (sparse)")
+    ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
+                    help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
     ap.add_argument("--kickback-max", type=int, default=3)
     ap.add_argument("--no-advisor", dest="advisor", action="store_false")
     ap.add_argument("--episode-timeout", type=int, default=1200)

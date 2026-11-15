@@ -5,17 +5,26 @@ directory with only the aliases its routine names (security T4): each endpoint b
 `flotilla-<endpoint>` speaking OpenAI completions at the endpoint's base URL. The key is named, never
 written: `$VAR` for an endpoint's key_env (the worker fills it from the fleet's secrets), `!cat <file>`
 for its key_file. pi is then called with --provider and --model from `pick`.
+
+Each model also gets what pi's own catalog knows about the model LiteLLM routes it to (`upstream`, e.g.
+fleet-bugfix-flash -> deepseek/deepseek-v4-flash): its context window, output limit, prices and compat.
+Without them pi assumes a 128k window and 16k output and reports no cost; a fix session on orrery #646
+stopped at 124k of context with one output token (2026-11-15), where the bake-off's openrouter provider
+had the model's 1M window.
 """
 import json
 import os
+import subprocess
 
 
 class ConfigError(Exception):
     pass
 
 
-def models_json(cfg, aliases):
-    """The models.json for these aliases of the models section `cfg` (FLOTILLA_MODELS, parsed)."""
+def models_json(cfg, aliases, meta=None, upstream=None):
+    """The models.json for these aliases of the models section `cfg` (FLOTILLA_MODELS, parsed); `meta` is
+    pi's catalog entry per upstream model, `upstream` the upstream model per LiteLLM model."""
+    meta, upstream = meta or {}, upstream or {}
     providers = {}
     for name in aliases:
         a = cfg.get("aliases", {}).get(name)
@@ -33,7 +42,9 @@ def models_json(cfg, aliases):
         else:
             p["apiKey"] = "none"  # pi wants one; the endpoint takes no Authorization
         if a["model"] not in [m["id"] for m in p["models"]]:
-            p["models"].append({"id": a["model"]})
+            entry = {"id": a["model"]}
+            entry.update(meta.get(upstream.get(a["model"], ""), {}))
+            p["models"].append(entry)
     return {"providers": providers}
 
 
@@ -45,9 +56,22 @@ def pick(cfg, alias):
     return "flotilla-" + a["endpoint"], a["model"]
 
 
-def write(agent_dir, aliases, environ=None):
-    """Write models.json into agent_dir for these aliases; returns the parsed models section."""
+def catalog(ids, environ=None):
+    """pi's catalog entries for these OpenRouter model ids (bugfix/pi_catalog.mjs, from the installed pi)."""
+    if not ids:
+        return {}
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pi_catalog.mjs")
+    p = subprocess.run(["node", script, *ids], capture_output=True, text=True, timeout=60, env=environ)
+    if p.returncode != 0:
+        raise ConfigError(f"pi's catalog: {p.stderr.strip()[:200]}")
+    return json.loads(p.stdout)
+
+
+def write(agent_dir, aliases, environ=None, upstream=None, meta=None):
+    """Write models.json into agent_dir for these aliases; returns the parsed models section. `upstream`
+    maps a LiteLLM model to the OpenRouter model it routes to; `meta` (tests) stands in for pi's catalog."""
     environ = os.environ if environ is None else environ
+    upstream = upstream or {}
     raw = environ.get("FLOTILLA_MODELS")
     if not raw:
         raise ConfigError("FLOTILLA_MODELS is not set: this installation's flotillad.yaml has no models section")
@@ -55,6 +79,8 @@ def write(agent_dir, aliases, environ=None):
     os.makedirs(agent_dir, exist_ok=True)
     path = os.path.join(agent_dir, "models.json")
     with open(path, "w") as f:
-        json.dump(models_json(cfg, aliases), f, indent=2)
+        if meta is None:
+            meta = catalog(sorted(set(upstream.values())), environ)
+        json.dump(models_json(cfg, aliases, meta, upstream), f, indent=2)
     os.chmod(path, 0o600)
     return cfg

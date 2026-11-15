@@ -16,6 +16,7 @@ run:
     python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model bugfix-flash
     --advisor-model bugfix-reviewer --reviewer-model bugfix-reviewer
     --exclude-path static/images --exclude-path static/audio --exclude-path masters
+    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2
   workdir: .
   timeout: 3h
 autonomy: shadow

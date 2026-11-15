@@ -38,6 +38,15 @@ class PiConfig(unittest.TestCase):
         self.assertEqual(env["apiKey"], "$OPENROUTER_API_KEY")
         self.assertEqual(pi_config.pick(MODELS, "bugfix-flash"), ("flotilla-gateway-bugfix", "fleet-bugfix-flash"))
 
+    def test_the_upstream_model_s_limits_and_prices(self):
+        """pi gets the context window, output limit and prices of the model LiteLLM routes to."""
+        meta = {"deepseek/deepseek-v4-flash": {"contextWindow": 1048575, "maxTokens": 4096, "cost": {"input": 0.098, "output": 0.196}}}
+        out = pi_config.models_json(MODELS, ["bugfix-flash", "bugfix-reviewer"], meta, {"fleet-bugfix-flash": "deepseek/deepseek-v4-flash"})
+        flash, rev = out["providers"]["flotilla-gateway-bugfix"]["models"]
+        self.assertEqual((flash["id"], flash["contextWindow"], flash["maxTokens"], flash["cost"]["output"]),
+                         ("fleet-bugfix-flash", 1048575, 4096, 0.196))
+        self.assertEqual(rev, {"id": "fleet-bugfix-reviewer"}, "no upstream named: pi's defaults")
+
     def test_unknown_alias_and_missing_section(self):
         with self.assertRaises(pi_config.ConfigError):
             pi_config.models_json(MODELS, ["nope"])
@@ -46,7 +55,7 @@ class PiConfig(unittest.TestCase):
 
     def test_written_private(self):
         d = tempfile.mkdtemp()
-        pi_config.write(d, ["bugfix-flash"], environ={"FLOTILLA_MODELS": json.dumps(MODELS)})
+        pi_config.write(d, ["bugfix-flash"], environ={"FLOTILLA_MODELS": json.dumps(MODELS)}, meta={})
         path = os.path.join(d, "models.json")
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         with open(path) as f:
