@@ -221,6 +221,20 @@ func (d *Dispatcher) deadlines(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return fmt.Errorf("case %s: status_at %q: %w", c.ID, c.StatusAt, err)
 		}
+		if len(plans) > 0 && d.API.Registry != nil && executeRoutine(d.API.Sched.Routines, action) != nil {
+			if a, ok := d.API.Registry.Action(action); ok && a.Repo() {
+				// an approved repo action waits for its executing routine (its machine may be off: RFC-0011
+				// §4); the deadline counts from the run's start, and there is none before it starts
+				started, at, err := d.executeStarted(ctx, c.ID, plans[len(plans)-1].ID)
+				if err != nil {
+					return err
+				}
+				if !started {
+					continue
+				}
+				since = at
+			}
+		}
 		limit := timeout + ExecutingGrace
 		if now.Sub(since) < limit {
 			continue
@@ -409,7 +423,10 @@ type planJSON struct {
 	PlanHash string            `json:"plan_hash"`
 }
 
-const executeStartedEvent = "execute.started"
+const (
+	executeStartedEvent    = "execute.started"
+	executeNotStartedEvent = "execute.not_started" // the scheduler refused or skipped it: nothing ran
+)
 
 // executions starts the executing routine of each approved repo action (RFC-0010 §3), once per plan:
 // the execute.started event, written before the run, is the at-most-once guard, with the lease.
@@ -422,6 +439,7 @@ func (d *Dispatcher) executions(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	busy := d.API.Sched.Running()
 	for _, c := range open {
 		if c.Holder != "" {
 			continue
@@ -441,7 +459,17 @@ func (d *Dispatcher) executions(ctx context.Context) error {
 		if j == nil {
 			continue // applied by a person (RecordApplied)
 		}
-		started, err := d.executeStarted(ctx, c.ID, p.ID)
+		// a run that cannot start now must not spend the plan's one attempt: busy (two approvals in one
+		// pass), paused, its fleet STOPped, its budget spent: the case waits, with nothing recorded
+		if _, running := busy[j.ID()]; running {
+			continue
+		}
+		if why, err := d.API.Sched.SkipReason(ctx, j); err != nil {
+			return err
+		} else if why != "" {
+			continue
+		}
+		started, _, err := d.executeStarted(ctx, c.ID, p.ID)
 		if err != nil {
 			return err
 		}
@@ -459,6 +487,7 @@ func (d *Dispatcher) executions(ctx context.Context) error {
 			_ = st.ReleaseCase(ctx, c.ID, j.ID())
 			return err
 		}
+		busy[j.ID()] = "started by this pass"
 		d.wg.Add(1)
 		go func(c store.Case, j *spec.Routine, p store.PlanRecord) {
 			defer d.wg.Done()
@@ -472,18 +501,28 @@ func (d *Dispatcher) executions(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dispatcher) executeStarted(ctx context.Context, id string, plan int64) (bool, error) {
+// executeStarted is whether the plan's executing run started (its latest execute.started is not followed
+// by an execute.not_started: a run the scheduler refused or skipped did nothing), and when.
+func (d *Dispatcher) executeStarted(ctx context.Context, id string, plan int64) (bool, time.Time, error) {
 	evs, err := d.API.Store.CaseEvents(ctx, id)
 	if err != nil {
-		return false, err
+		return false, time.Time{}, err
 	}
 	prefix := fmt.Sprintf("plan %d ", plan)
+	started, at := false, time.Time{}
 	for _, e := range evs {
-		if e.Kind == executeStartedEvent && strings.HasPrefix(e.Detail, prefix) {
-			return true, nil
+		if !strings.HasPrefix(e.Detail, prefix) {
+			continue
+		}
+		switch e.Kind {
+		case executeStartedEvent:
+			started = true
+			at, _ = time.Parse(time.RFC3339Nano, e.At)
+		case executeNotStartedEvent:
+			started = false
 		}
 	}
-	return false, nil
+	return started, at, nil
 }
 
 func shortHash(h string) string {
@@ -509,9 +548,16 @@ func (d *Dispatcher) execute(ctx context.Context, c store.Case, j *spec.Routine,
 		Data: d.openingData(ctx, full.ID)})
 	pj, _ := json.Marshal(planJSON{ID: p.ID, Action: p.Action, Params: p.Params, PlanHash: p.PlanHash})
 	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "execute", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj), "FLOTILLA_PLAN": string(pj)})
+	notStarted := func(why string) error {
+		// nothing ran: the attempt is given back, and the case waits for the next pass
+		d.Log.Warn("executing run did not start: the plan waits", "case", c.ID, "routine", j.ID(), "why", why)
+		return st.AddCaseEvent(ctx, c.ID, executeNotStartedEvent, j.ID(), fmt.Sprintf("plan %d %s: %s", p.ID, shortHash(p.PlanHash), why))
+	}
 	if err != nil {
-		// it never started: nothing was done, so the case waits for a person, who can run it again
-		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByAct, "", j.ID(), "the executing run did not start: "+err.Error())
+		return notStarted(err.Error())
+	}
+	if r.Status == store.StatusSkipped {
+		return notStarted("skipped: " + r.Detail)
 	}
 	if r.Status != store.StatusOK || out == nil {
 		return unknown(fmt.Sprintf("executing run %s ended %s", r.ID, r.Status))

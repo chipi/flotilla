@@ -161,6 +161,20 @@ class Streams(unittest.TestCase):
         self.assertEqual((fix.assistant_text(bad), fix.stream_error(bad)), ("", "400: UnsupportedParamsError reasoning_effort"))
 
 
+class Timeouts(unittest.TestCase):
+    def test_a_timeout_kills_the_whole_group(self):
+        """A grandchild (pi under bash pi.sh, vitest under npx) dies with the timeout."""
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        marker = os.path.join(d, "alive")
+        code, _ = fix.sh(f"(sleep 3; touch {marker}) & wait", d, timeout=1)
+        self.assertEqual(code, 124)
+        import time
+        time.sleep(3.5)
+        self.assertFalse(os.path.exists(marker), "the grandchild outlived the timeout")
+        self.assertEqual(fix.sh(["true"], d, timeout=5), (0, ""))
+
+
 class Errors(unittest.TestCase):
     def test_npm_s_error_lines_not_its_notice(self):
         out = ("added 1 package\nnpm error code 1\nnpm error path /wt/node_modules/canvas\n"

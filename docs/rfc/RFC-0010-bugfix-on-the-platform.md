@@ -87,7 +87,8 @@ person always approves a PR. Approving it starts the action's executing routine 
 `execute: {action}`, run once per plan), `bugfix/open-pr` on the `bugfix-act` worker, the only role
 with repo write, which:
 
-1. recomputes the plan's hash and refuses a plan that is not the approved one;
+1. recomputes the plan's hash and refuses a plan changed on the way (that a person approved that
+   hash is flotillad's check at the approval);
 2. checks the base commit still exists and the diff still applies (otherwise it escalates);
 3. pushes `flotilla/<case>` and opens a **draft** PR with exactly the approved diff;
 4. reports the PR, and the case moves to checking.

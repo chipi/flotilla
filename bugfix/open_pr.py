@@ -3,10 +3,12 @@
 flotillad starts it once, after a person approved the plan, with FLOTILLA_CASE and FLOTILLA_PLAN (the
 approved plan and its hash). It runs no repo code and holds no model key; it holds the GitHub App's key.
 
-  1. the plan is the approved one: its hash, computed here as flotillad computes it, must be the
-     plan_hash flotillad sent (a plan changed on the way is refused)
+  1. the plan is whole: its hash, computed here as flotillad computes it, must be the plan_hash flotillad
+     sent (a plan changed on the way is refused). That a person approved this hash is flotillad's check,
+     at the approval (ApprovePlan binds the approval to it); this one only sees that it arrived intact
   2. a token for this execution only: a JWT from the App's key (github_app.js), exchanged for an
-     installation token, which expires within the hour and is never written to disk or argv
+     installation token, which expires within the hour; it is never in argv or a URL, only in a mode-600
+     file in the run's own temporary directory, read by git's credential helper and deleted with it
   3. the base commit is fetched (no blobs, no checkout) and the diff applies to it exactly (git apply
      --cached --check), else it escalates
   4. one commit with the diff, pushed to flotilla/<case id> (new: a branch that exists escalates)
@@ -107,6 +109,12 @@ def execute(case, plan, env):
     branch = "flotilla/" + case["id"]
     token = installation_token(env)
     gapi = env.get("GITHUB_API", "https://api.github.com").rstrip("/")
+    if len(base) < 40:
+        # git fetches a commit by its full id only: a process change's base is the image's sha-<7>
+        st, c = api("GET", f"{gapi}/repos/{repo}/commits/{base}", token)
+        if st != 200 or not isinstance(c, dict) or not SHA_RE.match(c.get("sha") or "") or not c["sha"].startswith(base):
+            raise Escalate(f"the base commit {base} is gone from {repo} ({st})")
+        base = c["sha"]
     work = tempfile.mkdtemp(dir=env.get("BUGFIX_SCRATCH") or None)
     try:
         helper = os.path.join(work, "cred.sh")

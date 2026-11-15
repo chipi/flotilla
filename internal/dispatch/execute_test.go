@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
@@ -152,4 +153,164 @@ func TestCheckFailedEscalates(t *testing.T) {
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+// Two approvals in one pass, or a paused executing routine: the plan that cannot run now waits with nothing
+// recorded, and runs later; its one attempt is not spent (the advisor's review, 2026-11-15).
+func TestExecuteWaitsWhenBusyOrPaused(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	f.withExecutor("repo.process_change")
+	f.w.block, f.w.plan = make(chan struct{}), `{"outcome": "executed", "ref": "o/r#1"}`
+	a, _ := f.approvedRepo(t, "#b1")
+	b, _ := f.approvedRepo(t, "#b2")
+	if err := f.d.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for f.w.runs() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	_ = f.d.Once(ctx)
+	waiting := b
+	if f.cs(t, a).Holder == "" {
+		waiting = a
+	}
+	if started, _, _ := f.d.executeStarted(ctx, waiting, mustPlan(t, f, waiting)); started {
+		t.Fatal("the second approval spent its attempt while the routine was busy")
+	}
+	close(f.w.block)
+	f.d.Wait()
+	f.w.block = nil
+	f.pass(t)
+	// both ran once and were executed (repo.process_change declares no check, so a case that reached
+	// checking is escalated by the next pass: that is the check step, not the execution)
+	for _, id := range []string{a, b} {
+		evs, _ := f.st.CaseEvents(ctx, id)
+		executed := false
+		for _, e := range evs {
+			executed = executed || (e.Kind == "case."+cases.Checking && strings.Contains(e.Detail, "(o/r#1)"))
+		}
+		if !executed {
+			t.Fatalf("approval %s was not executed: %+v", id, lastEvent(t, f, id))
+		}
+	}
+	if f.w.runs() != 2 {
+		t.Fatalf("%d runs, want 2", f.w.runs())
+	}
+
+	g := setup(t)
+	g.withExecutor("repo.process_change")
+	g.result(`{"outcome": "executed"}`)
+	x, _ := g.approvedRepo(t, "#p")
+	if err := g.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:marko", "test"); err != nil {
+		t.Fatal(err)
+	}
+	g.pass(t)
+	if c := g.cs(t, x); c.Status != cases.Executing || g.w.runs() != 0 || lastEvent(t, g, x).Kind == executeStartedEvent {
+		t.Fatalf("paused: %+v, %d runs, %+v", c, g.w.runs(), lastEvent(t, g, x))
+	}
+	if err := g.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "0", "user:marko", "test"); err != nil {
+		t.Fatal(err)
+	}
+	g.pass(t)
+	if c := g.cs(t, x); c.Status != cases.Checking {
+		t.Fatalf("resumed: %+v", c)
+	}
+}
+
+// A run the scheduler skips after the guard was written (paused between the check and the run) gives the
+// attempt back: execute.not_started, the case still executing, and it runs on a later pass.
+func TestExecuteSkippedRunGivesTheAttemptBack(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	j := f.withExecutor("repo.process_change")
+	f.result(`{"outcome": "executed"}`)
+	id, pid := f.approvedRepo(t, "#s")
+	if err := f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:marko", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.AddCaseEvent(ctx, id, executeStartedEvent, j.ID(), "plan "+itoa(pid)+" abcdef012345"); err != nil {
+		t.Fatal(err)
+	}
+	plans, _ := f.st.Plans(ctx, id)
+	if err := f.d.execute(ctx, f.cs(t, id), j, plans[len(plans)-1]); err != nil {
+		t.Fatal(err)
+	}
+	if c := f.cs(t, id); c.Status != cases.Executing || lastEvent(t, f, id).Kind != executeNotStartedEvent {
+		t.Fatalf("a skipped run: %+v, %+v", c, lastEvent(t, f, id))
+	}
+	if started, _, _ := f.d.executeStarted(ctx, id, pid); started {
+		t.Fatal("a skipped run still counts as started")
+	}
+	_ = f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "0", "user:marko", "test")
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Checking || f.w.runs() != 1 {
+		t.Fatalf("after: %+v, %d runs", c, f.w.runs())
+	}
+}
+
+// An approved repo action whose executing routine has not started (its machine off) has no deadline; once
+// started, the deadline counts from the start, not from the approval.
+func TestRepoActionDeadlineCountsFromTheStart(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	j := f.withExecutor("repo.process_change")
+	id, pid := f.approvedRepo(t, "#d")
+	_ = f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:marko", "test")
+	f.now = f.now.Add(400 * time.Hour) // repo.process_change's timeout is 168h; + 15m grace
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Executing {
+		t.Fatalf("not started, long after the approval: %+v", c)
+	}
+	if err := f.st.AddCaseEvent(ctx, id, executeStartedEvent, j.ID(), "plan "+itoa(pid)+" abcdef012345"); err != nil {
+		t.Fatal(err)
+	}
+	ev := lastEvent(t, f, id)
+	at, _ := time.Parse(time.RFC3339Nano, ev.At)
+	f.now = at.Add(168*time.Hour + 10*time.Minute)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Executing {
+		t.Fatalf("inside the deadline from the start: %+v", c)
+	}
+	f.now = at.Add(168*time.Hour + 16*time.Minute)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Escalated {
+		t.Fatalf("past the deadline from the start: %+v", c)
+	}
+}
+
+func mustPlan(t *testing.T, f *fixture, id string) int64 {
+	t.Helper()
+	plans, err := f.st.Plans(context.Background(), id)
+	if err != nil || len(plans) == 0 {
+		t.Fatalf("plans of %s: %v", id, err)
+	}
+	return plans[len(plans)-1].ID
+}
+
+// The scheduler refusing the run because the routine is already running (a race the busy check above
+// cannot close) gives the attempt back too.
+func TestExecuteRefusedRunGivesTheAttemptBack(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	j := f.withExecutor("repo.process_change")
+	f.w.block, f.w.plan = make(chan struct{}), `{"outcome": "executed"}`
+	id, pid := f.approvedRepo(t, "#r")
+	go func() {
+		_, _, _ = f.d.API.Sched.RunWith(ctx, j.ID(), "manual", "test", map[string]string{"FLOTILLA_CASE": "{}"})
+	}()
+	for f.w.runs() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if err := f.st.AddCaseEvent(ctx, id, executeStartedEvent, j.ID(), "plan "+itoa(pid)+" abcdef012345"); err != nil {
+		t.Fatal(err)
+	}
+	plans, _ := f.st.Plans(ctx, id)
+	if err := f.d.execute(ctx, f.cs(t, id), j, plans[len(plans)-1]); err != nil {
+		t.Fatal(err)
+	}
+	close(f.w.block)
+	if c := f.cs(t, id); c.Status != cases.Executing || lastEvent(t, f, id).Kind != executeNotStartedEvent {
+		t.Fatalf("a refused run: %+v, %+v", c, lastEvent(t, f, id))
+	}
 }

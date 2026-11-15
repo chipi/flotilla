@@ -213,8 +213,8 @@ services:
       ROUTINE_NO_PROXY: flotillad
       ROUTINE_NODE_USE_ENV_PROXY: "1"
       ROUTINE_BUGFIX_SCRATCH: /scratch
-      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
-      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
+      # no ROUTINE_FLOTILLA_API_*: no bugfix routine reads flotillad's worker API, and pi's tools, steered
+      # by an untrusted issue, would inherit them (the advisor's review, 2026-11-15)
     volumes:
       - worker-bugfix-secrets:/run/flotilla:ro
       - bugfix-scratch:/scratch

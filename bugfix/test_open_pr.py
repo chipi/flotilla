@@ -27,7 +27,7 @@ class FakeGitHub:
     """The calls open-pr and pr-check make: the installation token, the repo, and pulls (create, list)."""
 
     def __init__(self, refuse_pr=False):
-        self.calls, self.pulls, self.refuse_pr = [], [], refuse_pr
+        self.calls, self.pulls, self.refuse_pr, self.commits = [], [], refuse_pr, []
         outer = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -62,6 +62,10 @@ class FakeGitHub:
                 outer.calls.append(("GET", self.path, self.headers.get("Authorization", ""), None))
                 if u.path == "/repos/chipi/orrery":
                     return self.reply(200, {"default_branch": "main"})
+                if u.path.startswith("/repos/chipi/orrery/commits/"):
+                    want = u.path.rsplit("/", 1)[1]
+                    full = [x for x in outer.commits if x.startswith(want)]
+                    return self.reply(200, {"sha": full[0]}) if full else self.reply(422, {"message": "No commit found"})
                 if u.path == "/repos/chipi/orrery/pulls":
                     head = urllib.parse.parse_qs(u.query).get("head", [""])[0]
                     return self.reply(200, [p for p in outer.pulls if "chipi:" + p["head"] == head])
@@ -94,6 +98,7 @@ class Fixture:
         self.key = os.path.join(self.d, "app.pem")
         subprocess.run(["openssl", "genrsa", "-out", self.key, "2048"], check=True, capture_output=True)
         self.gh = FakeGitHub(refuse_pr)
+        self.gh.commits = [self.base]
         self.env = dict(os.environ, GITHUB_API=self.gh.url, GIT_REMOTE_BASE="file://" + os.path.join(self.d, "remotes"),
                         GITHUB_APP_ID="4242", GITHUB_APP_INSTALLATION_ID="77", GITHUB_APP_KEY_FILE=self.key,
                         GIT_ALLOW_PROTOCOL="file", FLOTILLA_PLAN_FILE=os.path.join(self.d, "plan.json"), BUGFIX_SCRATCH=self.d)
@@ -135,6 +140,18 @@ class OpenPR(unittest.TestCase):
         self.assertNotIn("fake-tok", git("config", "--list", cwd=f.remote))
         self.assertEqual(os.listdir(f.d).count("plan.json"), 1)
         self.assertEqual(sorted(x for x in os.listdir(f.d) if x.startswith("tmp")), [], "its work directory is deleted")
+
+    def test_a_short_base_is_resolved(self):
+        """A process change's base is the image's sha-<7>: git cannot fetch a commit by a short id, so it is
+        resolved through GitHub first (the advisor's review, 2026-11-15); an unknown one escalates."""
+        f = self.fixture()
+        out = f.run(f.plan(base=f.base[:7]))
+        self.assertEqual(out["outcome"], "executed", out)
+        self.assertEqual(git("rev-parse", "flotilla/" + CASE["id"] + "^", cwd=f.remote), f.base)
+        g = self.fixture()
+        out = g.run(g.plan(base="abcdef1"))
+        self.assertEqual(out["outcome"], "escalate")
+        self.assertIn("is gone", out["detail"])
 
     def test_a_changed_plan_is_refused_by_its_hash(self):
         f = self.fixture()

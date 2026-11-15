@@ -33,6 +33,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -59,19 +60,27 @@ def tail(s, n):
 
 
 def sh(cmd, cwd, env=None, timeout=None, check=False):
-    """Run a command; (exit code, combined output). A timeout is exit 124."""
+    """Run a command in its own process group; (exit code, combined output). A timeout kills the whole
+    group and is exit 124: subprocess.run's timeout kills only the direct child, and a timed-out pi or
+    vitest under `bash pi.sh` or `sh -c npx` kept running (holding the CPUs, editing the worktree the next
+    round resets) until the worker's own run limit (the advisor's review, 2026-11-15)."""
+    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         shell=isinstance(cmd, str), start_new_session=True)
     try:
-        p = subprocess.run(cmd, cwd=cwd, env=env, timeout=timeout, capture_output=True, text=True,
-                           shell=isinstance(cmd, str))
-        out = (p.stdout or "") + (p.stderr or "")
-        if check and p.returncode != 0:
-            raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: exit {p.returncode}: {tail(out, 300)}")
-        return p.returncode, out
-    except subprocess.TimeoutExpired as e:
-        out = (e.stdout or b"").decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        out, _ = p.communicate()
         if check:
             raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: no result in {timeout}s")
-        return 124, out
+        return 124, out or ""
+    out = out or ""
+    if check and p.returncode != 0:
+        raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: exit {p.returncode}: {tail(out, 300)}")
+    return p.returncode, out
 
 
 ERR_LINE = re.compile(r"(npm (error|ERR!)|gyp ERR!|^error|Error:|ERR_)", re.I)
