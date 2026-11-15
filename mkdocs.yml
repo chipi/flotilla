@@ -76,7 +76,9 @@ nav:
     - A case, end to end: architecture/run-lifecycle.md
     - Data: architecture/data.md
     - Deployment: architecture/deployment.md
-  - Security: security.md
+  - Security:
+      - The threat model: security.md
+      - "SR-0001 — The bugfix coding harness": security-reviews/SR-0001-bugfix-coding-harness.md
   - Operations:
     - Host keys and certificates: operations/host-keys.md
     - Slack approvals: operations/slack.md

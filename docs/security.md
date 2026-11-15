@@ -107,8 +107,9 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
   and alert are not built, and whether the host's audit log is shipped off the host has not been
   checked. None of the [key procedures](operations/host-keys.md) has been run on a real host.
 - **Image signing:** planned before any routine reaches `auto`, not built.
-- **The coding harness** used by the bugfix fleet runs code from the repos it fixes; its security
-  review is due before that fleet acts.
+- **The coding harness** used by the bugfix fleet runs code from the repos it fixes: reviewed in
+  [SR-0001](security-reviews/SR-0001-bugfix-coding-harness.md) (2026-11-15). The fleet may go to
+  propose once the operator has made its GitHub App; the advisor's "read only" is not by construction.
 - **Model-written commands** (an investigation sandbox) are not part of the design; they get their
   own threat model if they are added.
 - **The egress proxy** has been checked for licence and activity; its configuration review and a

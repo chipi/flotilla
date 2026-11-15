@@ -234,6 +234,15 @@ class Chain(unittest.TestCase):
         self.assertIn("VERDICT: approve", p["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "review"])
         self.assertEqual(os.listdir(os.path.join(f.scratch, "runs")), [], "the run's directory is deleted")
+        cache = os.path.join(f.scratch, "repos", "chipi__orrery.git")
+        wl = subprocess.run(["git", "-C", cache, "worktree", "list"], capture_output=True, text=True).stdout.splitlines()
+        self.assertEqual(len(wl), 1, f"the cache stays and the run's worktree is gone: {wl}")
+        # a second case reuses the cache: it fetches what is new, not the whole repo again
+        with open(os.path.join(f.state, "verdicts"), "w") as fh:
+            fh.write("needs-info\n")
+        plan2, _ = f.run()
+        self.assertEqual(plan2["outcome"], "escalate")
+        self.assertTrue(os.path.isdir(cache))
 
     def test_excluded_paths_are_not_checked_out_and_not_in_the_diff(self):
         """orrery's images are left out of the checkout (--exclude-path); their absence is not a deletion."""
@@ -247,6 +256,32 @@ class Chain(unittest.TestCase):
         g.run()
         with open(os.path.join(g.state, "calls")) as fh:
             self.assertIn("img=yes", fh.read(), "without --exclude-path the whole tree is checked out")
+
+    def test_a_tampered_cache_is_refused_and_no_hook_runs(self):
+        """The repo cache is shared between runs: a URL rewrite left in its config stops the next run, and a
+        hook left in it does not run."""
+        f = self.fixture(["needs-info", "needs-info"], [])
+        f.run()
+        cache = os.path.join(f.scratch, "repos", "chipi__orrery.git")
+        hook = os.path.join(cache, ".git", "hooks", "post-checkout")
+        os.makedirs(os.path.dirname(hook), exist_ok=True)
+        marker = os.path.join(f.d, "hook-ran")
+        with open(hook, "w") as fh:
+            fh.write(f"#!/bin/sh\ntouch {marker}\n")
+        os.chmod(hook, 0o755)
+        subprocess.run(["git", "-C", cache, "config", "url.https://evil.example/.insteadOf", "https://github.com/"], check=True)
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("the repo cache's config was changed", plan["detail"])
+        subprocess.run(["git", "-C", cache, "config", "--unset", "url.https://evil.example/.insteadOf"], check=True)
+        os.makedirs(os.path.dirname(hook), exist_ok=True)
+        with open(hook, "w") as fh:
+            fh.write(f"#!/bin/sh\ntouch {marker}\n")
+        os.chmod(hook, 0o755)
+        with open(os.path.join(f.state, "verdicts"), "w") as fh:
+            fh.write("needs-info\n")
+        f.run()
+        self.assertFalse(os.path.exists(marker), "a hook in the shared cache ran")
 
     def test_not_actionable_escalates_with_the_reason(self):
         f = self.fixture(["needs-info"], [])

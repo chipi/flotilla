@@ -213,7 +213,11 @@ class Chain:
                          "BAKEOFF_ROOT": self.root, "BAKEOFF_WT": self.wt, "BAKEOFF_TRIAGED_DIR": self.triaged,
                          "TRIAGE_MODEL": self.worker, "ADVISOR_MODEL": self.advisor,
                          "PI_MODEL": self.worker, "npm_config_cache": os.path.join(a.scratch, "npm-cache"),
-                         "HOME": run_dir})
+                         "HOME": run_dir,
+                         # no git hook runs, in any git this run starts: the repo cache is shared between
+                         # runs, and a hook planted by one run's code would run in the next (the review,
+                         # docs/security-reviews)
+                         "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"})
         self.env.pop("FLOTILLA_PLAN_FILE", None)  # the leaves write nothing of the run's own
 
     def note(self, step, detail=""):
@@ -228,18 +232,37 @@ class Chain:
         a test that needs them fails on the base too, so it is in the base's red set, not a new failure."""
         remote = self.env.get("GIT_REMOTE_BASE", "https://github.com").rstrip("/") + "/" + self.repo
         ref = self.a.base or "main"
-        # blob:limit, not blob:none: with no blobs at all, the checkout asks for every file it needs in one
-        # batch, and GitHub answered such a request (1.3 MB of object ids, orrery case #643 on the mini,
-        # 2026-11-15) with HTTP 400. Blobs under the limit come in the clone's own pack (orrery: 852 MB, about
-        # 2 minutes); only the larger ones outside the excluded trees are fetched at the checkout.
-        sh(["git", "init", "-q", self.wt], self.run_dir, self.env, 60, check=True)
-        sh(["git", "-C", self.wt, "remote", "add", "origin", remote], self.run_dir, self.env, 60, check=True)
-        sh(["git", "-C", self.wt, "fetch", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "origin", ref],
+        # One partial clone per repo on the scratch volume, kept between runs; each run fetches only what is
+        # new and checks out a worktree of its own from it, and the large blobs a checkout fetched stay for
+        # the next run. Before, each run cloned 850 MB of orrery anonymously, and GitHub refused some of the
+        # checkout's fetches that followed one another (#643 and #648 on the X3, 2026-11-15, "could not read
+        # Username": a 6 KB request answered 4.5 KB, where #646's same request had been answered 140 MB).
+        # blob:limit, not blob:none: with no blobs at all a checkout asks for every file in one batch, and
+        # GitHub answered such a request with HTTP 400 (#643 on the mini, 2026-11-15).
+        cache = os.path.join(self.a.scratch, "repos", self.repo.replace("/", "__") + ".git")
+        self.cache = cache
+        if not os.path.isdir(cache):
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            # not --bare: with per-worktree config a bare repo's worktrees inherit core.bare=true
+            sh(["git", "init", "-q", cache], self.run_dir, self.env, 60, check=True)
+            sh(["git", "-C", cache, "remote", "add", "origin", remote], self.run_dir, self.env, 60, check=True)
+            sh(["git", "-C", cache, "config", "extensions.worktreeConfig", "true"], self.run_dir, self.env, 60, check=True)
+        sh(["git", "-C", cache, "worktree", "prune"], self.run_dir, self.env, 60)  # a run that died left its worktree
+        # what an earlier run's code could have left in the shared cache: hooks, another origin, a URL rewrite
+        shutil.rmtree(os.path.join(cache, ".git", "hooks"), ignore_errors=True)
+        sh(["git", "-C", cache, "remote", "set-url", "origin", remote], self.run_dir, self.env, 60, check=True)
+        _, cfg = sh(["git", "-C", cache, "config", "--local", "--list"], self.run_dir, self.env, 60)
+        bad = [ln for ln in cfg.splitlines() if re.match(r"(url\.|core\.(hookspath|fsmonitor|sshcommand)|protocol\.)", ln, re.I)]
+        if bad:
+            raise Stop(f"the repo cache's config was changed ({'; '.join(bad)[:200]}): remove {cache} by hand")
+        sh(["git", "-C", cache, "fetch", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "origin", ref],
            self.run_dir, self.env, 1200, check=True)
+        sh(["git", "-C", cache, "worktree", "add", "-q", "--no-checkout", "--detach", self.wt, "FETCH_HEAD"],
+           self.run_dir, self.env, 120, check=True)
         if self.a.exclude_path:
             sh(["git", "-C", self.wt, "sparse-checkout", "set", "--no-cone", "/*"] + [f"!/{x.strip('/')}/" for x in self.a.exclude_path],
                self.run_dir, self.env, 60, check=True)
-        sh(["git", "-C", self.wt, "checkout", "-q", "--detach", "FETCH_HEAD"], self.run_dir, self.env, 1200, check=True)
+        sh(["git", "-C", self.wt, "checkout", "-q", "--detach", "HEAD"], self.run_dir, self.env, 1200, check=True)
         _, base = sh(["git", "-C", self.wt, "rev-parse", "HEAD"], self.run_dir, self.env, 30, check=True)
         self.base = base.strip()
         self.env["TRIAGE_BASE"] = self.base  # the leaves reset to it
@@ -477,14 +500,18 @@ def main(argv=None, environ=None):
     case = json.loads(environ["FLOTILLA_CASE"])
     run_dir = os.path.join(a.scratch, "runs", f"{case.get('id', 'case')}-{int(time.time())}")
     os.makedirs(run_dir)
+    chain = None
     try:
-        out = Chain(a, case, run_dir, environ).run()
+        chain = Chain(a, case, run_dir, environ)
+        out = chain.run()
     except Stop as e:
         out = {"outcome": "escalate", "detail": str(e)}
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
+        if chain is not None and getattr(chain, "cache", None):
+            sh(["git", "-C", chain.cache, "worktree", "prune"], a.scratch, environ, 60)
     with open(environ["FLOTILLA_PLAN_FILE"], "w") as f:
         json.dump(out, f)
     print(f"BUGFIX FIX case={case.get('id')} outcome={out['outcome']} {out.get('detail', '')}")
