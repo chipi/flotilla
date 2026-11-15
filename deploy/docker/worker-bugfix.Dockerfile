@@ -8,7 +8,8 @@ FROM node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 git jq procps ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
- && groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker
+ && groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker \
+ && install -d -o 10001 -g 10001 /scratch   # an empty scratch volume takes this owner
 # pi, the harness the bake-off measured (BAKEOFF.md §8), at the version installed on the mini; its
 # npm-shrinkwrap.json pins what it pulls. No install scripts run.
 RUN npm install -g --ignore-scripts --no-fund --no-audit @earendil-works/pi-coding-agent@0.80.10 \

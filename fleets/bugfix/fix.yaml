@@ -15,6 +15,7 @@ run:
   command: >-
     python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model bugfix-flash
     --advisor-model bugfix-reviewer --reviewer-model bugfix-reviewer
+    --exclude-path static/images --exclude-path static/audio --exclude-path masters
   workdir: .
   timeout: 3h
 autonomy: shadow

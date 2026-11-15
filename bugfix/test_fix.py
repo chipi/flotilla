@@ -26,7 +26,8 @@ TRIAGE = POP + textwrap.dedent('''\
     BUG_JSON="$1"; EV="${3:-}"; PRIOR="${4:-}"
     ID=$(jq -r .id "$BUG_JSON")
     V=$(pop verdicts)
-    echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER" >> "$FAKE_STATE/calls"
+    IMG=no; [ -e "$BAKEOFF_WT/static/images/x.png" ] && IMG=yes
+    echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER img=$IMG" >> "$FAKE_STATE/calls"
     KB=0; [ -n "$EV" ] && KB=$(( $(jq -r '.kickback_round // 0' "$PRIOR") + 1 ))
     SUF=""; [ "$KB" -gt 0 ] && SUF="-kb$KB"
     OUT="$BAKEOFF_ROOT/results/${ID}-triage${SUF}/pi"; mkdir -p "$OUT"
@@ -108,7 +109,9 @@ class Fixture:
         # the remote: chipi/orrery with one passing test and one already red on main
         src = os.path.join(self.d, "src")
         os.makedirs(os.path.join(src, "src"))
-        for rel, text in (("src/a.js", "module.exports = () => 1;\n"), ("old.test.js", "fine\n"), ("red.test.js", "FAIL\n")):
+        os.makedirs(os.path.join(src, "static", "images"))
+        for rel, text in (("src/a.js", "module.exports = () => 1;\n"), ("old.test.js", "fine\n"), ("red.test.js", "FAIL\n"),
+                          ("static/images/x.png", "a big image\n")):
             with open(os.path.join(src, rel), "w") as f:
                 f.write(text)
         git("init", "-q", "-b", "main", cwd=src)
@@ -117,8 +120,9 @@ class Fixture:
         remote = os.path.join(self.d, "remotes", "chipi", "orrery")
         os.makedirs(os.path.dirname(remote))
         git("clone", "-q", "--bare", src, remote, cwd=self.d)
+        git("config", "uploadpack.allowfilter", "true", cwd=remote)  # GitHub allows --filter; a local bare repo must be told
         self.base = subprocess.run(["git", "-C", remote, "rev-parse", "main"], capture_output=True, text=True).stdout.strip()
-        self.bakeoff, self.remotes = b, os.path.join(self.d, "remotes")
+        self.bakeoff, self.remotes = b, "file://" + os.path.join(self.d, "remotes")  # file://: --depth and --filter work
         self.scratch = os.path.join(self.d, "scratch")
 
     def run(self, *extra):
@@ -168,7 +172,19 @@ class Chain(unittest.TestCase):
         self.assertIn("VERDICT: approve", p["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "review"])
         self.assertEqual(os.listdir(os.path.join(f.scratch, "runs")), [], "the run's directory is deleted")
-        self.assertTrue(os.path.isdir(os.path.join(f.scratch, "mirror", "chipi__orrery.git")), "the mirror stays")
+
+    def test_excluded_paths_are_not_checked_out_and_not_in_the_diff(self):
+        """orrery's images are left out of the checkout (--exclude-path); their absence is not a deletion."""
+        f = self.fixture(["actionable"], ["good"])
+        plan, _ = f.run("--exclude-path", "static/images")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertNotIn("static/images", plan["params"]["diff"])
+        with open(os.path.join(f.state, "calls")) as fh:
+            self.assertIn("img=no", fh.read())
+        g = self.fixture(["needs-info"], [])
+        g.run()
+        with open(os.path.join(g.state, "calls")) as fh:
+            self.assertIn("img=yes", fh.read(), "without --exclude-path the whole tree is checked out")
 
     def test_not_actionable_escalates_with_the_reason(self):
         f = self.fixture(["needs-info"], [])

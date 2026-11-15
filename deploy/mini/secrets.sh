@@ -69,6 +69,15 @@ if [ -s "$FLOTILLA_CONFIG/worker-bugfix.token" ]; then
   put $V-worker-bugfix-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-bugfix.token"
   put $V-worker-bugfix-secrets model.key 10001 "$FLOTILLA_CONFIG/bugfix-model.key"
 fi
+# the bugfix pusher, where its token exists; the GitHub App's key once the operator has made the App
+# (without it bugfix/open-pr escalates)
+if [ -s "$FLOTILLA_CONFIG/worker-bugfix-act.token" ]; then
+  put $V-flotillad-secrets worker-bugfix-act.token 65532 "$FLOTILLA_CONFIG/worker-bugfix-act.token"
+  put $V-worker-bugfix-act-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-bugfix-act.token"
+  if [ -s "$FLOTILLA_CONFIG/bugfix-github-app.pem" ]; then
+    put $V-worker-bugfix-act-secrets github-app.pem 10001 "$FLOTILLA_CONFIG/bugfix-github-app.pem"
+  fi
+fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"

@@ -62,6 +62,7 @@ services:
       worker-ops-read: {condition: service_healthy, required: false}
       worker-ops-act-host: {condition: service_healthy, required: false}
       worker-bugfix: {condition: service_healthy, required: false}
+      worker-bugfix-act: {condition: service_healthy, required: false}
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
@@ -220,6 +221,34 @@ services:
     healthcheck: *ops-health
     networks: [flotilla]
 
+  # The bugfix fleet's pusher (profile bugfix): bugfix/open-pr, after a person approved a PR plan. It
+  # holds the GitHub App's key (/run/flotilla/github-app.pem) and nothing else: no model key, and it
+  # runs no repo code (it fetches the base without a checkout and applies the diff to the index). The
+  # App's ids are not secrets: BUGFIX_GITHUB_APP_ID and BUGFIX_GITHUB_APP_INSTALLATION_ID in
+  # FLOTILLA_HOME/.env. Without them open-pr escalates, and the plan can be applied by hand.
+  worker-bugfix-act:
+    <<: *hardening
+    profiles: [bugfix]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG}
+    container_name: flotilla-worker-bugfix-act
+    mem_limit: 512m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=256m", "/home/worker:size=16m,uid=10001,gid=10001,mode=0700"]
+    environment:
+      FLOTILLA_WORKER: bugfix-act
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_NO_PROXY: flotillad
+      ROUTINE_GITHUB_APP_ID: ${BUGFIX_GITHUB_APP_ID:-}
+      ROUTINE_GITHUB_APP_INSTALLATION_ID: ${BUGFIX_GITHUB_APP_INSTALLATION_ID:-}
+      ROUTINE_GITHUB_APP_KEY_FILE: /run/flotilla/github-app.pem
+    volumes:
+      - worker-bugfix-act-secrets:/run/flotilla:ro
+    healthcheck: *ops-health
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -262,6 +291,9 @@ volumes:
     external: true
   bugfix-scratch:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-bugfix-scratch
+  worker-bugfix-act-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-bugfix-act-secrets
+    external: true
   # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
   triage-candidate-state:
     name: ${TRIAGE_CANDIDATE_STATE_VOLUME:-flotilla-triage-state-candidate}
