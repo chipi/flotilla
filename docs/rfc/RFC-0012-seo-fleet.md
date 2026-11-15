@@ -2,8 +2,8 @@
 
 **Status:** Accepted (operator, 2026-11-15: fleet `seo` with worker `marketing`; Search Console
 through a service account, the token signed with `openssl`; a view-only Umami user; the starting
-thresholds as proposed; the Search section weekly; the scope is the operator's production Orrery
-properties). Step 5 of the [vision plan](../wip/vision-plan.md).
+thresholds as proposed; the Search section weekly; the scope is the operator's 5 websites, more to come:
+§1a). Step 5 of the [vision plan](../wip/vision-plan.md).
 **Builds on:** [RFC-0001](RFC-0001-fleet-platform.md) (fleets in one platform; the SEO fleet named
 there as RFC-0003, a number never used), [RFC-0004](RFC-0004-agent-pipeline.md) (detections, cases,
 plans, autonomy levels), [RFC-0009](RFC-0009-post-incident-review.md) (a detection's `measure`).
@@ -50,6 +50,24 @@ Credentials, each its own file in the worker's secrets volume, read by path:
 
 The egress proxy allows only: `www.orrerylearn.com`, `chipi.github.io` (the mirror's noindex check),
 the Umami host, and for Search Console `oauth2.googleapis.com` and `searchconsole.googleapis.com`.
+
+### 1a. The sites (operator, 2026-11-15)
+
+The scope is a list in the fleet's config, one entry per site: its base URL, its Search Console
+property, its Umami website id and the routes site-check samples. A new site is a new entry, plus
+its Umami website moved into `seo-read` and the service account added to its property.
+
+| Site | Search Console | Umami website |
+| --- | --- | --- |
+| `www.orrerylearn.com` (14 locales; the mirror `chipi.github.io/orrery` checked for `noindex`) | `sc-domain:orrerylearn.com` | Orrery |
+| `www.humancopilot.eu` and `evals.humancopilot.eu` | `sc-domain:humancopilot.eu` | humancopilot.eu, Eval Harness |
+| `www.devwhateverops.com` | `sc-domain:devwhateverops.com` | devwhateverops.com |
+| `www.markodragoljevic.com` (Format) | `sc-domain:markodragoljevic.com` | markodragoljevic.com |
+| `airandspacehistory.com` (Adobe Portfolio) | `sc-domain:airandspacehistory.com` | airandspacehistory.com |
+
+The two hosted photo sites are not built by the operator, so a finding there can only be a setting
+in Format or Adobe Portfolio, never a PR. The Orrery-specific checks (locales, hreflang, the
+mirror) apply where a site declares them.
 
 ### 2. The routines (v1)
 
@@ -150,3 +168,8 @@ locales a week is not.
   `team-view-only`). Logged in as that user, it read Orrery's 7-day stats (200); editing the
   website and reading another site's stats were refused (401). Its password is in
   `~/flotilla/marketing/umami.env` on the mini (mode 600).
+- 2026-11-15 — the scope widened to 5 sites (§1a). The service account
+  `flotilla-seo@flotilla-seo.iam.gserviceaccount.com` sees all 5 properties as a restricted user (a
+  token signed with `openssl` on the mini, then each property's top queries and sitemaps read). The
+  other 5 Umami websites moved into `seo-read`; `flotilla-seo` reads each one's stats and is refused
+  the Close Listening player's.
