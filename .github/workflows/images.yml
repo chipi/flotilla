@@ -14,6 +14,11 @@ on:
       - worker/**
       - runtime/**
       - signal-fleet/mvp/**
+      - ops/**
+      - bugfix/**
+      - bugfix-fleet/**
+      - seo/**
+      - host/**
       - deploy/**   # deploy.sh takes the compose file from the image tag's commit: a compose change needs images too
       - .github/workflows/images.yml
   workflow_dispatch:
