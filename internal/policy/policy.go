@@ -169,6 +169,8 @@ func Decide(p Plan, s State, lim Limits) Decision {
 				refusals = append(refusals, fmt.Sprintf("parameter %s is missing", name))
 			case prm.Kind == "target_host" && v != HostOf(s.CaseTarget):
 				refusals = append(refusals, fmt.Sprintf("parameter %s=%q is not the case's host %q: no retargeting", name, v, HostOf(s.CaseTarget)))
+			case prm.Kind == "text" && len([]rune(v)) > prm.Max:
+				refusals = append(refusals, fmt.Sprintf("parameter %s is over %d characters", name, prm.Max))
 			case prm.Kind == "enum" && !in(prm.Enum, v):
 				refusals = append(refusals, fmt.Sprintf("parameter %s=%q is not one of %v", name, v, prm.Enum))
 			}
@@ -199,6 +201,10 @@ func Decide(p Plan, s State, lim Limits) Decision {
 	if s.Action.Reversible == "no" {
 		caps = append(caps, spec.AutonomyPropose)
 		say("cannot be undone: at most propose")
+	}
+	if s.Action.Repo() {
+		caps = append(caps, spec.AutonomyPropose)
+		say("a change to the repo: at most propose, a person approves it")
 	}
 	if s.FailedHour >= lim.BreakerFailures {
 		caps = append(caps, spec.AutonomyPropose)

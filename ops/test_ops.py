@@ -86,6 +86,25 @@ class TestMonitor(unittest.TestCase):
         self.assertEqual(backup_monitor.detect(None, 20, "host:mini")[0]["title"], "No successful off-box backup on mini in 30 days")
 
 
+class TestMeasure(unittest.TestCase):
+    """What the monitor reports for the post-incident review (ADR-0016 §3)."""
+
+    def test_cycle_is_the_median_gap(self):
+        day = 86400
+        # the mini's 14 days of 2026-11-15, near enough: daily, one 23.8 h and one 24.2 h
+        times = [i * day for i in range(12)] + [12 * day - 720, 13 * day]
+        self.assertAlmostEqual(common.cycle_hours(times + times), 24.0, places=1)
+        self.assertIsNone(common.cycle_hours([0, day]), "two successes are not a cycle")
+
+    def test_detection_carries_the_measure(self):
+        a = common.action(common.RERUN)
+        m = backup_monitor.measure(25.4, 25, 24.02, "shadow", a)["measure"]
+        self.assertEqual((m["value"], m["threshold"], m["cycle_hours"], m["source"]["key"]), (25.4, 25, 24.02, "pre_shadow"))
+        self.assertEqual(backup_monitor.measure(27.0, 26, None, "propose", a)["measure"]["source"]["key"], "pre")
+        d = backup_monitor.detect(25.4, 25, "host:mini", {"measure": m})
+        self.assertEqual(d[0]["data"]["measure"]["value"], 25.4)
+
+
 class TestDecide(unittest.TestCase):
     def setUp(self):
         self.a = common.action(common.RERUN)

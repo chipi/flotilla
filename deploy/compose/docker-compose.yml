@@ -155,6 +155,9 @@ services:
       ROUTINE_HTTP_PROXY: http://egress:4750
       ROUTINE_HTTPS_PROXY: http://egress:4750
       ROUTINE_NO_PROXY: flotillad
+      # ops/case-review reads cases on flotillad's worker listener with this worker's token (ADR-0016)
+      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
+      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
     volumes:
       - worker-ops-read-secrets:/run/flotilla:ro
     healthcheck: &ops-health

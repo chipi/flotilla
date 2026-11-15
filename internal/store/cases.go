@@ -35,6 +35,9 @@ type NewCase struct {
 	Urgency   int
 	Keys      []Key
 	Canonical Key // one of Keys: "one open case per canonical key"
+	// Data is the detection's structured data as JSON (a measure, a proposal: ADR-0016), kept on the
+	// case.detected event and on each later detection's event.
+	Data string
 }
 
 type Case struct {
@@ -65,6 +68,7 @@ type CaseEvent struct {
 	From   string `json:"from,omitempty"`
 	To     string `json:"to,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	Data   string `json:"data,omitempty"` // JSON, when the event carries structured data (ADR-0016)
 }
 
 func newCaseID(day string) (string, error) {
@@ -107,7 +111,7 @@ func (s *Store) OpenCase(ctx context.Context, n NewCase, actor, detail string) (
 	err = tx.QueryRowContext(ctx, `SELECT id FROM cases WHERE canonical_key = ? AND status <> ?`, ck, cases.Closed).Scan(&id)
 	switch {
 	case err == nil:
-		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "signal.attached", Actor: actor, Detail: detail}); err != nil {
+		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "signal.attached", Actor: actor, Detail: detail, Data: n.Data}); err != nil {
 			return "", false, err
 		}
 		return id, false, tx.Commit()
@@ -136,7 +140,7 @@ func insertCase(ctx context.Context, tx *sql.Tx, n NewCase, now time.Time, actor
 			return "", err
 		}
 	}
-	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case.detected", Actor: actor, To: cases.Detected, Detail: detail}); err != nil {
+	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "case.detected", Actor: actor, To: cases.Detected, Detail: detail, Data: n.Data}); err != nil {
 		return "", err
 	}
 	return id, linkRecurrence(ctx, tx, id, n, now)
@@ -273,8 +277,8 @@ func (s *Store) AddCaseEvent(ctx context.Context, id, kind, actor, detail string
 }
 
 func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO case_events (case_id, at, kind, actor, by_role, from_status, to_status, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, e.CaseID, e.At, e.Kind, e.Actor, e.By, e.From, e.To, e.Detail)
+	_, err := tx.ExecContext(ctx, `INSERT INTO case_events (case_id, at, kind, actor, by_role, from_status, to_status, detail, data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, e.CaseID, e.At, e.Kind, e.Actor, e.By, e.From, e.To, e.Detail, e.Data)
 	return err
 }
 
@@ -362,7 +366,7 @@ func (s *Store) Cases(ctx context.Context, f CaseFilter) ([]Case, error) {
 
 // CaseEvents is a case's timeline, oldest first.
 func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data
 		FROM case_events WHERE case_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return nil, err
@@ -371,7 +375,7 @@ func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) 
 	var out []CaseEvent
 	for rows.Next() {
 		var e CaseEvent
-		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail); err != nil {
+		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail, &e.Data); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

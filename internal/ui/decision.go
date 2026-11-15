@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"github.com/chipi/flotilla/internal/registry"
 	"sort"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ type decision struct {
 	CLIWhy, CLICommand                  string
 	SelfPage                            bool
 	ActionName                          string
+	Change                              string // a repo change's diff, shown as written (ADR-0016)
 }
 
 // decisionFor is the box for a case awaiting approval; ok is false when it has no plan.
@@ -51,6 +53,10 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	d.Action = p.Action + "(" + strings.Join(args, ", ") + ")"
 	d.On = c.Target
 	d.Command = u.hostCommand(ctx, hostOf(c.Target), p.Action)
+	if a, ok := registryAction(u, p.Action); ok && a.Repo() {
+		d.Action, d.Change = p.Action+" on "+p.Params["file"], p.Params["change"]
+		d.Command = "nothing runs by itself: once you approve, apply the change and record its commit on the case"
+	}
 	d.Title = c.Title
 	d.Risk, d.Reversible, d.Channel = "unknown", "not declared", "here or the CLI"
 	if u.API.Registry != nil {
@@ -76,6 +82,9 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	}
 	if d.After == "" {
 		d.After = "flotillad signs the plan and the host agent on " + hostOf(c.Target) + " runs it once."
+	}
+	if d.Change != "" {
+		d.After = "Approving records your yes. You apply the change, it goes through review, CI and deploy, and you record the commit here; until step 4 no PR is opened for you."
 	}
 	if ok, _ := u.API.SlackApprovable(p.Action); !d.CLI && ok && u.API.Slack != nil {
 		d.Channel = "here, the CLI or Slack"
@@ -149,4 +158,11 @@ func words(d time.Duration) string {
 		parts = append(parts, plural(m, "minute", "minutes"))
 	}
 	return strings.Join(parts, " ")
+}
+
+func registryAction(u *Server, name string) (registry.Action, bool) {
+	if u.API.Registry == nil {
+		return registry.Action{}, false
+	}
+	return u.API.Registry.Action(name)
 }

@@ -57,11 +57,26 @@ type Dispatcher struct {
 
 // The run's view of its case: FLOTILLA_CASE.
 type caseJSON struct {
-	ID      string      `json:"id"`
-	Kind    string      `json:"kind"`
-	Target  string      `json:"target"`
-	Project string      `json:"project"`
-	Keys    []store.Key `json:"keys"`
+	ID      string          `json:"id"`
+	Kind    string          `json:"kind"`
+	Target  string          `json:"target"`
+	Project string          `json:"project"`
+	Keys    []store.Key     `json:"keys"`
+	Data    json.RawMessage `json:"data,omitempty"` // the opening detection's data (ADR-0016)
+}
+
+// openingData is the data its first detection gave the case, for its routines.
+func (d *Dispatcher) openingData(ctx context.Context, id string) json.RawMessage {
+	evs, err := d.API.Store.CaseEvents(ctx, id)
+	if err != nil {
+		return nil
+	}
+	for _, e := range evs {
+		if e.Kind == "case.detected" && e.Data != "" {
+			return json.RawMessage(e.Data)
+		}
+	}
+	return nil
 }
 
 // Decision is a run's plan file.
@@ -313,7 +328,8 @@ func (d *Dispatcher) check(ctx context.Context, c store.Case, j *spec.Routine, c
 		return err
 	}
 	since, _ := time.Parse(time.RFC3339Nano, c.StatusAt)
-	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys})
+	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys,
+		Data: d.openingData(ctx, full.ID)})
 	kj, _ := json.Marshal(checkJSON{Verify: chk.Verify, Action: p.Action, Params: p.Params, Since: c.StatusAt,
 		Deadline: since.Add(time.Duration(chk.Within)).UTC().Format(time.RFC3339)})
 	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "check", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj), "FLOTILLA_CHECK": string(kj)})
@@ -385,7 +401,8 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	if err != nil {
 		return err
 	}
-	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys})
+	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys,
+		Data: d.openingData(ctx, full.ID)})
 	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "case", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj)})
 	if err != nil {
 		return d.noDecision(ctx, c.ID, j.ID(), "the run did not start: "+err.Error())
@@ -441,9 +458,27 @@ type Detection struct {
 	// Title is the problem in one sentence, for people (G3): "The newest offsite backup on mini is 27
 	// hours old". Optional; cut to one line of maxTitle runes.
 	Title string `json:"title,omitempty"`
+	// Data is structured: a measure ({name, value, threshold, cycle}) or a proposal (ADR-0016). A JSON
+	// object of at most maxData bytes; anything else is dropped and logged.
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 const maxTitle = 200
+
+const maxData = 8192
+
+// detectionData is a detection's data as stored: a JSON object within maxData, else "".
+func detectionData(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 {
+		return "", true
+	}
+	var obj map[string]any
+	if len(raw) > maxData || json.Unmarshal(raw, &obj) != nil {
+		return "", false
+	}
+	b, _ := json.Marshal(obj)
+	return string(b), true
+}
 
 // oneLine keeps a title to one line of at most maxTitle runes.
 func oneLine(s string) string {
@@ -496,8 +531,13 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 		k := store.Key{Kind: "target", Value: x.Kind + "/" + x.Target}
 		present[k.String()] = true
 		detail := strings.TrimSpace("run " + r.ID + ": " + x.Detail)
+		data, ok := detectionData(x.Data)
+		if !ok {
+			d.Log.Error("detection data dropped", "routine", j.ID(), "run_id", r.ID, "kind", x.Kind,
+				"why", fmt.Sprintf("not a JSON object of at most %d bytes", maxData))
+		}
 		id, how, err := d.API.Store.DetectIncident(ctx, store.NewCase{Title: oneLine(x.Title), Kind: x.Kind, Target: x.Target, Project: j.Fleet,
-			Keys: []store.Key{k}, Canonical: k}, j.ID(), detail)
+			Keys: []store.Key{k}, Canonical: k, Data: data}, j.ID(), detail)
 		if err != nil {
 			d.Log.Error("open case", "routine", j.ID(), "kind", x.Kind, "target", x.Target, "err", err)
 			continue

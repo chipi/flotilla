@@ -146,7 +146,7 @@ type CaseEnds struct {
 
 // CaseEventEnds returns every case's first and newest events.
 func (s *Store) CaseEventEnds(ctx context.Context) (map[string]CaseEnds, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail FROM case_events
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data FROM case_events
 		WHERE seq IN (SELECT MIN(seq) FROM case_events GROUP BY case_id) OR seq IN (SELECT MAX(seq) FROM case_events GROUP BY case_id)
 		ORDER BY seq`)
 	if err != nil {
@@ -156,7 +156,7 @@ func (s *Store) CaseEventEnds(ctx context.Context) (map[string]CaseEnds, error) 
 	out := map[string]CaseEnds{}
 	for rows.Next() {
 		var e CaseEvent
-		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail); err != nil {
+		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail, &e.Data); err != nil {
 			return nil, err
 		}
 		c, seen := out[e.CaseID]
@@ -171,7 +171,7 @@ func (s *Store) CaseEventEnds(ctx context.Context) (map[string]CaseEnds, error) 
 
 // CaseEventsSince returns every case's events since a time, newest first, at most limit.
 func (s *Store) CaseEventsSince(ctx context.Context, since string, limit int) ([]CaseEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data
 		FROM case_events WHERE at >= ? ORDER BY seq DESC LIMIT ?`, since, limit)
 	if err != nil {
 		return nil, err
@@ -180,7 +180,7 @@ func (s *Store) CaseEventsSince(ctx context.Context, since string, limit int) ([
 	var out []CaseEvent
 	for rows.Next() {
 		var e CaseEvent
-		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail); err != nil {
+		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail, &e.Data); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

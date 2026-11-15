@@ -1,0 +1,19 @@
+fleet: ops
+routine: process-change
+description: >-
+  The acting routine for process_change cases (ADR-0016): re-checks the proposal against the repo
+  files of its image and plans repo.process_change with the change as a diff, or closes the case when
+  the change is already made. Policy caps a repo change at propose: a person approves it, applies it
+  and records the commit.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: process_change}
+run:
+  command: python3 /opt/flotilla/ops/process_change.py
+  workdir: .
+  timeout: 1m
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0

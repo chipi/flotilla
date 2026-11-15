@@ -29,6 +29,21 @@ and nothing in flotilla said so. After a case closes, a review should say what t
    the repo gets a note naming the key and the value, not a `process_change` (Q2).
 6. **The record:** `process_change` plans count on Autonomy; a rejected one keeps its reason, and the
    same rule on the same kind and target proposes nothing for 30 days unless its evidence changes.
+7. **A process change is a real plan** (operator, 2026-11-15, while building: "full plan now").
+   - The registry gains `executor: repo` actions: no host preconditions or check, a `text` param kind
+     (bounded, bound by the plan's hash), and never above propose (`Action.MaxAutonomy`, and policy
+     caps it).
+   - `repo.process_change` is the first. `ops/process-change` re-checks a proposal against the repo
+     files of its image and plans it with the change as a diff, which Approvals and the case page
+     show.
+   - flotillad sends nothing to a host for a `repo:` target. Once approved, the operator applies the
+     change and records its commit on the case (`RecordApplied`), which closes it as verified, the one
+     close a person may make from `executing`.
+   - `ops/case-review` reads cases on flotillad's worker listener with the ops-read worker's own token
+     (`case-read`, `note-propose`); monitors put their measure on the case's timeline as structured
+     data (schema step 20).
+   - `repo.process_change` starts at shadow like every action: promote it to propose on Autonomy to
+     have its plans wait for you.
 
 ## Consequences
 

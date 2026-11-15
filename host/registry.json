@@ -12,6 +12,22 @@
       "check": {"verify": "backup_newer_than_execution", "within": "60m"},
       "limits": {"per_target_per_day": 2},
       "timeout": "30m"
+    },
+    {
+      "name": "repo.process_change",
+      "executor": "repo",
+      "for_kinds": ["process_change"],
+      "params": {
+        "file": {"kind": "enum", "enum": ["host/registry.json", "none"]},
+        "rule": {"kind": "enum", "enum": ["below_cycle", "self_clearing", "fix_not_holding"]},
+        "change": {"kind": "text", "max": 4000}
+      },
+      "risk": "low",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "", "within": "0s"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "168h"
     }
   ]
 }

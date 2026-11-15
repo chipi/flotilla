@@ -34,6 +34,13 @@
           </div>
         </li>{{end}}
       </ol>
+      {{if .CanApply}}<form class="confirm" method="post" action="/cases/{{$c.ID}}/applied">
+        {{template "csrf" $csrf}}
+        <strong>Applied the change?</strong>
+        <p>Make the change from the plan above, merge it, then record its commit here: the case closes as verified.</p>
+        <label class="field field--strong">Commit<input name="commit" required pattern="[0-9a-fA-F]{7,40}" spellcheck="false" placeholder="1dd224c"></label>
+        <div class="actions"><button class="btn btn--blue" type="submit">Record the commit</button></div>
+      </form>{{end}}
       {{if .CanFix}}<div class="actions">
         <details class="decision__rejectwrap">
           <summary class="btn btn--small">Hand back to its routine…</summary>
@@ -66,6 +73,7 @@
         {{range .Levels}}<div class="kv kv--tight"><span>{{.What}}</span><span class="level-text level-text--{{.Level}}">{{.Level}}</span></div>{{end}}
         <p class="panel-note">Plan <span class="exact">{{hash .Plan.PlanHash}}</span>, decided {{.Decided}}. Policy's result: <strong>{{.Result}}</strong>. Every reason is kept with the plan:</p>
         <ul class="changes">{{range .Plan.Reasons}}<li><span>{{.}}</span></li>{{end}}</ul>
+        {{with index .Plan.Params "change"}}<p class="panel-note">The change it proposes:</p><pre class="log">{{.}}</pre>{{end}}
         {{if .Record}}<a href="/autonomy">{{.Record}}</a>{{end}}
         {{else}}
         <p class="panel-note">No plan yet: policy has not decided anything on this case.</p>

@@ -48,6 +48,8 @@ type move struct{ from, to string }
 var table = map[move]struct {
 	by          []string
 	resolutions []string
+	// only, when set, pins a role to the resolutions it alone may close with
+	only map[string][]string
 }{
 	{Detected, Diagnosed}:         {by: []string{ByDiagnose}},
 	{Detected, HandedOver}:        {by: []string{ByDetector}},
@@ -65,12 +67,15 @@ var table = map[move]struct {
 	{AwaitingApproval, Executing}: {by: []string{ByOperator}},
 	{AwaitingApproval, Escalated}: {by: []string{ByOperator, ByTimer}},
 	{Executing, Checking}:         {by: []string{ByAct}},
-	{Executing, Closed}:           {by: []string{ByAct}, resolutions: []string{ResolvedItself}},
-	{Executing, Escalated}:        {by: []string{ByAct, ByTimer}},
-	{Checking, Closed}:            {by: []string{ByCheck}, resolutions: []string{Verified}},
-	{Checking, Escalated}:         {by: []string{ByCheck, ByTimer}},
-	{Escalated, HandedOver}:       {by: []string{ByOperator}},
-	{Escalated, Closed}:           {by: []string{ByOperator, BySync}, resolutions: []string{OperatorResolved, IssueResolved}},
+	// a person closes a repo change they applied by hand as verified (ADR-0016); the acting job still
+	// closes only as resolved itself
+	{Executing, Closed}: {by: []string{ByAct, ByOperator}, resolutions: []string{ResolvedItself, Verified},
+		only: map[string][]string{ByAct: {ResolvedItself}, ByOperator: {Verified}}},
+	{Executing, Escalated}:  {by: []string{ByAct, ByTimer}},
+	{Checking, Closed}:      {by: []string{ByCheck}, resolutions: []string{Verified}},
+	{Checking, Escalated}:   {by: []string{ByCheck, ByTimer}},
+	{Escalated, HandedOver}: {by: []string{ByOperator}},
+	{Escalated, Closed}:     {by: []string{ByOperator, BySync}, resolutions: []string{OperatorResolved, IssueResolved}},
 }
 
 // Statuses lists every status, in lifecycle order.
@@ -89,6 +94,9 @@ func Check(from, to, by, resolution string) error {
 	if to == Closed {
 		if !contains(m.resolutions, resolution) {
 			return fmt.Errorf("closing from %s needs one of %v, not %q", from, m.resolutions, resolution)
+		}
+		if only, ok := m.only[by]; ok && !contains(only, resolution) {
+			return fmt.Errorf("%s closes a case from %s only as %v, not %q", by, from, only, resolution)
 		}
 	} else if resolution != "" {
 		return fmt.Errorf("only a close carries a resolution")

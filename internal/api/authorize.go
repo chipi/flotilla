@@ -26,6 +26,7 @@ const (
 	ActFeedback    Action = "feedback"     // a verdict on a case's diagnosis, or a note proposed from it (G8)
 	ActNotes       Action = "notes"        // activate or drop a note agents will read
 	ActNotePropose Action = "note-propose" // propose a note from a case; a person still activates it (RFC-0008 Q4)
+	ActCaseRead    Action = "case-read"    // a worker's routine reads cases (ops/case-review, ADR-0016)
 )
 
 // Roles of people (ADR-0014); callers keep RoleAgent, RoleOperator (the callers file's) and RoleWorker.
@@ -56,7 +57,8 @@ var may = map[Action]map[string]bool{
 	ActApprove:     {RoleOperator: true, RoleAdmin: true},
 	ActFeedback:    {RoleOperator: true, RoleAdmin: true},
 	ActNotes:       {RoleOperator: true, RoleAdmin: true},
-	ActNotePropose: {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
+	ActNotePropose: {RoleAgent: true, RoleWorker: true, RoleOperator: true, RoleAdmin: true},
+	ActCaseRead:    {RoleWorker: true},
 }
 
 // Authorize reports whether a caller holding role may do action.

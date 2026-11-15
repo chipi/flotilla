@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/chipi/flotilla/internal/store"
@@ -52,6 +53,14 @@ func (s *Server) ProposeNote(ctx context.Context, c Caller, via, caseID, text st
 		return 0, err
 	}
 	id, err := s.Store.ProposeNote(ctx, "kind:"+cs.Kind, text, caseID, strings.TrimPrefix(c.Name, "user:"))
+	if err == nil {
+		// on the case's timeline too, so the case shows it and a review routine sees what it proposed
+		short := []rune(text)
+		if len(short) > 120 {
+			short = append(short[:120], '…')
+		}
+		_ = s.Store.AddCaseEvent(ctx, caseID, "note.proposed", c.Name, fmt.Sprintf("note %d: %s", id, string(short)))
+	}
 	if err != nil {
 		return 0, err
 	}

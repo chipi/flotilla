@@ -44,7 +44,7 @@ func (s *Store) DetectIncident(ctx context.Context, n NewCase, actor, detail str
 	err = tx.QueryRowContext(ctx, `SELECT id FROM cases WHERE canonical_key = ? AND status <> ?`, ck, cases.Closed).Scan(&id)
 	switch {
 	case err == nil:
-		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "signal.attached", Actor: actor, Detail: detail}); err != nil {
+		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "signal.attached", Actor: actor, Detail: detail, Data: n.Data}); err != nil {
 			return "", "", err
 		}
 		return id, Attached, tx.Commit()
@@ -56,7 +56,7 @@ func (s *Store) DetectIncident(ctx context.Context, n NewCase, actor, detail str
 		ORDER BY c.opened_at DESC LIMIT 1`, ck, cases.ShadowPlan, incidentCleared).Scan(&id)
 	switch {
 	case err == nil:
-		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: signalAbsorbed, Actor: actor, Detail: detail}); err != nil {
+		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: signalAbsorbed, Actor: actor, Detail: detail, Data: n.Data}); err != nil {
 			return "", "", err
 		}
 		return id, Absorbed, tx.Commit()

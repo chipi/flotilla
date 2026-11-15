@@ -11,6 +11,8 @@ Environment (from the worker: ROUTINE_<KEY> reaches a run as <KEY>):
 import json
 import os
 import re
+import statistics
+import time
 import urllib.parse
 import urllib.request
 
@@ -62,6 +64,34 @@ def backup_age_hours():
 def backup_last_success():
     """When the mini's off-box backup last succeeded (Unix seconds), or None when it has not in 30 days."""
     return query(f'max(last_over_time(homelab_backup_offsite_last_success_timestamp{{instance="{_instance()}"}}[30d]))')
+
+
+def query_range(expr, start, end, step, timeout=30):
+    """A range query: every (time, value) of every series, flattened."""
+    url = env("VM_URL").rstrip("/") + "/api/v1/query_range"
+    body = urllib.parse.urlencode({"query": expr, "start": int(start), "end": int(end), "step": step}).encode()
+    with urllib.request.urlopen(urllib.request.Request(url, data=body, method="POST"), timeout=timeout) as r:
+        out = json.load(r)
+    if out.get("status") != "success":
+        raise RuntimeError(f"VictoriaMetrics: {out}")
+    return [(float(t), float(v)) for s in out["data"]["result"] for t, v in s["values"]]
+
+
+def cycle_hours(successes):
+    """The source's normal cycle (ADR-0016 Q4): the median gap between distinct success times, in hours;
+    None with fewer than three successes."""
+    times = sorted(set(successes))
+    if len(times) < 3:
+        return None
+    return statistics.median(b - a for a, b in zip(times, times[1:])) / 3600
+
+
+def backup_cycle_hours(days=14, now=None):
+    """How often the off-box backup succeeds: the median interval between its successes over `days`."""
+    now = time.time() if now is None else now
+    pts = query_range(f'max(homelab_backup_offsite_last_success_timestamp{{instance="{_instance()}"}})',
+                      now - days * 86400, now, "30m")
+    return cycle_hours([v for _, v in pts])
 
 
 def action(name, path=REGISTRY):

@@ -60,6 +60,11 @@ tested.
 
 ### 3. Post-incident review (Ops)
 
+**Built 2026-11-15** ([ADR-0016](../adr/ADR-0016-post-incident-review.md)): `ops/case-review` with
+the five rules, monitors' measures, `process_change` as a real plan (`repo.process_change`), applied
+by hand with its commit recorded. The done check passes on the frozen first shadow case (25 h, with
+its evidence). Left: deployed, and `repo.process_change` promoted to propose.
+
 The operator, 2026-11-15: after a case closes, a review looks at what happened and what to learn, as
 a post-mortem would. Found by the first shadow case (`case-20261114-6983646f65`): the chain was right
 within its preconditions, but the check itself was wrong (a 20 h threshold on a backup that runs

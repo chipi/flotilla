@@ -155,14 +155,19 @@ func (s *Server) Handler() http.Handler {
 	return m
 }
 
-// WorkerHandler serves the workers' listener (flotillad's worker_listen): the ledger and /healthz, and
-// nothing else, so the full API can stay on loopback while a worker's routine reaches its ledger.
+// WorkerHandler serves the workers' listener (flotillad's worker_listen): the ledger, /healthz, the cases
+// a review routine reads and the notes it proposes (ADR-0016), and nothing else, so the full API can stay
+// on loopback while a worker's routine reaches what it needs.
 func (s *Server) WorkerHandler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "version": s.Version})
 	})
 	s.ledgerRoutes(m)
+	// what a worker's review routine reads and proposes (ADR-0016): cases, read only, and notes
+	m.Handle("GET /v1/cases", s.auth(ActCaseRead, s.cases))
+	m.Handle("GET /v1/cases/{id}", s.auth(ActCaseRead, s.caseShow))
+	m.Handle("POST /v1/cases/{id}/notes", s.auth(ActNotePropose, s.caseNote))
 	return m
 }
 
@@ -319,7 +324,12 @@ func (s *Server) caseShow(w http.ResponseWriter, r *http.Request, _ Caller) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"case": c, "events": ev})
+	plans, err := s.Store.Plans(r.Context(), c.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"case": c, "events": ev, "plans": plans})
 }
 
 func routineID(r *http.Request) string { return r.PathValue("fleet") + "/" + r.PathValue("routine") }

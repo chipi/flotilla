@@ -27,25 +27,47 @@ def host_of(target):
     return target.split(":", 1)[-1].split("/", 1)[0]
 
 
-def detect(age, limit, target):
+def measure(age, limit, cycle, stage, a):
+    """What the detection measured (ADR-0016 §3), for the post-incident review: the value, the threshold,
+    the source's normal cycle, and which declaration the threshold came from."""
+    key = "pre_shadow" if stage == "shadow" and a.get("pre_shadow") else "pre"
+    return {"measure": {"name": "backup_age_hours", "value": None if age is None else round(age, 2), "threshold": limit,
+                        "cycle_hours": None if cycle is None else round(cycle, 2),
+                        "source": {"file": "host/registry.json", "action": a["name"], "key": key,
+                                   "condition": "backup_age_above"}}}
+
+
+def detect(age, limit, target, data=None):
+    found = []
     if age is None:
-        return [{"kind": "failed_backup", "target": target, "detail": "no successful off-box backup in 30 days",
-                 "title": f"No successful off-box backup on {host_of(target)} in 30 days"}]
-    if age > limit:
-        return [{"kind": "failed_backup", "target": target, "detail": f"backup {age:.1f}h old, above {limit}h",
-                 "title": f"The newest offsite backup on {host_of(target)} is {age:.0f} hours old"}]
-    return []
+        found = [{"kind": "failed_backup", "target": target, "detail": "no successful off-box backup in 30 days",
+                  "title": f"No successful off-box backup on {host_of(target)} in 30 days"}]
+    elif age > limit:
+        found = [{"kind": "failed_backup", "target": target, "detail": f"backup {age:.1f}h old, above {limit}h",
+                  "title": f"The newest offsite backup on {host_of(target)} is {age:.0f} hours old"}]
+    for d in found:
+        if data:
+            d["data"] = data
+    return found
 
 
 def main():
     target = common.env("BACKUP_TARGET")
     stage = os.environ.get("FLEETD_STAGE", "shadow")
-    limit = threshold_hours(common.action(common.RERUN), stage)
+    a = common.action(common.RERUN)
+    limit = threshold_hours(a, stage)
     age = common.backup_age_hours()
-    found = detect(age, limit, target)
+    cycle = None
+    if age is None or age > limit:
+        try:
+            cycle = common.backup_cycle_hours()
+        except Exception as e:  # the cycle is evidence for the review, never a reason to miss a detection
+            print(f"BACKUP MONITOR cycle unknown: {e}")
+    found = detect(age, limit, target, measure(age, limit, cycle, stage, a))
     common.report({"outcome": "detections", "detections": found})
     shown = "none" if age is None else f"{age:.1f}h"
-    print(f"BACKUP MONITOR age={shown} threshold={limit}h stage={stage} detections={len(found)}")
+    cyc = "-" if cycle is None else f"{cycle:.2f}h"
+    print(f"BACKUP MONITOR age={shown} threshold={limit}h cycle={cyc} stage={stage} detections={len(found)}")
 
 
 if __name__ == "__main__":

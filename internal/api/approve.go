@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/chipi/flotilla/internal/cases"
@@ -22,6 +24,8 @@ func (s *Server) caseRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/cases/{id}/approve", s.auth(ActApprove, s.caseApprove))
 	m.Handle("POST /v1/cases/{id}/reject", s.auth(ActApprove, s.caseReject))
 	m.Handle("POST /v1/cases/{id}/close", s.auth(ActApprove, s.caseClose))
+	m.Handle("POST /v1/cases/{id}/applied", s.auth(ActApprove, s.caseApplied))
+	m.Handle("POST /v1/cases/{id}/notes", s.auth(ActNotePropose, s.caseNote))
 	m.Handle("POST /v1/cases/{id}/reassign", s.auth(ActApprove, s.caseReassign))
 }
 
@@ -189,4 +193,64 @@ func (s *Server) caseClose(w http.ResponseWriter, r *http.Request, c Caller) {
 func (s *Server) caseReassign(w http.ResponseWriter, r *http.Request, c Caller) {
 	err := s.ReassignCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
 	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "reassigned_by": c.Name})
+}
+
+var commitRe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+
+// RecordApplied closes an approved repo change that a person applied by hand as verified, naming the
+// commit (ADR-0016: until step 4 opens PRs). Only a repo action's case, only while it is executing.
+func (s *Server) RecordApplied(ctx context.Context, c Caller, via, id, commit string) error {
+	if err := s.Check(ctx, c, ActApprove); err != nil {
+		return err
+	}
+	commit = strings.ToLower(strings.TrimSpace(commit))
+	if !commitRe.MatchString(commit) {
+		return problem(400, "the commit: 7 to 40 hex characters")
+	}
+	cs, err := s.Store.Case(ctx, id)
+	if errors.Is(err, store.ErrNoSuchCase) {
+		return problem(404, "no such case")
+	}
+	if err != nil {
+		return err
+	}
+	if cs.Status != cases.Executing {
+		return problem(409, "case %s is %s, not executing (approved)", id, cs.Status)
+	}
+	plans, err := s.Store.Plans(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(plans) == 0 || s.Registry == nil {
+		return problem(409, "case %s has no plan", id)
+	}
+	p := plans[len(plans)-1]
+	if a, ok := s.Registry.Action(p.Action); !ok || !a.Repo() {
+		return problem(409, "%s is not a repo change: its host reports the result", p.Action)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Closed, cases.ByOperator, cases.Verified, c.Name,
+		fmt.Sprintf("applied in commit %s (plan %s)", commit, shortHash(p.PlanHash))); err != nil {
+		return err
+	}
+	s.Log.Info("repo change applied", "case", id, "by", c.Name, "commit", commit, "via", via)
+	return nil
+}
+
+func (s *Server) caseApplied(w http.ResponseWriter, r *http.Request, c Caller) {
+	var body struct {
+		Commit string `json:"commit"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	err := s.RecordApplied(r.Context(), c, "api", r.PathValue("id"), body.Commit)
+	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "applied_by": c.Name})
+}
+
+// caseNote is a note proposed from a case (agents included: RFC-0008 Q4, ADR-0016); a person activates it.
+func (s *Server) caseNote(w http.ResponseWriter, r *http.Request, c Caller) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body)
+	id, err := s.ProposeNote(r.Context(), c, "api", r.PathValue("id"), body.Text)
+	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "note": strconv.FormatInt(id, 10)})
 }

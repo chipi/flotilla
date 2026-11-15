@@ -56,8 +56,16 @@ func TestActionAutonomy(t *testing.T) {
 		t.Fatalf("policy at the action's propose: %+v", d)
 	}
 	as, _ := s.Actions(ctx)
-	if len(as) != 1 || as[0].Autonomy != "propose" || as[0].Max != "auto" || as[0].Record.Plans != 1 || as[0].Record.Outcomes["propose"] != 1 {
+	byName := map[string]ActionStatus{}
+	for _, a := range as {
+		byName[a.Name] = a
+	}
+	if r := byName[rerun]; r.Autonomy != "propose" || r.Max != "auto" || r.Record.Plans != 1 || r.Record.Outcomes["propose"] != 1 {
 		t.Fatalf("actions %+v", as)
+	}
+	// a repo change never goes past propose (ADR-0016)
+	if pc := byName["repo.process_change"]; pc.Max != "propose" || pc.Autonomy != "shadow" {
+		t.Fatalf("repo.process_change %+v", pc)
 	}
 }
 

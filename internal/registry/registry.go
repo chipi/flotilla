@@ -40,11 +40,19 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 func (d Duration) MarshalJSON() ([]byte, error) { return json.Marshal(time.Duration(d).String()) }
 
 // Param is one parameter of an action. Kind "target_host" takes the case's host (the model cannot
-// retarget: policy checks it equals the case's target); "enum" is one of Enum.
+// retarget: policy checks it equals the case's target); "enum" is one of Enum; "text" is free text of
+// at most Max characters, for a repo action's change (ADR-0016), bound by the plan's hash.
 type Param struct {
 	Kind string   `json:"kind"`
 	Enum []string `json:"enum,omitempty"`
+	Max  int      `json:"max,omitempty"`
 }
+
+// Executors.
+const (
+	ExecHost = "host" // the host agent runs it (the default)
+	ExecRepo = "repo" // a change to the repo: a person applies it (later a PR), never automatic
+)
 
 type Check struct {
 	Verify string   `json:"verify"`
@@ -66,7 +74,20 @@ type Action struct {
 	PreShadow  []string         `json:"pre_shadow,omitempty"` // shadow's lower threshold (RFC-0004 §10)
 	Check      Check            `json:"check"`
 	Limits     Limits           `json:"limits"`
-	Timeout    Duration         `json:"timeout"` // past it, executing becomes unknown (RFC-0004 §3.5)
+	Timeout    Duration         `json:"timeout"`            // past it, executing becomes unknown (RFC-0004 §3.5)
+	Executor   string           `json:"executor,omitempty"` // host (default) or repo (ADR-0016)
+}
+
+// Repo reports whether the action changes the repo rather than a host.
+func (a Action) Repo() bool { return a.Executor == ExecRepo }
+
+// MaxAutonomy is the highest level the action may run at: an irreversible action or a repo change
+// only ever proposes (a person approves each).
+func (a Action) MaxAutonomy() string {
+	if a.Reversible == "no" || a.Repo() {
+		return "propose"
+	}
+	return "auto"
 }
 
 // Declaration is one component's file.
@@ -141,12 +162,18 @@ func validAction(a Action) error {
 	if len(a.Params) == 0 {
 		errs = append(errs, errors.New("params is required"))
 	}
+	switch a.Executor {
+	case "", ExecHost, ExecRepo:
+	default:
+		errs = append(errs, fmt.Errorf("executor %q: host or repo", a.Executor))
+	}
 	for name, p := range a.Params {
 		switch {
-		case p.Kind == "target_host" && len(p.Enum) == 0:
+		case p.Kind == "target_host" && len(p.Enum) == 0 && !a.Repo():
 		case p.Kind == "enum" && len(p.Enum) > 0:
+		case p.Kind == "text" && a.Repo() && p.Max > 0 && p.Max <= 16000:
 		default:
-			errs = append(errs, fmt.Errorf("param %s: kind is target_host, or enum with values", name))
+			errs = append(errs, fmt.Errorf("param %s: kind is target_host (host actions), enum with values, or text with a max of 1 to 16000 (repo actions)", name))
 		}
 	}
 	switch a.Risk {
@@ -159,7 +186,7 @@ func validAction(a Action) error {
 	default:
 		errs = append(errs, errors.New("reversible is yes, regenerable or no"))
 	}
-	if len(a.Pre) == 0 {
+	if len(a.Pre) == 0 && !a.Repo() {
 		errs = append(errs, errors.New("pre is required: the host re-checks it before it runs"))
 	}
 	for _, c := range append(append([]string{}, a.Pre...), a.PreShadow...) {
@@ -167,7 +194,7 @@ func validAction(a Action) error {
 			errs = append(errs, fmt.Errorf("precondition %q is not name or name(arg)", c))
 		}
 	}
-	if !condRe.MatchString(a.Check.Verify) || a.Check.Within <= 0 {
+	if !(a.Repo() && a.Check.Verify == "") && (!condRe.MatchString(a.Check.Verify) || a.Check.Within <= 0) {
 		errs = append(errs, errors.New("check needs verify (a name) and within (> 0)"))
 	}
 	if a.Limits.PerTargetPerDay < 1 {

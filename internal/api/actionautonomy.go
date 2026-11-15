@@ -26,13 +26,6 @@ type ActionStatus struct {
 	Record     store.ActionRecord `json:"record"`
 }
 
-func maxFor(reversible string) string {
-	if reversible == "no" {
-		return spec.AutonomyPropose
-	}
-	return spec.AutonomyAuto
-}
-
 // Actions lists every declared action with its autonomy and record.
 func (s *Server) Actions(ctx context.Context) ([]ActionStatus, error) {
 	var out []ActionStatus
@@ -53,7 +46,7 @@ func (s *Server) Actions(ctx context.Context) ([]ActionStatus, error) {
 			return nil, err
 		}
 		out = append(out, ActionStatus{Name: name, ForKinds: a.ForKinds, Risk: a.Risk, Reversible: a.Reversible,
-			Autonomy: lvl, Max: maxFor(a.Reversible), Record: rec})
+			Autonomy: lvl, Max: a.MaxAutonomy(), Record: rec})
 	}
 	return out, nil
 }
@@ -75,7 +68,7 @@ func (s *Server) SetActionAutonomy(ctx context.Context, c Caller, via, name, lev
 	default:
 		return problem(400, "autonomy must be shadow, propose or auto")
 	}
-	if spec.Rank(level) > spec.Rank(maxFor(a.Reversible)) {
+	if spec.Rank(level) > spec.Rank(a.MaxAutonomy()) {
 		return problem(400, "%s cannot be undone (reversible: no): at most propose", name)
 	}
 	cur, err := s.Store.Control(ctx, actionSubject(name), "autonomy")

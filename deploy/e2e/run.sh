@@ -198,8 +198,8 @@ echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | grep -q "^action host.true$" && echo "$OUT" | grep -q "^action host.absent$" \
-  && echo "$OUT" | grep -q "^CHECK PASS.*, 3 actions$" \
-  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, host.true, host.absent)" || bad "-check: $OUT"
+  && echo "$OUT" | grep -q "^action repo.process_change$" && echo "$OUT" | grep -q "^CHECK PASS.*, 4 actions$" \
+  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, repo.process_change, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.

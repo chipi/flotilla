@@ -412,6 +412,7 @@ type caseData struct {
 	Result    string
 	Record    string
 	CanFix    bool // escalated: an operator may close or reassign it
+	CanApply  bool // an approved repo change: an operator records the commit that applied it (ADR-0016)
 	PlanCount int
 	Decided   string
 	Verdicts  []store.Feedback
@@ -451,6 +452,7 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		Chip: caseChip(c.Status), Age: u.ago(c.StatusAt), Last: last, LastWhen: u.clock(last.At), LastWhat: eventShort(last), Opener: first.Actor}
 	d := caseData{Row: row, Routine: kinds[c.Kind], Opened: u.clock(c.OpenedAt), PlanCount: len(plans),
 		CanFix: c.Status == cases.Escalated && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin)}
+	d.CanApply = c.Status == cases.Executing && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin) && u.repoCase(ctx, c.ID)
 	if d.Routine == "" && strings.Contains(first.Actor, "/") {
 		d.Routine = first.Actor
 	}
@@ -561,6 +563,9 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 		var hash string
 		hash, err = u.API.ApprovePlan(r.Context(), caller(s), "ui", id, r.PostFormValue("plan"), r.PostFormValue("note"))
 		ok = "Approved plan " + shortHash(hash) + " on " + id + ": flotillad signs it and sends it to the host."
+		if u.repoCase(r.Context(), id) {
+			ok = "Approved plan " + shortHash(hash) + " on " + id + ": apply the change, then record its commit on the case."
+		}
 	case "reject":
 		err, ok = u.API.RejectCase(r.Context(), caller(s), "ui", id, why), "Rejected the plan on "+id+": nothing ran, and the case is escalated."
 	case "close":
@@ -569,6 +574,8 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 		err, ok = u.API.ReassignCase(r.Context(), caller(s), "ui", id, why), "Handed "+id+" back to its routine."
 	case "right", "wrong":
 		err, ok = u.API.SetVerdict(r.Context(), caller(s), "ui", id, r.PathValue("action")), "Recorded: the diagnosis was "+r.PathValue("action")+"."
+	case "applied":
+		err, ok = u.API.RecordApplied(r.Context(), caller(s), "ui", id, r.PostFormValue("commit")), "Recorded: "+id+" applied, closed as verified."
 	case "note":
 		var n int64
 		n, err = u.API.ProposeNote(r.Context(), caller(s), "ui", id, r.PostFormValue("note"))
@@ -584,4 +591,14 @@ type caseRunRead struct {
 	Run, Models, Tokens string
 	Read                []store.Loaded
 	Untrusted           int
+}
+
+// repoCase is whether the case's newest plan is a repo change (ADR-0016).
+func (u *Server) repoCase(ctx context.Context, id string) bool {
+	plans, err := u.API.Store.Plans(ctx, id)
+	if err != nil || len(plans) == 0 {
+		return false
+	}
+	a, ok := registryAction(u, plans[len(plans)-1].Action)
+	return ok && a.Repo()
 }
