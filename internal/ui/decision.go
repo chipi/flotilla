@@ -53,9 +53,16 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	d.Action = p.Action + "(" + strings.Join(args, ", ") + ")"
 	d.On = c.Target
 	d.Command = u.hostCommand(ctx, hostOf(c.Target), p.Action)
+	executor := ""
 	if a, ok := registryAction(u, p.Action); ok && a.Repo() {
+		executor = u.executorOf(p.Action)
 		d.Action, d.Change = p.Action+" on "+p.Params["file"], p.Params["change"]
 		d.Command = "nothing runs by itself: once you approve, apply the change and record its commit on the case"
+		if executor != "" {
+			d.Action = fmt.Sprintf("%s on %s at %s", p.Action, p.Params["repo"], p.Params["base"])
+			d.Change = strings.TrimSpace(p.Params["title"] + "\n\n" + p.Params["diff"])
+			d.Command = "once you approve, " + executor + " opens it as a draft PR, once; you merge it"
+		}
 	}
 	d.Title = c.Title
 	d.Risk, d.Reversible, d.Channel = "unknown", "not declared", "here or the CLI"
@@ -83,7 +90,9 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	if d.After == "" {
 		d.After = "flotillad signs the plan and the host agent on " + hostOf(c.Target) + " runs it once."
 	}
-	if d.Change != "" {
+	if d.Change != "" && executor != "" {
+		d.After = "Approving starts " + executor + " once: it opens a draft PR with exactly this diff. Merged, the case is verified; closed without merging, it is escalated. You merge, always: the fleet never does."
+	} else if d.Change != "" {
 		d.After = "Approving records your yes. You apply the change, it goes through review, CI and deploy, and you record the commit here; until step 4 no PR is opened for you."
 	}
 	if ok, _ := u.API.SlackApprovable(p.Action); !d.CLI && ok && u.API.Slack != nil {
@@ -165,4 +174,18 @@ func registryAction(u *Server, name string) (registry.Action, bool) {
 		return registry.Action{}, false
 	}
 	return u.API.Registry.Action(name)
+}
+
+// executorOf is the routine that carries out an approved repo action (RFC-0010 §3), "" when a person
+// applies it.
+func (u *Server) executorOf(action string) string {
+	if u.API.Sched == nil {
+		return ""
+	}
+	for _, j := range u.API.Sched.Routines {
+		if j.Enabled && j.OnExecute() == action {
+			return j.ID()
+		}
+	}
+	return ""
 }

@@ -28,6 +28,24 @@
       "check": {"verify": "", "within": "0s"},
       "limits": {"per_target_per_day": 1},
       "timeout": "168h"
+    },
+    {
+      "name": "github.open_pr",
+      "executor": "repo",
+      "for_kinds": ["code_bug", "process_change"],
+      "params": {
+        "repo": {"kind": "enum", "enum": ["chipi/orrery", "chipi/flotilla"]},
+        "base": {"kind": "text", "max": 40},
+        "title": {"kind": "text", "max": 200},
+        "body": {"kind": "text", "max": 8000},
+        "diff": {"kind": "text", "max": 16000}
+      },
+      "risk": "low",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "pr_resolved", "within": "336h"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "30m"
     }
   ]
 }

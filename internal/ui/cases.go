@@ -452,7 +452,8 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		Chip: caseChip(c.Status), Age: u.ago(c.StatusAt), Last: last, LastWhen: u.clock(last.At), LastWhat: eventShort(last), Opener: first.Actor}
 	d := caseData{Row: row, Routine: kinds[c.Kind], Opened: u.clock(c.OpenedAt), PlanCount: len(plans),
 		CanFix: c.Status == cases.Escalated && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin)}
-	d.CanApply = c.Status == cases.Executing && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin) && u.repoCase(ctx, c.ID)
+	d.CanApply = c.Status == cases.Executing && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin) && u.repoCase(ctx, c.ID) &&
+		u.repoExecutor(ctx, c.ID) == "" // a routine carries it out (RFC-0010 §3): nothing for a person to record
 	if d.Routine == "" && strings.Contains(first.Actor, "/") {
 		d.Routine = first.Actor
 	}
@@ -563,7 +564,9 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 		var hash string
 		hash, err = u.API.ApprovePlan(r.Context(), caller(s), "ui", id, r.PostFormValue("plan"), r.PostFormValue("note"))
 		ok = "Approved plan " + shortHash(hash) + " on " + id + ": flotillad signs it and sends it to the host."
-		if u.repoCase(r.Context(), id) {
+		if ex := u.repoExecutor(r.Context(), id); ex != "" {
+			ok = "Approved plan " + shortHash(hash) + " on " + id + ": " + ex + " opens it as a draft PR; you merge it."
+		} else if u.repoCase(r.Context(), id) {
 			ok = "Approved plan " + shortHash(hash) + " on " + id + ": apply the change, then record its commit on the case."
 		}
 	case "reject":
@@ -591,6 +594,16 @@ type caseRunRead struct {
 	Run, Models, Tokens string
 	Read                []store.Loaded
 	Untrusted           int
+}
+
+// repoExecutor is the routine that carries out the case's newest plan, a repo action, "" when there is
+// none (a person applies it, or it is not a repo action).
+func (u *Server) repoExecutor(ctx context.Context, id string) string {
+	plans, err := u.API.Store.Plans(ctx, id)
+	if err != nil || len(plans) == 0 || !u.repoCase(ctx, id) {
+		return ""
+	}
+	return u.executorOf(plans[len(plans)-1].Action)
 }
 
 // repoCase is whether the case's newest plan is a repo change (ADR-0016).

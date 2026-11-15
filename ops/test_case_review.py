@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -187,29 +188,57 @@ class ProcessChange(unittest.TestCase):
         return {"id": "case-pc", "kind": "process_change", "target": det[0]["target"], "data": {"proposal": p}}
 
     def set_shadow(self, cond):
+        """The registry as it was with another shadow threshold, edited as text so its layout stays."""
         path = os.path.join(self.root, "host", "registry.json")
         with open(path) as f:
-            reg = json.load(f)
-        for a in reg["actions"]:
-            if a["name"] == "backup.rerun_observability":
-                a["pre_shadow"] = [cond, "not_running"]
+            text = f.read()
+        old = '"pre_shadow": ["backup_age_above(25h)", "not_running"]'
+        self.assertEqual(text.count(old), 1, "the registry's pre_shadow line moved: update this test")
         with open(path, "w") as f:
-            json.dump(reg, f)
+            f.write(text.replace(old, '"pre_shadow": [' + json.dumps(cond) + ', "not_running"]'))
 
-    def test_plans_the_diff(self):
+    def test_plans_a_pr_whose_diff_applies(self):
+        """RFC-0010 §3: the change as a PR on chipi/flotilla, based on the image's commit; the diff applies
+        to the registry and changes only that entry."""
         self.set_shadow("backup_age_above(20h)")
-        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.root)
-        self.assertEqual(out["outcome"], "plan")
-        self.assertEqual((out["action"], out["params"]["file"], out["params"]["rule"]), ("repo.process_change", "host/registry.json", "below_cycle"))
-        ch = out["params"]["change"]
-        self.assertIn('- "backup_age_above(20h)"', ch)
-        self.assertIn('+ "backup_age_above(25h)"', ch)
-        self.assertIn("24.02h", ch)
-        self.assertLessEqual(len(ch), pc.CHANGE_MAX)
+        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.root, version="sha-abc1234")
+        self.assertEqual((out["outcome"], out["action"]), ("plan", "github.open_pr"), out)
+        prm = out["params"]
+        self.assertEqual((prm["repo"], prm["base"]), ("chipi/flotilla", "abc1234"))
+        self.assertIn("backup_age_above(20h) -> backup_age_above(25h)", prm["title"])
+        self.assertIn("24.02h", prm["body"])
+        self.assertIn('-      "pre_shadow": ["backup_age_above(20h)", "not_running"],', prm["diff"])
+        self.assertIn('+      "pre_shadow": ["backup_age_above(25h)", "not_running"],', prm["diff"])
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        subprocess.run(["git", "-C", self.root, "apply", "-"], input=prm["diff"], text=True, check=True)
+        with open(os.path.join(self.root, "host", "registry.json")) as f:
+            after = json.load(f)
+        with open(os.path.join(HERE, "..", "host", "registry.json")) as f:
+            want = json.load(f)
+        self.assertEqual(after, want, "the diff, applied, gives back today's registry and nothing else")
+        for k, v in prm.items():
+            self.assertLessEqual(len(v), {"repo": 40, "base": 40, "title": 200, "body": 8000, "diff": 16000}[k], k)
+
+    def test_by_hand_without_a_commit_or_a_line(self):
+        """A dev build has no commit to base a PR on, and a key it cannot find on one line cannot become a
+        diff: both stay repo.process_change, applied by hand, with the change text."""
+        self.set_shadow("backup_age_above(20h)")
+        c = self.case("backup_age_above(20h)", "backup_age_above(25h)")
+        for version in ("dev", ""):
+            out = pc.decide(c, self.root, version=version)
+            self.assertEqual((out["action"], out["params"]["file"], out["params"]["rule"]), ("repo.process_change", "host/registry.json", "below_cycle"))
+            ch = out["params"]["change"]
+            self.assertIn('- "backup_age_above(20h)"', ch)
+            self.assertIn('+ "backup_age_above(25h)"', ch)
+            self.assertIn("24.02h", ch)
+            self.assertLessEqual(len(ch), pc.CHANGE_MAX)
+            self.assertIn("a dev build", out["detail"])
+        self.assertEqual(pc.registry_diff("host/registry.json", "backup.rerun_observability", "pre", "backup_age_above(20h)",
+                                          "backup_age_above(25h)", self.root), "", "pre has 26h, not 20h: no diff")
 
     def test_already_changed_resolves(self):
         """The registry today has 25 h: the proposal from the 20 h days is already made."""
-        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.root)
+        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.root, version="sha-abc1234")
         self.assertEqual(out["outcome"], "resolved_itself", out)
 
     def test_refuses_what_it_cannot_read(self):
