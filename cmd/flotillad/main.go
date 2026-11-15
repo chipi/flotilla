@@ -29,6 +29,7 @@ import (
 	"github.com/chipi/flotilla/internal/dispatch"
 	"github.com/chipi/flotilla/internal/hostalert"
 	"github.com/chipi/flotilla/internal/hostlink"
+	"github.com/chipi/flotilla/internal/mcpserver"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
@@ -417,7 +418,8 @@ func main() {
 	}
 	if cfg.UIListen != "" {
 		u := &ui.Server{API: apiSrv, Host: cfg.UIHost, Log: log, LogsURL: cfg.VLogsURL, Fleets: fleets, SpecsDir: cfg.SpecsDir,
-			MetricsURL: cfg.VMURL, HostMetrics: cfg.HostMetrics, BriefAt: cfg.BriefAt}
+			MetricsURL: cfg.VMURL, HostMetrics: cfg.HostMetrics, BriefAt: cfg.BriefAt,
+			MCP: (&mcpserver.Server{API: apiSrv, Version: version}).Handler()}
 		go func() {
 			defer close(briefDone)
 			t := time.NewTicker(time.Minute)

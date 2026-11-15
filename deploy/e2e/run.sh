@@ -534,7 +534,7 @@ OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resu
 echo "$OUT" | grep -q "needs a reason" && ok "loosening without a reason is refused" || bad "resume without a reason: $OUT"
 OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat --reason "e2e" 2>&1)"
 echo "$OUT" | grep -q '"by":"user:ada"' && ok "the admin resumes with a reason, as user:ada" || bad "admin resume: $OUT"
-UIC="$($D exec -i flotilla-worker-triage python3 - "$ADMIN" "$OP" < "$ROOT/deploy/e2e/ui_check.py" 2>&1)"; UIRC=$?
+UIC="$($D exec -i flotilla-worker-triage python3 - "$ADMIN" "$OP" "$AGENT" < "$ROOT/deploy/e2e/ui_check.py" 2>&1)"; UIRC=$?
 while IFS= read -r line; do
   case "$line" in PASS*) ok "UI: ${line#PASS }" ;; FAIL*) bad "UI: ${line#FAIL }" ;; esac
 done <<< "$UIC"

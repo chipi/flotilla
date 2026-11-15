@@ -1,6 +1,8 @@
 # RFC-0008 — The MCP server: other agents see and steer flotilla
 
-**Status:** Proposed (2026-11-15). Step 2 of the [vision plan](../wip/vision-plan.md).
+**Status:** Accepted → [ADR-0015](../adr/ADR-0015-mcp-server.md) (operator, 2026-11-15): Q1 the official
+SDK, Q2 HTTP on the UI node, Q3 and Q4 yes, Q5 build the dry run now. Step 2 of the
+[vision plan](../wip/vision-plan.md).
 **Builds on:** [RFC-0001](RFC-0001-fleet-platform.md) §6 (interfaces: "read tools, action tools, it
 cannot approve, over the tailnet, an identity per caller") and §8; [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one API under the CLI, the UI and MCP); [security](../security.md) T3 (an agent approves), T11

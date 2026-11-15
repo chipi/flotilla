@@ -373,6 +373,11 @@ func (s *Scheduler) Configured(ctx context.Context, j *spec.Routine) (string, er
 	return v, nil
 }
 
+// SkipReason is why a run starting now would be skipped ("" when it would run): what a dry run reports.
+func (s *Scheduler) SkipReason(ctx context.Context, j *spec.Routine) (string, error) {
+	return s.skipReason(ctx, j)
+}
+
 func (s *Scheduler) skipReason(ctx context.Context, j *spec.Routine) (string, error) {
 	if v, err := s.Store.Control(ctx, j.Fleet, KeyStop); err != nil {
 		return "", err

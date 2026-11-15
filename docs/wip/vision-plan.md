@@ -17,7 +17,7 @@ out of agentic-ai-homelab. The order of the steps below is the operator's (2026-
 | Triage | live on flotilla since 2026-11-14 ([promotion plan](promotion-plan.md)); the candidate `triage/cycle-shadow` still runs |
 | Ops | pipeline v1 in shadow: the backup monitor, rerun and verify ([pipeline v1](pipeline-v1-plan.md)); the morning brief, written by flotillad without a model; the daily model contract check |
 | Slack approvals | built and tested against a stand-in; not wired (no app) |
-| MCP server | not built (only a comment in `internal/api`) |
+| MCP server | built 2026-11-15 (ADR-0015); no real caller yet |
 | Bugfix | its code is in `bugfix-fleet/`; it does not run as a flotilla routine |
 | SEO / digital marketing | not started |
 | agentic-ai-homelab | still holds `fleetd/`, `signal-fleet/`, `bugfix-fleet/`, frozen |
@@ -40,6 +40,11 @@ out of agentic-ai-homelab. The order of the steps below is the operator's (2026-
 Done when one real plan was approved in Slack and ran, and the gate's decision is recorded.
 
 ### 2. The MCP server
+
+**Built 2026-11-15** ([ADR-0015](../adr/ADR-0015-mcp-server.md), [runbook](../operations/mcp.md)):
+17 tools at `/mcp` on the UI node, one token per caller, the official SDK, agents reading the ledger
+and proposing notes, a dry run. Left: a first real caller (a Claude session on the X3) and the done
+check below on the mini.
 
 Promised from the start (RFC-0001): other agents (Claude sessions, the X3 assistant) see and steer
 flotilla through the same API as the CLI and the UI.

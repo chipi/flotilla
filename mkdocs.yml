@@ -80,6 +80,7 @@ nav:
   - Operations:
     - Host keys and certificates: operations/host-keys.md
     - Slack approvals: operations/slack.md
+    - MCP for other agents: operations/mcp.md
   - Testing and validation: testing.md
   - Decisions (ADR):
     - Overview: adr/README.md
@@ -97,6 +98,7 @@ nav:
     - ADR-0012 — Skills in the harness: adr/ADR-0012-skills.md
     - ADR-0013 — Fleet packs: adr/ADR-0013-fleet-packs.md
     - ADR-0014 — The operator UI: adr/ADR-0014-operator-ui.md
+    - ADR-0015 — The MCP server: adr/ADR-0015-mcp-server.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

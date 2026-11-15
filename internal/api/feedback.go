@@ -35,7 +35,7 @@ func (s *Server) SetVerdict(ctx context.Context, c Caller, via, caseID, verdict 
 
 // ProposeNote keeps a note from a case, scoped to its kind, as proposed: it takes effect only once activated.
 func (s *Server) ProposeNote(ctx context.Context, c Caller, via, caseID, text string) (int64, error) {
-	if err := s.Check(ctx, c, ActFeedback); err != nil {
+	if err := s.Check(ctx, c, ActNotePropose); err != nil {
 		return 0, err
 	}
 	text = strings.TrimSpace(text)

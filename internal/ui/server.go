@@ -36,7 +36,9 @@ type Server struct {
 	MetricsURL  string
 	HostMetrics map[string]string
 	BriefAt     string // when the morning brief is written, "07:00" (flotillad.yaml brief_at)
-	Log         *slog.Logger
+	// MCP serves /mcp for other agents (RFC-0008); bearer tokens only, never the UI's cookie. nil: none.
+	MCP http.Handler
+	Log *slog.Logger
 
 	tmpl     *template.Template
 	once     sync.Once
@@ -62,6 +64,9 @@ func (u *Server) Handler() http.Handler {
 	m := http.NewServeMux()
 	static, _ := fs.Sub(Static, "static")
 	m.Handle("GET /static/", http.StripPrefix("/static/", cacheFor(http.FileServer(http.FS(static)))))
+	if u.MCP != nil {
+		m.Handle("/mcp", u.noCookie(u.MCP))
+	}
 	m.HandleFunc("GET /signin", u.signinPage)
 	m.HandleFunc("POST /signin", u.signin)
 	m.Handle("POST /signout", u.session(u.signout))
@@ -290,4 +295,16 @@ func (u *Server) signoutEverywhere(w http.ResponseWriter, r *http.Request, s *st
 	_, _ = u.API.Store.EndSessions(r.Context(), s.User, "user:"+s.User, "ui")
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+}
+
+// noCookie refuses a request that carries the UI's session cookie: /mcp takes a caller's bearer token
+// only, so a browser that is signed in cannot be made to call it.
+func (u *Server) noCookie(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := r.Cookie(cookieName); err == nil {
+			http.Error(w, "/mcp takes a bearer token, not the UI's cookie", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
