@@ -92,6 +92,22 @@ is minutes on the X3. **Done** when a code_bug case on the mini is fixed by a ru
 shadow plan, the X3 switched off leaves the cases waiting without events, and switching it on
 resumes them.
 
+### 8. From the review (Fable 5.1, 2026-11-15), to build with it
+
+- **The dispatcher checks "worker connected" before it leases or records anything**, as it now checks
+  busy and paused (fixed 2026-11-15 for executing routines: a run that cannot start gives its attempt
+  back).
+- **A late result is accepted:** a `run_result` for a run id flotillad issued to that worker's
+  certificate is taken within the run's deadline, on any connection, not only the one it was sent on.
+  Otherwise one tailnet blip during a push makes an approved PR unknown, never retried.
+- **A `cancel` frame:** today a run is cancelled by closing its HTTP request; a shared connection needs
+  a frame for it.
+- **A version mismatch is loud:** refused at `worker_hello` with an error logged and shown on the
+  Workers view, not a quiet skip the stuck-state timer reports a day later.
+- **One certificate per worker** (§3) **and one link per machine** (§5) are reconciled: the link holds
+  one certificate per worker it serves, and says which worker each frame is for.
+- `worker_hello` carries the version only (not the routines' image: the version names it).
+
 ## Open questions (the operator's)
 
 1. **The link: a mode of the host agent binary, or its own binary.** *Proposed:* a mode (`flotilla-node

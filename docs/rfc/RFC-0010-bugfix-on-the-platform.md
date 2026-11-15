@@ -230,6 +230,20 @@ once, when the operator marks the draft ready.
 
 There is no base-wide red set: the baseline is the related tests on the base, run once, in seconds.
 
+From the review (Fable 5.1, 2026-11-15), to build with it:
+
+- **A test file that does not load counts by itself:** today a file that fails to import has no
+  assertions, so "fails on the base" would read as zero failures. A repro test must load and fail on
+  the base; a load failure is reported as such.
+- **What `vitest related` cannot see is out of scope for a fix:** the repo's config, `package.json`,
+  the lockfile, `tsconfig`, the vitest config, i18n sources.
+- **Optional, the operator's call:** the whole suite once on the final clean diff on the X3 (about 3
+  minutes), against the base's red set cached per base commit. orrery's CI also runs it on the draft
+  PR.
+- **Seams for phase B, added now:** `--base <commit>` (a dataset item's base is its fix's parent) and
+  `--harness <name>` (the other bake-off harnesses), and a per-run tag on the model calls for cost per
+  arm.
+
 **Where it runs (proposed).** The mini orchestrates, the X3 works.
 
 - flotillad stays on the mini and dispatches. `bugfix/intake` and `bugfix/pr-check` (light API reads)
