@@ -394,6 +394,12 @@ func (s *Store) LeaseCheck(ctx context.Context, id, holder string, until time.Ti
 	return s.lease(ctx, id, cases.Checking, holder, until)
 }
 
+// LeaseExecution gives an executing case to its repo action's executing routine (RFC-0010 §3). Like
+// any lease on an executing case it never expires: the routine runs at most once.
+func (s *Store) LeaseExecution(ctx context.Context, id, holder string, until time.Time) (bool, error) {
+	return s.lease(ctx, id, cases.Executing, holder, until)
+}
+
 func (s *Store) lease(ctx context.Context, id, status, holder string, until time.Time) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = ?, lease_until = ? WHERE id = ? AND holder = '' AND status = ?`,
 		holder, until.UTC().Format(ts), id, status)

@@ -551,7 +551,7 @@ func TestCheckWithoutRoutineOrDecision(t *testing.T) {
 	if c := g.cs(t, b); c.Status != cases.Checking {
 		t.Fatalf("a check outcome that is not one: %+v", c)
 	}
-	if e := lastEvent(t, g, b); e.Kind != "run.no_decision" || !strings.Contains(e.Detail, `"resolved_itself" is not verified or not_yet`) {
+	if e := lastEvent(t, g, b); e.Kind != "run.no_decision" || !strings.Contains(e.Detail, `"resolved_itself" is not verified, not_yet or failed`) {
 		t.Fatalf("event %+v", e)
 	}
 

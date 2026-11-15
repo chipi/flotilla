@@ -112,7 +112,7 @@ func (s *Scheduler) Loop(ctx context.Context) {
 			continue
 		}
 		if j.OnEvent() {
-			s.Log.Info("routine runs on cases, not on time", "routine", j.ID(), "kind", j.OnCase(), "verify", j.OnCheck())
+			s.Log.Info("routine runs on cases, not on time", "routine", j.ID(), "kind", j.OnCase(), "execute", j.OnExecute(), "verify", j.OnCheck())
 			continue
 		}
 		wg.Add(1)

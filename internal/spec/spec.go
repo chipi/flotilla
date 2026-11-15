@@ -85,17 +85,26 @@ type Routine struct {
 }
 
 // Trigger is what starts the routine (ADR-0007): time (every) or an event on a case (RFC-0004 §3.7):
-// its hand-over (case) or its check after an execution (check). Exactly one of them.
+// its hand-over (case), the execution of an approved repo action (execute) or its check after an
+// execution (check). Exactly one of them.
 type Trigger struct {
-	Every string        `yaml:"every"`
-	Case  *CaseTrigger  `yaml:"case"`
-	Check *CheckTrigger `yaml:"check"`
+	Every   string          `yaml:"every"`
+	Case    *CaseTrigger    `yaml:"case"`
+	Execute *ExecuteTrigger `yaml:"execute"`
+	Check   *CheckTrigger   `yaml:"check"`
 }
 
 // CaseTrigger starts the routine when a case of its kind is handed over: it is that kind's acting
 // routine (pipeline v1 step 5). One routine per kind.
 type CaseTrigger struct {
 	Kind string `yaml:"kind"`
+}
+
+// ExecuteTrigger starts the routine when a person has approved a plan for this repo action (RFC-0010
+// §3): it carries the approved plan out (opens the PR) and reports it. One routine per action. A host
+// action never has one: its host agent executes it, signed (ADR-0006).
+type ExecuteTrigger struct {
+	Action string `yaml:"action"`
 }
 
 // CheckTrigger starts the routine while a case is in checking, for an action whose registry check is
@@ -112,6 +121,14 @@ func (j *Routine) OnCase() string {
 	return j.Trigger.Case.Kind
 }
 
+// OnExecute is the repo action the routine executes, "" for any other routine.
+func (j *Routine) OnExecute() string {
+	if j.Trigger.Execute == nil {
+		return ""
+	}
+	return j.Trigger.Execute.Action
+}
+
 // OnCheck is the verify condition the routine checks, "" for any other routine.
 func (j *Routine) OnCheck() string {
 	if j.Trigger.Check == nil {
@@ -121,7 +138,9 @@ func (j *Routine) OnCheck() string {
 }
 
 // OnEvent: the routine runs when a case calls for it, never on time.
-func (j *Routine) OnEvent() bool { return j.Trigger.Case != nil || j.Trigger.Check != nil }
+func (j *Routine) OnEvent() bool {
+	return j.Trigger.Case != nil || j.Trigger.Execute != nil || j.Trigger.Check != nil
+}
 
 // Skills (ADR-0012, RFC-0005 §4): rules the routine's code matches against its case's structured fields;
 // every rule that matches loads its skills, in spec order. On-demand loading comes with RFC-0002 §9 step 4.
@@ -138,7 +157,8 @@ type SkillRule struct {
 var (
 	skillNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 	caseFieldRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
-	verifyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\([^()]*\))?$`) // as the registry's conditions
+	verifyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\([^()]*\))?$`)        // as the registry's conditions
+	actionRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`) // as the registry's names
 )
 
 // Harness (RFC-0002 §4) configures the routine's model-driven step: its protocol, the tools offered, the
@@ -426,17 +446,21 @@ func (j *Routine) validate() error {
 		return d
 	}
 	n := 0
-	for _, set := range []bool{j.Trigger.Every != "", j.Trigger.Case != nil, j.Trigger.Check != nil} {
+	for _, set := range []bool{j.Trigger.Every != "", j.Trigger.Case != nil, j.Trigger.Execute != nil, j.Trigger.Check != nil} {
 		if set {
 			n++
 		}
 	}
 	switch {
 	case n > 1:
-		bad("trigger: one of every, case and check")
+		bad("trigger: one of every, case, execute and check")
 	case j.Trigger.Case != nil:
 		if !caseFieldRe.MatchString(j.Trigger.Case.Kind) {
 			bad("trigger.case.kind %q: a case kind such as failed_backup", j.Trigger.Case.Kind)
+		}
+	case j.Trigger.Execute != nil:
+		if !actionRe.MatchString(j.Trigger.Execute.Action) {
+			bad("trigger.execute.action %q: a registry action such as github.open_pr", j.Trigger.Execute.Action)
 		}
 	case j.Trigger.Check != nil:
 		if !verifyRe.MatchString(j.Trigger.Check.Verify) {

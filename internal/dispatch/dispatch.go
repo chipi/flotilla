@@ -20,8 +20,19 @@
 //	{"outcome": "verified", "detail": "backup at 10:42, after the execution at 10:31"}
 //	{"outcome": "not_yet", "detail": "the newest backup is still 09:00"}
 //
-// verified closes the case; not_yet waits for the backoff and looks again; the check's window ending
-// first escalates it as not verified (checks).
+// verified closes the case; not_yet waits for the backoff and looks again; failed escalates it (what
+// the action did is not what was wanted: a PR closed without merging); the check's window ending first
+// escalates it as not verified (checks).
+//
+// A repo action a person approved goes to its executing routine (trigger `execute: {action: ...}`,
+// RFC-0010 §3), with FLOTILLA_PLAN (the approved plan and its hash) beside FLOTILLA_CASE; its file is
+//
+//	{"outcome": "executed", "detail": "draft PR https://github.com/o/r/pull/7", "ref": "o/r#7"}
+//	{"outcome": "escalate", "detail": "the base commit is gone"}
+//
+// executed moves the case to checking, escalate escalates it. It runs at most once per plan: anything
+// else (a failed run, no file) escalates the case as unknown, since the run may have pushed. A repo
+// action with no executing routine is applied by a person, who records the commit (RecordApplied).
 package dispatch
 
 import (
@@ -86,6 +97,7 @@ type Decision struct {
 	Action  string            `json:"action,omitempty"`
 	Params  map[string]string `json:"params,omitempty"`
 	Detail  string            `json:"detail,omitempty"`
+	Ref     string            `json:"ref,omitempty"` // an executing run's: what it made (a PR, owner/repo#n)
 }
 
 // Loop runs a pass every interval until ctx ends, then waits for the runs it started.
@@ -152,6 +164,9 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 				d.Log.Error("acting run", "case", c.ID, "routine", j.ID(), "err", err)
 			}
 		}(c, j)
+	}
+	if err := d.executions(ctx); err != nil {
+		return err
 	}
 	if err := d.deadlines(ctx, now); err != nil {
 		return err
@@ -359,8 +374,163 @@ func (d *Dispatcher) check(ctx context.Context, c store.Case, j *spec.Routine, c
 	case "not_yet":
 		// the window decides "not verified", not one look: checked again after the backoff
 		return st.AddCaseEvent(ctx, c.ID, notYetEvent, j.ID(), strings.TrimSpace("run "+r.ID+": "+dec.Detail))
+	case "failed":
+		// what the action did is not what was wanted (a PR closed without merging): a person looks
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByCheck, "", j.ID(), strings.TrimSpace("not verified: run "+r.ID+": "+dec.Detail))
 	default:
-		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s: outcome %q is not verified or not_yet", r.ID, dec.Outcome))
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("check run %s: outcome %q is not verified, not_yet or failed", r.ID, dec.Outcome))
+	}
+}
+
+func executeRoutine(rs []*spec.Routine, action string) *spec.Routine {
+	for _, j := range rs {
+		if j.Enabled && j.OnExecute() == action {
+			return j
+		}
+	}
+	return nil
+}
+
+// The executing run's view of what it carries out: FLOTILLA_PLAN, the plan the person approved.
+type planJSON struct {
+	ID       int64             `json:"id"`
+	Action   string            `json:"action"`
+	Params   map[string]string `json:"params"`
+	PlanHash string            `json:"plan_hash"`
+}
+
+const executeStartedEvent = "execute.started"
+
+// executions starts the executing routine of each approved repo action (RFC-0010 §3), once per plan:
+// the execute.started event, written before the run, is the at-most-once guard, with the lease.
+func (d *Dispatcher) executions(ctx context.Context) error {
+	st := d.API.Store
+	if d.API.Registry == nil {
+		return nil
+	}
+	open, err := st.Cases(ctx, store.CaseFilter{Status: cases.Executing, Limit: 500})
+	if err != nil {
+		return err
+	}
+	for _, c := range open {
+		if c.Holder != "" {
+			continue
+		}
+		plans, err := st.Plans(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		if len(plans) == 0 {
+			continue
+		}
+		p := plans[len(plans)-1]
+		if a, ok := d.API.Registry.Action(p.Action); !ok || !a.Repo() {
+			continue // a host action: its host agent executes it (SendExecutions)
+		}
+		j := executeRoutine(d.API.Sched.Routines, p.Action)
+		if j == nil {
+			continue // applied by a person (RecordApplied)
+		}
+		started, err := d.executeStarted(ctx, c.ID, p.ID)
+		if err != nil {
+			return err
+		}
+		if started {
+			continue
+		}
+		ok, err := st.LeaseExecution(ctx, c.ID, j.ID(), d.API.Sched.Clock().Add(j.Limit+2*time.Minute))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if err := st.AddCaseEvent(ctx, c.ID, executeStartedEvent, j.ID(), fmt.Sprintf("plan %d %s", p.ID, shortHash(p.PlanHash))); err != nil {
+			_ = st.ReleaseCase(ctx, c.ID, j.ID())
+			return err
+		}
+		d.wg.Add(1)
+		go func(c store.Case, j *spec.Routine, p store.PlanRecord) {
+			defer d.wg.Done()
+			bg := context.WithoutCancel(ctx)
+			defer st.ReleaseCase(bg, c.ID, j.ID())
+			if err := d.execute(bg, c, j, p); err != nil {
+				d.Log.Error("executing run", "case", c.ID, "routine", j.ID(), "err", err)
+			}
+		}(c, j, p)
+	}
+	return nil
+}
+
+func (d *Dispatcher) executeStarted(ctx context.Context, id string, plan int64) (bool, error) {
+	evs, err := d.API.Store.CaseEvents(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	prefix := fmt.Sprintf("plan %d ", plan)
+	for _, e := range evs {
+		if e.Kind == executeStartedEvent && strings.HasPrefix(e.Detail, prefix) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
+}
+
+// execute runs the executing routine once and moves the case on what it reported.
+func (d *Dispatcher) execute(ctx context.Context, c store.Case, j *spec.Routine, p store.PlanRecord) error {
+	st := d.API.Store
+	full, err := st.Case(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	unknown := func(why string) error {
+		d.Log.Error("executing run made no decision: the case is unknown", "case", c.ID, "routine", j.ID(), "why", why)
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByAct, "", j.ID(),
+			"unknown: "+why+"; it may have acted, so it is not run again: look before you retry")
+	}
+	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys,
+		Data: d.openingData(ctx, full.ID)})
+	pj, _ := json.Marshal(planJSON{ID: p.ID, Action: p.Action, Params: p.Params, PlanHash: p.PlanHash})
+	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "execute", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj), "FLOTILLA_PLAN": string(pj)})
+	if err != nil {
+		// it never started: nothing was done, so the case waits for a person, who can run it again
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByAct, "", j.ID(), "the executing run did not start: "+err.Error())
+	}
+	if r.Status != store.StatusOK || out == nil {
+		return unknown(fmt.Sprintf("executing run %s ended %s", r.ID, r.Status))
+	}
+	if out.PlanError != "" || len(out.Plan) == 0 {
+		return unknown(fmt.Sprintf("executing run %s wrote no result %s", r.ID, out.PlanError))
+	}
+	var dec Decision
+	if err := json.Unmarshal(out.Plan, &dec); err != nil {
+		return unknown(fmt.Sprintf("executing run %s: result file: %v", r.ID, err))
+	}
+	if dec.CaseID != "" && dec.CaseID != c.ID {
+		return unknown(fmt.Sprintf("executing run %s reported for case %s, not this one", r.ID, dec.CaseID))
+	}
+	detail := strings.TrimSpace("run " + r.ID + ": " + dec.Detail)
+	switch dec.Outcome {
+	case "executed":
+		if dec.Ref != "" {
+			detail += " (" + dec.Ref + ")"
+		}
+		if err := st.MoveCase(ctx, c.ID, cases.Checking, cases.ByAct, "", j.ID(), detail); err != nil {
+			return err
+		}
+		d.Log.Info("repo action executed", "case", c.ID, "run_id", r.ID, "action", p.Action, "ref", dec.Ref)
+		return nil
+	case "escalate":
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByAct, "", j.ID(), detail)
+	default:
+		return unknown(fmt.Sprintf("executing run %s: outcome %q is not executed or escalate", r.ID, dec.Outcome))
 	}
 }
 
