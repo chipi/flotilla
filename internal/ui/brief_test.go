@@ -2,14 +2,40 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
+
+// RFC-0012 §4: a monitor's summary lines go into the brief's section its spec names, in the brief
+// written after its run only.
+func TestBriefSummarySection(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	f.sch.Routines = append(f.sch.Routines, &spec.Routine{Fleet: "seo", Routine: "traffic", BriefSection: "Search", Detects: []string{"seo_traffic_drop"}})
+	b, _ := json.Marshal(store.Summary{Run: "seo-traffic-1", Section: "Search", Lines: []string{"www.example.org: 10 visits (+5%)"}})
+	if err := f.st.Event(ctx, "seo/traffic", "flotillad", store.SummaryKind, "seo/traffic", string(b)); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Add(time.Hour)
+	br, err := f.ui.composeBrief(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := br.Sections[len(br.Sections)-1]
+	if last.Title != "Search" || len(last.Items) != 1 || last.Items[0].Text != "www.example.org: 10 visits (+5%)" || last.Items[0].Href != "/runs/seo-traffic-1" {
+		t.Fatalf("sections %+v", br.Sections)
+	}
+	if br, _ := f.ui.composeBrief(ctx, now.Add(48*time.Hour)); len(br.Sections) > 0 && br.Sections[len(br.Sections)-1].Title == "Search" {
+		t.Fatal("a summary older than a day is in the brief again")
+	}
+}
 
 // G11: the brief is written once a day after brief_at from flotillad's record, kept as written, shown
 // with its earlier briefs, and its items take a person's "more" or "less".

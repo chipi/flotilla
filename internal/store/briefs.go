@@ -21,6 +21,18 @@ type Brief struct {
 	Sections  []BriefSection `json:"sections"`
 }
 
+// SummaryKind is the event a monitor's summary lines are kept as: subject the routine, detail the JSON
+// of a Summary. The brief written after the run shows them under the section the routine's spec names
+// (RFC-0012 §4).
+const SummaryKind = "routine.summary"
+
+// Summary is one monitor run's summary lines.
+type Summary struct {
+	Run     string   `json:"run"`
+	Section string   `json:"section"`
+	Lines   []string `json:"lines"`
+}
+
 type BriefSection struct {
 	Title string      `json:"title"`
 	Items []BriefItem `json:"items"`

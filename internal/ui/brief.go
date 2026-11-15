@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -126,7 +127,59 @@ func (u *Server) composeBrief(ctx context.Context, now time.Time) (store.Brief, 
 			b.Sections = append(b.Sections, sec)
 		}
 	}
+	more, err := u.summarySections(ctx, dayAgo)
+	if err != nil {
+		return b, err
+	}
+	b.Sections = append(b.Sections, more...)
 	return b, nil
+}
+
+// summarySections are the sections monitors fill (RFC-0012 §4): for each routine whose spec names a
+// brief_section, the summary lines of its newest run, when that run ended since since; a weekly routine
+// so appears in one brief a week. Sections keep the order of their first routine by id.
+func (u *Server) summarySections(ctx context.Context, since time.Time) ([]store.BriefSection, error) {
+	if u.API.Sched == nil {
+		return nil, nil
+	}
+	var ids []string
+	byID := map[string]string{}
+	for _, j := range u.API.Sched.Routines {
+		if j.BriefSection != "" {
+			ids = append(ids, j.ID())
+			byID[j.ID()] = j.BriefSection
+		}
+	}
+	sort.Strings(ids)
+	var out []store.BriefSection
+	at := map[string]int{}
+	for _, id := range ids {
+		e, err := u.API.Store.LatestEvent(ctx, store.SummaryKind, id)
+		if err != nil {
+			return nil, err
+		}
+		if e == nil {
+			continue
+		}
+		if t, ok := parseTime(e.At); !ok || t.Before(since) {
+			continue
+		}
+		var s store.Summary
+		if json.Unmarshal([]byte(e.Detail), &s) != nil || len(s.Lines) == 0 {
+			continue
+		}
+		title := byID[id]
+		i, ok := at[title]
+		if !ok {
+			i = len(out)
+			at[title] = i
+			out = append(out, store.BriefSection{Title: title})
+		}
+		for _, ln := range s.Lines {
+			out[i].Items = append(out[i].Items, store.BriefItem{Text: ln, Href: "/runs/" + s.Run, Kind: "summary:" + id})
+		}
+	}
+	return out, nil
 }
 
 // WriteBriefIfDue writes today's brief once it is past brief_at and today has none. flotillad calls it

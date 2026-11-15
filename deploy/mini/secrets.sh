@@ -82,6 +82,13 @@ fi
 if [ -s "$FLOTILLA_CONFIG/worker-marketing.token" ]; then
   put $V-flotillad-secrets worker-marketing.token 65532 "$FLOTILLA_CONFIG/worker-marketing.token"
   put $V-worker-marketing-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-marketing.token"
+  # its read credentials (docs/operations/seo.md), where they exist: the view-only Umami user and the
+  # Search Console service account's key, in FLOTILLA_HOME/marketing
+  for f in umami.env gsc.json; do
+    if [ -s "$H/marketing/$f" ]; then
+      put $V-worker-marketing-secrets "$f" 10001 "$H/marketing/$f"
+    fi
+  done
 fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then

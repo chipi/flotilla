@@ -728,6 +728,7 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 	var rep struct {
 		Outcome    string      `json:"outcome"`
 		Detections []Detection `json:"detections"`
+		Summary    []string    `json:"summary"`
 	}
 	switch {
 	case r.Status != store.StatusOK:
@@ -777,12 +778,46 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 		}
 		d.Log.Info("case opened", "case", id, "kind", x.Kind, "target", x.Target, "routine", j.ID(), "run_id", r.ID)
 	}
+	d.summary(ctx, j, r, rep.Summary)
 	cleared, err := d.API.Store.ClearIncidents(ctx, j.ID(), present)
 	if err != nil {
 		d.Log.Error("clear incidents", "routine", j.ID(), "err", err)
 	}
 	for _, id := range cleared {
 		d.Log.Info("incident cleared", "case", id, "routine", j.ID(), "run_id", r.ID)
+	}
+}
+
+// maxSummaryLines bounds a report's summary, and each line is cut to one line of maxSummaryRunes.
+const (
+	maxSummaryLines = 20
+	maxSummaryRunes = 200
+)
+
+func (d *Dispatcher) summary(ctx context.Context, j *spec.Routine, r *store.Run, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	if j.BriefSection == "" {
+		d.Log.Error("summary dropped", "routine", j.ID(), "run_id", r.ID, "why", "the routine's spec names no brief_section")
+		return
+	}
+	s := store.Summary{Run: r.ID, Section: j.BriefSection}
+	for _, ln := range lines {
+		if len(s.Lines) == maxSummaryLines {
+			break
+		}
+		ln = strings.Join(strings.Fields(ln), " ")
+		if rs := []rune(ln); len(rs) > maxSummaryRunes {
+			ln = string(rs[:maxSummaryRunes-1]) + "…"
+		}
+		if ln != "" {
+			s.Lines = append(s.Lines, ln)
+		}
+	}
+	b, _ := json.Marshal(s)
+	if err := d.API.Store.Event(ctx, j.ID(), "flotillad", store.SummaryKind, j.ID(), string(b)); err != nil {
+		d.Log.Error("summary", "routine", j.ID(), "err", err)
 	}
 }
 

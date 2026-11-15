@@ -447,6 +447,20 @@ func (s *Store) Event(ctx context.Context, actor, via, kind, subject, detail str
 	return err
 }
 
+// LatestEvent is the newest event of kind on subject, or nil.
+func (s *Store) LatestEvent(ctx context.Context, kind, subject string) (*Event, error) {
+	var e Event
+	err := s.db.QueryRowContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events WHERE kind = ? AND subject = ?
+		ORDER BY seq DESC LIMIT 1`, kind, subject).Scan(&e.Seq, &e.At, &e.Actor, &e.Via, &e.Kind, &e.Subject, &e.Detail)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 func (s *Store) Events(ctx context.Context, limit int) ([]Event, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events ORDER BY seq DESC LIMIT ?`, limit)
 	if err != nil {

@@ -79,35 +79,38 @@ func TestLoadFleets(t *testing.T) {
 
 func TestRejects(t *testing.T) {
 	cases := map[string]struct{ rel, body, want string }{
-		"unknown field":             {"triage/cycle.yaml", good + "retries: 3\n", "field retries not found"},
-		"fleet not its folder":      {"other/cycle.yaml", good, `fleet "triage", but the file is under other/`},
-		"routine not its file name": {"triage/pass.yaml", good, `routine "cycle", but the file is pass.yaml`},
-		"bad autonomy":              {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: yolo", 1), "autonomy \"yolo\""},
-		"bad interval":              {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: soon", 1), "trigger.every"},
-		"interval too short":        {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: 5s", 1), "at least 1m0s"},
-		"timeout too long":          {"triage/cycle.yaml", strings.Replace(good, "timeout: 20m", "timeout: 2h", 1), "more than three intervals"},
-		"always stale":              {"triage/cycle.yaml", strings.Replace(good, "freshness: 35m", "freshness: 5m", 1), "always look stale"},
-		"negative budget":           {"triage/cycle.yaml", strings.Replace(good, "day_usd: 2", "day_usd: -1", 1), "must not be negative"},
-		"no command":                {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
-		"no description":            {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
-		"bad max_autonomy":          {"triage/cycle.yaml", good + "max_autonomy: yolo\n", `max_autonomy "yolo"`},
-		"autonomy above its cap":    {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: propose", 1) + "max_autonomy: shadow\n", "above max_autonomy shadow"},
-		"skills on demand":          {"triage/cycle.yaml", good + "skills: {on_demand: [x]}\n", "comes with RFC-0002 §9 step 4"},
-		"skill rule without when":   {"triage/cycle.yaml", good + "skills: {rule: [{load: [x]}]}\n", "non-empty when and load"},
-		"skill rule without load":   {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}}]}\n", "non-empty when and load"},
-		"bad skill name":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}, load: [Bad_Name]}]}\n", `skill name "Bad_Name"`},
-		"bad case field":            {"triage/cycle.yaml", good + "skills: {rule: [{when: {Class: a}, load: [x]}]}\n", `field "Class"`},
-		"unknown skills field":      {"triage/cycle.yaml", good + "skills: {rules: []}\n", "field rules not found"},
-		"every and case":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {every: 10m, case: {kind: failed_backup}}", 1), "one of every, case, execute and check"},
-		"case and check":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}, check: {verify: a_b}}", 1), "one of every, case, execute and check"},
-		"a bad verify":              {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: Not-One}}", 1), "trigger.check.verify"},
-		"execute and case":          {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}, execute: {action: github.open_pr}}", 1), "one of every, case, execute and check"},
-		"a bad execute action":      {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {execute: {action: open_pr}}", 1), "trigger.execute.action"},
-		"a check routine detecting": {"triage/cycle.yaml", strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: a_b}}", 1), "freshness: 35m\n", "", 1) + "detects: [failed_backup]\n", "a monitor runs on time"},
-		"a bad case kind":           {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: Failed-Backup}}", 1), "trigger.case.kind"},
-		"no trigger":                {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}\n", "", 1), "trigger.every"},
-		"a bad detected kind":       {"triage/cycle.yaml", good + "detects: [Disk Full]\n", "detects: \"Disk Full\""},
-		"a case routine detecting":  {"triage/cycle.yaml", strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}}", 1), "freshness: 35m\n", "", 1) + "detects: [failed_backup]\n", "a monitor runs on time"},
+		"unknown field":               {"triage/cycle.yaml", good + "retries: 3\n", "field retries not found"},
+		"fleet not its folder":        {"other/cycle.yaml", good, `fleet "triage", but the file is under other/`},
+		"routine not its file name":   {"triage/pass.yaml", good, `routine "cycle", but the file is pass.yaml`},
+		"bad autonomy":                {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: yolo", 1), "autonomy \"yolo\""},
+		"bad interval":                {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: soon", 1), "trigger.every"},
+		"interval too short":          {"triage/cycle.yaml", strings.Replace(good, "every: 10m", "every: 5s", 1), "at least 1m0s"},
+		"timeout too long":            {"triage/cycle.yaml", strings.Replace(good, "timeout: 20m", "timeout: 2h", 1), "more than three intervals"},
+		"always stale":                {"triage/cycle.yaml", strings.Replace(good, "freshness: 35m", "freshness: 5m", 1), "always look stale"},
+		"negative budget":             {"triage/cycle.yaml", strings.Replace(good, "day_usd: 2", "day_usd: -1", 1), "must not be negative"},
+		"no command":                  {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
+		"no description":              {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
+		"bad max_autonomy":            {"triage/cycle.yaml", good + "max_autonomy: yolo\n", `max_autonomy "yolo"`},
+		"autonomy above its cap":      {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: propose", 1) + "max_autonomy: shadow\n", "above max_autonomy shadow"},
+		"skills on demand":            {"triage/cycle.yaml", good + "skills: {on_demand: [x]}\n", "comes with RFC-0002 §9 step 4"},
+		"skill rule without when":     {"triage/cycle.yaml", good + "skills: {rule: [{load: [x]}]}\n", "non-empty when and load"},
+		"skill rule without load":     {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}}]}\n", "non-empty when and load"},
+		"bad skill name":              {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}, load: [Bad_Name]}]}\n", `skill name "Bad_Name"`},
+		"bad case field":              {"triage/cycle.yaml", good + "skills: {rule: [{when: {Class: a}, load: [x]}]}\n", `field "Class"`},
+		"unknown skills field":        {"triage/cycle.yaml", good + "skills: {rules: []}\n", "field rules not found"},
+		"every and case":              {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {every: 10m, case: {kind: failed_backup}}", 1), "one of every, case, execute and check"},
+		"case and check":              {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}, check: {verify: a_b}}", 1), "one of every, case, execute and check"},
+		"a bad verify":                {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: Not-One}}", 1), "trigger.check.verify"},
+		"execute and case":            {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}, execute: {action: github.open_pr}}", 1), "one of every, case, execute and check"},
+		"a bad execute action":        {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {execute: {action: open_pr}}", 1), "trigger.execute.action"},
+		"a check routine detecting":   {"triage/cycle.yaml", strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: a_b}}", 1), "freshness: 35m\n", "", 1) + "detects: [failed_backup]\n", "a monitor runs on time"},
+		"a bad case kind":             {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: Failed-Backup}}", 1), "trigger.case.kind"},
+		"no trigger":                  {"triage/cycle.yaml", strings.Replace(good, "trigger: {every: 10m}\n", "", 1), "trigger.every"},
+		"a bad detected kind":         {"triage/cycle.yaml", good + "detects: [Disk Full]\n", "detects: \"Disk Full\""},
+		"a case routine detecting":    {"triage/cycle.yaml", strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {case: {kind: failed_backup}}", 1), "freshness: 35m\n", "", 1) + "detects: [failed_backup]\n", "a monitor runs on time"},
+		"a brief section, no monitor": {"triage/cycle.yaml", good + "brief_section: Search\n", "only a monitor"},
+		"a brief section, bad title":  {"triage/cycle.yaml", good + "detects: [x]\nbrief_section: search-weekly\n", "not a short title"},
+		"a brief section of its own":  {"triage/cycle.yaml", good + "detects: [x]\nbrief_section: Watch\n", "one of the brief's own sections"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -214,6 +217,11 @@ func TestRepoSpecs(t *testing.T) {
 	}
 	if _, ok := ids["platform/heartbeat"]; !ok {
 		t.Fatal("platform/heartbeat missing")
+	}
+	for _, id := range []string{"seo/traffic", "seo/search-console"} {
+		if j := ids[id]; j == nil || j.BriefSection != "Search" {
+			t.Errorf("%s: the brief's Search section (RFC-0012 §4)", id)
+		}
 	}
 	// harness-default.json is what triage applies without flotillad (eval runs): the specs' harness
 	raw, err := os.ReadFile(filepath.Join("..", "..", "fleets", "triage", "harness-default.json"))

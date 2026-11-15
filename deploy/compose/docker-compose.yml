@@ -251,8 +251,9 @@ services:
     healthcheck: *ops-health
     networks: [flotilla]
 
-  # The seo fleet's worker (profile seo, RFC-0012): it reads the operator's websites and, later, their
-  # Search Console and Umami data. Read only; its worker token is its only secret until then.
+  # The seo fleet's worker (profile seo, RFC-0012): it reads the operator's websites, their Umami data
+  # (as a view-only user, /run/flotilla/umami.env) and their Search Console data (a service account's
+  # key, /run/flotilla/gsc.json). Read only.
   worker-marketing:
     <<: *hardening
     profiles: [seo]
@@ -268,6 +269,7 @@ services:
       ROUTINE_HTTP_PROXY: http://egress-seo:4750
       ROUTINE_HTTPS_PROXY: http://egress-seo:4750
       ROUTINE_NO_PROXY: flotillad
+      ROUTINE_SEO_UMAMI_URL: http://umami:3000   # Umami's container, through the proxy on its network
     volumes:
       - worker-marketing-secrets:/run/flotilla:ro
     healthcheck: *ops-health
@@ -306,7 +308,8 @@ services:
     networks: [flotilla, out, litellm]
 
   # The seo fleet's own egress proxy (profile seo): its allowlist (FLOTILLA_CONFIG/egress-seo-acl.yaml: the
-  # sites it checks, later Google's APIs and Umami) is its alone. The same image and settings as egress.
+  # sites it checks, Google's token and Search Console endpoints, Umami) is its alone, and so is its
+  # settings file (smokescreen-seo.yaml: allow_ranges only Umami's network).
   egress-seo:
     <<: *hardening
     profiles: [seo]
@@ -318,9 +321,9 @@ services:
     environment:
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS_SEO:-}
     volumes:
-      - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/smokescreen-seo.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-seo-acl.yaml:/etc/smokescreen/acl.yaml:ro
-    networks: [flotilla, out]
+    networks: [flotilla, out, umami]
 
 # Named so that a compose project rename can never strand them. TRIAGE_STATE_VOLUME picks the
 # triage fleet's state: a shadow copy beside fleetd, or the live state after the switch.
@@ -382,4 +385,7 @@ networks:
     external: true
   langfuse:
     name: ${NET_LANGFUSE:-langfuse_default}
+    external: true
+  umami:   # the seo proxy reaches Umami there (RFC-0012)
+    name: ${NET_UMAMI:-umami_default}
     external: true

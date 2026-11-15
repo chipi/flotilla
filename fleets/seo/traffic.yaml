@@ -1,0 +1,21 @@
+fleet: seo
+routine: traffic
+description: >-
+  RFC-0012 §2: each site's visits and visits from search engines in Umami, the last 7 days against the
+  7 before (Umami's own comparison). A drop of more than 30 % from at least 50 is one seo_traffic_drop
+  detection; the week's numbers go to the brief's Search section. Code only, read only, as the
+  view-only Umami user.
+enabled: true
+worker: marketing
+trigger:
+  every: 168h
+detects: [seo_traffic_drop]
+brief_section: Search
+run:
+  command: python3 /opt/flotilla/seo/traffic.py
+  workdir: .
+  timeout: 5m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 170h

@@ -367,6 +367,39 @@ func TestDetectionOpensAndHandsOver(t *testing.T) {
 	}
 }
 
+// RFC-0012 §4: a monitor's summary lines are kept as one event when its spec names a brief section,
+// cut to 20 lines of one line each; without a section they are dropped, and said so.
+func TestSummaryKept(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	long := strings.Repeat("x", 300)
+	lines := []string{"a: 10 visits", "b:\n 2  clicks", long}
+	for i := 0; i < 30; i++ {
+		lines = append(lines, "more")
+	}
+	b, _ := json.Marshal(map[string]any{"outcome": "detections", "detections": []any{}, "summary": lines})
+	f.monitor(t, "ok", string(b))
+	if e, _ := f.st.LatestEvent(ctx, store.SummaryKind, "ops/backup-monitor"); e != nil {
+		t.Fatalf("kept without a brief_section: %+v", e)
+	}
+	if !strings.Contains(f.logs.String(), "summary dropped") {
+		t.Fatal("a dropped summary is not logged")
+	}
+	f.d.API.Sched.Routines[1].BriefSection = "Search"
+	f.monitor(t, "ok", string(b))
+	e, err := f.st.LatestEvent(ctx, store.SummaryKind, "ops/backup-monitor")
+	if err != nil || e == nil {
+		t.Fatalf("no summary event: %v", err)
+	}
+	var s store.Summary
+	if err := json.Unmarshal([]byte(e.Detail), &s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Section != "Search" || len(s.Lines) != 20 || s.Lines[1] != "b: 2 clicks" || len([]rune(s.Lines[2])) != 200 || s.Run == "" {
+		t.Fatalf("summary %+v", s)
+	}
+}
+
 func TestReportsRefused(t *testing.T) {
 	many := `{"outcome": "detections", "detections": [` + strings.TrimSuffix(strings.Repeat(`{"kind": "failed_backup", "target": "host:mini"},`, 51), ",") + `]}`
 	for name, c := range map[string]struct{ status, report, log string }{

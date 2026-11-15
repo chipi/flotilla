@@ -75,6 +75,10 @@ type Routine struct {
 	// The model aliases (flotillad.yaml models) this routine may call (security T4): its runs get only
 	// these in FLOTILLA_MODELS, so an alias it does not name does not exist for it. Default none.
 	Models []string `yaml:"models"`
+	// The brief's section a monitor's summary lines go to (RFC-0012 §4): a monitor may report up to 20
+	// lines with its detections, and the brief written after its run shows them under this title. Only
+	// a monitor (one that detects) has one.
+	BriefSection string `yaml:"brief_section"`
 
 	// filled by Load
 	Path  string        `yaml:"-"`
@@ -155,10 +159,11 @@ type SkillRule struct {
 }
 
 var (
-	skillNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	caseFieldRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
-	verifyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\([^()]*\))?$`)        // as the registry's conditions
-	actionRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`) // as the registry's names
+	skillNameRe    = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	caseFieldRe    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+	verifyRe       = regexp.MustCompile(`^[a-z][a-z0-9_]*(\([^()]*\))?$`)        // as the registry's conditions
+	actionRe       = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`) // as the registry's names
+	briefSectionRe = regexp.MustCompile(`^[A-Z][A-Za-z ]{0,31}$`)
 )
 
 // Harness (RFC-0002 §4) configures the routine's model-driven step: its protocol, the tools offered, the
@@ -483,6 +488,16 @@ func (j *Routine) validate() error {
 	}
 	if len(j.Detects) > 0 && j.OnEvent() {
 		bad("detects: a routine on cases acts on them; a monitor runs on time")
+	}
+	if j.BriefSection != "" {
+		switch {
+		case len(j.Detects) == 0:
+			bad("brief_section: only a monitor (a routine with detects) reports summary lines")
+		case !briefSectionRe.MatchString(j.BriefSection):
+			bad("brief_section: %q is not a short title (a capital, then letters and spaces, at most 32)", j.BriefSection)
+		case j.BriefSection == "Needs you" || j.BriefSection == "Handled overnight" || j.BriefSection == "Watch":
+			bad("brief_section: %q is one of the brief's own sections", j.BriefSection)
+		}
 	}
 	j.Limit = dur("run.timeout", j.Run.Timeout, 10*time.Second)
 	if j.Freshness != "" || !j.OnEvent() { // a routine on cases runs when there is work: no freshness

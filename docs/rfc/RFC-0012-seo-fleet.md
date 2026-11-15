@@ -117,7 +117,9 @@ The weekly numbers are not findings. They go into the brief (§4) and into a his
   then a change is not done (the brief's rule).
 
 In the brief: open SEO cases appear under **Needs you** like any case; a weekly **Search** section
-(Mondays) carries the week's numbers per locale with the change from the week before.
+carries the week's numbers with the change from the week before. As built: a monitor may add up to 20
+summary lines to its report, flotillad keeps them as a `routine.summary` event, and the brief written
+in the day after the run shows them under the section the routine's spec names (`brief_section`).
 
 ### 5. Data it keeps
 
