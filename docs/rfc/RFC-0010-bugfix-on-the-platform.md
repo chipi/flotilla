@@ -205,6 +205,51 @@ does (`examples/triage-fleet`: a frozen dataset, arms, k runs, paired tests, cos
 Shadow on live issues (§5) runs beside the evaluation and feeds it: each shadow case whose issue is
 later fixed by a person becomes a new item.
 
+## 9. Revision, 2026-11-15: what a fix runs, and where
+
+The first live runs on the mini (shadow, 2026-11-15) showed the port's cost.
+
+- **Every fix ran orrery's whole suite 2 to 5 times:** once on the base for its red set, then once a
+  round. That is 7,505 tests in 433 files: 195 s on the X3 at 2 CPUs, more than 20 minutes on the mini,
+  where #646 escalated on the suite's timeout. `chain.go` did the same; the port copied it unexamined.
+- **The mini is for orchestration and services, not for dev work** (operator, 2026-11-15).
+
+**What a fix checks (proposed).** Only what the fix touches. The PR's own CI runs the whole suite
+once, when the operator marks the draft ready.
+
+1. **Repro:** the test files the diff adds or changes fail on the base (with the fix's source files
+   reverted) and pass with the fix. This is stronger than today's "a test file is in the diff", which
+   `chain.go` never checked either.
+2. **Related:** `vitest related <changed source files> --run`: no failure there that the base does not
+   have, computed on those files only.
+3. **Scope:** as now (nothing in CI, workflow or hook files).
+
+There is no base-wide red set: the baseline is the related tests on the base, run once, in seconds.
+
+**Where it runs (proposed).** The mini orchestrates, the X3 works.
+
+- flotillad stays on the mini and dispatches. `bugfix/intake` and `bugfix/pr-check` (light API reads)
+  stay on a mini worker.
+- `worker-bugfix` (the fix) and `worker-bugfix-act` (the push), with their egress proxy, run on the
+  X3 as one small compose stack on its local Docker engine. Their secrets, the model key and later
+  the GitHub App key, live on the X3, mode 600.
+- When the X3 is off, its cases wait without events, as a busy routine's do, and the stuck-state timer
+  is the only limit.
+
+**Open for the design (each with a proposal):**
+
+- **The transport.** A worker run is one HTTP request held open for the run, and flotillad's only way
+  out is its egress proxy. *Proposed:* flotillad reaches the X3 workers through the egress proxy,
+  their tailnet name on its allowlist, with the existing worker token (the tailnet encrypts). Check
+  first that Smokescreen holds a 20-minute request. The alternative is the X3 worker dialling out to
+  flotillad and taking runs (as the host agents connect in): more robust, more to build.
+- **The X3's rules** (`infra/x3/AGENTS.md`): its deploy checkout and user units, and the eval-harness
+  GPU rule (a fix run uses no GPU).
+- **Cost of the move:** a second compose stack to deploy, and the mini's worker-bugfix and its proxy
+  removed after it.
+
+Not changed: intake, cases, `github.open_pr`, autonomy, the evidence bar.
+
 ## Open questions (the operator's)
 
 1. **Intake label.** The routed label has never been applied, so triage hands nothing over today.
@@ -252,3 +297,7 @@ later fixed by a person becomes a new item.
   issues fixed (not duplicates or not planned), with a commit naming them, whose commits touch tests:
   podcast_scraper 177, 142, 136; orrery 28, 17, 8; agentic-ai-homelab 15, 9, 4. None is yet checked
   as an oracle (failing on the parent, passing at the fix).
+- 2026-11-15, after the first live runs, the operator: "we have run the entire test suite for a massive
+  project, which we cannot do at agent issue level … I want to run heavy agentic work like this on the
+  X3 … the mini as orchestrator and services platform, no dev work … minimal cockpit and CI/test effort,
+  and indeed we have the PR to validate all." §9 added.
