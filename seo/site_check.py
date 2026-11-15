@@ -24,6 +24,11 @@ from html.parser import HTMLParser
 UA = "flotilla-seo/1 (+https://github.com/chipi/flotilla)"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAX_BODY = 4_000_000
+# A request that got no HTTP answer is tried again after these pauses: Cloudflare reset 7 of 204 of
+# the mini's connections to orrerylearn.com in one run (2026-11-15), and a reset is about the network,
+# not the page. One that fails every time is still reported. PACE spaces the requests to one host.
+RETRY_PAUSES = (5, 15)
+PACE = 0.3
 TARGET_MAX = 120
 SM = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 
@@ -99,14 +104,21 @@ def target(check, url):
 
 
 class Check:
-    def __init__(self, site, fetcher=fetch):
-        self.site, self.fetch, self.found, self.requests = site, fetcher, [], 0
+    def __init__(self, site, fetcher=fetch, sleep=time.sleep):
+        self.site, self.fetch, self.sleep, self.found, self.requests, self.retries = site, fetcher, sleep, [], 0, 0
         self.base = site["base"].rstrip("/")
         self.host = urllib.parse.urlsplit(self.base).netloc.lower()
 
     def get(self, url, follow=True):
-        self.requests += 1
-        return self.fetch(url, follow)
+        for pause in (0,) + RETRY_PAUSES:
+            if pause:
+                self.retries += 1
+            self.sleep(pause or PACE)
+            self.requests += 1
+            got = self.fetch(url, follow)
+            if got[0] != 0:
+                return got
+        return got
 
     def find(self, check, url, title, detail, value=None, threshold=None):
         self.found.append({"kind": "seo_live_regression", "target": target(check, url), "title": title, "detail": detail,
@@ -236,7 +248,8 @@ class Check:
         for i, u in enumerate(pages):
             self.page(u, alternates=i < len(self.site.get("pages", ["/"])))
         self.retired()
-        return {"site": self.site["name"], "urls": len(urls), "pages": len(pages), "requests": self.requests, "findings": len(self.found)}
+        return {"site": self.site["name"], "urls": len(urls), "pages": len(pages), "requests": self.requests,
+                "retries": self.retries, "findings": len(self.found)}
 
 
 def main(fetcher=fetch):
@@ -249,7 +262,7 @@ def main(fetcher=fetch):
         c = Check(site, fetcher)
         s = c.run()
         found += c.found
-        lines.append(f"SEO SITE-CHECK {s['site']} urls={s['urls']} pages={s['pages']} requests={s['requests']} "
+        lines.append(f"SEO SITE-CHECK {s['site']} urls={s['urls']} pages={s['pages']} requests={s['requests']} retries={s['retries']} "
                      f"findings={s['findings']} {time.time() - t:.0f}s")
     plan = os.environ.get("FLOTILLA_PLAN_FILE")
     if plan:

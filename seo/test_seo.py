@@ -51,7 +51,7 @@ SITE = {"name": "example", "base": B, "brand": "Example", "pages": ["/"], "sampl
 def run(site=SITE, **over):
     fake = Site(**over)
     fake.pages.setdefault("https://old.example.org/", (404, None, {}, ""))
-    c = site_check.Check(site, fake)
+    c = site_check.Check(site, fake, sleep=lambda s: None)
     summary = c.run()
     return {d["target"] for d in c.found}, c, summary, fake
 
@@ -123,6 +123,30 @@ class SiteCheck(unittest.TestCase):
         found, *_ = run(**{"https://old.example.org/": (200, None, {}, '<meta name="robots" content="noindex">')})
         self.assertEqual(found, set(), "a retired host that serves noindex is fine")
 
+    def test_a_network_failure_is_tried_again(self):
+        """No HTTP answer (a reset, a timeout) is the network, not the page: tried again, and reported only
+        when it fails every time."""
+        flaky = {"n": 0}
+
+        class Flaky(Site):
+            def __call__(self, url, follow=True):
+                if url == B + "/de/":
+                    flaky["n"] += 1
+                    if flaky["n"] < 3:
+                        return 0, url, {}, "connection reset by peer"
+                return super().__call__(url, follow)
+        fake = Flaky()
+        fake.pages["https://old.example.org/"] = (404, None, {}, "")
+        pauses = []
+        c = site_check.Check(SITE, fake, sleep=pauses.append)
+        c.run()
+        self.assertEqual(c.found, [], [d["detail"] for d in c.found])
+        self.assertEqual((c.retries, flaky["n"]), (2, 3))
+        self.assertIn(5, pauses)
+        self.assertIn(15, pauses)
+        found, *_ = run(**{B + "/de/": (0, None, {}, "connection reset by peer")})
+        self.assertIn("site:hreflang/www.example.org/de/", found, "a failure every time is still a finding")
+
     def test_targets_fit_flotillad(self):
         t = site_check.target("canonical", B + "/a path/ü?x=1#f")
         self.assertRegex(t, r"^[a-z][a-z0-9_]*:[A-Za-z0-9._/-]{1,120}$")
@@ -137,9 +161,12 @@ class SiteCheck(unittest.TestCase):
             fake.pages["https://old.example.org/"] = (404, None, {}, "")
             env = dict(os.environ)
             os.environ.update(SEO_SITES=sites, FLOTILLA_PLAN_FILE=plan)
+            old = site_check.PACE, site_check.RETRY_PAUSES
+            site_check.PACE, site_check.RETRY_PAUSES = 0, (0, 0)
             try:
                 site_check.main(fake)
             finally:
+                site_check.PACE, site_check.RETRY_PAUSES = old
                 os.environ.clear()
                 os.environ.update(env)
             with open(plan) as f:
