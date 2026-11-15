@@ -101,10 +101,11 @@ and a rejected proposal is recorded.
 - **In beta evaluation** (operator, 2026-11-15): the bake-off found every arm equal on 5 bug families,
   which cannot tell arms apart. Nothing it chose is assumed to work. The port is measured in
   eval-harness on a frozen `orrery-bugfix` dataset (orrery's closed bugs, their fix commits' tests as
-  the oracle), one arm per change ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md) §7).
+  the oracle), one arm per change ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md) §8).
 
-Done when bugfix runs in shadow on the mini and its runs show on its fleet page, and the baseline arm
-has a measured result on `orrery-bugfix`.
+Done when bugfix runs in shadow on the mini and its runs show on its fleet page (phase A: the form
+and the flow). Making its fixes good (the evaluation, the harness, the models) is phase B, a separate
+activity over the following days and weeks (RFC-0010 §7, operator 2026-11-15).
 
 ### 5. SEO, the digital-marketing fleet
 

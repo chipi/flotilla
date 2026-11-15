@@ -1,6 +1,6 @@
 # RFC-0010 — Bugfix on the platform: from a bug to a draft PR, as a case
 
-**Status:** Proposed; the six questions taken as proposed, as starting points the evaluation (§7)
+**Status:** Proposed; the six questions taken as proposed, as starting points the evaluation (§8)
 may overturn (operator, 2026-11-15). Bugfix is in beta evaluation, not a fleet known to work. Step 4
 of the [vision plan](../wip/vision-plan.md).
 **Builds on:** [RFC-0002](RFC-0002-job-runtime.md) (the `external` step),
@@ -118,9 +118,8 @@ operator's, on Autonomy, after the coding harness's security review (T-row in
 
 ### 6. Tests and the replay
 
-- **The port reproduces the chain.** The bake-off's orrery bugs (`bugfix-fleet/bakeoff/bugs/`, with
-  hidden oracles) are run through `bugfix/fix`. The gate rows must match the seat auction's flashchain
-  results before shadow on real issues.
+- **The port runs the chain's flow.** One of the bake-off's orrery bugs (`bugfix-fleet/bakeoff/bugs/`)
+  goes through `bugfix/fix` end to end to a plan. Matching the seat auction's results is phase B (§7).
 - **Gate mutants:**
   - a diff with no test;
   - a test that passes on the base;
@@ -135,7 +134,27 @@ operator's, on Autonomy, after the coding harness's security review (T-row in
 - **Done** (the vision plan): bugfix runs in shadow on the mini on orrery's open bugs, its runs on its
   fleet page.
 
-### 7. The evaluation: does the loop work, and what moves it
+### 7. Two phases: the form now, making it work later
+
+The operator, 2026-11-15: get the form and the flow right first; making the fixes good (the harness,
+the models, the prompts) is a separate activity over the following days and weeks. The success
+criterion now is a better place, not working fixes.
+
+- **Phase A, now (step 4's done check):**
+  - `code_bug` cases from issues (§1);
+  - `bugfix/fix` with its gates and plan (§2);
+  - `github.open_pr`, with `process_change` on it (§3);
+  - the `bugfix` worker (§4);
+  - shadow on the mini, with its runs on the fleet page (§5);
+  - the tests (§6).
+
+  The baseline (pi, flash, the generic prompt) runs as it is. Whether its fixes are any good is not
+  part of phase A.
+- **Phase B, later:**
+  - the evaluation (§8): the dataset, the oracle check, the baseline's measured result, the arms;
+  - promotion of `github.open_pr` to propose after the security review.
+
+### 8. The evaluation (phase B): does the loop work, and what moves it
 
 The bake-off found every harness and model equal, Claude included. That is not evidence that they are
 equal: it measured 5 orrery bug families (with description variants of each) at k of 1 to 3, every cell
@@ -216,4 +235,11 @@ later fixed by a person becomes a new item.
 - 2026-11-15, the operator: "let's not assume that the bug fix fleet works fine … it's in some kind
   of beta evaluation … move what we can and then fully review how it works and actually use the
   tools we have, including Eval Harness, to figure out how to close this loop", and the six
-  questions taken as proposed as the starting ground. §7 added.
+  questions taken as proposed as the starting ground. The evaluation (now §8) added.
+- 2026-11-15, the operator: "focus on form and overall flow first, and separate making it work in terms
+  of fine-tuning harness and models etc. as a separate follow-up. Success criteria is to get to a
+  better place now, but not end up with fixes." §7 added; the evaluation is phase B (§8).
+- 2026-11-15, the census for §8's dataset (read-only, GitHub API and each repo's history): closed `bug`
+  issues fixed (not duplicates or not planned), with a commit naming them, whose commits touch tests:
+  podcast_scraper 177, 142, 136; orrery 28, 17, 8; agentic-ai-homelab 15, 9, 4. None is yet checked
+  as an oracle (failing on the parent, passing at the fix).
