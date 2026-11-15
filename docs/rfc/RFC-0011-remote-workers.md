@@ -1,6 +1,7 @@
 # RFC-0011 — Remote workers: routines on any machine, the mini orchestrating
 
-**Status:** Proposed.
+**Status:** Accepted (operator, 2026-11-15: the three questions as proposed: the link is a mode of
+the host agent's binary, the worker's version must be flotillad's, the X3 first). Not built.
 **Builds on:** [ADR-0006](../adr/ADR-0006-node-agent.md) (host agents: they dial in, mutual TLS, the
 host CA, enrolment and revocation), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (workers per role),
 [RFC-0010](RFC-0010-bugfix-on-the-platform.md) §9 (bugfix's fix and push workers on the X3, its first
@@ -116,3 +117,4 @@ resumes them.
 - 2026-11-15, the operator: "I want to run heavy agentic work like this on the X3 … the mini as
   orchestrator and services platform, no dev work … this orchestration should be a generic capability
   and we could use it for other flows also … and on other machines as well."
+- 2026-11-15, the operator: "all good, suggestions accepted".

@@ -207,6 +207,9 @@ later fixed by a person becomes a new item.
 
 ## 9. Revision, 2026-11-15: what a fix runs, and where
 
+**Accepted** (operator, 2026-11-15), with the placement as [RFC-0011](RFC-0011-remote-workers.md). Not
+built; `bugfix/fix` is paused on the mini until it is.
+
 The first live runs on the mini (shadow, 2026-11-15) showed the port's cost.
 
 - **Every fix ran orrery's whole suite 2 to 5 times:** once on the base for its red set, then once a
