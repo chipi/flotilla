@@ -210,6 +210,41 @@ func TestOneRunPerCase(t *testing.T) {
 	}
 }
 
+// Two cases of one kind: the second waits while the routine runs for the first, with no lease and no
+// event (a busy routine is not a run without a decision), and goes next.
+func TestBusyRoutineCaseWaits(t *testing.T) {
+	f := setup(t)
+	f.w.block, f.w.plan = make(chan struct{}), `{"outcome": "resolved_itself"}`
+	a := f.handOver(t, "#1")
+	b := f.handOver(t, "#2")
+	if err := f.d.Once(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for f.w.runs() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if err := f.d.Once(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first, second := a, b
+	if f.cs(t, a).Holder == "" {
+		first, second = b, a
+	}
+	if c := f.cs(t, second); c.Holder != "" || lastEvent(t, f, second).Kind != "case."+cases.HandedOver {
+		t.Fatalf("the waiting case: %+v, last event %+v", c, lastEvent(t, f, second))
+	}
+	close(f.w.block)
+	f.d.Wait()
+	if c := f.cs(t, first); c.Status != cases.Closed {
+		t.Fatalf("the first case: %+v", c)
+	}
+	f.w.block = nil
+	f.pass(t)
+	if c := f.cs(t, second); c.Status != cases.Closed || f.w.runs() != 2 {
+		t.Fatalf("the second case after the first: %+v, %d runs", c, f.w.runs())
+	}
+}
+
 // An expired lease frees a handed-over case, never one with an execution in flight; one in checking is
 // freed, so its check resumes.
 func TestExpiredLeases(t *testing.T) {

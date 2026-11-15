@@ -137,6 +137,7 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	busy := sc.Running()
 	for _, c := range open {
 		if c.Holder != "" { // a fast path: LeaseCase below is the guard
 			continue
@@ -144,6 +145,9 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		j := actingRoutine(sc.Routines, c.Kind)
 		if j == nil {
 			continue // no routine acts on this kind here: the stuck-state timer escalates it
+		}
+		if _, running := busy[j.ID()]; running {
+			continue // one run of a routine at a time: the case waits its turn, with nothing to record
 		}
 		if wait, err := d.backingOff(ctx, c.ID, now); err != nil || wait {
 			continue
@@ -155,6 +159,7 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+		busy[j.ID()] = "started by this pass"
 		d.wg.Add(1)
 		go func(c store.Case, j *spec.Routine) {
 			defer d.wg.Done()

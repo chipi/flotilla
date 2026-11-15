@@ -1,11 +1,15 @@
 """python3 bugfix/test_bugfix.py: the bugfix fleet's routines (RFC-0010)."""
+import http.server
 import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import intake  # noqa: E402
 import pi_config  # noqa: E402
 
 MODELS = {
@@ -47,6 +51,102 @@ class PiConfig(unittest.TestCase):
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         with open(path) as f:
             self.assertIn("fleet-bugfix-flash", f.read())
+
+
+def issue(n, title, labels, body="steps to reproduce", pr=False):
+    it = {"number": n, "title": title, "html_url": f"https://github.com/o/r/issues/{n}", "labels": [{"name": x} for x in labels],
+          "updated_at": "2026-11-15T10:00:00Z", "body": body}
+    if pr:
+        it["pull_request"] = {"url": "x"}
+    return it
+
+
+class FakeGitHub:
+    """A local GitHub issues API: GET /repos/<repo>/issues?labels=<one label> answers from `issues`."""
+
+    def __init__(self, issues, status=200):
+        self.issues, self.status, self.seen = issues, status, []
+        outer = self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                u = urllib.parse.urlparse(self.path)
+                q = urllib.parse.parse_qs(u.query)
+                outer.seen.append((u.path, q.get("labels", [""])[0], q.get("state", [""])[0], self.headers.get("Authorization")))
+                if outer.status != 200:
+                    self.send_response(outer.status)
+                    self.end_headers()
+                    return
+                label = q.get("labels", [""])[0]
+                body = json.dumps([i for i in outer.issues if label in [x["name"] for x in i["labels"]]]).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.srv.server_address[1]}"
+
+    def close(self):
+        self.srv.shutdown()
+
+
+class Intake(unittest.TestCase):
+    def run_intake(self, gh, *args, token=None):
+        plan = os.path.join(tempfile.mkdtemp(), "plan.json")
+        env = {"FLOTILLA_PLAN_FILE": plan, "GITHUB_API": gh.url}
+        if token:
+            tf = os.path.join(tempfile.mkdtemp(), "t")
+            with open(tf, "w") as f:
+                f.write(token + "\n")
+            env["GITHUB_TOKEN_FILE"] = tf
+        old = dict(os.environ)
+        os.environ.update(env)
+        try:
+            intake.main(list(args))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        with open(plan) as f:
+            return json.load(f)
+
+    def test_one_case_per_issue_either_label_no_prs(self):
+        gh = FakeGitHub([issue(12, "the orbit is wrong", ["bug"]), issue(15, "crash on /fly", ["triage-fleet/routed:bugfix", "bug"]),
+                         issue(16, "a PR", ["bug"], pr=True), issue(17, "routed only", ["triage-fleet/routed:bugfix"])])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug", "--label", "triage-fleet/routed:bugfix", token="tok-1")
+        self.assertEqual(out["outcome"], "detections")
+        got = {d["target"]: d for d in out["detections"]}
+        self.assertEqual(sorted(got), ["repo:chipi/orrery/issues/12", "repo:chipi/orrery/issues/15", "repo:chipi/orrery/issues/17"])
+        d = got["repo:chipi/orrery/issues/15"]
+        self.assertEqual((d["kind"], d["title"]), ("code_bug", "orrery #15: crash on /fly"))
+        self.assertEqual(d["data"]["issue"]["number"], 15)
+        self.assertEqual(d["data"]["issue"]["labels"], ["bug", "triage-fleet/routed:bugfix"])
+        self.assertTrue(all(s[2] == "open" and s[3] == "Bearer tok-1" for s in gh.seen), gh.seen)
+
+    def test_a_long_body_is_cut_to_fit(self):
+        gh = FakeGitHub([issue(3, "long", ["bug"], body="x" * 40000)])
+        self.addCleanup(gh.close)
+        d = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")["detections"][0]
+        self.assertTrue(d["data"]["issue"]["body_cut"])
+        self.assertLessEqual(len(json.dumps(d["data"]).encode()), intake.MAX_DATA)
+        self.assertGreater(len(d["data"]["issue"]["body"]), 1000)
+
+    def test_a_failed_read_or_too_many_fails_the_run(self):
+        """A run that could not see the issues, or would have to leave some out, reports nothing: either
+        would clear open cases."""
+        gh = FakeGitHub([], status=403)
+        self.addCleanup(gh.close)
+        with self.assertRaises(intake.IntakeError):
+            self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
+        many = FakeGitHub([issue(n, "b", ["bug"]) for n in range(1, intake.MAX_DETECTIONS + 2)])
+        self.addCleanup(many.close)
+        with self.assertRaises(intake.IntakeError):
+            self.run_intake(many, "--repo", "chipi/orrery", "--label", "bug")
 
 
 if __name__ == "__main__":

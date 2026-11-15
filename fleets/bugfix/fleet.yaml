@@ -1,0 +1,5 @@
+fleet: bugfix
+description: >-
+  The developers: fix bugs filed against the repos they cover. Today orrery: a case per open bug,
+  a fix with a reproducing test and the repo's suite as gates, and a draft PR the operator merges
+  (RFC-0010). In beta evaluation: whether its fixes are good is measured separately (§8).
