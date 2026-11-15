@@ -115,6 +115,13 @@ activity over the following days and weeks (RFC-0010 §7, operator 2026-11-15).
 
 ### 5. SEO, the digital-marketing fleet
 
+**Done 2026-11-15** ([RFC-0012](../rfc/RFC-0012-seo-fleet.md), accepted;
+[operations](../operations/seo.md)): `seo/site-check` runs daily in shadow on the `marketing` worker
+on the mini, over the operator's 5 sites. Its first run (19:37Z) opened 2 cases: Orrery's robots.txt
+keeps Baiduspider out, airandspacehistory.com's home canonical is `/home`. Search Console (a service
+account on the 5 properties) and Umami (a view-only user) are reachable; the traffic and
+search-console routines are next.
+
 - Design first: Orrery as the first site; Google Search Console and Umami as sources (GA4 is out);
   what a finding is, how often, what it may do (propose only to start).
 - Its own worker and credentials; findings into the brief's sections.
