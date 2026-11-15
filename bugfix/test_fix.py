@@ -161,6 +161,18 @@ class Streams(unittest.TestCase):
         self.assertEqual((fix.assistant_text(bad), fix.stream_error(bad)), ("", "400: UnsupportedParamsError reasoning_effort"))
 
 
+class Errors(unittest.TestCase):
+    def test_npm_s_error_lines_not_its_notice(self):
+        out = ("added 1 package\nnpm error code 1\nnpm error path /wt/node_modules/canvas\n"
+               "npm error gyp ERR! stack Error: getaddrinfo EAI_AGAIN nodejs.org\n"
+               "npm notice New major version of npm available! 10.9.9 -> 12.2.2\n")
+        got = fix.errors_of(out)
+        self.assertIn("npm error path /wt/node_modules/canvas", got)
+        self.assertIn("nodejs.org", got)
+        self.assertNotIn("New major version", got)
+        self.assertEqual(fix.errors_of("all fine\nthe end"), "all fine\nthe end", "no error line: the tail")
+
+
 class Chain(unittest.TestCase):
     def fixture(self, verdicts, fixes):
         f = Fixture(verdicts, fixes)

@@ -74,6 +74,16 @@ def sh(cmd, cwd, env=None, timeout=None, check=False):
         return 124, out
 
 
+ERR_LINE = re.compile(r"(npm (error|ERR!)|gyp ERR!|^error|Error:|ERR_)", re.I)
+
+
+def errors_of(out, n=400):
+    """The error lines of a tool's output, not its last lines: npm ends a failed install with an upgrade
+    notice, which is all a tail showed (orrery #490 on the mini, 2026-11-15)."""
+    lines = [ln.strip() for ln in (out or "").splitlines() if ERR_LINE.search(ln)]
+    return tail(" | ".join(lines), n) if lines else tail(out, n)
+
+
 def suite_failures(wt, suite_cmd, env, timeout):
     """The failed-test set (file::name) from the suite's JSON report (vitest's, as chain.go reads it). A red
     suite is data, not an error; a missing or unreadable report is an error."""
@@ -196,7 +206,7 @@ class Chain:
         if self.a.setup:
             code, out = sh(self.a.setup, self.wt, self.env, self.a.setup_timeout)
             if code != 0:
-                raise Stop(f"the repo's setup failed on the base (exit {code}): {tail(out, 300)}")
+                raise Stop(f"the repo's setup failed on the base (exit {code}): {errors_of(out)}")
 
     def reset(self):
         sh(["git", "-C", self.wt, "reset", "-q", "--hard", self.base], self.run_dir, self.env, 60, check=True)

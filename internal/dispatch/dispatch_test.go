@@ -245,6 +245,32 @@ func TestBusyRoutineCaseWaits(t *testing.T) {
 	}
 }
 
+// A paused routine's case waits with no run and no event (the scheduler would only record a skipped run
+// and the case a no-decision, every pass), and is run once the routine is resumed.
+func TestPausedRoutineCaseWaits(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	f.w.plan = `{"outcome": "resolved_itself"}`
+	id := f.handOver(t, "#p")
+	if err := f.st.SetControl(ctx, "ops/rerun", sched.KeyPaused, "1", "user:marko", "test"); err != nil {
+		t.Fatal(err)
+	}
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.HandedOver || f.w.runs() != 0 || lastEvent(t, f, id).Kind != "case."+cases.HandedOver {
+		t.Fatalf("paused: %+v, %d runs, last event %+v", c, f.w.runs(), lastEvent(t, f, id))
+	}
+	if runs, _ := f.st.Runs(ctx, "ops/rerun", 10); len(runs) != 0 {
+		t.Fatalf("a paused routine's case recorded %d runs", len(runs))
+	}
+	if err := f.st.SetControl(ctx, "ops/rerun", sched.KeyPaused, "0", "user:marko", "test"); err != nil {
+		t.Fatal(err)
+	}
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Closed || f.w.runs() != 1 {
+		t.Fatalf("resumed: %+v, %d runs", c, f.w.runs())
+	}
+}
+
 // An expired lease frees a handed-over case, never one with an execution in flight; one in checking is
 // freed, so its check resumes.
 func TestExpiredLeases(t *testing.T) {

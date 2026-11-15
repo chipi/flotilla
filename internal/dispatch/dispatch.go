@@ -149,6 +149,11 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		if _, running := busy[j.ID()]; running {
 			continue // one run of a routine at a time: the case waits its turn, with nothing to record
 		}
+		if why, err := sc.SkipReason(ctx, j); err != nil {
+			return err
+		} else if why != "" {
+			continue // paused, its fleet STOPped, its day's budget spent: the case waits, with nothing to record
+		}
 		if wait, err := d.backingOff(ctx, c.ID, now); err != nil || wait {
 			continue
 		}
