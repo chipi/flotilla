@@ -16,8 +16,10 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 
 BUG_JSON="$1"; HARNESS="${2:-pi}"
 KB_EVIDENCE="${3:-}"; KB_PRIOR="${4:-}"       # both set → kick-back re-entry
-ROOT="$HOME/.bugfix-fleet/bakeoff"
-WT="$ROOT/orrery"
+# flotilla's bugfix worker (RFC-0010 A5) sets these; unset, the bake-off's own layout
+ROOT="${BAKEOFF_ROOT:-$HOME/.bugfix-fleet/bakeoff}"
+WT="${BAKEOFF_WT:-$ROOT/orrery}"
+PROVIDER="${PI_PROVIDER:-openrouter}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 jqr(){ jq -r "$1" "$BUG_JSON"; }
@@ -144,7 +146,7 @@ EOF
 echo "══ run triager ══"
 SECONDS=0
 MAX_WALL="${TRIAGE_MAX_WALL:-900}"
-( cd "$WT" && pi -p --mode json --provider openrouter --model "$MODEL" "$PROMPT" < /dev/null ) \
+( cd "$WT" && pi -p --mode json --provider "$PROVIDER" --model "$MODEL" "$PROMPT" < /dev/null ) \
   > "$OUT/harness.json" 2> "$OUT/harness.err" &
 HPID=$!
 while kill -0 "$HPID" 2>/dev/null; do
@@ -251,8 +253,8 @@ fi
 # render an actionable verdict into a worker-ready manifest (bugs/triaged/)
 TRIAGED=""
 if [ "$VERDICT" = "actionable" ] && [ -f "$OUT/triage.json" ]; then
-  mkdir -p "$HERE/bugs/triaged"
-  TRIAGED="bugs/triaged/${ID}-triaged${SUFFIX}.json"
+  TRIAGED_DIR="${BAKEOFF_TRIAGED_DIR:-$HERE/bugs/triaged}"; mkdir -p "$TRIAGED_DIR"
+  TRIAGED="$TRIAGED_DIR/${ID}-triaged${SUFFIX}.json"
   TDESC=$(jq -r '.problem | (.symptom|tostring) + "\n\nExpected: " + (.expected|tostring)
     + "\n\nAcceptance criteria:\n" + (.acceptance | map(if type == "string" then "- " + . else "- " + .criterion + " [" + (.intent_source // "?") + ((.source_ref // "") | if . == "" then "" else ": " + . end) + "]" end) | join("\n"))
     + (if (.domain_facts | length) > 0 then "\n\nDomain facts:\n" + (.domain_facts | map("- " + .) | join("\n")) else "" end)
@@ -260,7 +262,7 @@ if [ "$VERDICT" = "actionable" ] && [ -f "$OUT/triage.json" ]; then
        + (if (.pin.decoy // "") != "" then "\nDo NOT change " + .pin.decoy + " — it is not the owner of this symptom." else "" end) else "" end)' \
     --arg kb "$([ "$KB_ROUND" -gt 0 ] && echo 1 || echo 0)" "$OUT/triage.json")
   jq --arg id "${ID}-triaged${SUFFIX}" --arg desc "$TDESC" --arg lvl "$([ "$KB_ROUND" -eq 0 ] && echo L1-triaged || echo L2-triaged-kb$KB_ROUND)" \
-     '.id=$id | .description=$desc | .level=$lvl' "$BUG_JSON" > "$HERE/$TRIAGED"
+     '.id=$id | .description=$desc | .level=$lvl' "$BUG_JSON" > "$TRIAGED"
   echo "   triaged manifest → $TRIAGED"
 fi
 

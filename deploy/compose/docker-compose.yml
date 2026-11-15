@@ -44,7 +44,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,worker-triage-candidate,worker-ops-read,worker-ops-act-host,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
@@ -61,6 +61,7 @@ services:
       # 2026-11-14 the monitor's first run at boot met a worker not yet listening.
       worker-ops-read: {condition: service_healthy, required: false}
       worker-ops-act-host: {condition: service_healthy, required: false}
+      worker-bugfix: {condition: service_healthy, required: false}
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
@@ -186,6 +187,39 @@ services:
     healthcheck: *ops-health
     networks: [flotilla]
 
+  # The bugfix fleet's worker (profile bugfix, RFC-0010 §4): it clones the repos it fixes, runs their
+  # code (installs, tests) and the coding harness, so it holds only its worker token and its model key
+  # (/run/flotilla/model.key, named by flotillad.yaml's bugfix endpoint as key_file). Nothing in it can
+  # push: the GitHub App key is on worker-bugfix-act only, which runs the executing routine (it applies an
+  # approved diff and pushes; it runs no repo code and holds no model key), as ops-read and ops-act-host
+  # split reading from acting. Worktrees live on the scratch volume and are deleted at the end of each
+  # run; the repo mirror and the npm cache stay there between runs. Node reads the proxy from the
+  # environment only with NODE_USE_ENV_PROXY.
+  worker-bugfix:
+    <<: *hardening
+    profiles: [bugfix]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG}
+    container_name: flotilla-worker-bugfix
+    mem_limit: 4g
+    cpus: 2.0
+    tmpfs: ["/tmp:size=256m", "/home/worker:size=64m,uid=10001,gid=10001,mode=0700"]
+    environment:
+      FLOTILLA_WORKER: bugfix
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress:4750
+      ROUTINE_HTTPS_PROXY: http://egress:4750
+      ROUTINE_NO_PROXY: flotillad
+      ROUTINE_NODE_USE_ENV_PROXY: "1"
+      ROUTINE_BUGFIX_SCRATCH: /scratch
+      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
+      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
+    volumes:
+      - worker-bugfix-secrets:/run/flotilla:ro
+      - bugfix-scratch:/scratch
+    healthcheck: *ops-health
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -222,6 +256,12 @@ volumes:
   worker-ops-act-host-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-ops-act-host-secrets
     external: true
+  # the bugfix worker's token and model key (profile bugfix), filled by secrets.sh; its scratch space
+  worker-bugfix-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-bugfix-secrets
+    external: true
+  bugfix-scratch:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-bugfix-scratch
   # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
   triage-candidate-state:
     name: ${TRIAGE_CANDIDATE_STATE_VOLUME:-flotilla-triage-state-candidate}

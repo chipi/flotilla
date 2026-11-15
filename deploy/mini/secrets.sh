@@ -62,6 +62,13 @@ for w in ops-read ops-act-host; do
     put $V-worker-$w-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-$w.token"
   fi
 done
+# the bugfix worker (compose profile bugfix, RFC-0010), where its token exists: its token and its model
+# key (FLOTILLA_CONFIG/bugfix-model.key, the LiteLLM fleet-bugfix virtual key, alone in its file)
+if [ -s "$FLOTILLA_CONFIG/worker-bugfix.token" ]; then
+  put $V-flotillad-secrets worker-bugfix.token 65532 "$FLOTILLA_CONFIG/worker-bugfix.token"
+  put $V-worker-bugfix-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-bugfix.token"
+  put $V-worker-bugfix-secrets model.key 10001 "$FLOTILLA_CONFIG/bugfix-model.key"
+fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"

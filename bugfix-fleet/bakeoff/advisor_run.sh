@@ -11,8 +11,10 @@ set -euo pipefail
 export NODE_OPTIONS="--max-old-space-size=4096"
 
 BUG_JSON="$1"; WOUT="$2"
-ROOT="$HOME/.bugfix-fleet/bakeoff"
-WT="$ROOT/orrery"
+# flotilla's bugfix worker (RFC-0010 A5) sets these; unset, the bake-off's own layout
+ROOT="${BAKEOFF_ROOT:-$HOME/.bugfix-fleet/bakeoff}"
+WT="${BAKEOFF_WT:-$ROOT/orrery}"
+PROVIDER="${PI_PROVIDER:-openrouter}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MODEL="${ADVISOR_MODEL:-z-ai/glm-5.2}"   # ladder rung 2 (reasoner); swappable
 
@@ -48,7 +50,7 @@ echo "══ advisor episode ($MODEL) ══"
 # kimi-k2.6 ran 27-31 min uncapped; 72k output tokens for a read-only pin)
 MAX_WALL="${ADVISOR_MAX_WALL:-600}"
 SECONDS=0
-( cd "$WT" && pi -p --mode json --provider openrouter --model "$MODEL" "$PROMPT" < /dev/null ) \
+( cd "$WT" && pi -p --mode json --provider "$PROVIDER" --model "$MODEL" "$PROMPT" < /dev/null ) \
   > "$WOUT/advisor-raw.json" 2> "$WOUT/advisor.err" &
 HPID=$!
 while kill -0 "$HPID" 2>/dev/null; do

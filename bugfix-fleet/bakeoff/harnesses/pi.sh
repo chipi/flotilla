@@ -3,6 +3,7 @@
 set -euo pipefail
 WT="$1"; DESC="$2"
 MODEL="${PI_MODEL:-deepseek/deepseek-v4-pro}"
+PROVIDER="${PI_PROVIDER:-openrouter}"
 read -r -d '' PROMPT <<EOF || true
 You are fixing a bug in the repository at the current working directory.
 
@@ -17,4 +18,4 @@ cd "$WT"
 export NODE_OPTIONS="--max-old-space-size=4096"
 # </dev/null: headless run must not inherit caller stdin — pi -p blocks reading
 # a held-open stdin socket (bit us 2026-07-23: 11-min 0-CPU hang, zero output)
-pi -p --mode json --provider openrouter --model "$MODEL" "$PROMPT" < /dev/null
+pi -p --mode json --provider "$PROVIDER" --model "$MODEL" "$PROMPT" < /dev/null
