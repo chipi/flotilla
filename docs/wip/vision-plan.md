@@ -18,7 +18,7 @@ out of agentic-ai-homelab. The order of the steps below is the operator's (2026-
 | Ops | pipeline v1 in shadow: the backup monitor, rerun and verify ([pipeline v1](pipeline-v1-plan.md)); the morning brief, written by flotillad without a model; the daily model contract check |
 | Slack approvals | built and tested against a stand-in; not wired (no app) |
 | MCP server | built 2026-11-15 (ADR-0015); no real caller yet |
-| Bugfix | its code is in `bugfix-fleet/`; it does not run as a flotilla routine |
+| Bugfix | phase A live 2026-11-15 in shadow: intake, fix, open-pr and pr-check as routines, its workers on the X3 as remote workers (RFC-0011); phase B (the evaluation) is a separate activity |
 | SEO / digital marketing | not started |
 | agentic-ai-homelab | still holds `fleetd/`, `signal-fleet/`, `bugfix-fleet/`, frozen |
 
@@ -93,6 +93,12 @@ Done when last night's pattern, replayed, produces a `process_change` proposing 
 and a rejected proposal is recorded.
 
 ### 4. Bugfix onto the platform
+
+**Phase A done 2026-11-15** ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md) §7, §9;
+[RFC-0011](../rfc/RFC-0011-remote-workers.md); [SR-0001](../security-reviews/SR-0001-bugfix-coding-harness.md)):
+the routines run in shadow, the fix and push workers on the X3 through their links, a fix checks only
+what it touches, and the fleet page shows the runs. Left: the operator makes the GitHub App, then
+`github.open_pr` to propose. Phase B (making the fixes good) is the operator's, with another agent.
 
 - Its routines as specs in `fleets/bugfix/`, on its own worker (repo write credentials, nothing else).
 - Its decisions in the ledger; its PRs as cases with a plan, so autonomy, the evidence bar and Slack
