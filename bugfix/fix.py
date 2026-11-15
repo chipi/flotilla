@@ -190,11 +190,15 @@ class Chain:
 
     # 2 · the base
     def checkout(self):
-        """main, one commit deep, its blobs fetched only for the paths checked out: orrery's history is 14 GB
-        and its tree 6.8 GB, most of it images the suite does not read. --exclude-path leaves such trees out;
+        """main, one commit deep, its large blobs fetched only for the paths checked out: orrery's history is
+        14 GB and its tree 6.8 GB, most of it images the suite does not read. --exclude-path leaves such trees out;
         a test that needs them fails on the base too, so it is in the base's red set, not a new failure."""
         remote = self.env.get("GIT_REMOTE_BASE", "https://github.com").rstrip("/") + "/" + self.repo
-        sh(["git", "clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout", "--branch", "main", remote, self.wt],
+        # blob:limit, not blob:none: with no blobs at all, the checkout asks for every file it needs in one
+        # batch, and GitHub answered such a request (1.3 MB of object ids, orrery case #643 on the mini,
+        # 2026-11-15) with HTTP 400. Blobs under the limit come in the clone's own pack (orrery: 852 MB, about
+        # 2 minutes); only the larger ones outside the excluded trees are fetched at the checkout.
+        sh(["git", "clone", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "--no-checkout", "--branch", "main", remote, self.wt],
            self.run_dir, self.env, 1200, check=True)
         if self.a.exclude_path:
             sh(["git", "-C", self.wt, "sparse-checkout", "set", "--no-cone", "/*"] + [f"!/{x.strip('/')}/" for x in self.a.exclude_path],
@@ -378,6 +382,7 @@ def parse(argv):
     ap.add_argument("--setup", default="npm ci --no-audit --no-fund && (npm run --if-present i18n:compile)")
     ap.add_argument("--suite-cmd", default="npx vitest run --reporter=json --outputFile=%s")
     ap.add_argument("--exclude-path", action="append", default=[], help="a tree of the repo not to check out (sparse)")
+    ap.add_argument("--blob-limit", default="256k", help="blobs up to this size come with the clone (git --filter=blob:limit)")
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
                     help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
     ap.add_argument("--kickback-max", type=int, default=3)
