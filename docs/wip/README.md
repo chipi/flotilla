@@ -23,6 +23,7 @@ prioritized task lists. Promotion targets:
   the overrides and the data gaps.
 - [Closing the initial vision](vision-plan.md): where the 2026-11-08 vision stands and the
   steps left, in the operator's order.
+- [Bugfix phase A](bugfix-phase-a.md): the build order for step 4's form and flow (RFC-0010 §7).
 - [Replay entry point](replay-entry-point.md): the versioned module evaluation projects call instead
   of patching internals (ADR-0013), agreed.
 
