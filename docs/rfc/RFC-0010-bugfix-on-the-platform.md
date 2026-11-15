@@ -239,10 +239,9 @@ There is no base-wide red set: the baseline is the related tests on the base, ru
 **Open for the design (each with a proposal):**
 
 - **The transport.** A worker run is one HTTP request held open for the run, and flotillad's only way
-  out is its egress proxy. *Proposed:* flotillad reaches the X3 workers through the egress proxy,
-  their tailnet name on its allowlist, with the existing worker token (the tailnet encrypts). Check
-  first that Smokescreen holds a 20-minute request. The alternative is the X3 worker dialling out to
-  flotillad and taking runs (as the host agents connect in): more robust, more to build.
+  out is its egress proxy. Superseded: the operator asked for placement as a generic capability, on
+  any machine. [RFC-0011](RFC-0011-remote-workers.md) proposes remote workers that dial in, as the host
+  agents do.
 - **The X3's rules** (`infra/x3/AGENTS.md`): its deploy checkout and user units, and the eval-harness
   GPU rule (a fix run uses no GPU).
 - **Cost of the move:** a second compose stack to deploy, and the mini's worker-bugfix and its proxy

@@ -112,6 +112,7 @@ nav:
     - RFC-0008 — The MCP server: rfc/RFC-0008-mcp-server.md
     - RFC-0009 — Post-incident review: rfc/RFC-0009-post-incident-review.md
     - RFC-0010 — Bugfix on the platform: rfc/RFC-0010-bugfix-on-the-platform.md
+    - RFC-0011 — Remote workers: rfc/RFC-0011-remote-workers.md
   - In progress:
     - Overview: wip/README.md
     - Phase 2 plan: wip/phase-2-plan.md
