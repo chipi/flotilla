@@ -462,6 +462,13 @@ class Chain:
         # under pytest the scope comes first: a file pytest imports must be named, not hidden behind "no test"
         if bad and pytest:
             return f"out of scope: the diff touches {', '.join(bad)}", files, stream, stats
+        # the related gates run what is left: a round that deletes the test its change breaks (or moves it out
+        # of a test path: --no-renames lists that as a delete) would pass them
+        _, gone = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=D", self.base],
+                     self.run_dir, self.env, 60, check=True)
+        deleted = [x for x in gone.split("\0") if x.strip() and TEST_FILE.search(x)]
+        if deleted:
+            return f"out of scope: a fix may not delete a test: {', '.join(deleted)}", files, stream, stats
         tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
         if pytest:   # only .py files go to pytest; a conftest or config is never a test
             tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]

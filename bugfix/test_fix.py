@@ -95,10 +95,14 @@ PI_HARNESS = POP + textwrap.dedent('''\
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyrenamesrc) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; git mv src/podcast_scraper/lone/z.py src/podcast_scraper/pkg/z.py
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pydeltest) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; rm tests/unit/podcast_scraper/pkg/test_keep.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyskip)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; printf 'SKIP\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyconf)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py; echo '[project]' > pyproject.toml ;;
       jsrename) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; git mv package.json src/moved.json ;;
+      jsdeltest) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; rm keep.test.js ;;
+      jsmovetest) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; mkdir -p docs; git mv keep.test.js docs/keep.md ;;
       nothing)  ;;
     esac
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output":7}}}\\n'
@@ -726,6 +730,15 @@ exec {real} "$@"
         self.assertEqual(plan["outcome"], "escalate")
         self.assertIn("out of scope: the diff touches package.json", plan["detail"])
 
+    def test_a_fix_may_not_delete_a_test(self):
+        """vitest related cannot see a deleted *.test.js: a round that removes the test its change breaks
+        would pass. A rename out of a test path is a delete too."""
+        for fix_, name in (("jsdeltest", "keep.test.js"), ("jsmovetest", "keep.test.js")):
+            f = self.fixture(["actionable"], [fix_])
+            plan, _ = f.run("--kickback-max", "0")
+            self.assertEqual(plan["outcome"], "escalate", fix_)
+            self.assertIn(f"a fix may not delete a test: {name}", plan["detail"], fix_)
+
     def test_out_of_scope(self):
         f = self.fixture(["actionable"], ["workflow"])
         plan, _ = f.run("--kickback-max", "0")
@@ -883,6 +896,12 @@ class PythonRepo(unittest.TestCase):
         self.assertNotIn("rename from", d)
         self.assertIn("deleted file mode", d)
         self.assertIn("+++ b/src/podcast_scraper/pkg/z.py", d)
+
+    def test_a_fix_may_not_delete_a_test(self):
+        f = self.fixture(["actionable"], ["pydeltest"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("a fix may not delete a test: tests/unit/podcast_scraper/pkg/test_keep.py", plan["detail"])
 
     def test_a_rename_out_of_a_forbidden_path_is_seen(self):
         f = self.fixture(["actionable"], ["pyrename"])
