@@ -177,6 +177,32 @@ class SpendTest(unittest.TestCase):
         with open(os.path.join(home, ".spend")) as f:
             self.assertGreaterEqual(float(f.read()), 0.0)
 
+    def test_a_sigkill_during_the_gateway_read_still_leaves_a_number(self):
+        # pi's figure is written before the gateway is read: a SIGKILL mid-read (past the worker's grace) leaves it
+        import signal
+        import subprocess
+        import time
+        g = self.gateway([4.0], step=0.01)   # never settles: the read goes on until the settle limit
+        kf = os.path.join(self.d, "key")
+        with open(kf, "w") as f:
+            f.write("sk-test")
+        models = {"endpoints": {"gw": {"base_url": g.base, "kind": "litellm", "key_file": kf}},
+                  "aliases": {"bugfix-flash": {"endpoint": "gw", "model": "m"}, "bugfix-reviewer": {"endpoint": "gw", "model": "m"}}}
+        home = os.path.join(self.d, "home")
+        os.makedirs(home)
+        env = dict(os.environ, FLOTILLA_CASE=json.dumps({"id": "c", "data": {}}), HOME=home,
+                   FLOTILLA_PLAN_FILE=os.path.join(self.d, "p.json"), FLOTILLA_MODELS=json.dumps(models))
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "chipi/orrery", "--worker-model", "bugfix-flash",
+                              "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer",
+                              "--scratch", os.path.join(self.d, "scratch"), "--spend-file", ".spend", "--spend-poll", "0.5"],
+                             env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
+        time.sleep(3)
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait(timeout=10)
+        with open(os.path.join(home, ".spend")) as f:
+            self.assertEqual(float(f.read()), 0.0)   # no pi session ran: pi's figure is 0, and it is there
+
     def test_without_spend_file_nothing_is_read_or_written(self):
         g = self.gateway([1.0])
         home = os.path.join(self.d, "home")

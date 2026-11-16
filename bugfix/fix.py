@@ -1036,6 +1036,8 @@ def main(argv=None, environ=None):
         if terminated and meter is not None:
             meter.hurry()
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
+            # pi's figure first, so a SIGKILL during the gateway read still leaves a number; then the bill over it
+            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi")))
             usd, source, why = meter.cost(os.path.join(run_dir, "pi"))
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
             print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else ""))
