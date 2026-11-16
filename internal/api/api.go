@@ -141,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/holds", s.auth(ActHold, s.holdAdd))
 	m.Handle("POST /v1/holds/{id}/lift", s.auth(ActUnhold, s.holdLift))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/run", s.auth(ActRun, s.run))
+	m.Handle("POST /v1/runs/{id}/cancel", s.auth(ActCancel, s.runCancel))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/pause", s.auth(ActPause, s.pause))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/resume", s.auth(ActResume, s.resume))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/autonomy", s.auth(ActAutonomy, s.autonomy))
@@ -353,6 +354,13 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, c Caller) {
 	writeAction(w, err, 202, map[string]string{"started": routineID(r), "by": c.Name})
 }
 
+// runCancel cancels one run in flight (an operator's; the body's reason is required).
+func (s *Server) runCancel(w http.ResponseWriter, r *http.Request, c Caller) {
+	err := s.CancelRun(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
+	writeAction(w, err, 200, map[string]string{"cancelled": r.PathValue("id"), "by": c.Name})
+}
+
+// pause pauses a routine: its next runs are skipped, and a run in flight finishes (only STOP cancels).
 func (s *Server) pause(w http.ResponseWriter, r *http.Request, c Caller) {
 	err := s.SetPaused(r.Context(), c, "api", routineID(r), true, "")
 	writeAction(w, err, 200, map[string]string{"subject": routineID(r), sched.KeyPaused: "1", "by": c.Name})

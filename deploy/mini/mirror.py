@@ -49,7 +49,7 @@ SYNCED = ("queue", "export")          # deletions follow the volume here; result
 # written on the host, not by the fleet: the deploy log (homelab's deploy hooks, then flotilla's
 # deploy append it there). The volume's copy is stale, so the mirror never writes it.
 HOST_OWNED = {"results/deploys.tsv"}
-DONE = ("ok", "error", "timeout", "interrupted")
+DONE = ("ok", "error", "timeout", "interrupted", "cancelled")
 
 
 def env_file(path):

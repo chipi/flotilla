@@ -257,7 +257,7 @@ func (u *Server) stopAll(stop bool) func(http.ResponseWriter, *http.Request, *st
 				return
 			}
 		}
-		ok := "STOP is on: no routine starts; runs in flight finish their current case."
+		ok := "STOP is on: no routine starts, and runs in flight are cancelled."
 		if !stop {
 			ok = "STOP is released: every fleet's routines start on their triggers again."
 		}

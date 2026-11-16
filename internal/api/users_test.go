@@ -88,6 +88,7 @@ func TestPermissionTable(t *testing.T) {
 		{ActResume, "POST", "/v1/routines/triage/cycle/resume", `{"reason":"t"}`},
 		{ActAutonomy, "POST", "/v1/routines/triage/cycle/autonomy", `{"autonomy":"shadow"}`},
 		{ActStop, "POST", "/v1/fleets/triage/stop", ""},
+		{ActCancel, "POST", "/v1/runs/none/cancel", `{"reason":"t"}`},
 		{ActStart, "POST", "/v1/fleets/triage/start", `{"reason":"t"}`},
 		{ActUsers, "GET", "/v1/users", ""},
 		{ActLedger, "GET", "/v1/ledger/counts?ns=triage/cycle", ""},
@@ -114,7 +115,7 @@ func TestPermissionTable(t *testing.T) {
 		ok   bool
 	}{
 		{RoleViewer, ActRun, false}, {RoleViewer, ActPause, false}, {RoleViewer, ActRead, true},
-		{RoleAgent, ActResume, false}, {RoleAgent, ActStop, true}, {RoleAgent, ActUsers, false},
+		{RoleAgent, ActResume, false}, {RoleAgent, ActStop, true}, {RoleAgent, ActCancel, false}, {RoleOperator, ActCancel, true}, {RoleAgent, ActUsers, false},
 		{RoleOperator, ActUsers, false}, {RoleAdmin, ActResume, true}, {RoleAdmin, ActUsers, true},
 		{RoleWorker, ActRead, false}, {RoleAdmin, ActLedger, false},
 		{RoleAgent, ActFreeze, true}, {RoleAgent, ActUnfreeze, false}, {RoleViewer, ActFreeze, false},

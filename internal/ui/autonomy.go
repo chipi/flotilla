@@ -260,7 +260,7 @@ func (u *Server) fleetAction(w http.ResponseWriter, r *http.Request, s *store.Se
 	var ok string
 	switch r.PathValue("action") {
 	case "stop":
-		err, ok = u.API.SetStopped(r.Context(), caller(s), "ui", f, true, ""), "STOPped fleet "+f+": none of its routines start."
+		err, ok = u.API.SetStopped(r.Context(), caller(s), "ui", f, true, ""), "STOPped fleet "+f+": none of its routines start, and its runs in flight are cancelled."
 	case "start":
 		err, ok = u.API.SetStopped(r.Context(), caller(s), "ui", f, false, r.PostFormValue("reason")), "Started fleet "+f+"."
 	default:

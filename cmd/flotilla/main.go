@@ -4,10 +4,11 @@
 //	flotilla runs [fleet/routine] [-n 20]
 //	flotilla events [-n 50]
 //	flotilla run fleet/routine
-//	flotilla pause fleet/routine
+//	flotilla pause fleet/routine                        (the run in flight finishes; only stop and cancel end it)
 //	flotilla resume fleet/routine --reason "..."        (operator; loosening needs a reason)
 //	flotilla autonomy fleet/routine shadow|propose|auto [--reason "..."]   (operator; raising needs one)
-//	flotilla stop fleet
+//	flotilla stop fleet                                 (also cancels the fleet's runs in flight)
+//	flotilla cancel RUN_ID --reason "..."               (operator: one run in flight)
 //	flotilla start fleet --reason "..."                 (operator)
 //	flotilla case approve ID [--plan HASH] | reject ID --reason "..." (operator: a proposed plan)
 //	flotilla case close ID --reason "..."               (operator: an escalated case; releases its target)
@@ -179,6 +180,9 @@ func main() {
 	case "stop":
 		need(args, 1, "stop fleet")
 		post("/v1/fleets/"+args[0]+"/stop", nil)
+	case "cancel":
+		need(args, 1, `cancel RUN_ID --reason "..."`)
+		post("/v1/runs/"+args[0]+"/cancel", map[string]string{"reason": reason})
 	case "start":
 		need(args, 1, `start fleet --reason "..."`)
 		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
@@ -446,7 +450,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

@@ -117,7 +117,7 @@ func (c mixCounts) show(what string) string {
 			return ""
 		}
 		var parts []string
-		for _, s := range []string{"ok", "skipped", "failed", "error", "timeout"} {
+		for _, s := range []string{"ok", "skipped", "cancelled", "failed", "error", "timeout"} {
 			if c.runs[s] > 0 {
 				parts = append(parts, fmt.Sprintf("%d %s", c.runs[s], s))
 			}
@@ -372,13 +372,15 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 		http.Error(w, "runs failed", 500)
 		return
 	}
-	n, okN, skip, fail, took := len(today), 0, 0, 0, 0.0
+	n, okN, skip, cancelled, fail, took := len(today), 0, 0, 0, 0, 0.0
 	for _, x := range today {
 		switch x.Status {
 		case "ok":
 			okN++
 		case "skipped":
 			skip++
+		case "cancelled":
+			cancelled++
 		case "failed", "error", "timeout":
 			fail++
 		}
@@ -396,7 +398,7 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 		return
 	}
 	d.Cards = []scoreCard{
-		{Label: "Runs today", Value: fmt.Sprint(n), Unit: fmt.Sprintf("%d ok · %d skipped · %d failed", okN, skip, fail), Delta: "since 00:00 UTC", Tone: map[bool]string{true: "bad", false: "neutral"}[fail > 0], Arrow: "■", Spark: makeSpark(nil)},
+		{Label: "Runs today", Value: fmt.Sprint(n), Unit: fmt.Sprintf("%d ok · %d skipped%s · %d failed", okN, skip, cancelledText(cancelled), fail), Delta: "since 00:00 UTC", Tone: map[bool]string{true: "bad", false: "neutral"}[fail > 0], Arrow: "■", Spark: makeSpark(nil)},
 		{Label: "A run takes", Value: avg, Unit: "on average today", Delta: "of a " + j.Run.Timeout + " limit", Tone: "neutral", Arrow: "■", Spark: makeSpark(nil)},
 	}
 	if lc.Decisions > 0 {
@@ -422,7 +424,7 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 		if x.DurationS != nil {
 			t = fmt.Sprintf("%.0f s", *x.DurationS)
 		}
-		chip := map[string]string{"ok": "chip--ok", "skipped": "chip--neutral"}[x.Status]
+		chip := map[string]string{"ok": "chip--ok", "skipped": "chip--neutral", "cancelled": "chip--neutral"}[x.Status]
 		if chip == "" {
 			chip = "chip--stop"
 		}
@@ -431,4 +433,12 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 	}
 	sort.SliceStable(d.Runs, func(a, b int) bool { return d.Runs[a].Start > d.Runs[b].Start })
 	u.render(w, "routine.html", 200, u.pageFor(s, id, "Fleets", r, d))
+}
+
+// cancelledText is the " · N cancelled" a day's run counts carry only when a run was cancelled.
+func cancelledText(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · %d cancelled", n)
 }

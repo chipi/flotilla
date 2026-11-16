@@ -30,6 +30,12 @@ type Runner interface {
 	Run(ctx context.Context, r worker.Request) (*worker.Result, error)
 }
 
+// Canceller is a runner that can stop a run in flight: worker.Client, and a remote worker's runner (the
+// link). The worker ends the run as its timeout would, and the run's own Run call returns "cancelled".
+type Canceller interface {
+	Cancel(ctx context.Context, runID string) error
+}
+
 // Metrics receives one sample per run; telemetry pushes them to VictoriaMetrics.
 type Metrics interface {
 	Run(routine, status, autonomy string, durationS, spendDayUSD float64)
@@ -48,6 +54,16 @@ const (
 )
 
 var ErrRunning = errors.New("already running")
+
+// ErrNotRunning: Cancel found no run of that routine in flight.
+var ErrNotRunning = errors.New("not running")
+
+// cancelRetryEvery and cancelRetryFor bound how long a cancel waits for a run that flotillad has registered
+// but whose request the worker has not taken yet (its answer to the cancel is "no such run").
+const (
+	cancelRetryEvery = 250 * time.Millisecond
+	cancelRetryFor   = 15 * time.Second
+)
 
 type Scheduler struct {
 	// ReadyWait bounds how long a routine's first run after Loop starts waits for its worker to answer
@@ -72,6 +88,7 @@ type Scheduler struct {
 
 	mu      sync.Mutex
 	running map[string]string // routine id -> run id
+	cancels map[string]string // run id -> "cancelled: <who>, <why>", while a cancel of it is pending
 }
 
 func (s *Scheduler) init() {
@@ -79,6 +96,7 @@ func (s *Scheduler) init() {
 	defer s.mu.Unlock()
 	if s.running == nil {
 		s.running = map[string]string{}
+		s.cancels = map[string]string{}
 	}
 	if s.Now == nil {
 		s.Now = time.Now
@@ -251,7 +269,7 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	}
 	s.running[id] = runID
 	s.mu.Unlock()
-	defer func() { s.mu.Lock(); delete(s.running, id); s.mu.Unlock() }()
+	defer func() { s.mu.Lock(); delete(s.running, id); delete(s.cancels, runID); s.mu.Unlock() }()
 
 	autonomy, err := s.Autonomy(ctx, j)
 	if err != nil {
@@ -351,7 +369,9 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		if reports {
 			outcome = &CaseOutcome{Plan: res.Plan, PlanError: res.PlanError}
 		}
-		if status != store.StatusOK {
+		if status == store.StatusCancelled {
+			detail = s.cancelNote(runID, res.OutputTail)
+		} else if status != store.StatusOK {
 			detail = tail(res.OutputTail, 800)
 		} else if reports && caseEnv == nil && res.PlanError != "" {
 			// a monitor whose report cannot be read has detected nothing anyone sees: its run failed
@@ -423,6 +443,72 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		s.AfterRun(fctx, j, &out, outcome)
 	}
 	return &out, outcome, nil
+}
+
+// cancelNote is a cancelled run's detail: who asked and why, when flotillad was asked; else what the
+// worker saw (someone cancelled at the worker itself).
+func (s *Scheduler) cancelNote(runID, output string) string {
+	s.mu.Lock()
+	note := s.cancels[runID]
+	s.mu.Unlock()
+	if note != "" {
+		return note
+	}
+	return "cancelled at the worker: " + tail(output, 700)
+}
+
+// Cancel stops routine id's run in flight and returns its run id. The run ends "cancelled" (detail
+// "cancelled: <who>, <why>") when its worker reports it so, with its spend counted as for any run; a run
+// that ends ok before the worker acts stays ok. ErrNotRunning when nothing of the routine is in flight.
+// The first ask is sent at once; a worker that does not know the run yet (flotillad has it, the request is
+// still on its way) is asked again in the background for a few seconds.
+func (s *Scheduler) Cancel(ctx context.Context, id, who, why string) (string, error) {
+	s.init()
+	j := s.Routine(id)
+	if j == nil {
+		return "", fmt.Errorf("no routine %s", id)
+	}
+	s.mu.Lock()
+	runID, busy := s.running[id]
+	if busy {
+		s.cancels[runID] = fmt.Sprintf("cancelled: %s, %s", who, why)
+	}
+	s.mu.Unlock()
+	if !busy {
+		return "", fmt.Errorf("%s: %w", id, ErrNotRunning)
+	}
+	c, ok := s.Workers[j.Worker].(Canceller)
+	if !ok {
+		return runID, fmt.Errorf("worker %s cannot cancel a run", j.Worker)
+	}
+	err := c.Cancel(ctx, runID)
+	if errors.Is(err, worker.ErrNoSuchRun) {
+		go s.retryCancel(context.WithoutCancel(ctx), c, id, runID)
+		return runID, nil
+	}
+	return runID, err
+}
+
+func (s *Scheduler) retryCancel(ctx context.Context, c Canceller, id, runID string) {
+	deadline := time.Now().Add(cancelRetryFor)
+	for time.Now().Before(deadline) {
+		time.Sleep(cancelRetryEvery)
+		s.mu.Lock()
+		still := s.running[id] == runID
+		s.mu.Unlock()
+		if !still {
+			return
+		}
+		err := c.Cancel(ctx, runID)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, worker.ErrNoSuchRun) {
+			s.Log.Error("cancel: the worker refused the retry", "routine", id, "run_id", runID, "err", err)
+			return
+		}
+	}
+	s.Log.Error("cancel: the worker never took the run", "routine", id, "run_id", runID)
 }
 
 // Autonomy is the autonomy a run starts with: shadow while the installation is frozen, else the routine's

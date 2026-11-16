@@ -12,7 +12,8 @@ const (
 	ActLedger      Action = "ledger"       // a worker's own ledger (read and write)
 	ActRun         Action = "run"          // start a run now
 	ActPause       Action = "pause"        // pause a routine
-	ActStop        Action = "stop"         // STOP a fleet
+	ActStop        Action = "stop"         // STOP a fleet (and cancel its runs in flight)
+	ActCancel      Action = "cancel"       // cancel one run in flight (an operator's)
 	ActResume      Action = "resume"       // resume a routine (loosening: needs a reason)
 	ActStart       Action = "start"        // start a STOPped fleet (loosening: needs a reason)
 	ActAutonomy    Action = "autonomy"     // set a routine's autonomy (raising it needs a reason)
@@ -45,6 +46,7 @@ var may = map[Action]map[string]bool{
 	ActRun:         {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActPause:       {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActStop:        {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
+	ActCancel:      {RoleOperator: true, RoleAdmin: true},
 	ActResume:      {RoleOperator: true, RoleAdmin: true},
 	ActStart:       {RoleOperator: true, RoleAdmin: true},
 	ActAutonomy:    {RoleOperator: true, RoleAdmin: true},

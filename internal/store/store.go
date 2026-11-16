@@ -344,7 +344,8 @@ var schema = []string{
 	ALTER TABLE cases ADD COLUMN spent_s REAL NOT NULL DEFAULT 0;`,
 }
 
-// Run statuses. "interrupted" is a run flotillad found unfinished when it started.
+// Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run
+// someone stopped in flight (a STOP of its fleet, or `flotilla cancel`): neither ok nor a failure.
 const (
 	StatusRunning     = "running"
 	StatusOK          = "ok"
@@ -352,6 +353,7 @@ const (
 	StatusTimeout     = "timeout"
 	StatusSkipped     = "skipped"
 	StatusInterrupted = "interrupted"
+	StatusCancelled   = "cancelled"
 )
 
 type Store struct {

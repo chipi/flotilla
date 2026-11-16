@@ -166,7 +166,9 @@ func (s *Server) SetPaused(ctx context.Context, c Caller, via, routineID string,
 	return s.setControl(ctx, c, via, a, j.ID(), sched.KeyPaused, v, reason)
 }
 
-// SetStopped STOPs a fleet or, with a reason, starts it again.
+// SetStopped STOPs a fleet or, with a reason, starts it again. A STOP also cancels the fleet's runs in
+// flight (the spend they would add is what a STOP is taken over); starting again cancels nothing. Pausing a
+// routine (SetPaused) does not cancel: a pause lets the run in flight finish.
 func (s *Server) SetStopped(ctx context.Context, c Caller, via, fleet string, stopped bool, reason string) error {
 	a, v := ActStop, "1"
 	if !stopped {
@@ -178,7 +180,64 @@ func (s *Server) SetStopped(ctx context.Context, c Caller, via, fleet string, st
 	if !s.hasFleet(fleet) {
 		return problem(404, "no such fleet")
 	}
-	return s.setControl(ctx, c, via, a, fleet, sched.KeyStop, v, reason)
+	if err := s.setControl(ctx, c, via, a, fleet, sched.KeyStop, v, reason); err != nil {
+		return err
+	}
+	if stopped {
+		running := s.Sched.Running()
+		for _, j := range s.Sched.Routines {
+			if j.Fleet == fleet && running[j.ID()] != "" {
+				// the STOP is in force whatever the worker answers: a failed cancel is logged and recorded
+				if err := s.cancelRun(ctx, c, via, j.ID(), "fleet "+fleet+" STOPped"); err != nil && !errors.Is(err, sched.ErrNotRunning) {
+					s.Log.Error("STOP: the run in flight was not cancelled", "routine", j.ID(), "caller", c.Name, "err", err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// CancelRun cancels one run in flight, by its run id: an operator's, and always with a reason.
+func (s *Server) CancelRun(ctx context.Context, c Caller, via, runID, reason string) error {
+	if err := s.Check(ctx, c, ActCancel); err != nil {
+		return err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return problem(400, "cancelling needs a reason: body {\"reason\": \"...\"}")
+	}
+	routine := ""
+	for id, r := range s.Sched.Running() {
+		if r == runID {
+			routine = id
+		}
+	}
+	if routine == "" {
+		return problem(404, "run %s is not in flight", runID)
+	}
+	if err := s.cancelRun(ctx, c, via, routine, reason); err != nil {
+		if errors.Is(err, sched.ErrNotRunning) {
+			return problem(404, "run %s is not in flight", runID)
+		}
+		return problem(502, "the worker did not take the cancel: %v", err)
+	}
+	return nil
+}
+
+// cancelRun asks the scheduler to cancel a routine's run in flight and records who and why in the event log,
+// whether or not the worker took it (the detail says).
+func (s *Server) cancelRun(ctx context.Context, c Caller, via, routineID, why string) error {
+	runID, err := s.Sched.Cancel(ctx, routineID, c.Name, why)
+	if runID == "" {
+		return err
+	}
+	detail := "run " + runID + ": " + why
+	if err != nil {
+		detail += " (not delivered: " + err.Error() + ")"
+	}
+	_ = s.Store.Event(ctx, c.Name, via, "run.cancel", routineID, detail)
+	s.Log.Info("run cancel", "routine", routineID, "run_id", runID, "caller", c.Name, "via", via, "reason", why, "err", err)
+	return err
 }
 
 func (s *Server) setControl(ctx context.Context, c Caller, via string, a Action, subject, key, value, reason string) error {

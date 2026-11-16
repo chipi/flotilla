@@ -436,7 +436,7 @@ func (u *Server) wrongNow(ctx context.Context, now time.Time, routines []api.Rou
 	}
 	byRoutine, order := map[string]*fail{}, []string{}
 	for _, x := range failed {
-		if x.Status == store.StatusSkipped {
+		if x.Status == store.StatusSkipped || x.Status == store.StatusCancelled { // chosen, not failed
 			continue
 		}
 		f := byRoutine[x.Routine]
