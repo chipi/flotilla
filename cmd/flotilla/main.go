@@ -247,6 +247,12 @@ func caseCmd(args []string, n string) {
 		}
 		fmt.Printf("%v  %v  %v\nstatus %v since %v%s\nopened %v  key %v\n", c["id"], c["kind"], c["target"], c["status"], c["status_at"],
 			res, c["opened_at"], c["canonical_key"])
+		if n, _ := c["repeats"].(float64); n > 0 { // an unchanged detection is counted, not an event
+			fmt.Printf("repeated %v times unchanged, the last %v\n", n, c["repeat_at"])
+		}
+		if s, _ := c["stage"].(string); s != "" {
+			fmt.Printf("stage %v (handed on %v times)\n", s, c["stage_changes"])
+		}
 		for _, e := range out.Events {
 			move := ""
 			if e["to"] != nil && e["to"] != "" {

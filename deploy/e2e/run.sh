@@ -104,8 +104,12 @@ workers:
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
-# triage's cycle and the bugfix fleet's intake and fix reach GitHub and real models: not in the e2e
-disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix]
+  # the SEO fleet's worker is named by its specs; the e2e runs none of its routines (they read the live web)
+  marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
+# triage's cycle, the bugfix fleet's intakes and fixes and the SEO routines reach GitHub, real models or the
+# live web: not in the e2e
+disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix, bugfix/intake-podcast, bugfix/fix-podcast,
+  seo/site-check, seo/traffic, seo/search-console]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -115,6 +119,11 @@ models:
     triage-pro: {endpoint: gateway, model: fleet-triage-pro}
     bugfix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     bugfix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
+    # one key per fix routine on the mini (2026-11-16); here every alias reads the same stand-in key
+    fix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
+    fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
+    fix-podcast-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
+    fix-podcast-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
@@ -382,15 +391,18 @@ for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 [ "$(started flotillad)" != "$F0" ] && ok "a new flotillad config hash recreates flotillad" || bad "flotillad not recreated: $(cat "$WORK/up2.log")"
 [ "$(started flotilla-egress)" = "$E0" ] && [ "$(started flotilla-worker-triage)" = "$W0" ] \
   && ok "the proxy and the worker, whose config did not change, keep running" || bad "other services were recreated too"
-# The recreated flotillad runs its monitor again at start; the backup is still old: one case per incident
-# (ADR-0005 decision 1, amended 2026-11-13), the repeat absorbed into the closed shadow case.
+# The monitor runs again (by hand: since 355bb2f a restarted flotillad runs a routine when it is due, not at
+# start); the backup is still old: one case per incident (ADR-0005 decision 1, amended 2026-11-13), the repeat
+# absorbed into the closed shadow case: as an event when its data changed, else counted on the case
+# ("repeated N times unchanged", 13c46f6).
+cli run ops/backup-monitor >/dev/null
 for i in $(seq 1 20); do
   CID="$(agent case list --all 2>&1 | awk '/failed_backup/ {print $1}')"
-  agent case show $CID 2>/dev/null | grep -q "signal.absorbed" && break; sleep 2
+  agent case show $CID 2>/dev/null | grep -q -E "signal.absorbed|^repeated [0-9]+ times unchanged" && break; sleep 2
 done
 N="$(agent case list --all 2>&1 | grep -c failed_backup)"
-[ "$N" = 1 ] && agent case show $CID 2>&1 | grep -q "signal.absorbed .*ops/backup-monitor" \
-  && ok "after the restart the monitor's repeat went into the incident's case (one case, signal.absorbed)" \
+[ "$N" = 1 ] && agent case show $CID 2>&1 | grep -q -E "signal.absorbed .*ops/backup-monitor|^repeated [0-9]+ times unchanged" \
+  && ok "after the restart the monitor's repeat went into the incident's case (one case, absorbed or counted)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
 
 echo "== the host agent (ADR-0006): installed by deploy/host/remote-install.sh; enrol, connect, heartbeat, a flotillad restart, revocation, remove"
