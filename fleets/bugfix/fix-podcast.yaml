@@ -5,12 +5,11 @@ description: >-
   a venv installed in the worker's scratch, pytest-json-report's reports, the related tests of the
   mirrored test directories, and (built in under --test-format pytest) an allowlist of what a fix may
   change: a .py under the source root, a test_*.py or *_test.py under the test root, nothing else.
-enabled: false
-# NOT ENABLED. Enabling it is ROADMAP B8 (podcast_scraper in shadow) and needs the operator's go. It
-# also needs, before then: a case kind of its own (flotillad allows one acting routine per kind, and
-# code_bug is fix's), an intake for the repo that detects it, chipi/podcast_scraper in the enum of
-# github.open_pr's repo param (host/registry.json), and the bugfix proxy's allowlist for pypi.org and
-# files.pythonhosted.org.
+enabled: true
+# ROADMAP B8, enabled in shadow on 2026-11-16 (operator's go). It relies on: its own case kind
+# (flotillad allows one acting routine per kind, and code_bug is fix's), intake-podcast detecting it,
+# chipi/podcast_scraper in github.open_pr's repo enum (host/registry.json), and pypi.org and
+# files.pythonhosted.org in the bugfix proxy's allowlist.
 worker: bugfix
 trigger:
   case: {kind: code_bug_python}
@@ -41,7 +40,7 @@ budget:
 explain:
   trigger: >-
     Runs when flotillad hands over a code_bug_python case: bugfix/intake-podcast found an open bug issue
-    in podcast_scraper and flotillad opened a case for it. Not enabled yet (ROADMAP B8).
+    in podcast_scraper and flotillad opened a case for it.
   worker: >-
     Runs on the worker bugfix, on the X3 (RFC-0011): python3 with a venv per run in its scratch, the pi
     coding agent and the models' gateway; no GitHub credential.

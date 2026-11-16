@@ -97,11 +97,10 @@ call phase is a failure.
 checked. The image has `python3-pip` and `python3-venv` and no compiler: a dependency with no wheel
 for it will not build.
 
-`fleets/bugfix/fix-podcast.yaml` is the profile for chipi/podcast_scraper (pytest). It is **not
-enabled**: enabling it is ROADMAP B8 and needs the operator's go. It also needs an intake that
-detects its case kind (`code_bug_python` in the spec), the repo in `github.open_pr`'s repo enum
-(`host/registry.json`), and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
-Nothing has run against the real repo yet.
+`fleets/bugfix/fix-podcast.yaml` is the profile for chipi/podcast_scraper (pytest). It is
+enabled in shadow since 2026-11-16 (ROADMAP B8, the operator's go), with `intake-podcast`, which
+detects its case kind (`code_bug_python`). It relies on the repo in `github.open_pr`'s repo enum
+(`host/registry.json`) and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
 
 ## Quick reference
 

@@ -4,10 +4,8 @@ description: >-
   The bugfix fleet's monitor for podcast_scraper (ROADMAP B8): its open issues labelled bug, or routed to
   bugfix by triage, each a code_bug_python detection, so the case goes to the pytest profile
   (fleets/bugfix/fix-podcast.yaml), not orrery's vitest one. Code only, read only: GitHub's public issues
-  API. Disabled until B8 is enabled with the operator's go (the operator gave the go for B8 on
-  2026-11-16 in the fleet session; enabling still needs their go in the deploying session), together
-  with fix-podcast.
-enabled: false
+  API. Enabled with fix-podcast, in shadow, on 2026-11-16 (the operator's go).
+enabled: true
 worker: bugfix
 trigger:
   every: 1h
@@ -33,7 +31,7 @@ explain:
     intake.py lists podcast_scraper's open issues labelled bug or routed to bugfix by triage, the first
     100 per label, leaves out pull requests and issues filed from a dev environment, and reports each
     other one as a detection, with the issue in its data. A run that finds more than 50 fails and
-    reports none. Not enabled yet (ROADMAP B8).
+    reports none.
   detects: >-
     Each issue found is a code_bug_python detection, so fix-podcast takes it. flotillad opens one case
     per issue; a detection of a known issue attaches to its case instead. Never more than 50 per run.
