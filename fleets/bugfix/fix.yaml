@@ -8,7 +8,7 @@ description: >-
   diff, or an escalation with the reason. The whole suite is the PR's CI. Its models are LiteLLM's
   fleet-bugfix aliases; it holds no GitHub credential. Runs on the X3 (RFC-0011).
 enabled: true
-worker: bugfix
+worker: bugfix-fix
 trigger:
   # RFC-0013 §2 (operator, 2026-11-16): all of a case's runs together get $1 and 90 minutes; a case past
   # either is escalated instead of run again. Money counts only what the runs report as spend.
@@ -35,7 +35,8 @@ explain:
     All of a case's runs share $1 and 90 minutes; a case past either is escalated to you instead of
     run again (money counts only the spend the runs report).
   worker: >-
-    Runs on the worker bugfix, on the X3 (RFC-0011): orrery's repo cache, node, the pi coding agent and
+    Runs on the worker bugfix-fix on the X3 (RFC-0011), its own: it holds only this routine's model key, so
+    a steered coding agent cannot read another routine's. It has orrery's repo cache, node, the pi coding agent and
     the models' gateway; no GitHub credential.
   run: >-
     fix.py checks orrery out at main, asks for a verdict, then runs fix rounds with gates on what each

@@ -10,7 +10,7 @@ enabled: true
 # (flotillad allows one acting routine per kind, and code_bug is fix's), intake-podcast detecting it,
 # chipi/podcast_scraper in github.open_pr's repo enum (host/registry.json), and pypi.org and
 # files.pythonhosted.org in the bugfix proxy's allowlist.
-worker: bugfix
+worker: bugfix-fix-podcast
 trigger:
   # RFC-0013 §2 (operator, 2026-11-16): all of a case's runs together get $1 and 90 minutes; a case past
   # either is escalated instead of run again. Money counts only what the runs report as spend.
@@ -47,7 +47,8 @@ explain:
     All of a case's runs share $1 and 90 minutes; a case past either is escalated to you instead of
     run again (money counts only the spend the runs report).
   worker: >-
-    Runs on the worker bugfix, on the X3 (RFC-0011): python3 with a venv per run in its scratch, the pi
+    Runs on the worker bugfix-fix-podcast on the X3 (RFC-0011), its own: it holds only this routine's model key, so
+    a steered coding agent cannot read another routine's. It has python3 with a venv per run in its scratch, the pi
     coding agent and the models' gateway; no GitHub credential.
   run: >-
     fix.py checks podcast_scraper out at main, installs it with its dev extras in a venv, asks for a
