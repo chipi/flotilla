@@ -145,7 +145,10 @@ printed.
    made the way the ops workers' were.
 2. **The model key:** `bugfix-model.key`, the LiteLLM `fleet-bugfix` virtual key alone in the file (on
    the mini it is `LITELLM_FLEET_BUGFIX_KEY` in `~/signal-fleet/fleet-gateway.env`). `secrets.sh` puts
-   it in the bugfix worker's volume as `/run/flotilla/model.key`.
+   it in the bugfix worker's volume as `/run/flotilla/model.key`. Each fix routine has its own key as
+   well (`fleet-bugfix-fix`, `fleet-bugfix-fix-podcast`, $5 a day each), mounted on the X3 as
+   `/run/flotilla/model-fix.key` and `/run/flotilla/model-fix-podcast.key` and named by the endpoints
+   `gateway-bugfix-fix` and `gateway-bugfix-fix-podcast`, so a run's spend is its key's alone.
 3. **`flotillad.yaml`:**
 
    ```yaml

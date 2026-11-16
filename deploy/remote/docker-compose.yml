@@ -53,6 +53,9 @@ services:
     volumes:
       - ${FLOTILLA_REMOTE:?set FLOTILLA_REMOTE}/secrets/worker-bugfix.token:/run/flotilla/worker-bugfix.token:ro
       - ${FLOTILLA_REMOTE}/secrets/bugfix-model.key:/run/flotilla/model.key:ro
+      # one LiteLLM key per fix routine (2026-11-16): its runs' spend is exact and the gateway stops it at its cap
+      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix.key:/run/flotilla/model-fix.key:ro
+      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix-podcast.key:/run/flotilla/model-fix-podcast.key:ro
       - ${FLOTILLA_REMOTE}/scratch:/scratch
     networks: [inner]
 

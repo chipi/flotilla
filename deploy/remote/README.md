@@ -25,6 +25,8 @@ On the machine, as the operator's user, in `FLOTILLA_REMOTE` (the X3: `~/flotill
    - `worker-bugfix.token`, `worker-bugfix-act.token`: 32 random bytes as hex each (`openssl rand
      -hex 32`); they stay on this machine, between each link and its worker.
    - `bugfix-model.key`: the LiteLLM `fleet-bugfix` virtual key alone in the file.
+   - `bugfix-model-fix.key`, `bugfix-model-fix-podcast.key`: the LiteLLM `fleet-bugfix-fix` and
+     `fleet-bugfix-fix-podcast` keys, one per fix routine ($5 a day each), alone in their files.
 3. **`root.crt`**: flotilla's host root certificate (the mini's `~/flotilla/config/host-ca/root.crt`).
 4. **`smokescreen.yaml`** and **`egress-acl.yaml`**:
 
