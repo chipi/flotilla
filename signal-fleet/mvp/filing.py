@@ -237,6 +237,21 @@ ACTIONABLE_LABEL = "triage-fleet/actionable"
 ROUTE_LABEL = "triage-fleet/routed:bugfix"
 # repos Fleet 1's chain can actually build+test today (B3 extends this)
 CHAIN_REPOS = {"chipi/orrery"}
+# A dev environment runs a worktree's unmerged code (GlitchTip project <name>-dev: environment=dev, a `worktree` tag,
+# no release). Its errors are filed for the record but never as a `bug` on main nor routed to bugfix: both wrong
+# fixes of bugfix phase A (#651, #659) fixed main for code only a dev branch had.
+DEV_LABEL = "triage-fleet/dev-env"
+
+
+def is_dev_signal(signal):
+    """A GlitchTip error from a dev project: its short id's project part ends in -DEV (ORRERY-DEV-13) or its
+    project slug in -dev (orrery-dev). repo_for still routes it to the project's repo."""
+    fp = signal.get("fingerprint", "")
+    if not fp.startswith("glitchtip:"):
+        return False
+    proj = fp[len("glitchtip:"):].rsplit("-", 1)[0]
+    slug = str((signal.get("labels") or {}).get("project", ""))
+    return proj.upper().endswith("-DEV") or slug.lower().endswith("-dev")
 
 # glitchtip project prefix → GitHub repo (operator mapping 2026-07-29).
 # Unmapped projects fall back to SF_OPS_REPO, else the ops repo, as unmapped grafana signals do.
@@ -886,7 +901,10 @@ def _file_or_update(signal, issue, kind):
     # routability proposal: the fleet assesses, the operator dispatches —
     # `bug` in a chain-capable repo gets the actionable marker so the operator's
     # GH filter (label:triage-fleet/actionable) IS the routing inbox
-    if kind == "bug" and repo in CHAIN_REPOS:
+    if is_dev_signal(signal):
+        labels.discard("bug")
+        labels.add(DEV_LABEL)
+    elif kind == "bug" and repo in CHAIN_REPOS:
         labels.add(ACTIONABLE_LABEL)
         body += (f"\n\n**Fleet 1 assessment: routable** — repo is chain-capable and "
                  f"acceptance is testable. Add `{ROUTE_LABEL}` to dispatch the bug-fix fleet.")

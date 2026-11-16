@@ -137,6 +137,14 @@ class Intake(unittest.TestCase):
         self.assertEqual(d["data"]["issue"]["labels"], ["bug", "triage-fleet/routed:bugfix"])
         self.assertTrue(all(s[2] == "open" and s[3] == "Bearer tok-1" for s in gh.seen), gh.seen)
 
+    def test_a_dev_environment_issue_is_not_a_case(self):
+        """ROADMAP T0.1: an issue triage marked as a dev-environment error is about a branch's code, not main's;
+        bugfix would fix main for code it does not have (phase A's #651 and #659). Skipped even if labelled bug."""
+        gh = FakeGitHub([issue(12, "real", ["bug"]), issue(13, "from a dev worktree", ["bug", "triage-fleet/dev-env"])])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
+        self.assertEqual([d["target"] for d in out["detections"]], ["repo:chipi/orrery/issues/12"])
+
     def test_a_long_body_is_cut_to_fit(self):
         gh = FakeGitHub([issue(3, "long", ["bug"], body="x" * 40000)])
         self.addCleanup(gh.close)
