@@ -1,8 +1,8 @@
 # RFC-0013 — The clarifier: answering "needs info" before the fix, and asking once
 
-**Status:** Draft (2026-11-16), reviewed by the fleet session the same day (seven points, folded in
-below), for the operator's decision. Asked for by the operator through the fleet session; phase B of
-bugfix ([the brief](../wip/bugfix-phase-b-brief.md)).
+**Status:** Accepted (operator, 2026-11-16: the five open questions as recommended, below), after the
+fleet session's review the same day (seven points, folded in). Asked for by the operator through the
+fleet session; phase B of bugfix ([the brief](../wip/bugfix-phase-b-brief.md)).
 **Builds on:** [RFC-0010](RFC-0010-bugfix-on-the-platform.md) (the chain, §9's checks),
 [RFC-0002](RFC-0002-job-runtime.md) §6–7 (memory, external knowledge), the runtime harness
 (`runtime/harness.py`), triage's probes (`signal-fleet/mvp/probes.py`),
@@ -90,6 +90,8 @@ cannot open a case. The clarifier needs the same case to go fix → clarify → 
   its kick-backs) shares **one** budget and **one** time limit per case, not each step's own cap.
   The steps' caps already add up past `bugfix/fix`'s 3 hours (the assessment, §2 item 8). The case
   records what it has spent; a step that would pass the case's limit escalates instead of starting.
+  **To start: $1 and 90 minutes per case** (operator, 2026-11-16; about 10 times a typical path
+  today, at about 6 minutes and under $0.10 a run), revisited after a week of numbers.
 
 The same mechanism serves other fleets later (a diagnose stage before an act stage).
 
@@ -128,17 +130,18 @@ The same mechanism serves other fleets later (a diagnose stage before an act sta
 **What to expect from it:** less than the bake-off's 5/15 to 10/15. The clarifier answers evidence
 questions; the intent the simulated reporter supplied comes only from §4.
 
-### 4. Asking a person, once (later, at propose)
+### 4. Asking a person, once
 
-- A new registry action **`github.issue_question`**: one comment on the issue with the intent
-  questions, and the label `needs-info`. Executed by the X3 act worker with a token narrowed to that
-  repo and `issues: write`. Shadow first, then propose: the question's text is generated from
-  untrusted input, and a person reads it before it is posted.
 - **Who answers:** in practice the operator. 10 of the 11 open orrery `bug` issues were filed by the
-  triage fleet (checked 2026-11-16), so "the issue's author" is the fleet itself. An answer is a
-  comment by the operator (or the issue's human author), or the label removed.
-- **An answer re-enters through intake:** it attaches to the case and hands it to the fix stage, with
-  the answer added to the clarified ticket.
+  triage fleet (checked 2026-11-16), so "the issue's author" is the fleet itself.
+- **Where (operator, 2026-11-16): in flotilla.** The intent questions go on the case page and into the
+  brief's Needs you; the operator answers on the case page, and the answer hands the case to the fix
+  stage with it added to the clarified ticket. No GitHub write.
+- **Only for an issue a person filed** (not the triage fleet): a registry action
+  **`github.issue_question`** may post the questions as one comment and add the label `needs-info`,
+  executed by the X3 act worker with a token narrowed to that repo and `issues: write`. At propose:
+  the question's text comes from untrusted input, and a person reads it before it is posted. An answer
+  there re-enters through intake.
 - **No answer in 7 days:** a case timer closes the case as `no_answer`.
 - One question round per case.
 
@@ -171,16 +174,20 @@ questions; the intent the simulated reporter supplied comes only from §4.
    change.
 2. Stages and the case budget (§2), with the schema step and tests.
 3. `bugfix/clarify` (§3) in shadow: it answers and rewrites; nothing leaves flotilla.
-4. `github.issue_question` (§4), shadow then propose, on the operator's go.
+4. The question round in flotilla (§4); `github.issue_question` for person-filed issues, at
+   propose, on the operator's go.
 
-## Open questions (the operator's)
+## Decisions (operator, 2026-11-16)
 
-1. Stages on the case (§2), or a different hand-over (below)?
-2. `not_reproducible` as its own resolution, or "resolved itself" with a reason?
-3. Should a closed `not_reproducible` case comment on the issue (§4's action), or stay internal?
-4. The question round: the asked party is in practice the operator (§4); is a GitHub comment the
-   right channel for that, or the case page and the brief? And the 7 days.
-5. The case's one budget and time limit (§2): what values?
+1. **Stages on the case** (§2), not a second case kind: one case keeps a bug's whole history, and the
+   mechanism serves other fleets.
+2. **`not_reproducible` is its own resolution:** "resolved itself" means the problem went away; this
+   means it never existed on main, and counting it apart measures the dev-branch filter (T0.1).
+3. **A `not_reproducible` close stays internal** (the case page and the brief); no comment on the
+   issue to start.
+4. **The question round happens in flotilla** (§4): the case page and the brief; a GitHub comment only
+   for an issue a person filed, at propose. 7 days, then `no_answer`.
+5. **The case's budget and time limit: $1 and 90 minutes** (§2), revisited after a week of numbers.
 
 ## Alternatives considered
 
@@ -207,3 +214,4 @@ questions; the intent the simulated reporter supplied comes only from §4.
   - the eval arm measures the repo part only (old items' probes cannot be re-run);
   - one budget and one time limit per case;
   - a private repo needs a read token on `bugfix-read`.
+- 2026-11-16 — accepted: the five open questions as recommended (Decisions).

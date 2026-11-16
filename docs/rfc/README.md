@@ -56,5 +56,5 @@ landed on an answer.
   (Accepted, 2026-11-15)
 - [RFC-0012 — The SEO fleet: Orrery's search presence, measured](RFC-0012-seo-fleet.md) (Accepted,
   2026-11-15)
-- [RFC-0013 — The clarifier: answering "needs info" before the fix](RFC-0013-bugfix-clarifier.md) (Draft,
+- [RFC-0013 — The clarifier: answering "needs info" before the fix](RFC-0013-bugfix-clarifier.md) (Accepted,
   2026-11-16)
