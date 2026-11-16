@@ -1731,6 +1731,10 @@ class TestRepoFor(unittest.TestCase):
         self.assertEqual(self._r("glitchtip:HUMANCOPILOT-WEB-2"), "chipi/humancopilot.eu")
         self.assertEqual(self._r("glitchtip:DEVWHATEVEROPS-WEB-1"), "chipi/humancopilot.eu")
 
+    def test_the_kg_viewer_routes_to_podcast_scraper(self):
+        # ROADMAP T0.3: podcast_scraper's web/gi-kg-viewer reports to GlitchTip project gi-kg-viewer (GI-KG-VIEWER-1)
+        self.assertEqual(self._r("glitchtip:GI-KG-VIEWER-1"), "chipi/podcast_scraper")
+
     def test_existing_routes_unchanged(self):
         self.assertEqual(self._r("glitchtip:PODCAST-PIPELINE-5E"), "chipi/podcast_scraper")
         self.assertEqual(self._r("glitchtip:PLAYER-1I"), "chipi/podcast_scraper")

@@ -261,6 +261,7 @@ REPO_MAP = {
     "LITELLM": "chipi/agentic-ai-homelab",
     "PODCAST": "chipi/podcast_scraper",
     "PLAYER": "chipi/podcast_scraper",
+    "GI-KG-VIEWER": "chipi/podcast_scraper",   # podcast_scraper's web/gi-kg-viewer (GlitchTip project gi-kg-viewer)
     # 2026-10-27, once the fleet token covered these repos: the eval-harness projects
     # (evals-web CSP, evals-inspector) and the websites' CSP projects. Unmapped, they
     # were refused (no SF_OPS_REPO), not filed.

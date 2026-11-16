@@ -14,6 +14,8 @@ Pass:
   - with SF_OPS_REPO unset, exactly the decisions the baseline refused change, each to the ops repo;
     every other decision's repository is unchanged; at least one decision changes;
   - with SF_OPS_REPO set, nothing changes: the installation's own ops repo still wins.
+Projects routed to their own repository after the fix (ROUTED below, e.g. gi-kg-viewer to podcast_scraper,
+ROADMAP T0.3 2026-11-16) must go exactly there, whatever the baseline did; they count apart.
 Prints counts only.
 
   python3 gate_unmapped_project_replay.py     # exit 1 on any failure
@@ -34,6 +36,8 @@ import filing  # noqa: E402
 BASE_REV = "15442c3"   # main before the fix
 CORPUS = evaldata.path("reference-retriage", "dispositions-2026-11-07.tsv.gz")
 OPS_DEFAULT = "chipi/agentic-ai-homelab"   # fixed here, not read from the code under test
+# GlitchTip project prefix -> repository, for projects mapped after BASE_REV; fixed here, not read from filing.py
+ROUTED = {"GI-KG-VIEWER": "chipi/podcast_scraper"}   # ROADMAP T0.3, 2026-11-16
 
 
 def _baseline():
@@ -61,10 +65,16 @@ def main():
     base, fails = _baseline(), []
     for ops in ("", "acme/ops"):
         base.OPS_REPO = filing.OPS_REPO = ops
-        moved = same = wrong = 0
+        moved = same = wrong = routed = 0
         for r in rows:
             sig = {"fingerprint": r["fingerprint"], "labels": {}}
             b, x = base.repo_for(sig), filing.repo_for(sig)
+            proj = r["fingerprint"].split(":", 1)[-1].rsplit("-", 1)[0].upper()
+            if proj in ROUTED:
+                routed += 1
+                if x != ROUTED[proj]:
+                    wrong += 1
+                continue
             if b == x:
                 same += 1
             elif not b and x == (ops or OPS_DEFAULT):
@@ -72,8 +82,8 @@ def main():
             else:
                 wrong += 1
         label = "set" if ops else "unset"
-        print(f"SF_OPS_REPO {label}: {len(rows)} decisions, {moved} refused -> ops repo, {same} unchanged, "
-              f"{wrong} changed otherwise")
+        print(f"SF_OPS_REPO {label}: {len(rows)} decisions, {moved} refused -> ops repo, {routed} routed to "
+              f"their own repo, {same} unchanged, {wrong} changed otherwise")
         if wrong:
             fails.append(f"SF_OPS_REPO {label}: {wrong} decisions changed repository")
         if ops and moved:
