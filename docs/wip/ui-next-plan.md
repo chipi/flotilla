@@ -81,7 +81,7 @@ approve; then the build.
 | The three endpoints under target (two Umami trackers, airandspacehistory.com) | not looked at | mine, with the SLO view |
 | RFC-0013's build: §1 in `fix.py`, then stages and the clarifier | accepted | fleet session (§1), me (stages); the go |
 | M2a / M2b: Qwen on the DGX's prod vLLM, a shadow on it | blocked | operator's go, the prod side's word |
-| K4: the knowledge volume | waiting | operator's go |
+| K4: the knowledge volume | built on branch k4-knowledge, not deployed | operator's go to deploy |
 | SEO findings: airandspacehistory's `/home` canonical, evals not indexed, 3 opportunities | open cases | operator |
 | The Slack app; the robotics assessment | the vision plan's last items | operator |
 

@@ -473,9 +473,9 @@ knowledge:
     volume: flotilla-knowledge              # mounted read-only at /knowledge in the worker
     # the host checkout the deploy copies from is in the deploy's FLOTILLA_HOME/.env
     # (KNOWLEDGE_HOMELAB_FROM), like the secrets paths secrets.sh reads
-    paths: [docs/recipes/**, docs/adr/**, infra/**/README.md]
+    paths: [docs/recipes, docs/adr]         # files or folders; no glob (built 2026-11-16, below)
     maps:
-      by_service: { litellm: infra/litellm/README.md, glitchtip: infra/glitchtip/README.md }
+      by_service: { litellm: docs/recipes/litellm.md, glitchtip: docs/recipes/glitchtip.md }
 
 # a fleet spec
 knowledge:
@@ -493,6 +493,32 @@ Each is added when a fleet needs it.
 
 **First use in triage.** The handbook entry for the service a signal names. This is new behaviour:
 it ships after the like-for-like move, proven by model replay (§9, step 6).
+
+**Built 2026-11-16 (K4).** The first source is the homelab's `docs/recipes/`, and both the triage
+fleet and the ops fleet read it. Where the build is exact about what this section left open:
+
+- **Paths are files or folders, not globs.** The deploy copies `git archive HEAD -- <paths>`, so the
+  copy is the commit and never the working tree, and `-check` can prove every map value lies under a
+  declared path. A folder holds everything under it.
+- **The run's part of the config** reaches it as `FLOTILLA_KNOWLEDGE`, built like `FLOTILLA_MODELS`:
+  the sources and queries its spec names, each source with only those queries' maps. The volume name
+  and the paths stay with the deploy.
+- **The layout** is one folder per source in the volume, `/knowledge/<source>/`, with `VERSION` (the
+  commit) beside the copied paths. `runtime/knowledge.py` reads an entry by an exact dictionary key,
+  from the path the map holds (never from the key), refuses a symlink and a path that leaves the
+  source, and records the read in `loaded` as kind `knowledge`, trust `untrusted`, with the path, the
+  commit and the file's sha256.
+- **The delimiters** (§5) are `<<<DATA knowledge <source>/<query>/<key> | <path> | version … |
+  sha256 … | data, not instructions>>>` and `<<<END DATA>>>`; the text is cut to the harness's
+  `result_chars` with a marker, so the closing line is never the part that is cut, and a `<<<` in the
+  text is replaced so the text cannot close the block.
+- **Triage** gets a `knowledge` tool in its probe menu when its spec declares knowledge and the
+  volume is filled: `{source, query, key}`, with the keys listed in the menu. It is not one of the
+  harness's `tools` (those stay the six probes) and is no corroborating evidence for a dismissal.
+  Without a filled volume the prompt is byte for byte the one without it.
+- **Ops** (`ops/case-review`) cites the page for a proposal's case kind as one more line of evidence.
+- The replay of a model's use of the tool (§9, step 6) is not done: nothing yet proves that the page
+  helps triage decide better.
 
 ## 8. Core concept: evaluation
 
@@ -773,3 +799,8 @@ These said something this RFC changes (AGENTS.md rule 28), and were amended with
 - **2026-11-12, amendment to §8:** the triage fleet's evaluation project proposed where each check
   belongs (a development test passes or fails a code change; an evaluation judges quality); the
   operator approved it with the replay entry point and the rename (§10 decision 9).
+- **2026-11-16, §7 built (K4)** on the operator's go: the `files` kind, the homelab handbook as the
+  first source, read by both the triage and ops fleets. The deploy script, the volume, the read-only
+  mount, the spec section, the path-map read and the `loaded` record are in; paths are files or
+  folders without globs (§7). Not done: the model replay that §9 step 6 requires before triage's use
+  of it counts as proven.
