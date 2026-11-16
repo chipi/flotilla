@@ -96,6 +96,14 @@ class SpendTest(unittest.TestCase):
         self.assertEqual((usd, source), (0.4, "pi"))
         self.assertIn("went down", why)
 
+    def test_a_call_the_gateway_records_late_is_still_counted(self):
+        # 2026-11-16, #335's full-stack run: the review (glm-5.2, $0.009051) was the run's last call, two reads 5 s apart
+        # agreed before LiteLLM had recorded it, and the run reported $0.051572 of the gateway's $0.060623
+        g = self.gateway([1.0, 1.2, 1.2, 1.2, 1.2, 1.3])
+        m = spend.Meter([(g.base, "sk-test")], poll_s=0.5, settle_s=30, stable_s=3)
+        usd, source, _ = m.cost(os.path.join(self.d, "pi"))
+        self.assertEqual((round(usd, 6), source), (0.3, "gateway"))
+
     def test_two_keys_add_up(self):
         a, b = self.gateway([1.0, 1.5, 1.5]), self.gateway([10.0, 10.25, 10.25])
         m = spend.Meter([(a.base, "sk-a"), (b.base, "sk-b")], poll_s=0.01, settle_s=5)

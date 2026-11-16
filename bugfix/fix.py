@@ -1025,6 +1025,8 @@ def parse(argv):
                     "there (the gateway's bill for its keys; bugfix/spend.py)")
     ap.add_argument("--spend-poll", type=float, default=5.0, help="seconds between the spend reads after the run")
     ap.add_argument("--spend-settle", type=float, default=60.0, help="most seconds to wait for the spend to settle")
+    ap.add_argument("--spend-stable", type=float, default=20.0,
+                    help="seconds the spend must hold still to count as settled (LiteLLM records calls late)")
     a = ap.parse_args(argv)
     if (a.related == "pytest-dirs" or a.test_format == "pytest") and not (a.source_root and a.test_root):
         ap.error("--related pytest-dirs and --test-format pytest need --source-root and --test-root (the scope rules use them)")
@@ -1054,7 +1056,7 @@ def main(argv=None, environ=None):
             cfg = {}
         try:
             meter = spend.Meter(spend.keys_of(cfg, {a.worker_model, a.advisor_model, a.reviewer_model}, environ),
-                                a.spend_poll, a.spend_settle)
+                                a.spend_poll, a.spend_settle, stable_s=a.spend_stable)
         except Terminated:
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), 0.0)

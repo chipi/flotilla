@@ -602,6 +602,28 @@ exec {real} "$@"
         self.assertEqual(len(r), 1, r)
         self.assertRegex(r[0], r"^resume s-notest-\d+\.jsonl changed=1 desc=YOUR FIX DID NOT PASS ITS GATES: r")
 
+    def test_a_diff_that_does_not_apply_falls_back_to_a_new_session(self):
+        # homelab's review: the fall-back had no test. The resumed round is handed a diff git cannot apply
+        f = self.fixture(["actionable"], ["good", "good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\napprove\n")
+        real = fix.Chain.attempt
+
+        def attempt(chain, manifest, resume=None):
+            if resume:
+                resume = (resume[0], "diff --git a/nope b/nope\n@@ not a patch @@\n", resume[2])
+            return real(chain, manifest, resume)
+        fix.Chain.attempt = attempt
+        try:
+            plan, _ = f.run()
+        finally:
+            fix.Chain.attempt = real
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(self.resumes(f), [], "no session resumed")
+        self.assertIn("resume: the previous round's diff does not apply", plan["params"]["body"])
+        with open(os.path.join(f.state, "fix_desc")) as fh:
+            self.assertIn("make value() return 2", fh.read(), "the new session gets the task again")
+
     def test_no_resume_starts_a_new_session(self):
         f = self.fixture(["actionable"], ["good", "good"])
         with open(os.path.join(f.state, "reviews"), "w") as fh:

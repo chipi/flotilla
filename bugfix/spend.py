@@ -68,8 +68,9 @@ def pi_cost(agent_dir):
 
 
 class Meter:
-    def __init__(self, keys, poll_s=5.0, settle_s=60.0, read=read_spend, read_timeout=5.0):
+    def __init__(self, keys, poll_s=5.0, settle_s=60.0, read=read_spend, read_timeout=5.0, stable_s=20.0):
         self.keys, self.poll_s, self.settle_s, self.read, self.read_timeout = list(keys), poll_s, settle_s, read, read_timeout
+        self.stable_s = stable_s
         self.before = [read(k, b, read_timeout) for b, k in self.keys]
 
     def hurry(self, within_s=6.0, read_timeout=2.0, poll_s=1.0):
@@ -79,26 +80,36 @@ class Meter:
         leaves a number. Safe from a signal handler."""
         self.read_timeout, self.poll_s = min(self.read_timeout, read_timeout), min(self.poll_s, poll_s)
         self.deadline = min(self.deadline, time.monotonic() + within_s)
+        self.hurried = True
 
     deadline = float("inf")
+    hurried = False
 
     def left(self):
         return self.deadline - time.monotonic()
 
     def settled(self, base, key):
-        """The key's spend once two reads in a row agree (or the last read at settle_s), None when unreadable or past
-        the deadline."""
+        """The key's spend once it has held still for stable_s (or the last read at settle_s), None when unreadable or
+        past the deadline. Two reads 5 s apart were not enough: on 2026-11-16 they agreed before LiteLLM had recorded a
+        run's last call (#335's review, $0.009051 of $0.060623), which the run then did not report."""
         t0 = time.monotonic()
         last = self.read(key, base, max(min(self.read_timeout, self.left()), 0.1))
-        while last is not None and time.monotonic() - t0 < self.settle_s:
+        since = time.monotonic()
+        while last is not None:
+            now = time.monotonic()
+            if now - since >= self.stable_s or now - t0 >= self.settle_s:
+                return last
             if self.left() <= self.poll_s:
-                return None
+                # hurried (the worker's SIGTERM): no time for stable_s; the last reading, best effort (it can miss the
+                # run's last calls; the key's daily max_budget at the gateway stays the hard stop)
+                return last if self.hurried else None
             time.sleep(self.poll_s)
             cur = self.read(key, base, max(min(self.read_timeout, self.left()), 0.1))
-            if cur is None or cur == last:
-                return last
-            last = cur
-        return last if self.left() > 0 else None
+            if cur is None:
+                return None
+            if cur != last:
+                last, since = cur, time.monotonic()
+        return None
 
     def cost(self, agent_dir):
         """(USD, source, note): the gateway's bill when every key could be read before and after, before the deadline

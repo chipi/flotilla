@@ -67,7 +67,8 @@ than being fixed from the first few hundred bytes.
 **What a run cost.** `fix.py --spend-file` writes the run's cost to the routine's `spend_file`, so
 the day's budget and the case's limit count it. The cost is the gateway's bill: LiteLLM's spend
 of each key the run's aliases use, read (`/key/info`, key in the header) before the run and after
-it, until two reads 5 s apart agree (at most 60 s). pi's own figure is its catalog's list price:
+it, until it has held still for 20 s (at most 60 s; two reads 5 s apart once agreed before LiteLLM
+had recorded a run's last call, its review). pi's own figure is its catalog's list price:
 5 to 7 times the bill on 2026-11-15, 1.8 times on #335's run of 2026-11-16, not established in
 general, so it is used only when the gateway cannot be read in time. A key another run spends on
 meanwhile makes the cost larger, never smaller; a key per routine makes it exact. The run's log
