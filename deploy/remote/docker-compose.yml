@@ -31,25 +31,33 @@ x-link: &link
   dns: [100.100.100.100]   # the tailnet's resolver, for flotilla-hosts.<tailnet>
   networks: [inner, out]
 
+# a bug-fix worker: the image, its limits, the proxy, its scratch at /scratch
+x-bugfix-worker: &bugfix-worker
+  <<: *hardening
+  image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG}
+  mem_limit: ${BUGFIX_MEM:-8g}
+  cpus: ${BUGFIX_CPUS:-4}
+  tmpfs: ["/tmp:size=512m", "/home/worker:size=64m,uid=${FLOTILLA_UID},gid=${FLOTILLA_GID},mode=0700"]
+  networks: [inner]
+
+x-bugfix-env: &bugfix-env
+  HOME: /home/worker
+  FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+  ROUTINE_HTTP_PROXY: http://egress:4750
+  ROUTINE_HTTPS_PROXY: http://egress:4750
+  # the target repo's tests serve on loopback; Node sends everything else to the proxy
+  ROUTINE_NO_PROXY: localhost,127.0.0.1,::1
+  ROUTINE_NODE_USE_ENV_PROXY: "1"
+  ROUTINE_BUGFIX_SCRATCH: /scratch
+
 services:
   worker-bugfix:
-    <<: *hardening
-    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-bugfix:${FLOTILLA_TAG}
+    <<: *bugfix-worker
     container_name: flotilla-remote-worker-bugfix
-    mem_limit: ${BUGFIX_MEM:-8g}
-    cpus: ${BUGFIX_CPUS:-4}
-    tmpfs: ["/tmp:size=512m", "/home/worker:size=64m,uid=${FLOTILLA_UID},gid=${FLOTILLA_GID},mode=0700"]
     environment:
-      HOME: /home/worker
+      <<: *bugfix-env
       FLOTILLA_WORKER: bugfix
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker-bugfix.token
-      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
-      ROUTINE_HTTP_PROXY: http://egress:4750
-      ROUTINE_HTTPS_PROXY: http://egress:4750
-      # the target repo's tests serve on loopback; Node sends everything else to the proxy
-      ROUTINE_NO_PROXY: localhost,127.0.0.1,::1
-      ROUTINE_NODE_USE_ENV_PROXY: "1"
-      ROUTINE_BUGFIX_SCRATCH: /scratch
     volumes:
       - ${FLOTILLA_REMOTE:?set FLOTILLA_REMOTE}/secrets/worker-bugfix.token:/run/flotilla/worker-bugfix.token:ro
       - ${FLOTILLA_REMOTE}/secrets/bugfix-model.key:/run/flotilla/model.key:ro
@@ -58,6 +66,32 @@ services:
       - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix-podcast.key:/run/flotilla/model-fix-podcast.key:ro
       - ${FLOTILLA_REMOTE}/scratch:/scratch
     networks: [inner]
+
+  # One worker per fix routine (2026-11-16, the Fable advisor's review): the coding agent runs as the
+  # worker's user, so a worker holds only its own routine's LiteLLM key and scratch, never another's.
+  worker-bugfix-fix:
+    <<: *bugfix-worker
+    container_name: flotilla-remote-worker-bugfix-fix
+    environment:
+      <<: *bugfix-env
+      FLOTILLA_WORKER: bugfix-fix
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+    volumes:
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix.token:/run/flotilla/worker.token:ro
+      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix.key:/run/flotilla/model-fix.key:ro
+      - ${FLOTILLA_REMOTE}/scratch-fix:/scratch
+
+  worker-bugfix-fix-podcast:
+    <<: *bugfix-worker
+    container_name: flotilla-remote-worker-bugfix-fix-podcast
+    environment:
+      <<: *bugfix-env
+      FLOTILLA_WORKER: bugfix-fix-podcast
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+    volumes:
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix-podcast.token:/run/flotilla/worker.token:ro
+      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix-podcast.key:/run/flotilla/model-fix-podcast.key:ro
+      - ${FLOTILLA_REMOTE}/scratch-fix-podcast:/scratch
 
   worker-bugfix-act:
     <<: *hardening
@@ -105,6 +139,30 @@ services:
     volumes:
       - ${FLOTILLA_REMOTE}/state/w-bugfix-act:/state
       - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-act.token:/run/flotilla/worker.token:ro
+      - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
+
+  link-bugfix-fix:
+    <<: *link
+    container_name: flotilla-remote-link-bugfix-fix
+    command: ["link", "-identity", "w-bugfix-fix-${FLOTILLA_NODE}", "-worker", "bugfix-fix",
+              "-worker-url", "http://worker-bugfix-fix:8081", "-worker-token-file", "/run/flotilla/worker.token",
+              "-state", "/state", "-root", "/run/flotilla/root.crt",
+              "-addr", "${FLOTILLA_HOSTS_ADDR}", "-server-name", "${FLOTILLA_HOSTS_NAME}"]
+    volumes:
+      - ${FLOTILLA_REMOTE}/state/w-bugfix-fix:/state
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix.token:/run/flotilla/worker.token:ro
+      - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
+
+  link-bugfix-fix-podcast:
+    <<: *link
+    container_name: flotilla-remote-link-bugfix-fix-podcast
+    command: ["link", "-identity", "w-bugfix-fix-podcast-${FLOTILLA_NODE}", "-worker", "bugfix-fix-podcast",
+              "-worker-url", "http://worker-bugfix-fix-podcast:8081", "-worker-token-file", "/run/flotilla/worker.token",
+              "-state", "/state", "-root", "/run/flotilla/root.crt",
+              "-addr", "${FLOTILLA_HOSTS_ADDR}", "-server-name", "${FLOTILLA_HOSTS_NAME}"]
+    volumes:
+      - ${FLOTILLA_REMOTE}/state/w-bugfix-fix-podcast:/state
+      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix-podcast.token:/run/flotilla/worker.token:ro
       - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
 
   egress:

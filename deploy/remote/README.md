@@ -8,9 +8,10 @@ This folder is the stack for one machine: today the bugfix fleet's two workers o
 
 | Service | What it holds | Network |
 | --- | --- | --- |
-| `worker-bugfix` | its worker token, the LiteLLM fleet-bugfix key | `inner` only (out through `egress`) |
+| `worker-bugfix` | its worker token, the LiteLLM fleet-bugfix key (intake and pr-check call no model; the key goes once the fix specs use their own workers) | `inner` only (out through `egress`) |
+| `worker-bugfix-fix`, `worker-bugfix-fix-podcast` | one per fix routine: its worker token, only its own routine's LiteLLM key, its own scratch (`scratch-fix/`, `scratch-fix-podcast/`) | `inner` only |
 | `worker-bugfix-act` | its worker token, the GitHub App's key (`app/`, once made) | `inner` only |
-| `link-bugfix`, `link-bugfix-act` | the identity's key and certificate (`state/<identity>/`), the worker's token | `inner` and `out` |
+| `link-bugfix`, `link-bugfix-act`, `link-bugfix-fix`, `link-bugfix-fix-podcast` | the identity's key and certificate (`state/<identity>/`), the worker's token | `inner` and `out` |
 | `egress` | this machine's allowlist | `inner` and `out` |
 
 Nothing is published. A link at another version than flotillad's is refused (logged as an error on the
@@ -20,13 +21,15 @@ mini): deploy the same tag on both.
 
 On the machine, as the operator's user, in `FLOTILLA_REMOTE` (the X3: `~/flotilla-remote`):
 
-1. **Layout**, mode 700: `secrets/`, `app/`, `state/w-bugfix/`, `state/w-bugfix-act/`, `scratch/`.
+1. **Layout**, mode 700: `secrets/`, `app/`, `state/w-bugfix/`, `state/w-bugfix-act/`, `state/w-bugfix-fix/`,
+   `state/w-bugfix-fix-podcast/`, `scratch/`, `scratch-fix/`, `scratch-fix-podcast/`.
 2. **`secrets/`**, each file mode 600, never printed:
-   - `worker-bugfix.token`, `worker-bugfix-act.token`: 32 random bytes as hex each (`openssl rand
+   - `worker-bugfix.token`, `worker-bugfix-act.token`, `worker-bugfix-fix.token`,
+     `worker-bugfix-fix-podcast.token`: 32 random bytes as hex each (`openssl rand
      -hex 32`); they stay on this machine, between each link and its worker.
    - `bugfix-model.key`: the LiteLLM `fleet-bugfix` virtual key alone in the file.
    - `bugfix-model-fix.key`, `bugfix-model-fix-podcast.key`: the LiteLLM `fleet-bugfix-fix` and
-     `fleet-bugfix-fix-podcast` keys, one per fix routine ($5 a day each), alone in their files.
+     `fleet-bugfix-fix-podcast` keys, one per fix routine ($1 a day each), alone in their files.
 3. **`root.crt`**: flotilla's host root certificate (the mini's `~/flotilla/config/host-ca/root.crt`).
 4. **`smokescreen.yaml`** and **`egress-acl.yaml`**:
 
@@ -73,7 +76,9 @@ On the machine, as the operator's user, in `FLOTILLA_REMOTE` (the X3: `~/flotill
      -addr $FLOTILLA_HOSTS_ADDR -server-name $FLOTILLA_HOSTS_NAME < token-file
    ```
 
-   and the same for `w-bugfix-act-omarchy` into `state/w-bugfix-act`. Delete the token files after.
+   and the same for `w-bugfix-act-omarchy` into `state/w-bugfix-act`, `w-bugfix-fix-omarchy` into
+   `state/w-bugfix-fix` and `w-bugfix-fix-podcast-omarchy` into `state/w-bugfix-fix-podcast`.
+   Delete the token files after.
 7. **On the mini**, in `flotillad.yaml`: `workers: {bugfix: {remote: w-bugfix-omarchy}, bugfix-act:
    {remote: w-bugfix-act-omarchy}}`, and the `gateway-bugfix` endpoint's `base_url` the gateway as this
    machine reaches it (`http://homelab:4001/v1`). Drop `bugfix` from the mini's `COMPOSE_PROFILES`.
