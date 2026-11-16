@@ -26,6 +26,7 @@ MAX_DATA = 7500      # flotillad keeps detection data up to 8192 bytes; room for
 MAX_REPORT = 64 * 1024  # flotillad refuses a whole report over this (internal/envelope MaxBytes)
 REPORT_ROOM = 2048      # the envelope and each detection's kind, target, detail and title, with margin per detection
 MIN_DATA = 600          # below this a detection's data is only its metadata: the body is gone entirely
+DATA_SHARE = (MAX_REPORT - REPORT_ROOM) // MAX_DETECTIONS - 400   # 869 bytes: one detection's data, fixed
 # An issue triage filed from a dev environment's error is about a branch's unmerged code, not main's: there is
 # nothing on main to fix (bugfix phase A's #651, #659). Triage no longer files them; the ones it filed before
 # carry `bug`, and their body names the signal as fp: `glitchtip:<SHORT-ID>` (signal-fleet/mvp/actions.py), a
@@ -111,8 +112,11 @@ def main(argv=None):
     if total > MAX_DETECTIONS:
         # leaving some out would clear their cases: fail instead, and say why
         raise IntakeError(f"{total} open issues, more than the {MAX_DETECTIONS} a run may report: narrow the labels or the repos")
-    # the whole report must fit flotillad's limit: each detection gets an equal share of it, its body cut to fit
-    limit = min(MAX_DATA, (MAX_REPORT - REPORT_ROOM) // max(1, total) - 400)
+    # the whole report must fit flotillad's limit. Each detection gets the same share whatever the number of open
+    # issues (the share that fits MAX_DETECTIONS): flotillad counts a repeat by the detection's data, and a share that
+    # depended on the count changed every case's data when one issue opened or closed (the advisor's review of
+    # flotilla, 2026-11-16). The fix step reads a cut body whole from GitHub (fix.py issue_for_case).
+    limit = min(MAX_DATA, DATA_SHARE)
     while True:
         found = [d for repo, issues in per_repo for d in detections(repo, issues, a.kind, limit)]
         report = json.dumps({"outcome": "detections", "detections": found})

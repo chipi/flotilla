@@ -191,13 +191,23 @@ class Intake(unittest.TestCase):
         with self.assertRaises(intake.IntakeError):
             self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
 
+    def test_an_issue_s_data_does_not_depend_on_how_many_issues_are_open(self):
+        # flotillad counts a repeat detection by its data (13c46f6); a cut that depended on the number of open issues
+        # changed every case's data whenever one issue opened or closed (the advisor's review of flotilla, 2026-11-16)
+        def data_of(n_open):
+            gh = FakeGitHub([issue(n, "t", ["bug"], body="x" * 9000) for n in range(1, n_open + 1)])
+            self.addCleanup(gh.close)
+            out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+            return next(d["data"] for d in out["detections"] if d["target"].endswith("/issues/1"))
+        self.assertEqual(data_of(3), data_of(30))
+
     def test_a_long_body_is_cut_to_fit(self):
         gh = FakeGitHub([issue(3, "long", ["bug"], body="x" * 40000)])
         self.addCleanup(gh.close)
         d = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")["detections"][0]
         self.assertTrue(d["data"]["issue"]["body_cut"])
-        self.assertLessEqual(len(json.dumps(d["data"]).encode()), intake.MAX_DATA)
-        self.assertGreater(len(d["data"]["issue"]["body"]), 1000)
+        self.assertLessEqual(len(json.dumps(d["data"]).encode()), intake.DATA_SHARE)
+        self.assertGreater(len(d["data"]["issue"]["body"]), 400, "a fixed share still carries the start of the body")
 
     def test_a_failed_read_or_too_many_fails_the_run(self):
         """A run that could not see the issues, or would have to leave some out, reports nothing: either
