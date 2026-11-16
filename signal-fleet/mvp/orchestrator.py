@@ -226,7 +226,8 @@ def run_glitchtip(limit=5, dry_run=True):
                 print(f"  idempotent: {sig['occurrence_id']} -> {prior_occ}; skip")
             continue
         new.append(sig)
-    new.sort(key=lambda s: str((s.get("raw") or {}).get("firstSeen") or s.get("startsAt") or ""))
+    far = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)   # a missing or unparsable firstSeen goes last
+    new.sort(key=lambda s: actions.parse_utc((s.get("raw") or {}).get("firstSeen") or s.get("startsAt")) or far)
     order = new + due
     waiting = max(0, len(order) - limit)
     disps = []

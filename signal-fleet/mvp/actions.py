@@ -163,8 +163,8 @@ def signal_code_version(signal):
     return ""
 
 
-def _utc(ts):
-    """'2026-11-14T08:01:02.5Z' -> '2026-11-14 08:01 UTC'; '' when absent or unparsable."""
+def parse_utc(ts):
+    """An ISO timestamp as an aware UTC datetime; None when absent or unparsable. No offset reads as UTC."""
     # fractions dropped first: python 3.9's fromisoformat (the mini's) refuses GlitchTip's 1-5 digit ones
     v = str(ts or "").replace("Z", "+00:00")
     if "." in v:
@@ -173,10 +173,14 @@ def _utc(ts):
     try:
         t = datetime.datetime.fromisoformat(v)
     except ValueError:
-        return ""
-    if t.tzinfo is None:
-        t = t.replace(tzinfo=datetime.timezone.utc)
-    return t.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        return None
+    return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).astimezone(datetime.timezone.utc)
+
+
+def _utc(ts):
+    """'2026-11-14T08:01:02.5Z' -> '2026-11-14 08:01 UTC'; '' when absent or unparsable."""
+    t = parse_utc(ts)
+    return t.strftime("%Y-%m-%d %H:%M UTC") if t else ""
 
 
 def _span_safe(value, cap=200):

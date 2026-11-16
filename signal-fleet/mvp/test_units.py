@@ -1368,6 +1368,31 @@ class TestPollWide(unittest.TestCase):
         self.assertEqual(self.triaged[-1], "glitchtip:X-0")   # the due re-triage comes after every new issue
         self.assertEqual(len(self.triaged), 13)
 
+    def test_never_decided_sort_by_the_parsed_first_seen_and_unknown_goes_last(self):
+        # as strings "+00:00" < ".5Z" < "Z" in one second, and a missing firstSeen ("") sorts before every real one
+        seen = {3: "2026-11-14T08:00:02.5Z", 4: "2026-11-14T08:00:01+00:00", 5: "2026-11-14T08:00:03Z",
+                6: "", 7: "not a time"}
+        for n, ts in seen.items():
+            self.issues[n]["raw"] = {"firstSeen": ts}
+        self.o.run_glitchtip(limit=5, dry_run=True)
+        self.assertEqual(self.triaged, [f"glitchtip:X-{n}" for n in (4, 3, 5, 6, 7)])
+
+    def test_a_first_seen_without_an_offset_is_utc_in_the_sort(self):
+        self.issues[3]["raw"] = {"firstSeen": "2026-11-14T08:00:03"}
+        self.issues[4]["raw"] = {"firstSeen": "2026-11-14T08:00:04+00:00"}
+        saved = os.environ.get("TZ")
+        os.environ["TZ"] = "America/Los_Angeles"
+        time.tzset()
+        try:
+            self.o.run_glitchtip(limit=2, dry_run=True)
+        finally:
+            if saved is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = saved
+            time.tzset()
+        self.assertEqual(self.triaged, ["glitchtip:X-3", "glitchtip:X-4"])
+
     def test_the_rest_wait_for_the_next_cycle(self):
         self.o.run_glitchtip(limit=10, dry_run=True)
         for fp in self.triaged:
@@ -1377,6 +1402,55 @@ class TestPollWide(unittest.TestCase):
         self.o.run_glitchtip(limit=10, dry_run=True)
         self.assertEqual(self.triaged, ["glitchtip:X-13", "glitchtip:X-14"])
 
+
+class TestDeferralBoundInThePoll(unittest.TestCase):
+    """The deferral bound end to end: run_glitchtip with the real _triage_or_defer and a triager that always times
+    out. A signal that keeps deferring is escalated after DEFER_LIMIT cycles, is then decided, and stops taking a
+    triage slot, so the issues behind it get triaged."""
+
+    def setUp(self):
+        import tempfile
+        import observ
+        import orchestrator
+        self.o = orchestrator
+        self._tmp = tempfile.mkdtemp()
+        self._orig = (actions.config.LEDGER, orchestrator.DEFER_STATE, orchestrator.DEFER_LIMIT,
+                      orchestrator.sources.glitchtip_unresolved, orchestrator.sources.to_error_signal,
+                      orchestrator.sources.attach_backend, orchestrator.triage.triage,
+                      observ.push_disposition_metric, dict(orchestrator._cycle))
+        actions.config.LEDGER = os.path.join(self._tmp, "ledger.tsv")
+        orchestrator.DEFER_STATE = os.path.join(self._tmp, "deferred.json")
+        orchestrator.DEFER_LIMIT = 3
+        orchestrator.sources.to_error_signal = lambda issue: issue
+        orchestrator.sources.attach_backend = lambda sig: sig
+        observ.push_disposition_metric = lambda *a, **k: None
+        issues = [{"fingerprint": f"glitchtip:X-{n}", "occurrence_id": f"glitchtip:X-{n}@t0", "source": "glitchtip",
+                   "alertname": "x", "labels": {"count": 1}, "raw": {"firstSeen": f"2026-11-14T08:00:0{n}Z"}}
+                  for n in range(4)]
+        orchestrator.sources.glitchtip_unresolved = lambda limit: issues
+        self.tried = []
+
+        def timing_out(sig):
+            self.tried.append(sig["fingerprint"])
+            raise orchestrator.triage.TriageDeferred("triager call failed: timed out")
+        orchestrator.triage.triage = timing_out
+
+    def tearDown(self):
+        import shutil
+        import observ
+        (actions.config.LEDGER, self.o.DEFER_STATE, self.o.DEFER_LIMIT, self.o.sources.glitchtip_unresolved,
+         self.o.sources.to_error_signal, self.o.sources.attach_backend, self.o.triage.triage,
+         observ.push_disposition_metric, cycle) = self._orig
+        self.o._cycle.update(cycle)
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_a_signal_that_keeps_deferring_stops_taking_a_slot_after_its_bound(self):
+        for _ in range(self.o.DEFER_LIMIT):
+            self.o.run_glitchtip(limit=1, dry_run=True)
+        self.assertEqual(self.tried, ["glitchtip:X-0"] * self.o.DEFER_LIMIT)   # it held the only slot, deferring
+        self.tried.clear()
+        self.o.run_glitchtip(limit=1, dry_run=True)
+        self.assertEqual(self.tried, ["glitchtip:X-1"])                        # the slot goes to the next one
 
 class TestRecurrenceOncePerCountChange(unittest.TestCase):
     """A GlitchTip count bump writes ONE recurrence row, not one per cycle."""
