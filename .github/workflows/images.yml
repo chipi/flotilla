@@ -1,27 +1,12 @@
-# Build the three images and push them to ghcr.io, tagged sha-<7> (ADR-0002). A deploy names that
-# tag; nothing deploys :latest. Runs on main when anything an image contains changes, and by hand.
+# Build the six images and push them to ghcr.io, tagged sha-<7> (ADR-0002). A deploy names that
+# tag; nothing deploys :latest. Called by ci-fast.yml, after ci-fast succeeded for the same commit and
+# when an image's files changed (the path list is in ci-fast.yml's `changes` job); it has no trigger of
+# its own, so no commit gets an image without passing ci-fast. A manual rebuild is ci-fast.yml's
+# workflow_dispatch.
 name: images
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - cmd/**
-      - internal/**
-      - go.mod
-      - go.sum
-      - fleets/**
-      - worker/**
-      - runtime/**
-      - signal-fleet/mvp/**
-      - ops/**
-      - bugfix/**
-      - bugfix-fleet/**
-      - seo/**
-      - host/**
-      - deploy/**   # deploy.sh takes the compose file from the image tag's commit: a compose change needs images too
-      - .github/workflows/images.yml
-  workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: images-${{ github.sha }}
@@ -42,7 +27,7 @@ jobs:
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to ghcr.io
-        run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        run: printf '%s' "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build and push
         env:

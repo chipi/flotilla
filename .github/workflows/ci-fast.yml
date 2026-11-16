@@ -1,7 +1,10 @@
 # Fast feedback CI — what every push must pass: `make ci-fast` (gofmt, go vet, go test for fleetd;
-# byte-compile and the unit tests for the triage fleet). The replays need the private corpora and
-# run on a host (`make replay`), not here. Per global AGENTS.md #3: red on this is "fix until
-# green", not advice.
+# byte-compile and the unit tests for the triage fleet). Per global AGENTS.md #3: red on this is
+# "fix until green", not advice.
+#
+# Images build here too, after ci-fast is green for the same commit (needs: ci-fast), so a red commit
+# never yields a deployable sha-<7>. The e2e stack is its own workflow (e2e.yml); the replays need the
+# private corpora and run on a host (`make replay`), not here.
 
 name: ci-fast
 
@@ -11,9 +14,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A PR's older run is cancelled by its next push. A push to main is never cancelled: its run builds
+# that commit's images, and a cancelled run would leave the commit with none.
 concurrency:
-  group: ci-fast-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-fast-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   ci-fast:
@@ -29,3 +37,49 @@ jobs:
 
       - name: Run ci-fast
         run: make ci-fast
+
+  # Did this push change anything an image contains? images.yml used to answer with a `paths:` filter
+  # on its own push trigger; a job that `needs` another cannot have one, so the same list is checked
+  # here against the push's own range (event.before..sha, what `paths:` compares).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.filter.outputs.images }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Images needed?
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The list of images.yml's old `paths:`. deploy/**: deploy.sh takes the compose file from the
+          # image tag's commit, so a compose change needs images too.
+          re='^(cmd/|internal/|go\.mod$|go\.sum$|fleets/|worker/|runtime/|signal-fleet/mvp/|ops/|bugfix/|bugfix-fleet/|seo/|host/|deploy/|\.github/workflows/images\.yml$)'
+          if [ "$EVENT" != push ]; then
+            echo "images=true" >> "$GITHUB_OUTPUT"; echo "$EVENT: build the images"; exit 0
+          fi
+          # A new branch or a force push has no usable before: build.
+          if [ "$BEFORE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "images=true" >> "$GITHUB_OUTPUT"; echo "no usable before ($BEFORE): build the images"; exit 0
+          fi
+          files="$(git diff --name-only "$BEFORE" "$SHA")"
+          hit="$(printf '%s\n' "$files" | grep -E "$re" || true)"
+          if [ -n "$hit" ]; then
+            echo "images=true" >> "$GITHUB_OUTPUT"; echo "an image's files changed:"; printf '%s\n' "$hit"
+          else
+            echo "images=false" >> "$GITHUB_OUTPUT"; echo "no image file changed; no images:"; printf '%s\n' "$files"
+          fi
+
+  images:
+    needs: [ci-fast, changes]
+    if: github.event_name != 'pull_request' && needs.changes.outputs.images == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/images.yml

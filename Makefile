@@ -43,7 +43,8 @@ help: ## Show this help (default target)
 # Go: flotillad and the CLI (the root module) and fleetd (its own module, until it retires). Python:
 # the worker and the triage fleet (stdlib only). The bugfix fleet's TypeScript MVP has no lockfile
 # and no CI yet (RFC-0001 §11). The replays need the private corpora, so they are `make replay`, run
-# on a host, not in CI. Without Go installed: make GO=scripts/go.sh GOFMT="scripts/go.sh gofmt" ...
+# on a host, not in CI. test-integration and test-e2e are one script, run by .github/workflows/e2e.yml.
+# Without Go installed: make GO=scripts/go.sh GOFMT="scripts/go.sh gofmt" ...
 
 SF_MVP := signal-fleet/mvp
 GO     ?= go
@@ -83,6 +84,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@python3 deploy/mini/test_shadow_compare.py >/tmp/flotilla-test_shadow_compare.log 2>&1 && echo "PASS deploy/mini/test_shadow_compare.py" || { echo "FAIL deploy/mini/test_shadow_compare.py"; tail -30 /tmp/flotilla-test_shadow_compare.log; exit 1; }
 	@python3 deploy/mini/test_triage_hooks.py >/tmp/flotilla-test_triage_hooks.log 2>&1 && echo "PASS deploy/mini/test_triage_hooks.py" || { echo "FAIL deploy/mini/test_triage_hooks.py"; tail -30 /tmp/flotilla-test_triage_hooks.log; exit 1; }
 	@python3 deploy/mini/test_deploy_store.py >/tmp/flotilla-test_deploy_store.log 2>&1 && echo "PASS deploy/mini/test_deploy_store.py" || { echo "FAIL deploy/mini/test_deploy_store.py"; tail -30 /tmp/flotilla-test_deploy_store.log; exit 1; }
+	@python3 deploy/mini/test_checks_green.py >/tmp/flotilla-test_checks_green.log 2>&1 && echo "PASS deploy/mini/test_checks_green.py" || { echo "FAIL deploy/mini/test_checks_green.py"; tail -30 /tmp/flotilla-test_checks_green.log; exit 1; }
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_model_client.py >/tmp/flotilla-test_model_client.log 2>&1 && echo "PASS runtime/test_model_client.py" || { echo "FAIL runtime/test_model_client.py"; tail -30 /tmp/flotilla-test_model_client.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_contract_routine.py >/tmp/flotilla-test_contract_routine.log 2>&1 && echo "PASS runtime/test_contract_routine.py" || { echo "FAIL runtime/test_contract_routine.py"; tail -30 /tmp/flotilla-test_contract_routine.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_loaded.py >/tmp/flotilla-test_loaded.log 2>&1 && echo "PASS runtime/test_loaded.py" || { echo "FAIL runtime/test_loaded.py"; tail -30 /tmp/flotilla-test_loaded.log; rm -rf $$h; exit 1; }; rm -rf $$h

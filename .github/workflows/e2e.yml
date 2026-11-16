@@ -1,0 +1,64 @@
+# End to end: the compose stack with stand-in services (deploy/e2e/run.sh), on the runner's own Docker
+# engine. `make test-integration` is this same script (the Makefile's "Integration = the e2e stack"), so
+# one run covers both. About 10 minutes on the X3 with warm layers; it builds six images and pulls a
+# browser image, so it does not run on every push to every PR branch: it runs on pushes to main and
+# on PRs that touch more than docs (the paths-ignore list). The replays are not here: they need the
+# private corpora (signal-fleet/replays.sh), which a hosted runner cannot read.
+
+name: e2e
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '*.md'
+      - 'llms.txt'
+      - 'llms.config.json'
+      - '.markdownlint.json'
+      - '.markdownlintignore'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '*.md'
+      - 'llms.txt'
+      - 'llms.config.json'
+      - '.markdownlint.json'
+      - '.markdownlintignore'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # run.sh talks to `docker --context ${DOCKER_CONTEXT_DEV:-dev}`; a hosted runner has only the
+      # default context, and its engine is the runner's own, so the dev-engine rule (homelab ADR-0009)
+      # is met by the runner being a throwaway VM.
+      - name: Run the e2e stack
+        env:
+          DOCKER_CONTEXT_DEV: default
+        run: make test-integration
+
+      # run.sh tears its stack down on its own, also after a failure; this catches a script killed
+      # by the job's timeout.
+      - name: Tear down
+        if: always()
+        env:
+          DOCKER_CONTEXT_DEV: default
+        run: bash deploy/e2e/run.sh down
