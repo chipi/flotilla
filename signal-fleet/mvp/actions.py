@@ -163,12 +163,44 @@ def signal_code_version(signal):
     return ""
 
 
+def _utc(ts):
+    """'2026-11-14T08:01:02.5Z' -> '2026-11-14 08:01 UTC'; '' when absent or unparsable."""
+    # fractions dropped first: python 3.9's fromisoformat (the mini's) refuses GlitchTip's 1-5 digit ones
+    v = str(ts or "").replace("Z", "+00:00")
+    if "." in v:
+        head, _, rest = v.partition(".")
+        v = head + rest[len(rest) - len(rest.lstrip("0123456789")):]
+    try:
+        t = datetime.datetime.fromisoformat(v)
+    except ValueError:
+        return ""
+    return t.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def signal_facts(signal):
+    """Lines stating what the polled GlitchTip issue already holds: a link to it, where it was thrown, how often and
+    since when (ROADMAP T0.7 Q3; the issue-quality rubric's R2, R3, R5). None of it comes from the model."""
+    raw = signal.get("raw") or {}
+    out = []
+    if raw.get("permalink"):
+        out.append(f"**Source:** [{raw.get('shortId') or 'GlitchTip issue'}]({raw['permalink']})")
+    if raw.get("culprit"):
+        out.append(f"**Where:** `{raw['culprit']}`")
+    first, last = _utc(raw.get("firstSeen")), _utc(raw.get("lastSeen"))
+    if raw.get("count") not in (None, "") and first:
+        users = raw.get("userCount")
+        seen = f"{raw['count']} events" + (f", {users} users" if users not in (None, "") else "")
+        out.append(f"**Seen:** {seen}; first {first}" + (f", last {last}" if last else ""))
+    return out
+
+
 def build_issue(signal, f):
     """GitHub issue payload for a File-shaped item. Label = work_type (the router)."""
     body = [
         f"**Signal:** `{signal.get('alertname')}` "
         f"(source: {signal.get('source')}, fp: `{signal.get('fingerprint')}`)",
     ]
+    body += signal_facts(signal)
     cv = signal_code_version(signal)
     if cv:
         body.append(f"**Code version:** `{cv}`  _(frames resolve against this revision)_")

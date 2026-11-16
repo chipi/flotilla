@@ -273,6 +273,24 @@ class TestCodeVersion(unittest.TestCase):
         self.assertIn("sha-abc", issue["body"])
         self.assertIn("Code version", issue["body"])
 
+    def test_build_issue_states_the_glitchtip_facts(self):
+        # T0.7 Q3 (rubric R2, R3, R5): where, how often and since when, and a link, from the issue triage polled
+        sig = {"alertname": "TypeError: x", "source": "glitchtip", "fingerprint": "glitchtip:ORRERY-PROD-25",
+               "raw": {"permalink": "https://glitchtip.example/orrery-prod/issues/945", "shortId": "ORRERY-PROD-25",
+                       "culprit": "src/lib/panel.svelte in render", "count": "12", "userCount": 3,
+                       "firstSeen": "2026-11-14T08:01:02.5Z", "lastSeen": "2026-11-16T09:30:00Z"}}
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        self.assertIn("**Source:** [ORRERY-PROD-25](https://glitchtip.example/orrery-prod/issues/945)", body)
+        self.assertIn("**Where:** `src/lib/panel.svelte in render`", body)
+        self.assertIn("**Seen:** 12 events, 3 users; first 2026-11-14 08:01 UTC, last 2026-11-16 09:30 UTC", body)
+
+    def test_build_issue_without_facts_adds_no_empty_lines(self):
+        for sig in ({"alertname": "a", "source": "grafana", "fingerprint": "grafana:h", "raw": {}},
+                    {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1", "raw": {}}):
+            body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+            for word in ("**Source:**", "**Where:**", "**Seen:**"):
+                self.assertNotIn(word, body)
+
 
 import filing  # noqa: E402
 
