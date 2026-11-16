@@ -37,3 +37,81 @@ autonomy: shadow
 max_autonomy: propose
 budget:
   day_usd: 5
+# What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/fix.py.
+explain:
+  trigger: >-
+    Runs when flotillad hands over a code_bug_python case: bugfix/intake-podcast found an open bug issue
+    in podcast_scraper and flotillad opened a case for it. Not enabled yet (ROADMAP B8).
+  worker: >-
+    Runs on the worker bugfix, on the X3 (RFC-0011): python3 with a venv per run in its scratch, the pi
+    coding agent and the models' gateway; no GitHub credential.
+  run: >-
+    fix.py checks podcast_scraper out at main, installs it with its dev extras in a venv, asks for a
+    verdict, then runs fix rounds with gates on what each fix touches, read from pytest's reports. Up to three kick-backs with the advisor, a review, then a plan or an escalation.
+  models: >-
+    The only aliases its runs can call: bugfix-flash for the coding agent, bugfix-reviewer for the
+    advisor and the reviewer.
+  autonomy: >-
+    shadow records the plan inside flotilla; at propose the plan waits for your approval before a PR is
+    opened. It can never act on its own.
+  budget: >-
+    The day's model spend; once it is reached, the routine's runs are skipped for the rest of the day.
+steps:
+  - id: verdict
+    lane: agent
+    who: agent
+    title: verdict
+    short: is it a bug on main, and what is it
+    explain: >-
+      An agent reads the issue against main with read-only tools and answers actionable, needs-info or
+      rejected, with its reason. Only actionable goes on to a fix; the others escalate.
+  - id: coder
+    lane: agent
+    who: agent
+    title: coding agent
+    short: writes the fix and a failing test
+    explain: >-
+      pi on bugfix-flash writes the fix and a test that fails on the base and passes with the fix, in a
+      worktree of podcast_scraper's main. The test goes under tests/unit/podcast_scraper, named test_*.py.
+  - id: advisor
+    lane: agent
+    who: agent
+    title: advisor
+    short: sends a weak round back, up to 3 times
+    explain: >-
+      pi on bugfix-reviewer, read-only tools. When a round fails its gates, it advises the next round; at
+      most three kick-backs.
+  - id: reviewer
+    lane: agent
+    who: agent
+    title: reviewer
+    short: approves, or asks for changes twice
+    explain: >-
+      The same model, read only, reviews the diff. Asking for changes sends the fix back, at most twice;
+      if a later round fails, the last clean fix is kept and marked unresolved.
+  - id: fixgates
+    lane: gates
+    who: code
+    title: gates on the fix
+    short: its tests fail on the base, pass with it
+    explain: >-
+      The fix's tests must load and fail on the base and pass with the fix (a skipped or erroring test
+      counts as not run); no new failure in the mirrored test directories of the changed modules; no
+      conftest.py, pytest or build config, requirements or lock file, and no .py outside the source and
+      test roots, at any depth.
+  - id: plan
+    lane: outcome
+    who: you
+    title: github.open_pr plan
+    short: the diff, the tests, the review
+    explain: >-
+      The fix as a plan on the case. At autonomy propose it waits for you on the case page: approve,
+      reject or reassign it.
+  - id: escalation
+    lane: outcome
+    who: you
+    title: escalation
+    short: no clean fix, with the reason
+    explain: >-
+      The verdict was not actionable, or no round passed its gates: the case is escalated to you with
+      the reason.
