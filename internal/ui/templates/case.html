@@ -16,21 +16,25 @@
   <div class="split split--tight">
     <section class="main card card--edge" aria-labelledby="tl">
       <h2 id="tl">Timeline</h2>
-      <ul class="legend" aria-label="Legend">
-        <li><span class="dot" aria-hidden="true"></span>flotilla or code</li>
-        <li><span class="dot dot--agent" aria-hidden="true"></span>an agent step</li>
-        <li><span class="dot dot--you" aria-hidden="true"></span>waiting for you</li>
-      </ul>
+      {{template "whoacts" "page"}}
+      {{if gt .EventCount (len .Events)}}<p class="meta">{{.EventCount}} events, shown as {{len .Events}} rows: every change of the case stays; runs and signals that changed nothing fold into one row, opened on a tap.</p>{{end}}
       <ol class="timeline">
         {{range .Events}}<li>
           <div class="timeline__rail"><span class="{{.Dot}}" aria-hidden="true"></span><span class="line" aria-hidden="true"></span></div>
           <div class="timeline__body">
+            {{if .Fold}}<details class="tlfold"><summary><strong>{{.What}}</strong> <span class="when">{{.FoldText}} · {{.When}}</span></summary>
+              <ol class="timeline timeline--inner">{{range .Fold}}<li>
+                <div class="timeline__rail"><span class="{{.Dot}}" aria-hidden="true"></span><span class="line" aria-hidden="true"></span></div>
+                <div class="timeline__body"><div class="timeline__head"><strong>{{.What}}</strong><span class="when">{{.When}} · {{.Actor}}</span>{{if .Run}}<a href="/runs/{{.Run}}">run {{short .Run 28}}</a>{{end}}</div>
+                {{if .Detail}}<span class="timeline__text">{{.Detail}}</span>{{end}}</div>
+              </li>{{end}}</ol>
+            </details>{{else}}
             <div class="timeline__head">
               <strong>{{.What}}</strong>
               <span class="when">{{.When}} · {{.Actor}}</span>
               {{if .Run}}<a href="/runs/{{.Run}}">run {{short .Run 28}}</a>{{end}}
             </div>
-            {{if .Detail}}<span class="timeline__text">{{.Detail}}</span>{{end}}
+            {{if .Detail}}<span class="timeline__text">{{.Detail}}</span>{{end}}{{end}}
           </div>
         </li>{{end}}
       </ol>

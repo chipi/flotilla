@@ -247,6 +247,36 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
+// RunDecision is one decision a run wrote to the ledger, as its run page shows it.
+type RunDecision struct {
+	TS, Fingerprint, Alertname, Disposition, Gates, Certainty, NProbes, Model, Reason, Stage string
+}
+
+// DecisionsOfRun are the decisions (not recurrences) a run wrote, in time order. ledger_entries
+// has no run_id index: a scan of the table, which a run page can afford.
+func (s *Store) DecisionsOfRun(ctx context.Context, runID string) ([]RunDecision, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT
+		coalesce(json_extract(row, '$.ts'), ''), coalesce(json_extract(row, '$.fingerprint'), ''),
+		coalesce(json_extract(row, '$.alertname'), ''), coalesce(json_extract(row, '$.disposition'), ''),
+		coalesce(json_extract(row, '$.gates'), ''), coalesce(json_extract(row, '$.certainty'), ''),
+		coalesce(json_extract(row, '$.n_probes'), ''), coalesce(json_extract(row, '$.model'), ''),
+		substr(coalesce(json_extract(row, '$.reason'), ''), 1, 400), coalesce(json_extract(row, '$.stage'), '')
+		FROM ledger_entries WHERE run_id = ? AND kind = 'decision' ORDER BY json_extract(row, '$.ts'), seq`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunDecision
+	for rows.Next() {
+		var d RunDecision
+		if err := rows.Scan(&d.TS, &d.Fingerprint, &d.Alertname, &d.Disposition, &d.Gates, &d.Certainty, &d.NProbes, &d.Model, &d.Reason, &d.Stage); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // LedgerDecision is one ledger entry as the decision mix counts it (the dispositions row's own fields).
 type LedgerDecision struct {
 	TS, Kind, Disposition, Stage, Gates, Fingerprint, PromptSHA, Model, NProbes, RunID string

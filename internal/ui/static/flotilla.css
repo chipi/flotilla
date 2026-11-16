@@ -683,12 +683,12 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 .trace__name.depth-4, .trace__name.depth-5, .trace__name.depth-6 { padding-left: 64px; }
 .trace__bar { display: block; width: 100%; height: 14px; }
 .trace__took { text-align: right; font: 12px var(--font-exact); color: var(--slate); }
-.kind--run { fill: var(--ink); background: var(--ink); }
-.kind--flotillad { fill: var(--muted); background: var(--muted); }
-.kind--knowledge { fill: var(--ok-mid); background: var(--ok-mid); }
+.kind--run { fill: var(--control-edge); background: var(--control-edge); }
+.kind--flotillad { fill: var(--control-edge); background: var(--control-edge); }
+.kind--knowledge { fill: var(--blue-soft); background: var(--blue-soft); }
 .kind--tool { fill: var(--blue-soft); background: var(--blue-soft); }
 .kind--model { fill: var(--signal-blue); background: var(--signal-blue); }
-.kind--harness { fill: var(--violet); background: var(--violet); }
+.kind--harness { fill: var(--control-edge); background: var(--control-edge); }
 .kind--other { fill: var(--code-grey); background: var(--code-grey); }
 @media (max-width: 640px) {
   .trace__head, .trace__row { grid-template-columns: 1fr 70px; min-width: 0; }
@@ -765,3 +765,17 @@ a.node.is-on { border-color: var(--board-focus); background: var(--board-node-on
 .bpanel__nums { font-size: 13px; }
 .bpanel pre.log { white-space: pre-wrap; }
 @media (max-width: 640px) { .rboard__stages, .rboard__chain { grid-auto-flow: row; grid-template-columns: 1fr; min-width: 0; } }
+
+/* The run page as one timeline (UI plan step 3): a model span carries its call; the run's decisions in time order. */
+.trace__call { display: block; font-size: 11px; color: var(--muted); font-family: var(--font-exact); margin-top: 2px; white-space: normal; overflow-wrap: anywhere; }
+.trace__call--bad { color: var(--stop-ink); }
+.rundec { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rundec__item { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--divider); }
+.rundec__t { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rundec__head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.rundec__head strong { overflow-wrap: anywhere; }
+.rundec__body p { margin: 4px 0 0; }
+.rundec__reason { font-size: 13px; color: var(--slate); }
+@media (max-width: 640px) { .rundec__item { grid-template-columns: 1fr; gap: 4px; } }
+.tlfold summary { cursor: pointer; }
+.timeline--inner { margin-top: var(--space-xs); }

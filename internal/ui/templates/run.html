@@ -15,7 +15,7 @@
     <section class="main trace" aria-label="Spans">
       <div class="trace__head"><span>Span</span><span class="trace__ticks">{{range .Ticks}}<span>{{.}}</span>{{end}}</span><span>took</span></div>
       {{range .Spans}}<a class="trace__row{{if .On}} is-on{{end}}" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">
-        <span class="trace__name depth-{{.Depth}}"><span class="swatch kind--{{.Kind}}" aria-hidden="true"></span>{{.Name}}</span>
+        <span class="trace__name depth-{{.Depth}}"><span class="swatch kind--{{.Kind}}" aria-hidden="true"></span>{{.Name}}{{if .Call}}<span class="trace__call{{if .CallBad}} trace__call--bad{{end}}">{{.Call}}</span>{{end}}</span>
         <svg class="trace__bar" viewBox="0 0 1000 14" preserveAspectRatio="none" aria-hidden="true"><rect x="{{printf "%.1f" .X}}" y="2" width="{{printf "%.1f" .W}}" height="10" rx="2" class="kind--{{.Kind}}"></rect></svg>
         <span class="trace__took">{{.Took}}</span>
       </a>{{end}}
@@ -26,11 +26,26 @@
       <dl class="facts facts--plain">{{range .Attrs}}<div><dt class="exact">{{index . 0}}</dt><dd>{{short (index . 1) 200}}</dd></div>{{end}}</dl>
     </aside>{{end}}
   </div>
-  <p class="footnote">{{len .Spans}} spans in {{.Total}} from {{range $i, $s := .Services}}{{if $i}}, {{end}}{{$s}}{{end}}. A routine that sends no spans of its own shows only flotillad's run span.</p>
+  <p class="footnote">{{len .Spans}} spans in {{.Total}} from {{range $i, $s := .Services}}{{if $i}}, {{end}}{{$s}}{{end}}. A routine that sends no spans of its own shows only flotillad's run span.{{if $.Data.CallsInSpans}} Each model call is on its span: alias, the check it served, tokens, cost.{{end}}</p>
+  {{template "whoacts" "page"}}
   {{else}}<p class="gap"><strong>No spans.</strong> {{.Err}}</p>{{end}}{{end}}
 
+  {{if .Decisions}}
+  <section class="card" aria-labelledby="dec-h">
+    <h2 id="dec-h">What the run decided, in time order</h2>
+    <ol class="rundec">{{range .Decisions}}<li class="rundec__item">
+      <span class="rundec__t exact">{{.Off}}</span>
+      <div class="rundec__body">
+        <div class="rundec__head"><span class="chip chip--small {{.Chip}}">{{.Disposition}}</span><strong>{{short .Title 140}}</strong></div>
+        <p class="meta"><span class="exact">{{.Fingerprint}}</span> · certainty {{or .Certainty "–"}} · {{.Probes}} probes · gates: {{.Gates}}{{if .Model}} · <span class="exact">{{.Model}}</span>{{end}}</p>
+        {{if .Reason}}<p class="rundec__reason">{{.Reason}}</p>{{end}}
+      </div>
+    </li>{{end}}</ol>
+  </section>
+  {{end}}
+
   <div class="split split--tight">
-    <section class="main card" aria-labelledby="calls-h">
+    {{if not .CallsInSpans}}<section class="main card" aria-labelledby="calls-h">
       <h2 id="calls-h">Model calls</h2>
       {{if $r.Calls}}<div class="table-box">
         <table class="data data--small">
@@ -45,8 +60,8 @@
             <td data-label="Result">{{if .Error}}<span class="chip chip--stop">{{.Error}}</span>{{else}}<span class="chip chip--ok">ok</span>{{end}}</td>
           </tr>{{end}}</tbody>
         </table>
-      </div>{{else}}<p class="panel-note">This run recorded no model call (a code-only routine, or a run from before 2026-11-14).</p>{{end}}
-    </section>
+      </div>{{else}}<p class="panel-note">This run recorded no model call (a code-only routine, or a run from before 2026-11-14; triage's calls are recorded from 2026-11-16).</p>{{end}}
+    </section>{{end}}
     <section class="main card" aria-labelledby="read-h">
       <h2 id="read-h">What the agent read</h2>
       {{if .Read}}{{template "readlist" .Read}}

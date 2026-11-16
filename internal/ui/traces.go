@@ -25,6 +25,8 @@ type traceSpan struct {
 	Kind                      string // run | flotillad | model | tool | knowledge | harness | other
 	Href                      string
 	On                        bool
+	Call                      string // a model span's call: alias, check, tokens, cost, result (runs.go)
+	CallBad                   bool
 }
 
 type traceView struct {

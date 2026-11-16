@@ -232,13 +232,27 @@ every time it appears.
   executing, checking, running). **Target** (`target-ink` on `target-wash`): target and role
   chips. **Spark Wash** and **Pivot Edge**: the area under a sparkline, a selected row, the
   pivot bar.
-- **Blue Soft**, **Violet**, **OK Mid**: second series in a chart (local engines, tool spans,
-  harness spans) and good deltas on a score card.
+- **Blue Soft**, **Violet**, **OK Mid**: second series in a chart (local engines) and good deltas
+  on a score card.
 - **Fleet colours** (`fleet-triage`, `signal-blue` for Ops, `fleet-marketing`, `ok-mid` for
   Bugfix): the fleet icon box on Cases.
 - **Board** (`board`, `board-node`, `board-node-on`, `board-edge`, `board-focus`, the board
   text colours, and lamps `ok-lamp`, `board-wait`, `board-bad`, `board-idle`): the dark workflow
   board on a fleet's page and the dark log panes.
+
+### Who acts
+
+Everywhere the UI draws a step (a block on a board or a routine page, a span's bar, a timeline's
+dot), its colour says who acts in it, in four categories (the operator, 2026-11-16):
+
+- **Code** (`control-edge`, grey): a routine's code, a worker, flotillad, a model's harness.
+- **An agent** (`signal-blue`): a model decides (a model call, a triage model, a coding agent).
+- **A tool the agent uses** (`blue-soft`): a probe, a tool span, what it reads (knowledge).
+- **You** (`wait-edge`, amber): a person acts or is waited for.
+
+A block shows it as a square block's 4 px strip on its left edge, a span as its bar, an event as
+its dot. The lamp beside it stays the state (ok, waiting, failing, idle). The legend (the `whoacts`
+template) names both on every page that draws steps.
 
 ### Status
 

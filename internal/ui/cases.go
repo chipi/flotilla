@@ -397,28 +397,79 @@ func (u *Server) caseCards(rows []caseRow, touched map[string]bool, evs []store.
 
 type timelineEvent struct {
 	What, When, Actor, Run, Detail, Dot string
+	Fold                                []timelineEvent // a run of events that changed nothing, opened on a tap
+	FoldText                            string
+}
+
+// foldTimeline keeps every event that changed the case's status, the first and the last, and folds each run
+// of two or more events between them that changed nothing (a signal attached again, a run with no decision)
+// into one row: how many of each kind, and how many came after the case closed (UI plan step 3).
+func foldTimeline(ev []store.CaseEvent, rows []timelineEvent, closedAt string) []timelineEvent {
+	var out, group []timelineEvent
+	var groupEv []store.CaseEvent
+	flush := func() {
+		switch {
+		case len(group) == 1:
+			out = append(out, group[0])
+		case len(group) > 1:
+			counts, order := map[string]int{}, []string{}
+			after := 0
+			for _, e := range groupEv {
+				w := eventWhat(e)
+				if counts[w] == 0 {
+					order = append(order, w)
+				}
+				counts[w]++
+				if closedAt != "" && e.At > closedAt {
+					after++
+				}
+			}
+			var parts []string
+			for _, w := range order {
+				parts = append(parts, fmt.Sprintf("%d × %s", counts[w], w))
+			}
+			text := strings.Join(parts, ", ")
+			if after > 0 {
+				text += fmt.Sprintf(" (%d after the case closed)", after)
+			}
+			out = append(out, timelineEvent{What: fmt.Sprintf("%d repeats folded", len(group)), When: group[0].When + " to " + group[len(group)-1].When,
+				Dot: "dot", Fold: append([]timelineEvent(nil), group...), FoldText: text})
+		}
+		group, groupEv = nil, nil
+	}
+	for i, e := range ev {
+		if i == 0 || i == len(ev)-1 || e.To != "" {
+			flush()
+			out = append(out, rows[i])
+			continue
+		}
+		group, groupEv = append(group, rows[i]), append(groupEv, e)
+	}
+	flush()
+	return out
 }
 
 type policyLevel struct{ What, Level string }
 
 type caseData struct {
-	Row       caseRow
-	Routine   string
-	Opened    string
-	Decision  *decision
-	Events    []timelineEvent
-	Plan      *store.PlanRecord
-	Levels    []policyLevel
-	Result    string
-	Record    string
-	CanFix    bool // escalated: an operator may close or reassign it
-	CanApply  bool // an approved repo change: an operator records the commit that applied it (ADR-0016)
-	PlanCount int
-	Decided   string
-	Verdicts  []store.Feedback
-	RunsRead  []caseRunRead // the case's runs: what each called (G1) and read (G7), for "What the agent read"
-	Mine      string        // the signed-in person's verdict
-	Notes     []store.Note
+	EventCount int // the events before folding
+	Row        caseRow
+	Routine    string
+	Opened     string
+	Decision   *decision
+	Events     []timelineEvent
+	Plan       *store.PlanRecord
+	Levels     []policyLevel
+	Result     string
+	Record     string
+	CanFix     bool // escalated: an operator may close or reassign it
+	CanApply   bool // an approved repo change: an operator records the commit that applied it (ADR-0016)
+	PlanCount  int
+	Decided    string
+	Verdicts   []store.Feedback
+	RunsRead   []caseRunRead // the case's runs: what each called (G1) and read (G7), for "What the agent read"
+	Mine       string        // the signed-in person's verdict
+	Notes      []store.Note
 }
 
 func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -479,6 +530,12 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		}
 		d.Events = append(d.Events, timelineEvent{What: what, When: u.clock(e.At), Actor: actor, Run: run, Detail: rest, Dot: eventDot(e)})
 	}
+	closedAt := ""
+	if c.ClosedAt != nil {
+		closedAt = *c.ClosedAt
+	}
+	d.EventCount = len(d.Events)
+	d.Events = foldTimeline(ev, d.Events, closedAt)
 	if len(plans) > 0 {
 		p := plans[len(plans)-1]
 		d.Plan = &p

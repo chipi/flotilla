@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/chipi/flotilla/internal/store"
@@ -133,6 +134,56 @@ type runData struct {
 	Printed, PrintedErr string
 	Read                []store.Loaded // what the run read into a model's context (G7)
 	Untrusted           int
+	CallsInSpans        bool          // every model call sits on its model.chat span: no separate table
+	Decisions           []runDecision // the decisions the run wrote to the ledger, in time order
+}
+
+type runDecision struct {
+	Off, Title, Fingerprint, Disposition, Chip, Certainty, Probes, Gates, Model, Reason string
+}
+
+// callLine is a model call as one line on its span: alias, the check it served, tokens, cost, result.
+func callLine(c store.ModelCall) string {
+	var parts []string
+	parts = append(parts, c.Alias)
+	if c.Check != "" {
+		r := "pass"
+		if c.CheckOK != nil && !*c.CheckOK {
+			r = "fail"
+		}
+		parts = append(parts, "check "+c.Check+" "+r)
+	}
+	if c.TokensIn != nil && c.TokensOut != nil {
+		parts = append(parts, fmt.Sprintf("%d → %d tokens", *c.TokensIn, *c.TokensOut))
+	}
+	if c.CostUSD != nil {
+		parts = append(parts, fmt.Sprintf("$%.6f", *c.CostUSD))
+	}
+	if c.Error != "" {
+		parts = append(parts, c.Error)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// callsOnSpans puts each model call on its model.chat span, in time order, when the two lists are the
+// same length; otherwise it changes nothing and the page keeps the calls table.
+func callsOnSpans(t *traceView, calls []store.ModelCall) bool {
+	var idx []int
+	for i, sp := range t.Spans {
+		if sp.Kind == "model" {
+			idx = append(idx, i)
+		}
+	}
+	if len(calls) == 0 || len(idx) != len(calls) {
+		return false
+	}
+	sorted := append([]store.ModelCall(nil), calls...)
+	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].At < sorted[b].At })
+	for k, i := range idx {
+		t.Spans[i].Call = callLine(sorted[k])
+		t.Spans[i].CallBad = sorted[k].Error != "" || (sorted[k].CheckOK != nil && !*sorted[k].CheckOK)
+	}
+	return true
 }
 
 func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -167,6 +218,35 @@ func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Sessio
 	}
 	d.Read = ld[run.ID]
 	d.Untrusted = countUntrusted(d.Read)
+	d.CallsInSpans = callsOnSpans(&d.Trace, d.Row.Calls)
+	decs, err := u.API.Store.DecisionsOfRun(r.Context(), run.ID)
+	if err != nil {
+		http.Error(w, "run failed", 500)
+		return
+	}
+	t0, _ := parseTime(run.StartedAt)
+	for _, x := range decs {
+		off := ""
+		if t, ok := parseTime(x.TS); ok && !t0.IsZero() {
+			off = fmt.Sprintf("+%.0f s", t.Sub(t0).Seconds())
+		}
+		var fired []string
+		for _, g := range mixGates(x.Gates) {
+			if g[0] != "operational" && g[1] != "passed" && g[1] != "n/a" {
+				fired = append(fired, g[0]+": "+g[1])
+			}
+		}
+		gates := "none fired"
+		if len(fired) > 0 {
+			gates = strings.Join(fired, " · ")
+		}
+		chip := map[string]string{"file": "chip--info", "escalate": "chip--wait", "cleanup": "chip--ok"}[x.Disposition]
+		if chip == "" {
+			chip = "chip--neutral"
+		}
+		d.Decisions = append(d.Decisions, runDecision{Off: off, Title: x.Alertname, Fingerprint: x.Fingerprint, Disposition: x.Disposition, Chip: chip,
+			Certainty: x.Certainty, Probes: x.NProbes, Gates: gates, Model: x.Model, Reason: x.Reason})
+	}
 	if run.EndedAt != nil {
 		d.Ended = u.clock(*run.EndedAt)
 	}

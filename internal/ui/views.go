@@ -266,8 +266,10 @@ func eventDot(e store.CaseEvent) string {
 		return "dot dot--you"
 	case e.By == cases.ByAct || e.By == cases.ByDiagnose:
 		return "dot dot--agent"
+	case strings.HasPrefix(e.Actor, "user:"):
+		return "dot dot--you"
 	}
-	return "dot"
+	return "dot dot--code"
 }
 
 // kindRoutines maps each case kind to the routine that acts on it, and each routine id to its spec.
