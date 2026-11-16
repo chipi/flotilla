@@ -297,6 +297,44 @@ class Chain(unittest.TestCase):
         plan2, _ = f.run("--setup", "git config core.hooksPath .husky")
         self.assertIn("needs info", plan2["detail"], "the second run is not refused by the cache check")
 
+    def test_a_refused_fetch_is_tried_again(self):
+        """GitHub refusing the checkout's blob fetch (anonymous, in a burst) is tried again; a refusal every
+        time still stops the run, and another failure is not retried."""
+        f = self.fixture(["needs-info", "needs-info", "needs-info"], [])
+        real = subprocess.run(["sh", "-c", "command -v git"], capture_output=True, text=True).stdout.strip()
+        count = os.path.join(f.d, "checkouts")
+        wrapper = os.path.join(f.d, "bin", "git")
+        os.makedirs(os.path.dirname(wrapper), exist_ok=True)
+
+        def fail(times, msg):
+            with open(wrapper, "w") as fh:
+                fh.write(f"""#!/bin/sh
+case "$*" in *"checkout -q --detach HEAD"*)
+  n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}
+  if [ $n -le {times} ]; then echo "fatal: {msg}" >&2; exit 128; fi;;
+esac
+exec {real} "$@"
+""")
+            os.chmod(wrapper, 0o755)
+            if os.path.exists(count):
+                os.remove(count)
+        old = fix.FETCH_RETRY_PAUSES
+        fix.FETCH_RETRY_PAUSES = (0, 0)
+        try:
+            fail(2, "could not read Username for 'https://github.com': No such device or address")
+            plan, _ = f.run()
+            self.assertIn("needs info", plan["detail"], "refused twice, then fetched: the run goes on")
+            fail(3, "could not read Username for 'https://github.com': No such device or address")
+            plan, _ = f.run()
+            self.assertIn("could not read Username", plan["detail"], "refused every time: the run stops")
+            fail(1, "invalid reference: HEAD")
+            plan, _ = f.run()
+            with open(count) as fh:
+                self.assertEqual(fh.read().strip(), "1", "a failure that is not a refused fetch is not retried")
+        finally:
+            fix.FETCH_RETRY_PAUSES = old
+            os.remove(wrapper)
+
     def test_not_actionable_escalates_with_the_reason(self):
         f = self.fixture(["needs-info"], [])
         plan, _ = f.run()

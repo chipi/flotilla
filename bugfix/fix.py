@@ -91,6 +91,14 @@ def sh(cmd, cwd, env=None, timeout=None, check=False):
     return p.returncode, out
 
 
+# A fetch GitHub refused or that broke off: worth trying again. Anonymous fetches were refused in bursts
+# on the X3 ("could not read Username": a 401 to an anonymous request), 5 of 8 runs in 3 minutes on
+# 2026-11-15 while the same checkout a minute later and the next day succeeded.
+FETCH_REFUSED = re.compile(r"could not read Username|unable to access|RPC failed|early EOF|unexpected disconnect|"
+                           r"The requested URL returned error: (429|5\d\d)", re.I)
+FETCH_RETRY_PAUSES = (30, 90)
+
+
 ERR_LINE = re.compile(r"(npm (error|ERR!)|gyp ERR!|^error|Error:|ERR_)", re.I)
 
 
@@ -262,7 +270,7 @@ class Chain:
         if self.a.exclude_path:
             sh(["git", "-C", self.wt, "sparse-checkout", "set", "--no-cone", "/*"] + [f"!/{x.strip('/')}/" for x in self.a.exclude_path],
                self.run_dir, self.env, 60, check=True)
-        sh(["git", "-C", self.wt, "checkout", "-q", "--detach", "HEAD"], self.run_dir, self.env, 1200, check=True)
+        self.with_fetch_retry(["git", "-C", self.wt, "checkout", "-q", "--detach", "HEAD"], 1200)
         _, base = sh(["git", "-C", self.wt, "rev-parse", "HEAD"], self.run_dir, self.env, 30, check=True)
         self.base = base.strip()
         self.env["TRIAGE_BASE"] = self.base  # the leaves reset to it
@@ -293,6 +301,20 @@ class Chain:
         with open(self.cfg_path, "w") as f:
             f.write(self.cfg_good)
         self.note(f"{when} changed the repo cache's config; put back", "; ".join(ln.strip() for ln in changed)[:200])
+
+    def with_fetch_retry(self, cmd, timeout):
+        """Run a git command that may fetch (a partial clone's checkout fetches the blobs it lacks); a refused
+        or broken fetch is tried again after FETCH_RETRY_PAUSES, and one that fails every time stops the run."""
+        for pause in (0,) + FETCH_RETRY_PAUSES:
+            if pause:
+                self.note("fetch refused; trying again", f"in {pause}s")
+                time.sleep(pause)
+            code, out = sh(cmd, self.run_dir, self.env, timeout)
+            if code == 0:
+                return out
+            if not FETCH_REFUSED.search(out):
+                break
+        raise Stop(f"{' '.join(cmd)}: exit {code}: {tail(out, 300)}")
 
     def reset(self):
         sh(["git", "-C", self.wt, "reset", "-q", "--hard", self.base], self.run_dir, self.env, 60, check=True)
