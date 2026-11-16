@@ -90,6 +90,8 @@ def main():
             fails.append("SF_OPS_REPO set: a decision moved, the installation's ops repo did not win")
         if not ops and not moved:
             fails.append("SF_OPS_REPO unset: no refused decision moved (nothing proven)")
+        if not routed:
+            fails.append(f"SF_OPS_REPO {label}: no decision of a ROUTED project in the corpus (nothing proven)")
     for f_ in fails:
         print("FAIL", f_)
     print("PASS" if not fails else f"FAIL ({len(fails)})")
