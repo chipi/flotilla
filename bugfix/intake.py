@@ -75,12 +75,12 @@ def data_for(repo, it):
     return d
 
 
-def detections(repo, issues):
+def detections(repo, issues, kind="code_bug"):
     out = []
     for n in sorted(issues, reverse=True):
         it = issues[n]
         name = repo.split("/", 1)[1]
-        out.append({"kind": "code_bug", "target": f"repo:{repo}/issues/{n}",
+        out.append({"kind": kind, "target": f"repo:{repo}/issues/{n}",
                     "detail": f"{repo}#{n} is open with an intake label",
                     "title": f"{name} #{n}: {it.get('title') or ''}", "data": data_for(repo, it)})
     return out
@@ -90,6 +90,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", action="append", required=True)
     ap.add_argument("--label", action="append", required=True)
+    # the case kind routes the case to its fix routine: code_bug for orrery's vitest profile (fix.yaml),
+    # code_bug_python for podcast_scraper's pytest profile (fix-podcast.yaml)
+    ap.add_argument("--kind", default="code_bug")
     a = ap.parse_args(argv)
     api = os.environ.get("GITHUB_API", "https://api.github.com").rstrip("/")
     token = None
@@ -99,7 +102,7 @@ def main(argv=None):
     found = []
     for repo in a.repo:
         issues = open_issues(api, repo, a.label, token)
-        found += detections(repo, issues)
+        found += detections(repo, issues, a.kind)
         print(f"BUGFIX INTAKE {repo}: {len(issues)} open issues with {', '.join(a.label)}")
     if len(found) > MAX_DETECTIONS:
         # leaving some out would clear their cases: fail instead, and say why

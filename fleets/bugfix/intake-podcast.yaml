@@ -1,0 +1,21 @@
+fleet: bugfix
+routine: intake-podcast
+description: >-
+  The bugfix fleet's monitor for podcast_scraper (ROADMAP B8): its open issues labelled bug, or routed to
+  bugfix by triage, each a code_bug_python detection, so the case goes to the pytest profile
+  (fleets/bugfix/fix-podcast.yaml), not orrery's vitest one. Code only, read only: GitHub's public issues
+  API. Disabled until B8 is enabled with the operator's go (2026-11-16: the go is given, after the review
+  fixes and the real-report check), together with fix-podcast.
+enabled: false
+worker: bugfix
+trigger:
+  every: 1h
+detects: [code_bug_python]
+run:
+  command: python3 /opt/flotilla/bugfix/intake.py --repo chipi/podcast_scraper --label bug --label triage-fleet/routed:bugfix --kind code_bug_python
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 3h

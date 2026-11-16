@@ -123,6 +123,17 @@ class Intake(unittest.TestCase):
         with open(plan) as f:
             return json.load(f)
 
+    def test_the_case_kind_is_per_routine(self):
+        # ROADMAP B8: podcast_scraper's issues go to the pytest profile (fleets/bugfix/fix-podcast.yaml), whose
+        # routine takes a case kind of its own; orrery keeps code_bug, the default
+        gh = FakeGitHub([issue(31, "ffprobe chokes on non-UTF-8", ["bug"])])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug", "--kind", "code_bug_python")
+        self.assertEqual([(d["kind"], d["target"]) for d in out["detections"]],
+                         [("code_bug_python", "repo:chipi/podcast_scraper/issues/31")])
+        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        self.assertEqual([d["kind"] for d in out["detections"]], ["code_bug"])
+
     def test_one_case_per_issue_either_label_no_prs(self):
         gh = FakeGitHub([issue(12, "the orbit is wrong", ["bug"]), issue(15, "crash on /fly", ["triage-fleet/routed:bugfix", "bug"]),
                          issue(16, "a PR", ["bug"], pr=True), issue(17, "routed only", ["triage-fleet/routed:bugfix"])])
