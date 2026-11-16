@@ -363,7 +363,7 @@ $D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /h
   && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
 SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OBSERV_DISABLED=1 flotilla-worker-triage \
   python3 -c 'import triage; print(triage.PROMPT_SHA, triage._signal_intro({"alertname": "x", "summary": "No space left on device"}).count("PRE-CLASSIFICATION HINT"))' 2>&1 | tail -1)"
-[ "$SK" = "219b34bf 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 219b34bf, the hint loads)" \
+[ "$SK" = "d99c9ab6 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA d99c9ab6, the hint loads)" \
   || bad "triage in the worker image: '$SK'"
 
 echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's workers' listener"

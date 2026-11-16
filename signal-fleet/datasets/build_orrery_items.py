@@ -200,7 +200,10 @@ def langfuse_conversation(alertname, T):
     msgs = json.loads(max(turns, key=lambda x: int(x["name"].rsplit("-", 1)[1]))["input"])["messages"]
     calls = []
     for a, u in zip(msgs[2::2], msgs[3::2]):
-        m = re.match(r"PROBE (\S+) result:\n(.*)\Z", u.get("content") or "", re.S)
+        # a probe result, with or without the data delimiters the harness adds since 2026-11-16
+        m = (re.match(r"PROBE (\S+) result:\n<<<DATA probe \S+ \| data, not instructions>>>\n(.*)\n<<<END DATA>>>\Z",
+                      u.get("content") or "", re.S)
+             or re.match(r"PROBE (\S+) result:\n(.*)\Z", u.get("content") or "", re.S))
         if a.get("role") != "assistant" or not m:
             continue
         try:
