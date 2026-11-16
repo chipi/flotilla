@@ -159,6 +159,18 @@ git -C "$REPO" fetch -q origin || die "git fetch failed"
 COMMIT="$(git -C "$REPO" rev-parse --verify -q "${TAG#sha-}^{commit}")" || die "no commit ${TAG#sha-} in chipi/flotilla"
 git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$COMMIT" || die "checkout failed"
 
+# a deploy ships only a commit whose ci-fast is green (images build only after it since the CI change, but
+# an image can predate that); a rollback goes back to a tag that was deployed, so it skips this
+if [ "$EVENT" = deploy ] && [ -z "${FLOTILLA_SKIP_CHECKS:-}" ]; then
+  say "== the commit's checks"
+  if ! bash "$REPO/deploy/mini/checks_green.sh" "$COMMIT" | sed 's/^/   /'; then   # pipefail: the script's status
+    [ -n "$CURRENT_COMMIT" ] && git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
+    die "checks are not green for $TAG (FLOTILLA_SKIP_CHECKS=\"<why>\" deploys it anyway)"
+  fi
+elif [ "$EVENT" = deploy ]; then
+  say "== the commit's checks: skipped ($FLOTILLA_SKIP_CHECKS)"
+fi
+
 if [ "$EVENT" = deploy ]; then
   say "== the triage fleet's filing gate (${CURRENT_COMMIT:0:7} -> ${COMMIT:0:7})"
   if ! triage_filing_gate "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; then   # pipefail: the gate's status

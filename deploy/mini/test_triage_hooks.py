@@ -137,7 +137,12 @@ class Base(unittest.TestCase):
         with open(os.path.join(bindir, "docker"), "w") as f:
             f.write(FAKE_DOCKER)
         os.chmod(os.path.join(bindir, "docker"), 0o755)
+        # a stub gh: the commit's check runs as checks_green.sh reads them (STUB_CHECKS, default ci-fast green)
+        with open(os.path.join(bindir, "gh"), "w") as f:
+            f.write('#!/bin/bash\nprintf "%b\\n" "${STUB_CHECKS:-1\\tci-fast\\tcompleted\\tsuccess}"\n')
+        os.chmod(os.path.join(bindir, "gh"), 0o755)
         shutil.copy(HELPER, os.path.join(self.repo, "deploy", "mini", "store_snapshot.py"))
+        shutil.copy(os.path.join(HERE, "checks_green.sh"), os.path.join(self.repo, "deploy", "mini", "checks_green.sh"))
         self.stub = os.path.join(self.tmp, "stub"); self.vols = os.path.join(self.stub, "vols")
         os.makedirs(self.vols)
         with open(os.path.join(self.stub, "migrate.py"), "w") as f:
@@ -328,6 +333,22 @@ class DeployWiringTest(DeployBase):
         r = self.deploy(f"sha-{self.commits[1][:7]}", env=dict(self.env, SF_FILING_GATE_ACCEPT="gate checkout moved"))
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("accepted: gate checkout moved", r.stdout)
+
+    def test_a_commit_whose_ci_fast_is_not_green_is_not_deployed(self):
+        # the Fable advisor's review (2026-11-16): an image existing was the deploy's only check
+        red = dict(self.env, STUB_CHECKS="1\\tci-fast\\tcompleted\\tfailure")
+        r = self.deploy(f"sha-{self.commits[1][:7]}", env=red)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("checks_green: RED", r.stdout)
+        self.assertIn("DEPLOY FAIL: checks are not green", r.stdout)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.commits[0])
+        p = os.path.join(self.tmp, "docker_calls")
+        calls = open(p).read() if os.path.exists(p) else ""
+        self.assertNotIn(" pull ", calls)
+        self.assertNotIn(" up ", calls)
+        r = self.deploy(f"sha-{self.commits[1][:7]}", env=dict(red, FLOTILLA_SKIP_CHECKS="checks re-run by hand"))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("checks: skipped (checks re-run by hand)", r.stdout)
 
     def test_a_first_install_deploys_and_says_the_gate_did_not_run(self):
         os.remove(os.path.join(self.home, "deployed.tsv"))
