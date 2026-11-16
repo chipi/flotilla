@@ -1722,6 +1722,53 @@ class TestLangfuseJoin(unittest.TestCase):
 class TestGlitchtipSync(unittest.TestCase):
     """#100: the operator's GitHub decision is mirrored onto the fleet-filed GlitchTip issue."""
 
+    def setUp(self):
+        import tempfile
+        import config
+        self._marked = (config, config.GLITCHTIP_MARKED)
+        config.GLITCHTIP_MARKED = os.path.join(tempfile.mkdtemp(prefix="gt_marked_"), "marked.json")
+
+    def tearDown(self):
+        config, path = self._marked
+        config.GLITCHTIP_MARKED = path
+
+    def test_a_marked_issue_is_not_read_again(self):
+        # 2026-11-16: every triage cycle re-read the comments of 373 mapped issues (about 71 s) to find a
+        # marker it had posted long before; the second pass reads nothing.
+        import glitchtip_sync as gs
+        calls = []
+        orig = gs._gt
+        gs._gt = lambda method, path, body=None, token=None: (
+            calls.append((method, path)) or (([{"data": {"text": gs.MARKER + " u"}}] if path == "/issues/1/comments/" else []), {}))
+        try:
+            acts = [{"sid": f"P-{i}", "id": i, "action": "note", "url": "u", "gh": f"o/r#{i}", "project": "p"} for i in (1, 2)]
+            first = gs.apply(acts, [])
+            second_calls_from = len(calls)
+            second = gs.apply(acts, [])
+        finally:
+            gs._gt = orig
+        self.assertEqual(first["commented"], 1)                       # #2 had no marker: commented once
+        self.assertEqual([c for c in calls[:second_calls_from] if c[0] == "GET"],
+                         [("GET", "/issues/1/comments/"), ("GET", "/issues/2/comments/")])
+        self.assertEqual(calls[second_calls_from:], [])               # nothing read or written again
+        self.assertEqual(second["commented"], 0)
+
+    def test_a_failed_comment_is_not_remembered(self):
+        import glitchtip_sync as gs
+        orig = gs._gt
+
+        def gt(method, path, body=None, token=None):
+            if method == "POST":
+                raise OSError("glitchtip down")
+            return [], {}
+        gs._gt = gt
+        try:
+            done = gs.apply([{"sid": "P-3", "id": 3, "action": "note", "url": "u"}], [])
+        finally:
+            gs._gt = orig
+        self.assertEqual(done["errors"], 1)
+        self.assertNotIn(3, gs._load_marked())
+
     def _plan(self, gh_state, issue_status="unresolved", extra_rows=(), extra_issues=None):
         import glitchtip_sync as gs
         rows = [{"fingerprint": "glitchtip:PIPE-1", "repo": "o/r", "issue": "10"}] + list(extra_rows)

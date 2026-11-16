@@ -76,6 +76,8 @@ RETRIAGE_HOURS = float(env("SF_RETRIAGE_HOURS", "24"))
 
 # state
 LEDGER = env("SF_LEDGER", os.path.expanduser("~/signal-fleet/results/dispositions.tsv"))
+# glitchtip_sync: the GlitchTip issue ids known to carry its "Tracked in GitHub" comment
+GLITCHTIP_MARKED = env("SF_GLITCHTIP_MARKED", os.path.expanduser("~/signal-fleet/results/glitchtip-marked.json"))
 # Per-decision probe capture (capture.py): off unless SF_CAPTURE_PROBES=1. One JSON per decision
 # with the signal and every probe answer, so a decision can be replayed later exactly.
 CAPTURE_PROBES = env("SF_CAPTURE_PROBES", "0") == "1"

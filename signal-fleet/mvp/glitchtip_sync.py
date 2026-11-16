@@ -151,6 +151,26 @@ def _has_marker(issue_id):
     return any(MARKER in ((c.get("data") or {}).get("text") or "") for c in comments or [])
 
 
+# The GlitchTip issues known to carry the marker. Without it every cycle re-read the comments of every
+# mapped issue to find the marker it had posted long ago: 373 reads, about 71 s of each triage cycle
+# (measured 2026-11-16). An id is added once the marker is seen or posted, and never read again.
+def _load_marked():
+    try:
+        with open(config.GLITCHTIP_MARKED) as f:
+            return set(json.load(f))
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_marked(marked):
+    try:
+        with open(config.GLITCHTIP_MARKED + ".tmp", "w") as f:
+            json.dump(sorted(marked), f)
+        os.replace(config.GLITCHTIP_MARKED + ".tmp", config.GLITCHTIP_MARKED)
+    except OSError as ex:  # the next cycle reads the comments again; nothing is lost
+        print(f"  glitchtip-sync: marked ids not saved: {ex}")
+
+
 def _comment(a):
     text = f"{MARKER} {a['url']} (signal-fleet)"
     if a.get("canon"):
@@ -175,14 +195,21 @@ def apply(actions, events=None):
     """Write the planned actions. ``events`` collects one audit entry per write."""
     events = [] if events is None else events
     done = collections.Counter()
+    marked = _load_marked()
+    known = set(marked)
+
+    def ensure_marker(a):
+        if a["id"] not in marked and not _has_marker(a["id"]):
+            _comment(a)
+            done["commented"] += 1
+            _audit(events, "commented", a)
+        marked.add(a["id"])
+
     for a in actions:
         if a["action"] in ("skip", "merge"):    # merges: commented on the survivor below
             continue
         try:
-            if not _has_marker(a["id"]):
-                _comment(a)
-                done["commented"] += 1
-                _audit(events, "commented", a)
+            ensure_marker(a)
             if a["action"] == "resolve":
                 _resolve(a["id"], a.get("release"))
                 done["resolved"] += 1
@@ -205,10 +232,7 @@ def apply(actions, events=None):
             for m in members:
                 _audit(events, "merged", m, f" into {m.get('target_sid')} (GitHub duplicate of {m.get('canon')})")
             survivor = max(ids)
-            if not _has_marker(survivor):
-                _comment({**members[0], "id": survivor})
-                done["commented"] += 1
-                _audit(events, "commented", {**members[0], "sid": f"merge-survivor:{survivor}"})
+            ensure_marker({**members[0], "id": survivor, "sid": f"merge-survivor:{survivor}"})
             if members[0].get("then_resolve"):
                 _resolve(survivor, members[0].get("release"))
                 done["resolved"] += 1
@@ -216,6 +240,8 @@ def apply(actions, events=None):
         except Exception as ex:  # noqa: BLE001
             done["errors"] += 1
             print(f"  sync merge into {target} failed: {ex}")
+    if marked != known:
+        _save_marked(marked)
     return done
 
 
