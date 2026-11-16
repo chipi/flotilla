@@ -230,11 +230,13 @@ echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | gre
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
-for i in $(seq 1 15); do $D logs flotilla-worker-triage 2>&1 | grep -q '"line": "HEARTBEAT PASS"' && break; sleep 1; done
-$D logs flotilla-worker-triage 2>&1 | grep -q '"line": "HEARTBEAT PASS"' && ok "the heartbeat saw allowed-in and denied-out" \
+# grep reads all of `docker logs`, never -q: under pipefail an early exit can SIGPIPE docker logs and fail
+# the pipe although the line is there (and turn a `!` check into a false pass)
+for i in $(seq 1 15); do $D logs flotilla-worker-triage 2>&1 | grep '"line": "HEARTBEAT PASS"' >/dev/null && break; sleep 1; done
+$D logs flotilla-worker-triage 2>&1 | grep '"line": "HEARTBEAT PASS"' >/dev/null && ok "the heartbeat saw allowed-in and denied-out" \
   || bad "no HEARTBEAT PASS in the worker's log (waited 15s)"
 # the proxy writes its log line just after it refuses: wait for it rather than read once (a race, 2026-11-11)
-seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep -q "$2" && return 0; sleep 1; done; return 1; }
+seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep "$2" >/dev/null && return 0; sleep 1; done; return 1; }
 seen flotilla-egress "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"
 [ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
 cli status | grep -E "^platform/heartbeat" | grep -q -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
@@ -244,7 +246,7 @@ L="$($D logs flotilla-worker-triage 2>&1)"
 echo "$L" | grep -q 'ok   model   triage-flash: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
   && ok "a model call through the client: alias, deployment id, reported cost, traced" \
   || bad "no model step line: $(echo "$L" | grep -o 'model   triage-flash[^"]*' | head -2)"
-$D logs e2e-litellm 2>&1 | grep -q "CHAT auth=bearer model=fleet-triage-flash" && ok "the endpoint got the key from the fleet's secrets file and the alias's model" \
+$D logs e2e-litellm 2>&1 | grep "CHAT auth=bearer model=fleet-triage-flash" >/dev/null && ok "the endpoint got the key from the fleet's secrets file and the alias's model" \
   || bad "the LiteLLM stand-in saw no authorised chat call"
 T="$($D exec flotilla-worker-triage python3 /opt/flotilla/runtime/test_telemetry.py 2>&1)"
 # with the SDK, the no-SDK test is the one that skips; the SDK test must have run and passed
@@ -282,7 +284,7 @@ echo "$SHOW" | grep -q "case.planned .*ops/rerun-backup .*by act .*backup_age_ab
   && ok "planned by ops/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
 echo "$SHOW" | grep -q "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
-$D logs e2e-victoriametrics 2>&1 | grep -q 'QUERY .*instance%3D%22homelab%22' \
+$D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*instance%3D%22homelab%22' >/dev/null \
   && ok "the ops workers queried VictoriaMetrics through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
 
 echo "== controls and auth"
@@ -461,7 +463,7 @@ OUT="$(printf '%s\n' "$HT" | hx -i flotilla-e2e-host sudo -u _flotilla /usr/loca
   -state /var/db/flotilla-host -audit /var/log/flotilla-host/audit.jsonl -root /etc/flotilla-host/root.crt -addr flotillad:8487 -server-name flotillad 2>&1)"
 echo "$OUT" | grep -q "enrolment refused" && ok "the same token a second time is refused" || bad "a used token: $OUT"
 cli host list | grep -q "^e2e-host  *no  *- .*[0-9]T" && ok "host list shows it enrolled, not yet connected, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
-$D logs flotillad 2>&1 | grep -q '"msg":"host executions are signed".*"key_id":"e2e1"' \
+$D logs flotillad 2>&1 | grep '"msg":"host executions are signed".*"key_id":"e2e1"' >/dev/null \
   && ok "flotillad loaded the execution-signing key from its secrets volume (secrets.sh)" || bad "no signing key at start: $($D logs flotillad 2>&1 | grep -i 'sign' | tail -2)"
 # the service: what launchd or systemd would run, as the agent's user (the container has neither)
 hx -d flotilla-e2e-host sh -c 'sudo -u _flotilla /usr/local/libexec/flotilla-host/flotilla-host run -config /etc/flotilla-host/config.json -state /var/db/flotilla-host -audit /var/log/flotilla-host/audit.jsonl -root /etc/flotilla-host/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s 2>>/var/log/flotilla-host/agent.log'
@@ -470,13 +472,13 @@ hseen '"msg":"connected to flotillad"' && seen flotillad '"msg":"host connected"
 seen flotillad '"msg":"host log".*"host":"e2e-host","line":"connected to flotillad"' \
   && ok "the agent's own log line reached flotillad's log (G5: host logs through the connection)" || bad "host log: $($D logs flotillad 2>&1 | grep '"host log' | tail -2)"
 sleep 8   # four heartbeats at 2s; silent for three, flotillad would drop it
-! $D logs flotillad 2>&1 | grep -q '"msg":"host disconnected"' && ok "heartbeats keep the connection (8s, flotillad drops after 6s of silence)" \
+! $D logs flotillad 2>&1 | grep '"msg":"host disconnected"' >/dev/null && ok "heartbeats keep the connection (8s, flotillad drops after 6s of silence)" \
   || bad "the connection dropped: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
 HL="$(cli host list 2>&1)"
 # nothing has run on the host, so its audit log is empty and has no chain head yet ("-")
 echo "$HL" | grep -q "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
   && ok "host list: connected, its version, last contact and clock offset, from the store (no chain head: nothing ran)" || bad "host list while connected: $HL"
-! $D logs flotillad 2>&1 | grep -q '"msg":"host alert"' && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
+! $D logs flotillad 2>&1 | grep '"msg":"host alert"' >/dev/null && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
 # H9c, real executions through the whole path: a detection, a case, the acting routine's plan, policy
 # (propose: the action promoted, the routine capped at propose), an operator's approval, the envelope
 # signed and sent, the host's own checks, the result. The first runs /bin/true and is verified by the
@@ -610,10 +612,10 @@ seen flotillad '"msg":"remote worker connected".*"worker":"remote-e2e"' \
   && ok "flotillad authenticated the link as remote-e2e's (identity w-remote-e2e, version $TAG)" || bad "link connect: $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
 acli run e2e/remote-echo >/dev/null
 for _ in $(seq 1 20); do acli runs e2e/remote-echo 2>&1 | grep -q " ok " && break; sleep 1; done
-acli runs e2e/remote-echo 2>&1 | grep -q " ok " && $D logs flotilla-e2e-remote-link 2>&1 | grep -q '"msg":"run ended"' \
+acli runs e2e/remote-echo 2>&1 | grep -q " ok " && $D logs flotilla-e2e-remote-link 2>&1 | grep '"msg":"run ended"' >/dev/null \
   && ok "a run went to the remote worker through its link and came back ok" || bad "remote run: $(acli runs e2e/remote-echo 2>&1 | head -3) $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
 $D rm -f flotilla-e2e-remote-link >/dev/null
-for _ in $(seq 1 15); do $D logs flotillad 2>&1 | grep -q '"msg":"remote worker disconnected".*"worker":"remote-e2e"' && break; sleep 1; done
+for _ in $(seq 1 15); do $D logs flotillad 2>&1 | grep '"msg":"remote worker disconnected".*"worker":"remote-e2e"' >/dev/null && break; sleep 1; done
 acli run e2e/remote-echo >/dev/null 2>&1
 acli runs e2e/remote-echo 2>&1 | head -2 | grep -q "skipped.*not connected" \
   && ok "with its link gone, the remote worker's routine is skipped again" || bad "after the link: $(acli runs e2e/remote-echo 2>&1 | head -3)"
