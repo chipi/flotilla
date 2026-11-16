@@ -334,6 +334,15 @@ class DeployWiringTest(DeployBase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("accepted: gate checkout moved", r.stdout)
 
+    def test_a_commit_whose_e2e_is_red_is_not_deployed(self):
+        # 2026-11-16: sha-6b18417 deployed while its e2e was red; ci-fast alone was required
+        red = dict(self.env, STUB_CHECKS="1\\tci-fast\\tcompleted\\tsuccess\\n2\\te2e\\tcompleted\\tfailure")
+        r = self.deploy(f"sha-{self.commits[1][:7]}", env=red)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("required e2e: completed/failure", r.stdout)
+        self.assertIn("DEPLOY FAIL: checks are not green", r.stdout)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.commits[0])
+
     def test_a_commit_whose_ci_fast_is_not_green_is_not_deployed(self):
         # the Fable advisor's review (2026-11-16): an image existing was the deploy's only check
         red = dict(self.env, STUB_CHECKS="1\\tci-fast\\tcompleted\\tfailure")

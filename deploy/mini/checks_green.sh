@@ -3,6 +3,9 @@
 #
 #   checks_green.sh <sha|sha-7> [check-name ...]      names default to: ci-fast
 #
+# A name ending in ? (e2e?) is required when the commit has a run of it, and may be absent: e2e.yml skips
+# docs-only commits (paths-ignore), so such a commit has no e2e run at all. A run that exists must be green.
+#
 # Reads the commit's check runs from GitHub (gh api repos/$FLOTILLA_REPO/commits/<sha>/check-runs;
 # default chipi/flotilla), prints one line per check run it saw, then GREEN or RED. Exit 0 only when
 # every named check's latest run (a re-run replaces the run before it) is completed and successful.
@@ -25,8 +28,11 @@ echo "check runs of $REPO@$ref:"
 
 rc=0
 for name in "${required[@]}"; do
+  optional=; [ "${name%\?}" != "$name" ] && { optional=1; name="${name%\?}"; }
   last="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$2 == n && $1 > id {id = $1; line = $3 "/" $4} END {print line}')"
-  if [ "$last" = completed/success ]; then
+  if [ -z "$last" ] && [ -n "$optional" ]; then
+    echo "  required $name: no run for this commit (its workflow skips it, e.g. docs only)"
+  elif [ "$last" = completed/success ]; then
     echo "  required $name: ok"
   else
     echo "  required $name: ${last:-missing} (needs completed/success)"; rc=1

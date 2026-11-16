@@ -90,6 +90,22 @@ class ChecksGreen(unittest.TestCase):
         self.assertEqual(self.run_script(["6230cda", "ci-fast"], runs).returncode, 0)
         self.assertEqual(self.run_script(["6230cda", "ci-fast", "e2e"], runs).returncode, 1)
 
+    def test_optional_name_absent_is_ok_present_must_pass(self):
+        green = row(1, "ci-fast", "completed", "success")
+        r = self.run_script(["6230cda", "ci-fast", "e2e?"], green)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("required e2e: no run for this commit", r.stdout)
+        for status, concl in (("completed", "failure"), ("in_progress", "-"), ("queued", "-"),
+                              ("completed", "cancelled")):
+            r = self.run_script(["6230cda", "ci-fast", "e2e?"], green + row(2, "e2e", status, concl))
+            self.assertEqual(r.returncode, 1, (status, concl))
+            self.assertIn(f"required e2e: {status}/{concl}", r.stdout)
+        r = self.run_script(["6230cda", "ci-fast", "e2e?"], green + row(2, "e2e", "completed", "success"))
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("required e2e: ok", r.stdout)
+        self.assertEqual(self.run_script(["6230cda", "e2e?"], "").returncode, 0)
+        self.assertEqual(self.run_script(["6230cda", "ci-fast?", "e2e"], green).returncode, 1)
+
     def test_api_error_is_red(self):
         r = self.run_script(["6230cda"], fail=True)
         self.assertEqual(r.returncode, 1)
