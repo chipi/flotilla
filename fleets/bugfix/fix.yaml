@@ -85,7 +85,8 @@ steps:
     short: its tests fail on the base, pass with it
     explain: >-
       The fix's tests must load and fail on the base and pass with the fix; no new failure in the
-      related tests; nothing in CI, hooks, config or the lockfile changes.
+      related tests; nothing in CI, hooks, config or the lockfile changes; no test file is deleted
+      (a rename out of a test path counts as a deletion).
   - id: plan
     lane: outcome
     who: you
