@@ -96,6 +96,12 @@ read, no further than the room left: a symlink the fix adds (to a key file, say)
 followed. `--review-tools read` gives the reviewer pi's read tools again. No tools is
 stricter than read-only, so SR-0001 H8 still holds.
 
+**Judged against the issue as filed.** The review is told the verdict's task can be wrong and to
+judge against the issue's own acceptance criteria (on 2026-11-16 a re-verdict's task said a filter
+was mandated, the issue did not, and the review approved the filter). The chain also lists the
+assertion lines a fix removes or rewrites in tests that are on main (B11): the review sees them
+(weakening one is class `test-proves-nothing`) and the plan names them.
+
 **What sends a fix back.** A kick-back costs a whole fix round, so the review sends a fix back
 only for a fault it can show from what it was given, and names its class (`hides-symptom`,
 `over-broad`, `test-proves-nothing`, `breaks-behaviour`, `wrong-place`), at most once
