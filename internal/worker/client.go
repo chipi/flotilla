@@ -12,12 +12,16 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 // ErrUnreachable: the request never reached the worker (its name did not resolve, or nothing answered
 // the dial), so the run did not start.
 var ErrUnreachable = errors.New("worker unreachable")
+
+// ErrNoSuchRun: the worker is not running that run id (never started there, or already answered).
+var ErrNoSuchRun = errors.New("the worker is not running that run")
 
 // Request is one run, as flotillad hands it to a worker.
 type Request struct {
@@ -31,7 +35,7 @@ type Request struct {
 	Env       map[string]string `json:"env"`
 }
 
-// Result is what the worker reports. Status is ok, error or timeout; anything that keeps the
+// Result is what the worker reports. Status is ok, error, timeout or cancelled (a cancel stopped it); anything that keeps the
 // worker from answering is an error of the call, not a Result.
 type Result struct {
 	Status     string  `json:"status"`
@@ -134,11 +138,41 @@ func (c *Client) Run(ctx context.Context, r Request) (*Result, error) {
 		return nil, fmt.Errorf("worker %s: bad result: %w", c.URL, err)
 	}
 	switch res.Status {
-	case "ok", "error", "timeout":
+	case "ok", "error", "timeout", "cancelled":
 	default:
 		return nil, fmt.Errorf("worker %s: unknown status %q", c.URL, res.Status)
 	}
 	return &res, nil
+}
+
+// Cancel asks the worker to stop a run in flight, as its timeout would: SIGTERM, then SIGKILL after the
+// worker's grace. The run's own Run call then returns a Result with status "cancelled". A run the worker
+// is not running is ErrNoSuchRun; cancelling twice while it ends is fine.
+func (c *Client) Cancel(ctx context.Context, runID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+"/v1/runs/"+url.PathEscape(runID)+"/cancel", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return fmt.Errorf("worker %s: %w: %w", c.URL, ErrUnreachable, err)
+		}
+		return fmt.Errorf("worker %s: %w", c.URL, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("worker %s: %w (%s)", c.URL, ErrNoSuchRun, bytes.TrimSpace(raw))
+	}
+	return fmt.Errorf("worker %s: HTTP %d: %s", c.URL, resp.StatusCode, bytes.TrimSpace(raw))
 }
 
 // Ready is whether the worker answers its health check now.

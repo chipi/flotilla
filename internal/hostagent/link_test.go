@@ -19,16 +19,30 @@ type fakeLocal struct {
 	mu        sync.Mutex
 	got       []worker.Request
 	block     chan struct{}
+	stop      chan struct{} // closed by Cancel: the worker stops the run and answers it "cancelled"
+	stops     []string
 	cancelled int
+}
+
+func (f *fakeLocal) Cancel(ctx context.Context, runID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stops = append(f.stops, runID)
+	if f.stop != nil && len(f.stops) == 1 {
+		close(f.stop)
+	}
+	return nil
 }
 
 func (f *fakeLocal) Run(ctx context.Context, r worker.Request) (*worker.Result, error) {
 	f.mu.Lock()
 	f.got = append(f.got, r)
-	b := f.block
+	b, stop := f.block, f.stop
 	f.mu.Unlock()
 	if b != nil {
 		select {
+		case <-stop:
+			return &worker.Result{Status: "cancelled", SpendUSD: 0.05, OutputTail: "stopped " + r.RunID}, nil
 		case <-b:
 		case <-ctx.Done():
 			f.mu.Lock()
@@ -173,4 +187,61 @@ func TestRemoteTimeoutCancels(t *testing.T) {
 		t.Fatalf("timed out: %v", err)
 	}
 	waitFor(t, "the cancel at the worker", func() bool { local.mu.Lock(); defer local.mu.Unlock(); return local.cancelled == 1 })
+}
+
+// An operator's cancel reaches the worker over the link as its /v1/runs/<id>/cancel; the run's request is
+// not ended, so the "cancelled" result and its spend come back to flotillad's Run call.
+func TestRemoteCancelStopsTheRunAtTheWorker(t *testing.T) {
+	w := remoteWorld(t)
+	local := &fakeLocal{block: make(chan struct{}), stop: make(chan struct{})}
+	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local))
+	r := hostlink.RemoteRunner{S: w.link, Worker: "bugfix"}
+	waitFor(t, "the link", r.Available)
+	type out struct {
+		res *worker.Result
+		err error
+	}
+	done := make(chan out, 1)
+	go func() {
+		res, err := r.Run(context.Background(), worker.Request{RunID: "r-cancel", TimeoutS: 600})
+		done <- out{res, err}
+	}()
+	waitFor(t, "the run at the worker", func() bool { return local.runs() == 1 })
+	if err := r.Cancel(context.Background(), "r-cancel"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case o := <-done:
+		if o.err != nil || o.res.Status != "cancelled" || o.res.SpendUSD != 0.05 {
+			t.Fatalf("the cancelled run's result: %+v %v", o.res, o.err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the cancel never reached the worker, or the result never came back")
+	}
+	local.mu.Lock()
+	defer local.mu.Unlock()
+	if len(local.stops) != 1 || local.stops[0] != "r-cancel" || local.cancelled != 0 {
+		t.Fatalf("stops=%v, local request cancelled %d times (it must stay open for the result)", local.stops, local.cancelled)
+	}
+}
+
+// A cancel for a run nobody waits for is refused and sends nothing.
+func TestRemoteCancelRefusals(t *testing.T) {
+	w := remoteWorld(t)
+	r := hostlink.RemoteRunner{S: w.link, Worker: "bugfix"}
+	if err := r.Cancel(context.Background(), "r-x"); !errors.Is(err, worker.ErrNoSuchRun) {
+		t.Fatalf("no such run: %v", err)
+	}
+	local := &fakeLocal{}
+	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local))
+	waitFor(t, "the link", r.Available)
+	if err := r.Cancel(context.Background(), "r-x"); !errors.Is(err, worker.ErrNoSuchRun) {
+		t.Fatalf("connected, but no such run: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	local.mu.Lock()
+	defer local.mu.Unlock()
+	if len(local.stops) != 0 {
+		t.Fatalf("a refused cancel reached the worker: %v", local.stops)
+	}
 }

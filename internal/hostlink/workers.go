@@ -249,6 +249,26 @@ func (s *Server) RunRemote(ctx context.Context, name string, req worker.Request)
 	return nil, fmt.Errorf("%w: no result from remote worker %s in time", ErrUnknown, name)
 }
 
+// CancelRemote tells the link of worker name to stop run runID. It sends a frame and returns: whether the
+// worker took it shows in the run's result.
+func (s *Server) CancelRemote(name, runID string) error {
+	s.mu.Lock()
+	s.initWorkers()
+	c := s.wconns[name]
+	r := s.runs[runID]
+	s.mu.Unlock()
+	if r == nil || r.worker != name {
+		return fmt.Errorf("remote worker %s: %w", name, worker.ErrNoSuchRun)
+	}
+	if c == nil {
+		return ErrWorkerNotConnected
+	}
+	if err := c.write(hostwire.Cancel, hostwire.CancelBody{RunID: runID, Stop: true}); err != nil {
+		return fmt.Errorf("remote worker %s: sending the cancel: %v", name, err)
+	}
+	return nil
+}
+
 // RemoteRunner is a remote worker as the scheduler runs it (sched.Runner, and Available for its quiet
 // skip when the worker is not connected).
 type RemoteRunner struct {
@@ -258,6 +278,13 @@ type RemoteRunner struct {
 
 func (r RemoteRunner) Run(ctx context.Context, req worker.Request) (*worker.Result, error) {
 	return r.S.RunRemote(ctx, r.Worker, req)
+}
+
+// Cancel has the link stop a run in flight on its worker (an operator's cancel, not a timeout): the run's
+// own Run call then returns its "cancelled" result over the link as usual. A run this server is not
+// waiting for is worker.ErrNoSuchRun; a worker with no link is ErrWorkerNotConnected.
+func (r RemoteRunner) Cancel(ctx context.Context, runID string) error {
+	return r.S.CancelRemote(r.Worker, runID)
 }
 
 func (r RemoteRunner) Available() bool { return r.S.WorkerConnected(r.Worker) }

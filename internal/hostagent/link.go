@@ -4,8 +4,9 @@ package hostagent
 // under the worker's own identity, takes runs and hands each to the worker's local /v1/runs, unchanged,
 // and sends the result back. A result that could not be sent (the connection dropped while the run ran)
 // is kept and sent on the next connection, which flotillad accepts within the run's deadline. A cancel
-// ends the local request; the worker's own timeout (the run's timeout_s, which flotillad's deadline
-// exceeds) ends the run itself.
+// whose time is up ends the local request; the worker's own timeout (the run's timeout_s, which
+// flotillad's deadline exceeds) ends the run itself. An operator's cancel (stop) goes to the worker's
+// /v1/runs/<id>/cancel, and the run's request stays open for its "cancelled" result.
 
 import (
 	"context"
@@ -29,6 +30,7 @@ import (
 // LocalWorker is the worker beside the link (worker.Client).
 type LocalWorker interface {
 	Run(ctx context.Context, r worker.Request) (*worker.Result, error)
+	Cancel(ctx context.Context, runID string) error
 }
 
 // Link is one remote worker's connection to flotillad.
@@ -228,6 +230,16 @@ func (l *Link) session(ctx context.Context) error {
 			var cb hostwire.CancelBody
 			if err := f.Decode(&cb); err != nil {
 				return err
+			}
+			if cb.Stop {
+				go func() {
+					if err := l.Local.Cancel(context.WithoutCancel(ctx), cb.RunID); err != nil {
+						l.Log.Warn("the worker did not take flotillad's cancel", "run_id", cb.RunID, "err", err)
+						return
+					}
+					l.Log.Warn("run cancelled by flotillad's request", "run_id", cb.RunID)
+				}()
+				continue
 			}
 			l.mu.Lock()
 			cancel := l.cancels[cb.RunID]

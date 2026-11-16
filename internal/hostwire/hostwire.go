@@ -41,7 +41,7 @@ const (
 	Answered = "answered" // {nonce, ok, text}: what became of a relayed approval
 	// flotillad -> a remote worker's link (RFC-0011)
 	Run    = "run"    // {run_id, request}: the worker's run request, as its HTTP API takes it
-	Cancel = "cancel" // {run_id}: the run's time is up; the link stops it
+	Cancel = "cancel" // {run_id, stop}: the run's time is up (the link ends its local request), or with stop an operator's cancel (the worker stops the run)
 )
 
 type Frame struct {
@@ -214,4 +214,7 @@ type RunResultBody struct {
 
 type CancelBody struct {
 	RunID string `json:"run_id"`
+	// Stop: the run is cancelled, not timed out. The link asks its worker to stop the run (SIGTERM, then
+	// SIGKILL) and leaves the request open, so the "cancelled" result and its spend still come back.
+	Stop bool `json:"stop,omitempty"`
 }

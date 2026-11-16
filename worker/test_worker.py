@@ -86,6 +86,32 @@ class TestRunJob(unittest.TestCase):
         time.sleep(3.5)
         self.assertFalse(os.path.exists(marker), "a child of the timed-out routine survived")
 
+    def test_cancel_kills_the_group_and_reads_the_spend(self):
+        marker = os.path.join(self.home, "child-alive")
+        os.makedirs(os.path.join(self.home, "r"))
+        cmd = f"echo 0.25 > $HOME/r/spend; (sleep 3; touch {marker}) & sleep 30"
+        cancel = threading.Event()
+        threading.Timer(0.7, cancel.set).start()
+        t0 = time.monotonic()
+        r = self.req(cmd, spend_file="r/spend")
+        res = fw.run_job(r, self.environ, cancel=cancel)
+        self.assertEqual(res["status"], "cancelled")
+        self.assertAlmostEqual(res["spend_usd"], 0.25, msg="a cancelled run's spend is read as usual")
+        self.assertLess(time.monotonic() - t0, fw.KILL_GRACE_S)
+        time.sleep(3.5)
+        self.assertFalse(os.path.exists(marker), "a child of the cancelled routine survived")
+
+    def test_cancel_escalates_to_sigkill_after_the_grace(self):
+        fw.KILL_GRACE_S = 1
+        self.addCleanup(setattr, fw, "KILL_GRACE_S", 10)
+        cancel = threading.Event()
+        threading.Timer(0.5, cancel.set).start()
+        t0 = time.monotonic()
+        res = fw.run_job(self.req("trap '' TERM; sleep 30"), self.environ, cancel=cancel)
+        self.assertEqual(res["status"], "cancelled")
+        self.assertGreaterEqual(time.monotonic() - t0, 1.4, "the routine ignores SIGTERM: it lives until the grace is over")
+        self.assertLess(time.monotonic() - t0, 8)
+
     def test_spend_read_and_truncated(self):
         os.makedirs(os.path.join(self.home, "r"))
         res = fw.run_job(self.req("echo 0.0123 > $HOME/r/spend", spend_file="r/spend"), self.environ)
@@ -208,6 +234,53 @@ class TestHTTP(unittest.TestCase):
         t.join()
         self.assertEqual(out["r"][0], 200)
         self.assertEqual(out["r"][1]["status"], "ok")
+
+    def start_run(self, run_id, command, routine="t/hang", timeout_s=60):
+        out = {}
+        t = threading.Thread(target=lambda: out.update(r=self.call("/v1/runs", {
+            "run_id": run_id, "routine": routine, "command": command, "timeout_s": timeout_s})))
+        t.start()
+        for _ in range(100):
+            if run_id in fw._cancels:
+                break
+            time.sleep(0.05)
+        self.assertIn(run_id, fw._cancels, "the worker never took the run")
+        return t, out
+
+    def test_cancel_ends_a_running_run_as_cancelled(self):
+        marker = os.path.join(fw.CODE_ROOT, "child-alive")
+        t, out = self.start_run("c1", f"(sleep 3; touch {marker}) & sleep 30")
+        time.sleep(0.3)
+        t0 = time.monotonic()
+        code, body = self.call("/v1/runs/c1/cancel", {})
+        self.assertEqual((code, body["ok"]), (200, True))
+        t.join(20)
+        self.assertEqual(out["r"][0], 200)
+        self.assertEqual(out["r"][1]["status"], "cancelled")
+        self.assertLess(time.monotonic() - t0, fw.KILL_GRACE_S, "SIGTERM ends it: no wait for the grace")
+        time.sleep(3.5)
+        self.assertFalse(os.path.exists(marker), "the cancel did not reach the run's process group")
+        self.assertEqual(self.call("/healthz")[1]["running"], [], "the routine is free again")
+        self.assertEqual(self.call("/v1/runs/c1/cancel", {})[0], 404, "answered: no longer here")
+
+    def test_cancel_unknown_run_and_auth(self):
+        self.assertEqual(self.call("/v1/runs/nope/cancel", {})[0], 404)
+        self.assertEqual(self.call("/v1/runs//cancel", {})[0], 404)
+        self.assertEqual(self.call("/v1/runs/a/b/cancel", {})[0], 404)
+        t, out = self.start_run("c2", "sleep 30")
+        self.assertEqual(self.call("/v1/runs/c2/cancel", {}, token="wrong")[0], 401, "the worker's token, like every endpoint")
+        self.assertTrue(t.is_alive(), "a refused cancel stopped the run")
+        self.assertEqual(self.call("/v1/runs/c2/cancel", {})[0], 200)
+        t.join(20)
+
+    def test_cancel_is_idempotent_while_the_run_ends(self):
+        fw.KILL_GRACE_S = 2
+        self.addCleanup(setattr, fw, "KILL_GRACE_S", 10)
+        t, out = self.start_run("c3", "trap '' TERM; sleep 30")
+        self.assertEqual(self.call("/v1/runs/c3/cancel", {})[0], 200)
+        self.assertEqual(self.call("/v1/runs/c3/cancel", {})[0], 200, "twice while the run is ending")
+        t.join(20)
+        self.assertEqual(out["r"][1]["status"], "cancelled")
 
 
 if __name__ == "__main__":

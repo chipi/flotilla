@@ -67,3 +67,45 @@ func TestUnreachable(t *testing.T) {
 		t.Fatalf("an answered error is not unreachable: %v", err)
 	}
 }
+
+func TestCancel(t *testing.T) {
+	var method, path, auth string
+	code := 200
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path, auth = r.Method, r.URL.Path, r.Header.Get("Authorization")
+		w.WriteHeader(code)
+		w.Write([]byte(`{"error":"no such run here"}`))
+	}))
+	defer ts.Close()
+	c := New(ts.URL, "secret")
+	if err := c.Cancel(context.Background(), "triage-cycle-abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if method != "POST" || path != "/v1/runs/triage-cycle-abc123/cancel" || auth != "Bearer secret" {
+		t.Fatalf("sent %s %s auth=%q", method, path, auth)
+	}
+	code = 404
+	if err := c.Cancel(context.Background(), "gone"); !errors.Is(err, ErrNoSuchRun) {
+		t.Fatalf("an unknown run: %v", err)
+	}
+	code = 401
+	if err := c.Cancel(context.Background(), "x"); err == nil || errors.Is(err, ErrNoSuchRun) || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("a refused token: %v", err)
+	}
+	dead := &Client{URL: "http://127.0.0.1:1", Token: "t", HTTP: http.DefaultClient}
+	if err := dead.Cancel(context.Background(), "x"); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("nothing answering: %v", err)
+	}
+}
+
+// A run a cancel stopped is answered as cancelled, which is a result and not an error of the call.
+func TestRunCancelledIsAResult(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"cancelled","exit_code":-15,"duration_s":3,"spend_usd":0.07,"output_tail":"stopped"}`))
+	}))
+	defer ts.Close()
+	res, err := New(ts.URL, "s").Run(context.Background(), Request{RunID: "r", Routine: "j/a", Command: "true", TimeoutS: 5})
+	if err != nil || res.Status != "cancelled" || res.SpendUSD != 0.07 {
+		t.Fatalf("%+v %v", res, err)
+	}
+}

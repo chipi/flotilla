@@ -4,6 +4,10 @@ The worker holds the fleet's secrets (its env files) and its code; flotillad hol
 says what to run and when; the worker runs it and reports. Python stdlib only.
 
   POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, plan_file, env}  -> the result, when done
+  POST /v1/runs/<run_id>/cancel   {ok, run_id}: stops that run as its timeout does (SIGTERM to its process
+                  group, SIGKILL after KILL_GRACE_S); the run's own request then answers with status
+                  "cancelled" and its spend as usual. A second cancel of a run still ending is 200 again;
+                  a run id this worker is not running (never started, or already answered) is 404.
   GET  /healthz   {ok, worker, version, running}
   GET  /livez     {ok} without a token: the container healthcheck
 
@@ -38,6 +42,7 @@ TAIL = 4000
 MAX_BODY = 1 << 20
 
 _running = {}
+_cancels = {}   # run id -> the Event a cancel sets; present from the run's acceptance to its answer
 _lock = threading.Lock()
 
 
@@ -169,7 +174,18 @@ def read_plan(path):
     return plan, ""
 
 
-def run_job(req, environ=None):
+def cancel_run(run_id):
+    """Ask the run to stop; False when this worker is not running it."""
+    with _lock:
+        ev = _cancels.get(run_id)
+    if ev is None:
+        return False
+    ev.set()
+    return True
+
+
+def run_job(req, environ=None, cancel=None):
+    cancel = cancel or threading.Event()
     environ = os.environ if environ is None else environ
     env = build_env(req.get("env"), environ)
     workdir = resolve(CODE_ROOT, req.get("workdir"))
@@ -202,11 +218,20 @@ def run_job(req, environ=None):
     reader = threading.Thread(target=pump, daemon=True)
     reader.start()
     status = "ok"
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        status = "timeout"
-        _kill_group(proc)
+    while True:
+        try:
+            proc.wait(timeout=0.2)
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if cancel.is_set():
+            status = "cancelled"
+            _kill_group(proc)
+            break
+        if time.monotonic() - start >= timeout:
+            status = "timeout"
+            _kill_group(proc)
+            break
     reader.join(timeout=KILL_GRACE_S)
     if status == "ok" and proc.returncode != 0:
         status = "error"
@@ -276,6 +301,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._authorized():
             return self._send(401, {"error": "unauthorized"})
+        if self.path.startswith("/v1/runs/") and self.path.endswith("/cancel"):
+            run_id = self.path[len("/v1/runs/"):-len("/cancel")]
+            if not run_id or "/" in run_id or not cancel_run(run_id):
+                return self._send(404, {"error": "no such run here"})
+            log("run cancel requested", run_id=run_id, level="warning")
+            return self._send(200, {"ok": True, "run_id": run_id})
         if self.path != "/v1/runs":
             return self._send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -295,15 +326,17 @@ class Handler(BaseHTTPRequestHandler):
             if req["routine"] in _running:
                 return self._send(409, {"error": f"{req['routine']} is already running ({_running[req['routine']]})"})
             _running[req["routine"]] = req["run_id"]
+            cancel = _cancels[req["run_id"]] = threading.Event()
         log("run start", run_id=req["run_id"], routine=req["routine"])
         try:
-            res = run_job(req)
+            res = run_job(req, cancel=cancel)
         except Exception as e:  # noqa: BLE001 — report, never crash the server
             log("run failed to start", level="error", run_id=req["run_id"], routine=req["routine"], error=str(e))
             res = {"status": "error", "exit_code": None, "duration_s": 0, "spend_usd": 0, "output_tail": str(e)}
         finally:
             with _lock:
                 _running.pop(req["routine"], None)
+                _cancels.pop(req["run_id"], None)
         log("run end", run_id=req["run_id"], routine=req["routine"], status=res["status"], exit_code=res["exit_code"],
             duration_s=res["duration_s"], spend_usd=res["spend_usd"],
             level="info" if res["status"] == "ok" else "warning")
