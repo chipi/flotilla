@@ -287,7 +287,8 @@ class Fixture:
                    GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
                    FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": f"repo:{self.repo}/issues/12",
                                              "data": {"issue": {"repo": self.repo, "number": 12, "title": "value is 1",
-                                                                "body": "value() returns 1, want 2", "url": "u"}}}))
+                                                                "body": getattr(self, "body", "value() returns 1, want 2"),
+                                                                "url": "u"}}}))
         old = fix.BAKEOFF
         fix.BAKEOFF = self.bakeoff
         try:
@@ -682,6 +683,21 @@ exec {real} "$@"
         out = fix.cap_bytes(s, fix.REVIEW_PROMPT_MAX)
         self.assertLessEqual(len(out.encode()), fix.REVIEW_PROMPT_MAX)
         self.assertIn("[... cut:", out)
+
+    def test_step_one_closes_a_bug_whose_code_is_not_on_main_before_any_model(self):
+        # RFC-0013 §1: the fixture's main has src/a.js; the error names a function nothing at the base has
+        f = self.fixture([], [])
+        f.body = "TypeError: m.gone_from_main is not a function at src/a.js:3 (dev branch)"
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "not_reproducible", plan)
+        self.assertIn("the failing code is not on main: gone_from_main appears nowhere", plan["detail"])
+        self.assertFalse(os.path.exists(os.path.join(f.state, "calls")), "no verdict, no fix: no model was called")
+        # --no-step-one: the chain goes to the verdict as before
+        g = self.fixture(["needs-info"], [])
+        g.body = f.body
+        plan, _ = g.run("--no-step-one")
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertEqual(g.calls(), ["triage"])
 
     def test_the_kick_back_limits_are_two_and_one(self):
         a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])

@@ -105,6 +105,15 @@ plan as unresolved; a review that did not run, or ran without a VERDICT line (cu
 out), is said on the plan, never read as an approval. The plan's flag heads the PR body after
 the body is cut to length, so the cut never removes it.
 
+**Step one: can the bug happen on main at all?** Before any model (RFC-0013 §1,
+`bugfix/stepone.py`), the chain takes the names the error calls missing (`x is not a function`,
+`x is not defined`, Python's `name 'x' is not defined` and `has no attribute 'x'`) and the source
+files the issue names (never a bundled path or a library's class), and searches them at the base.
+None of the names anywhere at the base: the failing code is not on main. Every one of them there:
+what the error says is missing is on main. Either closes the case as `not_reproducible`, its
+evidence in the detail; with nothing to search, "not checked", and the chain goes on.
+`--no-step-one` skips it.
+
 **A kick-back resumes the fix session.** After a failed gate or a review's request-changes, the
 next round puts the worktree back as the last round left it (its diff, re-applied) and continues
 that round's pi session (`--session`), with the gates' reason and the verdict's renewed task, or

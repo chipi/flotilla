@@ -49,6 +49,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_config  # noqa: E402
 import spend  # noqa: E402
+import stepone  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE), "bugfix-fleet", "bakeoff"))
@@ -111,6 +112,10 @@ def _unquoted(text):
 
 class Stop(Exception):
     """Ends the chain with an outcome: escalate with a reason."""
+
+
+class NotReproducible(Exception):
+    """RFC-0013 §1: step one found the bug cannot happen on the base; ends the run as not_reproducible."""
 
 
 class Terminated(BaseException):
@@ -828,6 +833,13 @@ class Chain:
 
     def rounds(self):
         self.checkout()
+        # 0 · step one (RFC-0013 §1): can the bug happen on the base at all? Deterministic, before any model
+        if self.a.step_one:
+            decision, evidence = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
+                                               self.wt, self.base)
+            self.note("step one", evidence.removeprefix("step one: "))
+            if decision == "close":
+                raise NotReproducible(evidence)
         # 1 · the verdict, on the base
         v, vpath = self.verdict()
         self.note("verdict", v.get("verdict", "none"))
@@ -1004,6 +1016,8 @@ def parse(argv):
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
                     help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
     # a kick-back roughly doubles a case's cost (a new fix session, and before it a new verdict): 2 and 1 bound it
+    ap.add_argument("--no-step-one", dest="step_one", action="store_false",
+                    help="skip RFC-0013 §1's check that the failing code is on the base (bugfix/stepone.py)")
     ap.add_argument("--no-resume", dest="resume", action="store_false",
                     help="a kick-back starts a new fix session (before C10) instead of resuming the previous round's")
     ap.add_argument("--kickback-max", type=int, default=2)
@@ -1069,6 +1083,8 @@ def main(argv=None, environ=None):
         out = {"outcome": "escalate", "detail": str(e)}
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
+    except NotReproducible as e:
+        out = {"outcome": "not_reproducible", "detail": str(e)}
     finally:
         # from here a SIGTERM (the worker's, at the routine's timeout; it SIGKILLs 10 s later) must not cut the report
         # short: it only hurries the spend read, here or already under way

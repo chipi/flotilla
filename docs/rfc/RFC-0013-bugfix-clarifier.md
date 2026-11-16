@@ -220,3 +220,8 @@ questions; the intent the simulated reporter supplied comes only from §4.
   routine); outcomes `hand_over` and `not_reproducible`; at most two hand-overs; a case past its
   limit is escalated. Money counts only the spend a run reports: bugfix's pi calls do not reach
   flotillad yet (the fleet session's C1), so until then the limit bites on time.
+- 2026-11-16 — §1 built: `bugfix/stepone.py`, run by `fix.py` after the checkout and before the
+  verdict (`--no-step-one` skips it). On the four issues as filed, against orrery's main of
+  2026-11-16 (28548a3): #651 closes (`surface_true_scale_short` is in `messages/*.json`), #659
+  closes (`panel_tab_sky` is nowhere at the base), #648 and #656 are not checked (a library class
+  and bundle paths only). The same four are `bugfix/test_stepone.py`'s cases.
