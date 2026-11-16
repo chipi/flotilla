@@ -50,6 +50,8 @@ PI_HARNESS = POP + textwrap.dedent('''\
       norepro)  echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/b.js 1' > src/a.test.js ;;
       halffix)  echo 'module.exports = () => 3;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
       newmod)   echo 'module.exports = () => 3;' > src/c.js; printf 'import src/c.js\nexpect src/c.js 3\n' > src/c.test.js ;;
+      goodnewmod) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
+                echo 'module.exports = () => 3;' > src/c.js; printf 'import src/c.js\nexpect src/c.js 3\n' > src/c.test.js ;;
       lockfile) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo '{}' > package-lock.json ;;
       workflow) echo 'expect src/a.js 2' > src/a.test.js; mkdir -p .github/workflows; echo on: push > .github/workflows/x.yml ;;
       nothing)  ;;
@@ -372,18 +374,21 @@ exec {real} "$@"
 
     def test_scope_of_the_tests(self):
         """RFC-0010 §9: a test that passes on the base does not reproduce; a new failure in a related test
-        stops the fix; a test that cannot load on the base (it imports what the fix adds) is noted and the
-        fix goes on; a lockfile is out of scope."""
+        stops the fix; a lockfile is out of scope. "A repro test must load and fail on the base": a test that
+        cannot load on the base (it imports what the fix adds) shows no behaviour, so it is noted, and the
+        fix needs at least one other test that loads and fails there (phase B: 2 of the first 4 plans
+        passed the gates and were wrong)."""
         cases = {"norepro": "repro: src/a.test.js passes on the base without the fix",
                  "breaks": "new failures in the related tests: keep.test.js",
                  "lockfile": "out of scope: the diff touches package-lock.json",
-                 "halffix": "the fix's own tests fail with the fix: src/a.test.js"}
+                 "halffix": "the fix's own tests fail with the fix: src/a.test.js",
+                 "newmod": "repro: no test loads and fails on the base (src/c.test.js does not load there)"}
         for fix_, want in cases.items():
             f = self.fixture(["actionable"], [fix_])
             plan, _ = f.run("--kickback-max", "0")
             self.assertEqual(plan["outcome"], "escalate", fix_)
             self.assertIn(want, plan["detail"], fix_)
-        f = self.fixture(["actionable"], ["newmod"])
+        f = self.fixture(["actionable"], ["goodnewmod"])
         plan, _ = f.run("--kickback-max", "0")
         self.assertEqual(plan["outcome"], "plan", plan)
         self.assertIn("Not loadable on the base (they import what the fix adds): src/c.test.js", plan["params"]["body"])

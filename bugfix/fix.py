@@ -406,6 +406,11 @@ class Chain:
         for x in tests:
             if x not in base.unloaded and not any(f.startswith(x + "::") for f in base.fails):
                 return f"repro: {x} passes on the base without the fix: it does not reproduce the bug"
+        # RFC-0010 §9: "a repro test must load and fail on the base". A file that cannot load there shows no
+        # behaviour; it is noted, and at least one other test must load and fail.
+        if all(x in base.unloaded for x in tests):
+            return (f"repro: no test loads and fails on the base ({', '.join(sorted(tests))} does not load there): "
+                    "nothing shows the bug before the fix")
         if fixed.unloaded or fixed.fails:
             return f"the fix's own tests fail with the fix: {tail('; '.join(sorted(fixed.unloaded | fixed.fails)), 300)}"
         new = sorted((rel.fails | rel.unloaded) - (base_rel.fails | base_rel.unloaded))
