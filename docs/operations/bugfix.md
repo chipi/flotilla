@@ -56,6 +56,12 @@ same as for vitest: no failure that the base did not have.
 (`<run>/pip-cache`, deleted with it): a cache shared between runs would let a wheel that one run's
 test code planted be installed by the next, so every run downloads its wheels again.
 
+**The issue as filed.** Intake cuts long issue bodies so its whole report fits flotillad's
+64 KiB (the detection's `body_cut`). When a case's body was cut, the fix step reads it whole
+from GitHub's public issues API (`api.github.com`, already in the bugfix proxy's allowlist, no
+credential) before the verdict, and notes it in the chain; if that read fails it keeps the cut
+body and says so.
+
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could
 delete the test its change breaks and add a new passing one, and both repro and the related gate would

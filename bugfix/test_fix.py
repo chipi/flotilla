@@ -932,3 +932,52 @@ class PythonRepo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FullIssueBody(unittest.TestCase):
+    """B8: intake cuts long bodies to fit flotillad's 64 KiB report (body_cut); the fix step must reason about the
+    issue as filed, so it fetches the full body from GitHub's public API, and falls back to the cut one."""
+
+    def serve(self, status, body):
+        import http.server
+        import threading
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(h):
+                self.paths.append(h.path)
+                data = json.dumps({"number": 7, "body": body}).encode()
+                h.send_response(status)
+                h.send_header("Content-Type", "application/json")
+                h.end_headers()
+                h.wfile.write(data)
+
+            def log_message(h, *a):
+                pass
+
+        self.paths = []
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def test_a_cut_body_is_fetched_whole(self):
+        api = self.serve(200, "the whole report, " * 500)
+        issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "the whole rep", "body_cut": True}
+        got, note = fix.issue_for_case(issue, {"GITHUB_API": api})
+        self.assertEqual(got["body"], "the whole report, " * 500)
+        self.assertFalse(got["body_cut"])
+        self.assertEqual(self.paths, ["/repos/chipi/podcast_scraper/issues/7"])
+        self.assertIn("full body", note)
+
+    def test_a_body_that_was_not_cut_is_not_fetched(self):
+        api = self.serve(200, "other")
+        issue = {"repo": "chipi/orrery", "number": 7, "body": "short", "body_cut": False}
+        got, note = fix.issue_for_case(issue, {"GITHUB_API": api})
+        self.assertEqual((got["body"], self.paths, note), ("short", [], ""))
+
+    def test_a_failed_fetch_keeps_the_cut_body_and_says_so(self):
+        api = self.serve(404, "x")
+        issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "cut", "body_cut": True}
+        got, note = fix.issue_for_case(issue, {"GITHUB_API": api})
+        self.assertEqual((got["body"], got["body_cut"]), ("cut", True))
+        self.assertIn("kept the cut body", note)
