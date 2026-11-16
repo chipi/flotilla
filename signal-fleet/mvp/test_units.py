@@ -284,11 +284,42 @@ class TestCodeVersion(unittest.TestCase):
         self.assertIn("**Where:** `src/lib/panel.svelte in render`", body)
         self.assertIn("**Seen:** 12 events, 3 users; first 2026-11-14 08:01 UTC, last 2026-11-16 09:30 UTC", body)
 
+    def test_build_issue_states_environment_and_release(self):
+        # T0.7 Q3b (rubric R4): from the error's latest event
+        sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1", "raw": {},
+               "event_facts": {"environment": "prod", "release": "sha-1234567"}}
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        self.assertIn("**Environment:** prod, release `sha-1234567`", body)
+        sig["raw"] = {"lastRelease": {"shortVersion": "sha-1234567"}}      # the Code version line already says it
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        self.assertIn("**Environment:** prod\n", body + "\n")
+
+    def test_event_facts_come_from_the_probe_first_and_fetch_only_when_asked(self):
+        sig = {"source": "glitchtip", "issue_id": "7"}
+        disp = {"_probe_trace": [{"probe": "event_detail", "args": {},
+                                  "result": {"environment": "staging", "code_version": "v1", "release": "v1"}}]}
+        self.assertEqual(actions.event_facts(sig, disp, fetch=False), {"environment": "staging", "release": "v1"})
+        import correlate
+        saved, calls = correlate._event_summary, []
+        correlate._event_summary = lambda iid: calls.append(iid) or {"environment": "prod", "release": "r9",
+                                                                       "code_version": "r9"}
+        try:
+            self.assertEqual(actions.event_facts(sig, {}, fetch=False), {})
+            self.assertEqual(calls, [])                  # a dry run or a replay never reads GlitchTip
+            self.assertEqual(actions.event_facts(sig, disp, fetch=True), {"environment": "staging", "release": "v1"})
+            self.assertEqual(calls, [])                  # the probe's result is used, not a second read
+            self.assertEqual(actions.event_facts(sig, {}, fetch=True), {"environment": "prod", "release": "r9"})
+            correlate._event_summary = lambda iid: (_ for _ in ()).throw(OSError("down"))
+            self.assertEqual(actions.event_facts(sig, {}, fetch=True), {})
+            self.assertEqual(actions.event_facts({"source": "grafana"}, {}, fetch=True), {})
+        finally:
+            correlate._event_summary = saved
+
     def test_build_issue_without_facts_adds_no_empty_lines(self):
         for sig in ({"alertname": "a", "source": "grafana", "fingerprint": "grafana:h", "raw": {}},
                     {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1", "raw": {}}):
             body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
-            for word in ("**Source:**", "**Where:**", "**Seen:**"):
+            for word in ("**Source:**", "**Where:**", "**Seen:**", "**Environment:**"):
                 self.assertNotIn(word, body)
 
 

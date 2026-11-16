@@ -191,7 +191,31 @@ def signal_facts(signal):
         users = raw.get("userCount")
         seen = f"{raw['count']} events" + (f", {users} users" if users not in (None, "") else "")
         out.append(f"**Seen:** {seen}; first {first}" + (f", last {last}" if last else ""))
+    ev = signal.get("event_facts") or {}
+    rel = ev.get("release") if not signal_code_version(signal) else ""   # the Code version line says it otherwise
+    parts = [p for p in (ev.get("environment"), f"release `{rel}`" if rel else "") if p]
+    if parts:
+        out.append("**Environment:** " + ", ".join(parts))
     return out
+
+
+def event_facts(signal, disp, fetch=False):
+    """Environment and release from the error's latest event (T0.7 Q3b, rubric R4): the event_detail probe's
+    result when the model fetched it, else, only when `fetch` (a real filing, never a dry run or a replay), one
+    best-effort read of the latest event. {} when neither gives anything."""
+    s = next((t.get("result") for t in disp.get("_probe_trace") or []
+              if t.get("probe") == "event_detail" and isinstance(t.get("result"), dict)), None)
+    if s is None and fetch and signal.get("source") == "glitchtip" and signal.get("issue_id"):
+        try:
+            import correlate
+            s = correlate._event_summary(signal["issue_id"])
+        except Exception as e:  # noqa: BLE001 -- the facts are a convenience; filing must not fail on them
+            print(f"  [event facts unavailable] {type(e).__name__}")
+            s = None
+    if not isinstance(s, dict):
+        return {}
+    facts = {"environment": s.get("environment") or "", "release": s.get("code_version") or s.get("release") or ""}
+    return {k: v for k, v in facts.items() if v}
 
 
 def build_issue(signal, f):
@@ -293,6 +317,7 @@ def act(signal, disp, dry_run=True):
         print(f"[CLEANUP queued] resolve+tag {signal.get('fingerprint')} (marker: {disp.get('marker')}) "
               f"-> {os.path.basename(p)}")
     elif d == "file":
+        signal = dict(signal, event_facts=event_facts(signal, disp, fetch=not dry_run))
         if dry_run:
             p = queue_proposal(signal, build_issue(signal, disp["file"]),
                                disp["file"].get("work_type", "bug"))
