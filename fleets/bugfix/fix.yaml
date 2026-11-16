@@ -66,7 +66,9 @@ steps:
     title: advisor
     short: sends a weak round back, up to 3 times
     explain: >-
-      pi on bugfix-reviewer, read-only tools. When a round fails its gates, it advises the next round; at
+      pi on bugfix-reviewer, read-only tools. When a round fails its gates (not when the review asked for
+      changes) it only pins the file that owns the bug, unless the fix was already at an earlier pin; the
+      verdict is then asked again with that evidence, and a verdict that is not actionable escalates. At
       most three kick-backs.
   - id: reviewer
     lane: agent

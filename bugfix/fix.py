@@ -63,8 +63,9 @@ OUT_OF_SCOPE = re.compile(r"^(\.github/|\.husky/|\.gitlab-ci|\.circleci/)|(^|/)(
 # What a pytest run executes or is configured by, wherever it sits in the tree: conftest.py and the
 # sitecustomize/.pth hooks are imported at collection or at interpreter start, with the worker's
 # environment; the config, manifest, lock and constraints files decide what is installed and how it runs.
-# The built-in default under --test-format pytest, so a spec that forgets --out-of-scope is still protected.
-PYTEST_OUT_OF_SCOPE = re.compile(r"(^|/)(conftest\.py|sitecustomize\.py|usercustomize\.py|[^/]*\.pth|pytest\.ini|tox\.ini|"
+# Under --test-format pytest the scope is an allowlist (pytest_scope); this blocklist only gives its
+# error message the more specific reason for these.
+PYTEST_OUT_OF_SCOPE = re.compile(r"(^|/)(conftest\.py|sitecustomize\.py|usercustomize\.py|[^/]*\.pth|\.?pytest\.(ini|toml)|tox\.ini|"
                                  r"\.coveragerc|setup\.(py|cfg)|pyproject\.toml|Makefile|\.pre-commit-config\.yaml|"
                                  r"requirements[^/]*\.txt|constraints[^/]*\.txt|[^/]*\.lock)$|^requirements/")
 DIFF_MAX = 16000   # the registry's max for github.open_pr's diff
@@ -439,8 +440,11 @@ class Chain:
         code, stream = sh([harness, self.wt, desc], BAKEOFF, self.env, self.a.episode_timeout)
         turns, out_tok = usage(stream)
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
-        _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", self.base], self.run_dir, self.env, 60, check=True)
-        files = [x for x in names.splitlines() if x.strip() and not x.startswith(".flotilla-suite")]
+        # -z: names raw, never git's quoted form for a non-ASCII path; --no-renames: both sides of a rename
+        # are listed, so a file moved out of an out-of-scope path is still seen
+        _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", self.base],
+                      self.run_dir, self.env, 60, check=True)
+        files = [x for x in names.split("\0") if x.strip() and not x.startswith(".flotilla-suite")]
         stats = (turns, out_tok)
         if code == 124 and not files:
             return "the fix episode ran out of time with no change", files, stream, stats
@@ -451,6 +455,8 @@ class Chain:
         for x in files:
             if OUT_OF_SCOPE.search(x) or any(re.search(o, x) for o in self.a.out_of_scope):
                 bad.append(x)
+            elif pytest and x.startswith('"'):   # git's quoted form of an odd name: fail closed
+                bad.append(f"{x} (a quoted path name: it cannot be checked against the scope)")
             elif pytest and self.pytest_scope(x):
                 bad.append(f"{x} ({self.pytest_scope(x)})")
         # under pytest the scope comes first: a file pytest imports must be named, not hidden behind "no test"
@@ -466,31 +472,33 @@ class Chain:
         return self.gates(files, tests), files, stream, stats
 
     def pytest_scope(self, x):
-        """Why a changed file may not be part of a pytest fix ("" when it may). Python that pytest imports
-        before or outside a test is code that runs with the worker's environment: the repo root is on
-        sys.path (cwd under `python -m pytest`, and PYTHONPATH), so a top-level json.py or pytest_socket.py
-        shadows the installed module, a tests/ __init__.py runs at package collection, a helper module when a
-        test imports it. Only source files and test files (test_*.py, *_test.py) are a fix's to change."""
+        """Why a changed file may not be part of a pytest fix ("" when it may): an ALLOWLIST, a .py under
+        --source-root or a test_*.py / *_test.py under --test-root; every other changed file anywhere (config,
+        data, docs, helpers) is out. Python that pytest imports outside a test is code that runs with the
+        worker's environment: the repo root is on sys.path (cwd under `python -m pytest`, and PYTHONPATH), so a
+        top-level json.py or pytest_socket.py shadows the installed module, a tests/ __init__.py runs at
+        package collection, a helper module when a test imports it."""
         if PYTEST_OUT_OF_SCOPE.search(x):
             return "pytest config, collection or install file"
-        if not x.endswith(".py"):
-            return ""
         src, tst = self.a.source_root.rstrip("/") + "/", self.a.test_root.rstrip("/") + "/"
-        if x.startswith(tst):
-            base = os.path.basename(x)
-            ok = re.fullmatch(r"test_[^/]*\.py|[^/]*_test\.py", base)
-            return "" if ok else (f"only test files (test_*.py, *_test.py) may change under {self.a.test_root}: "
-                                  "__init__.py and helper modules run at import")
-        if x.startswith(src):
+        if x.endswith(".py") and x.startswith(src):
             return ""
-        return (f"a .py outside {self.a.source_root} and {self.a.test_root} is imported by pytest and may shadow "
-                "an installed module")
+        if x.startswith(tst) and x.endswith(".py"):
+            if re.fullmatch(r"test_[^/]*\.py|[^/]*_test\.py", os.path.basename(x)):
+                return ""
+            return (f"only test files (test_*.py, *_test.py) may change under {self.a.test_root}: "
+                    "__init__.py and helper modules run at import")
+        if x.endswith(".py"):
+            return (f"a .py outside {self.a.source_root} and {self.a.test_root} is imported by pytest and may shadow "
+                    "an installed module")
+        return (f"only a .py under {self.a.source_root} or a test_*.py / *_test.py under {self.a.test_root} may change: "
+                "config, data and other files are a person's")
 
     def gates(self, files, tests):
         """RFC-0010 §9: repro (the tests fail on the base, pass with the fix) and related (no failure the base
         did not have, in the tests related to the changed source files). Leaves the tree as the fix made it."""
         patch = os.path.join(self.run_dir, "fix.patch")
-        _, d = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", self.base], self.run_dir, self.env, 60, check=True)
+        _, d = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", "--no-renames", self.base], self.run_dir, self.env, 60, check=True)
         with open(patch, "w") as f:
             f.write(d)
         src = [x for x in files if not TEST_FILE.search(x)]
@@ -587,7 +595,7 @@ class Chain:
 
     def diff(self):
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
-        _, d = sh(["git", "-C", self.wt, "diff", "--cached", self.base, "--", ".", ":(exclude).flotilla-suite.json"],
+        _, d = sh(["git", "-C", self.wt, "diff", "--cached", "--no-renames", self.base, "--", ".", ":(exclude).flotilla-suite.json"],
                   self.run_dir, self.env, 60, check=True)
         return d
 

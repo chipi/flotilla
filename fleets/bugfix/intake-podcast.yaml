@@ -4,8 +4,9 @@ description: >-
   The bugfix fleet's monitor for podcast_scraper (ROADMAP B8): its open issues labelled bug, or routed to
   bugfix by triage, each a code_bug_python detection, so the case goes to the pytest profile
   (fleets/bugfix/fix-podcast.yaml), not orrery's vitest one. Code only, read only: GitHub's public issues
-  API. Disabled until B8 is enabled with the operator's go (the operator gave the go for B8 on 2026-11-16 in the fleet
-  session; enabling still needs their go in the deploying session), together with fix-podcast.
+  API. Disabled until B8 is enabled with the operator's go (the operator gave the go for B8 on
+  2026-11-16 in the fleet session; enabling still needs their go in the deploying session), together
+  with fix-podcast.
 enabled: false
 worker: bugfix
 trigger:
@@ -22,18 +23,20 @@ freshness: 3h
 # What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/intake.py.
 explain:
   trigger: >-
-    Every hour. Each run reports every open bug issue again: an issue it no longer reports is taken as
-    cleared.
+    Every hour. Each run reports again every issue it finds (see below): an issue it no longer reports
+    is taken as cleared.
   freshness: >-
     With no run ending ok for 3 hours the routine is stale: new bug issues would wait.
   worker: >-
     Runs on the worker bugfix. Read only: GitHub's public issues API, no credential needed.
   run: >-
-    intake.py lists podcast_scraper's open issues labelled bug or routed to bugfix by triage and reports
-    each as a detection, with the issue in its data. Not enabled yet (ROADMAP B8).
+    intake.py lists podcast_scraper's open issues labelled bug or routed to bugfix by triage, the first
+    100 per label, leaves out pull requests and issues filed from a dev environment, and reports each
+    other one as a detection, with the issue in its data. A run that finds more than 50 fails and
+    reports none. Not enabled yet (ROADMAP B8).
   detects: >-
-    Each issue is a code_bug_python detection, so fix-podcast takes it. flotillad opens one case per issue; a detection of a known issue
-    attaches to its case instead.
+    Each issue found is a code_bug_python detection, so fix-podcast takes it. flotillad opens one case
+    per issue; a detection of a known issue attaches to its case instead. Never more than 50 per run.
   autonomy: >-
     It only reads and reports; flotillad opens the cases.
   budget: >-

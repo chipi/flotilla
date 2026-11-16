@@ -56,8 +56,14 @@ same as for vitest: no failure that the base did not have.
 (`<run>/pip-cache`, deleted with it): a cache shared between runs would let a wheel that one run's
 test code planted be installed by the next, so every run downloads its wheels again.
 
-**What a pytest fix may not touch.** Under `--test-format pytest`, at any depth: `conftest.py`,
-`sitecustomize.py`, `usercustomize.py`, `*.pth`, `pytest.ini`, `tox.ini`, `.coveragerc`, `setup.py`,
+**What a pytest fix may change (an allowlist).** Under `--test-format pytest` a changed path is
+allowed only if it is a `.py` under `--source-root`, or a `test_*.py` / `*_test.py` under
+`--test-root`; every other changed file anywhere is rejected, with its name and the rule. Both sides
+of a rename are checked (`--no-renames`) and paths are read NUL-separated, so neither a move out of
+a forbidden path nor a non-ASCII name slips past. The blocklist below only gives the message for
+the usual suspects. At any depth: `conftest.py`,
+`sitecustomize.py`, `usercustomize.py`, `*.pth`, `pytest.ini`, `.pytest.ini`, `pytest.toml`,
+`.pytest.toml`, `tox.ini`, `.coveragerc`, `setup.py`,
 `setup.cfg`, `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml`, `requirements*.txt`,
 `constraints*.txt`, `*.lock` and `requirements/`. pytest imports a conftest at collection, in the base
 run and the fixed run, with the worker's environment. Such a file is never counted as a test file,

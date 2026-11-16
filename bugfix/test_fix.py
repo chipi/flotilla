@@ -81,9 +81,24 @@ PI_HARNESS = POP + textwrap.dedent('''\
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pysuffix) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/mod_test.py ;;
+      pyrename) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; git mv conftest.py src/podcast_scraper/pkg/moved.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyunicode) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; mkdir -p tests/unit/podcast_scraper/é; echo 'import os' > tests/unit/podcast_scraper/é/conftest.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyunicodesrc) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'x' > 'src/podcast_scraper/pkg/é.txt'
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyconfigs) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo '[pytest]' > .pytest.ini; echo '[pytest]' > pytest.toml; echo '[pytest]' > .pytest.toml
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pydata)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo '{}' > src/podcast_scraper/pkg/data.json; echo 'hi' > README.md
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyquote)  echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'x = 1' > '"q".py'
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyrenamesrc) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; git mv src/podcast_scraper/lone/z.py src/podcast_scraper/pkg/z.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyskip)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; printf 'SKIP\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyconf)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py; echo '[project]' > pyproject.toml ;;
+      jsrename) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; git mv package.json src/moved.json ;;
       nothing)  ;;
     esac
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output":7}}}\\n'
@@ -214,7 +229,7 @@ class Fixture:
         os.makedirs(os.path.join(src, "static", "images"))
         files = (("src/a.js", "module.exports = () => 1;\n"), ("src/b.js", "module.exports = () => 1;\n"),
                  ("keep.test.js", "expect src/b.js 1\n"), ("red.test.js", "expect src/a.js 9\n"),
-                 ("static/images/x.png", "a big image\n"))
+                 ("static/images/x.png", "a big image\n"), ("package.json", '{"name": "x"}\n'))
         if py:
             # podcast_scraper's shape: src/<pkg>/<a>/<b>.py, tests mirrored under tests/unit/<pkg>/<a>/
             pkg, tests = "src/podcast_scraper", "tests/unit/podcast_scraper"
@@ -223,7 +238,7 @@ class Fixture:
                      (f"{tests}/pkg/sub/test_s.py", f"expect {pkg}/pkg/sub/s.py 1\n"),
                      (f"{tests}/pkg/test_keep.py", f"expect {pkg}/pkg/other.py 1\n"),
                      (f"{tests}/pkg/test_red.py", f"expect {pkg}/pkg/mod.py 9\n"),
-                     (f"{tests}/test_top.py", f"expect {pkg}/pkg/other.py 1\n"))
+                     (f"{tests}/test_top.py", f"expect {pkg}/pkg/other.py 1\n"), ("conftest.py", "# root\n"))
         for rel, text in files:
             os.makedirs(os.path.dirname(os.path.join(src, rel)), exist_ok=True)
             with open(os.path.join(src, rel), "w") as f:
@@ -705,6 +720,12 @@ exec {real} "$@"
         self.assertIn("stuck: kick-back limit (1) reached; last: the fix changed nothing", plan["detail"])
         self.assertEqual(f.calls(), ["triage", "fix", "triage", "fix"])
 
+    def test_a_rename_out_of_a_forbidden_path_is_seen_on_the_vitest_path_too(self):
+        f = self.fixture(["actionable"], ["jsrename"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("out of scope: the diff touches package.json", plan["detail"])
+
     def test_out_of_scope(self):
         f = self.fixture(["actionable"], ["workflow"])
         plan, _ = f.run("--kickback-max", "0")
@@ -831,10 +852,53 @@ class PythonRepo(unittest.TestCase):
         with self.assertRaises(SystemExit):
             fix.parse(["--repo", "o/r", "--worker-model", "a", "--advisor-model", "b", "--reviewer-model", "c", "--test-format", "pytest"])
 
-    def test_only_python_files_are_handed_to_pytest(self):
-        f = self.fixture(["actionable"], ["pyjson"])
+    def test_the_allowlist_names_every_other_changed_file(self):
+        """Under pytest a changed path is allowed only if it is a .py under the source root or a test_*.py /
+        *_test.py under the test root: config, data, docs and non-.py files anywhere are rejected."""
+        for fix_, files in (("pyjson", ["tests/unit/podcast_scraper/pkg/data/x.json"]),
+                            ("pydata", ["src/podcast_scraper/pkg/data.json", "README.md"]),
+                            ("pyconfigs", [".pytest.ini", "pytest.toml", ".pytest.toml"])):
+            f = self.fixture(["actionable"], [fix_])
+            plan, _ = f.run("--kickback-max", "0")
+            self.assertEqual(plan["outcome"], "escalate", fix_)
+            for x in files:
+                self.assertIn(f"{x} (", plan["detail"], (fix_, x))
+
+    def test_the_blocklist_names_the_usual_config_files(self):
+        f = self.fixture(["actionable"], ["pyconfigs"])
+        plan, _ = f.run("--kickback-max", "0")
+        for x in (".pytest.ini", "pytest.toml", ".pytest.toml"):
+            self.assertIn(f"{x} (pytest config, collection or install file)", plan["detail"])
+
+    def test_a_name_that_starts_with_a_quote_fails_closed(self):
+        f = self.fixture(["actionable"], ["pyquote"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertIn('"q".py (a quoted path name', plan["detail"])
+
+    def test_a_renamed_source_file_is_a_delete_and_an_add_in_the_plan(self):
+        f = self.fixture(["actionable"], ["pyrenamesrc"])
         plan, _ = f.run()
         self.assertEqual(plan["outcome"], "plan", plan)
+        d = plan["params"]["diff"]
+        self.assertNotIn("rename from", d)
+        self.assertIn("deleted file mode", d)
+        self.assertIn("+++ b/src/podcast_scraper/pkg/z.py", d)
+
+    def test_a_rename_out_of_a_forbidden_path_is_seen(self):
+        f = self.fixture(["actionable"], ["pyrename"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("conftest.py (pytest config, collection or install file)", plan["detail"])
+
+    def test_a_non_ascii_path_is_not_quoted_past_the_scope(self):
+        f = self.fixture(["actionable"], ["pyunicode"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("tests/unit/podcast_scraper/é/conftest.py (pytest config", plan["detail"])
+        g = self.fixture(["actionable"], ["pyunicodesrc"])
+        plan, _ = g.run("--kickback-max", "0")
+        self.assertIn("src/podcast_scraper/pkg/é.txt (", plan["detail"])
+        self.assertNotIn('"', plan["detail"].split("touches")[1][:5], "the name is not git's quoted form")
 
     def test_the_pip_cache_is_the_run_s_own(self):
         f = self.fixture(["actionable"], ["pygood"])

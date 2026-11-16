@@ -3,8 +3,8 @@ routine: fix-podcast
 description: >-
   The per-repo profile of bugfix/fix for chipi/podcast_scraper (pytest): the same chain as fix, with
   a venv installed in the worker's scratch, pytest-json-report's reports, the related tests of the
-  mirrored test directories, and (built in under --test-format pytest, at any depth) conftest.py, the
-  pytest and build config, requirements, constraints and lock files out of scope.
+  mirrored test directories, and (built in under --test-format pytest) an allowlist of what a fix may
+  change: a .py under the source root, a test_*.py or *_test.py under the test root, nothing else.
 enabled: false
 # NOT ENABLED. Enabling it is ROADMAP B8 (podcast_scraper in shadow) and needs the operator's go. It
 # also needs, before then: a case kind of its own (flotillad allows one acting routine per kind, and
@@ -47,7 +47,8 @@ explain:
     coding agent and the models' gateway; no GitHub credential.
   run: >-
     fix.py checks podcast_scraper out at main, installs it with its dev extras in a venv, asks for a
-    verdict, then runs fix rounds with gates on what each fix touches, read from pytest's reports. Up to three kick-backs with the advisor, a review, then a plan or an escalation.
+    verdict, then runs fix rounds with gates on what each fix touches, read from pytest's reports. Up to
+    three kick-backs with the advisor, a review, then a plan or an escalation.
   models: >-
     The only aliases its runs can call: bugfix-flash for the coding agent, bugfix-reviewer for the
     advisor and the reviewer.
@@ -72,14 +73,17 @@ steps:
     short: writes the fix and a failing test
     explain: >-
       pi on bugfix-flash writes the fix and a test that fails on the base and passes with the fix, in a
-      worktree of podcast_scraper's main. The test goes under tests/unit/podcast_scraper, named test_*.py.
+      worktree of podcast_scraper's main. The gates accept tests only under tests/unit/podcast_scraper,
+      named test_*.py or *_test.py.
   - id: advisor
     lane: agent
     who: agent
     title: advisor
     short: sends a weak round back, up to 3 times
     explain: >-
-      pi on bugfix-reviewer, read-only tools. When a round fails its gates, it advises the next round; at
+      pi on bugfix-reviewer, read-only tools. When a round fails its gates (not when the review asked for
+      changes) it only pins the file that owns the bug, unless the fix was already at an earlier pin; the
+      verdict is then asked again with that evidence, and a verdict that is not actionable escalates. At
       most three kick-backs.
   - id: reviewer
     lane: agent
@@ -96,9 +100,10 @@ steps:
     short: its tests fail on the base, pass with it
     explain: >-
       The fix's tests must load and fail on the base and pass with the fix (a skipped or erroring test
-      counts as not run); no new failure in the mirrored test directories of the changed modules; no
-      conftest.py, pytest or build config, requirements or lock file, and no .py outside the source and
-      test roots, at any depth.
+      counts as not run); no new failure in the mirrored test directories of the changed modules. Only a
+      .py under src/podcast_scraper or a test_*.py / *_test.py under tests/unit/podcast_scraper may
+      change: any other file (conftest.py, config, requirements, lock, data, docs, helpers, __init__.py
+      under the tests, a .py elsewhere) is rejected, at any depth, naming the file.
   - id: plan
     lane: outcome
     who: you
