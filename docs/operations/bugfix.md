@@ -18,6 +18,48 @@ what it does. It is in beta evaluation: whether its fixes are good is RFC-0010 ย
 nothing reaches GitHub. Promote it to propose on Autonomy, after the coding harness's security review
 (RFC-0010 ยง5), for plans to wait in Approvals. A repo action never goes above propose.
 
+## Per-repo profiles
+
+`bugfix/fix` knows nothing of a repo but its flags, so a repo is a routine spec that sets them
+(`fleets/bugfix/fix.yaml` is orrery's; its defaults are orrery's: npm, vitest). One acting routine
+per case kind, so a second repo needs a kind of its own.
+
+| Flag | What it sets | Default (orrery) |
+| --- | --- | --- |
+| `--setup`, `--setup-timeout` | install on the base, run under `sh` in the worktree | `npm ci ...`, 1200 s |
+| `--test-cmd` | the test command: `%s` is the report's path, the test files are appended | `npx vitest run ...` |
+| `--test-format` | the report's shape: `vitest`, or `pytest` (pytest-json-report) | `vitest` |
+| `--related` | `vitest`: `--related-cmd` on the changed source files; `pytest-dirs`: see below | `vitest` |
+| `--source-root`, `--test-root` | for `pytest-dirs`: the source tree and the test tree that mirrors it | none |
+| `--out-of-scope` | a regex of paths a fix may not touch (added to the built-in CI, hook and JS config set) | none |
+| `--exclude-path` | a tree not checked out (sparse) | none |
+
+**The pytest format.** The report is read into the one per-file result the gates use for vitest:
+a failed or errored test is a failure `file::name`; a file whose collection failed is unloaded;
+**a skipped test is not a pass**: a file whose tests were all skipped (or xfailed) counts as not run
+(unloaded), and so does a requested test file the report does not mention. podcast_scraper's
+integration files guard themselves with `pytest.importorskip`, so a broken install skips them, and a
+run that only skipped must not look green. The test command should pass
+`--continue-on-collection-errors`, or one file that cannot load on the base stops the others.
+
+**The related mode `pytest-dirs`.** For each changed source file under `--source-root`
+(`src/pkg/a/b.py`) the tests in the mirrored directory (`<test-root>/a/`) run, through `--test-cmd`
+and the same report. A module directly under the source root maps to `<test-root>/test_<module>.py`.
+A file with no mirror is logged (`related: no mirrored test directory for ...: skipped`) and skipped;
+it never widens to the whole suite. The gate is the same as for vitest: no failure that the base
+did not have.
+
+**The environment a profile gets.** `BUGFIX_VENV` is a directory under the scratch volume
+(`venvs/<run>`, outside the worktree, deleted when the run ends); `PIP_CACHE_DIR` is under the
+scratch volume too, since `HOME` is the run's own directory and is deleted.
+
+`fleets/bugfix/fix-podcast.yaml` is the profile for chipi/podcast_scraper (pytest). It is **not
+enabled**: enabling it is ROADMAP B8 and needs the operator's go. It also needs an intake that
+detects its case kind (`code_bug_python` in the spec), the repo in `github.open_pr`'s repo enum
+(`host/registry.json`), and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
+The worker image has `python3-pip` and `python3-venv` for it. Nothing has run against the real
+repo yet.
+
 ## Quick reference
 
 ```bash

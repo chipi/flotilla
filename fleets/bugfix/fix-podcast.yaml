@@ -1,0 +1,39 @@
+fleet: bugfix
+routine: fix-podcast
+description: >-
+  The per-repo profile of bugfix/fix for chipi/podcast_scraper (pytest): the same chain as fix, with
+  a venv installed in the worker's scratch, pytest-json-report's reports, the related tests of the
+  mirrored test directories, and the Python repo's own out-of-scope files.
+enabled: false
+# NOT ENABLED. Enabling it is ROADMAP B8 (podcast_scraper in shadow) and needs the operator's go. It
+# also needs, before then: a case kind of its own (flotillad allows one acting routine per kind, and
+# code_bug is fix's), an intake for the repo that detects it, chipi/podcast_scraper in the enum of
+# github.open_pr's repo param (host/registry.json), and the bugfix proxy's allowlist for pypi.org and
+# files.pythonhosted.org.
+worker: bugfix
+trigger:
+  case: {kind: code_bug_python}
+models: [bugfix-flash, bugfix-reviewer]
+run:
+  # BUGFIX_VENV (outside the worktree, deleted with the run) and PIP_CACHE_DIR (under the scratch
+  # volume) are set by fix.py; HOME is the run's directory. --test-cmd and --setup run under sh in
+  # the worktree, after fix.py has put its environment in; the report path replaces %s and the test
+  # files (or the related directories) are appended. --continue-on-collection-errors: a test file
+  # that cannot load on the base must not stop the others from running.
+  command: >-
+    python3 /opt/flotilla/bugfix/fix.py --repo chipi/podcast_scraper --worker-model bugfix-flash
+    --advisor-model bugfix-reviewer --reviewer-model bugfix-reviewer
+    --setup 'python3 -m venv "$BUGFIX_VENV" && "$BUGFIX_VENV/bin/pip" install -q -e ".[dev]"'
+    --setup-timeout 1800
+    --test-cmd 'PYTHONPATH="$PWD" "$BUGFIX_VENV/bin/python" -m pytest -p no:cacheprovider -n 0 --no-cov --disable-socket --allow-hosts=127.0.0.1,localhost --continue-on-collection-errors --json-report --json-report-file=%s'
+    --test-format pytest
+    --related pytest-dirs --source-root src/podcast_scraper --test-root tests/unit/podcast_scraper
+    --exclude-path tests/fixtures/audio
+    --out-of-scope '^(pyproject\.toml|Makefile|setup\.(py|cfg)|requirements[^/]*\.txt|(tests/)?conftest\.py|\.pre-commit-config\.yaml)$'
+    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2
+  workdir: .
+  timeout: 3h
+autonomy: shadow
+max_autonomy: propose
+budget:
+  day_usd: 5
