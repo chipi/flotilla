@@ -27,7 +27,7 @@ TRIAGE = POP + textwrap.dedent('''\
     ID=$(jq -r .id "$BUG_JSON")
     V=$(pop verdicts)
     IMG=no; [ -e "$BAKEOFF_WT/static/images/x.png" ] && IMG=yes
-    echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER img=$IMG tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
+    echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER img=$IMG tools=${PI_TOOLS:-all} rows=$( [ -n "$EV" ] && wc -l < "$EV/result.tsv" | tr -d " " || echo 0)" >> "$FAKE_STATE/calls"
     KB=0; [ -n "$EV" ] && KB=$(( $(jq -r '.kickback_round // 0' "$PRIOR") + 1 ))
     SUF=""; [ "$KB" -gt 0 ] && SUF="-kb$KB"
     OUT="$BAKEOFF_ROOT/results/${ID}-triage${SUF}/pi"; mkdir -p "$OUT"
@@ -65,10 +65,11 @@ ADVISOR = textwrap.dedent('''\
     ''')
 
 # the reviewer is pi itself, on PATH
-PI_BIN = textwrap.dedent('''\
+PI_BIN = POP + textwrap.dedent('''\
     T=all; prev=; for a in "$@"; do [ "$prev" = --tools ] && T="$a"; prev="$a"; done
-    echo "review model=$6 tools=$T" >> "$FAKE_STATE/calls"
-    printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Fine.\\\\nVERDICT: approve"}]}}\\n'
+    R=approve; [ -s "$FAKE_STATE/reviews" ] && R=$(pop reviews)
+    echo "review model=$6 tools=$T verdict=$R" >> "$FAKE_STATE/calls"
+    printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$R"
     ''')
 
 # a vitest-shaped runner. `run REPORT FILES`: those test files; `related REPORT SOURCES`: every *.test.js
@@ -352,6 +353,37 @@ exec {real} "$@"
         self.assertIn("round 0: repro-first violated: no test in the diff", plan["params"]["body"])
         self.assertIn("advisor: src/a.js", plan["params"]["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage", "fix", "review"])
+
+    def test_the_review_can_send_a_fix_back(self):
+        """Phase B: the review asked for changes on the 3 wrong or partial plans of 4 and could not stop
+        any. request-changes now kicks the fix back (the review is the evidence, no advisor), at most
+        --review-kickback-max times; after that the plan goes to the operator with the review in it."""
+        f = self.fixture(["actionable", "actionable"], ["good", "good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\napprove\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(f.calls(), ["triage", "fix", "review", "triage", "fix", "review"])
+        self.assertIn("round 0: the review requested changes: The test only checks a constant.", plan["params"]["body"])
+        self.assertIn("VERDICT: approve", plan["params"]["body"])
+        with open(os.path.join(f.state, "calls")) as fh:
+            kicked = [ln for ln in fh.read().splitlines() if ln.startswith("triage") and "ev=yes" in ln]
+        self.assertEqual(len(kicked), 1)
+        self.assertIn("rows=1", kicked[0], "the kick-back evidence the verdict step reads stays one row")
+        # always request-changes: two kick-backs, then the plan carries the review's objection
+        g = self.fixture(["actionable"] * 3, ["good"] * 3)
+        with open(os.path.join(g.state, "reviews"), "w") as fh:
+            fh.write("request-changes\n" * 3)
+        plan, _ = g.run("--review-kickback-max", "2")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(g.calls().count("review"), 3)
+        self.assertIn("VERDICT: request-changes", plan["params"]["body"])
+        # no kick-backs left in the round budget: the plan as before
+        h = self.fixture(["actionable"], ["good"])
+        with open(os.path.join(h.state, "reviews"), "w") as fh:
+            fh.write("request-changes\n")
+        plan, _ = h.run("--kickback-max", "0")
+        self.assertEqual((plan["outcome"], h.calls()), ("plan", ["triage", "fix", "review"]), plan)
 
     def test_only_the_fixer_may_change_the_tree(self):
         """SR-0001 H8: the verdict, the advisor and the review read; only the fix step gets pi's default

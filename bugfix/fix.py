@@ -50,6 +50,7 @@ BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE
 # SR-0001 H8: the steps that only read (verdict, advisor, review) get pi's read tools, no shell and no
 # writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
 READ_ONLY_TOOLS = "read,grep,find,ls"
+REQUEST_CHANGES = re.compile(r"VERDICT:\s*\**\s*request[- ]changes", re.I)
 TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/]*\.py$")
 # CI and hooks, and what `vitest related` cannot see: the repo's config, manifest and lockfile (the
 # advisor's review, 2026-11-15); a spec adds its repo's own with --out-of-scope
@@ -449,14 +450,30 @@ class Chain:
         if v.get("verdict") != "actionable":
             raise Stop(self.not_actionable(v))
         manifest = os.path.join(self.triaged, f"{self.tid}-triaged.json")
-        pins, prior = [], vpath
+        pins, prior, reviewed_back = [], vpath, 0
         for rnd in range(self.a.kickback_max + 1):
             if not os.path.exists(manifest):
                 raise Stop(f"stuck: the verdict step wrote no triaged manifest for round {rnd}")
             reason, files, stream, (turns, out_tok) = self.attempt(manifest)
-            self.note(f"round {rnd}", reason or f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
+            from_review = False
             if not reason:
-                return self.plan(rnd)
+                d = self.diff()
+                if len(d) > DIFF_MAX:
+                    raise Stop(f"the clean fix's diff is {len(d)} characters, more than the {DIFF_MAX} a plan may carry")
+                review = self.review(d)
+                self.note("review", tail(review.splitlines()[-1] if review else "", 80))
+                # the review saw what the gates did not on 3 of phase A's 4 plans: request-changes sends the fix
+                # back while the budget lasts; after that the operator sees the plan with the review in it
+                if REQUEST_CHANGES.search(review or "") and reviewed_back < self.a.review_kickback_max \
+                        and rnd < self.a.kickback_max:
+                    reviewed_back += 1
+                    from_review = True
+                    # one line: the reason goes into result.tsv, the leaves' kick-back evidence
+                    reason = "the review requested changes: " + tail(" ".join(review.split()), 400)
+                else:
+                    self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
+                    return self.plan(rnd, d, review)
+            self.note(f"round {rnd}", reason)
             if rnd == self.a.kickback_max:
                 raise Stop(f"stuck: kick-back limit ({self.a.kickback_max}) reached; last: {reason}")
             # the kick-back evidence, as chain.go writes it for the leaves
@@ -472,7 +489,7 @@ class Chain:
             gap = next((p for p in pins if p in touched), "")
             if gap:
                 self.note("acceptance gap", f"fixed at the pin {gap} and still failing")
-            elif self.a.advisor:
+            elif self.a.advisor and not from_review:   # a review's objection is its own evidence: no pin needed
                 code, out = sh([os.path.join(BAKEOFF, "advisor_run.sh"), os.path.join(self.run_dir, "ticket.json"), ev],
                                BAKEOFF, dict(self.env, PI_TOOLS=READ_ONLY_TOOLS), self.a.episode_timeout)
                 try:
@@ -500,12 +517,7 @@ class Chain:
                 "rejected": "rejected as not a bug"}.get(verdict, f"no usable verdict ({verdict})")
         return " ".join(x for x in [head, after, (": " + why) if why else ""] if x).replace(" :", ":")
 
-    def plan(self, rnd):
-        d = self.diff()
-        if len(d) > DIFF_MAX:
-            raise Stop(f"the clean fix's diff is {len(d)} characters, more than the {DIFF_MAX} a plan may carry")
-        review = self.review(d)
-        self.note("review", tail(review.splitlines()[-1] if review else "", 80))
+    def plan(self, rnd, d, review):
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
         body = "\n".join([
             f"An automated fix for {self.repo}#{self.n} by flotilla's bugfix fleet (RFC-0010), in beta evaluation.",
@@ -538,6 +550,8 @@ def parse(argv):
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
                     help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
     ap.add_argument("--kickback-max", type=int, default=3)
+    ap.add_argument("--review-kickback-max", type=int, default=2,
+                    help="times the review's request-changes sends a gate-clean fix back (within --kickback-max)")
     ap.add_argument("--no-advisor", dest="advisor", action="store_false")
     ap.add_argument("--episode-timeout", type=int, default=1200)
     ap.add_argument("--test-timeout", type=int, default=900)
