@@ -33,6 +33,7 @@ E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/conf
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
   COMPOSE_PROFILES=candidate,ops,bugfix TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
+  KNOWLEDGE_HOMELAB_FROM="$ROOT" KNOWLEDGE_HOMELAB_PATHS=docs/operations   # the e2e's source: this repo's own operations docs
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" -f "$ROOT/deploy/e2e/docker-compose.e2e.yml" "$@"; }
 
@@ -40,7 +41,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-knowledge flotilla-e2e-host-state flotilla-e2e-host-audit; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -116,6 +117,14 @@ models:
     bugfix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     bugfix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
+knowledge:                              # RFC-0002 §7: the shipped specs name homelab-handbook; here its source is this repo's docs
+  homelab-handbook:
+    kind: files
+    volume: flotilla-e2e-knowledge
+    paths: [docs/operations]
+    maps:
+      by_service: {slack: docs/operations/slack.md, seo: docs/operations/seo.md}
+      by_case_kind: {failed_backup: docs/operations/host-keys.md}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 cat > "$WORK/config/worker-triage.env" <<EOF
@@ -195,6 +204,13 @@ else
 fi
 FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep -q "SEED SKIP" \
   && ok "a seeded state volume is never overwritten" || bad "seeding twice did not skip"
+
+echo "== the knowledge volume (deploy/mini/knowledge.sh, as a deploy runs it)"
+if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/knowledge.sh" $TAG >"$WORK/knowledge.log" 2>&1; then
+  ok "knowledge copied ($(grep -c KNOWLEDGE\ PASS "$WORK/knowledge.log") pass, $(sed -n 's/^  \([0-9]*\) files.*/\1/p' "$WORK/knowledge.log") files)"
+else
+  cat "$WORK/knowledge.log"; bad "knowledge.sh"
+fi
 
 echo "== an old, real-sized store for flotillad (schema step 1, 5000 runs)"
 # flotillad migrates it at start, in its read-only container (deploy/e2e/old_store.py says why)
@@ -337,6 +353,14 @@ case "$S" in *.env*|*STOP*) bad "seeding copied an env file (secrets or a backup
   *fingerprint*) ok "the seeded state has the ledgers and no env file (secrets or their backups) or STOP" ;; *) bad "seeded state: $S" ;; esac
 $D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /home/worker/signal-fleet/w' 2>/dev/null \
   && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
+KV="$($D exec flotilla-worker-triage cat /knowledge/homelab-handbook/VERSION 2>&1)"
+[ "$KV" = "$(git -C "$ROOT" rev-parse HEAD)" ] && ok "the worker reads the knowledge volume at the checkout's commit (${KV:0:12})" || bad "knowledge VERSION in the worker: '$KV'"
+$D exec flotilla-worker-triage sh -c 'test -s /knowledge/homelab-handbook/docs/operations/slack.md' 2>/dev/null \
+  && ok "a declared page is in the volume" || bad "docs/operations/slack.md is not in the knowledge volume"
+$D exec flotilla-worker-triage sh -c 'touch /knowledge/w' 2>/dev/null \
+  && bad "the worker can write the knowledge volume" || ok "the knowledge volume is read-only in the worker"
+$D exec flotilla-worker-ops-read sh -c 'test -s /knowledge/homelab-handbook/VERSION && ! touch /knowledge/w' 2>/dev/null \
+  && ok "the ops-read worker reads the knowledge volume, read-only" || bad "ops-read and the knowledge volume"
 SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OBSERV_DISABLED=1 flotilla-worker-triage \
   python3 -c 'import triage; print(triage.PROMPT_SHA, triage._signal_intro({"alertname": "x", "summary": "No space left on device"}).count("PRE-CLASSIFICATION HINT"))' 2>&1 | tail -1)"
 [ "$SK" = "219b34bf 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 219b34bf, the hint loads)" \

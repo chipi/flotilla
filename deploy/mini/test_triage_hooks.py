@@ -255,6 +255,32 @@ class DeployWiringTest(Base):
         self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
         self.assertNotEqual(self.hashes().split()[1], second.split()[1], "the ACL changed: the proxy's hash too")
 
+    def stub_knowledge(self, exit_code):
+        path = os.path.join(self.repo, "deploy", "mini", "knowledge.sh")
+        with open(path, "w") as f:
+            f.write(f'#!/usr/bin/env bash\necho "$@" >> "{self.tmp}/knowledge_calls"\necho KNOWLEDGE STUB\nexit {exit_code}\n')
+
+    def test_deploy_fills_the_knowledge_volume_before_up(self):
+        self.stub_knowledge(0)
+        r = self.deploy(f"sha-{self.commits[1][:7]}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(self.tmp, "knowledge_calls")) as f:
+            self.assertEqual(f.read().split(), [f"sha-{self.commits[1][:7]}"])
+        self.assertLess(r.stdout.index("== knowledge into its volume"), r.stdout.index("== up"))
+        self.assertIn("KNOWLEDGE STUB", r.stdout)
+
+    def test_a_failed_knowledge_copy_refuses_the_deploy_before_up(self):
+        self.stub_knowledge(1)
+        r = self.deploy(f"sha-{self.commits[1][:7]}")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("DEPLOY FAIL: knowledge.sh failed", r.stdout)
+        self.assertNotIn(" up ", open(os.path.join(self.tmp, "docker_calls")).read())
+
+    def test_a_tag_without_the_script_deploys_as_before(self):
+        r = self.deploy(f"sha-{self.commits[1][:7]}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("KNOWLEDGE", r.stdout)
+
     def test_rollback_skips_gate_and_logs_rollback(self):
         self.assertEqual(self.deploy(f"sha-{self.commits[1][:7]}").returncode, 0)
         n = len(self.gate_calls())

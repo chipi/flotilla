@@ -37,6 +37,8 @@ TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state
 FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
 TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (mirror-test's until the switch)
 TRIAGE_FILING_GATE=<filing_gate.py>                    # optional: default ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py
+KNOWLEDGE_HOMELAB_FROM=<a checkout of the homelab repo>  # the knowledge volume's source (below); unset: nothing is copied
+# KNOWLEDGE_HOMELAB_PATHS="docs/recipes"                # optional: what knowledge.sh copies; the paths flotillad.yaml declares
 # the services' Docker networks, when they are not the defaults
 # NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default
 ```
@@ -49,7 +51,7 @@ flag, and never overwritten after:
 ```
 
 `config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`,
-`disabled_routines`, `case_timers`, `models` and `hosts`):
+`disabled_routines`, `case_timers`, `models`, `knowledge` and `hosts`):
 
 ```yaml
 listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
@@ -77,6 +79,14 @@ models:                                 # optional (ADR-0004): the aliases routi
     triage-default: {endpoint: gateway, model: fleet-triage-pro}
     local-dgx: {endpoint: gateway, model: <model name>, tools: none, cost: zero}
   prices: {}                             # per alias, for cost: table (input_per_mtok, output_per_mtok)
+knowledge:                              # optional (RFC-0002 §7): the reference text routines may read; see "The knowledge volume"
+  homelab-handbook:
+    kind: files
+    volume: flotilla-knowledge           # <FLOTILLA_VOLUME_PREFIX>-knowledge, which the compose file mounts read-only at /knowledge
+    paths: [docs/recipes]                # what deploy/mini/knowledge.sh copies from the checkout: files or folders, no glob
+    maps:                                # a key must match exactly; every value is under a path above
+      by_service: {litellm: docs/recipes/litellm.md, glitchtip: docs/recipes/glitchtip.md}
+      by_case_kind: {failed_backup: docs/recipes/backup.md}
 ```
 
 `-check` validates `models` with the same rules the Python client applies (shared fixtures:
@@ -141,6 +151,43 @@ default:
   action: enforce
   allowed_domains: [victoriametrics, victorialogs, victoriatraces, grafana, litellm, <glitchtip web container>, langfuse-web, api.github.com]
 ```
+
+## The knowledge volume (RFC-0002 §7)
+
+Reference text the routines read and flotilla does not own: today the homelab's handbook and runbooks
+(`docs/recipes/` of the homelab repo, the operations handbook among them). It is data, read-only and
+versioned: a run reads the copy the last deploy made, never the live checkout, and no host folder is
+mounted into a worker.
+
+- **Declared in three places that must agree.**
+  - `.env`: `KNOWLEDGE_HOMELAB_FROM`, the checkout on this host, and `KNOWLEDGE_HOMELAB_PATHS`, the
+    paths to copy (default `docs/recipes`).
+  - `flotillad.yaml` `knowledge:` (above): the source's name, its paths and its maps. `-check`
+    refuses a key whose path is not under a declared path, a glob, and a routine that names a source
+    or query the section lacks.
+  - The routine's spec: `knowledge: {sources: [...], queries: [...]}`. A run gets only those, as
+    `FLOTILLA_KNOWLEDGE`. Today `triage/cycle` and `triage/cycle-shadow` name `by_service`, and
+    `ops/case-review` names `by_case_kind`.
+- **The copy.** `deploy.sh` runs `deploy/mini/knowledge.sh sha-<7>` after `secrets.sh`. It copies the
+  declared paths as they are at the checkout's HEAD commit (`git archive`, never the working tree)
+  into `flotilla-knowledge/homelab-handbook/` through a throwaway container with no network, writes
+  `VERSION` there with the commit, and replaces the folder whole by a rename. It always creates the
+  volume, so the stack can mount it before anything is copied; without `KNOWLEDGE_HOMELAB_FROM` it
+  prints `KNOWLEDGE SKIP`. To bring newer text in: update the checkout (`git pull` in it), then deploy,
+  or run the script by hand: `~/flotilla/repo/deploy/mini/knowledge.sh sha-<7>`.
+- **The mount.** `worker-triage`, `worker-triage-candidate` and `worker-ops-read` mount the volume
+  read-only at `/knowledge`. A worker whose volume holds no `VERSION` offers no knowledge tool, and
+  its prompt is the one without it.
+- **What a run does with it.** Triage's model may call a `knowledge` tool with `{source, query, key}`
+  and gets the page between `<<<DATA` and `<<<END DATA>>>` lines, cut to the harness's result limit
+  with a visible marker. A key that is not in the map reads nothing. `ops/case-review` cites the page
+  for a proposal's case kind as one more line of evidence. Each read is on the run's page under "What
+  the agent read" as `knowledge`, untrusted, with the source, path, commit and sha256.
+- **First deploy.** Add the `knowledge:` section to `flotillad.yaml` and `KNOWLEDGE_HOMELAB_FROM` to
+  `.env` before deploying an image whose specs name it: `-check` refuses the deploy before `up`
+  otherwise.
+- **Roll back.** `deploy.sh --rollback` leaves the volume as it is (the newer copy is only reference
+  text). To pin older text, check the older commit out in the homelab checkout and run the script.
 
 ## The ops workers: pipeline v1 (RFC-0004 §10)
 

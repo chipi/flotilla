@@ -15,6 +15,8 @@
 #                    smokescreen.yaml, egress-acl.yaml (deploy/compose/README.md)
 # State and secrets live in Docker volumes (the compose file); secrets.sh refills the secret volumes
 # from the host's files on every deploy.
+# knowledge.sh does the same for the knowledge volume (reference text the workers read), from the checkout
+# named by KNOWLEDGE_HOMELAB_FROM in .env.
 #   deployed.tsv     every deploy: time, tag, commit, result (the previous tag is read from here)
 #
 # The triage fleet's hooks (triage_hooks.sh, loaded from this checkout before it moves): a deploy runs the
@@ -88,6 +90,12 @@ compose "$TAG" pull -q || die "images for $TAG not pullable (did the images work
 say "== secrets into their volumes (a rotated secret is picked up here)"
 FLOTILLA_HOME="$H" bash "$REPO/deploy/mini/secrets.sh" "$TAG" | sed 's/^/   /'
 [ "${PIPESTATUS[0]}" = 0 ] || die "secrets.sh failed"
+
+say "== knowledge into its volume (RFC-0002 §7: the homelab checkout's declared paths, at its HEAD)"
+if [ -f "$REPO/deploy/mini/knowledge.sh" ]; then   # an older tag has none
+  FLOTILLA_HOME="$H" bash "$REPO/deploy/mini/knowledge.sh" "$TAG" | sed 's/^/   /'
+  [ "${PIPESTATUS[0]}" = 0 ] || die "knowledge.sh failed"
+fi
 
 say "== check config, callers and specs with the new flotillad"
 OUT="$(compose "$TAG" run --rm --no-deps flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"

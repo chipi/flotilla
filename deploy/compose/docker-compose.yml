@@ -92,6 +92,7 @@ services:
     volumes:
       - worker-triage-secrets:/run/flotilla:ro
       - triage-state:/home/worker/signal-fleet
+      - knowledge:/knowledge:ro                          # reference text, filled by deploy/mini/knowledge.sh (RFC-0002 §7)
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -128,6 +129,7 @@ services:
     volumes:
       - worker-triage-secrets:/run/flotilla:ro           # the same fleet secrets; shadow never writes outward
       - triage-candidate-state:/home/worker/signal-fleet  # never the live state
+      - knowledge:/knowledge:ro
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -163,6 +165,7 @@ services:
       ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
     volumes:
       - worker-ops-read-secrets:/run/flotilla:ro
+      - knowledge:/knowledge:ro                          # ops/case-review cites the handbook page for a case kind
     healthcheck: &ops-health
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -339,6 +342,11 @@ volumes:
     external: true
   triage-state:
     name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}
+    external: true
+  # external knowledge (RFC-0002 §7): the declared paths of a host checkout and a VERSION file, copied at
+  # deploy by deploy/mini/knowledge.sh (which always creates it); read-only in the workers, never written
+  knowledge:
+    name: ${KNOWLEDGE_VOLUME:-${FLOTILLA_VOLUME_PREFIX:-flotilla}-knowledge}
     external: true
   # the ops workers' tokens (profile ops); secrets.sh fills them when the tokens exist
   worker-ops-read-secrets:
