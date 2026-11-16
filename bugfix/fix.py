@@ -136,16 +136,17 @@ def errors_of(out, n=400):
 
 
 class Tests:
-    """One test run's result from a vitest-shaped JSON report: the failed tests (file::name), the files that
-    failed to load (no assertions, a failed status), and the files that ran."""
+    """One test run's result, from a vitest or a pytest JSON report: the failed tests (file::name), the files
+    that failed to load or ran no test (vitest: no assertions and a failed status; pytest: a failed
+    collection, or every test skipped), and the files that ran."""
 
     def __init__(self, fails, unloaded, ran):
         self.fails, self.unloaded, self.ran = fails, unloaded, ran
 
 
-def run_tests(wt, cmd, files, env, timeout):
+def run_tests(wt, cmd, files, env, timeout, fmt="vitest"):
     """cmd with %s for the report and the files appended. A red run is data, not an error; a run that did
-    not finish, or wrote no readable report, is an error (it names which)."""
+    not finish, or wrote no readable report, is an error (it names which). fmt: the report's shape."""
     report = os.path.join(wt, ".flotilla-suite.json")
     if os.path.exists(report):
         os.remove(report)
@@ -161,6 +162,12 @@ def run_tests(wt, cmd, files, env, timeout):
     finally:
         if os.path.exists(report):
             os.remove(report)
+    if fmt == "pytest":
+        return parse_pytest(rep, files)
+    return parse_vitest(rep, wt)
+
+
+def parse_vitest(rep, wt):
     fails, unloaded, ran = set(), set(), set()
     for tr in rep.get("testResults") or []:
         name = os.path.relpath(tr.get("name", ""), wt)
@@ -171,6 +178,29 @@ def run_tests(wt, cmd, files, env, timeout):
         for ar in assertions:
             if ar.get("status") == "failed":
                 fails.add(name + "::" + ar.get("fullName", ""))
+    return Tests(fails, unloaded, ran)
+
+
+def parse_pytest(rep, files):
+    """pytest-json-report's {"tests": [{nodeid, outcome}], "collectors": [{nodeid, outcome}]}. A skipped
+    test is not a pass: podcast_scraper's integration files guard themselves with pytest.importorskip, so a
+    broken install skips them and a run that only skipped must not look green. A file with no test that
+    passed or failed, a collector that did not pass, and a requested file with no result at all are all
+    unloaded (not run)."""
+    fails, ran, seen = set(), set(), {}
+    for t in rep.get("tests") or []:
+        file, _, name = (t.get("nodeid") or "").partition("::")
+        outcome = t.get("outcome")
+        executed = outcome in ("passed", "xpassed", "failed", "error")
+        seen[file] = seen.get(file, False) or executed
+        if outcome in ("failed", "error"):
+            fails.add(file + "::" + name)
+    unloaded = {f for f, executed in seen.items() if not executed}
+    for c in rep.get("collectors") or []:
+        if c.get("outcome") != "passed":
+            unloaded.add((c.get("nodeid") or "").partition("::")[0] or "(collection)")
+    unloaded |= {f for f in files if f.endswith(".py") and f not in seen}
+    ran = {f for f, executed in seen.items() if executed} - unloaded
     return Tests(fails, unloaded, ran)
 
 
@@ -237,6 +267,7 @@ class Chain:
         self.wt = os.path.join(run_dir, "wt")              # BAKEOFF_WT: the worktree
         self.triaged = os.path.join(run_dir, "triaged")    # BAKEOFF_TRIAGED_DIR: the manifests
         self.log = []
+        self.venv = os.path.join(a.scratch, "venvs", os.path.basename(run_dir))
         upstream = dict(x.split("=", 1) for x in a.upstream)
         cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ, upstream)
         self.provider, self.worker = pi_config.pick(cfg, a.worker_model)
@@ -248,6 +279,9 @@ class Chain:
                          "TRIAGE_MODEL": self.worker, "ADVISOR_MODEL": self.advisor,
                          "PI_MODEL": self.worker, "npm_config_cache": os.path.join(a.scratch, "npm-cache"),
                          "HOME": run_dir,
+                         # a Python repo's venv and pip cache: outside the worktree, and not under HOME
+                         # (the run's directory); the venv is deleted with the run
+                         "BUGFIX_VENV": self.venv, "PIP_CACHE_DIR": os.path.join(a.scratch, "pip-cache"),
                          # no git hook runs, in any git this run starts: the repo cache is shared between
                          # runs, and a hook planted by one run's code would run in the next (the review,
                          # docs/security-reviews)
@@ -412,7 +446,7 @@ class Chain:
         with open(patch, "w") as f:
             f.write(d)
         src = [x for x in files if not TEST_FILE.search(x)]
-        t, rt = self.a.test_timeout, self.a.related_cmd
+        t = self.a.test_timeout
 
         def tree(with_source):
             self.reset()
@@ -422,12 +456,12 @@ class Chain:
             sh(args + [patch], self.run_dir, self.env, 60, check=True)
 
         tree(with_source=False)
-        base = run_tests(self.wt, self.a.test_cmd, tests, self.env, t)
+        base = self.tests(self.a.test_cmd, tests)
         base_src = [x for x in src if os.path.exists(os.path.join(self.wt, x))]
-        base_rel = run_tests(self.wt, rt, base_src, self.env, t) if base_src else Tests(set(), set(), set())
+        base_rel = self.related(base_src, say=False)
         tree(with_source=True)
-        fixed = run_tests(self.wt, self.a.test_cmd, tests, self.env, t)
-        rel = run_tests(self.wt, rt, src, self.env, t) if src else Tests(set(), set(), set())
+        fixed = self.tests(self.a.test_cmd, tests)
+        rel = self.related(src, say=True)
         self.unloaded_on_base = sorted(base.unloaded)
         for x in tests:
             if x not in base.unloaded and not any(f.startswith(x + "::") for f in base.fails):
@@ -444,6 +478,36 @@ class Chain:
             return f"{len(new)} new failures in the related tests: {tail('; '.join(new), 300)}"
         self.checked = f"{len(tests)} test files fail on the base and pass with the fix; {len(rel.ran)} related files, none newly failing"
         return ""
+
+    def tests(self, cmd, files):
+        return run_tests(self.wt, cmd, files, self.env, self.a.test_timeout, self.a.test_format)
+
+    def related(self, src, say):
+        """The tests related to the changed source files. vitest: --related-cmd on them. pytest-dirs: --test-cmd
+        on the mirrored test directories (src/<root>/a/b.py -> <test-root>/a/; a module straight under the
+        source root -> <test-root>/test_<module>.py); a file with no mirror is noted and skipped, never
+        widened to the whole suite."""
+        if not src:
+            return Tests(set(), set(), set())
+        if self.a.related != "pytest-dirs":
+            return run_tests(self.wt, self.a.related_cmd, src, self.env, self.a.test_timeout, self.a.test_format)
+        root, troot = self.a.source_root.rstrip("/") + "/", self.a.test_root.rstrip("/")
+        targets = set()
+        for x in src:
+            rel = x[len(root):] if x.startswith(root) and x.endswith(".py") else None
+            parent = os.path.dirname(rel) if rel else None
+            t = None if rel is None else (os.path.join(troot, parent) if parent else
+                                          os.path.join(troot, "test_" + os.path.basename(rel)))
+            if t and os.path.exists(os.path.join(self.wt, t)):
+                targets.add(t)
+            elif say:
+                self.note("related", f"no mirrored test directory for {x}: skipped")
+        targets = sorted(t for t in targets if not any(t.startswith(o + "/") for o in targets))
+        if not targets:
+            return Tests(set(), set(), set())
+        if say:
+            self.note("related", ", ".join(targets))
+        return self.tests(self.a.test_cmd, targets)
 
     def diff(self):
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
@@ -590,6 +654,13 @@ def parse(argv):
     ap.add_argument("--setup", default="npm ci --no-audit --no-fund && (npm run --if-present i18n:compile)")
     ap.add_argument("--test-cmd", default="npx vitest run --reporter=json --outputFile=%s", help="%%s: the report; the files follow")
     ap.add_argument("--related-cmd", default="npx vitest related --run --reporter=json --outputFile=%s")
+    ap.add_argument("--test-format", choices=("vitest", "pytest"), default="vitest",
+                    help="the shape of the report --test-cmd writes: vitest's JSON, or pytest-json-report's")
+    ap.add_argument("--related", choices=("vitest", "pytest-dirs"), default="vitest",
+                    help="vitest: --related-cmd on the changed source files; pytest-dirs: --test-cmd on the test "
+                         "directories that mirror them (--source-root, --test-root)")
+    ap.add_argument("--source-root", default="", help="pytest-dirs: the source tree the mirror starts at, e.g. src/pkg")
+    ap.add_argument("--test-root", default="", help="pytest-dirs: the test tree that mirrors it, e.g. tests/unit/pkg")
     ap.add_argument("--out-of-scope", action="append", default=[], help="a regex of paths a fix may not touch")
     ap.add_argument("--base", default="", help="the commit to fix (default: main), for replays (phase B)")
     ap.add_argument("--harness", default="pi", help="harnesses/<name>.sh (phase B arms)")
@@ -606,7 +677,10 @@ def parse(argv):
     ap.add_argument("--setup-timeout", type=int, default=1200)
     ap.add_argument("--review-timeout", type=int, default=600)
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
-    return ap.parse_args(argv)
+    a = ap.parse_args(argv)
+    if a.related == "pytest-dirs" and not (a.source_root and a.test_root):
+        ap.error("--related pytest-dirs needs --source-root and --test-root")
+    return a
 
 
 def main(argv=None, environ=None):
@@ -627,6 +701,7 @@ def main(argv=None, environ=None):
         if chain is not None:
             chain.restore_config("the run")
         shutil.rmtree(run_dir, ignore_errors=True)
+        shutil.rmtree(os.path.join(a.scratch, "venvs", os.path.basename(run_dir)), ignore_errors=True)
         if chain is not None and getattr(chain, "cache", None):
             sh(["git", "-C", chain.cache, "worktree", "prune"], a.scratch, environ, 60)
     with open(environ["FLOTILLA_PLAN_FILE"], "w") as f:

@@ -54,6 +54,17 @@ PI_HARNESS = POP + textwrap.dedent('''\
                 echo 'module.exports = () => 3;' > src/c.js; printf 'import src/c.js\nexpect src/c.js 3\n' > src/c.test.js ;;
       lockfile) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo '{}' > package-lock.json ;;
       workflow) echo 'expect src/a.js 2' > src/a.test.js; mkdir -p .github/workflows; echo on: push > .github/workflows/x.yml ;;
+      pygood)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pybreaks) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'def value(): return 2' > src/podcast_scraper/pkg/other.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pylone)   echo 'def value(): return 2' > src/podcast_scraper/lone/z.py
+                echo 'expect src/podcast_scraper/lone/z.py 2' > tests/unit/podcast_scraper/test_z.py ;;
+      pynested) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'def value(): return 1  # x' > src/podcast_scraper/pkg/sub/s.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyskip)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; printf 'SKIP\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyconf)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py; echo '[project]' > pyproject.toml ;;
       nothing)  ;;
     esac
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output":7}}}\\n'
@@ -108,6 +119,41 @@ SUITE = textwrap.dedent('''\
     ''')
 
 
+# a pytest-json-report-shaped runner: `PYSUITE REPORT ARGS`, the args test files or directories (every
+# test_*.py below). A test file's lines are SUITE's, plus "SKIP" (every test in it is skipped, as a
+# pytest.importorskip that found nothing does). A file that fails to load is a failed collector.
+PYSUITE = textwrap.dedent('''\
+    import json, os, sys
+    report, args = sys.argv[1], sys.argv[2:]
+    files = []
+    for a in args:
+        if os.path.isdir(a):
+            for root, _, fs in os.walk(a):
+                files += [os.path.join(root, f) for f in sorted(fs) if f.startswith("test_") and f.endswith(".py")]
+        else:
+            files.append(a)
+    tests, collectors = [], [{"nodeid": "", "outcome": "passed", "result": []}]
+    if not args:   # pytest with no path argument runs the whole suite: fail loudly, a gate must never do that
+        tests.append({"nodeid": "WHOLE_SUITE::test_0", "outcome": "failed"})
+    for f in sorted(set(files)):
+        lines = open(f).read().splitlines()
+        if any(ln.startswith("import ") and not os.path.exists(ln.split()[1]) for ln in lines):
+            collectors.append({"nodeid": f, "outcome": "failed", "longrepr": "ImportError"})
+            continue
+        collectors.append({"nodeid": f, "outcome": "passed", "result": []})
+        for i, ln in enumerate(l for l in lines if l == "FAIL" or l.startswith("expect ")):
+            ok = True
+            if ln == "FAIL":
+                ok = False
+            else:
+                _, target, n = ln.split()
+                ok = os.path.exists(target) and f"return {n}" in open(target).read()
+            out = "skipped" if "SKIP" in lines else ("passed" if ok else "failed")
+            tests.append({"nodeid": f"{f}::test_{i}", "outcome": out})
+    json.dump({"tests": tests, "collectors": collectors}, open(report, "w"))
+    ''')
+
+
 def write(path, text, mode=0o755):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -120,7 +166,9 @@ def git(*a, cwd):
 
 
 class Fixture:
-    def __init__(self, verdicts, fixes):
+    def __init__(self, verdicts, fixes, py=False):
+        self.py = py
+        self.repo = "chipi/podcast_scraper" if py else "chipi/orrery"
         self.d = tempfile.mkdtemp()
         b = os.path.join(self.d, "bakeoff")
         write(os.path.join(b, "triage_run.sh"), TRIAGE)
@@ -128,7 +176,7 @@ class Fixture:
         write(os.path.join(b, "harnesses", "pi.sh"), PI_HARNESS)
         write(os.path.join(self.d, "bin", "pi"), PI_BIN)
         self.suite = os.path.join(self.d, "suite.py")
-        write(self.suite, SUITE, 0o644)
+        write(self.suite, PYSUITE if py else SUITE, 0o644)
         self.state = os.path.join(self.d, "state")
         os.makedirs(self.state)
         for name, items in (("verdicts", verdicts), ("fixes", fixes)):
@@ -138,15 +186,26 @@ class Fixture:
         src = os.path.join(self.d, "src")
         os.makedirs(os.path.join(src, "src"))
         os.makedirs(os.path.join(src, "static", "images"))
-        for rel, text in (("src/a.js", "module.exports = () => 1;\n"), ("src/b.js", "module.exports = () => 1;\n"),
-                          ("keep.test.js", "expect src/b.js 1\n"), ("red.test.js", "expect src/a.js 9\n"),
-                          ("static/images/x.png", "a big image\n")):
+        files = (("src/a.js", "module.exports = () => 1;\n"), ("src/b.js", "module.exports = () => 1;\n"),
+                 ("keep.test.js", "expect src/b.js 1\n"), ("red.test.js", "expect src/a.js 9\n"),
+                 ("static/images/x.png", "a big image\n"))
+        if py:
+            # podcast_scraper's shape: src/<pkg>/<a>/<b>.py, tests mirrored under tests/unit/<pkg>/<a>/
+            pkg, tests = "src/podcast_scraper", "tests/unit/podcast_scraper"
+            files = ((f"{pkg}/pkg/mod.py", "def value(): return 1\n"), (f"{pkg}/pkg/other.py", "def value(): return 1\n"),
+                     (f"{pkg}/lone/z.py", "def value(): return 1\n"), (f"{pkg}/pkg/sub/s.py", "def value(): return 1\n"),
+                     (f"{tests}/pkg/sub/test_s.py", f"expect {pkg}/pkg/sub/s.py 1\n"),
+                     (f"{tests}/pkg/test_keep.py", f"expect {pkg}/pkg/other.py 1\n"),
+                     (f"{tests}/pkg/test_red.py", f"expect {pkg}/pkg/mod.py 9\n"),
+                     (f"{tests}/test_top.py", f"expect {pkg}/pkg/other.py 1\n"))
+        for rel, text in files:
+            os.makedirs(os.path.dirname(os.path.join(src, rel)), exist_ok=True)
             with open(os.path.join(src, rel), "w") as f:
                 f.write(text)
         git("init", "-q", "-b", "main", cwd=src)
         git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A", cwd=src)
         git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base", cwd=src)
-        remote = os.path.join(self.d, "remotes", "chipi", "orrery")
+        remote = os.path.join(self.d, "remotes", *self.repo.split("/"))
         os.makedirs(os.path.dirname(remote))
         git("clone", "-q", "--bare", src, remote, cwd=self.d)
         git("config", "uploadpack.allowfilter", "true", cwd=remote)  # GitHub allows --filter; a local bare repo must be told
@@ -159,15 +218,17 @@ class Fixture:
         env = dict(os.environ, FLOTILLA_PLAN_FILE=plan, FLOTILLA_MODELS=json.dumps(MODELS), FAKE_STATE=self.state, GIT_ALLOW_PROTOCOL="file",
                    GIT_REMOTE_BASE=self.remotes, PATH=os.path.join(self.d, "bin") + os.pathsep + os.environ["PATH"],
                    GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
-                   FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": "repo:chipi/orrery/issues/12",
-                                             "data": {"issue": {"repo": "chipi/orrery", "number": 12, "title": "value is 1",
+                   FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": f"repo:{self.repo}/issues/12",
+                                             "data": {"issue": {"repo": self.repo, "number": 12, "title": "value is 1",
                                                                 "body": "value() returns 1, want 2", "url": "u"}}}))
         old = fix.BAKEOFF
         fix.BAKEOFF = self.bakeoff
         try:
-            out = fix.main(["--repo", "chipi/orrery", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
-                            "--reviewer-model", "bugfix-reviewer", "--setup", "true", "--test-cmd", f"python3 {self.suite} run %s",
-                            "--related-cmd", f"python3 {self.suite} related %s",
+            cmds = (["--test-cmd", f"python3 {self.suite} %s", "--test-format", "pytest", "--related", "pytest-dirs",
+                     "--source-root", "src/podcast_scraper", "--test-root", "tests/unit/podcast_scraper"] if self.py else
+                    ["--test-cmd", f"python3 {self.suite} run %s", "--related-cmd", f"python3 {self.suite} related %s"])
+            out = fix.main(["--repo", self.repo, "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
+                            "--reviewer-model", "bugfix-reviewer", "--setup", "true", *cmds,
                             "--scratch", self.scratch, *extra], environ=env)
         finally:
             fix.BAKEOFF = old
@@ -215,6 +276,47 @@ class Errors(unittest.TestCase):
         self.assertIn("nodejs.org", got)
         self.assertNotIn("New major version", got)
         self.assertEqual(fix.errors_of("all fine\nthe end"), "all fine\nthe end", "no error line: the tail")
+
+
+def pyrep(tests=(), collectors=()):
+    return {"tests": [{"nodeid": n, "outcome": o} for n, o in tests],
+            "collectors": [{"nodeid": n, "outcome": o} for n, o in collectors]}
+
+
+class PytestReport(unittest.TestCase):
+    """pytest-json-report's shape read into the one internal per-file result vitest's gives."""
+
+    def test_passed_failed_collector_error_and_all_skipped(self):
+        rep = pyrep(
+            tests=[("tests/a/test_ok.py::test_1", "passed"), ("tests/a/test_ok.py::test_2[x-1]", "passed"),
+                   ("tests/a/test_bad.py::TestC::test_1", "failed"), ("tests/a/test_bad.py::test_2", "passed"),
+                   ("tests/a/test_err.py::test_1", "error"),
+                   ("tests/a/test_skip.py::test_1", "skipped"), ("tests/a/test_skip.py::test_2", "skipped"),
+                   ("tests/a/test_mixed.py::test_1", "skipped"), ("tests/a/test_mixed.py::test_2", "passed"),
+                   ("tests/a/test_xf.py::test_1", "xfailed")],
+            collectors=[("", "passed"), ("tests/a/test_ok.py", "passed"), ("tests/a/test_load.py", "failed"),
+                        ("tests/a/test_modskip.py", "skipped")])
+        t = fix.parse_pytest(rep, [])
+        self.assertEqual(t.fails, {"tests/a/test_bad.py::TestC::test_1", "tests/a/test_err.py::test_1"})
+        self.assertEqual(t.unloaded, {"tests/a/test_load.py", "tests/a/test_skip.py", "tests/a/test_modskip.py", "tests/a/test_xf.py"})
+        self.assertEqual(t.ran, {"tests/a/test_ok.py", "tests/a/test_bad.py", "tests/a/test_err.py", "tests/a/test_mixed.py"})
+
+    def test_a_file_whose_collector_failed_did_not_run(self):
+        rep = pyrep(tests=[("tests/test_b.py::test_1", "passed")], collectors=[("tests/test_b.py", "failed")])
+        t = fix.parse_pytest(rep, [])
+        self.assertEqual((t.unloaded, t.ran), ({"tests/test_b.py"}, set()))
+
+    def test_all_skipped_is_not_a_pass(self):
+        t = fix.parse_pytest(pyrep(tests=[("tests/test_i.py::test_1", "skipped")]), ["tests/test_i.py"])
+        self.assertEqual((t.unloaded, t.ran, t.fails), ({"tests/test_i.py"}, set(), set()))
+
+    def test_a_requested_file_with_no_result_did_not_run(self):
+        t = fix.parse_pytest(pyrep(tests=[("tests/test_a.py::test_1", "passed")]), ["tests/test_a.py", "tests/test_gone.py", "tests/dir"])
+        self.assertEqual(t.unloaded, {"tests/test_gone.py"}, "a directory argument names no file; a missing file is unloaded")
+
+    def test_a_collection_error_without_a_file_is_named(self):
+        t = fix.parse_pytest(pyrep(collectors=[("", "failed")]), [])
+        self.assertEqual(t.unloaded, {"(collection)"})
 
 
 class Chain(unittest.TestCase):
@@ -578,6 +680,59 @@ exec {real} "$@"
         self.assertEqual(out["outcome"], "escalate")
         self.assertIn("no issue", out["detail"])
         self.assertEqual(old, os.environ.get("FLOTILLA_CASE"))
+
+
+class PythonRepo(unittest.TestCase):
+    """The chain on a Python-shaped repo: --test-format pytest, --related pytest-dirs."""
+    PYCONF = ("--out-of-scope", r"^(pyproject\.toml|Makefile|(tests/)?conftest\.py)$")
+
+    def fixture(self, verdicts, fixes):
+        f = Fixture(verdicts, fixes, py=True)
+        self.addCleanup(f.close)
+        return f
+
+    def test_a_clean_fix_goes_through_repro_the_base_check_related_and_the_gates(self):
+        f = self.fixture(["actionable"], ["pygood"])
+        plan, _ = f.run(*self.PYCONF)
+        self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), plan)
+        p = plan["params"]
+        self.assertEqual(p["repo"], "chipi/podcast_scraper")
+        self.assertIn("1 test files fail on the base and pass with the fix", p["body"])
+        self.assertIn("4 related files, none newly failing", p["body"], "test_keep, test_red, sub/test_s and the fix's test_mod under pkg/")
+        self.assertIn("related: tests/unit/podcast_scraper/pkg", p["body"])
+        self.assertNotIn("flotilla-suite", p["diff"])
+
+    def test_a_new_failure_in_the_mirrored_directory_stops_the_fix(self):
+        f = self.fixture(["actionable"], ["pybreaks"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("new failures in the related tests: tests/unit/podcast_scraper/pkg/test_keep.py", plan["detail"])
+
+    def test_no_mirrored_directory_says_so_and_does_not_run_the_suite(self):
+        f = self.fixture(["actionable"], ["pylone"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("related: no mirrored test directory for src/podcast_scraper/lone/z.py: skipped", plan["params"]["body"])
+        self.assertIn("0 related files", plan["params"]["body"])
+
+    def test_a_nested_mirrored_directory_is_run_once_under_its_parent(self):
+        f = self.fixture(["actionable"], ["pynested"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        body = plan["params"]["body"]
+        self.assertIn("- related: tests/unit/podcast_scraper/pkg\n", body)
+        self.assertIn("4 related files", body)
+
+    def test_a_fix_whose_only_test_is_skipped_does_not_reproduce(self):
+        f = self.fixture(["actionable"], ["pyskip"])
+        plan, _ = f.run("--kickback-max", "0")
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("repro: no test loads and fails on the base", plan["detail"])
+
+    def test_the_profile_s_out_of_scope_paths(self):
+        f = self.fixture(["actionable"], ["pyconf"])
+        plan, _ = f.run("--kickback-max", "0", *self.PYCONF)
+        self.assertIn("out of scope: the diff touches pyproject.toml", plan["detail"])
 
 
 if __name__ == "__main__":
