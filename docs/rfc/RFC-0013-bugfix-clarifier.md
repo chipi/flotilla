@@ -215,3 +215,8 @@ questions; the intent the simulated reporter supplied comes only from §4.
   - one budget and one time limit per case;
   - a private repo needs a read token on `bugfix-read`.
 - 2026-11-16 — accepted: the five open questions as recommended (Decisions).
+- 2026-11-16 — §2 built (operator's go for §7 steps 1 and 2): `cases.stage`, `stage_changes`, `spent_usd`,
+  `spent_s` (schema step); `trigger.case.stage` and `trigger.case.limit` (on the kind's first-stage
+  routine); outcomes `hand_over` and `not_reproducible`; at most two hand-overs; a case past its limit
+  is escalated. Money counts only the spend a run reports: bugfix's pi calls do not reach flotillad yet
+  (the fleet session's C1), so until then the limit bites on time.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
 
@@ -454,6 +455,7 @@ type policyLevel struct{ What, Level string }
 type caseData struct {
 	EventCount int    // the events before folding
 	Repeats    string // "still reported 18 more times, unchanged; the last 14:46", or ""
+	Path       string // RFC-0013 §2: its stage and what its runs spent of its limit, or ""
 	Row        caseRow
 	Routine    string
 	Opened     string
@@ -536,6 +538,7 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		closedAt = *c.ClosedAt
 	}
 	d.EventCount = len(d.Events)
+	d.Path = u.casePath(c)
 	if c.Repeats > 0 {
 		d.Repeats = fmt.Sprintf("Still reported %s, unchanged; the last %s.", plural(c.Repeats, "more time", "more times"), u.clock(c.RepeatAt))
 	}
@@ -675,4 +678,25 @@ func (u *Server) repoCase(ctx context.Context, id string) bool {
 	}
 	a, ok := registryAction(u, plans[len(plans)-1].Action)
 	return ok && a.Repo()
+}
+
+// casePath is RFC-0013 §2 on the case page: the stage it is at and what its acting runs have spent of
+// the limit its kind's first routine declares ("" when there is neither).
+func (u *Server) casePath(c store.Case) string {
+	var parts []string
+	if c.Stage != "" {
+		parts = append(parts, fmt.Sprintf("At stage %s (handed on %d of %d times).", c.Stage, c.StageChanges, store.MaxStageChanges))
+	}
+	var lim *spec.CaseLimit
+	if u.API.Sched != nil {
+		for _, j := range u.API.Sched.Routines {
+			if j.OnCase() == c.Kind && j.OnStage() == "" && j.Trigger.Case.Limit != nil {
+				lim = j.Trigger.Case.Limit
+			}
+		}
+	}
+	if lim != nil {
+		parts = append(parts, fmt.Sprintf("Its runs have spent $%.2f of $%.2f and %.0f of %d minutes.", c.SpentUSD, lim.USD, c.SpentS/60, lim.Minutes))
+	}
+	return strings.Join(parts, " ")
 }

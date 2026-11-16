@@ -214,6 +214,9 @@ func humanKind(k string) string {
 
 // eventWhat is what a case event did, in words.
 func eventWhat(e store.CaseEvent) string {
+	if e.Kind == "case.staged" { // RFC-0013 §2: the status stays; the stage changes
+		return "Handed on to " + e.To
+	}
 	if e.To != "" {
 		switch e.To {
 		case cases.Detected:
@@ -248,6 +251,9 @@ func eventWhat(e store.CaseEvent) string {
 
 // eventShort is a case's newest event for a table cell: "policy: waiting for you".
 func eventShort(e store.CaseEvent) string {
+	if e.Kind == "case.staged" {
+		return e.Actor + ": handed on to " + e.To
+	}
 	if e.To != "" {
 		who := e.By
 		if who == "" {
@@ -281,7 +287,7 @@ func (u *Server) specs() (map[string]string, map[string]*spec.Routine) {
 	for _, j := range u.API.Sched.Routines {
 		id := j.Fleet + "/" + j.Routine
 		by[id] = j
-		if k := j.OnCase(); k != "" {
+		if k := j.OnCase(); k != "" && j.OnStage() == "" { // the kind's first routine names its fleet
 			kinds[k] = id
 		}
 	}

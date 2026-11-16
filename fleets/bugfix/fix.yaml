@@ -10,7 +10,9 @@ description: >-
 enabled: true
 worker: bugfix
 trigger:
-  case: {kind: code_bug}
+  # RFC-0013 §2 (operator, 2026-11-16): all of a case's runs together get $1 and 90 minutes; a case past
+  # either is escalated instead of run again. Money counts only what the runs report as spend.
+  case: {kind: code_bug, limit: {usd: 1, minutes: 90}}
 models: [bugfix-flash, bugfix-reviewer]
 run:
   command: >-
@@ -29,6 +31,8 @@ explain:
   trigger: >-
     Runs when flotillad hands over a code_bug case: bugfix/intake found an open bug issue in orrery and
     flotillad opened a case for it.
+    All of a case's runs share $1 and 90 minutes; a case past either is escalated to you instead of
+    run again (money counts only the spend the runs report).
   worker: >-
     Runs on the worker bugfix, on the X3 (RFC-0011): orrery's repo cache, node, the pi coding agent and
     the models' gateway; no GitHub credential.

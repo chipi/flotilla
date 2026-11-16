@@ -57,6 +57,10 @@ type Case struct {
 	RecurrenceOf string  `json:"recurrence_of,omitempty"` // G14: the earlier case this one came back after
 	Repeats      int     `json:"repeats,omitempty"`       // detections that repeated its last signal exactly
 	RepeatAt     string  `json:"repeat_at,omitempty"`     // the last of them
+	Stage        string  `json:"stage,omitempty"`         // RFC-0013 §2: the stage its acting routine is chosen by
+	StageChanges int     `json:"stage_changes,omitempty"` // how often an acting run handed it on
+	SpentUSD     float64 `json:"spent_usd,omitempty"`     // its acting runs' spend, together
+	SpentS       float64 `json:"spent_s,omitempty"`       // and their time, in seconds
 	Keys         []Key   `json:"keys,omitempty"`
 }
 
@@ -303,13 +307,13 @@ func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
 	return err
 }
 
-const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of, repeats, repeat_at`
+const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of, repeats, repeat_at, stage, stage_changes, spent_usd, spent_s`
 
 func scanCase(sc interface{ Scan(...any) error }) (Case, error) {
 	var c Case
 	var closed sql.NullString
 	err := sc.Scan(&c.ID, &c.Kind, &c.Target, &c.CanonicalKey, &c.Project, &c.Urgency, &c.Status, &c.Resolution, &c.Holder,
-		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf, &c.Repeats, &c.RepeatAt)
+		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf, &c.Repeats, &c.RepeatAt, &c.Stage, &c.StageChanges, &c.SpentUSD, &c.SpentS)
 	if closed.Valid {
 		c.ClosedAt = &closed.String
 	}

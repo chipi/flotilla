@@ -104,9 +104,21 @@ type Trigger struct {
 }
 
 // CaseTrigger starts the routine when a case of its kind is handed over: it is that kind's acting
-// routine (pipeline v1 step 5). One routine per kind.
+// routine (pipeline v1 step 5). One routine per kind and stage (RFC-0013 §2): the empty stage is the
+// kind's first routine, and an acting run may hand the case on to another stage.
 type CaseTrigger struct {
-	Kind string `yaml:"kind"`
+	Kind  string     `yaml:"kind"`
+	Stage string     `yaml:"stage"`
+	Limit *CaseLimit `yaml:"limit"`
+}
+
+// CaseLimit is what all of a case's acting runs may spend together, in dollars and in minutes (RFC-0013
+// §2). It is declared on the kind's first-stage routine; a case past either is escalated instead of run
+// again. Spend counts only what the runs report (a routine whose model calls flotillad does not see adds
+// time, not money).
+type CaseLimit struct {
+	USD     float64 `yaml:"usd"`
+	Minutes int     `yaml:"minutes"`
 }
 
 // ExecuteTrigger starts the routine when a person has approved a plan for this repo action (RFC-0010
@@ -128,6 +140,14 @@ func (j *Routine) OnCase() string {
 		return ""
 	}
 	return j.Trigger.Case.Kind
+}
+
+// OnStage is the stage of its kind's cases the routine acts on ("" is the first).
+func (j *Routine) OnStage() string {
+	if j.Trigger.Case == nil {
+		return ""
+	}
+	return j.Trigger.Case.Stage
 }
 
 // OnExecute is the repo action the routine executes, "" for any other routine.
@@ -277,11 +297,12 @@ func Load(dir string) ([]*Routine, error) {
 		}
 		seen[j.ID()] = p
 		if k := j.OnCase(); k != "" {
-			if prev, dup := seen["case:"+k]; dup {
-				errs = append(errs, fmt.Errorf("%s: %s cases already have an acting routine in %s", p, k, prev))
+			key := "case:" + k + "/" + j.OnStage()
+			if prev, dup := seen[key]; dup {
+				errs = append(errs, fmt.Errorf("%s: %s cases at stage %q already have an acting routine in %s", p, k, j.OnStage(), prev))
 				continue
 			}
-			seen["case:"+k] = p
+			seen[key] = p
 		}
 		if v := j.OnCheck(); v != "" {
 			if prev, dup := seen["check:"+v]; dup {
@@ -468,6 +489,17 @@ func (j *Routine) validate() error {
 	case j.Trigger.Case != nil:
 		if !caseFieldRe.MatchString(j.Trigger.Case.Kind) {
 			bad("trigger.case.kind %q: a case kind such as failed_backup", j.Trigger.Case.Kind)
+		}
+		if st := j.Trigger.Case.Stage; st != "" && !caseFieldRe.MatchString(st) {
+			bad("trigger.case.stage %q: a stage name such as clarify", st)
+		}
+		if l := j.Trigger.Case.Limit; l != nil {
+			if j.Trigger.Case.Stage != "" {
+				bad("trigger.case.limit: declared on the kind's first-stage routine, not on stage %q", j.Trigger.Case.Stage)
+			}
+			if l.USD <= 0 || l.Minutes <= 0 {
+				bad("trigger.case.limit: usd and minutes both above 0")
+			}
 		}
 	case j.Trigger.Execute != nil:
 		if !actionRe.MatchString(j.Trigger.Execute.Action) {

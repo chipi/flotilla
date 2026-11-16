@@ -8,6 +8,14 @@
 //	{"outcome": "plan", "action": "backup.rerun_observability", "params": {"host": "mini"}}
 //	{"outcome": "resolved_itself", "detail": "backup 2h old after a fresh look"}
 //	{"outcome": "escalate", "detail": "the re-check contradicts the diagnosis"}
+//	{"outcome": "not_reproducible", "detail": "the failing call is not on main"}
+//	{"outcome": "hand_over", "stage": "clarify", "detail": "needs info", "data": {"questions": [...]}}
+//
+// A hand_over (RFC-0013 §2) keeps the case handed over and moves it to the stage its run named: the
+// routine for that kind and stage acts next, and reads the data as stage_data in FLOTILLA_CASE. A case
+// may be handed on twice; the third escalates it. A kind whose first-stage routine declares a limit
+// (trigger.case.limit) shares it across all of its case's runs: a case past it escalates instead of
+// running again, and FLOTILLA_CASE says what is left of it.
 //
 // A plan moves the case to planned (by the run's routine) and goes to policy. Anything else (a failed
 // run, no file, a bad file, an unknown outcome, another case's id) leaves the case handed over with a
@@ -38,6 +46,7 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -74,6 +83,16 @@ type caseJSON struct {
 	Project string          `json:"project"`
 	Keys    []store.Key     `json:"keys"`
 	Data    json.RawMessage `json:"data,omitempty"` // the opening detection's data (ADR-0016)
+	// RFC-0013 §2: the stage the case is at, what the routine that handed it on left for this one, and
+	// what is left of the case's limit (absent when its kind has none)
+	Stage     string          `json:"stage,omitempty"`
+	StageData json.RawMessage `json:"stage_data,omitempty"`
+	Left      *caseLeft       `json:"left,omitempty"`
+}
+
+type caseLeft struct {
+	USD     float64 `json:"usd"`
+	Seconds float64 `json:"seconds"`
 }
 
 // openingData is the data its first detection gave the case, for its routines.
@@ -98,6 +117,9 @@ type Decision struct {
 	Params  map[string]string `json:"params,omitempty"`
 	Detail  string            `json:"detail,omitempty"`
 	Ref     string            `json:"ref,omitempty"` // an executing run's: what it made (a PR, owner/repo#n)
+	// hand_over (RFC-0013 §2): the stage the case goes to and what its routine should read
+	Stage string          `json:"stage,omitempty"`
+	Data  json.RawMessage `json:"data,omitempty"`
 }
 
 // Loop runs a pass every interval until ctx ends, then waits for the runs it started.
@@ -142,9 +164,15 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		if c.Holder != "" { // a fast path: LeaseCase below is the guard
 			continue
 		}
-		j := actingRoutine(sc.Routines, c.Kind)
+		j := actingRoutine(sc.Routines, c.Kind, c.Stage)
 		if j == nil {
-			continue // no routine acts on this kind here: the stuck-state timer escalates it
+			continue // no routine acts on this kind and stage here: the stuck-state timer escalates it
+		}
+		if why := overLimit(c, caseLimit(sc.Routines, c.Kind)); why != "" {
+			if err := st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByPolicy, "", "flotillad", why); err != nil && !errors.Is(err, store.ErrBadTransition) {
+				return err
+			}
+			continue
 		}
 		if _, running := busy[j.ID()]; running {
 			continue // one run of a routine at a time: the case waits its turn, with nothing to record
@@ -622,13 +650,36 @@ func anyActs(rs []*spec.Routine, kind string) bool {
 	return false
 }
 
-func actingRoutine(rs []*spec.Routine, kind string) *spec.Routine {
+func actingRoutine(rs []*spec.Routine, kind, stage string) *spec.Routine {
 	for _, j := range rs {
-		if j.Enabled && j.OnCase() == kind {
+		if j.Enabled && j.OnCase() == kind && j.OnStage() == stage {
 			return j
 		}
 	}
 	return nil
+}
+
+// caseLimit is the limit a kind's cases share, declared on its first-stage routine (nil: none).
+func caseLimit(rs []*spec.Routine, kind string) *spec.CaseLimit {
+	for _, j := range rs {
+		if j.OnCase() == kind && j.OnStage() == "" && j.Trigger.Case.Limit != nil {
+			return j.Trigger.Case.Limit
+		}
+	}
+	return nil
+}
+
+// overLimit says why a case may not run again: its acting runs have spent its limit (RFC-0013 §2).
+func overLimit(c store.Case, l *spec.CaseLimit) string {
+	switch {
+	case l == nil:
+		return ""
+	case c.SpentUSD >= l.USD:
+		return fmt.Sprintf("the case's runs have spent $%.2f of its $%.2f", c.SpentUSD, l.USD)
+	case c.SpentS >= float64(l.Minutes)*60:
+		return fmt.Sprintf("the case's runs have taken %.0f of its %d minutes", c.SpentS/60, l.Minutes)
+	}
+	return ""
 }
 
 // backingOff: a case's last word was a defer (planned -> handed_over), a run with no decision or a check
@@ -659,11 +710,27 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	if err != nil {
 		return err
 	}
-	cj, _ := json.Marshal(caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys,
-		Data: d.openingData(ctx, full.ID)})
+	cv := caseJSON{ID: full.ID, Kind: full.Kind, Target: full.Target, Project: full.Project, Keys: full.Keys,
+		Data: d.openingData(ctx, full.ID), Stage: full.Stage}
+	if sd, err := st.StageData(ctx, full.ID); err == nil && sd != "" {
+		cv.StageData = json.RawMessage(sd)
+	}
+	if l := caseLimit(d.API.Sched.Routines, full.Kind); l != nil {
+		cv.Left = &caseLeft{USD: max(l.USD-full.SpentUSD, 0), Seconds: max(float64(l.Minutes)*60-full.SpentS, 0)}
+	}
+	cj, _ := json.Marshal(cv)
 	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "case", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj)})
 	if err != nil {
 		return d.noDecision(ctx, c.ID, j.ID(), "the run did not start: "+err.Error())
+	}
+	if r != nil {
+		secs := 0.0
+		if r.DurationS != nil {
+			secs = *r.DurationS
+		}
+		if err := st.AddCaseSpend(ctx, c.ID, r.SpendUSD, secs); err != nil {
+			d.Log.Error("recording the case's spend", "case", c.ID, "run_id", r.ID, "err", err)
+		}
 	}
 	if r.Status != store.StatusOK || out == nil {
 		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s ended %s", r.ID, r.Status))
@@ -695,12 +762,42 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 		return nil
 	case "resolved_itself":
 		return st.MoveCase(ctx, c.ID, cases.Closed, cases.ByAct, cases.ResolvedItself, j.ID(), "run "+r.ID+": "+dec.Detail)
+	case "not_reproducible":
+		return st.MoveCase(ctx, c.ID, cases.Closed, cases.ByAct, cases.NotReproducible, j.ID(), "run "+r.ID+": "+dec.Detail)
 	case "escalate":
 		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByAct, "", j.ID(), "run "+r.ID+": "+dec.Detail)
+	case "hand_over":
+		return d.handOver(ctx, c, j, r.ID, dec)
 	default:
-		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: outcome %q is not plan, resolved_itself or escalate", r.ID, dec.Outcome))
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: outcome %q is not plan, resolved_itself, not_reproducible, escalate or hand_over", r.ID, dec.Outcome))
 	}
 }
+
+// handOver moves the case to the stage its run named (RFC-0013 §2). A stage no enabled routine acts on, or
+// data that is not a JSON object within maxData, is no decision; a hand-over past MaxStageChanges
+// escalates, so a case cannot loop between routines.
+func (d *Dispatcher) handOver(ctx context.Context, c store.Case, j *spec.Routine, runID string, dec Decision) error {
+	st := d.API.Store
+	if !stageRe.MatchString(dec.Stage) || actingRoutine(d.API.Sched.Routines, c.Kind, dec.Stage) == nil {
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: hand_over to stage %q, which no enabled routine of %s acts on", runID, dec.Stage, c.Kind))
+	}
+	data, ok := detectionData(dec.Data)
+	if !ok {
+		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: hand_over data is not a JSON object of at most %d bytes", runID, maxData))
+	}
+	err := st.StageCase(ctx, c.ID, dec.Stage, j.ID(), strings.TrimSpace("run "+runID+": "+dec.Detail), data)
+	if errors.Is(err, store.ErrStageLimit) {
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByAct, "", j.ID(),
+			fmt.Sprintf("run %s: a hand_over to %q past the %d a case may have: %s", runID, dec.Stage, store.MaxStageChanges, dec.Detail))
+	}
+	if err == nil {
+		d.Log.Info("case handed on", "case", c.ID, "run_id", runID, "from", c.Stage, "to", dec.Stage)
+	}
+	return err
+}
+
+// stageRe is a stage name as specs write it (spec's trigger.case.stage); "" is the kind's first stage.
+var stageRe = regexp.MustCompile(`^([a-z][a-z0-9_]{0,40})?$`)
 
 func (d *Dispatcher) noDecision(ctx context.Context, id, routine, why string) error {
 	d.Log.Warn("acting run made no decision", "case", id, "routine", routine, "why", why)

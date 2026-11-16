@@ -173,6 +173,45 @@ func TestCaseTrigger(t *testing.T) {
 	}
 }
 
+// RFC-0013 §2: one acting routine per kind and stage; the case's limit sits on the first stage's routine.
+func TestCaseStages(t *testing.T) {
+	onCase := func(name, trigger string) string {
+		return strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: "+name,
+			"trigger: {every: 10m}", "trigger: "+trigger, "freshness: 35m\n", "").Replace(good)
+	}
+	d := t.TempDir()
+	write(t, d, "ops/fix.yaml", onCase("fix", "{case: {kind: code_bug, limit: {usd: 1, minutes: 90}}}"))
+	write(t, d, "ops/clarify.yaml", onCase("clarify", "{case: {kind: code_bug, stage: clarify}}"))
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range routines {
+		if j.ID() == "ops/clarify" && (j.OnCase() != "code_bug" || j.OnStage() != "clarify") {
+			t.Fatalf("clarify acts on %q at %q", j.OnCase(), j.OnStage())
+		}
+		if j.ID() == "ops/fix" && (j.Trigger.Case.Limit == nil || j.Trigger.Case.Limit.Minutes != 90) {
+			t.Fatalf("fix's limit %+v", j.Trigger.Case.Limit)
+		}
+	}
+	for name, c := range map[string]struct{ trigger, want string }{
+		"the same stage twice":     {"{case: {kind: code_bug, stage: clarify}}", "at stage \"clarify\" already have an acting routine"},
+		"a limit on a later stage": {"{case: {kind: code_bug, stage: verify, limit: {usd: 1, minutes: 9}}}", "first-stage routine"},
+		"a zero limit":             {"{case: {kind: other_bug, limit: {usd: 0, minutes: 9}}}", "both above 0"},
+		"a bad stage name":         {"{case: {kind: code_bug, stage: Clarify}}", "a stage name"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d2 := t.TempDir()
+			write(t, d2, "ops/fix.yaml", onCase("fix", "{case: {kind: code_bug, limit: {usd: 1, minutes: 90}}}"))
+			write(t, d2, "ops/clarify.yaml", onCase("clarify", "{case: {kind: code_bug, stage: clarify}}"))
+			write(t, d2, "ops/other.yaml", onCase("other", c.trigger))
+			if _, err := Load(d2); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want %q, got %v", c.want, err)
+			}
+		})
+	}
+}
+
 // A check routine (RFC-0004 §7): runs on cases in checking, never on time; one per verify condition.
 func TestCheckTrigger(t *testing.T) {
 	onCheck := strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {check: {verify: backup_newer_than_execution}}", 1),

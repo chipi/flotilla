@@ -334,6 +334,12 @@ var schema = []string{
 	// the case, not written as another event: a case's timeline no longer grows by one event an hour.
 	`ALTER TABLE cases ADD COLUMN repeats INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE cases ADD COLUMN repeat_at TEXT NOT NULL DEFAULT '';`,
+	// RFC-0013 §2: a case passes through routines in sequence (its stage, how often it changed), and its
+	// acting runs share one budget and one time limit (what they have spent, in dollars and seconds).
+	`ALTER TABLE cases ADD COLUMN stage TEXT NOT NULL DEFAULT '';
+	ALTER TABLE cases ADD COLUMN stage_changes INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE cases ADD COLUMN spent_usd REAL NOT NULL DEFAULT 0;
+	ALTER TABLE cases ADD COLUMN spent_s REAL NOT NULL DEFAULT 0;`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

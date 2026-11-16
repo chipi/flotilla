@@ -28,19 +28,21 @@ type fakeWorker struct {
 	status string
 	plan   string
 	planEr string // the worker could not read the plan file (too big, not JSON)
+	spend  float64
+	secs   float64
 	block  chan struct{}
 }
 
 func (f *fakeWorker) Run(ctx context.Context, r worker.Request) (*worker.Result, error) {
 	f.mu.Lock()
 	f.got = append(f.got, r)
-	status, plan, planEr, block := f.status, f.plan, f.planEr, f.block
+	status, plan, planEr, spend, secs, block := f.status, f.plan, f.planEr, f.spend, f.secs, f.block
 	f.mu.Unlock()
 	if block != nil {
 		<-block
 	}
 	z := 0
-	res := &worker.Result{Status: status, ExitCode: &z, PlanError: planEr}
+	res := &worker.Result{Status: status, ExitCode: &z, PlanError: planEr, SpendUSD: spend, DurationS: secs}
 	if plan != "" {
 		res.Plan = json.RawMessage(plan)
 	}

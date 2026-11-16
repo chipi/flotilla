@@ -12,7 +12,9 @@ enabled: true
 # files.pythonhosted.org in the bugfix proxy's allowlist.
 worker: bugfix
 trigger:
-  case: {kind: code_bug_python}
+  # RFC-0013 §2 (operator, 2026-11-16): all of a case's runs together get $1 and 90 minutes; a case past
+  # either is escalated instead of run again. Money counts only what the runs report as spend.
+  case: {kind: code_bug_python, limit: {usd: 1, minutes: 90}}
 models: [bugfix-flash, bugfix-reviewer]
 run:
   # BUGFIX_VENV (outside the worktree, deleted with the run) and PIP_CACHE_DIR (the run's own,
@@ -41,6 +43,8 @@ explain:
   trigger: >-
     Runs when flotillad hands over a code_bug_python case: bugfix/intake-podcast found an open bug issue
     in podcast_scraper and flotillad opened a case for it.
+    All of a case's runs share $1 and 90 minutes; a case past either is escalated to you instead of
+    run again (money counts only the spend the runs report).
   worker: >-
     Runs on the worker bugfix, on the X3 (RFC-0011): python3 with a venv per run in its scratch, the pi
     coding agent and the models' gateway; no GitHub credential.

@@ -32,9 +32,12 @@ const (
 
 // How a case was closed.
 const (
-	Dismissed        = "dismissed"
-	Reported         = "reported"
-	ResolvedItself   = "resolved_itself"
+	Dismissed      = "dismissed"
+	Reported       = "reported"
+	ResolvedItself = "resolved_itself"
+	// RFC-0013: the problem never existed on main (a dev branch's error); counted apart from resolved_itself,
+	// which means it went away
+	NotReproducible  = "not_reproducible"
 	ShadowPlan       = "shadow_plan_recorded"
 	Verified         = "verified"
 	OperatorResolved = "operator_resolved"
@@ -59,7 +62,8 @@ var table = map[move]struct {
 	{HandedOver, Planned}:   {by: []string{ByAct}},
 	// the monitor that opened it closes a case of a kind no routine acts on, once it stops finding it
 	// (operator, 2026-11-15: RFC-0012's findings)
-	{HandedOver, Closed}:          {by: []string{ByAct, ByDetector}, resolutions: []string{ResolvedItself}},
+	{HandedOver, Closed}: {by: []string{ByAct, ByDetector}, resolutions: []string{ResolvedItself, NotReproducible},
+		only: map[string][]string{ByDetector: {ResolvedItself}}},
 	{HandedOver, Escalated}:       {by: []string{ByAct, ByPolicy, ByTimer}},
 	{Planned, Closed}:             {by: []string{ByPolicy}, resolutions: []string{ShadowPlan}},
 	{Planned, AwaitingApproval}:   {by: []string{ByPolicy}},
