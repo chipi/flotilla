@@ -378,12 +378,15 @@ exec {real} "$@"
         self.assertEqual(plan["outcome"], "plan", plan)
         self.assertEqual(g.calls().count("review"), 3)
         self.assertIn("VERDICT: request-changes", plan["params"]["body"])
+        self.assertIn("unresolved: the review asked for changes", plan["detail"])
+        self.assertIn("unresolved: the review asked for changes", plan["params"]["body"].splitlines()[0])
         # no kick-backs left in the round budget: the plan as before
         h = self.fixture(["actionable"], ["good"])
         with open(os.path.join(h.state, "reviews"), "w") as fh:
             fh.write("request-changes\n")
         plan, _ = h.run("--kickback-max", "0")
         self.assertEqual((plan["outcome"], h.calls()), ("plan", ["triage", "fix", "review"]), plan)
+        self.assertIn("unresolved: the review asked for changes", plan["detail"])
 
     def test_a_sent_back_round_that_fails_keeps_the_last_clean_fix(self):
         """Round 0 is gate-clean and the review asks for changes; the round that follows fails a gate or its
@@ -404,6 +407,7 @@ exec {real} "$@"
             fh.write("request-changes\n")
         plan, _ = e.run()
         self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertNotIn("Traceback", plan["params"]["body"])      # a Stop is a reason, not a bug
         # the limit reached by a failing round keeps it too
         g = self.fixture(["actionable"], ["good", "notest"])
         with open(os.path.join(g.state, "reviews"), "w") as fh:
@@ -440,6 +444,8 @@ exec {real} "$@"
             self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), (exc, plan))
             self.assertIn("+module.exports = () => 2;", plan["params"]["diff"])
             self.assertIn(type(exc).__name__, plan["params"]["body"])
+            self.assertIn("Traceback", plan["params"]["body"], exc)    # a bug's traceback is not hidden
+            self.assertIn("in attempt", plan["params"]["body"], exc)
         # not a failure a round can have: it still ends the run
         with self.assertRaises(KeyboardInterrupt):
             self._later_round_raises(KeyboardInterrupt())

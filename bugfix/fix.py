@@ -41,6 +41,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_config  # noqa: E402
@@ -474,8 +475,12 @@ class Chain:
             # round raised): the operator gets the last clean one with the review's requested changes in it,
             # and the reason the later rounds ended
             rnd, d, review, checked, unloaded = self.kept
-            self.note("kept", f"round {rnd}'s clean fix; the run ended ({type(e).__name__}): {tail(str(e), 300)}")
-            return self.plan(rnd, d, review, checked, unloaded, unresolved=True)
+            where = ""
+            if not isinstance(e, Stop):   # an error a round raised may be a bug: keep where it came from
+                where = " | " + tail(" | ".join(traceback.format_exc().strip().splitlines()[-20:]), 1500)
+            self.note("kept", f"round {rnd}'s clean fix; the run ended ({type(e).__name__}): {tail(str(e), 300)}{where}")
+            return self.plan(rnd, d, review, checked, unloaded,
+                             unresolved="the later rounds did not resolve what the review asked for")
 
     def rounds(self):
         self.checkout()
@@ -508,7 +513,9 @@ class Chain:
                     reason = "the review requested changes: " + tail(" ".join(review.split()), 400)
                 else:
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
-                    return self.plan(rnd, d, review)
+                    return self.plan(rnd, d, review, unresolved=(
+                        "the review's kick-back budget was spent, so nothing changed after it"
+                        if review_requests_changes(review) else ""))
             self.note(f"round {rnd}", reason)
             if rnd == self.a.kickback_max:
                 raise Stop(f"stuck: kick-back limit ({self.a.kickback_max}) reached; last: {reason}")
@@ -553,13 +560,13 @@ class Chain:
                 "rejected": "rejected as not a bug"}.get(verdict, f"no usable verdict ({verdict})")
         return " ".join(x for x in [head, after, (": " + why) if why else ""] if x).replace(" :", ":")
 
-    def plan(self, rnd, d, review, checked=None, unloaded=None, unresolved=False):
+    def plan(self, rnd, d, review, checked=None, unloaded=None, unresolved=""):
         checked = self.checked if checked is None else checked
         unloaded = self.unloaded_on_base if unloaded is None else unloaded
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
         flag = f"unresolved: the review asked for changes; round {rnd}'s clean fix kept"
         body = "\n".join([
-            *([f"**{flag}**: the later rounds did not resolve what the review asked for (see the review below).", ""]
+            *([f"**{flag}**: {unresolved} (see the review below).", ""]
               if unresolved else []),
             f"An automated fix for {self.repo}#{self.n} by flotilla's bugfix fleet (RFC-0010), in beta evaluation.",
             "", f"Gates (base {self.base[:12]}, round {rnd}): {checked}; nothing in CI, hooks, config or the lockfile. "
