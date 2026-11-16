@@ -37,6 +37,7 @@ PATH = re.compile(r"(?:^|[\s`'\"(/])((?:src|lib|app|tests?)/[\w./-]+\.(?:svelte|
 COMPONENT = re.compile(r"(?<![\w/.-])([A-Z][\w-]*\.svelte)\b")
 BUNDLED = re.compile(r"_app/immutable|/chunks/|node_modules|\.[A-Za-z0-9_-]{6,}\.m?js$")
 COMPUTED = re.compile(r"\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(")
+NOTE_MAX = 1200   # the plan body keeps its tail (BODY_MAX): a long note must not push the chain's head out
 
 
 class GitError(Exception):
@@ -45,7 +46,7 @@ class GitError(Exception):
 
 def git(wt, *args, ok=(0,)):
     try:
-        p = subprocess.run(["git", "-C", wt, *args], capture_output=True, text=True, timeout=60)
+        p = subprocess.run(["git", "-C", wt, *args], capture_output=True, text=True, errors="replace", timeout=60)
     except (OSError, subprocess.SubprocessError) as e:
         raise GitError(f"git {args[0]}: {type(e).__name__}") from e
     if p.returncode not in ok:
@@ -111,16 +112,24 @@ def computed(wt, base, files, names):
 
 
 def check(issue_text, wt, base):
-    """('note', facts) for the chain's log. Advisory: it never decides anything."""
+    """('note', facts) for the chain's log. Advisory: it never decides anything, and nothing it meets ends the case."""
+    try:
+        note = _check(issue_text, wt, base)
+    except Exception as e:
+        note = f"step one (advisory): not checked ({e if isinstance(e, GitError) else type(e).__name__})"
+    return "note", note if len(note) <= NOTE_MAX else note[:NOTE_MAX - 12] + " [cut short]"
+
+
+def _check(issue_text, wt, base):
     names = names_of(issue_text)
     if not names:
-        return "note", "step one (advisory): not checked (no project-specific name the error calls missing)"
+        return "step one (advisory): not checked (no project-specific name the error calls missing)"
     try:
         files, absent = files_of(issue_text, wt, base)
         seen = {n: where(wt, base, n) for n in names}
         dynamic = computed(wt, base, files, names) if files else False
     except GitError as e:
-        return "note", f"step one (advisory): not checked ({e})"
+        return f"step one (advisory): not checked ({e})"
     facts = []
     for n in names:
         in_named = [h for h in seen[n] if h[0] in files]
@@ -137,4 +146,4 @@ def check(issue_text, wt, base):
         extra.append(f"named files not on main: {', '.join(absent)}")
     if dynamic:
         extra.append("a named file computes names (obj[name]( or a string that starts a name)")
-    return "note", "step one (advisory): " + "; ".join(facts + extra)
+    return "step one (advisory): " + "; ".join(facts + extra)

@@ -41,6 +41,8 @@ class StepOne(unittest.TestCase):
             os.makedirs(os.path.join(cls.d, os.path.dirname(path)), exist_ok=True)
             with open(os.path.join(cls.d, path), "w") as f:
                 f.write(text)
+        with open(os.path.join(cls.d, "src", "latin1.py"), "wb") as f:   # homelab's review of 62b2523: not UTF-8
+            f.write(b"# caf\xe9\nlatin_name_x = 2\ncaf\xe9_label = latin_name_x\n")
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]):
             subprocess.run(["git", "-C", cls.d, *args], check=True, capture_output=True)
         cls.base = subprocess.run(["git", "-C", cls.d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -94,6 +96,23 @@ class StepOne(unittest.TestCase):
         decision, facts = stepone.check(issue(659), self.d, "0" * 40)   # a base the repo does not have
         self.assertEqual(decision, "note")
         self.assertIn("step one (advisory): not checked (git ls-tree: exit", facts)
+
+    def test_a_non_utf8_file_is_read_not_fatal(self):
+        # grep hit and `git show` of a named latin-1 file: both decoded with replacement, the note is written
+        facts = self.note("NameError: name 'latin_name_x' is not defined\n  File \"src/latin1.py\", line 3")
+        self.assertIn("latin_name_x in a named file; at src/latin1.py:2", facts)
+
+    def test_any_fault_is_not_checked_and_the_note_is_capped(self):
+        real = stepone.where
+        stepone.where = lambda *a: (_ for _ in ()).throw(ValueError("boom"))
+        try:
+            self.assertEqual(self.note(issue(659)), "step one (advisory): not checked (ValueError)")
+        finally:
+            stepone.where = real
+        many = "\n".join(f"TypeError: m.long_missing_name_{i:03d} is not a function" for i in range(200))
+        facts = self.note(many + "\nat src/a.py:1")
+        self.assertLessEqual(len(facts), stepone.NOTE_MAX)
+        self.assertTrue(facts.endswith(" [cut short]"), facts[-40:])
 
     def test_python_shapes(self):
         self.assertEqual(stepone.names_of("NameError: name 'load_cfg' is not defined"), ["load_cfg"])

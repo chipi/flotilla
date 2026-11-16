@@ -702,6 +702,17 @@ exec {real} "$@"
         plan, _ = g.run("--no-step-one")
         self.assertEqual(g.calls(), ["triage"])
         self.assertNotIn("appears nowhere", json.dumps(plan))
+        # a fault inside step one never ends the case (homelab's review of 62b2523)
+        h = self.fixture(["actionable"], ["good"])
+        h.body = f.body
+        real = fix.stepone.check
+        fix.stepone.check = lambda *a: (_ for _ in ()).throw(UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "x"))
+        try:
+            plan, _ = h.run()
+        finally:
+            fix.stepone.check = real
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("- step one: not checked (UnicodeDecodeError)", plan["params"]["body"])
 
     def test_the_kick_back_limits_are_two_and_one(self):
         a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])

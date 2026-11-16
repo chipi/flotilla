@@ -835,8 +835,11 @@ class Chain:
         # 0 · step one (RFC-0013 §1), advisory: what the base has of what the error calls missing. It never closes a
         # case (operator, 2026-11-17): its close rules closed real bugs, and dev-branch errors are left out upstream
         if self.a.step_one:
-            _, facts = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
-                                     self.wt, self.base)
+            try:
+                _, facts = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
+                                         self.wt, self.base)
+            except Exception as e:   # advisory: a fault in it must not end the case
+                facts = f"not checked ({type(e).__name__})"
             self.note("step one", facts.removeprefix("step one (advisory): "))
         # 1 · the verdict, on the base
         v, vpath = self.verdict()
