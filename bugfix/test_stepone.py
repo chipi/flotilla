@@ -58,28 +58,55 @@ class StepOne(unittest.TestCase):
         decision, ev = self.check(issue(651))
         self.assertEqual(decision, "close", ev)
         self.assertIn("what the error says is missing is on main", ev)
-        self.assertIn("surface_true_scale_short at", ev)
+        self.assertIn("surface_true_scale_short called at src/lib/surface-scene/SurfaceScene.svelte:3, defined at messages/", ev)
         self.assertNotIn("_index.js", ev.split("searched")[0], "a bundled path is never searched")
 
     def test_648_and_656_are_not_checked(self):
         # a library class, an app error class and bundle paths: nothing the error calls missing
         for n in (648, 656):
             decision, ev = self.check(issue(n))
-            self.assertEqual((decision, ev), ("go", "step one: not checked (no name the error calls missing)"), n)
+            self.assertEqual((decision, ev), ("go", "step one: not checked (no project-specific name the error calls missing)"), n)
 
     def test_a_name_found_only_in_a_test_counts_as_absent(self):
-        decision, ev = self.check("TypeError: x.ghost_in_tests is not a function")
+        decision, ev = self.check("TypeError: x.ghost_in_tests is not a function at src/lib/components/StarPanel.svelte:9")
         self.assertEqual(decision, "close", ev)
         self.assertIn("the failing code is not on main: ghost_in_tests appears nowhere", ev)
 
     def test_some_names_present_some_absent_goes_on(self):
-        decision, ev = self.check("TypeError: m.panel_tab_info is not a function; ReferenceError: nowhere_fn is not defined")
+        decision, ev = self.check("TypeError: m.panel_tab_info is not a function; ReferenceError: nowhere_fn is not defined "
+                                  "in src/lib/components/StarPanel.svelte")
         self.assertEqual(decision, "go", ev)
-        self.assertIn("panel_tab_info found, nowhere_fn absent", ev)
+        self.assertIn("panel_tab_info in the named file, elsewhere too, nowhere_fn not in the named file, nowhere else", ev)
 
     def test_python_shapes(self):
         self.assertEqual(stepone.names_of("NameError: name 'load_cfg' is not defined"), ["load_cfg"])
-        self.assertEqual(stepone.names_of("AttributeError: 'Feed' object has no attribute 'episodes_v2'"), ["episodes_v2"])
+        # an attribute error names an attribute of a wrong object: never searched
+        self.assertEqual(stepone.names_of("AttributeError: 'Feed' object has no attribute 'episodes_v2'"), [])
+
+    def test_homelabs_cases_are_not_closed(self):
+        # homelab's review of 444a153 (2026-11-16): each of these closed a real bug
+        for text in ("AttributeError: 'NoneType' object has no attribute 'get' in src/lib/surface-scene/SurfaceScene.svelte",
+                     "TypeError: undefined is not a function at src/lib/components/StarPanel.svelte:3",
+                     "TypeError: items.map is not a function at src/lib/components/StarPanel.svelte:3"):
+            decision, ev = self.check(text)
+            self.assertEqual(decision, "go", (text, ev))
+
+    def test_a_close_needs_a_named_file_on_main(self):
+        decision, ev = self.check("TypeError: m.panel_tab_sky is not a function")   # #659's name, no file named
+        self.assertEqual(decision, "go", ev)
+        self.assertIn("no named source file at the base", ev)
+        decision, ev = self.check("TypeError: m.panel_tab_sky is not a function at src/lib/components/Gone.svelte:3")
+        self.assertEqual(decision, "go", ev)
+
+    def test_a_name_on_main_that_the_named_file_does_not_call_is_not_closed(self):
+        # surface_true_scale_short is defined (messages) but StarPanel.svelte does not call it: not rule 2
+        decision, ev = self.check("TypeError: m.surface_true_scale_short is not a function at src/lib/components/StarPanel.svelte:3")
+        self.assertEqual(decision, "go", ev)
+
+    def test_a_git_failure_is_not_checked(self):
+        decision, ev = stepone.check(issue(659), self.d, "0" * 40)   # a base the repo does not have
+        self.assertEqual(decision, "go", ev)
+        self.assertIn("step one: not checked (git ls-tree: exit", ev)
 
     def test_bundled_paths_are_never_named(self):
         files, absent = stepone.files_of("at /orrery/_app/immutable/nodes/33.FFOEfYOl.js:275 and chunks/BRzXeRZN2.js",

@@ -112,12 +112,15 @@ verdict step gave no verdict"). `--min-output 32768` (the default) is the floor 
 
 **Step one: can the bug happen on main at all?** Before any model (RFC-0013 §1,
 `bugfix/stepone.py`), the chain takes the names the error calls missing (`x is not a function`,
-`x is not defined`, Python's `name 'x' is not defined` and `has no attribute 'x'`) and the source
-files the issue names (never a bundled path or a library's class), and searches them at the base.
-None of the names anywhere at the base: the failing code is not on main. Every one of them there:
-what the error says is missing is on main. Either closes the case as `not_reproducible`, its
-evidence in the detail; with nothing to search, "not checked", and the chain goes on.
-`--no-step-one` skips it.
+`x is not defined`, Python's `name 'x' is not defined`), only those that look like the project's
+own (6 characters or more, an underscore or an inner capital, not a keyword, global or built-in
+method), and the source files the issue names (never a bundled path or a library's class). A
+close needs a named file on main: none of the names in it nor anywhere at the base (the failing
+code is not on main), or every name called in it and defined in another file (what the error
+calls missing is on main). Either closes the case as `not_reproducible`, its evidence in the
+detail; anything else, a git failure included, is "not checked" and the chain goes on. A wrong
+close loses a real bug, so the rules are narrow: an attribute error, `undefined is not a
+function` or `items.map is not a function` is never closed. `--no-step-one` skips it.
 
 **A kick-back resumes the fix session.** After a failed gate or a review's request-changes, the
 next round puts the worktree back as the last round left it (its diff, re-applied) and continues
