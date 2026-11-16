@@ -47,6 +47,19 @@ class PiConfig(unittest.TestCase):
                          ("fleet-bugfix-flash", 1048575, 4096, 0.196))
         self.assertEqual(rev, {"id": "fleet-bugfix-reviewer"}, "no upstream named: pi's defaults")
 
+    def test_the_reply_limit_has_a_floor(self):
+        """pi's catalog gives deepseek-v4-flash maxTokens 4096 while the pinned providers allow 131072 and more; flash
+        spent all 4096 on reasoning and was cut off before its answer in 5 eval runs of 2026-11-16 (a verdict cut off
+        that way ends the case "no verdict"). A floor raises the limit; a catalog's higher limit stays."""
+        meta = {"deepseek/deepseek-v4-flash": {"contextWindow": 1048575, "maxTokens": 4096},
+                "z-ai/glm-5.2": {"contextWindow": 1048576, "maxTokens": 131072}}
+        up = {"fleet-bugfix-flash": "deepseek/deepseek-v4-flash", "fleet-bugfix-reviewer": "z-ai/glm-5.2"}
+        flash, rev = pi_config.models_json(MODELS, ["bugfix-flash", "bugfix-reviewer"], meta, up,
+                                           min_output=32768)["providers"]["flotilla-gateway-bugfix"]["models"]
+        self.assertEqual((flash["maxTokens"], rev["maxTokens"]), (32768, 131072))
+        bare = pi_config.models_json(MODELS, ["bugfix-flash"], {}, {}, min_output=32768)
+        self.assertEqual(bare["providers"]["flotilla-gateway-bugfix"]["models"][0]["maxTokens"], 32768)
+
     def test_unknown_alias_and_missing_section(self):
         with self.assertRaises(pi_config.ConfigError):
             pi_config.models_json(MODELS, ["nope"])

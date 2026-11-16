@@ -364,7 +364,8 @@ class Chain:
         self.rel_targets, self.rel_unmapped, self.rel_considered = [], [], []
         self.venv = os.path.join(a.scratch, "venvs", os.path.basename(run_dir))
         upstream = dict(x.split("=", 1) for x in a.upstream)
-        cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ, upstream)
+        cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ, upstream,
+                              min_output=a.min_output or None)
         self.provider, self.worker = pi_config.pick(cfg, a.worker_model)
         _, self.advisor = pi_config.pick(cfg, a.advisor_model)
         _, self.reviewer = pi_config.pick(cfg, a.reviewer_model)
@@ -1016,6 +1017,8 @@ def parse(argv):
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
                     help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
     # a kick-back roughly doubles a case's cost (a new fix session, and before it a new verdict): 2 and 1 bound it
+    ap.add_argument("--min-output", type=int, default=32768,
+                    help="a floor for each model's reply limit pi is told (its catalog gives flash 4096, which reasoning used up before the answer); 0 keeps the catalog's")
     ap.add_argument("--no-step-one", dest="step_one", action="store_false",
                     help="skip RFC-0013 §1's check that the failing code is on the base (bugfix/stepone.py)")
     ap.add_argument("--no-resume", dest="resume", action="store_false",

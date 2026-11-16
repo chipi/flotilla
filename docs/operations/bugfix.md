@@ -105,6 +105,11 @@ plan as unresolved; a review that did not run, or ran without a VERDICT line (cu
 out), is said on the plan, never read as an approval. The plan's flag heads the PR body after
 the body is cut to length, so the cut never removes it.
 
+**A reply long enough to finish.** pi's catalog gives deepseek-v4-flash a reply limit of 4,096
+tokens, where the pinned providers allow 131,072 and more; flash spent all of it reasoning and was
+cut off before its answer (5 eval runs on 2026-11-16, and a verdict cut off so ends the case "the
+verdict step gave no verdict"). `--min-output 32768` (the default) is the floor every model gets.
+
 **Step one: can the bug happen on main at all?** Before any model (RFC-0013 §1,
 `bugfix/stepone.py`), the chain takes the names the error calls missing (`x is not a function`,
 `x is not defined`, Python's `name 'x' is not defined` and `has no attribute 'x'`) and the source

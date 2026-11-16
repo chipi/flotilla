@@ -21,9 +21,12 @@ class ConfigError(Exception):
     pass
 
 
-def models_json(cfg, aliases, meta=None, upstream=None):
+def models_json(cfg, aliases, meta=None, upstream=None, min_output=None):
     """The models.json for these aliases of the models section `cfg` (FLOTILLA_MODELS, parsed); `meta` is
-    pi's catalog entry per upstream model, `upstream` the upstream model per LiteLLM model."""
+    pi's catalog entry per upstream model, `upstream` the upstream model per LiteLLM model. `min_output` is a
+    floor for a model's reply limit (maxTokens): pi's catalog gives deepseek-v4-flash 4096, the pinned providers
+    allow 131072 and more, and flash spent all 4096 on reasoning and was cut off before its answer (5 eval runs of
+    2026-11-16; a verdict cut off so ends the case "no verdict")."""
     meta, upstream = meta or {}, upstream or {}
     providers = {}
     for name in aliases:
@@ -44,6 +47,8 @@ def models_json(cfg, aliases, meta=None, upstream=None):
         if a["model"] not in [m["id"] for m in p["models"]]:
             entry = {"id": a["model"]}
             entry.update(meta.get(upstream.get(a["model"], ""), {}))
+            if min_output:
+                entry["maxTokens"] = max(int(entry.get("maxTokens") or 0), min_output)
             p["models"].append(entry)
     return {"providers": providers}
 
@@ -67,7 +72,7 @@ def catalog(ids, environ=None):
     return json.loads(p.stdout)
 
 
-def write(agent_dir, aliases, environ=None, upstream=None, meta=None):
+def write(agent_dir, aliases, environ=None, upstream=None, meta=None, min_output=None):
     """Write models.json into agent_dir for these aliases; returns the parsed models section. `upstream`
     maps a LiteLLM model to the OpenRouter model it routes to; `meta` (tests) stands in for pi's catalog."""
     environ = os.environ if environ is None else environ
@@ -81,6 +86,6 @@ def write(agent_dir, aliases, environ=None, upstream=None, meta=None):
     with open(path, "w") as f:
         if meta is None:
             meta = catalog(sorted(set(upstream.values())), environ)
-        json.dump(models_json(cfg, aliases, meta, upstream), f, indent=2)
+        json.dump(models_json(cfg, aliases, meta, upstream, min_output), f, indent=2)
     os.chmod(path, 0o600)
     return cfg
