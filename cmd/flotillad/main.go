@@ -540,7 +540,7 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 				push.LastSuccess(j.ID(), at)
 			}
 		}
-		if err := casetimer.Run(ctx, st, s.Clock(), timers, log); err != nil {
+		if err := casetimer.Run(ctx, st, s.Clock(), timers, log, s.CaseHold); err != nil {
 			log.Error("case timers", "err", err)
 		}
 		backup(ctx, st, stateDir, s.Clock().In(s.Location).Format("2006-01-02"), log)

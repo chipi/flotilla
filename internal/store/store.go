@@ -554,6 +554,16 @@ func (s *Store) SetControlBecause(ctx context.Context, subject, key, value, acto
 	return tx.Commit()
 }
 
+// ControlAt is one control's value and when it was last set ("", "" when it was never set).
+func (s *Store) ControlAt(ctx context.Context, subject, key string) (string, string, error) {
+	var v, at string
+	err := s.db.QueryRowContext(ctx, `SELECT value, at FROM controls WHERE subject = ? AND key = ?`, subject, key).Scan(&v, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	return v, at, err
+}
+
 // Control returns one control's value, or "" when it was never set.
 func (s *Store) Control(ctx context.Context, subject, key string) (string, error) {
 	var v string

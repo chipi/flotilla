@@ -124,6 +124,34 @@ func TestCaseLimitIsShared(t *testing.T) {
 	}
 }
 
+// The limit holds for the bug, not the case: after a person closes an escalated case, the next detection's
+// new case (the same canonical key) starts with what the earlier one spent, and is escalated, not run.
+func TestLimitIsPerBugAcrossCases(t *testing.T) {
+	f := setup(t)
+	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
+	ctx := context.Background()
+	id := f.handOver(t, "")
+	if err := f.st.AddCaseSpend(ctx, id, 1.2, 60); err != nil {
+		t.Fatal(err)
+	}
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Escalated {
+		t.Fatalf("first case %s", c.Status)
+	}
+	if err := f.st.MoveCase(ctx, id, cases.Closed, cases.ByOperator, cases.OperatorResolved, "user:op", "done here"); err != nil {
+		t.Fatal(err)
+	}
+	id2 := f.handOver(t, "") // the same canonical key: the issue is still open
+	if id2 == id {
+		t.Fatal("the closed case was reused")
+	}
+	runs := f.w.runs()
+	f.pass(t)
+	if c := f.cs(t, id2); c.Status != cases.Escalated || f.w.runs() != runs {
+		t.Fatalf("the reopened bug ran again with a fresh limit: %s, %d runs (was %d)", c.Status, f.w.runs(), runs)
+	}
+}
+
 // not_reproducible is its own close (RFC-0013, decision 2): never existed on main, not "went away".
 func TestNotReproducibleCloses(t *testing.T) {
 	f := setup(t)

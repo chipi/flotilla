@@ -47,12 +47,12 @@ func TestDetectedTooLongAlertsOnce(t *testing.T) {
 	st, logs, log := setup(t)
 	id := open(t, st, "host:mini")
 	now := time.Now()
-	_ = Run(ctx, st, now.Add(29*time.Minute), Config{}, log)
+	_ = Run(ctx, st, now.Add(29*time.Minute), Config{}, log, nil)
 	if strings.Contains(logs.String(), "stuck in detected") {
 		t.Fatal("alerted before 30 minutes")
 	}
-	_ = Run(ctx, st, now.Add(31*time.Minute), Config{}, log)
-	_ = Run(ctx, st, now.Add(40*time.Minute), Config{}, log)
+	_ = Run(ctx, st, now.Add(31*time.Minute), Config{}, log, nil)
+	_ = Run(ctx, st, now.Add(40*time.Minute), Config{}, log, nil)
 	if n := strings.Count(logs.String(), "stuck in detected"); n != 1 || !strings.Contains(logs.String(), "level=ERROR") {
 		t.Fatalf("alerts: %d\n%s", n, logs)
 	}
@@ -71,11 +71,11 @@ func TestHandedOverTooLongEscalates(t *testing.T) {
 	id := open(t, st, "host:mini")
 	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	now := time.Now()
-	_ = Run(ctx, st, now.Add(23*time.Hour), Config{}, log)
+	_ = Run(ctx, st, now.Add(23*time.Hour), Config{}, log, nil)
 	if status(t, st, id) != cases.HandedOver {
 		t.Fatal("escalated before 24 hours")
 	}
-	_ = Run(ctx, st, now.Add(25*time.Hour), Config{}, log)
+	_ = Run(ctx, st, now.Add(25*time.Hour), Config{}, log, nil)
 	if status(t, st, id) != cases.Escalated {
 		t.Fatal("not escalated after 24 hours")
 	}
@@ -112,8 +112,33 @@ func TestConfiguredLimits(t *testing.T) {
 	st, _, log := setup(t)
 	id := open(t, st, "host:mini")
 	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
-	_ = Run(ctx, st, time.Now().Add(2*time.Hour), Config{HandedOverEscalate: time.Hour}, log)
+	_ = Run(ctx, st, time.Now().Add(2*time.Hour), Config{HandedOverEscalate: time.Hour}, log, nil)
 	if status(t, st, id) != cases.Escalated {
 		t.Fatal("a configured 1h limit was not used")
+	}
+}
+
+// A STOP or a pause holds a handed-over case: no escalation while held, and after the release the 24 hours
+// start again (a STOP longer than the limit must not turn the queue into escalations).
+func TestHeldCaseIsNotEscalated(t *testing.T) {
+	ctx := context.Background()
+	st, _, log := setup(t)
+	id := open(t, st, "host:mini")
+	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
+	now := time.Now()
+	held := func(context.Context, string, string) (bool, string, error) { return true, "", nil }
+	_ = Run(ctx, st, now.Add(30*time.Hour), Config{}, log, held)
+	if status(t, st, id) != cases.HandedOver {
+		t.Fatal("a held case was escalated")
+	}
+	released := now.Add(29 * time.Hour).UTC().Format(store.TimeFormat)
+	free := func(context.Context, string, string) (bool, string, error) { return false, released, nil }
+	_ = Run(ctx, st, now.Add(30*time.Hour), Config{}, log, free)
+	if status(t, st, id) != cases.HandedOver {
+		t.Fatal("escalated one hour after the release")
+	}
+	_ = Run(ctx, st, now.Add(54*time.Hour), Config{}, log, free)
+	if status(t, st, id) != cases.Escalated {
+		t.Fatal("not escalated 25 hours after the release")
 	}
 }

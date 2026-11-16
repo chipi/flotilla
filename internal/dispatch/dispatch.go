@@ -168,7 +168,11 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		if j == nil {
 			continue // no routine acts on this kind and stage here: the stuck-state timer escalates it
 		}
-		if why := overLimit(c, caseLimit(sc.Routines, c.Kind)); why != "" {
+		spent, err := d.bugSpend(ctx, c, now)
+		if err != nil {
+			return err
+		}
+		if why := overLimit(spent, caseLimit(sc.Routines, c.Kind)); why != "" {
 			if err := st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByPolicy, "", "flotillad", why); err != nil && !errors.Is(err, store.ErrBadTransition) {
 				return err
 			}
@@ -682,6 +686,21 @@ func overLimit(c store.Case, l *spec.CaseLimit) string {
 	return ""
 }
 
+// LimitWindow is how far back the cases of one bug (one canonical key) count against its limit together: a
+// person closing an escalated case and the next detection opening a new one does not start the limit over.
+const LimitWindow = 7 * 24 * time.Hour
+
+// bugSpend is the case with what every case of its canonical key opened within LimitWindow has spent, the
+// case's own runs included.
+func (d *Dispatcher) bugSpend(ctx context.Context, c store.Case, now time.Time) (store.Case, error) {
+	usd, secs, err := d.API.Store.KeySpend(ctx, c.CanonicalKey, now.Add(-LimitWindow).UTC().Format(store.TimeFormat))
+	if err != nil {
+		return c, err
+	}
+	c.SpentUSD, c.SpentS = max(usd, c.SpentUSD), max(secs, c.SpentS)
+	return c, nil
+}
+
 // backingOff: a case's last word was a defer (planned -> handed_over), a run with no decision or a check
 // that said not yet, less than the backoff ago.
 func (d *Dispatcher) backingOff(ctx context.Context, id string, now time.Time) (bool, error) {
@@ -716,7 +735,11 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 		cv.StageData = json.RawMessage(sd)
 	}
 	if l := caseLimit(d.API.Sched.Routines, full.Kind); l != nil {
-		cv.Left = &caseLeft{USD: max(l.USD-full.SpentUSD, 0), Seconds: max(float64(l.Minutes)*60-full.SpentS, 0)}
+		bug, err := d.bugSpend(ctx, full, d.API.Sched.Clock())
+		if err != nil {
+			return err
+		}
+		cv.Left = &caseLeft{USD: max(l.USD-bug.SpentUSD, 0), Seconds: max(float64(l.Minutes)*60-bug.SpentS, 0)}
 	}
 	cj, _ := json.Marshal(cv)
 	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "case", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj)})

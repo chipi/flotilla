@@ -38,8 +38,14 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
+// Hold says whether a handed-over case of this kind and stage cannot run now because its acting routine is
+// held (its fleet STOPped or the routine paused), and when it was last released ("" for never held). A held
+// case is not escalated, and its hand-over clock starts again at the release: a STOP longer than the limit
+// does not turn the whole queue into escalations. nil holds nothing.
+type Hold func(ctx context.Context, kind, stage string) (held bool, releasedAt string, err error)
+
 // Run checks every open case once against its status's limit.
-func Run(ctx context.Context, st *store.Store, now time.Time, c Config, log *slog.Logger) error {
+func Run(ctx context.Context, st *store.Store, now time.Time, c Config, log *slog.Logger, hold Hold) error {
 	c = c.withDefaults()
 	detected, err := st.Cases(ctx, store.CaseFilter{Status: cases.Detected, Limit: 500})
 	if err != nil {
@@ -74,7 +80,22 @@ func Run(ctx context.Context, st *store.Store, now time.Time, c Config, log *slo
 			return err
 		}
 		start, ok := handedOverSince(ev)
-		if !ok || now.Sub(start) < c.HandedOverEscalate {
+		if !ok {
+			continue
+		}
+		if hold != nil {
+			held, released, err := hold(ctx, x.Kind, x.Stage)
+			if err != nil {
+				return err
+			}
+			if held {
+				continue
+			}
+			if t, err := time.Parse(time.RFC3339Nano, released); err == nil && t.After(start) {
+				start = t
+			}
+		}
+		if now.Sub(start) < c.HandedOverEscalate {
 			continue
 		}
 		detail := fmt.Sprintf("handed over since %s, longer than %s", start.Format(time.RFC3339), c.HandedOverEscalate)

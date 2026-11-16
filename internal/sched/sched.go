@@ -544,6 +544,29 @@ func (s *Scheduler) Configured(ctx context.Context, j *spec.Routine) (string, er
 	return v, nil
 }
 
+// CaseHold is casetimer.Hold: a case of this kind and stage is held while its acting routine's fleet is
+// STOPped or the routine is paused; released, the later of the two controls' last change is when.
+func (s *Scheduler) CaseHold(ctx context.Context, kind, stage string) (bool, string, error) {
+	for _, j := range s.Routines {
+		if !j.Enabled || j.OnCase() != kind || j.OnStage() != stage {
+			continue
+		}
+		sv, sat, err := s.Store.ControlAt(ctx, j.Fleet, KeyStop)
+		if err != nil {
+			return false, "", err
+		}
+		pv, pat, err := s.Store.ControlAt(ctx, j.ID(), KeyPaused)
+		if err != nil {
+			return false, "", err
+		}
+		if sv == "1" || pv == "1" {
+			return true, "", nil
+		}
+		return false, max(sat, pat), nil // the store's time format sorts as text
+	}
+	return false, "", nil
+}
+
 // SkipReason is why a run starting now would be skipped ("" when it would run): what a dry run reports.
 func (s *Scheduler) SkipReason(ctx context.Context, j *spec.Routine) (string, error) {
 	return s.skipReason(ctx, j)

@@ -82,3 +82,12 @@ func (s *Store) StageData(ctx context.Context, id string) (string, error) {
 	}
 	return data, err
 }
+
+// KeySpend is what the acting runs of every case with this canonical key, opened since `since`, have spent
+// together (RFC-0013 §2): the case limit holds for the bug, not for one case, so closing a case and the
+// next detection opening a new one does not start the limit over.
+func (s *Store) KeySpend(ctx context.Context, key, since string) (usd, seconds float64, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(spent_usd), 0), COALESCE(SUM(spent_s), 0) FROM cases
+		WHERE canonical_key = ? AND opened_at >= ?`, key, since).Scan(&usd, &seconds)
+	return usd, seconds, err
+}
