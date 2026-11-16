@@ -1,0 +1,17 @@
+fleet: e2e
+routine: hang
+description: >-
+  The e2e's cancel check, never shipped: a run that blocks for five minutes unless it is cancelled. Disabled,
+  so it never runs on a timer; the e2e starts it by hand and STOPs its fleet while it runs.
+enabled: false
+worker: triage
+trigger:
+  every: 60m
+run:
+  command: sleep 300
+  workdir: .
+  timeout: 10m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 120m

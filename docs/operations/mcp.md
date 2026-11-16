@@ -10,6 +10,9 @@ caller's own token. Nothing there approves, rejects or loosens.
 | --- | --- |
 | `status`, `runs_list`, `run_show`, `cases_list`, `case_show`, `approvals_list`, `hosts_list`, `models_calls`, `brief_show`, `ledger_query` | `routine_run`, `routine_dry_run`, `routine_pause`, `fleet_stop`, `freeze`, `hold`, `note_propose` |
 
+`fleet_stop` also cancels the fleet's runs in flight (an agent may; cancelling one run is an
+operator's `flotilla cancel`, not a tool).
+
 Each call is an event under the caller's name (`mcp.<tool>`, `via=mcp`); a caller may make 60 calls
 a minute.
 

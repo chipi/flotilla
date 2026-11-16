@@ -71,7 +71,8 @@ high, so a limit acts early. A key another run spends on meanwhile makes the cos
 smaller; a key per routine makes it exact. The run's log ends with `BUGFIX SPEND ... source=`.
 A run stopped at the routine's timeout reports too: the worker's SIGTERM ends the step in flight
 (each step runs in its own session, which the worker's kill of the run's group does not reach),
-and the spend is read with a 5 s settle inside the worker's 10 s grace.
+and the spend is read with a 5 s settle inside the worker's 10 s grace. A cancelled run (a STOP of
+the fleet, `flotilla cancel`) is stopped the same way and reports the same.
 
 **The fleet's rules, not the repo's AGENTS.md.** pi loads the repo's `AGENTS.md` into every call
 by default: about 30,000 tokens on orrery, 44% of the input tokens of the fleet's sessions on

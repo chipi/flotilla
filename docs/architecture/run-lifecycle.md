@@ -78,6 +78,28 @@ A **run** is one routine execution; a case may span several (a diagnose run, a p
 run). No run waits: an approval makes flotillad sign and send the execution, and a due check is an
 event that starts the check run.
 
+## Stopping a run in flight
+
+Besides its own end and its timeout, a STOP and an operator's cancel end a run that has started; a
+pause does not:
+
+| Control | What happens to the run in flight |
+| --- | --- |
+| **STOP** a fleet (`flotilla stop FLEET`, the UI, an agent's `fleet_stop`) | flotillad cancels each of the fleet's runs in flight, and the fleet's later starts are skipped |
+| **`flotilla cancel RUN_ID --reason R`** (`POST /v1/runs/{id}/cancel`, operator only, a reason required) | that one run is cancelled; nothing else changes |
+| **Pause** a routine (`flotilla pause`) | nothing: the run finishes, and the routine's next starts are skipped |
+
+A cancel does what the timeout does. The worker sends SIGTERM to the run's process group and SIGKILL
+after its 10 s grace (`POST /v1/runs/<run_id>/cancel` on the worker, with its token; for a worker
+reached through a link, flotillad sends the link a `cancel` frame with `stop`, and the link calls
+that endpoint). The run ends with the status `cancelled` and its spend read as for any run, so the
+day's budget counts it. Its detail is `cancelled: <who>, <why>` (for a STOP, `fleet F STOPped`), and
+the event log has a `run.cancel` event with the caller and the reason. `cancelled` is neither `ok`
+(it is no success, so the stale clock keeps running) nor a failure (no failed count, no
+needs-attention item). A run on a case that is cancelled is handled as any run that did not end ok:
+the case gets a `run.no_decision` event and nothing is decided from the run, and an executing run's
+case becomes `unknown`. A cancel that reaches a run which already ended ok changes nothing.
+
 ## Failure behaviour
 
 | Failure | Behaviour |

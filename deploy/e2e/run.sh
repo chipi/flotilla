@@ -6,7 +6,7 @@
 #
 # Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
 # is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a routine's
-# autonomy; a STOPped fleet's run is recorded as skipped; the worker refuses a wrong token; the candidate
+# autonomy; a STOPped fleet's run is recorded as skipped, and a STOP cancels a run in flight; the worker refuses a wrong token; the candidate
 # worker (profile candidate) is healthy on its own state volume and its routine cannot leave shadow; the
 # heartbeat's model step calls the LiteLLM stand-in through the model client, with the models section
 # from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported. The UI
@@ -292,6 +292,15 @@ cli stop platform >/dev/null && cli run platform/heartbeat >/dev/null
 sleep 3
 cli runs platform/heartbeat -n 1 | grep -q " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
 cli start platform --reason "e2e: start after the STOP check" >/dev/null
+# STOP also ends a run in flight: e2e/hang blocks for 5 minutes on the triage worker; the STOP must cancel it
+cli run e2e/hang >/dev/null
+for i in $(seq 1 20); do cli status | grep -E "^e2e/hang " | grep -q "running " && break; sleep 1; done
+cli status | grep -E "^e2e/hang " | grep -q "running " && ok "e2e/hang is in flight on the worker" || bad "e2e/hang did not start: $(cli runs e2e/hang -n 1 2>&1)"
+cli stop e2e >/dev/null
+for i in $(seq 1 30); do cli runs e2e/hang -n 1 | grep -q " running " || break; sleep 1; done
+cli runs e2e/hang -n 1 | grep -q " cancelled .*cancelled: operator, fleet e2e STOPped" \
+  && ok "a STOPped fleet's run in flight ends as cancelled, with who and why" || bad "STOP did not cancel the run in flight: $(cli runs e2e/hang -n 1 2>&1)"
+cli start e2e --reason "e2e: start after the cancel check" >/dev/null
 cli events -n 5 | grep -q "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
 # The freeze (ADR-0014 decision 8), through the real scheduler and worker: the heartbeat's own autonomy is auto.
 agent() { $D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla "$@"; }
