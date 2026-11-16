@@ -9,6 +9,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -417,6 +419,38 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
+// errNewer is the refusal of a store ahead of this binary. deploy.sh reads the "(N)" for the newest
+// schema this binary accepts, so the wording is part of its contract.
+func errNewer(n int) error {
+	return fmt.Errorf("database schema %d is newer than this flotillad (%d): refusing to run an older binary on it", n, len(schema))
+}
+
+// CheckSchema is what flotillad -check does with the store: it opens it read-only and returns the
+// refusal Open would give when the store is ahead of this binary. It never creates, migrates or
+// writes, so a deploy's check (and a rollback's, before anything is stopped) leaves the store as it
+// was. A missing store is a first install.
+func CheckSchema(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(n), 0) FROM schema_version`).Scan(&n); err != nil {
+		if strings.Contains(err.Error(), "no such table") {
+			return nil // a file that never had a schema is migrated at start
+		}
+		return fmt.Errorf("store: %w", err)
+	}
+	if n > len(schema) {
+		return errNewer(n)
+	}
+	return nil
+}
+
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate() error {
@@ -428,7 +462,7 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if n > len(schema) {
-		return fmt.Errorf("database schema %d is newer than this flotillad (%d): refusing to run an older binary on it", n, len(schema))
+		return errNewer(n)
 	}
 	for i := n; i < len(schema); i++ {
 		tx, err := s.db.Begin()

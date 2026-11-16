@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Tests for triage_hooks.sh and its wiring in deploy.sh: the filing gate and the fleet's deploy log.
 
-The deploy tests run deploy.sh for real against a throwaway checkout, with a stub `docker` on PATH (compose
-pull/up/run and the health checks succeed) and a fake filing gate, so the gate's PASS, FAIL and accept paths,
-the deploy-log rows and the checkout after a refused deploy are all exercised without a mini.
+The deploy tests run deploy.sh for real against a throwaway checkout, with a stub `docker` on PATH and a fake
+filing gate, so the gate's PASS, FAIL, NOT RUN and accept paths, the deploy-log rows and the checkout after a
+refused deploy are all exercised without a mini. The stub is a small engine: compose commands, the health
+checks, and `docker run` of deploy/mini/store_snapshot.py (the real helper, on real SQLite files standing in
+for the state volume); test_deploy_store.py builds on it.
 """
 import csv
 import os
@@ -16,6 +18,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS = os.path.join(HERE, "triage_hooks.sh")
 DEPLOY = os.path.join(HERE, "deploy.sh")
+HELPER = os.path.join(HERE, "store_snapshot.py")
 
 
 def sh(cmd, cwd=None, env=None, check=True):
@@ -42,12 +45,65 @@ FAKE_GATE = textwrap.dedent("""\
 
 FAKE_DOCKER = textwrap.dedent("""\
     #!/usr/bin/env bash
+    # A stub engine. STUB_CFG holds its state: running (the tag compose last brought up), and per tag
+    # <tag>.max (the newest store schema that binary accepts: an older binary on a newer store fails its
+    # -check, unless <tag>.nocheck, and is unhealthy at up), <tag>.migrate (N: the binary moves the store to
+    # schema N at start), <tag>.unhealthy. STUB_VOLS/<volume> is a volume's folder.
+    live_schema() { STORE_DIR="$STUB_VOLS/flotilla-state" python3 "$HELPER_PATH" schema; }
+    tagfile() { echo "$STUB_CFG/$1.$2"; }
+    refuses() { local m; m="$(cat "$(tagfile "$1" max)" 2>/dev/null)"; [ -n "$m" ] && [ "$(live_schema)" -gt "$m" ]; }
+    if [ "$1" = run ]; then   # deploy.sh's store_run: docker run ... -v VOL:/v --entrypoint python3 IMG -c SRC MODE
+      args=("$@"); vol=; mode=; src=
+      for ((i=0; i<${#args[@]}; i++)); do
+        case "${args[i]}" in
+          -v) vol="${args[i+1]%%:*}";;
+          -c) src="${args[i+1]}"; mode="${args[i+2]}"; break;;
+        esac
+      done
+      echo "helper $mode" >> "$DOCKER_CALLS"
+      [ "$mode" = backup ] && [ -n "${STUB_FAIL_BACKUP:-}" ] && exit 1
+      printf '%s\\n' "$src" > "$STUB_CFG/helper.py"
+      STORE_DIR="$STUB_VOLS/$vol" python3 "$STUB_CFG/helper.py" "$mode"
+      exit $?
+    fi
     echo "docker $* | hash_flotillad=${FLOTILLA_CONFIG_HASH_FLOTILLAD:-} hash_egress=${FLOTILLA_CONFIG_HASH_EGRESS:-}" >> "$DOCKER_CALLS"
-    case "$*" in
-      *" run "*) echo "CHECK PASS";;
-      *"flotilla status"*) echo '{"ok":true}';;
+    case "$1" in
+      compose)
+        sub=; args=("$@")
+        for ((i=0; i<${#args[@]}; i++)); do [ "${args[i]}" = -f ] && { sub="${args[i+2]}"; break; }; done
+        tag="$FLOTILLA_TAG"
+        case "$sub" in
+          run)
+            if [ ! -f "$(tagfile "$tag" nocheck)" ] && refuses "$tag"; then
+              echo "store: database schema $(live_schema) is newer than this flotillad ($(cat "$(tagfile "$tag" max)")): refusing to run an older binary on it" >&2
+              exit 1
+            fi
+            echo "CHECK PASS";;
+          stop) : > "$STUB_CFG/running";;
+          up)
+            echo "$tag" > "$STUB_CFG/running"
+            if [ -f "$(tagfile "$tag" migrate)" ] && ! refuses "$tag"; then
+              python3 "$STUB_CFG/migrate.py" "$STUB_VOLS/flotilla-state/flotilla.db" "$(cat "$(tagfile "$tag" migrate)")"
+            fi;;
+        esac
+        exit 0;;
+      exec)
+        t="$(cat "$STUB_CFG/running" 2>/dev/null)"
+        healthy() { [ -n "$t" ] && [ ! -f "$(tagfile "$t" unhealthy)" ] && ! refuses "$t"; }
+        case "$*" in
+          *"flotilla status"*) if healthy; then echo '{"ok":true}'; else echo '{"ok":false}'; fi; exit 0;;
+          *health*) healthy; exit $?;;
+        esac;;
     esac
     exit 0
+""")
+
+MIGRATE_PY = textwrap.dedent("""\
+    import sqlite3, sys
+    db = sqlite3.connect(sys.argv[1])
+    db.execute("INSERT INTO schema_version (n) VALUES (?)", (int(sys.argv[2]),))
+    db.execute("INSERT INTO t (v) VALUES ('after-migration')")
+    db.commit()
 """)
 
 
@@ -81,9 +137,15 @@ class Base(unittest.TestCase):
         with open(os.path.join(bindir, "docker"), "w") as f:
             f.write(FAKE_DOCKER)
         os.chmod(os.path.join(bindir, "docker"), 0o755)
+        shutil.copy(HELPER, os.path.join(self.repo, "deploy", "mini", "store_snapshot.py"))
+        self.stub = os.path.join(self.tmp, "stub"); self.vols = os.path.join(self.stub, "vols")
+        os.makedirs(self.vols)
+        with open(os.path.join(self.stub, "migrate.py"), "w") as f:
+            f.write(MIGRATE_PY)
         self.env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HOME=self.tmp, USER="tester",
                         GATE_CALLS=self.calls, DOCKER_CALLS=os.path.join(self.tmp, "docker_calls"),
-                        FLOTILLA_HOME=self.home, VLOGS="http://127.0.0.1:9")
+                        FLOTILLA_HOME=self.home, VLOGS="http://127.0.0.1:9", STUB_CFG=self.stub, STUB_VOLS=self.vols,
+                        HELPER_PATH=HELPER, FLOTILLA_HEALTH_TRIES="2", FLOTILLA_HEALTH_SLEEP="0")
         self.env.pop("SF_FILING_GATE_ACCEPT", None)
 
     def tearDown(self):
@@ -184,8 +246,8 @@ class FilingGateTest(Base):
         self.assertEqual(self.gate_calls(), [])
 
 
-class DeployWiringTest(Base):
-    """deploy.sh end to end with the stub docker: gate before pull, log row after up, checkout restored on refusal."""
+class DeployBase(Base):
+    """A host with one earlier passing deploy (commit 0) and a config folder, for deploy.sh run with the stub docker."""
 
     def setUp(self):
         super().setUp()
@@ -205,6 +267,10 @@ class DeployWiringTest(Base):
     def deploy(self, *args, env=None):
         return sh(["bash", os.path.join(self.repo, "deploy", "mini", "deploy.sh"), *args],
                   env=env or self.env, check=False)
+
+
+class DeployWiringTest(DeployBase):
+    """deploy.sh end to end with the stub docker: gate before pull, log row after up, checkout restored on refusal."""
 
     def test_deploy_runs_gate_then_logs(self):
         r = self.deploy(f"sha-{self.commits[1][:7]}")

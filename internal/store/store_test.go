@@ -1,8 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -189,5 +192,111 @@ func TestBackupIsAWorkingCopy(t *testing.T) {
 	var v string
 	if err := db.QueryRow(`SELECT value FROM controls WHERE subject='triage'`).Scan(&v); err != nil || v != "1" {
 		t.Fatalf("backup content: %q %v", v, err)
+	}
+}
+
+func bumpSchema(t *testing.T, p string, n int) {
+	t.Helper()
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO schema_version (n) VALUES (?)`, n); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// -check of an older flotillad must fail on a newer store before anything is stopped (a rollback dies
+// there), with the message Open gives at start.
+func TestCheckSchemaRefusesNewerStore(t *testing.T) {
+	s, p := open(t)
+	s.Close()
+	bumpSchema(t, p, len(schema)+1)
+	err := CheckSchema(p)
+	if err == nil || !strings.Contains(err.Error(), "newer than this flotillad") {
+		t.Fatalf("CheckSchema on a newer store = %v, want the \"newer than this flotillad\" refusal", err)
+	}
+	if want := fmt.Sprintf("(%d)", len(schema)); !strings.Contains(err.Error(), want) {
+		t.Fatalf("the refusal must name this binary's schema %s (deploy.sh reads it): %v", want, err)
+	}
+}
+
+func TestCheckSchemaAcceptsCurrentOlderAndMissing(t *testing.T) {
+	if err := CheckSchema(filepath.Join(t.TempDir(), "absent.db")); err != nil {
+		t.Fatalf("a missing store is a first install: %v", err)
+	}
+	s, p := open(t)
+	s.Close()
+	if err := CheckSchema(p); err != nil {
+		t.Fatalf("a store at this schema: %v", err)
+	}
+	old := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL); INSERT INTO schema_version (n) VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err := CheckSchema(old); err != nil {
+		t.Fatalf("an older store is migrated at start, not refused: %v", err)
+	}
+}
+
+// -check must not migrate or write: the older store stays at its schema, byte for byte, and no
+// schema_version table appears in a database that had none.
+func TestCheckSchemaWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.db")
+	db, err := sql.Open("sqlite", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL); INSERT INTO schema_version (n) VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	before, err := os.ReadFile(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSchema(old); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(old)
+	if !bytes.Equal(before, after) {
+		t.Fatal("CheckSchema changed the database file")
+	}
+	var n int
+	db, _ = sql.Open("sqlite", old)
+	defer db.Close()
+	if err := db.QueryRow(`SELECT MAX(n) FROM schema_version`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("schema after CheckSchema = %d %v, want 1", n, err)
+	}
+
+	empty := filepath.Join(dir, "empty.db")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSchema(empty); err != nil {
+		t.Fatalf("an empty store file: %v", err)
+	}
+	if fi, _ := os.Stat(empty); fi.Size() != 0 {
+		t.Fatalf("CheckSchema wrote %d bytes to an empty store", fi.Size())
+	}
+}
+
+// A live flotillad holds the store open in WAL mode while a deploy's -check runs in another container.
+func TestCheckSchemaWhileTheStoreIsOpen(t *testing.T) {
+	s, p := open(t)
+	defer s.Close()
+	if err := CheckSchema(p); err != nil {
+		t.Fatalf("-check beside a running flotillad: %v", err)
+	}
+	bumpSchema(t, p, len(schema)+1)
+	if err := CheckSchema(p); err == nil {
+		t.Fatal("a newer store beside a running flotillad must still be refused")
 	}
 }

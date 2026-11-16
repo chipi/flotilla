@@ -19,6 +19,7 @@ installation lives on the host, outside git. Placeholders below are in `<angle b
     smokescreen.yaml        the proxy: listen address, which private ranges it may reach
     egress-acl.yaml         the proxy: which host names routines may reach
   deployed.tsv              written by deploy/mini/deploy.sh
+  backups/                  the store's snapshots, one folder per deploy or rollback (see "Roll back")
 ```
 
 **State and secrets are Docker volumes**, not host folders: `flotilla-state` (the store and its daily
@@ -37,6 +38,7 @@ TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state
 FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
 TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (mirror-test's until the switch)
 TRIAGE_FILING_GATE=<filing_gate.py>                    # optional: default ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py
+# FLOTILLA_BACKUPS_KEEP=10                             # optional: how many store snapshots deploy.sh keeps
 # the services' Docker networks, when they are not the defaults
 # NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default
 ```
@@ -294,12 +296,10 @@ network as an external one and serves the node with `bind tailscale/flotilla` an
 `reverse_proxy flotillad:8486`. The proxy terminates TLS and plays no part in identity; Funnel is never
 on.
 
-The users step adds store schema step 5, and an older flotillad refuses a newer store. So before the
-first deploy with it:
-
-- run the new image read-only against a copy of the real store;
-- deploy with a store copy taken first;
-- to roll back, restore that copy, then deploy the previous tag.
+An older flotillad refuses a store a newer one has moved forward ("database schema N is newer than
+this flotillad"), and every schema step is one-way. So a deploy that adds a schema step cannot be
+rolled back by starting the old image: see "Roll back" below. Before the first deploy that adds a
+step, run the new image read-only against a copy of the real store.
 
 ## Deploy, roll back, operate
 
@@ -310,6 +310,42 @@ docker exec flotillad flotilla status
 docker exec flotillad flotilla runs triage/cycle -n 20
 docker exec flotillad flotilla stop triage            # any caller; starting again is the operator's
 ```
+
+### Snapshots
+
+Before every `up`, a deploy and a rollback alike, `deploy.sh` snapshots the store: a throwaway
+container of the worker image with no network (flotillad's own image has no shell) copies
+`flotilla.db` from the state volume with SQLite's online backup, so the copy is consistent beside a
+running flotillad, and streams it to the host. It lands in `~/flotilla/backups/<tag>-<UTC time>/`
+(`flotilla.db`, `SCHEMA` with the store's newest schema step, `WHY`; owner-only, as the store holds
+sessions and approvals). `<tag>` is the tag being deployed, so the snapshot is of the store as that
+deploy found it. The newest 10 are kept (`FLOTILLA_BACKUPS_KEEP`); only folders named like that are
+ever deleted. A snapshot that cannot be made, or is not a sound database, stops the deploy before
+anything is stopped. A first install has no store and takes none.
+
+The snapshot copies the database only; the first deploy that carries it must be run by the new
+script, so check out its commit in `~/flotilla/repo` first (the script that runs is the one in the
+checkout).
+
+### Roll back
+
+`deploy.sh --rollback` goes back to the tag deployed before the current one. Its `-check` opens the
+store read-only and fails, with nothing stopped, when the store is newer than that tag's flotillad;
+for a tag older than that check, deploy.sh reads the tag's schema steps from its
+`internal/store/store.go`. When the tag cannot run the store, the rollback restores a snapshot:
+
+1. it picks the newest snapshot whose schema the tag accepts (taken before the deploy that moved the
+   schema); if there is none it stops saying so, with nothing stopped, restored or changed;
+2. it snapshots the store as it is now (the newer schema, kept for a way forward), stops flotillad,
+   replaces `flotilla.db` (and removes its `-wal` and `-shm`) with the picked snapshot, and runs
+   `-check` again;
+3. it brings the stack up and prints exactly what it restored.
+
+**Rows written after the snapshot are lost on such a rollback** (runs, ledger entries, approvals,
+cases since that deploy started). The pre-rollback snapshot keeps them, for reading, not for
+merging. A deploy whose `up` is unhealthy falls back to the previous tag the same way, restoring the
+snapshot taken for that deploy. `deploy.sh` prints `rolled back to <tag> (running and healthy)` only
+when that tag is running and healthy; otherwise it ends `DEPLOY FAIL` and says which tag is running.
 
 ## Test it before a host has it
 

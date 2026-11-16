@@ -1,7 +1,7 @@
 // flotillad — the flotilla control plane: specs, scheduler, store, API.
 //
 //	flotillad -config /etc/flotilla/flotillad.yaml
-//	flotillad -config ... -check      # load config, callers and specs, then exit (a deploy gate)
+//	flotillad -config ... -check      # load config, callers and specs, read the store's schema, then exit (a deploy gate)
 package main
 
 import (
@@ -196,6 +196,12 @@ func readToken(path string) (string, error) {
 	return t, nil
 }
 
+// checkStore is -check's look at the store: read-only, so a rollback to a binary older than the
+// store dies in the check, before anything is stopped (deploy/mini/deploy.sh).
+func checkStore(stateDir string) error {
+	return store.CheckSchema(filepath.Join(stateDir, "flotilla.db"))
+}
+
 func main() {
 	cfgPath := flag.String("config", "/etc/flotilla/flotillad.yaml", "config file")
 	check := flag.Bool("check", false, "load config, callers and specs, print them, exit")
@@ -296,6 +302,10 @@ func main() {
 		}
 	}
 	if *check {
+		if err := checkStore(cfg.StateDir); err != nil {
+			fmt.Fprintln(os.Stderr, "store:", err)
+			os.Exit(1)
+		}
 		for _, j := range routines {
 			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s autonomy=%-7s spec=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Autonomy, j.Hash)
 		}
