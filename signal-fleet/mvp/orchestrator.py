@@ -193,8 +193,10 @@ POLL_WIDTH = 100
 def run_glitchtip(limit=5, dry_run=True):
     """Phase B: process unresolved GlitchTip errors through the same spine.
 
-    Reads up to POLL_WIDTH issues, most recently seen first, and triages at most `limit` of them; the rest wait
-    for the next cycle, when the ones triaged now are skipped as decided.
+    Reads up to POLL_WIDTH issues and triages at most `limit` of them: first those never decided, oldest first seen
+    first, so a backlog drains even while new errors keep arriving; then re-triages that are due. The rest wait for
+    the next cycle, when the ones triaged now are skipped as decided. A triage that defers (the model timed out)
+    uses its slot; deferral is bounded per signal (_triage_or_defer), so it cannot hold a slot for good.
 
     Recurrence handling (R5-4 follow-up + R2-2): a fingerprint that already has
     a disposition and shows NEW events is a `recurrence` ledger row (the
@@ -202,7 +204,7 @@ def run_glitchtip(limit=5, dry_run=True):
     triage is older than RETRIAGE_HOURS, in which case one re-triage is due."""
     issues = sources.glitchtip_unresolved(max(limit, POLL_WIDTH))
     print(f"glitchtip unresolved: {len(issues)}")
-    disps, triaged, waiting = [], 0, 0
+    new, due = [], []
     for issue in issues:
         sig = sources.to_error_signal(issue)
         prior_occ = actions.already_done(sig["occurrence_id"])
@@ -219,13 +221,16 @@ def run_glitchtip(limit=5, dry_run=True):
                         actions.record_recurrence(sig, base)
                     continue
                 print(f"  re-triage due (recurred, last look {base['ts']})")
+                due.append(sig)
             else:
                 print(f"  idempotent: {sig['occurrence_id']} -> {prior_occ}; skip")
-                continue
-        if triaged >= limit:
-            waiting += 1
             continue
-        triaged += 1
+        new.append(sig)
+    new.sort(key=lambda s: str((s.get("raw") or {}).get("firstSeen") or s.get("startsAt") or ""))
+    order = new + due
+    waiting = max(0, len(order) - limit)
+    disps = []
+    for sig in order[:limit]:
         print(f"--- {sig['alertname'][:60]} (fp {sig['fingerprint']}) ---")
         sources.attach_backend(sig)    # LiteLLM only: which backend failed (assistant failover)
         disp = _triage_or_defer(sig)   # investigation self-probes (§7.3)
@@ -355,7 +360,8 @@ if __name__ == "__main__":
                     help="one daemon cycle: grafana + glitchtip (fleetd contract)")
     ap.add_argument("--synthetic", action="store_true", help="synthetic staleness signal")
     ap.add_argument("--glitchtip", action="store_true", help="process unresolved GlitchTip errors")
-    ap.add_argument("--limit", type=int, default=5, help="max GlitchTip issues per run")
+    ap.add_argument("--limit", type=int, default=5,
+                    help="max GlitchTip triages (model calls) per run; up to POLL_WIDTH issues are read")
     ap.add_argument("--no-dry-run", action="store_true", help="really create issues (gated)")
     args = ap.parse_args()
     if args.poll:

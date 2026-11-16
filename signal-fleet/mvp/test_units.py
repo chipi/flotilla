@@ -1299,6 +1299,23 @@ class TestPollWide(unittest.TestCase):
         # decided issues cost nothing and take no place; the next 10 undecided are triaged, newest first
         self.assertEqual(self.triaged, [f"glitchtip:X-{n}" for n in range(3, 13)])
 
+    def test_never_decided_go_first_oldest_first_then_re_triages(self):
+        # homelab review of T0.2: newest-first starved an older backlog, and due re-triages took slots first
+        for n, sig in enumerate(self.issues):
+            sig["startsAt"] = f"2026-11-{16 - n:02d}T00:00:00Z"   # later in the list = first seen earlier
+        self.issues[0]["labels"]["count"] = 9            # decided at count 1, recurred: re-triage due
+        saved = self.o._hours_since
+        self.o._hours_since = lambda ts: 10 ** 6         # its last look is long ago
+        try:
+            self.o.run_glitchtip(limit=3, dry_run=True)
+            self.assertEqual(self.triaged, ["glitchtip:X-14", "glitchtip:X-13", "glitchtip:X-12"])
+            self.triaged.clear()
+            self.o.run_glitchtip(limit=20, dry_run=True)
+        finally:
+            self.o._hours_since = saved
+        self.assertEqual(self.triaged[-1], "glitchtip:X-0")   # the due re-triage comes after every new issue
+        self.assertEqual(len(self.triaged), 13)
+
     def test_the_rest_wait_for_the_next_cycle(self):
         self.o.run_glitchtip(limit=10, dry_run=True)
         for fp in self.triaged:
