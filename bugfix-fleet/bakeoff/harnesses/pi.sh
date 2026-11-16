@@ -4,6 +4,13 @@ set -euo pipefail
 WT="$1"; DESC="$2"
 MODEL="${PI_MODEL:-deepseek/deepseek-v4-pro}"
 PROVIDER="${PI_PROVIDER:-openrouter}"
+# PI_RESUME_SESSION (bugfix/fix.py): continue the previous round's session with DESC as the next message (the
+# gates' or the review's verdict on the fix), instead of a new session that explores the repo from nothing
+if [ -n "${PI_RESUME_SESSION:-}" ]; then
+  cd "$WT"
+  export NODE_OPTIONS="--max-old-space-size=4096"
+  exec pi -p --mode json --provider "$PROVIDER" --model "$MODEL" --session "$PI_RESUME_SESSION" ${BUGFIX_PI_RULES:+--no-context-files --append-system-prompt "$BUGFIX_PI_RULES"} "$DESC" < /dev/null
+fi
 read -r -d '' PROMPT <<EOF || true
 You are fixing a bug in the repository at the current working directory.
 

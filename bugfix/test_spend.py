@@ -32,7 +32,10 @@ class Gateway:
                 body = json.dumps({"key": "x", "info": {"spend": s, "max_budget": 12.0}}).encode()
                 h.send_response(g.status)
                 h.end_headers()
-                h.wfile.write(body)
+                try:
+                    h.wfile.write(body)
+                except BrokenPipeError:   # the slow-gateway test's client gives up first, as meant
+                    pass
 
             def log_message(h, *a):
                 pass

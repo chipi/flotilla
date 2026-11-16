@@ -44,6 +44,13 @@ TRIAGE = POP + textwrap.dedent('''\
 PI_HARNESS = POP + textwrap.dedent('''\
     WT="$1"; F=$(pop fixes)
     printf '%s' "$2" > "$FAKE_STATE/fix_desc"
+    # pi's saved session: a new one per fresh run, appended to on a resume (what the chain resumes is logged)
+    if [ -n "${PI_RESUME_SESSION:-}" ]; then
+      echo "resume $(basename "$PI_RESUME_SESSION") changed=$(git -C "$WT" status --porcelain | wc -l | tr -d ' ') desc=$(printf '%s' "$2" | head -c 34)" >> "$FAKE_STATE/resumes"
+      echo '{}' >> "$PI_RESUME_SESSION"
+    else
+      mkdir -p "$PI_CODING_AGENT_DIR/sessions/--wt--"; echo '{}' > "$PI_CODING_AGENT_DIR/sessions/--wt--/s-$F-$RANDOM.jsonl"
+    fi
     echo "fix ${BUGFIX_PI_RULES:-none}" >> "$FAKE_STATE/rules"
     echo "fix $F model=$PI_MODEL tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     cd "$WT"
@@ -565,6 +572,39 @@ exec {real} "$@"
         self.assertEqual(fix.review_class("VERDICT: request-changes CLASS: hides-symptom\nlater\n**VERDICT: approve**"), "")
         self.assertEqual(fix.review_class("VERDICT: request-changes"), "")
 
+    def resumes(self, f):
+        path = os.path.join(f.state, "resumes")
+        if not os.path.exists(path):
+            return []
+        with open(path) as fh:
+            return fh.read().splitlines()
+
+    def test_a_review_kick_back_resumes_the_fix_session_on_its_own_tree(self):
+        # C10: the next round goes on with the previous session (no new exploration), the tree as it left it
+        f = self.fixture(["actionable"], ["good", "good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\napprove\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        r = self.resumes(f)
+        self.assertEqual(len(r), 1, r)
+        self.assertRegex(r[0], r"^resume s-good-\d+\.jsonl changed=2 desc=A REVIEW OF YOUR FIX ASKED FOR CHA")
+
+    def test_a_gate_kick_back_resumes_with_the_gates_reason(self):
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        r = self.resumes(f)
+        self.assertEqual(len(r), 1, r)
+        self.assertRegex(r[0], r"^resume s-notest-\d+\.jsonl changed=1 desc=YOUR FIX DID NOT PASS ITS GATES: r")
+
+    def test_no_resume_starts_a_new_session(self):
+        f = self.fixture(["actionable"], ["good", "good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\napprove\n")
+        f.run("--no-resume")
+        self.assertEqual(self.resumes(f), [])
+
     def test_the_kick_back_limits_are_two_and_one(self):
         a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])
         self.assertEqual((a.kickback_max, a.review_kickback_max), (2, 1))
@@ -576,7 +616,7 @@ exec {real} "$@"
         f = self.fixture(["actionable", "actionable"], ["good", "good"])
         with open(os.path.join(f.state, "reviews"), "w") as fh:
             fh.write("request-changes\napprove\n")
-        plan, _ = f.run()
+        plan, _ = f.run("--no-resume")   # the new session's task (review and diff); a resumed one: its own tests
         self.assertEqual(plan["outcome"], "plan", plan)
         # no new verdict after a review's kick-back (it did not dispute actionability): the fix step again, with the
         # whole review and the diff it judged
@@ -592,7 +632,8 @@ exec {real} "$@"
         g = self.fixture(["actionable"] * 3, ["good"] * 3)
         with open(os.path.join(g.state, "reviews"), "w") as fh:
             fh.write("request-changes\n" * 3)
-        plan, _ = g.run("--review-kickback-max", "2")
+        # fresh sessions: resumed, the same fake fix again is "changed nothing since its last round" (its own test)
+        plan, _ = g.run("--review-kickback-max", "2", "--no-resume")
         self.assertEqual(plan["outcome"], "plan", plan)
         self.assertEqual(g.calls().count("review"), 3)
         self.assertIn("VERDICT: request-changes", plan["params"]["body"])
@@ -612,7 +653,8 @@ exec {real} "$@"
         f = self.fixture(["actionable", "actionable", "needs-info"], ["good", "notest"])
         with open(os.path.join(f.state, "reviews"), "w") as fh:
             fh.write("request-changes\n")
-        plan, _ = f.run()
+        # fresh sessions: the fake fixes assume a tree back at the base; resuming has its own tests
+        plan, _ = f.run("--no-resume")
         self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), plan)
         self.assertIn("+module.exports = () => 2;", plan["params"]["diff"])
         self.assertIn("VERDICT: request-changes", plan["params"]["body"])
@@ -645,7 +687,7 @@ exec {real} "$@"
             fh.write("request-changes\n")
         real, calls = fix.Chain.attempt, []
 
-        def attempt(chain, manifest):
+        def attempt(chain, manifest, resume=None):
             calls.append(manifest)
             if len(calls) > 1:
                 raise exc
@@ -775,9 +817,13 @@ exec {real} "$@"
 
     def test_the_kickback_limit(self):
         f = self.fixture(["actionable", "actionable"], ["notest", "nothing"])
-        plan, _ = f.run("--kickback-max", "1", "--no-advisor")
+        plan, _ = f.run("--kickback-max", "1", "--no-advisor", "--no-resume")
         self.assertEqual(plan["outcome"], "escalate")
         self.assertIn("stuck: kick-back limit (1) reached; last: the fix changed nothing", plan["detail"])
+        # resumed, the tree still holds round 0's change: a session that adds nothing is caught as such
+        g = self.fixture(["actionable", "actionable"], ["notest", "nothing"])
+        plan, _ = g.run("--kickback-max", "1", "--no-advisor")
+        self.assertIn("stuck: kick-back limit (1) reached; last: the fix changed nothing since its last round", plan["detail"])
         self.assertEqual(f.calls(), ["triage", "fix", "triage", "fix"])
 
     def test_a_rename_out_of_a_forbidden_path_is_seen_on_the_vitest_path_too(self):

@@ -34,6 +34,7 @@ Environment: FLOTILLA_CASE, FLOTILLA_PLAN_FILE, FLOTILLA_MODELS (the worker's); 
 scratch volume); GIT_REMOTE_BASE (default https://github.com, a test's local path).
 """
 import argparse
+import glob
 import json
 import os
 import re
@@ -490,15 +491,53 @@ class Chain:
         return v, path
 
     # 3 · one fix attempt and its gates
-    def attempt(self, manifest):
+    def sessions(self):
+        """{session file: size} of pi's saved sessions in this run (all steps share PI_CODING_AGENT_DIR)."""
+        out = {}
+        for f in glob.glob(os.path.join(self.run_dir, "pi", "sessions", "*", "*.jsonl")):
+            try:
+                out[f] = os.path.getsize(f)
+            except OSError:
+                pass
+        return out
+
+    def attempt(self, manifest, resume=None):
+        """One fix attempt. `resume` = (session file, the previous round's diff, the feedback): the worktree is put
+        back as that round left it and its session goes on with the feedback as the next message, where a new session
+        would explore the repo again from nothing (44-99 calls a session on 2026-11-15/16; fleet-eval-data
+        projects/bugfix-cost, the advisor's review). If the diff does not apply, a new session from the manifest."""
         with open(manifest) as f:
             desc = json.load(f)["description"]
-        desc += "\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+        note = "\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
         self.reset()
+        env, resumed_from = self.env, None
+        if resume:
+            session, patch, feedback = resume
+            ok = True
+            if patch.strip():
+                pf = os.path.join(self.run_dir, "resume.patch")
+                with open(pf, "w") as f:
+                    f.write(patch)
+                code, out = sh(["git", "-C", self.wt, "apply", "--index", "--binary", pf], self.run_dir, self.env, 60)
+                ok = code == 0
+                if not ok:
+                    self.note("resume", f"the previous round's diff does not apply ({tail(out, 120)}): a new session")
+                    self.reset()
+            if ok:
+                desc = feedback + "\n\nThe worktree is as your previous attempt left it." + note
+                env, resumed_from = dict(self.env, PI_RESUME_SESSION=session), patch
+            else:
+                desc += note
+        else:
+            desc += note
         harness = os.path.join(BAKEOFF, "harnesses", self.a.harness + ".sh")
         if not re.fullmatch(r"[a-z0-9-]+", self.a.harness) or not os.path.exists(harness):
             raise Stop(f"no harness {self.a.harness!r} in {os.path.dirname(harness)}")
-        code, stream = sh([harness, self.wt, desc], BAKEOFF, self.env, self.a.episode_timeout)
+        before = self.sessions()
+        code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout)
+        after = self.sessions()
+        grown = [f for f, n in after.items() if before.get(f) != n]
+        self.last_session = max(grown, key=os.path.getmtime) if grown else None
         turns, out_tok = usage(stream)
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
         # -z: names raw, never git's quoted form for a non-ASCII path; --no-renames: both sides of a rename
@@ -506,7 +545,11 @@ class Chain:
         _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", self.base],
                       self.run_dir, self.env, 60, check=True)
         files = [x for x in names.split("\0") if x.strip() and not x.startswith(".flotilla-suite")]
+        _, self.last_patch = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", self.base, "--", ".",
+                                 ":(exclude).flotilla-suite.json"], self.run_dir, self.env, 60, check=True)
         stats = (turns, out_tok)
+        if resumed_from is not None and self.last_patch == resumed_from:   # the tree still holds the last round's change
+            return "the fix changed nothing since its last round", files, stream, stats
         if code == 124 and not files:
             return "the fix episode ran out of time with no change", files, stream, stats
         if not files:
@@ -763,11 +806,13 @@ class Chain:
         if v.get("verdict") != "actionable":
             raise Stop(self.not_actionable(v))
         manifest = os.path.join(self.triaged, f"{self.tid}-triaged.json")
-        pins, prior, reviewed_back = [], vpath, 0
+        pins, prior, reviewed_back, resume = [], vpath, 0, None
+        self.last_session, self.last_patch = None, ""
         for rnd in range(self.a.kickback_max + 1):
             if not os.path.exists(manifest):
                 raise Stop(f"stuck: the verdict step wrote no triaged manifest for round {rnd}")
-            reason, files, stream, (turns, out_tok) = self.attempt(manifest)
+            reason, files, stream, (turns, out_tok) = self.attempt(manifest, resume)
+            resume = None
             from_review = False
             if not reason:
                 d = self.diff()
@@ -798,6 +843,10 @@ class Chain:
                     if rnd == self.a.kickback_max:
                         raise Stop(f"stuck: kick-back limit ({self.a.kickback_max}) reached; last: {reason}")
                     manifest = self.review_manifest(manifest, rnd, d, review)
+                    if self.a.resume and self.last_session:
+                        resume = (self.last_session, self.last_patch,
+                                  f"A REVIEW OF YOUR FIX ASKED FOR CHANGES. Address what it says that holds; if a point is "
+                                  f"wrong, keep your fix and say why in the test or a comment.\n\nTHE REVIEW:\n{review[:12000]}")
                     continue
                 else:
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
@@ -839,6 +888,11 @@ class Chain:
                 raise Stop(self.not_actionable(kv, after=f"after round {rnd}"))
             manifest = os.path.join(self.triaged, f"{self.tid}-triaged-kb{self.kb_round}.json")
             prior = kpath
+            if self.a.resume and self.last_session and os.path.exists(manifest):
+                with open(manifest) as f:
+                    task = json.load(f).get("description") or ""
+                resume = (self.last_session, self.last_patch,
+                          f"YOUR FIX DID NOT PASS ITS GATES: {reason}\n\nTHE TASK, AS THE VERDICT STEP NOW SEES IT:\n{task}")
 
     def review_manifest(self, manifest, rnd, d, review):
         """The next fix's instructions after a review's request-changes: the same task, the whole review and the
@@ -914,6 +968,8 @@ def parse(argv):
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
                     help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
     # a kick-back roughly doubles a case's cost (a new fix session, and before it a new verdict): 2 and 1 bound it
+    ap.add_argument("--no-resume", dest="resume", action="store_false",
+                    help="a kick-back starts a new fix session (before C10) instead of resuming the previous round's")
     ap.add_argument("--kickback-max", type=int, default=2)
     ap.add_argument("--review-kickback-max", type=int, default=1,
                     help="times the review's request-changes sends a gate-clean fix back (within --kickback-max)")

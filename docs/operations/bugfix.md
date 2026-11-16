@@ -98,6 +98,14 @@ only for a fault it can show from what it was given, and names its class (`hides
 the whole review and the diff it judged, without a new verdict. Any other objection goes on the
 plan as unresolved; a review that did not run is said on the plan, never read as an approval.
 
+**A kick-back resumes the fix session.** After a failed gate or a review's request-changes, the
+next round puts the worktree back as the last round left it (its diff, re-applied) and continues
+that round's pi session (`--session`), with the gates' reason and the verdict's renewed task, or
+the whole review, as the next message: no new session exploring the repo from nothing. A resumed
+round that adds nothing is "the fix changed nothing since its last round". If the diff does not
+apply, or no session file was saved, the round starts a new session as before (`--no-resume`
+always does).
+
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could
 delete the test its change breaks and add a new passing one, and both repro and the related gate would
