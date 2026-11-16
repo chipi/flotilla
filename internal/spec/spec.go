@@ -79,6 +79,11 @@ type Routine struct {
 	// lines with its detections, and the brief written after its run shows them under this title. Only
 	// a monitor (one that detects) has one.
 	BriefSection string `yaml:"brief_section"`
+	// What the routine page draws (explain.go): a text per drawn block, keyed by the spec part it explains,
+	// the steps its code takes that no other field shows, and the routines that come after it.
+	Explain map[string]string `yaml:"explain"`
+	Steps   []Step            `yaml:"steps"`
+	Chain   []ChainLink       `yaml:"chain"`
 
 	// filled by Load
 	Path  string        `yaml:"-"`
@@ -287,6 +292,7 @@ func Load(dir string) ([]*Routine, error) {
 		}
 		routines = append(routines, j)
 	}
+	errs = append(errs, checkChains(routines)...)
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -495,10 +501,11 @@ func (j *Routine) validate() error {
 			bad("brief_section: only a monitor (a routine with detects) reports summary lines")
 		case !briefSectionRe.MatchString(j.BriefSection):
 			bad("brief_section: %q is not a short title (a capital, then letters and spaces, at most 32)", j.BriefSection)
-		case j.BriefSection == "Needs you" || j.BriefSection == "Handled overnight" || j.BriefSection == "Watch":
+		case j.BriefSection == "Needs you" || j.BriefSection == "Handled overnight" || j.BriefSection == "Watch" || j.BriefSection == "Decisions":
 			bad("brief_section: %q is one of the brief's own sections", j.BriefSection)
 		}
 	}
+	j.validateExplain(bad)
 	j.Limit = dur("run.timeout", j.Run.Timeout, 10*time.Second)
 	if j.Freshness != "" || !j.OnEvent() { // a routine on cases runs when there is work: no freshness
 		j.Fresh = dur("freshness", j.Freshness, time.Minute)

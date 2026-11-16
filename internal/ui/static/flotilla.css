@@ -735,3 +735,33 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 .mix__seg--dismiss, .mix__key--dismiss { fill: var(--control-edge); background: var(--control-edge); }
 .mix__seg--cleanup, .mix__key--cleanup { fill: var(--ok-mid); background: var(--ok-mid); }
 .mix__seg--other, .mix__key--other { fill: var(--violet); background: var(--violet); }
+
+/* Who acts (UI plan step 3, DESIGN.md "Who acts"): a block's strip, a span's bar and a timeline dot say who
+   acts in it: code (routines, workers, flotillad, the harness), an agent (a model decides), a tool the agent
+   uses, or you. The lamp stays the state. Blocks are square. */
+.node { border-radius: 0; position: relative; padding-left: 14px; }
+.node::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--who, transparent); }
+.node--code { --who: var(--control-edge); }
+.node--agent { --who: var(--signal-blue); }
+.node--tool { --who: var(--blue-soft); }
+.node--you { --who: var(--wait-edge); }
+a.node.is-on { border-color: var(--board-focus); background: var(--board-node-on); }
+.sw { display: inline-block; width: 3px; height: 12px; margin-right: 6px; vertical-align: -1px; background: var(--control-edge); }
+.sw--code { background: var(--control-edge); } .sw--agent { background: var(--signal-blue); }
+.sw--tool { background: var(--blue-soft); } .sw--you { background: var(--wait-edge); }
+.lp { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--ok-lamp); }
+.lp--wait { background: var(--wait-edge); } .lp--bad { background: var(--stop-red); } .lp--idle { background: var(--sort-idle); }
+.whoacts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--slate); }
+.whoacts span { display: inline-flex; align-items: center; }
+.whoacts--board { margin-top: 12px; font-size: 11px; color: var(--board-muted); }
+.whoacts--board b { color: var(--board-text); }
+.dot--code { background: var(--control-edge); }
+.rboard__stages, .rboard__chain { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 1000px; }
+.rboard { flex: none; }
+.rboard .node { margin-bottom: 8px; }
+.rboard__caps { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; font-size: 12px; color: var(--board-muted); }
+.rboard__caps b { color: var(--board-text); font-weight: 600; }
+.bpanel h2 { display: flex; align-items: center; }
+.bpanel__nums { font-size: 13px; }
+.bpanel pre.log { white-space: pre-wrap; }
+@media (max-width: 640px) { .rboard__stages, .rboard__chain { grid-auto-flow: row; grid-template-columns: 1fr; min-width: 0; } }

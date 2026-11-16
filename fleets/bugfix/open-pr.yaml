@@ -17,3 +17,17 @@ autonomy: propose
 max_autonomy: propose
 budget:
   day_usd: 0
+# What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/open_pr.py.
+explain:
+  trigger: >-
+    Runs when you approve a github.open_pr plan on a case. Nothing else starts it.
+  worker: >-
+    Runs on the worker bugfix-act: the only worker that can mint a GitHub App token, and only for this
+    run, narrowed to the plan's repo.
+  run: >-
+    open_pr.py checks the plan's hash, applies its diff to the base commit and opens a draft PR from the
+    branch flotilla/<case>. It runs no repo code and calls no model.
+  autonomy: >-
+    Capped at propose: it acts only on a plan a person approved.
+  budget: >-
+    No model: no spend.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -270,8 +269,25 @@ func (u *Server) stopAll(stop bool) func(http.ResponseWriter, *http.Request, *st
 
 type boardNode struct {
 	ID, Label, Sub, A, B, BClass, Lamp, Href string
+	Who                                      string // who acts in it: code, agent, tool, you (the block's strip)
 	On                                       bool
 	Arrow                                    bool
+}
+
+// whoActs is "agent" for a routine where a model decides (a harness, or a step an agent takes), else "code".
+func whoActs(j *spec.Routine) string {
+	if j == nil {
+		return "code"
+	}
+	if j.Harness != nil {
+		return "agent"
+	}
+	for _, s := range j.Steps {
+		if s.Who == "agent" {
+			return "agent"
+		}
+	}
+	return "code"
 }
 
 type boardStage struct {
@@ -408,7 +424,7 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 			j := specsBy[x.ID]
 			lamp := lampOf(x, f.LastFailed[x.ID])
 			n := boardNode{ID: x.ID, Label: x.ID, Sub: triggerText(j), A: plural(runs24[x.ID], "run", "runs"),
-				Lamp: "blamp blamp--" + lamp, Href: base + "?sel=" + url.QueryEscape(x.ID), On: x.ID == sel, Arrow: arrow, BClass: "soft"}
+				Lamp: "blamp blamp--" + lamp, Href: "/fleets/" + x.ID, On: x.ID == sel, Arrow: arrow, BClass: "soft", Who: whoActs(j)}
 			switch {
 			case !x.Enabled:
 				n.B = "disabled"

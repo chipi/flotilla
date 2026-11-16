@@ -82,6 +82,7 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("POST /fleets/stop-all", u.session(u.stopAll(true)))
 	m.Handle("POST /fleets/release-all", u.session(u.stopAll(false)))
 	m.Handle("GET /fleets/{fleet}", u.session(u.fleetPage))
+	m.Handle("GET /fleets/{fleet}/{routine}", u.session(u.routinePage))
 	m.Handle("POST /routines/{fleet}/{routine}/{action}", u.session(u.routineAction))
 	m.Handle("POST /fleets/{fleet}/{action}", u.session(u.fleetAction))
 	m.Handle("GET /hosts", u.session(u.hostsPage))

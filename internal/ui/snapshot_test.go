@@ -176,6 +176,7 @@ func TestSnapshots(t *testing.T) {
 		"runs": "/runs", "runs-problems": "/runs?f=problems", "run": "/runs/ops-rerun-backup-0001",
 		"fleets": "/fleets", "fleet": "/fleets/ops", "fleet-triage": "/fleets/triage", "fleet-routines": "/fleets/ops?tab=routines",
 		"fleet-stats": "/fleets/ops?tab=stats", "fleet-logs": "/fleets/triage?tab=logs",
+		"routine": "/fleets/triage/cycle", "routine-block": "/fleets/triage/cycle?b=gate.edge", "routine-bugfix": "/fleets/bugfix/fix",
 		"hosts": "/hosts", "host": "/hosts/vps", "host-agent": "/hosts/mini?tab=agent", "host-exec": "/hosts/vps?tab=exec",
 		"autonomy": "/autonomy", "history": "/history?period=all", "history-ledger": "/history?type=ledger&period=all",
 		"account": "/account", "users": "/users", "models": "/models", "models-spend": "/models?tab=spend&period=30d",

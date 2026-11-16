@@ -1,0 +1,93 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{$csrf := .CSRF}}{{$act := .CanAct}}
+  {{with .Data}}{{$back := .Back}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/fleets">Fleets</a> / <a href="/fleets/{{.Fleet}}">{{.FleetName}}</a> / {{.ID}}</nav>
+  <section class="head">
+    <div>
+      <div class="actions"><span class="{{.Lamp}}" aria-hidden="true"></span><h1>{{.Title}}</h1><span class="{{.Chip}}">{{.Status}}</span></div>
+      <p class="sub">{{.Sub}} · spec <a class="exact" href="{{.SpecURL}}">fleets/{{.ID}}.yaml</a></p>
+      <p class="meta">{{.Desc}}</p>
+    </div>
+    {{if $act}}<div class="actions">
+      <form method="post" action="/routines/{{.ID}}/run" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}"><button class="btn btn--quiet" type="submit">Run now</button></form>
+      {{if .Routine.Paused}}
+      <details class="decision__rejectwrap">
+        <summary class="btn btn--quiet">Resume…</summary>
+        <form class="confirm" method="post" action="/routines/{{.ID}}/resume">
+          {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}">
+          <label class="field field--strong">Why resume (kept with the change)<textarea name="reason" rows="2" required data-needs></textarea></label>
+          <div class="actions"><button class="btn btn--blue" type="submit">Resume</button></div>
+        </form>
+      </details>
+      {{else}}
+      <form method="post" action="/routines/{{.ID}}/pause" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}"><button class="btn btn--quiet" type="submit">Pause</button></form>
+      {{end}}
+      <a class="btn btn--quiet" href="/runs?routine={{.ID}}">All its runs</a>
+    </div>{{end}}
+  </section>
+
+  <section class="scores scores--wide" aria-label="Today">{{range .Cards}}{{template "score" .}}{{end}}</section>
+
+  <section class="board rboard" aria-label="The routine, drawn from its spec">
+    <div class="board__head"><strong>{{.ID}} · drawn from its spec</strong><span>counts: {{.Counted}} · open a block for what it does</span></div>
+    <div class="board__stages rboard__stages">
+      {{range .Lanes}}<div class="stage">
+        <span class="stage__title">{{.Title}}</span>
+        {{$arrow := .Arrow}}{{range .Blocks}}<div class="stage__row">
+          {{template "rblock" .}}
+          {{if $arrow}}<span class="stage__arrow" aria-hidden="true">→</span>{{end}}
+        </div>{{end}}
+      </div>{{end}}
+    </div>
+    <div class="rboard__caps">{{range .Caps}}<span><b>{{index . 0}}</b> {{index . 1}}</span>{{end}}</div>
+    {{template "whoacts" "board"}}
+  </section>
+
+  <aside class="card bpanel" id="block" aria-label="The open block">
+    {{with .Sel}}
+    <h2><i class="sw sw--{{.Who}}" aria-hidden="true"></i>{{.Name}}</h2>
+    {{if .Explain}}<p>{{.Explain}}</p>{{else}}<p class="gap"><strong>Not explained in the spec yet.</strong> Add <span class="exact">explain: {{.ID}}</span> to the routine's spec.</p>{{end}}
+    <p class="meta">{{if eq .Where "spec"}}Set in the routine's spec{{else if eq .Where "code"}}Done by the routine's code, described in its spec{{else}}Kept by flotillad{{end}}{{if .Key}} · <span class="exact">{{.Key}}</span>{{end}}</p>
+    {{if .Nums}}<p class="bpanel__nums">{{.Nums}}</p>{{end}}
+    {{if .YAML}}<h3>In the spec</h3><pre class="log log--small">{{.YAML}}</pre>{{end}}
+    {{else}}<p class="meta">Open a block: what it does, where it is set, the spec it comes from and its counts.</p>{{end}}
+  </aside>
+
+  {{if .Chain}}
+  <section class="board rboard" aria-label="The chain after it">
+    <div class="board__head"><strong>The chain after it</strong><span>each block a routine's spec · blue: an agent</span></div>
+    <div class="board__stages rboard__chain">
+      {{range .Chain}}<div class="stage">
+        <span class="stage__title">{{.Title}}</span>
+        {{$arrow := .Arrow}}{{range .Blocks}}<div class="stage__row">
+          {{template "rblock" .}}
+          {{if $arrow}}<span class="stage__arrow" aria-hidden="true">→</span>{{end}}
+        </div>{{end}}
+      </div>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section class="card" aria-labelledby="runs-h">
+    <h2 id="runs-h">Last runs</h2>
+    <div class="table-box"><table class="data data--small">
+      <thead><tr><th scope="col">Started</th><th scope="col">Status</th><th scope="col">Took</th><th scope="col">Decisions</th><th scope="col">Recurrences</th><th scope="col">Model calls</th></tr></thead>
+      <tbody>{{range .Runs}}<tr>
+        <td data-label="Started"><a class="exact" href="/runs/{{.ID}}">{{.Start}}</a></td>
+        <td data-label="Status"><span class="chip chip--small {{.Chip}}">{{.Status}}</span></td>
+        <td data-label="Took">{{.Took}}</td><td data-label="Decisions">{{.Decisions}}</td>
+        <td data-label="Recurrences">{{.Recurrences}}</td><td data-label="Model calls">{{if .Calls}}{{.Calls}}{{else}}–{{end}}</td>
+      </tr>{{else}}<tr><td colspan="6">No run yet.</td></tr>{{end}}</tbody>
+    </table></div>
+  </section>
+  {{end}}
+</main>
+{{template "foot" .}}
+
+{{define "rblock"}}{{if .Href}}<a class="node node--{{.Who}}{{if .On}} is-on{{end}}" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{else}}<span class="node node--{{.Who}}">{{end}}
+  <span class="node__name"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Name}}</span>
+  {{if .Sub}}<span class="node__sub">{{.Sub}}</span>{{end}}
+  {{if .Nums}}<span class="node__nums"><span>{{.Nums}}</span></span>{{end}}
+{{if .Href}}</a>{{else}}</span>{{end}}{{end}}

@@ -36,12 +36,12 @@
   {{if eq .Tab "workflow"}}
   <div class="split split--tight">
     <section class="board" aria-label="Workflow">
-      <div class="board__head"><strong>Workflow · live</strong><span>counts: last 24h · click a block for its details</span></div>
+      <div class="board__head"><strong>Workflow · live</strong><span>counts: last 24h · open a routine's block for its page</span></div>
       <div class="board__stages">
         {{range .Stages}}<div class="stage">
           <span class="stage__title">{{.Title}}</span>
           {{range .Nodes}}<div class="stage__row">
-            {{if .Href}}<a class="node" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{else}}<span class="node">{{end}}
+            {{if .Href}}<a class="node node--{{or .Who "code"}}" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{else}}<span class="node node--{{or .Who "code"}}">{{end}}
               <span class="node__name"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Label}}</span>
               <span class="node__sub">{{.Sub}}</span>
               <span class="node__nums">{{if .A}}<span>{{.A}}</span>{{end}}{{if .B}}<span class="{{.BClass}}">{{.B}}</span>{{end}}</span>
@@ -51,12 +51,7 @@
           {{if .None}}<span class="stage__none">{{.None}}</span>{{end}}
         </div>{{end}}
       </div>
-      <div class="board__legend">
-        <span><span class="blamp" aria-hidden="true"></span>running normally</span>
-        <span><span class="blamp blamp--wait" aria-hidden="true"></span>waiting (you, a lock, a check)</span>
-        <span><span class="blamp blamp--bad" aria-hidden="true"></span>failing or down</span>
-        <span><span class="blamp blamp--idle" aria-hidden="true"></span>paused or idle</span>
-      </div>
+      {{template "whoacts" "board"}}
     </section>
 
     {{with .Sel}}<aside class="card selaside" aria-label="Selected block">

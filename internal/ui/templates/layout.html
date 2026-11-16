@@ -78,3 +78,11 @@
   <div class="readitem__head"><span class="chip {{if eq .Trust "source"}}chip--ok{{else if eq .Trust "memory"}}chip--info{{else}}chip--stop{{end}}">{{.Trust}}</span><strong>{{.Title}}</strong></div>
   <span class="readitem__src">{{.Kind}} · {{.Source}}{{if .SHA256}} · sha256 {{short .SHA256 12}}{{end}}</span>
 </div>{{end}}{{end}}
+
+{{define "whoacts"}}<div class="whoacts{{if eq . "board"}} whoacts--board{{end}}" aria-label="Colours">
+  <span><b>Who acts</b></span>
+  <span><i class="sw sw--code" aria-hidden="true"></i>code</span><span><i class="sw sw--agent" aria-hidden="true"></i>an agent (a model decides)</span>
+  <span><i class="sw sw--tool" aria-hidden="true"></i>a tool the agent uses</span><span><i class="sw sw--you" aria-hidden="true"></i>you</span>
+  <span><b>State</b></span><span><i class="lp" aria-hidden="true"></i>ok</span><span><i class="lp lp--wait" aria-hidden="true"></i>waiting</span>
+  <span><i class="lp lp--bad" aria-hidden="true"></i>failing</span><span><i class="lp lp--idle" aria-hidden="true"></i>idle, no action</span>
+</div>{{end}}

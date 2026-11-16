@@ -249,7 +249,7 @@ func contains(xs []string, x string) bool {
 
 // LedgerDecision is one ledger entry as the decision mix counts it (the dispositions row's own fields).
 type LedgerDecision struct {
-	TS, Kind, Disposition, Stage, Gates, Fingerprint, PromptSHA, Model string
+	TS, Kind, Disposition, Stage, Gates, Fingerprint, PromptSHA, Model, NProbes, RunID string
 }
 
 // DecisionsSince are the entries of the given namespaces whose row's ts is on or after since (a date
@@ -269,7 +269,7 @@ func (s *Store) DecisionsSince(ctx context.Context, namespaces []string, since s
 		coalesce(json_extract(row, '$.ts'), ''), coalesce(json_extract(row, '$.disposition'), ''),
 		coalesce(json_extract(row, '$.stage'), ''), coalesce(json_extract(row, '$.gates'), ''),
 		coalesce(json_extract(row, '$.fingerprint'), ''), coalesce(json_extract(row, '$.prompt_sha'), ''),
-		coalesce(json_extract(row, '$.model'), '')
+		coalesce(json_extract(row, '$.model'), ''), coalesce(json_extract(row, '$.n_probes'), ''), run_id
 		FROM ledger_entries WHERE namespace IN (`+ph+`) AND json_extract(row, '$.ts') >= ?
 		ORDER BY json_extract(row, '$.ts'), seq`, args...)
 	if err != nil {
@@ -279,7 +279,7 @@ func (s *Store) DecisionsSince(ctx context.Context, namespaces []string, since s
 	var out []LedgerDecision
 	for rows.Next() {
 		var d LedgerDecision
-		if err := rows.Scan(&d.Kind, &d.TS, &d.Disposition, &d.Stage, &d.Gates, &d.Fingerprint, &d.PromptSHA, &d.Model); err != nil {
+		if err := rows.Scan(&d.Kind, &d.TS, &d.Disposition, &d.Stage, &d.Gates, &d.Fingerprint, &d.PromptSHA, &d.Model, &d.NProbes, &d.RunID); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
