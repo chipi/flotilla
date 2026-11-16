@@ -70,17 +70,24 @@ printed.
 5. **`FLOTILLA_HOME/.env`:** add `bugfix` to `COMPOSE_PROFILES`.
 6. Deploy as usual (`deploy/mini/deploy.sh`): `secrets.sh` fills the two workers' volumes.
 
-## The GitHub App (before `github.open_pr` leaves shadow)
+## The GitHub App
 
-The operator makes it (GitHub, Settings, Developer settings, GitHub Apps):
+`github.open_pr` is at propose since 2026-11-16: a fix's PR plan waits in Approvals (once the
+`bugfix/fix` routine is at propose too), and the approval runs `bugfix/open-pr` on the X3's act worker.
 
-- **Permissions:** Contents read and write, Pull requests read and write, Metadata read. Nothing else:
-  no Issues write, no Actions, no Administration.
-- **Installed on:** `chipi/orrery` and `chipi/flotilla` only.
-- **Its private key:** downloaded straight into `FLOTILLA_CONFIG/bugfix-github-app.pem` (mode 600).
-  `secrets.sh` puts it in the pusher's volume only.
-- **Its ids** (not secrets): `BUGFIX_GITHUB_APP_ID` and `BUGFIX_GITHUB_APP_INSTALLATION_ID` in
-  `FLOTILLA_HOME/.env`.
+- **The App:** `orrery-bugfix-fleet` (id 4354093), the old homelab bugfix fleet's, reused (operator,
+  2026-11-16). Installation 147992211 reaches the operator's 18 repositories. The App itself may write
+  contents, issues and pull requests; **every token `open_pr` asks for is narrowed** to the plan's one
+  repository and to contents write, pull requests write and metadata read (`TOKEN_PERMISSIONS` in
+  `bugfix/open_pr.py`). Checked against GitHub from the act worker: the narrowed token reached 1
+  repository with exactly those permissions.
+- **Its private key:** on the X3 in `~/flotilla-remote/app/github-app.pem` (mode 600), mounted into
+  the act worker alone (`/run/flotilla/app/`). The original is kept in `~/flotilla/retired/bugfix-fleet-env/`
+  on the mini, with the old fleet's other credentials.
+- **Its ids** (not secrets): `BUGFIX_GITHUB_APP_ID` and `BUGFIX_GITHUB_APP_INSTALLATION_ID` in the X3's
+  `~/flotilla-remote/.env`.
+- The old fleet's second App, `bugfix-fleet-reviewer` (id 4356712, contents read, pull requests write,
+  17 repositories), is not used by flotilla.
 
 Without the App, `bugfix/open-pr` escalates the case ("no GitHub App configured"), and the diff on the
 case page can be applied by hand.

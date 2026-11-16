@@ -138,6 +138,10 @@ class OpenPR(unittest.TestCase):
         self.assertEqual((pr["head"], pr["base"], pr["draft"], pr["title"]), (branch, "main", True, "fix #12: value is 1"))
         self.assertFalse([c for c in f.gh.calls if "merge" in c[1]], "nothing merges")
         self.assertNotIn("fake-tok", git("config", "--list", cwd=f.remote))
+        asked = [c[3] for c in f.gh.calls if c[1] == "/app/installations/77/access_tokens"]
+        self.assertEqual(asked, [{"repositories": ["orrery"], "permissions": {"contents": "write", "pull_requests": "write",
+                                                                             "metadata": "read"}}],
+                         "the token is narrowed to the plan's repository and to contents and pull requests")
         self.assertEqual(os.listdir(f.d).count("plan.json"), 1)
         self.assertEqual(sorted(x for x in os.listdir(f.d) if x.startswith("tmp")), [], "its work directory is deleted")
 

@@ -75,7 +75,13 @@ def api(method, url, token, body=None, auth="Bearer"):
                 return e.code, None
 
 
-def installation_token(env):
+# What a pusher's token may do (SR-0001): write the branch and the draft PR, nothing else. The App itself may
+# hold more (the operator's App writes issues too and is installed on all 18 repos, 2026-11-16), so every
+# token is narrowed to the plan's one repository and these permissions when it is made.
+TOKEN_PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
+
+
+def installation_token(env, repo):
     app, inst = env.get("GITHUB_APP_ID", ""), env.get("GITHUB_APP_INSTALLATION_ID", "")
     key = env.get("GITHUB_APP_KEY_FILE", "/run/flotilla/github-app.pem")
     if not app.isdigit() or not inst.isdigit() or not os.path.exists(key):
@@ -84,7 +90,8 @@ def installation_token(env):
     if p.returncode != 0 or not p.stdout:
         raise Escalate(f"the App's JWT could not be made: {p.stderr.strip()[:200]}")
     base = env.get("GITHUB_API", "https://api.github.com").rstrip("/")
-    st, out = api("POST", f"{base}/app/installations/{inst}/access_tokens", p.stdout.strip())
+    st, out = api("POST", f"{base}/app/installations/{inst}/access_tokens", p.stdout.strip(),
+                  body={"repositories": [repo.split("/", 1)[1]], "permissions": TOKEN_PERMISSIONS})
     if st != 201 or not isinstance(out, dict) or not out.get("token"):
         raise Escalate(f"GitHub refused an installation token ({st})")
     return out["token"]
@@ -107,7 +114,7 @@ def execute(case, plan, env):
     if not REPO_RE.match(repo) or not SHA_RE.match(base) or not diff:
         raise Escalate("the plan's repo, base or diff is malformed")
     branch = "flotilla/" + case["id"]
-    token = installation_token(env)
+    token = installation_token(env, repo)
     gapi = env.get("GITHUB_API", "https://api.github.com").rstrip("/")
     if len(base) < 40:
         # git fetches a commit by its full id only: a process change's base is the image's sha-<7>
