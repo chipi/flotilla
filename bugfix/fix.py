@@ -51,6 +51,8 @@ BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE
 # writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
 READ_ONLY_TOOLS = "read,grep,find,ls"
 REQUEST_CHANGES = re.compile(r"VERDICT:\s*\**\s*request[- ]changes", re.I)
+VERDICT_LINE = re.compile(r"^[\s*_>#-]*VERDICT:", re.I)
+VERDICT_LINE_REQUESTS = re.compile(r"^[\s*_>#-]*VERDICT:\s*\**\s*request[- ]changes", re.I)
 TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/]*\.py$")
 # CI and hooks, and what `vitest related` cannot see: the repo's config, manifest and lockfile (the
 # advisor's review, 2026-11-15); a spec adds its repo's own with --out-of-scope
@@ -60,6 +62,17 @@ OUT_OF_SCOPE = re.compile(r"^(\.github/|\.husky/|\.gitlab-ci|\.circleci/)|(^|/)(
 DIFF_MAX = 16000   # the registry's max for github.open_pr's diff
 BODY_MAX = 8000
 TITLE_MAX = 200
+
+
+def review_requests_changes(review):
+    """The review's decision is its LAST line that starts with `VERDICT:` (the prompt asks it to end with
+    one); a review that quotes the instruction or names a rejected alternative mid-text is not a request.
+    With no such line, the match anywhere is kept: a reviewer that buried its verdict in a sentence still
+    asked for changes, and a spurious kick-back costs one round while a missed one ships the objection."""
+    lines = [ln for ln in (review or "").splitlines() if VERDICT_LINE.match(ln)]
+    if lines:
+        return bool(VERDICT_LINE_REQUESTS.match(lines[-1]))
+    return bool(REQUEST_CHANGES.search(review or ""))
 
 
 class Stop(Exception):
@@ -477,7 +490,7 @@ class Chain:
                 self.note("review", tail(review.splitlines()[-1] if review else "", 80))
                 # the review saw what the gates did not on 3 of phase A's 4 plans: request-changes sends the fix
                 # back while the budget lasts; after that the operator sees the plan with the review in it
-                if REQUEST_CHANGES.search(review or "") and reviewed_back < self.a.review_kickback_max \
+                if review_requests_changes(review) and reviewed_back < self.a.review_kickback_max \
                         and rnd < self.a.kickback_max:
                     reviewed_back += 1
                     self.kept = (rnd, d, review, self.checked, self.unloaded_on_base)

@@ -416,6 +416,19 @@ exec {real} "$@"
         plan, _ = h.run()
         self.assertEqual(plan["outcome"], "escalate", plan)
 
+    def test_the_review_decides_on_its_last_verdict_line(self):
+        f = self.fixture(["actionable"], ["good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write(r'approve (I rejected \"VERDICT: request-changes\")' + "\n")
+        plan, _ = f.run()
+        self.assertEqual((plan["outcome"], f.calls()), ("plan", ["triage", "fix", "review"]), plan)
+        asks = fix.review_requests_changes
+        self.assertFalse(asks("End with VERDICT: request-changes or approve.\nVERDICT: approve"))
+        self.assertTrue(asks("VERDICT: approve\nOn reflection:\n**VERDICT: request-changes**"))
+        self.assertFalse(asks("VERDICT: request-changes\nVERDICT: approve"))
+        self.assertTrue(asks("no verdict line, but VERDICT: request-changes mid-line"))
+        self.assertFalse(asks("looks fine"))
+
     def test_only_the_fixer_may_change_the_tree(self):
         """SR-0001 H8: the verdict, the advisor and the review read; only the fix step gets pi's default
         tools (the advisor once started a dev server). Read-only is a tool allowlist, not a prompt."""
