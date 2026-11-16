@@ -688,20 +688,20 @@ exec {real} "$@"
         self.assertLessEqual(len(out.encode()), fix.REVIEW_PROMPT_MAX)
         self.assertIn("[... cut:", out)
 
-    def test_step_one_closes_a_bug_whose_code_is_not_on_main_before_any_model(self):
-        # RFC-0013 §1: the fixture's main has src/a.js; the error names a function nothing at the base has
-        f = self.fixture([], [])
+    def test_step_one_is_advisory_it_notes_and_never_closes(self):
+        # RFC-0013 §1, advisory (operator, 2026-11-17): a name nothing at the base has is noted, and the verdict runs
+        f = self.fixture(["actionable"], ["good"])
         f.body = "TypeError: m.gone_from_main is not a function at src/a.js:3 (dev branch)"
         plan, _ = f.run()
-        self.assertEqual(plan["outcome"], "not_reproducible", plan)
-        self.assertIn("the failing code is not on main: gone_from_main appears nowhere", plan["detail"])
-        self.assertFalse(os.path.exists(os.path.join(f.state, "calls")), "no verdict, no fix: no model was called")
-        # --no-step-one: the chain goes to the verdict as before
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(f.calls(), ["triage", "fix", "review"], "the verdict, the fix and the review ran")
+        self.assertIn("- step one: gone_from_main appears nowhere", plan["params"]["body"])
+        # --no-step-one: no note
         g = self.fixture(["needs-info"], [])
         g.body = f.body
         plan, _ = g.run("--no-step-one")
-        self.assertEqual(plan["outcome"], "escalate", plan)
         self.assertEqual(g.calls(), ["triage"])
+        self.assertNotIn("appears nowhere", json.dumps(plan))
 
     def test_the_kick_back_limits_are_two_and_one(self):
         a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])

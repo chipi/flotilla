@@ -114,10 +114,6 @@ class Stop(Exception):
     """Ends the chain with an outcome: escalate with a reason."""
 
 
-class NotReproducible(Exception):
-    """RFC-0013 §1: step one found the bug cannot happen on the base; ends the run as not_reproducible."""
-
-
 class Terminated(BaseException):
     """The worker's SIGTERM at the routine's timeout (a BaseException: no step's error handling may catch it).
     The worker SIGKILLs 10 s later (worker/flotilla_worker.py KILL_GRACE_S), so main has that long to stop
@@ -836,13 +832,12 @@ class Chain:
 
     def rounds(self):
         self.checkout()
-        # 0 · step one (RFC-0013 §1): can the bug happen on the base at all? Deterministic, before any model
+        # 0 · step one (RFC-0013 §1), advisory: what the base has of what the error calls missing. It never closes a
+        # case (operator, 2026-11-17): its close rules closed real bugs, and dev-branch errors are left out upstream
         if self.a.step_one:
-            decision, evidence = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
-                                               self.wt, self.base)
-            self.note("step one", evidence.removeprefix("step one: "))
-            if decision == "close":
-                raise NotReproducible(evidence)
+            _, facts = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
+                                     self.wt, self.base)
+            self.note("step one", facts.removeprefix("step one (advisory): "))
         # 1 · the verdict, on the base
         v, vpath = self.verdict()
         self.note("verdict", v.get("verdict", "none"))
@@ -1022,7 +1017,8 @@ def parse(argv):
     ap.add_argument("--min-output", type=int, default=32768,
                     help="a floor for each model's reply limit pi is told (its catalog gives flash 4096, which reasoning used up before the answer); 0 keeps the catalog's")
     ap.add_argument("--no-step-one", dest="step_one", action="store_false",
-                    help="skip RFC-0013 §1's check that the failing code is on the base (bugfix/stepone.py)")
+                    help="skip RFC-0013 §1's advisory step one (bugfix/stepone.py), which notes on the chain what the base "
+                         "has of what the error calls missing; it never closes a case")
     ap.add_argument("--no-resume", dest="resume", action="store_false",
                     help="a kick-back starts a new fix session (before C10) instead of resuming the previous round's")
     ap.add_argument("--kickback-max", type=int, default=2)
@@ -1088,8 +1084,6 @@ def main(argv=None, environ=None):
         out = {"outcome": "escalate", "detail": str(e)}
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
-    except NotReproducible as e:
-        out = {"outcome": "not_reproducible", "detail": str(e)}
     finally:
         # from here a SIGTERM (the worker's, at the routine's timeout; it SIGKILLs 10 s later) must not cut the report
         # short: it only hurries the spend read, here or already under way

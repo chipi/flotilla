@@ -54,8 +54,8 @@ explain:
     fix.py checks podcast_scraper out at main into a venv with its dev extras, asks for a verdict, then
     runs fix rounds gated on pytest's reports: up to two kick-backs (one from the review), each resuming
     the fix's session; a review, then a plan or an escalation.
-    Step one first, no model (RFC-0013 §1): if the names the error calls missing are nowhere at the base, or
-    all there, the case closes not_reproducible, which can also close a real bug called on the wrong object.
+    Step one first, no model (RFC-0013 §1), advisory: it notes on the chain what main has of the names the
+    error calls missing, and never closes a case.
   models: >-
     The only aliases its runs can call: fix-podcast-flash for the coding agent, fix-podcast-reviewer for
     the advisor and the reviewer. Both use this routine's own LiteLLM key (fleet-bugfix-fix-podcast, its own

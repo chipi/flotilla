@@ -225,3 +225,9 @@ questions; the intent the simulated reporter supplied comes only from §4.
   2026-11-16 (28548a3): #651 closes (`surface_true_scale_short` is in `messages/*.json`), #659
   closes (`panel_tab_sky` is nowhere at the base), #648 and #656 are not checked (a library class
   and bundle paths only). The same four are `bugfix/test_stepone.py`'s cases.
+- 2026-11-17 — §1 made advisory (operator): it never closes a case. Homelab's reviews found both
+  close-rule versions (444a153, 0731108) closing real bugs: an attribute error on a common name,
+  `undefined is not a function`, a NameError whose name is defined in another file (a missing
+  import), a computed name, a name only in a test, a doc or a generated file. The cases it was
+  for, #651 and #659, are dev errors that intake (`is_dev`) and triage already leave out. Step one
+  now notes on the chain what main has of the names the error calls missing.

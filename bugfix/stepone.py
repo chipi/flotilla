@@ -1,24 +1,19 @@
-"""bugfix/stepone.py: RFC-0013 §1, step one: before any model, check the bug can happen on the base at all.
+"""bugfix/stepone.py: RFC-0013 §1, step one, advisory: what the base has of what the error says is missing.
 
-Deterministic, on the worktree the fix already has, at the base commit. A wrong close loses a real bug, so every
-rule only closes on strong evidence and anything else is "not checked" (the chain goes on to the verdict):
+Before any model, on the worktree the fix already has, at the base commit, it records facts on the chain; it never
+closes a case (operator, 2026-11-17). Two rounds of close rules closed real bugs (homelab's reviews of 444a153 and
+0731108: an AttributeError on `get`, `undefined is not a function`, `items.map`, a NameError whose name is defined in
+another file, i.e. a missing import, a computed name, a name only in a test, a doc or a generated file), while the cases
+it was built for, dev-branch errors such as #651 and #659, are already left out by intake (`is_dev`) and by triage.
 
-- names: only those the error says are missing (`x.name is not a function`, `name is not a function`,
-  `name is not defined`, Python's `name 'n' is not defined`), and only names that look like the project's own: at
-  least 6 characters, with an underscore or an inner capital, not a keyword, a global or a common built-in method
-  (`undefined`, `map`, `get`, `forEach`...). An attribute error names an attribute of a wrong object, never searched.
-- files: a source file the issue names (`src/...`, a `.svelte`, `.ts`, `.js` or `.py` path, or a bare
-  `Component.svelte`), never a bundled path or a library's class. A close needs one that exists at the base.
-
-Two closes, each `not_reproducible` with its evidence:
-1. the failing code is not on main: no name is in the named files, nor anywhere in the tree
-   (#659: StarPanel.svelte is on main, panel_tab_sky nowhere);
-2. what the error says is missing is on main: every name is called in a named file and defined in another file
-   (#651: SurfaceScene.svelte calls m.surface_true_scale_short, messages/*.json defines it).
-A git command that fails or times out is "not checked", never a close.
-
-Homelab's review of 444a153 (2026-11-16) found the first version closing real bugs: an AttributeError on `get`
-(present in any repo), "undefined is not a function" (a keyword taken as a name), "items.map is not a function".
+What it records:
+- the names the error says are missing (`x.name is not a function`, `name is not a function`, `name is not defined`,
+  Python's `name 'n' is not defined`) that look like the project's own (6+ characters, an underscore or an inner
+  capital, not a keyword, global or built-in method);
+- for each: whether a source file the issue names has it, and where else at the base it appears (code, tests and docs
+  alike), or that it appears nowhere at the base;
+- the named files the base does not have, and a sign of computed names (`obj[name](`, a string that starts the name);
+- "not checked" when there is nothing to search or a git command fails.
 """
 import re
 import subprocess
@@ -41,7 +36,7 @@ None True False print open len range list dict tuple str int float bool type obj
 PATH = re.compile(r"(?:^|[\s`'\"(/])((?:src|lib|app|tests?)/[\w./-]+\.(?:svelte|tsx?|jsx?|mjs|py))\b")
 COMPONENT = re.compile(r"(?<![\w/.-])([A-Z][\w-]*\.svelte)\b")
 BUNDLED = re.compile(r"_app/immutable|/chunks/|node_modules|\.[A-Za-z0-9_-]{6,}\.m?js$")
-TEST = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/]*\.py$")
+COMPUTED = re.compile(r"\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(")
 
 
 class GitError(Exception):
@@ -92,41 +87,54 @@ def files_of(text, wt, base):
 
 
 def where(wt, base, name):
-    """Non-test, non-Markdown files at the base that contain `name` as a word: [(path, line)]."""
-    out = git(wt, "grep", "-n", "-w", "-F", "-e", name, base, "--", ".", ":!*.md", ok=(0, 1))   # 1: no match
+    """Every tracked file at the base that contains `name` as a word, tests and docs included: [(path, line)]."""
+    out = git(wt, "grep", "-n", "-w", "-F", "-e", name, base, ok=(0, 1))   # 1: no match
     hits = []
     for ln in out.splitlines():
         parts = ln.split(":", 3)   # base:path:line:text
-        if len(parts) >= 3 and not TEST.search(parts[1]):
+        if len(parts) >= 3:
             hits.append((parts[1], parts[2]))
     return hits
 
 
+def computed(wt, base, files, names):
+    """Whether a named file calls through a computed name or holds a string that starts one of the names."""
+    for f in files:
+        text = git(wt, "show", f"{base}:{f}")
+        if COMPUTED.search(text):
+            return True
+        for n in names:
+            stem = n[: n.rfind("_") + 1] if "_" in n.strip("_") else ""
+            if len(stem) >= 4 and re.search(r"['\"`]" + re.escape(stem), text):
+                return True
+    return False
+
+
 def check(issue_text, wt, base):
-    """('close', evidence) for a not_reproducible close, else ('go', what was checked)."""
+    """('note', facts) for the chain's log. Advisory: it never decides anything."""
     names = names_of(issue_text)
     if not names:
-        return "go", "step one: not checked (no project-specific name the error calls missing)"
+        return "note", "step one (advisory): not checked (no project-specific name the error calls missing)"
     try:
         files, absent = files_of(issue_text, wt, base)
-        if not files:
-            return "go", f"step one: not checked (no named source file at the base; names: {', '.join(names)})"
         seen = {n: where(wt, base, n) for n in names}
+        dynamic = computed(wt, base, files, names) if files else False
     except GitError as e:
-        return "go", f"step one: not checked ({e})"
-    at = base[:12]
-    searched = f"searched {', '.join(files)}" + (f" ({', '.join(absent)} not at the base)" if absent else "") + " and the tree"
-    in_named = {n: [h for h in seen[n] if h[0] in files] for n in names}
-    elsewhere = {n: [h for h in seen[n] if h[0] not in files] for n in names}
-    if all(not seen[n] for n in names):
-        verb = "appears" if len(names) == 1 else "appear"
-        return "close", (f"step one: the failing code is not on main: {', '.join(names)} {verb} nowhere at {at} "
-                         f"({searched}); the error came from code main does not have")
-    if all(in_named[n] and elsewhere[n] for n in names):
-        found = "; ".join(f"{n} called at {in_named[n][0][0]}:{in_named[n][0][1]}, defined at "
-                          f"{elsewhere[n][0][0]}:{elsewhere[n][0][1]}" for n in names)
-        return "close", (f"step one: what the error says is missing is on main at {at}: {found}; "
-                         "the bug cannot happen there")
-    return "go", f"step one: checked, no close ({searched}): " + ", ".join(
-        f"{n} {'in the named file' if in_named[n] else 'not in the named file'}, "
-        f"{'elsewhere too' if elsewhere[n] else 'nowhere else'}" for n in names)
+        return "note", f"step one (advisory): not checked ({e})"
+    facts = []
+    for n in names:
+        in_named = [h for h in seen[n] if h[0] in files]
+        others = [h for h in seen[n] if h[0] not in files]
+        if not seen[n]:
+            facts.append(f"{n} appears nowhere at {base[:12]}")
+        else:
+            where_ = ", ".join(f"{p}:{line}" for p, line in (in_named + others)[:3])
+            facts.append(f"{n} {'in a named file' if in_named else 'not in a named file'}; at {where_}")
+    extra = []
+    if files:
+        extra.append(f"named files on main: {', '.join(files)}")
+    if absent:
+        extra.append(f"named files not on main: {', '.join(absent)}")
+    if dynamic:
+        extra.append("a named file computes names (obj[name]( or a string that starts a name)")
+    return "note", "step one (advisory): " + "; ".join(facts + extra)
