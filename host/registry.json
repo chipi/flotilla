@@ -32,9 +32,9 @@
     {
       "name": "github.open_pr",
       "executor": "repo",
-      "for_kinds": ["code_bug", "process_change"],
+      "for_kinds": ["code_bug", "code_bug_python", "process_change"],
       "params": {
-        "repo": {"kind": "enum", "enum": ["chipi/orrery", "chipi/flotilla"]},
+        "repo": {"kind": "enum", "enum": ["chipi/orrery", "chipi/flotilla", "chipi/podcast_scraper"]},
         "base": {"kind": "text", "max": 40},
         "title": {"kind": "text", "max": 200},
         "body": {"kind": "text", "max": 8000},

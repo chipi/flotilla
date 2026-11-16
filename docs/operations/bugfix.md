@@ -147,7 +147,8 @@ printed.
    default:
      project: flotilla-bugfix
      action: enforce
-     allowed_domains: [litellm, github.com, codeload.github.com, api.github.com, registry.npmjs.org]
+     allowed_domains: [litellm, github.com, codeload.github.com, api.github.com, registry.npmjs.org,
+                       pypi.org, files.pythonhosted.org]   # pypi: fix-podcast's venv
    ```
 
    A package whose install fetches a binary from elsewhere is denied, and the denial is logged: add

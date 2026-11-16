@@ -45,7 +45,8 @@ On the machine, as the operator's user, in `FLOTILLA_REMOTE` (the X3: `~/flotill
      project: flotilla-remote
      action: enforce
      allowed_domains: [homelab, github.com, codeload.github.com, api.github.com, registry.npmjs.org,
-                       release-assets.githubusercontent.com, objects.githubusercontent.com]
+                       release-assets.githubusercontent.com, objects.githubusercontent.com,
+                       pypi.org, files.pythonhosted.org]   # pypi: fix-podcast's venv
    ```
 
 5. **`.env`** (no secrets in it):
