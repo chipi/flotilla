@@ -290,10 +290,10 @@ class TestCodeVersion(unittest.TestCase):
         sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1", "raw": {},
                "event_facts": {"environment": "prod", "release": "sha-1234567"}}
         body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
-        self.assertIn("**Environment:** prod, release `sha-1234567`", body)
+        self.assertIn("**Environment:** `prod`, release `sha-1234567`", body)
         sig["raw"] = {"lastRelease": {"shortVersion": "sha-1234567"}}      # the Code version line already says it
         body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
-        self.assertIn("**Environment:** prod\n", body + "\n")
+        self.assertIn("**Environment:** `prod`\n", body + "\n")
 
     def test_event_facts_come_from_the_probe_first_and_fetch_only_when_asked(self):
         sig = {"source": "glitchtip", "issue_id": "7"}
@@ -325,13 +325,37 @@ class TestCodeVersion(unittest.TestCase):
                "event_facts": {"environment": "prod\n@ops", "release": "r`1\n@x"}}
         body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
         self.assertIn("**Where:** `a ## injected @​org/team b`", body)
-        self.assertIn("**Environment:** prod @​ops, release `r1 @​x`", body)
+        self.assertIn("**Environment:** `prod @​ops`, release `r1 @​x`", body)
         self.assertNotIn("\n## injected", body)
         self.assertNotIn("@org", body)
         self.assertNotIn("@ops", body)
         src = next(l for l in body.splitlines() if l.startswith("**Source:**"))
         self.assertNotIn("`", src)
         self.assertNotIn("@x", src)
+        self.assertIn("[P-1\\] @​org/team](https://g.example/i/1)", src)
+
+    def test_build_issue_text_outside_a_code_span_cannot_make_markdown(self):
+        sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1",
+               "raw": {"permalink": "https://g.example/i/1", "shortId": "](http://e)<b>#1 *x* _y_ ![i] |",
+                       "count": "[p](q) @team", "userCount": "<img src=x>", "firstSeen": "2026-11-14T08:01:02Z"},
+               "event_facts": {"environment": "[x](http://evil) <img src=x> #123"}}
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        src = next(l for l in body.splitlines() if l.startswith("**Source:**"))
+        text = src[src.index("[") + 1:src.rindex("](")]
+        for ch in "[]()<>!#*_|":
+            self.assertNotIn(ch, text.replace("\\" + ch, ""), (ch, src))
+        env = next(l for l in body.splitlines() if l.startswith("**Environment:**"))
+        self.assertEqual(env, "**Environment:** `[x](http://evil) <img src=x> #123`")
+        self.assertNotIn("**Seen:**", body)    # count is not a number: the whole line is left out
+
+    def test_build_issue_counts_are_numbers_or_left_out(self):
+        base = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1"}
+        f = {"symptom": "s", "acceptance": [], "evidence": []}
+        raw = {"firstSeen": "2026-11-14T08:01:02Z", "count": "12", "userCount": "[u](http://e) @team"}
+        body = actions.build_issue(dict(base, raw=raw), f)["body"]
+        self.assertIn("**Seen:** 12 events; first 2026-11-14 08:01 UTC", body)
+        self.assertNotIn("users", body)
+        self.assertNotIn("@team", body)
 
     def test_build_issue_caps_a_long_fact(self):
         sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1",
@@ -343,7 +367,10 @@ class TestCodeVersion(unittest.TestCase):
 
     def test_build_issue_drops_an_unsafe_permalink(self):
         for bad in ("javascript:alert(1)", "https://x.example/a b", "https://x.example/a)b",
-                    "https://x.example/a>b", "https://x.example/a\nb", "ftp://x.example/a"):
+                    "https://x.example/a>b", "https://x.example/a\nb", "ftp://x.example/a",
+                    "https://x.example/a\x00b", "https://x.example/a\x7fb", "https://x.example/a​b",
+                    "https://x.example/a(b", "https://x.example/a[b", "https://x.example/a]b",
+                    "https://x.example/a\\b", 'https://x.example/a"b', "https://x.example/\u00e9"):
             sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1",
                    "raw": {"permalink": bad, "shortId": "P-1"}}
             body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
@@ -351,6 +378,11 @@ class TestCodeVersion(unittest.TestCase):
         sig["raw"]["permalink"] = "http://x.example/a"
         body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
         self.assertIn("**Source:** [P-1](http://x.example/a)", body)
+
+    def test_parse_utc_never_raises(self):
+        for ts in ("0001-01-01T00:00:00+05:00", "9999-12-31T23:59:59-05:00", 5, ["x"], {"a": 1}, b"2026"):
+            self.assertIsNone(actions.parse_utc(ts), ts)
+            self.assertEqual(actions._utc(ts), "")
 
     def test_utc_reads_a_timestamp_without_an_offset_as_utc(self):
         saved = os.environ.get("TZ")
@@ -1376,6 +1408,13 @@ class TestPollWide(unittest.TestCase):
             self.issues[n]["raw"] = {"firstSeen": ts}
         self.o.run_glitchtip(limit=5, dry_run=True)
         self.assertEqual(self.triaged, [f"glitchtip:X-{n}" for n in (4, 3, 5, 6, 7)])
+
+    def test_a_first_seen_that_overflows_does_not_crash_the_poll_and_sorts_last(self):
+        for n, ts in ((3, "0001-01-01T00:00:00+05:00"), (4, "9999-12-31T23:59:59-05:00"), (5, 12345),
+                      (6, "2026-11-14T08:00:01Z")):
+            self.issues[n]["raw"] = {"firstSeen": ts}
+        self.o.run_glitchtip(limit=4, dry_run=True)
+        self.assertEqual(self.triaged, [f"glitchtip:X-{n}" for n in (6, 3, 4, 5)])
 
     def test_a_first_seen_without_an_offset_is_utc_in_the_sort(self):
         self.issues[3]["raw"] = {"firstSeen": "2026-11-14T08:00:03"}

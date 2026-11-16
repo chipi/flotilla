@@ -14,6 +14,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 
 import capture
 import config
@@ -166,15 +167,20 @@ def signal_code_version(signal):
 def parse_utc(ts):
     """An ISO timestamp as an aware UTC datetime; None when absent or unparsable. No offset reads as UTC."""
     # fractions dropped first: python 3.9's fromisoformat (the mini's) refuses GlitchTip's 1-5 digit ones
-    v = str(ts or "").replace("Z", "+00:00")
+    if not isinstance(ts, str):
+        return None
+    v = ts.replace("Z", "+00:00")
     if "." in v:
         head, _, rest = v.partition(".")
         v = head + rest[len(rest) - len(rest.lstrip("0123456789")):]
     try:
         t = datetime.datetime.fromisoformat(v)
-    except ValueError:
+    except (ValueError, OverflowError, TypeError):
         return None
-    return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).astimezone(datetime.timezone.utc)
+    try:
+        return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).astimezone(datetime.timezone.utc)
+    except OverflowError:   # 0001-01-01+05:00 and 9999-12-31-05:00 leave the datetime range in UTC
+        return None
 
 
 def _utc(ts):
@@ -191,10 +197,26 @@ def _span_safe(value, cap=200):
     return v if len(v) <= cap else v[:cap - 1] + "\u2026"
 
 
+def _md_text(value):
+    """_span_safe, then backslash-escaped for Markdown text outside a code span (link text)."""
+    return re.sub(r"([\[\]()<>!#\\*_|])", r"\\\1", _span_safe(value))
+
+
+# Any host: the permalinks real issues carry are http://<the mini's address>:8090/<project>/issues/<n>, which is not
+# config.GLITCHTIP_URL's host name, so pinning to that would drop them all
+_URL_UNSAFE = re.compile(r"[\x00-\x20\x7f\"<>()\[\]\\]|[^\x00-\x7f]")
+
+
 def _safe_url(url):
-    u = str(url or "")
-    ok = u.startswith(("https://", "http://")) and not any(c.isspace() or c in ")>" for c in u)
-    return u if ok else ""
+    u = url if isinstance(url, str) else ""
+    return u if u.startswith(("https://", "http://")) and not _URL_UNSAFE.search(u) else ""
+
+
+def _count(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 def signal_facts(signal):
@@ -204,19 +226,19 @@ def signal_facts(signal):
     out = []
     link = _safe_url(raw.get("permalink"))
     if link:
-        out.append(f"**Source:** [{_span_safe(raw.get('shortId') or 'GlitchTip issue')}]({link})")
+        out.append(f"**Source:** [{_md_text(raw.get('shortId') or 'GlitchTip issue')}]({link})")
     culprit = _span_safe(raw.get("culprit") or "")
     if culprit:
         out.append(f"**Where:** `{culprit}`")
     first, last = _utc(raw.get("firstSeen")), _utc(raw.get("lastSeen"))
-    if raw.get("count") not in (None, "") and first:
-        users = raw.get("userCount")
-        seen = f"{raw['count']} events" + (f", {users} users" if users not in (None, "") else "")
+    count, users = _count(raw.get("count")), _count(raw.get("userCount"))
+    if count is not None and first:
+        seen = f"{count} events" + (f", {users} users" if users is not None else "")
         out.append(f"**Seen:** {seen}; first {first}" + (f", last {last}" if last else ""))
     ev = signal.get("event_facts") or {}
     rel = _span_safe(ev.get("release") or "") if not signal_code_version(signal) else ""   # the Code version line says it otherwise
     env = _span_safe(ev.get("environment") or "")
-    parts = [p for p in (env, f"release `{rel}`" if rel else "") if p]
+    parts = [p for p in (f"`{env}`" if env else "", f"release `{rel}`" if rel else "") if p]
     if parts:
         out.append("**Environment:** " + ", ".join(parts))
     return out
