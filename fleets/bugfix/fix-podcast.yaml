@@ -3,7 +3,8 @@ routine: fix-podcast
 description: >-
   The per-repo profile of bugfix/fix for chipi/podcast_scraper (pytest): the same chain as fix, with
   a venv installed in the worker's scratch, pytest-json-report's reports, the related tests of the
-  mirrored test directories, and the Python repo's own out-of-scope files.
+  mirrored test directories, and (built in under --test-format pytest, at any depth) conftest.py, the
+  pytest and build config, requirements, constraints and lock files out of scope.
 enabled: false
 # NOT ENABLED. Enabling it is ROADMAP B8 (podcast_scraper in shadow) and needs the operator's go. It
 # also needs, before then: a case kind of its own (flotillad allows one acting routine per kind, and
@@ -15,8 +16,8 @@ trigger:
   case: {kind: code_bug_python}
 models: [bugfix-flash, bugfix-reviewer]
 run:
-  # BUGFIX_VENV (outside the worktree, deleted with the run) and PIP_CACHE_DIR (under the scratch
-  # volume) are set by fix.py; HOME is the run's directory. --test-cmd and --setup run under sh in
+  # BUGFIX_VENV (outside the worktree, deleted with the run) and PIP_CACHE_DIR (the run's own,
+  # deleted with it) are set by fix.py; HOME is the run's directory. --test-cmd and --setup run under sh in
   # the worktree, after fix.py has put its environment in; the report path replaces %s and the test
   # files (or the related directories) are appended. --continue-on-collection-errors: a test file
   # that cannot load on the base must not stop the others from running.
@@ -29,7 +30,6 @@ run:
     --test-format pytest
     --related pytest-dirs --source-root src/podcast_scraper --test-root tests/unit/podcast_scraper
     --exclude-path tests/fixtures/audio
-    --out-of-scope '^(pyproject\.toml|Makefile|setup\.(py|cfg)|requirements[^/]*\.txt|(tests/)?conftest\.py|\.pre-commit-config\.yaml)$'
     --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2
   workdir: .
   timeout: 3h

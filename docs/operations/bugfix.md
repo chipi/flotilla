@@ -31,7 +31,7 @@ per case kind, so a second repo needs a kind of its own.
 | `--test-format` | the report's shape: `vitest`, or `pytest` (pytest-json-report) | `vitest` |
 | `--related` | `vitest`: `--related-cmd` on the changed source files; `pytest-dirs`: see below | `vitest` |
 | `--source-root`, `--test-root` | for `pytest-dirs`: the source tree and the test tree that mirrors it | none |
-| `--out-of-scope` | a regex of paths a fix may not touch (added to the built-in CI, hook and JS config set) | none |
+| `--out-of-scope` | a regex of paths a fix may not touch (added to the built-in sets: CI, hooks, JS config; and under `--test-format pytest`, `PYTEST_OUT_OF_SCOPE`) | none |
 | `--exclude-path` | a tree not checked out (sparse) | none |
 
 **The pytest format.** The report is read into the one per-file result the gates use for vitest:
@@ -45,20 +45,37 @@ run that only skipped must not look green. The test command should pass
 **The related mode `pytest-dirs`.** For each changed source file under `--source-root`
 (`src/pkg/a/b.py`) the tests in the mirrored directory (`<test-root>/a/`) run, through `--test-cmd`
 and the same report. A module directly under the source root maps to `<test-root>/test_<module>.py`.
-A file with no mirror is logged (`related: no mirrored test directory for ...: skipped`) and skipped;
-it never widens to the whole suite. The gate is the same as for vitest: no failure that the base
-did not have.
+A file with no mirror is logged (`related: no mirrored test directory for ...: skipped`), named in the
+plan's checked line, and left out; it never widens to the whole suite. When changed files under the
+source root exist and **none** maps to a test directory (only `__init__.py`, or non-`.py` files),
+the gate **fails closed**: nothing related ran, so it is a kick-back, not a pass. Otherwise it is the
+same as for vitest: no failure that the base did not have.
 
 **The environment a profile gets.** `BUGFIX_VENV` is a directory under the scratch volume
-(`venvs/<run>`, outside the worktree, deleted when the run ends); `PIP_CACHE_DIR` is under the
-scratch volume too, since `HOME` is the run's own directory and is deleted.
+(`venvs/<run>`, outside the worktree, deleted when the run ends). `PIP_CACHE_DIR` is the run's own
+(`<run>/pip-cache`, deleted with it): a cache shared between runs would let a wheel that one run's
+test code planted be installed by the next, so every run downloads its wheels again.
+
+**What a pytest fix may not touch.** Under `--test-format pytest`, at any depth: `conftest.py`,
+`sitecustomize.py`, `usercustomize.py`, `*.pth`, `pytest.ini`, `tox.ini`, `.coveragerc`, `setup.py`,
+`setup.cfg`, `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml`, `requirements*.txt`,
+`constraints*.txt`, `*.lock` and `requirements/`. pytest imports a conftest at collection, in the base
+run and the fixed run, with the worker's environment. Such a file is never counted as a test file,
+and only `.py` files are handed to pytest.
+
+**A setup or teardown error is not a failure.** pytest-json-report's outcome `error` (a fixture that
+exists only in the fix, say) counts as not run, not as the test failing on the base; only a failed
+call phase is a failure.
+
+**The image.** `python3` is bookworm's 3.11.2 and podcast_scraper requires `>=3.10` at every base
+checked. The image has `python3-pip` and `python3-venv` and no compiler: a dependency with no wheel
+for it will not build.
 
 `fleets/bugfix/fix-podcast.yaml` is the profile for chipi/podcast_scraper (pytest). It is **not
 enabled**: enabling it is ROADMAP B8 and needs the operator's go. It also needs an intake that
 detects its case kind (`code_bug_python` in the spec), the repo in `github.open_pr`'s repo enum
 (`host/registry.json`), and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
-The worker image has `python3-pip` and `python3-venv` for it. Nothing has run against the real
-repo yet.
+Nothing has run against the real repo yet.
 
 ## Quick reference
 

@@ -60,6 +60,13 @@ TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/
 OUT_OF_SCOPE = re.compile(r"^(\.github/|\.husky/|\.gitlab-ci|\.circleci/)|(^|/)(package\.json|package-lock\.json|"
                           r"npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig[^/]*\.json|"
                           r"(vitest|vite|svelte|playwright)\.config\.[cm]?[tj]s)$")
+# What a pytest run executes or is configured by, wherever it sits in the tree: conftest.py and the
+# sitecustomize/.pth hooks are imported at collection or at interpreter start, with the worker's
+# environment; the config, manifest, lock and constraints files decide what is installed and how it runs.
+# The built-in default under --test-format pytest, so a spec that forgets --out-of-scope is still protected.
+PYTEST_OUT_OF_SCOPE = re.compile(r"(^|/)(conftest\.py|sitecustomize\.py|usercustomize\.py|[^/]*\.pth|pytest\.ini|tox\.ini|"
+                                 r"\.coveragerc|setup\.(py|cfg)|pyproject\.toml|Makefile|\.pre-commit-config\.yaml|"
+                                 r"requirements[^/]*\.txt|constraints[^/]*\.txt|[^/]*\.lock)$|^requirements/")
 DIFF_MAX = 16000   # the registry's max for github.open_pr's diff
 BODY_MAX = 8000
 TITLE_MAX = 200
@@ -187,15 +194,22 @@ def parse_pytest(rep, files):
     broken install skips them and a run that only skipped must not look green. A file with no test that
     passed or failed, a collector that did not pass, and a requested file with no result at all are all
     unloaded (not run)."""
-    fails, ran, seen = set(), set(), {}
+    fails, unloaded, seen = set(), set(), {}
     for t in rep.get("tests") or []:
-        file, _, name = (t.get("nodeid") or "").partition("::")
+        nodeid = t.get("nodeid") or ""
+        file, _, name = nodeid.partition("::")
         outcome = t.get("outcome")
-        executed = outcome in ("passed", "xpassed", "failed", "error")
+        # "error" is a failed setup or teardown (a fixture that does not exist on the base, say), not a
+        # test that ran and failed: it is a failure only when its call phase failed, else not run
+        if outcome == "error" and (t.get("call") or {}).get("outcome") == "failed":
+            outcome = "failed"
+        executed = outcome in ("passed", "xpassed", "failed")
         seen[file] = seen.get(file, False) or executed
-        if outcome in ("failed", "error"):
-            fails.add(file + "::" + name)
-    unloaded = {f for f, executed in seen.items() if not executed}
+        if outcome == "failed":
+            fails.add(nodeid)
+        elif outcome == "error":
+            unloaded.add(nodeid)
+    unloaded |= {f for f, executed in seen.items() if not executed}
     for c in rep.get("collectors") or []:
         if c.get("outcome") != "passed":
             unloaded.add((c.get("nodeid") or "").partition("::")[0] or "(collection)")
@@ -267,6 +281,7 @@ class Chain:
         self.wt = os.path.join(run_dir, "wt")              # BAKEOFF_WT: the worktree
         self.triaged = os.path.join(run_dir, "triaged")    # BAKEOFF_TRIAGED_DIR: the manifests
         self.log = []
+        self.rel_targets, self.rel_unmapped, self.rel_considered = [], [], []
         self.venv = os.path.join(a.scratch, "venvs", os.path.basename(run_dir))
         upstream = dict(x.split("=", 1) for x in a.upstream)
         cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ, upstream)
@@ -279,9 +294,10 @@ class Chain:
                          "TRIAGE_MODEL": self.worker, "ADVISOR_MODEL": self.advisor,
                          "PI_MODEL": self.worker, "npm_config_cache": os.path.join(a.scratch, "npm-cache"),
                          "HOME": run_dir,
-                         # a Python repo's venv and pip cache: outside the worktree, and not under HOME
-                         # (the run's directory); the venv is deleted with the run
-                         "BUGFIX_VENV": self.venv, "PIP_CACHE_DIR": os.path.join(a.scratch, "pip-cache"),
+                         # a Python repo's venv and pip cache: outside the worktree; both are the run's own
+                         # and deleted with it (a cache shared between runs would let a wheel that one
+                         # run's test code planted be installed by the next)
+                         "BUGFIX_VENV": self.venv, "PIP_CACHE_DIR": os.path.join(run_dir, "pip-cache"),
                          # no git hook runs, in any git this run starts: the repo cache is shared between
                          # runs, and a hook planted by one run's code would run in the next (the review,
                          # docs/security-reviews)
@@ -431,9 +447,12 @@ class Chain:
         if not files:
             return "the fix changed nothing", files, stream, stats
         tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
+        if self.a.test_format == "pytest":   # only .py files go to pytest; a conftest or config is never a test
+            tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]
         if not tests:
             return "repro-first violated: no test in the diff", files, stream, stats
-        bad = [x for x in files if OUT_OF_SCOPE.search(x) or any(re.search(o, x) for o in self.a.out_of_scope)]
+        bad = [x for x in files if OUT_OF_SCOPE.search(x) or any(re.search(o, x) for o in self.a.out_of_scope)
+               or (self.a.test_format == "pytest" and PYTEST_OUT_OF_SCOPE.search(x))]
         if bad:
             return f"out of scope: the diff touches {', '.join(bad)}", files, stream, stats
         return self.gates(files, tests), files, stream, stats
@@ -473,40 +492,56 @@ class Chain:
                     "nothing shows the bug before the fix")
         if fixed.unloaded or fixed.fails:
             return f"the fix's own tests fail with the fix: {tail('; '.join(sorted(fixed.unloaded | fixed.fails)), 300)}"
+        if self.a.related == "pytest-dirs" and self.rel_considered and not self.rel_targets:
+            return (f"related: no changed source file under {self.a.source_root} maps to a test directory under "
+                    f"{self.a.test_root} ({', '.join(self.rel_unmapped)}): no related test ran, so nothing shows the change "
+                    "breaks none")
         new = sorted((rel.fails | rel.unloaded) - (base_rel.fails | base_rel.unloaded))
         if new:
             return f"{len(new)} new failures in the related tests: {tail('; '.join(new), 300)}"
         self.checked = f"{len(tests)} test files fail on the base and pass with the fix; {len(rel.ran)} related files, none newly failing"
+        if self.rel_unmapped:
+            self.checked += f"; no mirrored test directory for {', '.join(self.rel_unmapped)}"
         return ""
 
     def tests(self, cmd, files):
         return run_tests(self.wt, cmd, files, self.env, self.a.test_timeout, self.a.test_format)
 
+    def mirror(self, src):
+        """pytest-dirs: (the existing mirrored test paths, the changed files under the source root with none,
+        the changed files under the source root). src/<root>/a/b.py -> <test-root>/a/; a module straight under
+        the source root -> <test-root>/test_<module>.py; a non-.py file has no mirror."""
+        root, troot = self.a.source_root.rstrip("/") + "/", self.a.test_root.rstrip("/")
+        targets, unmapped, considered = set(), [], [x for x in src if x.startswith(root)]
+        for x in considered:
+            rel = x[len(root):]
+            t = None
+            if x.endswith(".py"):
+                parent = os.path.dirname(rel)
+                t = os.path.join(troot, parent) if parent else os.path.join(troot, "test_" + os.path.basename(rel))
+            if t and os.path.exists(os.path.join(self.wt, t)):
+                targets.add(t)
+            else:
+                unmapped.append(x)
+        return sorted(t for t in targets if not any(t.startswith(o + "/") for o in targets)), unmapped, considered
+
     def related(self, src, say):
         """The tests related to the changed source files. vitest: --related-cmd on them. pytest-dirs: --test-cmd
-        on the mirrored test directories (src/<root>/a/b.py -> <test-root>/a/; a module straight under the
-        source root -> <test-root>/test_<module>.py); a file with no mirror is noted and skipped, never
-        widened to the whole suite."""
+        on the mirrored test directories (see mirror); a file with no mirror is noted and left out, never
+        widened to the whole suite, and when none maps the gate fails (gates). say: the final tree's call."""
         if not src:
             return Tests(set(), set(), set())
         if self.a.related != "pytest-dirs":
             return run_tests(self.wt, self.a.related_cmd, src, self.env, self.a.test_timeout, self.a.test_format)
-        root, troot = self.a.source_root.rstrip("/") + "/", self.a.test_root.rstrip("/")
-        targets = set()
-        for x in src:
-            rel = x[len(root):] if x.startswith(root) and x.endswith(".py") else None
-            parent = os.path.dirname(rel) if rel else None
-            t = None if rel is None else (os.path.join(troot, parent) if parent else
-                                          os.path.join(troot, "test_" + os.path.basename(rel)))
-            if t and os.path.exists(os.path.join(self.wt, t)):
-                targets.add(t)
-            elif say:
+        targets, unmapped, considered = self.mirror(src)
+        if say:
+            self.rel_targets, self.rel_unmapped, self.rel_considered = targets, unmapped, considered
+            for x in unmapped:
                 self.note("related", f"no mirrored test directory for {x}: skipped")
-        targets = sorted(t for t in targets if not any(t.startswith(o + "/") for o in targets))
+            if targets:
+                self.note("related", ", ".join(targets))
         if not targets:
             return Tests(set(), set(), set())
-        if say:
-            self.note("related", ", ".join(targets))
         return self.tests(self.a.test_cmd, targets)
 
     def diff(self):
