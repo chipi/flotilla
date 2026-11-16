@@ -32,6 +32,7 @@ from http_util import post_json
 # here, /opt/flotilla/runtime in the worker image. An extract of signal-fleet/ must carry it beside.
 try:
     import harness
+    import knowledge
     import loaded
     import model_client
     import skills
@@ -39,6 +40,7 @@ except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
     try:
         import harness
+        import knowledge
         import loaded
         import model_client
         import skills
@@ -222,8 +224,15 @@ def _read_playbook():
 _SYSTEM = _read_playbook()
 
 
+def _menu():
+    """The probe menu, and a line for the external knowledge the routine's spec declares (RFC-0002 §7) when
+    its volume is filled. Without that line the prompt is the one before knowledge existed."""
+    line = knowledge.menu_line()
+    return probes.menu() + ("\n" + line if line else "")
+
+
 def _sys():
-    return _SYSTEM % (MAX_PROBES, probes.menu())
+    return _SYSTEM % (MAX_PROBES, _menu())
 
 
 PROMPT_SHA = hashlib.sha1(_sys().encode()).hexdigest()[:8]
@@ -531,7 +540,21 @@ def _finish(signal, disp, trace, gates, usage, t0, trace_id=None):
 def _probe(signal, name, args, table):
     # what a probe returns is outside data in the model's context (G7)
     loaded.record("probe", "untrusted", f"probe {name}", _trim(json.dumps(args, sort_keys=True), 200))
+    if name == "knowledge" and table is None and knowledge.available():
+        return _knowledge(args)
     return probes.run_probe(signal, name, args, table=table)
+
+
+def _knowledge(args):
+    """The `knowledge` tool: an entry by an exact key of a declared path map, as a delimited data block that
+    fits the harness's result cut (the cut would otherwise take the closing delimiter). Never raises."""
+    if not isinstance(args, dict):
+        return "<knowledge: args must be {source, query, key}>"
+    try:
+        entry = knowledge.read(args.get("source"), args.get("query"), args.get("key"))
+        return knowledge.data_block(entry, _harness_cfg()["quirks"]["result_chars"])
+    except knowledge.KnowledgeError as e:
+        return f"<knowledge: {e}>"
 
 
 def investigate(signal, max_probes=None, probe_table=None):

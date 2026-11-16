@@ -18,3 +18,9 @@ autonomy: shadow
 budget:
   day_usd: 0
 freshness: 75m
+# External knowledge (RFC-0002 §7): the homelab handbook's page for a case kind. A proposal cites its
+# path and version as one more line of evidence for the person who answers it. A kind with no page, or a
+# worker whose volume is not filled, leaves the review as it was.
+knowledge:
+  sources: [homelab-handbook]
+  queries: [by_case_kind]

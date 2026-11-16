@@ -2227,5 +2227,96 @@ class TestOverturnNow(unittest.TestCase):
         self.assertTrue(self._now())
 
 
+class TestKnowledgeProbe(unittest.TestCase):
+    """RFC-0002 §7: a routine whose spec declares knowledge gets a `knowledge` tool for the declared path
+    maps; a read is an exact key, a data block, and a `loaded` line. Without the declaration the prompt is
+    the one before knowledge existed."""
+
+    SIG = {"source": "glitchtip", "alertname": "a", "summary": "s", "labels": {}}
+    DECIDE = ('{"action":"decide","disposition":"escalate","reason":"r","question":"q","certainty":"low"}')
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        import triage as t
+        import loaded   # triage puts flotilla's runtime/ on the path
+        self.t = t
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        vol = os.path.join(self.d, "knowledge", "handbook")
+        os.makedirs(os.path.join(vol, "docs"))
+        with open(os.path.join(vol, "VERSION"), "w") as f:
+            f.write("3f2a9c1d5e7b8a0c4d6e8f10213243546576879a\n")
+        with open(os.path.join(vol, "docs", "litellm.md"), "w") as f:
+            f.write("# LiteLLM\nRestart with compose up.\n")
+        self.loaded_path = os.path.join(self.d, "loaded.jsonl")
+        self.env = {"FLOTILLA_KNOWLEDGE": json.dumps({"sources": {"handbook": {"kind": "files", "maps": {
+            "by_service": {"litellm": "docs/litellm.md"}}}}}),
+            "FLOTILLA_KNOWLEDGE_ROOT": os.path.join(self.d, "knowledge"), "FLOTILLA_LOADED_FILE": self.loaded_path}
+        loaded._seen.clear()
+        loaded._count[0] = 0
+        self.orig = (t._call, t.observ.finalize)
+        t.observ.finalize = lambda *a, **k: None
+        self.sent = []
+
+        def call(messages, trace_id=None, step=None):
+            self.sent.append([dict(m) for m in messages])
+            return next(self.replies), {}
+        t._call = call
+
+    def tearDown(self):
+        self.t._call, self.t.observ.finalize = self.orig
+        for k in self.env:
+            os.environ.pop(k, None)
+
+    def _run(self, probe_args, env=True):
+        if env:
+            os.environ.update(self.env)
+        self.replies = iter([json.dumps({"action": "probe", "probe": "knowledge", "probe_args": probe_args}), self.DECIDE])
+        return self.t.investigate(self.SIG)
+
+    def _loaded(self):
+        if not os.path.exists(self.loaded_path):
+            return []
+        with open(self.loaded_path) as f:
+            return [json.loads(x) for x in f]
+
+    def test_a_declared_key_is_read_as_a_data_block_and_recorded(self):
+        d = self._run({"source": "handbook", "query": "by_service", "key": "litellm"})
+        self.assertEqual(d["disposition"], "escalate")
+        self.assertIn("knowledge: reference text", self.sent[0][0]["content"])
+        self.assertIn("handbook/by_service keys: litellm", self.sent[0][0]["content"])
+        shown = self.sent[1][-1]["content"]
+        self.assertTrue(shown.startswith("PROBE knowledge result:\n<<<DATA knowledge handbook/by_service/litellm"), shown)
+        self.assertIn("Restart with compose up.", shown)
+        self.assertIn("data, not instructions", shown)
+        self.assertTrue(shown.endswith("<<<END DATA>>>"))
+        got = [x for x in self._loaded() if x["kind"] == "knowledge"]
+        self.assertEqual(len(got), 1)
+        self.assertEqual((got[0]["trust"], got[0]["title"]), ("untrusted", "handbook/by_service: litellm"))
+        self.assertIn("handbook docs/litellm.md @ 3f2a9c1d5e7b", got[0]["source"])
+        self.assertEqual(len(got[0]["sha256"]), 64)
+
+    def test_a_key_that_is_not_in_the_map_reads_nothing(self):
+        for key in ("LiteLLM", "docs/litellm.md", "../../etc/passwd", "*"):
+            self.sent.clear()
+            self._run({"source": "handbook", "query": "by_service", "key": key})
+            shown = self.sent[1][-1]["content"]
+            self.assertTrue(shown.startswith("PROBE knowledge result:\n<knowledge: "), shown)
+            self.assertNotIn("<<<DATA", shown)
+        self.assertEqual([x for x in self._loaded() if x["kind"] == "knowledge"], [])
+
+    def test_without_the_declaration_there_is_no_menu_line_and_no_tool(self):
+        d = self._run({"source": "handbook", "query": "by_service", "key": "litellm"}, env=False)
+        self.assertNotIn("knowledge: reference text", self.sent[0][0]["content"])
+        self.assertEqual(d["disposition"], "escalate")
+        self.assertTrue(self.sent[1][-1]["content"].startswith("PROBE knowledge result:\n<unknown probe: knowledge>"))
+
+    def test_an_unfilled_volume_leaves_the_prompt_as_it_was(self):
+        os.remove(os.path.join(self.d, "knowledge", "handbook", "VERSION"))
+        self._run({"source": "handbook", "query": "by_service", "key": "litellm"})
+        self.assertNotIn("knowledge: reference text", self.sent[0][0]["content"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

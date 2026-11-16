@@ -53,3 +53,7 @@ harness:
     reply_echo_chars: 600
     decision_echo_chars: 400
     result_chars: 1800
+# The same external knowledge as the live routine (RFC-0002 §7), so the shadow comparison measures it.
+knowledge:
+  sources: [homelab-handbook]
+  queries: [by_service]

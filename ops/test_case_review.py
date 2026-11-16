@@ -248,5 +248,65 @@ class ProcessChange(unittest.TestCase):
         self.assertEqual(pc.decide(bad, self.root)["outcome"], "escalate")
 
 
+class RunbookEvidence(unittest.TestCase):
+    """RFC-0002 §7 in ops: a proposal cites the handbook's page for its case kind, read by an exact key of the
+    declared by_case_kind map and recorded as read; a kind with no page, or no knowledge, changes nothing."""
+
+    def setUp(self):
+        import knowledge
+        self.k = knowledge
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        src = os.path.join(self.d, "knowledge", "handbook")
+        os.makedirs(os.path.join(src, "docs", "recipes"))
+        with open(os.path.join(src, "VERSION"), "w") as f:
+            f.write("3f2a9c1d5e7b8a0c4d6e8f10213243546576879a\n")
+        with open(os.path.join(src, "docs", "recipes", "backup.md"), "w") as f:
+            f.write("# Backup runbook\nCheck the off-box job first.\n")
+        self.loaded = os.path.join(self.d, "loaded.jsonl")
+        self.env = {"FLOTILLA_KNOWLEDGE": json.dumps({"sources": {"handbook": {"kind": "files", "maps": {
+            "by_case_kind": {"failed_backup": "docs/recipes/backup.md"}}}}}),
+            "FLOTILLA_KNOWLEDGE_ROOT": os.path.join(self.d, "knowledge"), "FLOTILLA_LOADED_FILE": self.loaded}
+        self.old = {k: os.environ.get(k) for k in self.env}
+        os.environ.update(self.env)
+        self.addCleanup(self.restore)
+        self.k.loaded._seen.clear()
+        self.k.loaded._count[0] = 0
+
+    def restore(self):
+        for k, v in self.old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_a_proposal_cites_the_page_and_the_read_is_recorded(self):
+        det, _ = cr.review(FakeAPI([real_case()]), NOW, runbook=cr.runbooks())
+        ev = det[0]["data"]["proposal"]["evidence"]
+        self.assertEqual(ev[-1], "runbook: docs/recipes/backup.md @ 3f2a9c1d5e7b (Backup runbook)")
+        with open(self.loaded) as f:
+            got = [json.loads(x) for x in f]
+        self.assertEqual([(g["kind"], g["trust"], g["title"]) for g in got], [("knowledge", "untrusted", "handbook/by_case_kind: failed_backup")])
+
+    def test_a_kind_without_a_page_gets_no_line_and_no_read(self):
+        cs = [synth(f"case-s{i}", kind="disk_full", closed=f"2026-11-1{i}T10:00:00Z") for i in range(2, 5)]
+        det, _ = cr.review(FakeAPI(cs), NOW, runbook=cr.runbooks())
+        self.assertEqual(len(det), 1)
+        self.assertEqual(len(det[0]["data"]["proposal"]["evidence"]), 1)
+        self.assertFalse(os.path.exists(self.loaded))
+
+    def test_without_the_declaration_the_review_is_as_it_was(self):
+        for k in self.env:
+            os.environ.pop(k, None)
+        det, _ = cr.review(FakeAPI([real_case()]), NOW, runbook=cr.runbooks())
+        self.assertFalse(any(l.startswith("runbook:") for l in det[0]["data"]["proposal"]["evidence"]))
+
+    def test_an_unreadable_page_never_stops_the_review(self):
+        os.remove(os.path.join(self.d, "knowledge", "handbook", "docs", "recipes", "backup.md"))
+        det, _ = cr.review(FakeAPI([real_case()]), NOW, runbook=cr.runbooks())
+        self.assertEqual(len(det), 1)
+        self.assertFalse(any(l.startswith("runbook:") for l in det[0]["data"]["proposal"]["evidence"]))
+
+
 if __name__ == "__main__":
     unittest.main()

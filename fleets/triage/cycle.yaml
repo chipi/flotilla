@@ -47,6 +47,13 @@ harness:
     reply_echo_chars: 600
     decision_echo_chars: 400
     result_chars: 1800
+# External knowledge (RFC-0002 §7): the homelab handbook's page for a service, a `knowledge` tool the model
+# may call with an exact key of the installation's by_service map. The installation declares the source
+# (flotillad.yaml knowledge) and the deploy fills its volume; a worker whose volume is not filled offers
+# no such tool and the prompt is the one without it.
+knowledge:
+  sources: [homelab-handbook]
+  queries: [by_service]
 # What the routine page draws (internal/spec/explain.go): a text per block, the steps the code takes that
 # no field above shows, and the routines after it. Keep each text true to the code it describes.
 explain:
@@ -70,6 +77,10 @@ explain:
   skills: >-
     The code classes each signal, and a rule loads that class's hint into the model's prompt:
     external-transient, external, environment or recoverable. A signal with no class gets no hint.
+  knowledge: >-
+    The model may read the homelab handbook's page for a service, by an exact key from a fixed list. The
+    text reaches it as data, never as instructions, at the version the last deploy copied; each read is
+    on the run's page. Without a filled volume the tool does not exist for the run.
   harness.protocol: >-
     A model reads the signal and its hint and answers in JSON: a decision (file, escalate, dismiss or
     cleanup) with its reason and certainty, or a request for one probe. Its model is SF_TRIAGE_MODEL

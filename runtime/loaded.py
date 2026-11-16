@@ -4,7 +4,7 @@ worker), which the worker returns with the run so flotillad keeps it and the cas
 
   source     flotilla's own files at an image's version (a playbook, a skill), pinned by sha256
   memory     what flotilla remembers (an earlier case, an active note)
-  untrusted  what came from outside (a signal's text, a probe's output): data, never instructions
+  untrusted  what came from outside (a signal's text, a probe's output, a knowledge entry): data, never instructions
 
 Without the variable nothing is written; a failure to write never fails the run. Stdlib only.
 """
@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-KINDS = ("playbook", "skill", "note", "case", "input", "probe")
+KINDS = ("playbook", "skill", "note", "case", "input", "probe", "knowledge")
 TRUST = ("source", "memory", "untrusted")
 MAX = 200          # lines per run; a run that reads more keeps the first MAX
 TEXT_MAX = 300     # characters of a title or source

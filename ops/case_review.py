@@ -11,6 +11,10 @@ It changes nothing itself. Each proposal names its evidence. Rules (RFC-0009 §2
   wrong_diagnosis  a person's Wrong verdict: a note drafted from the case
   refused_plan     a plan a person rejected, with their reason: a note
 
+Each proposal also cites the handbook's page for its case kind, when the routine's spec declares the
+by_case_kind knowledge query (RFC-0002 §7) and the kind has a page: its path and the version read, for the
+person who answers. The page is read as data; nothing in it changes a rule.
+
 Run with FLOTILLA_API_URL / FLOTILLA_API_TOKEN_FILE (the worker sets them) and FLOTILLA_PLAN_FILE.
 """
 import json
@@ -23,11 +27,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import flotilla_api  # noqa: E402
 
+# flotilla's runtime/ is beside ops/: /opt/flotilla in the worker image, the repo root in a checkout
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime"))
+import knowledge  # noqa: E402
+
 WINDOW = timedelta(days=7)
 RECUR_WINDOW = timedelta(days=30)
 SELF_CLEARS = 3
 QUIET = timedelta(days=30)  # after a rejected process change, the same proposal waits this long
 TAG = "case-review"
+QUERY = "by_case_kind"
 
 
 def ts(s):
@@ -129,7 +138,36 @@ def notes_for(case, events, already):
     return out
 
 
-def review(api, now=None):
+def runbooks():
+    """kind -> one evidence line naming the handbook's page for that case kind (its path and the version
+    read), or None: the kind has no page, or the routine declares no knowledge. A page that is declared but
+    cannot be read is said on the run's output and left out; it never stops the review."""
+    sources = [s for s, q in knowledge.available() if q == QUERY]
+
+    def line(kind):
+        for s in sources:
+            try:
+                e = knowledge.read(s, QUERY, kind)
+            except knowledge.NotAKey:
+                continue
+            except knowledge.KnowledgeError as err:
+                print(f"CASE REVIEW runbook for {kind}: {err}")
+                return None
+            head = next((l.lstrip("#").strip() for l in e["text"].splitlines() if l.startswith("#")), "")
+            head = "".join(ch for ch in head if ch.isprintable())[:80]
+            return f"runbook: {e['path']} @ {e['version'][:12]}" + (f" ({head})" if head else "")
+        return None
+    return line
+
+
+def with_runbook(p, kind, runbook):
+    line = runbook(kind) if runbook else None
+    if line:
+        p["evidence"].append(line)
+    return p
+
+
+def review(api, now=None, runbook=None):
     now = now or datetime.now(timezone.utc)
     all_cases = api.cases(all=1, limit=1000)
     recent = [c for c in all_cases if c["status"] == "closed" and ts(c.get("closed_at")) and now - ts(c["closed_at"]) < WINDOW]
@@ -143,7 +181,7 @@ def review(api, now=None):
         events = full.get("events", [])
         p = below_cycle(c, events)
         if p:
-            d = detection(p)
+            d = detection(with_runbook(p, c["kind"], runbook))
             if d["target"] not in seen and not settled(d["target"], closed_pcs, now, ts(c["closed_at"])):
                 seen.add(d["target"])
                 detections.append(d)
@@ -163,7 +201,7 @@ def review(api, now=None):
             p = {"rule": "self_clearing", "subject": subject, "kind": kind, "case_target": target,
                  "evidence": [f"{len(ids)} {kind} cases on {target} cleared on their own in 7 days: {', '.join(ids)}"],
                  "title": f"{kind} on {target} cleared on its own {len(ids)} times in 7 days: look at its threshold"}
-            d = detection(p)
+            d = detection(with_runbook(p, kind, runbook))
             if not settled(d["target"], closed_pcs, now, now - WINDOW):
                 detections.append(d)
     for (kind, target), ids in sorted(recurs.items()):
@@ -172,7 +210,7 @@ def review(api, now=None):
             p = {"rule": "fix_not_holding", "subject": subject, "kind": kind, "case_target": target,
                  "evidence": [f"{len(ids)} {kind} cases on {target} came back after a verified fix in 30 days: {', '.join(ids)}"],
                  "title": f"The fix for {kind} on {target} does not hold: escalate this kind instead of fixing it again"}
-            d = detection(p)
+            d = detection(with_runbook(p, kind, runbook))
             if not settled(d["target"], closed_pcs, now, now - RECUR_WINDOW):
                 detections.append(d)
     return detections, notes
@@ -180,7 +218,7 @@ def review(api, now=None):
 
 def main():
     api = flotilla_api.from_env()
-    detections, notes = review(api)
+    detections, notes = review(api, runbook=runbooks())
     proposed = 0
     for case_id, rule, text in notes:
         try:
