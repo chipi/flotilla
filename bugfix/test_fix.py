@@ -43,6 +43,7 @@ TRIAGE = POP + textwrap.dedent('''\
 
 PI_HARNESS = POP + textwrap.dedent('''\
     WT="$1"; F=$(pop fixes)
+    printf '%s' "$2" > "$FAKE_STATE/fix_desc"
     echo "fix ${BUGFIX_PI_RULES:-none}" >> "$FAKE_STATE/rules"
     echo "fix $F model=$PI_MODEL tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     cd "$WT"
@@ -125,6 +126,7 @@ PI_BIN = POP + textwrap.dedent('''\
     for a in "$@"; do last="$a"; done; printf '%s' "$last" > "$FAKE_STATE/review_prompt"
     R=approve; [ -s "$FAKE_STATE/reviews" ] && R=$(pop reviews)
     echo "review model=$6 tools=$T verdict=$R" >> "$FAKE_STATE/calls"
+    [ "$R" = fail ] && exit 1
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$R"
     ''')
 
@@ -524,6 +526,21 @@ exec {real} "$@"
         self.assertIn("advisor: src/a.js", plan["params"]["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage", "fix", "review"])
 
+    def test_a_review_that_did_not_run_is_said_on_the_plan(self):
+        # it used to read as an approval: "(no review: ...)" has no VERDICT line
+        f = self.fixture(["actionable"], ["good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("fail\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("unresolved: the review did not run", plan["detail"])
+        self.assertIn("the review did not run: (no review", plan["params"]["body"])
+        self.assertEqual(f.calls(), ["triage", "fix", "review"])
+
+    def test_the_kick_back_limits_are_two_and_one(self):
+        a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])
+        self.assertEqual((a.kickback_max, a.review_kickback_max), (2, 1))
+
     def test_the_review_can_send_a_fix_back(self):
         """Phase B: the review asked for changes on the 3 wrong or partial plans of 4 and could not stop
         any. request-changes now kicks the fix back (the review is the evidence, no advisor), at most
@@ -533,13 +550,16 @@ exec {real} "$@"
             fh.write("request-changes\napprove\n")
         plan, _ = f.run()
         self.assertEqual(plan["outcome"], "plan", plan)
-        self.assertEqual(f.calls(), ["triage", "fix", "review", "triage", "fix", "review"])
+        # no new verdict after a review's kick-back (it did not dispute actionability): the fix step again, with the
+        # whole review and the diff it judged
+        self.assertEqual(f.calls(), ["triage", "fix", "review", "fix", "review"])
         self.assertIn("round 0: the review requested changes: The test only checks a constant.", plan["params"]["body"])
         self.assertIn("VERDICT: approve", plan["params"]["body"])
-        with open(os.path.join(f.state, "calls")) as fh:
-            kicked = [ln for ln in fh.read().splitlines() if ln.startswith("triage") and "ev=yes" in ln]
-        self.assertEqual(len(kicked), 1)
-        self.assertIn("rows=1", kicked[0], "the kick-back evidence the verdict step reads stays one row")
+        with open(os.path.join(f.state, "fix_desc")) as fh:
+            desc = fh.read()
+        self.assertIn("make value() return 2", desc)
+        self.assertIn("THE REVIEW:\nThe test only checks a constant.\nVERDICT: request-changes", desc)
+        self.assertIn("THE DIFF IT REVIEWED (the worktree is back at the base):\ndiff --git", desc)
         # always request-changes: two kick-backs, then the plan carries the review's objection
         g = self.fixture(["actionable"] * 3, ["good"] * 3)
         with open(os.path.join(g.state, "reviews"), "w") as fh:

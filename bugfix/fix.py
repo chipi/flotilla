@@ -15,7 +15,9 @@ chain.go's order, calling the bake-off's leaves through LiteLLM, and decides:
      a failing gate kicks it back: the advisor (advisor_run.sh) pins the owner once per round unless the
      fix was already at a pin (the acceptance transition), then the verdict is asked again with that
      evidence; needs-info or rejected escalates
-  4. a review of the clean diff (non-blocking), then the plan:
+  4. a review of the clean diff: request-changes sends it back once (--review-kickback-max), with the whole
+     review and the previous diff, straight to the fix step (no new verdict: the review did not dispute that
+     the bug is actionable); a review that did not run is said on the plan, never read as an approval; then:
        {"outcome": "plan", "action": "github.open_pr", "params": {repo, base, title, body, diff}}
      or {"outcome": "escalate", "detail": why}
 
@@ -745,6 +747,9 @@ class Chain:
                     raise Stop(f"the clean fix's diff is {len(d)} characters, more than the {DIFF_MAX} a plan may carry")
                 review = self.review(d)
                 self.note("review", tail(review.splitlines()[-1] if review else "", 80))
+                if review.startswith("(no review"):   # a failed review is not an approval: the plan says so
+                    self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
+                    return self.plan(rnd, d, review, unresolved="the review did not run: " + tail(review, 200))
                 # the review saw what the gates did not on 3 of phase A's 4 plans: request-changes sends the fix
                 # back while the budget lasts; after that the operator sees the plan with the review in it
                 if review_requests_changes(review) and reviewed_back < self.a.review_kickback_max \
@@ -752,8 +757,13 @@ class Chain:
                     reviewed_back += 1
                     self.kept = (rnd, d, review, self.checked, self.unloaded_on_base)
                     from_review = True
-                    # one line: the reason goes into result.tsv, the leaves' kick-back evidence
+                    # one line: the reason goes into result.tsv and the chain's log; the fix step gets the whole review
                     reason = "the review requested changes: " + tail(" ".join(review.split()), 400)
+                    self.note(f"round {rnd}", reason)
+                    if rnd == self.a.kickback_max:
+                        raise Stop(f"stuck: kick-back limit ({self.a.kickback_max}) reached; last: {reason}")
+                    manifest = self.review_manifest(manifest, rnd, d, review)
+                    continue
                 else:
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
                     return self.plan(rnd, d, review, unresolved=(
@@ -795,6 +805,23 @@ class Chain:
             manifest = os.path.join(self.triaged, f"{self.tid}-triaged-kb{self.kb_round}.json")
             prior = kpath
 
+    def review_manifest(self, manifest, rnd, d, review):
+        """The next fix's instructions after a review's request-changes: the same task, the whole review and the
+        diff it judged (the next attempt starts from the base again). No new verdict: it re-ran ~30 calls of
+        exploration to re-judge actionability, which the review did not dispute, and the review reached the fix
+        step only as 400 characters of result.tsv through it (fleet-eval-data projects/bugfix-cost, the advisor's
+        review: a likely reason #553's later rounds changed nothing)."""
+        with open(manifest) as f:
+            m = json.load(f)
+        m["description"] = (m.get("description") or "") + (
+            f"\n\nA REVIEW OF YOUR PREVIOUS ATTEMPT (round {rnd}) ASKED FOR CHANGES. Address what it says that holds; "
+            f"if a point is wrong, keep your fix and say why in the test or a comment.\n\nTHE REVIEW:\n{review[:12000]}"
+            f"\n\nTHE DIFF IT REVIEWED (the worktree is back at the base):\n{d[:16000]}")
+        out = os.path.join(self.triaged, f"{self.tid}-triaged-review{rnd}.json")
+        with open(out, "w") as f:
+            json.dump(m, f)
+        return out
+
     def not_actionable(self, v, after=""):
         verdict = v.get("verdict") or "none"
         missing = v.get("missing") or v.get("Missing") or []
@@ -807,7 +834,9 @@ class Chain:
         checked = self.checked if checked is None else checked
         unloaded = self.unloaded_on_base if unloaded is None else unloaded
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
-        flag = f"unresolved: the review asked for changes; round {rnd}'s clean fix kept"
+        flag = (f"unresolved: the review did not run; round {rnd}'s clean fix kept"
+                if unresolved.startswith("the review did not run") else
+                f"unresolved: the review asked for changes; round {rnd}'s clean fix kept")
         body = "\n".join([
             *([f"**{flag}**: {unresolved} (see the review below).", ""]
               if unresolved else []),
@@ -847,8 +876,9 @@ def parse(argv):
     ap.add_argument("--blob-limit", default="256k", help="blobs up to this size come with the clone (git --filter=blob:limit)")
     ap.add_argument("--upstream", action="append", default=[], metavar="LITELLM_MODEL=OPENROUTER_MODEL",
                     help="the model LiteLLM routes an alias's model to, for pi's catalog (pi_config)")
-    ap.add_argument("--kickback-max", type=int, default=3)
-    ap.add_argument("--review-kickback-max", type=int, default=2,
+    # a kick-back roughly doubles a case's cost (a new fix session, and before it a new verdict): 2 and 1 bound it
+    ap.add_argument("--kickback-max", type=int, default=2)
+    ap.add_argument("--review-kickback-max", type=int, default=1,
                     help="times the review's request-changes sends a gate-clean fix back (within --kickback-max)")
     ap.add_argument("--no-advisor", dest="advisor", action="store_false")
     ap.add_argument("--episode-timeout", type=int, default=1200)
