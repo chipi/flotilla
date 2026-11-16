@@ -311,6 +311,14 @@ docker exec flotillad flotilla runs triage/cycle -n 20
 docker exec flotillad flotilla stop triage            # any caller; starting again is the operator's
 ```
 
+### The filing gate
+
+A deploy runs the triage fleet's filing gate (`TRIAGE_FILING_GATE`) against the commit running now.
+A deploy fails when the gate fails, and also when it did not run: its script is missing. Either is
+accepted by naming the reason: `SF_FILING_GATE_ACCEPT="<why>" deploy.sh sha-<7>`. Only a first
+install (no earlier deploy to compare with) passes without it, and the output says `NOT RUN (no
+earlier deploy ...)`. A rollback never runs the gate.
+
 ### Snapshots
 
 Before every `up`, a deploy and a rollback alike, `deploy.sh` snapshots the store: a throwaway

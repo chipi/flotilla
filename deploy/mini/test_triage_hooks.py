@@ -237,12 +237,27 @@ class FilingGateTest(Base):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(self.gate_calls()[0]["accept"], "new rollup rule")
 
-    def test_not_run_without_gate_or_previous(self):
+    def test_not_run_without_the_gate_script_fails(self):
+        """A gate that did not run is not a pass (found 2026-11-16: it returned 0 for a missing script)."""
         env = dict(self.env, TRIAGE_FILING_GATE=os.path.join(self.tmp, "absent.py"))
         r = self.hook(f"triage_filing_gate {self.commits[0]} {self.commits[1]}", env)
-        self.assertEqual(r.returncode, 0); self.assertIn("NOT RUN (no ", r.stdout)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("NOT RUN (no ", r.stdout)
+        self.assertIn("SF_FILING_GATE_ACCEPT", r.stdout)
+
+    def test_not_run_is_accepted_with_a_reason(self):
+        env = dict(self.env, TRIAGE_FILING_GATE=os.path.join(self.tmp, "absent.py"),
+                   SF_FILING_GATE_ACCEPT="gate checkout is being moved")
+        r = self.hook(f"triage_filing_gate {self.commits[0]} {self.commits[1]}", env)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("NOT RUN", r.stdout)
+        self.assertIn("accepted: gate checkout is being moved", r.stdout)
+
+    def test_first_install_passes_and_says_it_was_not_run(self):
         r = self.hook(f'triage_filing_gate "" {self.commits[1]}', dict(self.env, TRIAGE_FILING_GATE=self.gate))
-        self.assertEqual(r.returncode, 0); self.assertIn("NOT RUN (no earlier deploy", r.stdout)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("NOT RUN (no earlier deploy", r.stdout)
+        self.assertIn("first install", r.stdout)
         self.assertEqual(self.gate_calls(), [])
 
 
@@ -297,6 +312,29 @@ class DeployWiringTest(DeployBase):
                         env=dict(self.env, GATE_MODE="fail", SF_FILING_GATE_ACCEPT="intended"))
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(self.rows()[-1][1], "deploy")
+
+    def test_a_missing_gate_script_fails_the_deploy_unless_accepted(self):
+        with open(os.path.join(self.home, ".env"), "a") as f:
+            f.write(f"TRIAGE_FILING_GATE={os.path.join(self.tmp, 'absent.py')}\n")
+        r = self.deploy(f"sha-{self.commits[1][:7]}")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("filing gate: NOT RUN", r.stdout)
+        self.assertIn("DEPLOY FAIL: filing gate failed or did not run", r.stdout)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.commits[0])
+        p = os.path.join(self.tmp, "docker_calls")
+        calls = open(p).read() if os.path.exists(p) else ""
+        self.assertNotIn(" pull ", calls)
+        self.assertNotIn(" up ", calls)
+        r = self.deploy(f"sha-{self.commits[1][:7]}", env=dict(self.env, SF_FILING_GATE_ACCEPT="gate checkout moved"))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("accepted: gate checkout moved", r.stdout)
+
+    def test_a_first_install_deploys_and_says_the_gate_did_not_run(self):
+        os.remove(os.path.join(self.home, "deployed.tsv"))
+        r = self.deploy(f"sha-{self.commits[1][:7]}")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("NOT RUN (no earlier deploy", r.stdout)
+        self.assertEqual(self.gate_calls(), [])
 
     def hashes(self):
         p = os.path.join(self.tmp, "docker_calls")

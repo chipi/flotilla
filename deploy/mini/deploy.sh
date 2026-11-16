@@ -163,7 +163,7 @@ if [ "$EVENT" = deploy ]; then
   say "== the triage fleet's filing gate (${CURRENT_COMMIT:0:7} -> ${COMMIT:0:7})"
   if ! triage_filing_gate "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; then   # pipefail: the gate's status
     [ -n "$CURRENT_COMMIT" ] && git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
-    die "filing gate failed for $TAG (set SF_FILING_GATE_ACCEPT=\"<why>\" to accept the change)"
+    die "filing gate failed or did not run for $TAG (set SF_FILING_GATE_ACCEPT=\"<why>\" to accept)"
   fi
 fi
 

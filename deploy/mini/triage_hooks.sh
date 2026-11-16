@@ -5,7 +5,10 @@
 #   triage_filing_gate PREV NOW   the filing gate, as homelab's signal-fleet/deploy/gates.sh calls it: it replays
 #                                 the newest frozen week with the two flotilla commits; any change in what filing
 #                                 does fails, unless SF_FILING_GATE_ACCEPT names the reason (read by the gate).
-#                                 Returns 0 on PASS or when there is nothing to compare, 1 on FAIL.
+#                                 Returns 0 on PASS, 1 on FAIL. A gate that cannot run (its script is missing)
+#                                 is NOT RUN and fails the same way, so a deploy never passes a gate that did not
+#                                 look; SF_FILING_GATE_ACCEPT accepts it too. Only "no earlier deploy" (a first
+#                                 install: nothing to compare with) passes, and says it was not run.
 #   triage_deploy_log EVENT OLD NEW
 #                                 one row in the fleet's deploy log, with `flotilla` as the 7th field (the header
 #                                 keeps its six columns; the readers take the 7th by position). Never fails.
@@ -20,8 +23,14 @@
 triage_filing_gate() {
   local prev="$1" now="$2" gate="${TRIAGE_FILING_GATE:-$HOME/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py}"
   local log="$H/filing_gate.log"
-  if [ -z "$prev" ]; then echo "filing gate: NOT RUN (no earlier deploy to compare with)"; return 0; fi
-  if [ ! -f "$gate" ]; then echo "filing gate: NOT RUN (no $gate)"; return 0; fi
+  if [ -z "$prev" ]; then echo "filing gate: NOT RUN (no earlier deploy to compare with: a first install, so it passes)"; return 0; fi
+  if [ ! -f "$gate" ]; then
+    if [ -n "${SF_FILING_GATE_ACCEPT:-}" ]; then
+      echo "filing gate: NOT RUN (no $gate); accepted: $SF_FILING_GATE_ACCEPT"; return 0
+    fi
+    echo "filing gate: NOT RUN (no $gate): the deploy fails; set SF_FILING_GATE_ACCEPT=\"<why>\" to deploy without it"
+    return 1
+  fi
   if SF_CHECKOUT="$REPO" python3 "$gate" "$prev" "$now" >"$log" 2>&1; then
     echo "filing gate: $(tail -1 "$log")"
     return 0
