@@ -72,7 +72,15 @@ def review_requests_changes(review):
     lines = [ln for ln in (review or "").splitlines() if VERDICT_LINE.match(ln)]
     if lines:
         return bool(VERDICT_LINE_REQUESTS.match(lines[-1]))
-    return bool(REQUEST_CHANGES.search(review or ""))
+    return bool(REQUEST_CHANGES.search(_unquoted(review or "")))
+
+
+def _unquoted(text):
+    """The text without what only quotes the instruction: `>` lines, code fences, `inline code` and "double quotes"."""
+    text = re.sub(r"```.*?```", " ", text, flags=re.S)
+    text = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(">"))
+    text = re.sub(r"`[^`\n]*`", " ", text)
+    return re.sub(r"[\"\u201c][^\"\u201d\n]*[\"\u201d]", " ", text)
 
 
 class Stop(Exception):
@@ -459,14 +467,15 @@ class Chain:
         self.kept = None   # the last gate-clean round the review sent back: (rnd, diff, review, checked, unloaded)
         try:
             return self.rounds()
-        except Stop as e:
+        except (Stop, OSError, subprocess.SubprocessError, ValueError) as e:
             if not self.kept:
                 raise
-            # a good fix is not thrown away because a later round failed: the operator gets the last clean one
-            # with the review's requested changes in it, and the reason the later rounds ended
+            # a good fix is not thrown away because a later round failed (a gate, the verdict, or an error a
+            # round raised): the operator gets the last clean one with the review's requested changes in it,
+            # and the reason the later rounds ended
             rnd, d, review, checked, unloaded = self.kept
-            self.note("kept", f"round {rnd}'s clean fix; the run ended: {tail(str(e), 300)}")
-            return self.plan(rnd, d, review, checked, unloaded)
+            self.note("kept", f"round {rnd}'s clean fix; the run ended ({type(e).__name__}): {tail(str(e), 300)}")
+            return self.plan(rnd, d, review, checked, unloaded, unresolved=True)
 
     def rounds(self):
         self.checkout()
@@ -544,11 +553,14 @@ class Chain:
                 "rejected": "rejected as not a bug"}.get(verdict, f"no usable verdict ({verdict})")
         return " ".join(x for x in [head, after, (": " + why) if why else ""] if x).replace(" :", ":")
 
-    def plan(self, rnd, d, review, checked=None, unloaded=None):
+    def plan(self, rnd, d, review, checked=None, unloaded=None, unresolved=False):
         checked = self.checked if checked is None else checked
         unloaded = self.unloaded_on_base if unloaded is None else unloaded
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
+        flag = f"unresolved: the review asked for changes; round {rnd}'s clean fix kept"
         body = "\n".join([
+            *([f"**{flag}**: the later rounds did not resolve what the review asked for (see the review below).", ""]
+              if unresolved else []),
             f"An automated fix for {self.repo}#{self.n} by flotilla's bugfix fleet (RFC-0010), in beta evaluation.",
             "", f"Gates (base {self.base[:12]}, round {rnd}): {checked}; nothing in CI, hooks, config or the lockfile. "
             "The whole suite is this PR's CI.",
@@ -558,7 +570,7 @@ class Chain:
             "", "Review (fleet reviewer, comment only):", tail(review, 3000),
             "", "The operator merges, always: the fleet never does."])
         return {"outcome": "plan", "action": "github.open_pr",
-                "detail": f"#{self.n}: a clean fix in round {rnd} at {self.base[:12]}",
+                "detail": f"#{self.n}: " + (f"{flag}; " if unresolved else "") + f"a clean fix in round {rnd} at {self.base[:12]}",
                 "params": {"repo": self.repo, "base": self.base, "title": title, "body": tail(body, BODY_MAX), "diff": d}}
 
 

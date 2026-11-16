@@ -416,6 +416,58 @@ exec {real} "$@"
         plan, _ = h.run()
         self.assertEqual(plan["outcome"], "escalate", plan)
 
+    def _later_round_raises(self, exc):
+        """Round 0 is clean and the review sends it back; round 1's attempt raises `exc`."""
+        f = self.fixture(["actionable", "actionable"], ["good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\n")
+        real, calls = fix.Chain.attempt, []
+
+        def attempt(chain, manifest):
+            calls.append(manifest)
+            if len(calls) > 1:
+                raise exc
+            return real(chain, manifest)
+        fix.Chain.attempt = attempt
+        try:
+            return f.run()[0]
+        finally:
+            fix.Chain.attempt = real
+
+    def test_a_later_round_that_raises_keeps_the_last_clean_fix(self):
+        for exc in (OSError("disk full"), subprocess.SubprocessError("boom"), ValueError("bad json")):
+            plan = self._later_round_raises(exc)
+            self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), (exc, plan))
+            self.assertIn("+module.exports = () => 2;", plan["params"]["diff"])
+            self.assertIn(type(exc).__name__, plan["params"]["body"])
+        # not a failure a round can have: it still ends the run
+        with self.assertRaises(KeyboardInterrupt):
+            self._later_round_raises(KeyboardInterrupt())
+
+    def test_a_kept_plan_says_the_review_s_changes_are_unresolved(self):
+        plan = self._later_round_raises(OSError("disk full"))
+        self.assertIn("unresolved: the review asked for changes", plan["detail"])
+        self.assertIn("a clean fix in round 0", plan["detail"])
+        first = plan["params"]["body"].splitlines()[0]
+        self.assertIn("unresolved: the review asked for changes", first)
+        self.assertIn("round 0", first)
+        # a plan whose review approved says no such thing
+        f = self.fixture(["actionable"], ["good"])
+        plan, _ = f.run()
+        self.assertNotIn("unresolved", plan["detail"])
+        self.assertNotIn("unresolved", plan["params"]["body"])
+
+    def test_a_quoted_instruction_is_not_a_request_for_changes(self):
+        asks = fix.review_requests_changes
+        for quoted in ('I was told to end with "VERDICT: request-changes" or approve.',
+                       "Reply `VERDICT: request-changes` only if it is broken.",
+                       "> the prompt says: VERDICT: request-changes",
+                       "It reads fine.\n```\nend with VERDICT: request-changes\n```\nNothing to change.",
+                       "I was told to end with “VERDICT: request-changes” or approve."):
+            self.assertFalse(asks(quoted), quoted)
+        self.assertTrue(asks("It is broken, so VERDICT: request-changes"))
+        self.assertTrue(asks('Quoting "fine" aside, VERDICT: request-changes'))
+
     def test_the_review_decides_on_its_last_verdict_line(self):
         f = self.fixture(["actionable"], ["good"])
         with open(os.path.join(f.state, "reviews"), "w") as fh:
