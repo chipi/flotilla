@@ -52,6 +52,7 @@ BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE
 # SR-0001 H8: the steps that only read (verdict, advisor, review) get pi's read tools, no shell and no
 # writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
 READ_ONLY_TOOLS = "read,grep,find,ls"
+REVIEW_PROMPT_MAX = 100_000   # bytes; pi takes the prompt as one argument and Linux caps one at 128 KiB
 REQUEST_CHANGES = re.compile(r"VERDICT:\s*\**\s*request[- ]changes", re.I)
 VERDICT_LINE = re.compile(r"^[\s*_>#-]*VERDICT:", re.I)
 VERDICT_LINE_REQUESTS = re.compile(r"^[\s*_>#-]*VERDICT:\s*\**\s*request[- ]changes", re.I)
@@ -652,13 +653,53 @@ class Chain:
                   self.run_dir, self.env, 60, check=True)
         return d
 
+    def review_prompt(self, diff):
+        """The review's whole input: the issue as filed, the diff, and the files the fix touched as they are after it.
+        With --review-tools none the reviewer judges from this alone, in one call: on 2026-11-15/16 a review explored
+        the repo for 5 to 38 calls on glm-5.2, the fleet's dearest model (fleet-eval-data projects/bugfix-cost, C4).
+        pi takes the prompt as one argument, which Linux caps at 128 KiB (MAX_ARG_STRLEN): the parts are cut to fit
+        REVIEW_PROMPT_MAX, the diff first, then the issue, then the files, each cut said where it is."""
+        head = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}).\n\n")
+        ask = ("\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes "
+               "the issue as filed rather than hiding its symptom. End with VERDICT: approve or VERDICT: request-changes.")
+        if self.a.review_tools == "none":
+            ask = "\n\nYou have no tools: judge from what is above." + ask
+        room = REVIEW_PROMPT_MAX - len((head + ask).encode())
+
+        def cut(text, n):
+            b = text.encode()
+            return text if len(b) <= n else b[:max(n - 80, 0)].decode(errors="ignore") + f"\n[... cut: {len(b) - n + 80} more bytes]"
+
+        parts = [("DIFF:\n", cut(diff, min(room, 40000)))]
+        room -= len(parts[0][1].encode()) + 20
+        body = self.issue.get("body") or ""
+        parts.append(("\n\nTHE ISSUE AS FILED:\n", cut(body, min(room, 8000))))
+        room -= len(parts[1][1].encode()) + 30
+        _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=d", self.base],
+                      self.run_dir, self.env, 60)
+        files = []
+        for x in [n for n in names.split("\0") if n.strip() and not n.startswith(".flotilla-suite")]:
+            if room < 200:
+                files.append(f"=== {x} === [not included: no room left]")
+                continue
+            try:
+                with open(os.path.join(self.wt, x), errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            piece = cut(text, room - len(x) - 20)
+            files.append(f"=== {x} ===\n{piece}")
+            room -= len(piece.encode()) + len(x) + 20
+        if files:
+            parts.append(("\n\nTHE CHANGED FILES, AFTER THE FIX:\n", "\n".join(files)))
+        return head + "".join(a + b for a, b in parts) + ask
+
     def review(self, diff):
-        prompt = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}). Read only: do not edit any "
-                  f"file.\n\nDIFF:\n{diff}\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy. "
-                  "End with VERDICT: approve or VERDICT: request-changes.")
+        prompt = self.review_prompt(diff)
         rules = ["--no-context-files", "--append-system-prompt", self.env["BUGFIX_PI_RULES"]] if self.env.get("BUGFIX_PI_RULES") else []
+        tools = ["--no-tools"] if self.a.review_tools == "none" else ["--tools", READ_ONLY_TOOLS]
         code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer,
-                           "--tools", READ_ONLY_TOOLS, *rules, prompt],
+                           *tools, *rules, prompt],
                           self.wt, self.env, self.a.review_timeout)
         text = assistant_text(stream)
         if text:
@@ -814,6 +855,9 @@ def parse(argv):
     ap.add_argument("--test-timeout", type=int, default=900)
     ap.add_argument("--setup-timeout", type=int, default=1200)
     ap.add_argument("--review-timeout", type=int, default=600)
+    ap.add_argument("--review-tools", choices=("none", "read"), default="none",
+                    help="none: the reviewer judges from the issue, the diff and the changed files it is given, in one "
+                         "call; read: it also gets pi's read tools and explores (the behaviour before C4)")
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
     ap.add_argument("--pi-rules", default=os.path.join(HERE, "fleet_rules.md"),
                     help="the rule file every pi step gets instead of the repo's AGENTS.md (--no-context-files); '' keeps "

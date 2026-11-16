@@ -81,6 +81,13 @@ and `bugfix/fleet_rules.md` instead (`--pi-rules`; `''` keeps pi's default). The
 results small: find before reading, ranges of long files, no generated or vendored files, no
 `git log -p`. On orrery pi's first request went from 123,326 to 7,082 characters.
 
+**The review judges what it is given.** The reviewer gets the issue as filed, the diff and the
+files the fix touched as they are after it, and no tools (`--review-tools none`, the default): one
+call, where an exploring review took 5 to 38 calls on the reviewer model, the fleet's dearest. The
+prompt is one argument to pi, which Linux caps at 128 KiB, so the parts are cut to 100,000 bytes
+(the diff first, then the issue, then the files), each cut marked. `--review-tools read` gives the
+reviewer pi's read tools again. No tools is stricter than read-only, so SR-0001 H8 still holds.
+
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could
 delete the test its change breaks and add a new passing one, and both repro and the related gate would

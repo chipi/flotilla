@@ -120,8 +120,9 @@ ADVISOR = textwrap.dedent('''\
 # the reviewer is pi itself, on PATH
 PI_BIN = POP + textwrap.dedent('''\
     T=all; prev=; RULES=none; for a in "$@"; do [ "$prev" = --tools ] && T="$a"; [ "$prev" = --append-system-prompt ] && RULES="$a"; prev="$a"; done
-    NC=no; for a in "$@"; do [ "$a" = --no-context-files ] && NC=yes; done
+    NC=no; for a in "$@"; do [ "$a" = --no-context-files ] && NC=yes; [ "$a" = --no-tools ] && T=none; done
     echo "review $RULES no-context-files=$NC" >> "$FAKE_STATE/rules"
+    for a in "$@"; do last="$a"; done; printf '%s' "$last" > "$FAKE_STATE/review_prompt"
     R=approve; [ -s "$FAKE_STATE/reviews" ] && R=$(pop reviews)
     echo "review model=$6 tools=$T verdict=$R" >> "$FAKE_STATE/calls"
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$R"
@@ -665,8 +666,9 @@ exec {real} "$@"
             raw = [ln for ln in fh.read().splitlines() if ln.strip()]
         lines = [ln.split() for ln in raw]
         tools = {ln[0]: [w for w in ln if w.startswith("tools=")] for ln in lines}
-        for step in ("triage", "advisor", "review"):
+        for step in ("triage", "advisor"):
             self.assertEqual(tools[step], ["tools=read,grep,find,ls"], step)
+        self.assertEqual(tools["review"], ["tools=none"], "C4: the review is given what it judges, and gets no tools")
         self.assertEqual(tools["fix"], ["tools=all"])
         for leaf in ("triage_run.sh", "advisor_run.sh"):
             with open(os.path.join(fix.BAKEOFF, leaf)) as fh:
@@ -776,6 +778,56 @@ exec {real} "$@"
         path = os.path.join(os.path.dirname(os.path.abspath(fix.__file__)), "fleet_rules.md")
         self.assertTrue(os.path.isfile(path))
         self.assertEqual(self.rules(f), [f"verdict {path}", f"fix {path}", f"review {path} no-context-files=yes"])
+
+    def review_prompt(self, f):
+        with open(os.path.join(f.state, "review_prompt")) as fh:
+            return fh.read()
+
+    def test_the_review_is_given_the_issue_the_diff_and_the_changed_files(self):
+        # C4: one call on what it judges, no tools (it explored for 5 to 38 calls on glm-5.2 before)
+        f = self.fixture(["actionable"], ["good"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        p = self.review_prompt(f)
+        self.assertIn("THE ISSUE AS FILED:\nvalue() returns 1, want 2", p)
+        self.assertIn("DIFF:\ndiff --git", p)
+        self.assertIn("=== src/a.js ===\nmodule.exports = () => 2;", p)
+        self.assertIn("=== src/a.test.js ===\nexpect src/a.js 2", p)
+        self.assertIn("You have no tools", p)
+        self.assertTrue(p.rstrip().endswith("VERDICT: request-changes."))
+
+    def test_review_tools_read_keeps_the_exploring_review(self):
+        f = self.fixture(["actionable"], ["good"])
+        f.run("--review-tools", "read")
+        with open(os.path.join(f.state, "calls")) as fh:
+            review = [ln for ln in fh.read().splitlines() if ln.startswith("review ")]
+        self.assertEqual([w for w in review[0].split() if w.startswith("tools=")], ["tools=read,grep,find,ls"])
+        self.assertNotIn("You have no tools", self.review_prompt(f))
+
+    def test_a_large_changed_file_is_cut_to_fit_one_argument(self):
+        # pi takes the prompt as one argv string, which Linux caps at 128 KiB: a one-line fix in a 300 KB file
+        # (a plan's diff is small, the file is not) must still give a prompt pi can be started with
+        import types
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        git("init", "-q", d, cwd=d)
+        os.makedirs(os.path.join(d, "src"))
+        with open(os.path.join(d, "src", "big.js"), "w") as fh:
+            fh.write("module.exports = () => 1;\n" + "x" * 300000 + "\n")
+        git("add", "-A", cwd=d)
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base", cwd=d)
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True).stdout.strip()
+        with open(os.path.join(d, "src", "big.js"), "r+") as fh:
+            fh.write("module.exports = () => 2;")
+        git("add", "-A", cwd=d)
+        chain = types.SimpleNamespace(repo="chipi/orrery", n=12, issue={"title": "t", "body": "value() returns 1, want 2"},
+                                      a=types.SimpleNamespace(review_tools="none"), wt=d, base=base, run_dir=d, env=dict(os.environ))
+        p = fix.Chain.review_prompt(chain, "diff --git a/src/big.js b/src/big.js\n-1\n+2\n")
+        self.assertLessEqual(len(p.encode()), fix.REVIEW_PROMPT_MAX)
+        self.assertIn("=== src/big.js ===\nmodule.exports = () => 2;", p)
+        self.assertIn("[... cut:", p)
+        self.assertIn("THE ISSUE AS FILED:\nvalue() returns 1, want 2", p)
+        self.assertTrue(p.rstrip().endswith("VERDICT: request-changes."))
 
     def test_an_empty_pi_rules_keeps_pis_default(self):
         f = self.fixture(["actionable"], ["good"])
