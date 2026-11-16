@@ -55,6 +55,8 @@ type Case struct {
 	ClosedAt     *string `json:"closed_at"`
 	Title        string  `json:"title,omitempty"`
 	RecurrenceOf string  `json:"recurrence_of,omitempty"` // G14: the earlier case this one came back after
+	Repeats      int     `json:"repeats,omitempty"`       // detections that repeated its last signal exactly
+	RepeatAt     string  `json:"repeat_at,omitempty"`     // the last of them
 	Keys         []Key   `json:"keys,omitempty"`
 }
 
@@ -111,7 +113,7 @@ func (s *Store) OpenCase(ctx context.Context, n NewCase, actor, detail string) (
 	err = tx.QueryRowContext(ctx, `SELECT id FROM cases WHERE canonical_key = ? AND status <> ?`, ck, cases.Closed).Scan(&id)
 	switch {
 	case err == nil:
-		if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "signal.attached", Actor: actor, Detail: detail, Data: n.Data}); err != nil {
+		if err := addSignal(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: "signal.attached", Actor: actor, Detail: detail, Data: n.Data}); err != nil {
 			return "", false, err
 		}
 		return id, false, tx.Commit()
@@ -276,19 +278,38 @@ func (s *Store) AddCaseEvent(ctx context.Context, id, kind, actor, detail string
 	return tx.Commit()
 }
 
+// addSignal adds a detection to its case as an event, unless it repeats the case's last signal exactly (the
+// same structured data, as an issue intake reports every hour while it stays open, unchanged): then the case
+// counts it instead (repeats, repeat_at). A detection without data is always an event.
+func addSignal(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
+	if e.Data != "" {
+		var last string
+		err := tx.QueryRowContext(ctx, `SELECT data FROM case_events WHERE case_id = ?
+			AND kind IN ('case.detected', 'signal.attached', 'signal.absorbed') ORDER BY seq DESC LIMIT 1`, e.CaseID).Scan(&last)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil && last == e.Data {
+			_, err := tx.ExecContext(ctx, `UPDATE cases SET repeats = repeats + 1, repeat_at = ? WHERE id = ?`, e.At, e.CaseID)
+			return err
+		}
+	}
+	return addCaseEvent(ctx, tx, e)
+}
+
 func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO case_events (case_id, at, kind, actor, by_role, from_status, to_status, detail, data)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, e.CaseID, e.At, e.Kind, e.Actor, e.By, e.From, e.To, e.Detail, e.Data)
 	return err
 }
 
-const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of`
+const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of, repeats, repeat_at`
 
 func scanCase(sc interface{ Scan(...any) error }) (Case, error) {
 	var c Case
 	var closed sql.NullString
 	err := sc.Scan(&c.ID, &c.Kind, &c.Target, &c.CanonicalKey, &c.Project, &c.Urgency, &c.Status, &c.Resolution, &c.Holder,
-		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf)
+		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf, &c.Repeats, &c.RepeatAt)
 	if closed.Valid {
 		c.ClosedAt = &closed.String
 	}

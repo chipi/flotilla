@@ -17,6 +17,7 @@
     <section class="main card card--edge" aria-labelledby="tl">
       <h2 id="tl">Timeline</h2>
       {{template "whoacts" "page"}}
+      {{if .Repeats}}<p class="meta">{{.Repeats}} An unchanged detection is counted here, not added to the timeline.</p>{{end}}
       {{if gt .EventCount (len .Events)}}<p class="meta">{{.EventCount}} events, shown as {{len .Events}} rows: every change of the case stays; runs and signals that changed nothing fold into one row, opened on a tap.</p>{{end}}
       <ol class="timeline">
         {{range .Events}}<li>

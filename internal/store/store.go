@@ -330,6 +330,10 @@ var schema = []string{
 	CREATE INDEX slack_asks_decided ON slack_asks(outcome, decided_at);`,
 	// ADR-0016: a detection's structured data (its measure, a proposal) on the case's timeline.
 	`ALTER TABLE case_events ADD COLUMN data TEXT NOT NULL DEFAULT '';`,
+	// A detection that repeats the case's last signal exactly (an issue still open, unchanged) is counted on
+	// the case, not written as another event: a case's timeline no longer grows by one event an hour.
+	`ALTER TABLE cases ADD COLUMN repeats INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE cases ADD COLUMN repeat_at TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started.

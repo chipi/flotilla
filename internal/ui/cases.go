@@ -452,7 +452,8 @@ func foldTimeline(ev []store.CaseEvent, rows []timelineEvent, closedAt string) [
 type policyLevel struct{ What, Level string }
 
 type caseData struct {
-	EventCount int // the events before folding
+	EventCount int    // the events before folding
+	Repeats    string // "still reported 18 more times, unchanged; the last 14:46", or ""
 	Row        caseRow
 	Routine    string
 	Opened     string
@@ -535,6 +536,9 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		closedAt = *c.ClosedAt
 	}
 	d.EventCount = len(d.Events)
+	if c.Repeats > 0 {
+		d.Repeats = fmt.Sprintf("Still reported %s, unchanged; the last %s.", plural(c.Repeats, "more time", "more times"), u.clock(c.RepeatAt))
+	}
 	d.Events = foldTimeline(ev, d.Events, closedAt)
 	if len(plans) > 0 {
 		p := plans[len(plans)-1]
