@@ -76,5 +76,12 @@ class DevEnvironment(unittest.TestCase):
             self.assertFalse(filing.is_dev_signal(_sig(fp, project)), fp)
 
 
+    def test_a_grafana_alert_is_never_dev(self):
+        # a decision, not a side effect: dev environments run no Grafana alerting (homelab review of T0.1),
+        # so only GlitchTip signals are classed dev, even when an alert's project label ends in -dev
+        sig = _sig("grafana:abc123", "orrery-dev")
+        sig["source"] = "grafana"
+        self.assertFalse(filing.is_dev_signal(sig))
+
 if __name__ == "__main__":
     unittest.main()

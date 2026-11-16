@@ -16,6 +16,7 @@ GITHUB_TOKEN_FILE (optional: a read token, for the rate limit; public repos need
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -25,6 +26,13 @@ MAX_DATA = 7500      # flotillad keeps detection data up to 8192 bytes; room for
 # triage's label for an error from a dev environment (signal-fleet/mvp/filing.py DEV_LABEL): that code is a
 # branch's, not main's, so there is nothing on main to fix. Such an issue is never a case, whatever else it carries.
 DEV_LABEL = "triage-fleet/dev-env"
+# Issues triage filed before it labelled dev signals carry only `bug`; their body names the signal as
+# fp: `glitchtip:<SHORT-ID>` (signal-fleet/mvp/actions.py), and a dev project's short id is <PROJECT>-DEV-<n>.
+DEV_FP = re.compile(r"fp: `glitchtip:[A-Za-z0-9-]*-DEV-[A-Za-z0-9]+`", re.IGNORECASE)
+
+
+def is_dev(it):
+    return DEV_LABEL in {lb.get("name") for lb in it.get("labels") or []} or bool(DEV_FP.search(it.get("body") or ""))
 
 
 class IntakeError(Exception):
@@ -43,7 +51,7 @@ def get(url, token=None, timeout=20):
 
 
 def open_issues(api, repo, labels, token=None):
-    """The open issues (not pull requests) of repo carrying any of labels and not DEV_LABEL, by number."""
+    """The open issues (not pull requests) of repo carrying any of labels and not from a dev environment, by number."""
     found = {}
     for label in labels:
         q = urllib.parse.urlencode({"state": "open", "labels": label, "per_page": 100})
@@ -51,7 +59,7 @@ def open_issues(api, repo, labels, token=None):
         if not isinstance(items, list):
             raise IntakeError(f"{repo} label {label}: not a list of issues")
         for it in items:
-            if "pull_request" not in it and DEV_LABEL not in {lb.get("name") for lb in it.get("labels") or []}:
+            if "pull_request" not in it and not is_dev(it):
                 found[it["number"]] = it
     return found
 

@@ -145,6 +145,16 @@ class Intake(unittest.TestCase):
         out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
         self.assertEqual([d["target"] for d in out["detections"]], ["repo:chipi/orrery/issues/12"])
 
+    def test_an_issue_filed_from_a_dev_signal_before_the_label_is_not_a_case(self):
+        """Issues triage filed before it labelled dev signals carry only `bug`; their body names the signal
+        (actions.py: `fp: `glitchtip:ORRERY-DEV-13``), as #651 and #659 do. A production fingerprint stays a case."""
+        dev = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-DEV-13`)"
+        prod = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-PROD-25`)"
+        gh = FakeGitHub([issue(14, "prod", ["bug"], body=prod), issue(15, "dev", ["bug"], body=dev)])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
+        self.assertEqual([d["target"] for d in out["detections"]], ["repo:chipi/orrery/issues/14"])
+
     def test_a_long_body_is_cut_to_fit(self):
         gh = FakeGitHub([issue(3, "long", ["bug"], body="x" * 40000)])
         self.addCleanup(gh.close)
