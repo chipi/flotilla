@@ -373,7 +373,7 @@ func (u *Server) wrongNow(ctx context.Context, now time.Time, routines []api.Rou
 			continue
 		}
 		href := "/fleets/" + x.Fleet + "?sel=" + url.QueryEscape(x.ID)
-		if x.Stale {
+		if x.Stale && !x.Paused { // a paused routine is listed as paused, not also as stale
 			last := "it has never run ok"
 			if x.LastSuccess != "" {
 				last = "last ok " + u.clock(x.LastSuccess) + ", " + u.agoText(x.LastSuccess)

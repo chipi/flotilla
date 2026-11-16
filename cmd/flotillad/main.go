@@ -533,7 +533,9 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 			if !j.Enabled {
 				continue
 			}
-			if j.Fresh > 0 { // a routine on cases has no freshness
+			// a routine on cases has no freshness; a STOPped or paused one is not stale, it is held: no freshness
+			// pushed, so the stale alert (which needs it) stays quiet for it and a real stale routine stands out
+			if held, err := s.Held(ctx, j); j.Fresh > 0 && err == nil && !held {
 				push.Freshness(j.ID(), j.Fresh)
 			}
 			if at, err := st.LastSuccess(ctx, j.ID()); err == nil {

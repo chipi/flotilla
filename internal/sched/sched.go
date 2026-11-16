@@ -42,6 +42,13 @@ type Metrics interface {
 	LastSuccess(routine string, at time.Time)
 }
 
+// StoreError counts a store write that failed without failing its caller, when the metrics sink has it.
+func (s *Scheduler) StoreError(op string) {
+	if m, ok := s.Metrics.(interface{ StoreError(string) }); ok {
+		m.StoreError(op)
+	}
+}
+
 // Control keys. A fleet's "stop" skips every routine of the fleet; a routine's "paused" skips that routine; a
 // routine's "autonomy" overrides the spec's default. The installation's "frozen" (ADR-0014 decision 8) runs
 // every routine at shadow; it is kept on FreezeSubject, which no fleet or routine id can be.
@@ -412,6 +419,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		// the calls are a record of the run, not its outcome: a failure to keep them is logged, not fatal
 		if err := s.Store.RecordCalls(fctx, calls); err != nil {
 			s.Log.Error("recording the run's model calls", "run_id", runID, "err", err)
+			s.StoreError("run_calls")
 		}
 	}
 	if callErr == nil && len(res.Loaded) > 0 {
@@ -426,6 +434,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		}
 		if err := s.Store.RecordLoaded(fctx, items); err != nil {
 			s.Log.Error("recording what the run read", "run_id", runID, "err", err)
+			s.StoreError("run_loaded")
 		}
 	}
 	total := spent
@@ -556,6 +565,15 @@ func (s *Scheduler) Configured(ctx context.Context, j *spec.Routine) (string, er
 		return j.MaxAutonomy, nil
 	}
 	return v, nil
+}
+
+// Held says whether the routine is held by an operator: its fleet STOPped or the routine paused.
+func (s *Scheduler) Held(ctx context.Context, j *spec.Routine) (bool, error) {
+	if v, err := s.Store.Control(ctx, j.Fleet, KeyStop); err != nil || v == "1" {
+		return v == "1", err
+	}
+	v, err := s.Store.Control(ctx, j.ID(), KeyPaused)
+	return v == "1", err
 }
 
 // CaseHold is casetimer.Hold: a case of this kind and stage is held while its acting routine's fleet is

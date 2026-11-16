@@ -132,6 +132,13 @@ func (p *Pusher) Run(routine, status, autonomy string, durationS, spendDayUSD fl
 	p.push(lines)
 }
 
+// StoreError records one store write that failed but did not fail its caller (a run's model calls, what it
+// read, a case's spend, cleared incidents): flotilla_store_error{op} 1 per failure, counted with
+// count_over_time, so a write that keeps failing is seen and not only logged.
+func (p *Pusher) StoreError(op string) {
+	p.push([]string{p.sample("flotilla_store_error", map[string]string{"op": op}, 1)})
+}
+
 // LastSuccess pushes the time of a routine's last ok run; the stale alert compares it with now.
 func (p *Pusher) LastSuccess(routine string, at time.Time) {
 	if at.IsZero() {

@@ -757,6 +757,7 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 		}
 		if err := st.AddCaseSpend(ctx, c.ID, r.SpendUSD, secs); err != nil {
 			d.Log.Error("recording the case's spend", "case", c.ID, "run_id", r.ID, "err", err)
+			d.API.Sched.StoreError("case_spend")
 		}
 	}
 	if r.Status != store.StatusOK || out == nil {
@@ -939,6 +940,7 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 	cleared, err := d.API.Store.ClearIncidents(ctx, j.ID(), present)
 	if err != nil {
 		d.Log.Error("clear incidents", "routine", j.ID(), "err", err)
+		d.API.Sched.StoreError("clear_incidents")
 	}
 	for _, id := range cleared {
 		d.Log.Info("incident cleared", "case", id, "routine", j.ID(), "run_id", r.ID)

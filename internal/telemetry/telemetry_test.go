@@ -32,6 +32,10 @@ func TestPushFormat(t *testing.T) {
 	if strings.Contains(bodies[1], "flotilla_spend_day_usd") || strings.Contains(bodies[1], "flotilla_run_seconds") {
 		t.Fatalf("a skipped run must not overwrite the day's spend with 0: %s", bodies[1])
 	}
+	p.StoreError("case_spend")
+	if !strings.Contains(bodies[2], `flotilla_store_error{environment="operations",op="case_spend",service="flotillad"} 1`) {
+		t.Fatalf("store error sample: %s", bodies[2])
+	}
 }
 
 func TestPushRetriesTransientFailures(t *testing.T) {

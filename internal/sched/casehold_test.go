@@ -43,4 +43,18 @@ func TestCaseHold(t *testing.T) {
 	if h, _, _ := s.CaseHold(ctx, "other_kind", ""); h {
 		t.Fatal("a kind no routine acts on is held")
 	}
+	// Held (the stale alert's freshness is not pushed for a held routine)
+	j := s.Routines[len(s.Routines)-1]
+	if h, err := s.Held(ctx, j); h || err != nil {
+		t.Fatalf("released: %v %v", h, err)
+	}
+	_ = s.Store.SetControl(ctx, "bugfix", KeyStop, "1", "op", "test")
+	if h, _ := s.Held(ctx, j); !h {
+		t.Fatal("a STOPped fleet's routine is not held")
+	}
+	_ = s.Store.SetControl(ctx, "bugfix", KeyStop, "0", "op", "test")
+	_ = s.Store.SetControl(ctx, j.ID(), KeyPaused, "1", "op", "test")
+	if h, _ := s.Held(ctx, j); !h {
+		t.Fatal("a paused routine is not held")
+	}
 }
