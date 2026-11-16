@@ -73,6 +73,14 @@ PI_HARNESS = POP + textwrap.dedent('''\
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyfixture) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'F = 1' > src/podcast_scraper/pkg/newf.py
                 printf 'fixture src/podcast_scraper/pkg/newf.py\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyshadow) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'x = 1' > json.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyinitfile) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'import os' > tests/unit/podcast_scraper/pkg/__init__.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pyhelper) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'import os' > tests/unit/podcast_scraper/pkg/helpers.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
+      pysuffix) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
+                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/mod_test.py ;;
       pyskip)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; printf 'SKIP\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
       pyconf)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
                 echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py; echo '[project]' > pyproject.toml ;;
@@ -750,6 +758,9 @@ class PythonRepo(unittest.TestCase):
             self.assertIn("related: no changed source file under src/podcast_scraper maps to a test directory", plan["detail"], fix_)
             if what:
                 self.assertIn(what, plan["detail"])
+                self.assertIn("its tests belong in tests/unit/podcast_scraper/lone/", plan["detail"])
+            else:
+                self.assertIn("its tests belong in tests/unit/podcast_scraper/test___init__.py", plan["detail"])
 
     def test_a_source_file_with_no_mirror_is_in_the_checked_line(self):
         f = self.fixture(["actionable"], ["pypartial"])
@@ -792,10 +803,33 @@ class PythonRepo(unittest.TestCase):
         for p in ("src/podcast_scraper/a.py", "tests/unit/podcast_scraper/test_a.py", "docs/guide.md", "src/podcast_scraper/requirements_check.py"):
             self.assertFalse(fix.PYTEST_OUT_OF_SCOPE.search(p), p)
 
-    def test_a_conftest_alone_is_not_a_test_file(self):
+    def test_a_conftest_alone_is_out_of_scope_and_named(self):
         f = self.fixture(["actionable"], ["pyconftestonly"])
         plan, _ = f.run("--kickback-max", "0")
-        self.assertIn("repro-first violated: no test in the diff", plan["detail"])
+        self.assertIn("out of scope: the diff touches tests/unit/podcast_scraper/pkg/conftest.py (pytest config, collection or install file)",
+                      plan["detail"])
+
+    def test_python_that_pytest_imports_outside_a_test_file_is_out_of_scope(self):
+        """cwd and PYTHONPATH put the repo root first on sys.path: a top-level json.py shadows the installed
+        module; a tests/ __init__.py runs at package collection and a helper module when it is imported."""
+        cases = {"pyshadow": ("json.py", "a .py outside src/podcast_scraper and tests/unit/podcast_scraper"),
+                 "pyinitfile": ("tests/unit/podcast_scraper/pkg/__init__.py", "only test files (test_*.py, *_test.py) may change"),
+                 "pyhelper": ("tests/unit/podcast_scraper/pkg/helpers.py", "only test files (test_*.py, *_test.py) may change")}
+        for fix_, (path, rule) in cases.items():
+            f = self.fixture(["actionable"], [fix_])
+            plan, _ = f.run("--kickback-max", "0")
+            self.assertEqual(plan["outcome"], "escalate", fix_)
+            self.assertIn(f"out of scope: the diff touches {path} (", plan["detail"], fix_)
+            self.assertIn(rule, plan["detail"], fix_)
+
+    def test_test_files_may_be_named_either_way(self):
+        f = self.fixture(["actionable"], ["pysuffix"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+
+    def test_pytest_needs_both_roots(self):
+        with self.assertRaises(SystemExit):
+            fix.parse(["--repo", "o/r", "--worker-model", "a", "--advisor-model", "b", "--reviewer-model", "c", "--test-format", "pytest"])
 
     def test_only_python_files_are_handed_to_pytest(self):
         f = self.fixture(["actionable"], ["pyjson"])

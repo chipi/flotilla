@@ -446,16 +446,45 @@ class Chain:
             return "the fix episode ran out of time with no change", files, stream, stats
         if not files:
             return "the fix changed nothing", files, stream, stats
+        pytest = self.a.test_format == "pytest"
+        bad = []
+        for x in files:
+            if OUT_OF_SCOPE.search(x) or any(re.search(o, x) for o in self.a.out_of_scope):
+                bad.append(x)
+            elif pytest and self.pytest_scope(x):
+                bad.append(f"{x} ({self.pytest_scope(x)})")
+        # under pytest the scope comes first: a file pytest imports must be named, not hidden behind "no test"
+        if bad and pytest:
+            return f"out of scope: the diff touches {', '.join(bad)}", files, stream, stats
         tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
-        if self.a.test_format == "pytest":   # only .py files go to pytest; a conftest or config is never a test
+        if pytest:   # only .py files go to pytest; a conftest or config is never a test
             tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]
         if not tests:
             return "repro-first violated: no test in the diff", files, stream, stats
-        bad = [x for x in files if OUT_OF_SCOPE.search(x) or any(re.search(o, x) for o in self.a.out_of_scope)
-               or (self.a.test_format == "pytest" and PYTEST_OUT_OF_SCOPE.search(x))]
         if bad:
             return f"out of scope: the diff touches {', '.join(bad)}", files, stream, stats
         return self.gates(files, tests), files, stream, stats
+
+    def pytest_scope(self, x):
+        """Why a changed file may not be part of a pytest fix ("" when it may). Python that pytest imports
+        before or outside a test is code that runs with the worker's environment: the repo root is on
+        sys.path (cwd under `python -m pytest`, and PYTHONPATH), so a top-level json.py or pytest_socket.py
+        shadows the installed module, a tests/ __init__.py runs at package collection, a helper module when a
+        test imports it. Only source files and test files (test_*.py, *_test.py) are a fix's to change."""
+        if PYTEST_OUT_OF_SCOPE.search(x):
+            return "pytest config, collection or install file"
+        if not x.endswith(".py"):
+            return ""
+        src, tst = self.a.source_root.rstrip("/") + "/", self.a.test_root.rstrip("/") + "/"
+        if x.startswith(tst):
+            base = os.path.basename(x)
+            ok = re.fullmatch(r"test_[^/]*\.py|[^/]*_test\.py", base)
+            return "" if ok else (f"only test files (test_*.py, *_test.py) may change under {self.a.test_root}: "
+                                  "__init__.py and helper modules run at import")
+        if x.startswith(src):
+            return ""
+        return (f"a .py outside {self.a.source_root} and {self.a.test_root} is imported by pytest and may shadow "
+                "an installed module")
 
     def gates(self, files, tests):
         """RFC-0010 §9: repro (the tests fail on the base, pass with the fix) and related (no failure the base
@@ -494,8 +523,8 @@ class Chain:
             return f"the fix's own tests fail with the fix: {tail('; '.join(sorted(fixed.unloaded | fixed.fails)), 300)}"
         if self.a.related == "pytest-dirs" and self.rel_considered and not self.rel_targets:
             return (f"related: no changed source file under {self.a.source_root} maps to a test directory under "
-                    f"{self.a.test_root} ({', '.join(self.rel_unmapped)}): no related test ran, so nothing shows the change "
-                    "breaks none")
+                    f"{self.a.test_root} ({', '.join(self.mirror_hint(x) for x in self.rel_unmapped)}): no related test ran, "
+                    "so nothing shows the change breaks none")
         new = sorted((rel.fails | rel.unloaded) - (base_rel.fails | base_rel.unloaded))
         if new:
             return f"{len(new)} new failures in the related tests: {tail('; '.join(new), 300)}"
@@ -524,6 +553,18 @@ class Chain:
             else:
                 unmapped.append(x)
         return sorted(t for t in targets if not any(t.startswith(o + "/") for o in targets)), unmapped, considered
+
+    def mirror_path(self, x):
+        """Where the tests of source file x belong: its mirror under --test-root ("" for a non-.py file)."""
+        if not x.endswith(".py"):
+            return ""
+        rel = x[len(self.a.source_root.rstrip("/") + "/"):]
+        parent = os.path.dirname(rel)
+        troot = self.a.test_root.rstrip("/")
+        return os.path.join(troot, parent) + "/" if parent else os.path.join(troot, "test_" + os.path.basename(rel))
+
+    def mirror_hint(self, x):
+        return f"{x}: its tests belong in {self.mirror_path(x)}" if self.mirror_path(x) else f"{x}: a non-.py file has no test mirror"
 
     def related(self, src, say):
         """The tests related to the changed source files. vitest: --related-cmd on them. pytest-dirs: --test-cmd
@@ -713,8 +754,8 @@ def parse(argv):
     ap.add_argument("--review-timeout", type=int, default=600)
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
     a = ap.parse_args(argv)
-    if a.related == "pytest-dirs" and not (a.source_root and a.test_root):
-        ap.error("--related pytest-dirs needs --source-root and --test-root")
+    if (a.related == "pytest-dirs" or a.test_format == "pytest") and not (a.source_root and a.test_root):
+        ap.error("--related pytest-dirs and --test-format pytest need --source-root and --test-root (the scope rules use them)")
     return a
 
 

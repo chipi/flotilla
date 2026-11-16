@@ -63,6 +63,21 @@ test code planted be installed by the next, so every run downloads its wheels ag
 run and the fixed run, with the worker's environment. Such a file is never counted as a test file,
 and only `.py` files are handed to pytest.
 
+Python that pytest imports outside a test is out of scope too, because the repo root is first on
+`sys.path` (the working directory under `python -m pytest`, and `PYTHONPATH`): a model-added
+top-level `json.py` or `pytest_socket.py` would shadow the installed module, a `tests/**/__init__.py`
+runs at package collection, and a helper module runs when a test imports it. So under
+`--test-format pytest` a changed `.py` must be under `--source-root`, or under `--test-root` **and**
+named `test_*.py` or `*_test.py`; anything else is rejected with its file and the rule in the
+kick-back. Both roots are therefore required with `--test-format pytest`. A fix that needs a new
+helper or an `__init__.py` under the tests is a person's change.
+
+`PYTHONPATH` stays in the profile but removes nothing: `python -m pytest` puts the working
+directory on `sys.path` anyway, and podcast_scraper's `from tests.conftest import ...` needs the repo
+root, which `tests/__init__.py` also gets pytest to insert (checked on a scratch package with pytest
+and pytest-json-report from an existing venv, not on podcast_scraper). The shadowing risk is closed
+by the scope rule, not by dropping the variable.
+
 **A setup or teardown error is not a failure.** pytest-json-report's outcome `error` (a fixture that
 exists only in the fix, say) counts as not run, not as the test failing on the base; only a failed
 call phase is a failure.
