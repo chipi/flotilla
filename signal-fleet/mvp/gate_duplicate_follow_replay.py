@@ -37,6 +37,9 @@ import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
 HERE = os.path.dirname(os.path.abspath(__file__))
 LEDGER = evaldata.path("reference-filing", "filed-2026-10-02.tsv")
 CORPUS = evaldata.path("reference-filing", "duplicates-2026-10-02.json")
+# A dev project's error (short id <PROJECT>-DEV-<n>) is refused by filing since 2026-11-16 (operator: a dev error
+# never becomes a GitHub issue). Written here independently of filing.is_dev_signal, so a wrong is_dev_signal fails.
+DEV_FP = re.compile(r"^glitchtip:[A-Za-z0-9-]*-DEV-[A-Za-z0-9]+$", re.IGNORECASE)
 BASE_REV = "499400f"  # homelab 857ddf8   # main before this fix
 NOW = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
 _TMP = tempfile.mkdtemp(prefix="sf-dup-replay-")
@@ -124,10 +127,15 @@ def main():
     dups = corpus["duplicate_of"]
     base, fix = _baseline(), _load(os.path.join(HERE, "filing.py"), "filing_fix")
     rows = [r for r in base._ledger_rows() if r["fingerprint"].startswith(("glitchtip:", "grafana:"))]
-    fails, moved, same, examples = [], 0, 0, []
+    fails, moved, same, examples, dev = [], 0, 0, [], 0
     for r in rows:
         key = f"{r['repo']}#{r['issue']}"
         b, f = outcome(base, r, corpus), outcome(fix, r, corpus)
+        if DEV_FP.match(r["fingerprint"]):
+            dev += 1
+            if f != ("REFUSED", []):
+                fails.append(f"{key} ({r['fingerprint']}, dev): expected REFUSED with no write, got {f}")
+            continue
         if dups.get(key):
             want = chain_end(key, dups)
             moved += 1
@@ -150,7 +158,8 @@ def main():
             fails.append(f"disk case {k}: expected COMMENTED on #43, got {res} {tg}")
     print(f"Duplicate-follow replay — {len(rows)} ledger rows replayed as recurrences\n")
     print(f"  rows whose issue was closed as a duplicate: {moved}")
-    print(f"  other rows acting exactly as before:        {same} of {len(rows) - moved}")
+    print(f"  dev rows refused, nothing written:          {dev}")
+    print(f"  other rows acting exactly as before:        {same} of {len(rows) - moved - dev}")
     print("  examples (baseline -> fix):")
     print("\n".join(sorted(set(examples))))
     shutil.rmtree(_TMP, ignore_errors=True)

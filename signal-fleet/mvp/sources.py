@@ -170,16 +170,23 @@ def attach_backend(sig):
 SUBSTRATE_GLITCHTIP_PROJECTS = {"flotilla"}
 
 
+def _left_out(slug):
+    """Substrate, or a dev project (<name>-dev). A dev build runs a branch's unmerged code: its errors belong to
+    whoever works on that branch, never to triage, and never become a GitHub issue (operator 2026-11-16). Both
+    wrong plans of bugfix phase A (#651, #659) came from triage filing orrery-dev errors as bugs on main."""
+    slug = str(slug or "")
+    return slug in SUBSTRATE_GLITCHTIP_PROJECTS or slug.lower().endswith("-dev")
+
+
 def _issue_query(limit):
-    """The issues query; with a substrate project in the org, it names every other project."""
+    """The issues query; with a project left out in the org, it names every other project."""
     q = f"/organizations/homelab/issues/?limit={limit}&sort=-last_seen"
     projects = _gt("/organizations/homelab/projects/")
     if not isinstance(projects, list):
         raise RuntimeError(f"glitchtip projects error: {str(projects)[:160]}")
-    if not any(p.get("slug") in SUBSTRATE_GLITCHTIP_PROJECTS for p in projects):
+    if not any(_left_out(p.get("slug")) for p in projects):
         return q
-    return q + "".join(f"&project={p['id']}" for p in projects
-                       if p.get("slug") not in SUBSTRATE_GLITCHTIP_PROJECTS)
+    return q + "".join(f"&project={p['id']}" for p in projects if not _left_out(p.get("slug")))
 
 
 def glitchtip_unresolved(limit=10):

@@ -137,16 +137,8 @@ class Intake(unittest.TestCase):
         self.assertEqual(d["data"]["issue"]["labels"], ["bug", "triage-fleet/routed:bugfix"])
         self.assertTrue(all(s[2] == "open" and s[3] == "Bearer tok-1" for s in gh.seen), gh.seen)
 
-    def test_a_dev_environment_issue_is_not_a_case(self):
-        """ROADMAP T0.1: an issue triage marked as a dev-environment error is about a branch's code, not main's;
-        bugfix would fix main for code it does not have (phase A's #651 and #659). Skipped even if labelled bug."""
-        gh = FakeGitHub([issue(12, "real", ["bug"]), issue(13, "from a dev worktree", ["bug", "triage-fleet/dev-env"])])
-        self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
-        self.assertEqual([d["target"] for d in out["detections"]], ["repo:chipi/orrery/issues/12"])
-
-    def test_an_issue_filed_from_a_dev_signal_before_the_label_is_not_a_case(self):
-        """Issues triage filed before it labelled dev signals carry only `bug`; their body names the signal
+    def test_an_issue_filed_from_a_dev_signal_is_not_a_case(self):
+        """Issues triage filed from dev signals carry `bug`; their body names the signal
         (actions.py: `fp: `glitchtip:ORRERY-DEV-13``), as #651 and #659 do. A production fingerprint stays a case."""
         dev = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-DEV-13`)"
         prod = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-PROD-25`)"

@@ -1,10 +1,10 @@
-"""python3 test_dev_filter.py: an error from a dev environment never becomes a `bug` on main (fleet-eval-data
-ROADMAP T0.1).
+"""python3 test_dev_filter.py: an error from a dev environment never becomes a GitHub issue (fleet-eval-data
+ROADMAP T0.1; operator 2026-11-16).
 
-A dev build runs a worktree's unmerged code (orrery's GlitchTip project orrery-dev: environment=dev, a `worktree`
-tag, no release). Its errors were filed in chipi/orrery as `bug` + actionable and routed to bugfix, which fixed main,
-where the code does not exist: both wrong fixes of phase A (#651, #659) came from there. The signal still gets
-filed, labelled as dev, without `bug`, the actionable marker or the routing note.
+A dev build runs a branch's unmerged code (orrery's GlitchTip project orrery-dev: environment=dev, a `worktree`
+tag holding the branch, no release). Its errors were filed in chipi/orrery as `bug` + actionable and routed to
+bugfix, which fixed main, where the code does not exist: both wrong fixes of phase A (#651, #659) came from there.
+The poll leaves dev projects out (test_units TestSubstrateGlitchTipProjects); filing refuses one that gets through.
 """
 import os
 import sys
@@ -47,23 +47,22 @@ class DevEnvironment(unittest.TestCase):
         os.unlink(self.path)
 
     def file(self, fp, project):
-        out = filing.file_or_update(_sig(fp, project), {"title": "t", "body": "b", "labels": ["bug", "area:x"]}, "bug")
-        self.assertTrue(out.startswith("CREATED") or out.startswith("FILED"), out)
-        return self.posts[-1]
+        return filing.file_or_update(_sig(fp, project), {"title": "t", "body": "b", "labels": ["bug", "area:x"]}, "bug")
 
-    def test_a_dev_error_is_filed_as_dev_not_as_a_bug(self):
-        p = self.file("glitchtip:ORRERY-DEV-T", "orrery-dev")
-        self.assertIn(filing.DEV_LABEL, p["labels"])
-        self.assertNotIn("bug", p["labels"])
-        self.assertNotIn(filing.ACTIONABLE_LABEL, p["labels"])
-        self.assertNotIn("routable", p["body"])
+    def test_a_dev_error_is_refused_and_nothing_is_written(self):
+        out = self.file("glitchtip:ORRERY-DEV-T", "orrery-dev")
+        self.assertTrue(out.startswith("REFUSED"), out)
+        self.assertEqual(self.posts, [])
+        with open(self.path) as f:
+            self.assertEqual(f.read(), "")
 
     def test_a_production_error_is_unchanged(self):
-        p = self.file("glitchtip:ORRERY-PROD-25", "orrery-prod")
+        out = self.file("glitchtip:ORRERY-PROD-25", "orrery-prod")
+        self.assertTrue(out.startswith("CREATED") or out.startswith("FILED"), out)
+        p = self.posts[-1]
         self.assertIn("bug", p["labels"])
         self.assertIn(filing.ACTIONABLE_LABEL, p["labels"])
         self.assertIn("routable", p["body"])
-        self.assertNotIn(filing.DEV_LABEL, p["labels"])
 
     def test_which_signals_are_dev(self):
         yes = [("glitchtip:ORRERY-DEV-13", "orrery-dev"), ("glitchtip:PODCAST-PIPELINE-DEV-1I", "podcast-pipeline-dev"),

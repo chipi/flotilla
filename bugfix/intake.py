@@ -23,16 +23,15 @@ import urllib.request
 
 MAX_DETECTIONS = 50  # flotillad refuses a report with more
 MAX_DATA = 7500      # flotillad keeps detection data up to 8192 bytes; room for the JSON around it
-# triage's label for an error from a dev environment (signal-fleet/mvp/filing.py DEV_LABEL): that code is a
-# branch's, not main's, so there is nothing on main to fix. Such an issue is never a case, whatever else it carries.
-DEV_LABEL = "triage-fleet/dev-env"
-# Issues triage filed before it labelled dev signals carry only `bug`; their body names the signal as
-# fp: `glitchtip:<SHORT-ID>` (signal-fleet/mvp/actions.py), and a dev project's short id is <PROJECT>-DEV-<n>.
+# An issue triage filed from a dev environment's error is about a branch's unmerged code, not main's: there is
+# nothing on main to fix (bugfix phase A's #651, #659). Triage no longer files them; the ones it filed before
+# carry `bug`, and their body names the signal as fp: `glitchtip:<SHORT-ID>` (signal-fleet/mvp/actions.py), a
+# dev project's short id being <PROJECT>-DEV-<n>. Such an issue is never a case, whatever labels it carries.
 DEV_FP = re.compile(r"fp: `glitchtip:[A-Za-z0-9-]*-DEV-[A-Za-z0-9]+`", re.IGNORECASE)
 
 
 def is_dev(it):
-    return DEV_LABEL in {lb.get("name") for lb in it.get("labels") or []} or bool(DEV_FP.search(it.get("body") or ""))
+    return bool(DEV_FP.search(it.get("body") or ""))
 
 
 class IntakeError(Exception):

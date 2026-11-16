@@ -46,6 +46,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LEDGER = evaldata.path("reference-filing", "filed-2026-10-17.tsv")
 CORPUS = evaldata.path("reference-filing", "identity-2026-10-17.json")
 BASE_REV = "1e9a3e5"  # homelab 237371c   # main before these fixes
+# A dev project's error (short id <PROJECT>-DEV-<n>) is refused by filing since 2026-11-16 (operator: a dev error
+# never becomes a GitHub issue). Written here independently of filing.is_dev_signal, so a wrong is_dev_signal fails.
+DEV_FP = re.compile(r"^glitchtip:[A-Za-z0-9-]*-DEV-[A-Za-z0-9]+$", re.IGNORECASE)
 GROUP_RULES_SINCE = "2026-08-20"   # f9a6b14 (2026-08-19) last changed GROUP_RULES
 NOW = datetime(2026, 10, 17, 15, 30, tzinfo=timezone.utc)
 _TMP = tempfile.mkdtemp(prefix="sf-identity-replay-")
@@ -137,7 +140,7 @@ def _outcome(mod, c, signal, issue=None):
 
 
 def section_a(base, fix, c, rows, gi, fails):
-    reused, same, other = [], 0, 0
+    reused, same, other, dev = [], 0, 0, 0
     for r in rows:
         src = r["fingerprint"].split(":")[0]
         if src not in ("glitchtip", "grafana"):
@@ -158,12 +161,17 @@ def section_a(base, fix, c, rows, gi, fails):
                 fails.append(f"A {r['fingerprint']}: baseline did not act on {key} — replay not faithful ({b})")
             if {key, "regression-of:" + key} & set(f[1]):
                 fails.append(f"A {r['fingerprint']}: fix still acts on the old issue {key} ({f})")
+        elif DEV_FP.match(r["fingerprint"]):
+            dev += 1
+            if f != ("REFUSED", []):
+                fails.append(f"A {r['fingerprint']} (dev): expected REFUSED with no write, got {f}")
         else:
             other += 1
             same += b == f
             if b != f:
                 fails.append(f"A {r['fingerprint']} ({src}, not reused) changed: {b} -> {f}")
-    print(f"A  short-id reuse, filing path: {len(reused)} reused rows; other rows unchanged {same}/{other}")
+    print(f"A  short-id reuse, filing path: {len(reused)} reused rows; dev rows refused {dev}; "
+          f"other rows unchanged {same}/{other}")
     print("\n".join(reused))
     return len(reused)
 
