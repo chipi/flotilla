@@ -7,10 +7,10 @@ again with each later step, so keep what you read and run small.
   the lines around the matches. For a file over 300 lines, read a range (offset and limit), not
   the whole file.
 - Do not read generated, built or vendored files: `node_modules/`, `dist/`, `build/`,
-  `.svelte-kit/`, `src/lib/paraglide/` (compiled messages), `*.min.js`, lockfiles. Read their
-  sources instead.
+  `.svelte-kit/`, `__pycache__/`, `.venv/`, compiled or bundled output (such as compiled message
+  catalogs), `*.min.js`, lockfiles. Read their sources instead.
 - Do not dump history: no `git log -p`, no `git log --all`, no `git show` of a whole commit.
   `git log --oneline -n 20 -- <path>` and `git show <sha> -- <path>` are enough.
-- Keep command output short: pipe long output to `head -n 50`, and run only the test files that
-  matter, not the whole suite.
+- Keep command output short: run only the test files that matter, not the whole suite, and keep
+  the end of long output, where test failures are (`2>&1 | tail -n 60`).
 - Do not commit, push, open a PR, or change CI, hooks, config or the lockfile.
