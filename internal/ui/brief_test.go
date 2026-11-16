@@ -69,6 +69,26 @@ func TestWorkerLinkIsNotAHostAgent(t *testing.T) {
 	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "worker link") {
 		t.Fatal("the Hosts page does not call the link a worker link")
 	}
+	// the fleet page's host agents card counts dgx alone (it said "2 down" with the X3's links, 2026-11-16)
+	if _, page := f.do("GET", "/fleets/triage", ck, nil, nil); !strings.Contains(page, "1 down") || strings.Contains(page, "2 down") {
+		t.Fatal("the fleet page counts a worker link as a host agent that is down")
+	}
+}
+
+// A worker a routine names but the installation does not have (the ended candidate, 2026-11-16) is not
+// "healthy" on the fleet page: the fixture configures no workers at all.
+func TestUnconfiguredWorkerIsNotHealthy(t *testing.T) {
+	f := setup(t)
+	ck, _ := f.csrfOf(f.addOperator())
+	_, page := f.do("GET", "/fleets/triage", ck, nil, nil)
+	i := strings.Index(page, "worker triage")
+	if i < 0 {
+		t.Fatal("no worker block on the fleet page")
+	}
+	block := page[i:min(len(page), i+600)]
+	if !strings.Contains(block, "not configured") || strings.Contains(block, ">healthy<") {
+		t.Fatalf("worker block: %s", block)
+	}
 }
 
 // RFC-0012 §4: a monitor's summary lines go into the brief's section its spec names, in the brief

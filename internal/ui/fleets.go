@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
@@ -414,7 +415,11 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		stages := []boardStage{{Title: "1 · Sources"}, {Title: "2 · Monitors"}, {Title: "3 · Remediation"}, {Title: "4 · Decide and act"}, {Title: "5 · Verify and report"}}
 		for _, wk := range f.Workers {
 			lamp, b, bc := "blamp", "healthy", "soft"
-			if m, ok := workers[wk].(map[string]any); ok && m["ok"] != true {
+			if m, ok := workers[wk].(map[string]any); !ok {
+				// named by a routine (a disabled one, say) but not in this installation's workers: nothing to
+				// be healthy about (the ended candidate read "healthy" on 2026-11-16)
+				lamp, b, bc = "blamp blamp--idle", "not configured", "soft"
+			} else if m["ok"] != true {
 				lamp, b, bc = "blamp blamp--bad", "not healthy", "bad"
 			}
 			stages[0].Nodes = append(stages[0].Nodes, boardNode{Label: "worker " + wk, Sub: "the access its routines read through", A: "", B: b, BClass: bc, Lamp: lamp, Arrow: true})
@@ -448,7 +453,8 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		hosts, _ := u.API.Store.Hosts(ctx)
 		up, down := 0, 0
 		for _, h := range hosts {
-			if h.RevokedAt != nil || h.EnrolledAt == nil {
+			// a remote worker's link enrols like a host (RFC-0011) but is not a host agent, as on Hosts and Watch
+			if h.RevokedAt != nil || h.EnrolledAt == nil || hostca.WorkerIdentityRe.MatchString(h.Name) {
 				continue
 			}
 			if h.Connected {

@@ -75,6 +75,19 @@ class Routine(unittest.TestCase):
             self.assertEqual(x["alias"], x["alias"].strip())
             self.assertNotIn(x["alias"], ("main", "plain", "bogus"), "a check line names the real alias")
 
+    def test_a_span_per_check_call(self):
+        """2026-11-16: a model-contract run made 8 calls and sent 1 span (the run's): the routine built its
+        client with tracing off. Each check's call is now a model.chat span under the run's trace."""
+        from test_model_client import Tracer
+        tracer = Tracer()
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        with contextlib.redirect_stdout(io.StringIO()):
+            cr.main([], environ={"FLOTILLA_MODELS": json.dumps(MODELS)}, transport=Endpoint(), tracer=tracer)
+        names = {sp.name for sp in tracer.spans}
+        self.assertGreaterEqual(len(tracer.spans), 12, "one span per check call: 3 aliases x 4 checks")
+        self.assertEqual(names, {"model.chat"})
+
     def test_checks_are_not_logged_twice(self):
         _, _, lines, _ = self.run_it()
         self.assertTrue(all("check" in x for x in lines), "the checks' own calls were also logged as ordinary calls")

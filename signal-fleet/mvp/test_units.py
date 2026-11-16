@@ -8,6 +8,7 @@ Each enhancement item (#1..#8, the 2026-08-27 triage enhancements; see docs/sign
 TestCase here as it lands; same input → same verdict, every run.
 """
 import collections
+import json
 import os
 import time
 import unittest
@@ -1590,6 +1591,51 @@ class TestNoTerminalDecision(unittest.TestCase):
         self._script(["", '{"action":"decide","disposition":"escalate","reason":"r",'
                           '"question":"q","certainty":"low"}'])
         self.assertEqual(self.t.investigate(self.SIG, probe_table={})["disposition"], "escalate")
+
+
+class TestCallsFile(unittest.TestCase):
+    """2026-11-16: no triage run had a row in flotillad's run_calls. The worker names the run's calls
+    file in FLOTILLA_CALLS_FILE and runtime/model_client.py writes one line per call to it, but triage
+    built its client with an environment holding only the API key, so the file was never named."""
+
+    def setUp(self):
+        import tempfile
+        import triage as t
+        self.t = t
+        self.orig = (t.post_json, t.config.OPENROUTER_URL, t.config.OPENROUTER_KEY,
+                     os.environ.get("FLOTILLA_CALLS_FILE"))
+        t.config.OPENROUTER_KEY, t.config.OPENROUTER_URL = "k", "http://localhost:4001/v1/chat/completions"
+        t.post_json = lambda url, body, headers=None, timeout=None: {
+            "model": body["model"], "choices": [{"message": {"content": '{"action":"decide"}'}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+        fd, self.path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+
+    def tearDown(self):
+        self.t.post_json, self.t.config.OPENROUTER_URL, self.t.config.OPENROUTER_KEY, calls = self.orig
+        if calls is None:
+            os.environ.pop("FLOTILLA_CALLS_FILE", None)
+        else:
+            os.environ["FLOTILLA_CALLS_FILE"] = calls
+        os.unlink(self.path)
+
+    def lines(self):
+        with open(self.path) as f:
+            return [json.loads(x) for x in f if x.strip()]
+
+    def test_each_call_is_a_line_in_the_runs_calls_file(self):
+        os.environ["FLOTILLA_CALLS_FILE"] = self.path
+        self.t._call([{"role": "user", "content": "x"}], trace_id="tid-1", step=0)
+        self.t._call([{"role": "user", "content": "y"}], trace_id="tid-1", step=1)
+        got = self.lines()
+        self.assertEqual(len(got), 2)
+        self.assertEqual((got[0]["tokens_in"], got[0]["tokens_out"]), (3, 2))
+        self.assertEqual(got[0]["model"], self.t.config.TRIAGE_MODEL)
+
+    def test_no_calls_file_outside_a_run(self):
+        os.environ.pop("FLOTILLA_CALLS_FILE", None)
+        self.t._call([{"role": "user", "content": "x"}], trace_id="tid-1", step=0)
+        self.assertEqual(self.lines(), [])
 
 
 class TestLangfuseJoin(unittest.TestCase):

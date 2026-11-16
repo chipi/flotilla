@@ -43,8 +43,10 @@ def line(name, r):
             "check": r["check"], "check_ok": r["ok"], "detail": r["detail"][:300]}
 
 
-def main(argv=None, environ=None, transport=None):
+def main(argv=None, environ=None, transport=None, tracer="default"):
     environ = dict(os.environ if environ is None else environ)
+    import telemetry
+    telemetry.setup(environ)   # each check's call a model.chat span; a no-op without an OTLP URL
     ap = argparse.ArgumentParser()
     ap.add_argument("--spend-file", default="")
     ap.add_argument("--timeout", type=int, default=60)
@@ -60,7 +62,7 @@ def main(argv=None, environ=None, transport=None):
         sub = alias_config(cfg, name)
         aliases = mc.load(sub)
         m = aliases["main"]
-        c = mc.Client(aliases, environ=environ, transport=transport, tracer=None)
+        c = mc.Client(aliases, environ=environ, transport=transport, tracer=tracer)
         results = cc.run_checks(c, tools=m.tools, cost=m.cost, json_mode=m.json_mode, timeout=a.timeout,
                                 main="main", plain="plain", bogus="bogus")
         for r in results:

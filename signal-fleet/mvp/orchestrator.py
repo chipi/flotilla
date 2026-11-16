@@ -365,6 +365,8 @@ if __name__ == "__main__":
                     help="max GlitchTip triages (model calls) per run; up to POLL_WIDTH issues are read")
     ap.add_argument("--no-dry-run", action="store_true", help="really create issues (gated)")
     args = ap.parse_args()
+    import telemetry   # flotilla's runtime/, on the path once triage is imported
+    telemetry.setup()  # each model call a model.chat span under the run's trace; a no-op without an OTLP URL
     if args.poll:
         sys.exit(1 if run_poll(limit=args.limit, dry_run=not args.no_dry_run) >= 2 else 0)
     elif args.glitchtip:

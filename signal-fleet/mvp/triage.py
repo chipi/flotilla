@@ -264,8 +264,11 @@ def _client():
                                      "kind": "litellm" if config.via_gateway() else "openai",
                                      "defaults": {"json": "object", "tools": "json", "cost": "reported"}}},
            "aliases": {config.TRIAGE_MODEL: {"endpoint": "triager", "model": config.TRIAGE_MODEL}}}
+    # FLOTILLA_CALLS_FILE (set by the worker for the run) is how the run's model calls reach flotillad's
+    # run_calls; without it in this environment every triage call went unrecorded until 2026-11-16
     return (model_client.Client(model_client.load(cfg), transport=_post_json_transport,
-                                environ={"OPENROUTER_API_KEY": config.OPENROUTER_KEY}),
+                                environ={"OPENROUTER_API_KEY": config.OPENROUTER_KEY,
+                                         "FLOTILLA_CALLS_FILE": os.environ.get("FLOTILLA_CALLS_FILE", "")}),
             config.TRIAGE_MODEL)
 
 
