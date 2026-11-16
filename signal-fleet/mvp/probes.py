@@ -6,6 +6,7 @@ either live or against a frozen probe->response table (the eval replay, EVAL.md 
 §7.3 "freeze the probe->response table").
 """
 import json
+import re
 
 import correlate
 
@@ -24,21 +25,62 @@ def _occurrence_history(signal, args):
     return hist if any(v is not None for v in hist.values()) else "<no occurrence history>"
 
 
+# A GlitchTip project slug is not the label its logs and metrics carry: the logs are labelled by app (podcast,
+# player, orrery, evals, websites) and by `service` per surface, the metrics by job. Read from the live stores on
+# 2026-11-16 (VictoriaLogs `stats by (app, service)`, VictoriaMetrics `count by (job) (up)`). Without this map
+# app:<slug> matched no logs for most projects, so their dismissals could not be corroborated and escalated.
+# A slug not here keeps the old query; the model's own `service` argument still wins.
+LOG_SELECTOR = {
+    "podcast-pipeline": "service:podcast-pipeline", "podcast-api": "service:podcast-api",
+    "player-api": "service:player-api", "player-mcp": "service:player-mcp",
+    "player-obs": "service:player-obs",
+    "orrery-prod": "service:orrery-web", "orrery-lab-api": "service:orrery-lab-api", "orrery-mcp": "service:orrery-mcp",
+    "evals-inspector": "service:evals-inspector", "evals-web": "service:evals-web",
+    "litellm-prod": "service:litellm-gateway",
+    "humancopilot-web": "app:websites", "devwhateverops-web": "app:websites",
+}
+METRIC_JOB = {
+    "player-mcp": "player_mcp", "player-obs": "player_obs",
+    "orrery-prod": "orrery", "orrery-lab-api": "orrery", "orrery-mcp": "orrery",
+    "evals-inspector": "evals-inspector", "evals-mcp": "evals-mcp",
+    "moss-dgx-transcription": "moss-app", "pyannote-dgx-diarization": "pyannote-app", "delivery": "delivery",
+}
+
+
+# The name and the window go into LogsQL and PromQL strings: a plain name and a plain duration only.
+NAME_OK = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+WINDOW_OK = re.compile(r"^[0-9]{1,4}[smhd]$")
+
+
+def _name(signal, args):
+    """The service to query: the model's argument, else the signal's project; None unless a plain name. The model
+    knows a project by its GlitchTip slug, so the maps apply to its argument too."""
+    svc = str(args.get("service") or signal.get("labels", {}).get("project", ""))
+    return svc if NAME_OK.match(svc) else None
+
+
 def _service_logs(signal, args):
-    svc = args.get("service") or signal.get("labels", {}).get("project", "")
-    window = args.get("window", "6h")
+    svc = _name(signal, args)
+    window = str(args.get("window", "6h"))
     if not svc:
         return "<no service to query>"
-    return correlate.vl_query(f"app:{svc} AND _time:{window} | sort by (_time) desc | limit 15")
+    if not WINDOW_OK.match(window):
+        window = "6h"
+    selector = LOG_SELECTOR.get(svc, f"app:{svc}")
+    return correlate.vl_query(f"{selector} AND _time:{window} | sort by (_time) desc | limit 15")
 
 
 def _metric(signal, args):
-    svc = args.get("service") or signal.get("labels", {}).get("project", "")
+    svc = _name(signal, args)
+    if not svc:
+        return "<no service to query>"
     kind = args.get("kind", "5xx")
+    job = METRIC_JOB.get(svc)
+    sel = f'job="{job}"' if job else f'job=~".*{svc}.*"'
     q = {
-        "5xx": f'sum(rate(http_requests_total{{job=~".*{svc}.*",status=~"5.."}}[5m]))',
-        "up": f'up{{job=~".*{svc}.*"}}',
-    }.get(kind, f'up{{job=~".*{svc}.*"}}')
+        "5xx": f'sum(rate(http_requests_total{{{sel},status=~"5.."}}[5m]))',
+        "up": f'up{{{sel}}}',
+    }.get(kind, f'up{{{sel}}}')
     return correlate.vm_query(q)
 
 
