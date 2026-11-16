@@ -902,11 +902,16 @@ def main(argv=None, environ=None):
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
     finally:
-        if terminated:   # finish the report inside the worker's 10 s; a second SIGTERM must not cut it short
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        # from here a SIGTERM (the worker's, at the routine's timeout; it SIGKILLs 10 s later) must not cut the report
+        # short: it only hurries the spend read, here or already under way
+        def on_late_term(signum, frame):
+            terminated.append(signum)
             if meter is not None:
-                meter.settle_s = min(meter.settle_s, 5.0)
-                meter.poll_s = min(meter.poll_s, 1.0)
+                meter.hurry()
+
+        signal.signal(signal.SIGTERM, on_late_term)
+        if terminated and meter is not None:
+            meter.hurry()
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
             usd, source, why = meter.cost(os.path.join(run_dir, "pi"))
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)

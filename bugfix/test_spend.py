@@ -16,14 +16,19 @@ import spend  # noqa: E402
 class Gateway:
     """/key/info answering the next spend of a script per read (the last one repeats); records what it saw."""
 
-    def __init__(self, spends, status=200):
-        self.spends, self.status, self.seen = list(spends), status, []
+    def __init__(self, spends, status=200, delay=0.0, step=0.0):
+        self.spends, self.status, self.seen, self.delay, self.step = list(spends), status, [], delay, step
         g = self
 
         class H(http.server.BaseHTTPRequestHandler):
             def do_GET(h):
                 g.seen.append((h.path, h.headers.get("Authorization")))
+                if g.delay and len(g.seen) > 1:
+                    import time
+                    time.sleep(g.delay)
                 s = g.spends.pop(0) if len(g.spends) > 1 else g.spends[0]
+                if g.step:   # never settles: every read is higher
+                    s = s + g.step * len(g.seen)
                 body = json.dumps({"key": "x", "info": {"spend": s, "max_budget": 12.0}}).encode()
                 h.send_response(g.status)
                 h.end_headers()
@@ -55,14 +60,14 @@ class SpendTest(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()
 
-    def gateway(self, spends, status=200):
-        g = Gateway(spends, status)
+    def gateway(self, spends, status=200, **kw):
+        g = Gateway(spends, status, **kw)
         self.addCleanup(g.close)
         return g
 
     def test_the_cost_is_the_gateways_bill_once_it_settles(self):
         g = self.gateway([1.0, 1.2, 1.35, 1.35])
-        m = spend.Meter({g.base: "sk-test"}, poll_s=0.01, settle_s=5)
+        m = spend.Meter([(g.base, "sk-test")], poll_s=0.01, settle_s=5)
         session(os.path.join(self.d, "pi"), [0.5, 0.5])   # pi's own figure is not the bill
         usd, source, why = m.cost(os.path.join(self.d, "pi"))
         self.assertEqual((round(usd, 6), source, why), (0.35, "gateway", ""))
@@ -74,7 +79,7 @@ class SpendTest(unittest.TestCase):
 
     def test_an_unreadable_gateway_reports_pis_figure(self):
         g = self.gateway([1.0], status=500)
-        m = spend.Meter({g.base: "sk-test"}, poll_s=0.01, settle_s=1)
+        m = spend.Meter([(g.base, "sk-test")], poll_s=0.01, settle_s=1)
         session(os.path.join(self.d, "pi"), [0.25, 0.5])
         usd, source, why = m.cost(os.path.join(self.d, "pi"))
         self.assertEqual((usd, source), (0.75, "pi"))
@@ -82,7 +87,7 @@ class SpendTest(unittest.TestCase):
 
     def test_a_spend_that_went_down_reports_pis_figure(self):
         g = self.gateway([3.0, 0.1, 0.1])
-        m = spend.Meter({g.base: "sk-test"}, poll_s=0.01, settle_s=1)
+        m = spend.Meter([(g.base, "sk-test")], poll_s=0.01, settle_s=1)
         session(os.path.join(self.d, "pi"), [0.4])
         usd, source, why = m.cost(os.path.join(self.d, "pi"))
         self.assertEqual((usd, source), (0.4, "pi"))
@@ -90,7 +95,7 @@ class SpendTest(unittest.TestCase):
 
     def test_two_keys_add_up(self):
         a, b = self.gateway([1.0, 1.5, 1.5]), self.gateway([10.0, 10.25, 10.25])
-        m = spend.Meter({a.base: "sk-a", b.base: "sk-b"}, poll_s=0.01, settle_s=5)
+        m = spend.Meter([(a.base, "sk-a"), (b.base, "sk-b")], poll_s=0.01, settle_s=5)
         usd, source, _ = m.cost(os.path.join(self.d, "pi"))
         self.assertEqual((round(usd, 6), source), (0.75, "gateway"))
 
@@ -102,7 +107,7 @@ class SpendTest(unittest.TestCase):
                              "c": {"base_url": "http://c/v1"}},
                "aliases": {"x": {"endpoint": "a"}, "y": {"endpoint": "b"}, "z": {"endpoint": "c"}, "w": {"endpoint": "a"}}}
         self.assertEqual(spend.keys_of(cfg, ["x", "y", "z", "w", "missing"], {"K": "sk-env"}),
-                         {"http://a/v1": "sk-env", "http://b/v1": "sk-file"})
+                         [("http://a/v1", "sk-env"), ("http://b/v1", "sk-file")])
 
     def test_fix_writes_the_runs_cost_to_the_spend_file(self):
         # a run that stops early (the case has no issue) still reports what it spent
@@ -124,6 +129,50 @@ class SpendTest(unittest.TestCase):
         self.assertEqual(out["outcome"], "escalate")
         with open(os.path.join(home, ".bugfix-fix-spend")) as f:
             self.assertEqual(float(f.read()), 0.125)
+
+    def test_two_keys_on_one_gateway_are_both_read(self):
+        cfg = {"endpoints": {"a": {"base_url": "http://g/v1", "key_env": "A"}, "b": {"base_url": "http://g/v1", "key_env": "B"}},
+               "aliases": {"x": {"endpoint": "a"}, "y": {"endpoint": "b"}, "z": {"endpoint": "a"}}}
+        self.assertEqual(spend.keys_of(cfg, ["x", "y", "z"], {"A": "sk-a", "B": "sk-b"}), [("http://g/v1", "sk-a"), ("http://g/v1", "sk-b")])
+
+    def test_a_hurried_read_of_a_slow_gateway_falls_back_in_time(self):
+        # the worker SIGKILLs 10 s after its SIGTERM: a 20 s read must not hold the report
+        import time
+        g = self.gateway([1.0, 1.5], delay=20)
+        m = spend.Meter([(g.base, "sk-test")], poll_s=0.01, settle_s=60)
+        session(os.path.join(self.d, "pi"), [0.3])
+        m.hurry()
+        t0 = time.monotonic()
+        usd, source, _ = m.cost(os.path.join(self.d, "pi"))
+        self.assertLess(time.monotonic() - t0, 7)
+        self.assertEqual((usd, source), (0.3, "pi"))
+
+    def test_a_sigterm_during_the_settle_still_writes_the_spend(self):
+        # the run has ended and the spend is being read (a gateway that never settles, settle 60 s) when the worker's
+        # SIGTERM comes: the report must still land before its SIGKILL 10 s later
+        import signal
+        import subprocess
+        import time
+        g = self.gateway([4.0], step=0.01)
+        kf = os.path.join(self.d, "key")
+        with open(kf, "w") as f:
+            f.write("sk-test")
+        models = {"endpoints": {"gw": {"base_url": g.base, "kind": "litellm", "key_file": kf}},
+                  "aliases": {"bugfix-flash": {"endpoint": "gw", "model": "m"}, "bugfix-reviewer": {"endpoint": "gw", "model": "m"}}}
+        home = os.path.join(self.d, "home")
+        os.makedirs(home)
+        env = dict(os.environ, FLOTILLA_CASE=json.dumps({"id": "c", "data": {}}), HOME=home,
+                   FLOTILLA_PLAN_FILE=os.path.join(self.d, "p.json"), FLOTILLA_MODELS=json.dumps(models))
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "chipi/orrery", "--worker-model", "bugfix-flash",
+                              "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer",
+                              "--scratch", os.path.join(self.d, "scratch"), "--spend-file", ".spend", "--spend-poll", "0.5"],
+                             env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
+        time.sleep(3)   # the case has no issue: the chain stops at once and the settle is under way
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(timeout=10)
+        with open(os.path.join(home, ".spend")) as f:
+            self.assertGreaterEqual(float(f.read()), 0.0)
 
     def test_without_spend_file_nothing_is_read_or_written(self):
         g = self.gateway([1.0])

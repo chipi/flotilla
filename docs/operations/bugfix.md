@@ -65,14 +65,16 @@ body and says so.
 **What a run cost.** `fix.py --spend-file` writes the run's cost to the routine's `spend_file`, so
 the day's budget and the case's limit count it. The cost is the gateway's bill: LiteLLM's spend
 of each key the run's aliases use, read (`/key/info`, key in the header) before the run and after
-it, until two reads 5 s apart agree (at most 60 s). pi's own figure is its catalog's list price,
-5 to 7 times the bill on 2026-11-15, so it is used only when the gateway cannot be read; it errs
-high, so a limit acts early. A key another run spends on meanwhile makes the cost larger, never
-smaller; a key per routine makes it exact. The run's log ends with `BUGFIX SPEND ... source=`.
-A run stopped at the routine's timeout reports too: the worker's SIGTERM ends the step in flight
-(each step runs in its own session, which the worker's kill of the run's group does not reach),
-and the spend is read with a 5 s settle inside the worker's 10 s grace. A cancelled run (a STOP of
-the fleet, `flotilla cancel`) is stopped the same way and reports the same.
+it, until two reads 5 s apart agree (at most 60 s). pi's own figure is its catalog's list price:
+5 to 7 times the bill on 2026-11-15, 1.8 times on #335's run of 2026-11-16, not established in
+general, so it is used only when the gateway cannot be read in time. A key another run spends on
+meanwhile makes the cost larger, never smaller; a key per routine makes it exact. The run's log
+ends with `BUGFIX SPEND ... source=`. A run stopped at the routine's timeout reports too: the
+worker's SIGTERM ends the step in flight (each step runs in its own session, which the worker's
+kill of the run's group does not reach). A SIGTERM before or during the spend read hurries it:
+reads of at most 2 s, all of it within 6 s, else pi's figure, inside the worker's 10 s grace
+before its SIGKILL. A cancelled run (a STOP of the fleet,
+`flotilla cancel`) is stopped the same way and reports the same.
 
 **The fleet's rules, not the repo's AGENTS.md.** pi loads the repo's `AGENTS.md` into every call
 by default: about 30,000 tokens on orrery, 44% of the input tokens of the fleet's sessions on
