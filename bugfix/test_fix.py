@@ -2,6 +2,7 @@
 and a local git remote. The models are replaced, not the flow: the verdicts and fixes each leaf gives
 are scripted per call, and the chain's steps, gates and limits are what is tested."""
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ TRIAGE = POP + textwrap.dedent('''\
     BUG_JSON="$1"; EV="${3:-}"; PRIOR="${4:-}"
     ID=$(jq -r .id "$BUG_JSON")
     V=$(pop verdicts)
+    echo "verdict ${BUGFIX_PI_RULES:-none}" >> "$FAKE_STATE/rules"
     IMG=no; [ -e "$BAKEOFF_WT/static/images/x.png" ] && IMG=yes
     echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER img=$IMG tools=${PI_TOOLS:-all} rows=$( [ -n "$EV" ] && wc -l < "$EV/result.tsv" | tr -d " " || echo 0)" >> "$FAKE_STATE/calls"
     KB=0; [ -n "$EV" ] && KB=$(( $(jq -r '.kickback_round // 0' "$PRIOR") + 1 ))
@@ -41,10 +43,12 @@ TRIAGE = POP + textwrap.dedent('''\
 
 PI_HARNESS = POP + textwrap.dedent('''\
     WT="$1"; F=$(pop fixes)
+    echo "fix ${BUGFIX_PI_RULES:-none}" >> "$FAKE_STATE/rules"
     echo "fix $F model=$PI_MODEL tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     cd "$WT"
     case "$F" in
       good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
+      hang)     echo $$ > "$FAKE_STATE/harness.pid"; sleep 60 ;;
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
       breaks)   echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo 'module.exports = () => 2;' > src/b.js ;;
       norepro)  echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/b.js 1' > src/a.test.js ;;
@@ -115,7 +119,9 @@ ADVISOR = textwrap.dedent('''\
 
 # the reviewer is pi itself, on PATH
 PI_BIN = POP + textwrap.dedent('''\
-    T=all; prev=; for a in "$@"; do [ "$prev" = --tools ] && T="$a"; prev="$a"; done
+    T=all; prev=; RULES=none; for a in "$@"; do [ "$prev" = --tools ] && T="$a"; [ "$prev" = --append-system-prompt ] && RULES="$a"; prev="$a"; done
+    NC=no; for a in "$@"; do [ "$a" = --no-context-files ] && NC=yes; done
+    echo "review $RULES no-context-files=$NC" >> "$FAKE_STATE/rules"
     R=approve; [ -s "$FAKE_STATE/reviews" ] && R=$(pop reviews)
     echo "review model=$6 tools=$T verdict=$R" >> "$FAKE_STATE/calls"
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$R"
@@ -756,6 +762,104 @@ exec {real} "$@"
         self.assertEqual(out["outcome"], "escalate")
         self.assertIn("no issue", out["detail"])
         self.assertEqual(old, os.environ.get("FLOTILLA_CASE"))
+
+    def rules(self, f):
+        with open(os.path.join(f.state, "rules")) as fh:
+            return fh.read().splitlines()
+
+    def test_every_pi_step_gets_the_fleet_rules_not_the_repos_agents_md(self):
+        # C2 (fleet-eval-data projects/bugfix-cost): pi loads the repo's AGENTS.md into every call by default,
+        # ~30k tokens on orrery; the verdict, the fix and the review each get the fleet's rule file instead
+        f = self.fixture(["actionable"], ["good"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        path = os.path.join(os.path.dirname(os.path.abspath(fix.__file__)), "fleet_rules.md")
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(self.rules(f), [f"verdict {path}", f"fix {path}", f"review {path} no-context-files=yes"])
+
+    def test_an_empty_pi_rules_keeps_pis_default(self):
+        f = self.fixture(["actionable"], ["good"])
+        plan, _ = f.run("--pi-rules", "")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(self.rules(f), ["verdict none", "fix none", "review none no-context-files=no"])
+
+    def test_the_bakeoff_scripts_pass_the_rules_to_pi(self):
+        # the image ships these three scripts (deploy/docker/worker-bugfix.Dockerfile); each pi call carries the rules
+        bakeoff = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(fix.__file__))), "bugfix-fleet", "bakeoff")
+        for name in ("harnesses/pi.sh", "triage_run.sh", "advisor_run.sh"):
+            with open(os.path.join(bakeoff, name)) as fh:
+                calls = [x for x in fh.read().splitlines() if re.search(r"\bpi -p\b", x) and not x.lstrip().startswith("#")]
+            self.assertTrue(calls, name)
+            for x in calls:
+                self.assertIn('${BUGFIX_PI_RULES:+--no-context-files --append-system-prompt "$BUGFIX_PI_RULES"}', x, name)
+
+    def test_a_run_stopped_at_its_timeout_still_reports_its_spend(self):
+        # the worker SIGTERMs the run's process group at the routine's timeout and SIGKILLs it 10 s later
+        # (worker/flotilla_worker.py KILL_GRACE_S); the spend must be written inside those 10 s
+        import signal
+        import time
+        import test_spend
+        f = self.fixture(["actionable"], ["hang"])
+        g = test_spend.Gateway([2.0, 2.25, 2.25])
+        self.addCleanup(g.close)
+        kf = os.path.join(f.d, "key")
+        with open(kf, "w") as fh:
+            fh.write("sk-test")
+        models = {"endpoints": {"gw": {"base_url": g.base, "kind": "litellm", "key_file": kf}},
+                  "aliases": {"bugfix-flash": {"endpoint": "gw", "model": "fleet-bugfix-flash"},
+                              "bugfix-reviewer": {"endpoint": "gw", "model": "fleet-bugfix-reviewer"}}}
+        home = os.path.join(f.d, "home")
+        os.makedirs(home)
+        env = dict(os.environ, FLOTILLA_PLAN_FILE=os.path.join(f.d, "plan.json"), FLOTILLA_MODELS=json.dumps(models),
+                   FAKE_STATE=f.state, GIT_ALLOW_PROTOCOL="file", GIT_REMOTE_BASE=f.remotes, HOME=home, BUGFIX_BAKEOFF_DIR=f.bakeoff,
+                   PATH=os.path.join(f.d, "bin") + os.pathsep + os.environ["PATH"],
+                   GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+                   FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": "repo:chipi/orrery/issues/12",
+                                             "data": {"issue": {"repo": "chipi/orrery", "number": 12, "title": "value is 1",
+                                                                "body": "value() returns 1, want 2", "url": "u"}}}))
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "chipi/orrery", "--worker-model", "bugfix-flash",
+                              "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
+                              "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
+                              "--scratch", f.scratch, "--spend-file", ".spend", "--spend-poll", "0.1"],
+                             env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
+        calls = os.path.join(f.state, "calls")
+        for _ in range(300):   # until the fix step hangs
+            if os.path.exists(calls) and "fix hang" in open(calls).read():
+                break
+            time.sleep(0.1)
+        with open(os.path.join(f.state, "harness.pid")) as fh:
+            harness = int(fh.read())
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(timeout=10)
+        with open(os.path.join(home, ".spend")) as fh:
+            self.assertEqual(float(fh.read()), 0.25)
+        # the fix step runs in its own session (sh), out of the worker's reach: fix.py must stop it, or the
+        # coding agent goes on calling the model after the run has ended
+        for _ in range(50):
+            try:
+                os.kill(harness, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            os.kill(harness, signal.SIGKILL)
+            self.fail("the fix step outlived the run")
+
+    def test_pi_sh_passes_the_rules_only_when_set(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        write(os.path.join(d, "bin", "pi"), 'printf "%s\\n" "$@" > "$OUT"\n')
+        harness = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(fix.__file__))), "bugfix-fleet", "bakeoff",
+                               "harnesses", "pi.sh")
+        for rules, want in (("/r.md", ["--no-context-files", "--append-system-prompt", "/r.md"]), ("", [])):
+            out = os.path.join(d, "args")
+            env = dict(os.environ, PATH=os.path.join(d, "bin") + os.pathsep + os.environ["PATH"], OUT=out, BUGFIX_PI_RULES=rules)
+            subprocess.run(["bash", harness, d, "the bug"], env=env, check=True, capture_output=True)
+            with open(out) as fh:
+                args = fh.read().splitlines()
+            got = [a for a in args if a in ("--no-context-files", "--append-system-prompt", "/r.md")]
+            self.assertEqual(got, want, rules)
 
 
 class PythonRepo(unittest.TestCase):

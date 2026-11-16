@@ -97,6 +97,12 @@ class Stop(Exception):
     """Ends the chain with an outcome: escalate with a reason."""
 
 
+class Terminated(BaseException):
+    """The worker's SIGTERM at the routine's timeout (a BaseException: no step's error handling may catch it).
+    The worker SIGKILLs 10 s later (worker/flotilla_worker.py KILL_GRACE_S), so main has that long to stop
+    the step in flight and report the run's spend."""
+
+
 def tail(s, n):
     s = (s or "").strip()
     return s if len(s) <= n else "…" + s[-(n - 1):]
@@ -120,6 +126,14 @@ def sh(cmd, cwd, env=None, timeout=None, check=False):
         if check:
             raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: no result in {timeout}s")
         return 124, out or ""
+    except BaseException:
+        # the child has its own session, out of reach of the worker's kill of the run's group: a run stopped
+        # at its timeout must not leave a coding agent calling the model
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        raise
     out = out or ""
     if check and p.returncode != 0:
         raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: exit {p.returncode}: {tail(out, 300)}")
@@ -316,6 +330,12 @@ class Chain:
         _, self.advisor = pi_config.pick(cfg, a.advisor_model)
         _, self.reviewer = pi_config.pick(cfg, a.reviewer_model)
         self.env = dict(environ)
+        # every pi step reads the fleet's rule file, not the repo's AGENTS.md: on orrery that file is ~30k tokens
+        # in every call (pi loads it by default), 44% of the input tokens of 2026-11-15/16's sessions
+        if a.pi_rules:
+            self.env["BUGFIX_PI_RULES"] = a.pi_rules
+        else:
+            self.env.pop("BUGFIX_PI_RULES", None)
         self.env.update({"PI_CODING_AGENT_DIR": os.path.join(run_dir, "pi"), "PI_PROVIDER": self.provider,
                          "BAKEOFF_ROOT": self.root, "BAKEOFF_WT": self.wt, "BAKEOFF_TRIAGED_DIR": self.triaged,
                          "TRIAGE_MODEL": self.worker, "ADVISOR_MODEL": self.advisor,
@@ -636,8 +656,9 @@ class Chain:
         prompt = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}). Read only: do not edit any "
                   f"file.\n\nDIFF:\n{diff}\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy. "
                   "End with VERDICT: approve or VERDICT: request-changes.")
+        rules = ["--no-context-files", "--append-system-prompt", self.env["BUGFIX_PI_RULES"]] if self.env.get("BUGFIX_PI_RULES") else []
         code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer,
-                           "--tools", READ_ONLY_TOOLS, prompt],
+                           "--tools", READ_ONLY_TOOLS, *rules, prompt],
                           self.wt, self.env, self.a.review_timeout)
         text = assistant_text(stream)
         if text:
@@ -794,6 +815,9 @@ def parse(argv):
     ap.add_argument("--setup-timeout", type=int, default=1200)
     ap.add_argument("--review-timeout", type=int, default=600)
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
+    ap.add_argument("--pi-rules", default=os.path.join(HERE, "fleet_rules.md"),
+                    help="the rule file every pi step gets instead of the repo's AGENTS.md (--no-context-files); '' keeps "
+                         "pi's default of loading the repo's AGENTS.md")
     ap.add_argument("--spend-file", default="", help="the routine's spend_file, relative to HOME: the run writes its cost "
                     "there (the gateway's bill for its keys; bugfix/spend.py)")
     ap.add_argument("--spend-poll", type=float, default=5.0, help="seconds between the spend reads after the run")
@@ -819,6 +843,13 @@ def main(argv=None, environ=None):
             cfg = {}
         meter = spend.Meter(spend.keys_of(cfg, {a.worker_model, a.advisor_model, a.reviewer_model}, environ),
                             a.spend_poll, a.spend_settle)
+    terminated = []
+
+    def on_term(signum, frame):
+        terminated.append(signum)
+        raise Terminated()
+
+    old_term = signal.signal(signal.SIGTERM, on_term)
     try:
         chain = Chain(a, case, run_dir, environ)
         out = chain.run()
@@ -827,6 +858,11 @@ def main(argv=None, environ=None):
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
     finally:
+        if terminated:   # finish the report inside the worker's 10 s; a second SIGTERM must not cut it short
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            if meter is not None:
+                meter.settle_s = min(meter.settle_s, 5.0)
+                meter.poll_s = min(meter.poll_s, 1.0)
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
             usd, source, why = meter.cost(os.path.join(run_dir, "pi"))
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
@@ -837,6 +873,8 @@ def main(argv=None, environ=None):
         shutil.rmtree(os.path.join(a.scratch, "venvs", os.path.basename(run_dir)), ignore_errors=True)
         if chain is not None and getattr(chain, "cache", None):
             sh(["git", "-C", chain.cache, "worktree", "prune"], a.scratch, environ, 60)
+        if not terminated:
+            signal.signal(signal.SIGTERM, old_term)
     with open(environ["FLOTILLA_PLAN_FILE"], "w") as f:
         json.dump(out, f)
     print(f"BUGFIX FIX case={case.get('id')} outcome={out['outcome']} {out.get('detail', '')}")

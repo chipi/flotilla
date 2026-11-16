@@ -69,6 +69,16 @@ it, until two reads 5 s apart agree (at most 60 s). pi's own figure is its catal
 5 to 7 times the bill on 2026-11-15, so it is used only when the gateway cannot be read; it errs
 high, so a limit acts early. A key another run spends on meanwhile makes the cost larger, never
 smaller; a key per routine makes it exact. The run's log ends with `BUGFIX SPEND ... source=`.
+A run stopped at the routine's timeout reports too: the worker's SIGTERM ends the step in flight
+(each step runs in its own session, which the worker's kill of the run's group does not reach),
+and the spend is read with a 5 s settle inside the worker's 10 s grace.
+
+**The fleet's rules, not the repo's AGENTS.md.** pi loads the repo's `AGENTS.md` into every call
+by default: about 30,000 tokens on orrery, 44% of the input tokens of the fleet's sessions on
+2026-11-15 and 16. Every pi step (verdict, advisor, fix, review) runs with `--no-context-files`
+and `bugfix/fleet_rules.md` instead (`--pi-rules`; `''` keeps pi's default). The rules keep tool
+results small: find before reading, ranges of long files, no generated or vendored files, no
+`git log -p`. On orrery pi's first request went from 123,326 to 7,082 characters.
 
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could

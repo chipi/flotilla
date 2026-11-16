@@ -146,7 +146,7 @@ EOF
 echo "══ run triager ══"
 SECONDS=0
 MAX_WALL="${TRIAGE_MAX_WALL:-900}"
-( cd "$WT" && pi -p --mode json --provider "$PROVIDER" --model "$MODEL" ${PI_TOOLS:+--tools "$PI_TOOLS"} "$PROMPT" < /dev/null ) \
+( cd "$WT" && pi -p --mode json --provider "$PROVIDER" --model "$MODEL" ${PI_TOOLS:+--tools "$PI_TOOLS"} ${BUGFIX_PI_RULES:+--no-context-files --append-system-prompt "$BUGFIX_PI_RULES"} "$PROMPT" < /dev/null ) \
   > "$OUT/harness.json" 2> "$OUT/harness.err" &
 HPID=$!
 while kill -0 "$HPID" 2>/dev/null; do
