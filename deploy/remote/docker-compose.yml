@@ -60,10 +60,8 @@ services:
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker-bugfix.token
     volumes:
       - ${FLOTILLA_REMOTE:?set FLOTILLA_REMOTE}/secrets/worker-bugfix.token:/run/flotilla/worker-bugfix.token:ro
-      - ${FLOTILLA_REMOTE}/secrets/bugfix-model.key:/run/flotilla/model.key:ro
-      # one LiteLLM key per fix routine (2026-11-16): its runs' spend is exact and the gateway stops it at its cap
-      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix.key:/run/flotilla/model-fix.key:ro
-      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix-podcast.key:/run/flotilla/model-fix-podcast.key:ro
+      # no model key: its routines (intake, intake-podcast, pr-check) call no model; each fix routine has
+      # its own worker below, holding only its own key
       - ${FLOTILLA_REMOTE}/scratch:/scratch
     networks: [inner]
 

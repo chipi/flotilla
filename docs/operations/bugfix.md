@@ -190,24 +190,28 @@ printed.
 
 1. **Worker tokens:** `worker-bugfix.token` and `worker-bugfix-act.token`, 32 random bytes as hex each,
    made the way the ops workers' were.
-2. **The model key:** `bugfix-model.key`, the LiteLLM `fleet-bugfix` virtual key alone in the file (on
-   the mini it is `LITELLM_FLEET_BUGFIX_KEY` in `~/signal-fleet/fleet-gateway.env`). `secrets.sh` puts
-   it in the bugfix worker's volume as `/run/flotilla/model.key`. Each fix routine has its own key as
-   well (`fleet-bugfix-fix`, `fleet-bugfix-fix-podcast`, $5 a day each), mounted on the X3 as
-   `/run/flotilla/model-fix.key` and `/run/flotilla/model-fix-podcast.key` and named by the endpoints
-   `gateway-bugfix-fix` and `gateway-bugfix-fix-podcast`, so a run's spend is its key's alone.
+2. **The model keys:** one per fix routine (`fleet-bugfix-fix`, `fleet-bugfix-fix-podcast`, $1 a
+   day each), each alone in its file and mounted only into that routine's worker on the X3, as
+   `/run/flotilla/model-fix.key` and `/run/flotilla/model-fix-podcast.key`, named by the endpoints
+   `gateway-bugfix-fix` and `gateway-bugfix-fix-podcast`, so a run's spend is its key's alone. The
+   shared `fleet-bugfix` key (`bugfix-model.key`) is no longer mounted anywhere.
 3. **`flotillad.yaml`:**
 
    ```yaml
-   workers:
-     bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
-     bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
+   workers:   # on the mini they are remote, on the X3 (deploy/remote/README.md)
+     bugfix: {remote: w-bugfix-omarchy}                       # intake, intake-podcast, pr-check: no model
+     bugfix-act: {remote: w-bugfix-act-omarchy}               # open-pr
+     bugfix-fix: {remote: w-bugfix-fix-omarchy}               # fix: only fleet-bugfix-fix's key
+     bugfix-fix-podcast: {remote: w-bugfix-fix-podcast-omarchy}   # fix-podcast: only its own key
    models:
      endpoints:
-       gateway-bugfix: {base_url: "http://litellm:4000/v1", kind: litellm, key_file: /run/flotilla/model.key}
+       gateway-bugfix-fix: {base_url: "http://homelab:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix.key}
+       gateway-bugfix-fix-podcast: {base_url: "http://homelab:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix-podcast.key}
      aliases:
-       bugfix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
-       bugfix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
+       fix-flash: {endpoint: gateway-bugfix-fix, model: fleet-bugfix-flash}
+       fix-reviewer: {endpoint: gateway-bugfix-fix, model: fleet-bugfix-reviewer}
+       fix-podcast-flash: {endpoint: gateway-bugfix-fix-podcast, model: fleet-bugfix-flash}
+       fix-podcast-reviewer: {endpoint: gateway-bugfix-fix-podcast, model: fleet-bugfix-reviewer}
    ```
 
    flotillad's `-check` refuses the bugfix specs without these aliases (security T4).

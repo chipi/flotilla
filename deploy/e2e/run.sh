@@ -103,6 +103,10 @@ workers:
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
+  # the fix routines' own workers on the mini are remote (the X3); the e2e runs neither routine, so they
+  # name the local bugfix worker
+  bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
+  bugfix-fix-podcast: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
   # the SEO fleet's worker is named by its specs; the e2e runs none of its routines (they read the live web)
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
