@@ -7,11 +7,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
+
+// ErrUnreachable: the request never reached the worker (its name did not resolve, or nothing answered
+// the dial), so the run did not start.
+var ErrUnreachable = errors.New("worker unreachable")
 
 // Request is one run, as flotillad hands it to a worker.
 type Request struct {
@@ -112,6 +118,10 @@ func (c *Client) Run(ctx context.Context, r Request) (*Result, error) {
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return nil, fmt.Errorf("worker %s: %w: %w", c.URL, ErrUnreachable, err)
+		}
 		return nil, fmt.Errorf("worker %s: %w", c.URL, err)
 	}
 	defer resp.Body.Close()

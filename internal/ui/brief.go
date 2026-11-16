@@ -48,7 +48,7 @@ func (u *Server) composeBrief(ctx context.Context, now time.Time) (store.Brief, 
 	dayAgo := now.Add(-24 * time.Hour)
 	var closedRows []caseRow
 	for _, c := range rows {
-		if waiting(c.Status) {
+		if u.waitingCase(c.Status, c.Kind) {
 			needs = append(needs, store.BriefItem{Text: c.Title + ": " + statusLabel(c.Status) + ".", Case: c.ID, Href: "/cases/" + c.ID, Kind: "needs:" + c.Kind})
 		}
 		if c.Status == cases.Closed && c.ClosedAt != nil {

@@ -111,7 +111,7 @@ func (u *Server) fleetSums(ctx context.Context, rows []caseRow) ([]fleetSum, []a
 		if c.OpenedAt >= day24 {
 			f.Cases24++
 		}
-		if waiting(c.Status) {
+		if u.waitingCase(c.Status, c.Kind) {
 			f.Waiting++
 		}
 	}
@@ -381,7 +381,7 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 	}
 	waitingKind := map[string]int{}
 	for _, c := range rows {
-		if waiting(c.Status) {
+		if u.waitingCase(c.Status, c.Kind) {
 			waitingKind[c.Kind]++
 		}
 	}
@@ -437,7 +437,7 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 			if c.Fleet == f.ID && c.Last.At >= day24 && (c.Last.By == "policy") {
 				decided++
 			}
-			if c.Fleet == f.ID && waiting(c.Status) {
+			if c.Fleet == f.ID && u.waitingCase(c.Status, c.Kind) {
 				asked++
 			}
 		}

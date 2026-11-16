@@ -161,6 +161,23 @@ func waiting(status string) bool {
 	return status == cases.AwaitingApproval || status == cases.Escalated
 }
 
+// waitingCase is waiting, and also a handed-over case of a kind no routine acts on (the seo fleet's
+// findings, RFC-0012): nothing but a person moves it.
+func (u *Server) waitingCase(status, kind string) bool {
+	if waiting(status) {
+		return true
+	}
+	if status != cases.HandedOver || u.API.Sched == nil {
+		return false
+	}
+	for _, j := range u.API.Sched.Routines {
+		if j.OnCase() == kind {
+			return false
+		}
+	}
+	return true
+}
+
 var runPrefix = regexp.MustCompile(`^run ([A-Za-z0-9._:\-]+): ?`)
 
 // splitRun takes the "run ID: " a routine puts before what it reports, so the run can be a link.

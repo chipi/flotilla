@@ -35,6 +35,10 @@ const (
 // HostNameRe is a host's name, the same rule the host's own config uses (internal/hostcfg).
 var HostNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
+// WorkerIdentityRe is a remote worker link's identity, w-<worker>-<node> (RFC-0011): it enrols like a
+// host but is not a host agent, so the host pages do not count it as one.
+var WorkerIdentityRe = regexp.MustCompile(`^w-[a-z0-9-]{1,60}$`)
+
 // CA is a certificate with its key: the root (on the operator's machine) or the intermediate.
 type CA struct {
 	Cert *x509.Certificate

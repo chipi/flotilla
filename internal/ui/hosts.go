@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostwire"
 	"github.com/chipi/flotilla/internal/store"
 )
@@ -44,6 +45,8 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 			row.Status, row.Lamp, row.Cap, row.Cert = "revoked", "lamp lamp--idle", "–", "revoked "+u.clock(*h.RevokedAt)
 		case h.EnrolledAt == nil:
 			row.Status, row.Lamp, row.Cert = "not enrolled", "lamp lamp--idle", "–"
+		case hostca.WorkerIdentityRe.MatchString(h.Name):
+			row.Status, row.Lamp = "worker link", "lamp lamp--idle" // its state is on its fleet's page
 		case h.Connected:
 			row.Status, row.Lamp = "connected", "lamp"
 		default:

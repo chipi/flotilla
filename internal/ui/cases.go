@@ -159,11 +159,11 @@ func (u *Server) casesPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		return
 	}
 	t := readTable(r, "last", true, func(c string) bool { return caseSorts[c] })
-	d := casesData{T: t, Total: len(rows), Cards: caseCards(rows, touched, evs, u.clockNow())}
+	d := casesData{T: t, Total: len(rows), Cards: u.caseCards(rows, touched, evs, u.clockNow())}
 
 	groups := map[string]func(caseRow) bool{
 		"":       func(caseRow) bool { return true },
-		"needs":  func(c caseRow) bool { return waiting(c.Status) },
+		"needs":  func(c caseRow) bool { return u.waitingCase(c.Status, c.Kind) },
 		"open":   func(c caseRow) bool { return c.Status != cases.Closed },
 		"closed": func(c caseRow) bool { return c.Status == cases.Closed },
 	}
@@ -313,7 +313,7 @@ func (u *Server) whyNoCases(ctx context.Context) (string, []string) {
 }
 
 // caseCards are Cases' six score cards.
-func caseCards(rows []caseRow, touched map[string]bool, evs []store.CaseEvent, now time.Time) []scoreCard {
+func (u *Server) caseCards(rows []caseRow, touched map[string]bool, evs []store.CaseEvent, now time.Time) []scoreCard {
 	ds := days(now, 14)
 	ends := make([]time.Time, 14)
 	idx := map[string]int{}
@@ -352,7 +352,7 @@ func caseCards(rows []caseRow, touched map[string]bool, evs []store.CaseEvent, n
 		if c.Status != cases.Closed {
 			nOpen++
 		}
-		if waiting(c.Status) {
+		if u.waitingCase(c.Status, c.Kind) {
 			nWait++
 		}
 		if !cl.IsZero() {

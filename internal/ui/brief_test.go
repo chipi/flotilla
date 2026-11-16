@@ -13,6 +13,64 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
+// A handed-over case of a kind no routine acts on (the seo fleet's) waits for a person: it is in the
+// brief's Needs you; one a routine acts on is not.
+func TestHandedOverWithoutARoutineNeedsYou(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	f.sch.Routines = append(f.sch.Routines, &spec.Routine{Fleet: "ops", Routine: "rerun", Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}})
+	open := func(kind, target, title string) string {
+		k := store.Key{Kind: "target", Value: kind + "/" + target}
+		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: kind, Target: target, Keys: []store.Key{k}, Canonical: k, Title: title}, "m", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
+		return id
+	}
+	seo := open("seo_live_regression", "site:robots/www.example.org/robots.txt", "robots.txt keeps Baiduspider out")
+	open("failed_backup", "host:mini", "The backup is late")
+	b, err := f.ui.composeBrief(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Sections) == 0 || b.Sections[0].Title != "Needs you" || len(b.Sections[0].Items) != 1 || b.Sections[0].Items[0].Case != seo {
+		t.Fatalf("sections %+v", b.Sections)
+	}
+}
+
+// A remote worker's link enrols like a host (RFC-0011) but is not a host agent: Watch does not say it is
+// down, and the Hosts page calls it a worker link; a host agent that is down is still said so.
+func TestWorkerLinkIsNotAHostAgent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	for _, h := range []string{"w-bugfix-omarchy", "dgx"} {
+		if _, err := f.st.AddEnrolment(ctx, h, "t-"+h, "user:ada", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.st.Enrol(ctx, h, "t-"+h, func() (string, time.Time, error) { return "c-" + h, time.Now().Add(720 * time.Hour), nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w, err := f.ui.wrongNow(ctx, time.Now(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var down []string
+	for _, x := range w.Items {
+		if strings.Contains(x.What, "host agent not connected") {
+			down = append(down, x.What)
+		}
+	}
+	if len(down) != 1 || !strings.HasPrefix(down[0], "dgx ") {
+		t.Fatalf("down: %v", down)
+	}
+	ck, _ := f.csrfOf(f.addOperator())
+	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "worker link") {
+		t.Fatal("the Hosts page does not call the link a worker link")
+	}
+}
+
 // RFC-0012 §4: a monitor's summary lines go into the brief's section its spec names, in the brief
 // written after its run only.
 func TestBriefSummarySection(t *testing.T) {

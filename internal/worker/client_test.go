@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,5 +51,19 @@ func TestRunRejects(t *testing.T) {
 				t.Fatalf("want %q, got %v", c.want, err)
 			}
 		})
+	}
+}
+
+// A worker nothing answers for is ErrUnreachable (the run did not start); an answered error is not.
+func TestUnreachable(t *testing.T) {
+	c := &Client{URL: "http://127.0.0.1:1", Token: "t", HTTP: http.DefaultClient}
+	if _, err := c.Run(context.Background(), Request{RunID: "r", TimeoutS: 1}); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("a refused dial: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "no", http.StatusInternalServerError) }))
+	defer srv.Close()
+	c.URL = srv.URL
+	if _, err := c.Run(context.Background(), Request{RunID: "r", TimeoutS: 1}); err == nil || errors.Is(err, ErrUnreachable) {
+		t.Fatalf("an answered error is not unreachable: %v", err)
 	}
 }

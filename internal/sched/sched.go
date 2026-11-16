@@ -50,13 +50,16 @@ const (
 var ErrRunning = errors.New("already running")
 
 type Scheduler struct {
-	Store    *store.Store
-	Routines []*spec.Routine
-	Workers  map[string]Runner
-	Metrics  Metrics
-	Location *time.Location
-	Log      *slog.Logger
-	Now      func() time.Time
+	// StartDelay holds the first timed runs after Loop starts: a deploy recreates the workers and the
+	// egress proxy beside flotillad, and runs started at once met them half up (2026-11-15).
+	StartDelay time.Duration
+	Store      *store.Store
+	Routines   []*spec.Routine
+	Workers    map[string]Runner
+	Metrics    Metrics
+	Location   *time.Location
+	Log        *slog.Logger
+	Now        func() time.Time
 	// the installation's validated models section, as JSON, for the UI's Models page
 	ModelsJSON string
 	// the same, parsed: each run gets only the aliases its spec names (security T4)
@@ -119,6 +122,13 @@ func (s *Scheduler) Loop(ctx context.Context) {
 		go func(j *spec.Routine) {
 			defer wg.Done()
 			s.Log.Info("routine loop started", "routine", j.ID(), "every", j.Every.String(), "worker", j.Worker)
+			if s.StartDelay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(s.StartDelay):
+				}
+			}
 			t := time.NewTicker(j.Every)
 			defer t.Stop()
 			for {
@@ -264,6 +274,10 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	var outcome *CaseOutcome
 	if callErr != nil {
 		detail = callErr.Error()
+		if errors.Is(callErr, worker.ErrUnreachable) {
+			// the run never started (a deploy recreating the worker): a skip, not a failure
+			status = store.StatusSkipped
+		}
 	} else {
 		status, exit, spend, dur = res.Status, res.ExitCode, res.SpendUSD, res.DurationS
 		if reports {

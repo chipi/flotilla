@@ -3,6 +3,7 @@ package sched
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -243,6 +244,16 @@ func TestWorkerUnreachableIsAnErrorRun(t *testing.T) {
 	fr.res, fr.err = nil, errors.New("connection refused")
 	r, err := s.RunNow(context.Background(), "triage/cycle", "schedule", "flotillad")
 	if err != nil || r.Status != store.StatusError || !strings.Contains(r.Detail, "connection refused") {
+		t.Fatalf("got %+v %v", r, err)
+	}
+}
+
+// A request that never reached the worker (a deploy recreating it, 2026-11-15) is a skipped run.
+func TestWorkerNotReachedIsSkipped(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	fr.res, fr.err = nil, fmt.Errorf("worker http://worker-ops-read:8081: %w: lookup worker-ops-read: server misbehaving", worker.ErrUnreachable)
+	r, err := s.RunNow(context.Background(), "triage/cycle", "schedule", "flotillad")
+	if err != nil || r.Status != store.StatusSkipped || !strings.Contains(r.Detail, "server misbehaving") {
 		t.Fatalf("got %+v %v", r, err)
 	}
 }

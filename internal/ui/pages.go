@@ -11,6 +11,7 @@ import (
 
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/store"
 )
@@ -147,7 +148,7 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 	// Needs you: the first waiting plan as a decision, then the rest as cards.
 	plans := 0
 	for _, c := range rows {
-		if !waiting(c.Status) {
+		if !u.waitingCase(c.Status, c.Kind) {
 			continue
 		}
 		if c.Status == cases.AwaitingApproval {
@@ -194,7 +195,7 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 	}
 	waitingN := 0
 	for _, c := range rows {
-		if waiting(c.Status) {
+		if u.waitingCase(c.Status, c.Kind) {
 			waitingN++
 		}
 	}
@@ -413,8 +414,8 @@ func (u *Server) wrongNow(ctx context.Context, now time.Time, routines []api.Rou
 		}
 	}
 	for _, h := range hosts {
-		if h.RevokedAt != nil || h.EnrolledAt == nil {
-			continue
+		if h.RevokedAt != nil || h.EnrolledAt == nil || hostca.WorkerIdentityRe.MatchString(h.Name) {
+			continue // a worker link is shown with its fleet's workers, not as a host agent
 		}
 		node := hostNode{Name: h.Name, Roles: "host agent " + orDash(h.Version), Up: h.Connected,
 			Note: plural(perHost[h.Name], "execution today", "executions today")}

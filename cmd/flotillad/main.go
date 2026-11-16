@@ -28,6 +28,7 @@ import (
 	"github.com/chipi/flotilla/internal/casetimer"
 	"github.com/chipi/flotilla/internal/dispatch"
 	"github.com/chipi/flotilla/internal/hostalert"
+	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostlink"
 	"github.com/chipi/flotilla/internal/mcpserver"
 	"github.com/chipi/flotilla/internal/models"
@@ -99,7 +100,7 @@ type WorkerConfig struct {
 	Remote string `yaml:"remote"`
 }
 
-var remoteIdentityRe = regexp.MustCompile(`^w-[a-z0-9-]{1,60}$`)
+var remoteIdentityRe = hostca.WorkerIdentityRe
 
 func loadConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
@@ -364,7 +365,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
+	s := &sched.Scheduler{StartDelay: 30 * time.Second, Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
