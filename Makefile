@@ -54,12 +54,17 @@ format: ## Apply gofmt to every Go file
 	@$(GOFMT) -w cmd internal fleetd && echo "format PASS"
 
 .PHONY: lint
-lint: ## gofmt check + go vet (both modules), byte-compile every Python file
+lint: ## gofmt check + go vet (both modules), byte-compile every Python file, llms.txt up to date
 	@out="$$($(GOFMT) -l cmd internal fleetd)"; test -z "$$out" || { echo "lint FAIL: gofmt would change:"; echo "$$out"; exit 1; }
 	@$(GO) vet ./...
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
 	@python3 -m compileall -q signal-fleet worker deploy runtime >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+	@python3 scripts/llms_txt.py --check >/dev/null || { echo "lint FAIL: llms.txt"; python3 scripts/llms_txt.py --check; exit 1; }
 	@echo "lint PASS"
+
+.PHONY: llms-txt
+llms-txt: ## Regenerate llms.txt, the agent-facing index of the docs (scripts/llms_txt.py, llms.config.json)
+	@python3 scripts/llms_txt.py --write
 
 .PHONY: test-unit
 test-unit: ## go test (both modules), the worker's tests, the triage fleet's unit tests (empty HOME)
