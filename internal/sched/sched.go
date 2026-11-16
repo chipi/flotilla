@@ -353,6 +353,9 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		}
 		if status != store.StatusOK {
 			detail = tail(res.OutputTail, 800)
+		} else if reports && caseEnv == nil && res.PlanError != "" {
+			// a monitor whose report cannot be read has detected nothing anyone sees: its run failed
+			status, detail = store.StatusError, "the report was refused: "+res.PlanError
 		}
 	}
 	// a cancelled flotillad must still record the run it ran

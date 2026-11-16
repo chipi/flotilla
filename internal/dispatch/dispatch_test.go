@@ -27,19 +27,20 @@ type fakeWorker struct {
 	got    []worker.Request
 	status string
 	plan   string
+	planEr string // the worker could not read the plan file (too big, not JSON)
 	block  chan struct{}
 }
 
 func (f *fakeWorker) Run(ctx context.Context, r worker.Request) (*worker.Result, error) {
 	f.mu.Lock()
 	f.got = append(f.got, r)
-	status, plan, block := f.status, f.plan, f.block
+	status, plan, planEr, block := f.status, f.plan, f.planEr, f.block
 	f.mu.Unlock()
 	if block != nil {
 		<-block
 	}
 	z := 0
-	res := &worker.Result{Status: status, ExitCode: &z}
+	res := &worker.Result{Status: status, ExitCode: &z, PlanError: planEr}
 	if plan != "" {
 		res.Plan = json.RawMessage(plan)
 	}
@@ -449,6 +450,26 @@ func TestReportsRefused(t *testing.T) {
 				t.Fatalf("no ERROR %q in the log:\n%s", c.log, f.logs)
 			}
 		})
+	}
+}
+
+// A monitor whose report the worker could not read (bugfix/intake-podcast's 35 issues were over the
+// envelope's 64 KiB, 2026-11-16) is a failed run with the reason, not an "ok" run that found nothing.
+func TestUnreadableReportFailsTheRun(t *testing.T) {
+	f := setup(t)
+	f.w.mu.Lock()
+	f.w.planEr = "plan_file: over 65536 bytes"
+	f.w.mu.Unlock()
+	f.monitor(t, "ok", "")
+	if cs := f.open(t); len(cs) != 0 {
+		t.Fatalf("opened %+v", cs)
+	}
+	runs, err := f.st.Runs(context.Background(), "ops/backup-monitor", 1)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs %v %v", runs, err)
+	}
+	if r := runs[0]; r.Status != store.StatusError || !strings.Contains(r.Detail, "report was refused: plan_file: over 65536 bytes") {
+		t.Fatalf("run %s %q", r.Status, r.Detail)
 	}
 }
 
