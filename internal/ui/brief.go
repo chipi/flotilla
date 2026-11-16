@@ -127,6 +127,13 @@ func (u *Server) composeBrief(ctx context.Context, now time.Time) (store.Brief, 
 			b.Sections = append(b.Sections, sec)
 		}
 	}
+	mix, err := u.decisionItems(ctx, fs, now)
+	if err != nil {
+		return b, err
+	}
+	if len(mix) > 0 {
+		b.Sections = append(b.Sections, store.BriefSection{Title: "Decisions", Items: mix})
+	}
 	more, err := u.summarySections(ctx, dayAgo)
 	if err != nil {
 		return b, err

@@ -246,3 +246,43 @@ func contains(xs []string, x string) bool {
 	}
 	return false
 }
+
+// LedgerDecision is one ledger entry as the decision mix counts it (the dispositions row's own fields).
+type LedgerDecision struct {
+	TS, Kind, Disposition, Stage, Gates, Fingerprint, PromptSHA, Model string
+}
+
+// DecisionsSince are the entries of the given namespaces whose row's ts is on or after since (a date
+// or an RFC 3339 time, compared as text), oldest first. The row's ts is the decision's own time; an
+// imported entry's written_at is the import's.
+func (s *Store) DecisionsSince(ctx context.Context, namespaces []string, since string) ([]LedgerDecision, error) {
+	if len(namespaces) == 0 {
+		return nil, nil
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?, ", len(namespaces)), ", ")
+	args := make([]any, 0, len(namespaces)+1)
+	for _, ns := range namespaces {
+		args = append(args, ns)
+	}
+	args = append(args, since)
+	rows, err := s.db.QueryContext(ctx, `SELECT kind,
+		coalesce(json_extract(row, '$.ts'), ''), coalesce(json_extract(row, '$.disposition'), ''),
+		coalesce(json_extract(row, '$.stage'), ''), coalesce(json_extract(row, '$.gates'), ''),
+		coalesce(json_extract(row, '$.fingerprint'), ''), coalesce(json_extract(row, '$.prompt_sha'), ''),
+		coalesce(json_extract(row, '$.model'), '')
+		FROM ledger_entries WHERE namespace IN (`+ph+`) AND json_extract(row, '$.ts') >= ?
+		ORDER BY json_extract(row, '$.ts'), seq`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LedgerDecision
+	for rows.Next() {
+		var d LedgerDecision
+		if err := rows.Scan(&d.Kind, &d.TS, &d.Disposition, &d.Stage, &d.Gates, &d.Fingerprint, &d.PromptSHA, &d.Model); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

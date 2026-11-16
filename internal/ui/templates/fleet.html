@@ -110,6 +110,36 @@
   {{template "pager" $t}}
   {{end}}
 
+  {{if eq .Tab "decisions"}}{{$m := .Mix}}
+  <section class="mix" aria-label="Decisions">
+    <p class="meta">What {{$f.Name}} decided each UTC day, {{$m.From}} to {{$m.To}}: live decisions only{{if $m.Shadow}} ({{$m.Shadow}} by a shadow routine are not counted){{end}}. A recurrence is an issue already decided coming back, counted apart. A gate fired when its outcome was neither passed nor n/a. A change of prompt or model is marked on the day it happened.</p>
+    <ul class="mix__legend" aria-label="Colours">
+      <li><span class="mix__key mix__key--file" aria-hidden="true"></span>file</li>
+      <li><span class="mix__key mix__key--escalate" aria-hidden="true"></span>escalate</li>
+      <li><span class="mix__key mix__key--dismiss" aria-hidden="true"></span>dismiss</li>
+      <li><span class="mix__key mix__key--cleanup" aria-hidden="true"></span>cleanup</li>
+      <li><span class="mix__key mix__key--other" aria-hidden="true"></span>other</li>
+    </ul>
+    {{if not $m.HasAny}}<p class="card">No decision in these days.</p>{{end}}
+    <ol class="mix__days">
+      {{range $m.Days}}
+      <li class="mix__day">
+        <div class="mix__head"><span class="exact">{{.Day}}</span><span><strong>{{.Total}}</strong> {{if eq .Total 1}}decision{{else}}decisions{{end}}{{if .Rec}} · {{.Rec}} {{if eq .Rec 1}}recurrence{{else}}recurrences{{end}}{{end}}</span></div>
+        <svg class="mix__bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="mix__track" width="100" height="8"></rect>{{range .Segs}}<rect class="mix__seg mix__seg--{{.Label}}" x="{{.X}}" width="{{.Pct}}" height="8"></rect>{{end}}</svg>
+        {{if or .Segs .Gates}}<p class="meta">{{range $i, $s := .Segs}}{{if $i}} · {{end}}{{$s.Label}} {{$s.N}}{{end}}{{if .Gates}}{{if .Segs}} · {{end}}gates fired: {{.Gates}}{{end}}</p>{{end}}
+        {{range .Changes}}<p class="mix__change">{{.}}</p>{{end}}
+      </li>
+      {{end}}
+    </ol>
+    {{if $m.Projects}}
+    <h2 class="mix__h">By project, these {{len $m.Days}} days</h2>
+    <ul class="mix__projects">
+      {{range $m.Projects}}<li><span class="exact">{{.Name}}</span> <strong>{{.Total}}</strong><span class="meta"> · {{.Line}}</span></li>{{end}}
+    </ul>
+    {{end}}
+  </section>
+  {{end}}
+
   {{if eq .Tab "stats"}}
   <section class="scores scores--wide" aria-label="Costs and stats">
     {{range .Cards}}{{template "score" .}}{{end}}

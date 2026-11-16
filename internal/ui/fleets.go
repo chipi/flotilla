@@ -308,6 +308,7 @@ type fleetData struct {
 	Rows    []routineRow
 	T       tableQ
 	Cards   []scoreCard
+	Mix     decisionMix
 	Log     string
 	Back    string
 	CanStop bool
@@ -353,15 +354,29 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		return
 	}
 	_, specsBy := u.specs()
+	nss, err := u.decisionNamespaces(ctx, *f)
+	if err != nil {
+		http.Error(w, "ledger failed", 500)
+		return
+	}
 	tab := r.URL.Query().Get("tab")
 	switch tab {
 	case "routines", "stats", "logs":
+	case "decisions":
+		if len(nss) == 0 {
+			tab = "workflow"
+		}
 	default:
 		tab = "workflow"
 	}
 	base := "/fleets/" + f.ID
 	d := fleetData{F: *f, Tab: tab, Back: r.URL.RequestURI(), CanStop: true}
-	for _, p := range [][2]string{{"workflow", "Workflow"}, {"routines", "Routines"}, {"stats", "Costs and stats"}, {"logs", "Logs"}} {
+	tabs := [][2]string{{"workflow", "Workflow"}, {"routines", "Routines"}}
+	if len(nss) > 0 {
+		tabs = append(tabs, [2]string{"decisions", "Decisions"})
+	}
+	tabs = append(tabs, [2]string{"stats", "Costs and stats"}, [2]string{"logs", "Logs"})
+	for _, p := range tabs {
 		href := base
 		if p[0] != "workflow" {
 			href += "?tab=" + p[0]
@@ -588,6 +603,13 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		})
 		d.Rows = window(out, &t)
 		d.T = t
+	case "decisions":
+		mix, err := u.decisionMix(ctx, nss, now, 14)
+		if err != nil {
+			http.Error(w, "decisions failed", 500)
+			return
+		}
+		d.Mix = mix
 	case "stats":
 		cards, err := u.fleetCards(ctx, *f, rows)
 		if err != nil {
