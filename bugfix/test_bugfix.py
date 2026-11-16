@@ -158,6 +158,39 @@ class Intake(unittest.TestCase):
         out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
         self.assertEqual([d["target"] for d in out["detections"]], ["repo:chipi/orrery/issues/14"])
 
+    def test_the_whole_report_stays_under_flotillads_limit(self):
+        # B8 (2026-11-16): podcast_scraper's 35 open bug issues at up to 7,500 bytes each made a report over the
+        # 64 KiB flotillad accepts (internal/envelope MaxBytes): refused, no case opened, the run still "ok"
+        big = [issue(n, f"bug {n}", ["bug"], body="x" * 9000) for n in range(1, 51)]
+        gh = FakeGitHub(big)
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        self.assertEqual(len(out["detections"]), 50)
+        self.assertLess(len(json.dumps(out).encode()), 64 * 1024)
+        self.assertTrue(all(d["data"]["issue"]["body_cut"] for d in out["detections"]))
+        # a handful of short issues keeps its bodies whole
+        small = [issue(n, f"bug {n}", ["bug"], body="short body") for n in range(1, 6)]
+        gh2 = FakeGitHub(small)
+        self.addCleanup(gh2.close)
+        out = self.run_intake(gh2, "--repo", "chipi/orrery", "--label", "bug")
+        self.assertEqual({d["data"]["issue"]["body"] for d in out["detections"]}, {"short body"})
+
+    def test_long_titles_shrink_the_bodies_until_the_report_fits(self):
+        # a title sits in the detection and in its data, outside the per-detection estimate: the shares must shrink
+        long_title = "t" * 300
+        gh = FakeGitHub([issue(n, long_title, ["bug"], body="x" * 9000) for n in range(1, 51)])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        self.assertEqual(len(out["detections"]), 50)
+        self.assertLess(len(json.dumps(out).encode()), 64 * 1024)
+
+    def test_a_report_that_cannot_fit_fails_the_run(self):
+        # never hand flotillad a report it refuses (it opens nothing and says nothing)
+        gh = FakeGitHub([issue(n, "t" * 1500, ["bug"], body="x") for n in range(1, 51)])
+        self.addCleanup(gh.close)
+        with self.assertRaises(intake.IntakeError):
+            self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+
     def test_a_long_body_is_cut_to_fit(self):
         gh = FakeGitHub([issue(3, "long", ["bug"], body="x" * 40000)])
         self.addCleanup(gh.close)

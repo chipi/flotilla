@@ -23,6 +23,9 @@ import urllib.request
 
 MAX_DETECTIONS = 50  # flotillad refuses a report with more
 MAX_DATA = 7500      # flotillad keeps detection data up to 8192 bytes; room for the JSON around it
+MAX_REPORT = 64 * 1024  # flotillad refuses a whole report over this (internal/envelope MaxBytes)
+REPORT_ROOM = 2048      # the envelope and each detection's kind, target, detail and title, with margin per detection
+MIN_DATA = 600          # below this a detection's data is only its metadata: the body is gone entirely
 # An issue triage filed from a dev environment's error is about a branch's unmerged code, not main's: there is
 # nothing on main to fix (bugfix phase A's #651, #659). Triage no longer files them; the ones it filed before
 # carry `bug`, and their body names the signal as fp: `glitchtip:<SHORT-ID>` (signal-fleet/mvp/actions.py), a
@@ -63,26 +66,26 @@ def open_issues(api, repo, labels, token=None):
     return found
 
 
-def data_for(repo, it):
-    """The detection's data: the issue, with the body cut so the whole stays under MAX_DATA bytes."""
+def data_for(repo, it, limit=MAX_DATA):
+    """The detection's data: the issue, with the body cut so the whole stays under `limit` bytes."""
     d = {"issue": {"repo": repo, "number": it["number"], "title": it.get("title") or "", "url": it.get("html_url") or "",
                    "labels": sorted(lb.get("name", "") for lb in it.get("labels") or []), "updated_at": it.get("updated_at") or "",
                    "body": it.get("body") or "", "body_cut": False}}
     body = d["issue"]["body"]
-    while len(json.dumps(d).encode()) > MAX_DATA and body:
+    while len(json.dumps(d).encode()) > limit and body:
         body = body[: max(0, len(body) - max(200, len(body) // 10))]
         d["issue"]["body"], d["issue"]["body_cut"] = body, True
     return d
 
 
-def detections(repo, issues, kind="code_bug"):
+def detections(repo, issues, kind="code_bug", limit=MAX_DATA):
     out = []
     for n in sorted(issues, reverse=True):
         it = issues[n]
         name = repo.split("/", 1)[1]
         out.append({"kind": kind, "target": f"repo:{repo}/issues/{n}",
                     "detail": f"{repo}#{n} is open with an intake label",
-                    "title": f"{name} #{n}: {it.get('title') or ''}", "data": data_for(repo, it)})
+                    "title": f"{name} #{n}: {it.get('title') or ''}", "data": data_for(repo, it, limit)})
     return out
 
 
@@ -99,16 +102,28 @@ def main(argv=None):
     if os.environ.get("GITHUB_TOKEN_FILE"):
         with open(os.environ["GITHUB_TOKEN_FILE"]) as f:
             token = f.read().strip()
-    found = []
+    per_repo = []
     for repo in a.repo:
         issues = open_issues(api, repo, a.label, token)
-        found += detections(repo, issues, a.kind)
+        per_repo.append((repo, issues))
         print(f"BUGFIX INTAKE {repo}: {len(issues)} open issues with {', '.join(a.label)}")
-    if len(found) > MAX_DETECTIONS:
+    total = sum(len(i) for _, i in per_repo)
+    if total > MAX_DETECTIONS:
         # leaving some out would clear their cases: fail instead, and say why
-        raise IntakeError(f"{len(found)} open issues, more than the {MAX_DETECTIONS} a run may report: narrow the labels or the repos")
+        raise IntakeError(f"{total} open issues, more than the {MAX_DETECTIONS} a run may report: narrow the labels or the repos")
+    # the whole report must fit flotillad's limit: each detection gets an equal share of it, its body cut to fit
+    limit = min(MAX_DATA, (MAX_REPORT - REPORT_ROOM) // max(1, total) - 400)
+    while True:
+        found = [d for repo, issues in per_repo for d in detections(repo, issues, a.kind, limit)]
+        report = json.dumps({"outcome": "detections", "detections": found})
+        if len(report.encode()) <= MAX_REPORT:
+            break
+        if limit <= MIN_DATA:
+            # never send a report flotillad refuses: that clears nothing but opens nothing either, silently
+            raise IntakeError(f"{total} detections do not fit flotillad's {MAX_REPORT}-byte report even with bodies cut")
+        limit = max(MIN_DATA, int(limit * 0.85))
     with open(os.environ["FLOTILLA_PLAN_FILE"], "w") as f:
-        json.dump({"outcome": "detections", "detections": found}, f)
+        f.write(report)
     print(f"BUGFIX INTAKE detections={len(found)}")
 
 
