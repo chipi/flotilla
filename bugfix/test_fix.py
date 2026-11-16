@@ -136,6 +136,10 @@ PI_BIN = POP + textwrap.dedent('''\
     [ "$R" = fail ] && exit 1
     V="$R"; [ "$R" = request-changes ] && V="request-changes CLASS: test-proves-nothing"
     [ "$R" = request-changes-unverified ] && V="request-changes CLASS: unverified"
+    if [ "$R" = noverdict ]; then   # a review cut off before its verdict
+      printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a const"}]}}\\n'
+      exit 0
+    fi
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$V"
     ''')
 
@@ -604,6 +608,58 @@ exec {real} "$@"
             fh.write("request-changes\napprove\n")
         f.run("--no-resume")
         self.assertEqual(self.resumes(f), [])
+
+    def test_a_review_without_a_verdict_is_not_an_approval(self):
+        # homelab's review (2026-11-16): any text read as approval, e.g. the partial output of a timed-out call
+        f = self.fixture(["actionable"], ["good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("noverdict\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("unresolved: the review gave no verdict", plan["detail"])
+        self.assertTrue(plan["params"]["body"].startswith("**unresolved: the review gave no verdict"))
+
+    def test_the_review_never_reads_a_symlink_or_a_file_outside_the_worktree(self):
+        # a fix that adds a link to the routine's key file must not put the key in the reviewer's prompt
+        import types
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        secret = os.path.join(d, "model-fix.key")
+        with open(secret, "w") as fh:
+            fh.write("sk-SECRET-KEY")
+        wt = os.path.join(d, "wt")
+        git("init", "-q", wt, cwd=d)
+        os.makedirs(os.path.join(wt, "src"))
+        with open(os.path.join(wt, "src", "a.js"), "w") as fh:
+            fh.write("module.exports = () => 1;\n")
+        git("add", "-A", cwd=wt)
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base", cwd=wt)
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True).stdout.strip()
+        os.symlink(secret, os.path.join(wt, "src", "k.js"))
+        with open(os.path.join(wt, "src", "a.js"), "w") as fh:
+            fh.write("module.exports = () => 2;\n")
+        git("add", "-A", cwd=wt)
+        chain = types.SimpleNamespace(repo="chipi/orrery", n=12, issue={"title": "t", "body": "b"}, checked="",
+                                      a=types.SimpleNamespace(review_tools="none"), wt=wt, base=base, run_dir=d, env=dict(os.environ))
+        p = fix.Chain.review_prompt(chain, "diff --git a/src/a.js b/src/a.js\n")
+        self.assertNotIn("sk-SECRET-KEY", p)
+        self.assertIn("=== src/k.js === [not included: not a regular file]", p)
+        self.assertIn("=== src/a.js ===\nmodule.exports = () => 2;", p)
+
+    def test_the_unresolved_flag_survives_a_long_plan_body(self):
+        import types
+        chain = types.SimpleNamespace(repo="chipi/orrery", n=12, issue={"title": "t"}, base="a" * 40, checked="gates ok",
+                                      unloaded_on_base=[], log=["step " + "x" * 3000] * 5)
+        plan = fix.Chain.plan(chain, 1, "diff", "VERDICT: request-changes", unresolved="the review asked for changes")
+        body = plan["params"]["body"]
+        self.assertLessEqual(len(body), fix.BODY_MAX)
+        self.assertTrue(body.startswith("**unresolved: the review asked for changes; round 1's clean fix kept**"))
+
+    def test_cap_bytes_counts_bytes(self):
+        s = "é" * 100000   # 200,000 bytes in UTF-8
+        out = fix.cap_bytes(s, fix.REVIEW_PROMPT_MAX)
+        self.assertLessEqual(len(out.encode()), fix.REVIEW_PROMPT_MAX)
+        self.assertIn("[... cut:", out)
 
     def test_the_kick_back_limits_are_two_and_one(self):
         a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])
@@ -1226,12 +1282,14 @@ class FullIssueBody(unittest.TestCase):
         got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
         self.assertEqual((got["body"], self.paths, note), ("short", [], ""))
 
-    def test_a_failed_fetch_keeps_the_cut_body_and_says_so(self):
+    def test_a_failed_fetch_is_retried_once_then_stops_the_case(self):
+        # intake's fixed share cuts most bodies: the fix must not work from the first few hundred bytes, silently
         api = self.serve(404, "x")
         issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "cut", "body_cut": True}
-        got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
-        self.assertEqual((got["body"], got["body_cut"]), ("cut", True))
-        self.assertIn("kept the cut body", note)
+        with self.assertRaises(fix.Stop) as e:
+            fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api, "BUGFIX_BODY_RETRY_S": "0"})
+        self.assertIn("could not be read whole from GitHub (HTTPError", str(e.exception))
+        self.assertEqual(len(self.paths), 2, "one retry")
 
     def test_an_issue_without_its_repo_is_read_from_the_chains_repo(self):
         # Chain falls back to --repo when the case's issue names none; the read must use the same repo

@@ -68,13 +68,15 @@ def pi_cost(agent_dir):
 
 
 class Meter:
-    def __init__(self, keys, poll_s=5.0, settle_s=60.0, read=read_spend, read_timeout=15.0):
+    def __init__(self, keys, poll_s=5.0, settle_s=60.0, read=read_spend, read_timeout=5.0):
         self.keys, self.poll_s, self.settle_s, self.read, self.read_timeout = list(keys), poll_s, settle_s, read, read_timeout
         self.before = [read(k, b, read_timeout) for b, k in self.keys]
 
     def hurry(self, within_s=6.0, read_timeout=2.0, poll_s=1.0):
-        """The worker's SIGTERM, before or during cost(): what is left (reads, the settle, the fallback) must end
-        within within_s of now, inside the worker's 10 s grace before its SIGKILL. Safe from a signal handler."""
+        """The worker's SIGTERM, before or during cost(): the reads and the settle still to come end within within_s of
+        now, inside the worker's 10 s grace before its SIGKILL. A read already under way keeps its own timeout
+        (read_timeout, 5 s by default); fix.py writes pi's figure before the reads, so a SIGKILL during one still
+        leaves a number. Safe from a signal handler."""
         self.read_timeout, self.poll_s = min(self.read_timeout, read_timeout), min(self.poll_s, poll_s)
         self.deadline = min(self.deadline, time.monotonic() + within_s)
 
@@ -114,6 +116,9 @@ class Meter:
 
 
 def write(path, usd):
-    """The routine's spend_file: one number, read and truncated by the worker."""
-    with open(path, "w") as f:
+    """The routine's spend_file: one number, read and truncated by the worker. Written to a temporary file and
+    renamed over it, so a kill mid-write never leaves an empty or half-written number."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
         f.write(f"{usd:.6f}\n")
+    os.replace(tmp, path)

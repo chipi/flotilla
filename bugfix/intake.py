@@ -27,6 +27,7 @@ MAX_REPORT = 64 * 1024  # flotillad refuses a whole report over this (internal/e
 REPORT_ROOM = 2048      # the envelope and each detection's kind, target, detail and title, with margin per detection
 MIN_DATA = 600          # below this a detection's data is only its metadata: the body is gone entirely
 DATA_SHARE = (MAX_REPORT - REPORT_ROOM) // MAX_DETECTIONS - 400   # 869 bytes: one detection's data, fixed
+TITLE_BYTES = 200       # a title is in the detection and in its data: two long non-ASCII titles x 50 could fill the report
 # An issue triage filed from a dev environment's error is about a branch's unmerged code, not main's: there is
 # nothing on main to fix (bugfix phase A's #651, #659). Triage no longer files them; the ones it filed before
 # carry `bug`, and their body names the signal as fp: `glitchtip:<SHORT-ID>` (signal-fleet/mvp/actions.py), a
@@ -67,13 +68,23 @@ def open_issues(api, repo, labels, token=None):
     return found
 
 
+def size(obj):
+    """Bytes as the report is written: UTF-8 JSON (ensure_ascii off), not \\uXXXX escapes at 6 bytes a character."""
+    return len(json.dumps(obj, ensure_ascii=False).encode())
+
+
+def short(text, n=TITLE_BYTES):
+    b = (text or "").encode()
+    return text or "" if len(b) <= n else b[:n - 3].decode(errors="ignore") + "..."
+
+
 def data_for(repo, it, limit=MAX_DATA):
     """The detection's data: the issue, with the body cut so the whole stays under `limit` bytes."""
-    d = {"issue": {"repo": repo, "number": it["number"], "title": it.get("title") or "", "url": it.get("html_url") or "",
+    d = {"issue": {"repo": repo, "number": it["number"], "title": short(it.get("title")), "url": it.get("html_url") or "",
                    "labels": sorted(lb.get("name", "") for lb in it.get("labels") or []), "updated_at": it.get("updated_at") or "",
                    "body": it.get("body") or "", "body_cut": False}}
     body = d["issue"]["body"]
-    while len(json.dumps(d).encode()) > limit and body:
+    while size(d) > limit and body:
         body = body[: max(0, len(body) - max(200, len(body) // 10))]
         d["issue"]["body"], d["issue"]["body_cut"] = body, True
     return d
@@ -86,7 +97,7 @@ def detections(repo, issues, kind="code_bug", limit=MAX_DATA):
         name = repo.split("/", 1)[1]
         out.append({"kind": kind, "target": f"repo:{repo}/issues/{n}",
                     "detail": f"{repo}#{n} is open with an intake label",
-                    "title": f"{name} #{n}: {it.get('title') or ''}", "data": data_for(repo, it, limit)})
+                    "title": short(f"{name} #{n}: {it.get('title') or ''}"), "data": data_for(repo, it, limit)})
     return out
 
 
@@ -119,14 +130,14 @@ def main(argv=None):
     limit = min(MAX_DATA, DATA_SHARE)
     while True:
         found = [d for repo, issues in per_repo for d in detections(repo, issues, a.kind, limit)]
-        report = json.dumps({"outcome": "detections", "detections": found})
+        report = json.dumps({"outcome": "detections", "detections": found}, ensure_ascii=False)
         if len(report.encode()) <= MAX_REPORT:
             break
         if limit <= MIN_DATA:
             # never send a report flotillad refuses: that clears nothing but opens nothing either, silently
             raise IntakeError(f"{total} detections do not fit flotillad's {MAX_REPORT}-byte report even with bodies cut")
         limit = max(MIN_DATA, int(limit * 0.85))
-    with open(os.environ["FLOTILLA_PLAN_FILE"], "w") as f:
+    with open(os.environ["FLOTILLA_PLAN_FILE"], "w", encoding="utf-8") as f:
         f.write(report)
     print(f"BUGFIX INTAKE detections={len(found)}")
 

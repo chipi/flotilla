@@ -185,11 +185,28 @@ class Intake(unittest.TestCase):
         self.assertLess(len(json.dumps(out).encode()), 64 * 1024)
 
     def test_a_report_that_cannot_fit_fails_the_run(self):
-        # never hand flotillad a report it refuses (it opens nothing and says nothing)
+        # never hand flotillad a report it refuses (it opens nothing and says nothing). With titles capped at
+        # TITLE_BYTES a real report always fits, so the limit is lowered here to reach the guard
         gh = FakeGitHub([issue(n, "t" * 1500, ["bug"], body="x") for n in range(1, 51)])
         self.addCleanup(gh.close)
-        with self.assertRaises(intake.IntakeError):
-            self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        old = intake.MAX_REPORT
+        intake.MAX_REPORT = 20000
+        try:
+            with self.assertRaises(intake.IntakeError):
+                self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        finally:
+            intake.MAX_REPORT = old
+
+    def test_fifty_long_non_ascii_titles_still_fit(self):
+        # homelab's review (2026-11-16): JSON's \\uXXXX escapes and the title in two places could fill the report even
+        # with the bodies cut away, and the whole intake failed
+        gh = FakeGitHub([issue(n, "é" * 256, ["bug"], body="ü" * 9000) for n in range(1, 51)])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        self.assertEqual(len(out["detections"]), 50)
+        for d in out["detections"]:
+            self.assertLessEqual(len(d["data"]["issue"]["title"].encode()), intake.TITLE_BYTES)
+            self.assertLessEqual(len(d["title"].encode()), intake.TITLE_BYTES)
 
     def test_an_issue_s_data_does_not_depend_on_how_many_issues_are_open(self):
         # flotillad counts a repeat detection by its data (13c46f6); a cut that depended on the number of open issues

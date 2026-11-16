@@ -56,11 +56,13 @@ same as for vitest: no failure that the base did not have.
 (`<run>/pip-cache`, deleted with it): a cache shared between runs would let a wheel that one run's
 test code planted be installed by the next, so every run downloads its wheels again.
 
-**The issue as filed.** Intake cuts long issue bodies so its whole report fits flotillad's
-64 KiB (the detection's `body_cut`). When a case's body was cut, the fix step reads it whole
-from GitHub's public issues API (`api.github.com`, already in the bugfix proxy's allowlist, no
-credential) before the verdict, and notes it in the chain; if that read fails it keeps the cut
-body and says so.
+**The issue as filed.** Intake gives every detection the same share of flotillad's 64 KiB
+report (869 bytes, whatever the number of open issues, so a case's data changes only when its
+issue does), titles at most 200 bytes; most bodies are cut (the detection's `body_cut`). When a
+case's body was cut, the fix step reads it whole from GitHub's public issues API
+(`api.github.com`, already in the bugfix proxy's allowlist, no credential, 60 reads an hour per
+address) before the verdict. If that read fails twice, the case stops with the reason rather
+than being fixed from the first few hundred bytes.
 
 **What a run cost.** `fix.py --spend-file` writes the run's cost to the routine's `spend_file`, so
 the day's budget and the case's limit count it. The cost is the gateway's bill: LiteLLM's spend
@@ -88,7 +90,9 @@ the fix was given (the verdict's analysis), the fix agent's own summary, the iss
 files the fix touched as they are after it, and no tools (`--review-tools none`, the default): one
 call, where an exploring review took 5 to 38 calls on the reviewer model, the fleet's dearest. The
 prompt is one argument to pi, which Linux caps at 128 KiB, so the parts are cut to 100,000 bytes,
-each cut marked. `--review-tools read` gives the reviewer pi's read tools again. No tools is
+each cut marked (the fix step's own message too). Only regular files inside the worktree are
+read, no further than the room left: a symlink the fix adds (to a key file, say) is named, never
+followed. `--review-tools read` gives the reviewer pi's read tools again. No tools is
 stricter than read-only, so SR-0001 H8 still holds.
 
 **What sends a fix back.** A kick-back costs a whole fix round, so the review sends a fix back
@@ -96,7 +100,9 @@ only for a fault it can show from what it was given, and names its class (`hides
 `over-broad`, `test-proves-nothing`, `breaks-behaviour`, `wrong-place`), at most once
 (`--review-kickback-max 1`; all kick-backs together `--kickback-max 2`). The fix step then gets
 the whole review and the diff it judged, without a new verdict. Any other objection goes on the
-plan as unresolved; a review that did not run is said on the plan, never read as an approval.
+plan as unresolved; a review that did not run, or ran without a VERDICT line (cut off, timed
+out), is said on the plan, never read as an approval. The plan's flag heads the PR body after
+the body is cut to length, so the cut never removes it.
 
 **A kick-back resumes the fix session.** After a failed gate or a review's request-changes, the
 next round puts the worktree back as the last round left it (its diff, re-applied) and continues

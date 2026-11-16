@@ -119,6 +119,14 @@ class Terminated(BaseException):
     the step in flight and report the run's spend."""
 
 
+def cap_bytes(s, n):
+    """s cut to at most n UTF-8 bytes, keeping its start, the cut marked."""
+    b = s.encode()
+    if len(b) <= n:
+        return s
+    return b[:max(n - 80, 0)].decode(errors="ignore") + f"\n[... cut: {len(b) - n + 80} more bytes]"
+
+
 def tail(s, n):
     s = (s or "").strip()
     return s if len(s) <= n else "…" + s[-(n - 1):]
@@ -302,22 +310,32 @@ def issue_for_case(issue, repo, environ):
     """The issue as filed: intake cuts long bodies so its whole report fits flotillad's 64 KiB (body_cut), and the
     fix step should not reason from a cut report. When the body was cut, read it whole from GitHub's public issues
     API for `repo` (GITHUB_API, default https://api.github.com; the bugfix proxy allows api.github.com, no credential).
-    On any failure keep the cut body. Returns the issue and a note for the chain's log ("" when nothing was done)."""
+    Intake gives every detection the same small share (869 bytes), so most bodies are cut and this read is the fix's
+    only full view of the issue: after one retry (BUGFIX_BODY_RETRY_S, 5 s) a failure stops the case, visibly, rather
+    than fixing from the first few hundred bytes (homelab's review, 2026-11-16; the unauthenticated API allows 60 reads
+    an hour per address). Returns the issue and a note for the chain's log ("" when nothing was done)."""
     if not issue.get("body_cut"):
         return issue, ""
     api = (environ.get("GITHUB_API") or "https://api.github.com").rstrip("/")
     url = f"{api}/repos/{repo}/issues/{int(issue['number'])}"
-    try:
-        import urllib.request
-        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                   "User-Agent": "flotilla-bugfix-fix"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            body = json.load(r).get("body")
-    except Exception as e:  # noqa: BLE001 -- the cut body still describes the bug
-        return issue, f"issue body: kept the cut body ({type(e).__name__} reading it whole)"
-    if not isinstance(body, str):
-        return issue, "issue body: kept the cut body (no body in GitHub's answer)"
-    return dict(issue, body=body, body_cut=False), f"issue body: read the full body ({len(body)} chars) from GitHub"
+    why = ""
+    for attempt in range(2):
+        if attempt:
+            time.sleep(float(environ.get("BUGFIX_BODY_RETRY_S") or 5))
+        try:
+            import urllib.request
+            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                                       "User-Agent": "flotilla-bugfix-fix"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body = json.load(r).get("body")
+        except Exception as e:  # noqa: BLE001 -- any failure: try once more, then stop
+            why = f"{type(e).__name__}: {e}"
+            continue
+        if isinstance(body, str):
+            return dict(issue, body=body, body_cut=False), f"issue body: read the full body ({len(body)} chars) from GitHub"
+        why = "no body in GitHub's answer"
+    raise Stop(f"the issue's body was cut to fit intake's report and could not be read whole from GitHub ({tail(why, 160)}): "
+               "not fixing from its first few hundred bytes")
 
 
 class Chain:
@@ -533,6 +551,7 @@ class Chain:
         harness = os.path.join(BAKEOFF, "harnesses", self.a.harness + ".sh")
         if not re.fullmatch(r"[a-z0-9-]+", self.a.harness) or not os.path.exists(harness):
             raise Stop(f"no harness {self.a.harness!r} in {os.path.dirname(harness)}")
+        desc = cap_bytes(desc, REVIEW_PROMPT_MAX)   # one argv string to pi: Linux caps it at 128 KiB
         before = self.sessions()
         code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout)
         after = self.sessions()
@@ -753,9 +772,18 @@ class Chain:
             if room < 200:
                 files.append(f"=== {x} === [not included: no room left]")
                 continue
+            path = os.path.join(self.wt, x)
+            # only a regular file, read no further than the room left: a fix that adds a symlink to the routine's key
+            # file (/run/flotilla/model-*.key) must not put the key in a prompt the provider sees, and a FIFO or
+            # /dev/zero must not block or fill the run (homelab's review of the series, 2026-11-16)
+            inside = os.path.realpath(path).startswith(os.path.realpath(self.wt) + os.sep)
+            if os.path.islink(path) or not inside or not os.path.isfile(path):
+                files.append(f"=== {x} === [not included: not a regular file]")
+                room -= len(x) + 60
+                continue
             try:
-                with open(os.path.join(self.wt, x), errors="replace") as f:
-                    text = f.read()
+                with open(path, "rb") as f:
+                    text = f.read(max(room, 0) + 1).decode("utf-8", errors="replace")
             except OSError:
                 continue
             piece = cut(text, room - len(x) - 20)
@@ -825,6 +853,10 @@ class Chain:
                 if review.startswith("(no review"):   # a failed review is not an approval: the plan says so
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
                     return self.plan(rnd, d, review, unresolved="the review did not run: " + tail(review, 200))
+                if not any(VERDICT_LINE.match(ln) for ln in review.splitlines()):
+                    # text without a verdict (a cut-off or timed-out review) is not an approval either
+                    self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
+                    return self.plan(rnd, d, review, unresolved="the review gave no verdict: " + tail(" ".join(review.split()), 200))
                 # the review saw what the gates did not on 3 of phase A's 4 plans: request-changes sends the fix
                 # back while the budget lasts; after that the operator sees the plan with the review in it
                 if review_requests_changes(review) and review_class(review) not in KICK_CLASSES:
@@ -840,8 +872,6 @@ class Chain:
                     # one line: the reason goes into result.tsv and the chain's log; the fix step gets the whole review
                     reason = "the review requested changes: " + tail(" ".join(review.split()), 400)
                     self.note(f"round {rnd}", reason)
-                    if rnd == self.a.kickback_max:
-                        raise Stop(f"stuck: kick-back limit ({self.a.kickback_max}) reached; last: {reason}")
                     manifest = self.review_manifest(manifest, rnd, d, review)
                     if self.a.resume and self.last_session:
                         resume = (self.last_session, self.last_patch,
@@ -889,10 +919,13 @@ class Chain:
             manifest = os.path.join(self.triaged, f"{self.tid}-triaged-kb{self.kb_round}.json")
             prior = kpath
             if self.a.resume and self.last_session and os.path.exists(manifest):
-                with open(manifest) as f:
-                    task = json.load(f).get("description") or ""
-                resume = (self.last_session, self.last_patch,
-                          f"YOUR FIX DID NOT PASS ITS GATES: {reason}\n\nTHE TASK, AS THE VERDICT STEP NOW SEES IT:\n{task}")
+                try:
+                    with open(manifest) as f:
+                        task = json.load(f).get("description") or ""
+                    resume = (self.last_session, self.last_patch,
+                              f"YOUR FIX DID NOT PASS ITS GATES: {reason}\n\nTHE TASK, AS THE VERDICT STEP NOW SEES IT:\n{task}")
+                except (OSError, ValueError, AttributeError) as e:   # the next round starts a new session instead
+                    self.note("resume", f"the renewed task could not be read ({type(e).__name__}): a new session")
 
     def review_manifest(self, manifest, rnd, d, review):
         """The next fix's instructions after a review's request-changes: the same task, the whole review and the
@@ -925,12 +958,13 @@ class Chain:
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
         flag = (f"unresolved: the review did not run; round {rnd}'s clean fix kept"
                 if unresolved.startswith("the review did not run") else
+                f"unresolved: the review gave no verdict; round {rnd}'s clean fix kept"
+                if unresolved.startswith("the review gave no verdict") else
                 f"unresolved: the review raised points it cannot show from the diff; round {rnd}'s clean fix kept"
                 if unresolved.startswith("the review asked for changes it cannot show") else
                 f"unresolved: the review asked for changes; round {rnd}'s clean fix kept")
+        head = f"**{flag}**: {unresolved} (see the review below).\n\n" if unresolved else ""
         body = "\n".join([
-            *([f"**{flag}**: {unresolved} (see the review below).", ""]
-              if unresolved else []),
             f"An automated fix for {self.repo}#{self.n} by flotilla's bugfix fleet (RFC-0010), in beta evaluation.",
             "", f"Gates (base {self.base[:12]}, round {rnd}): {checked}; nothing in CI, hooks, config or the lockfile. "
             "The whole suite is this PR's CI.",
@@ -941,7 +975,9 @@ class Chain:
             "", "The operator merges, always: the fleet never does."])
         return {"outcome": "plan", "action": "github.open_pr",
                 "detail": f"#{self.n}: " + (f"{flag}; " if unresolved else "") + f"a clean fix in round {rnd} at {self.base[:12]}",
-                "params": {"repo": self.repo, "base": self.base, "title": title, "body": tail(body, BODY_MAX), "diff": d}}
+                # the flag goes on after the cut: tail() keeps the end, and it must never cut the flag away
+                "params": {"repo": self.repo, "base": self.base, "title": title,
+                           "body": head + tail(body, BODY_MAX - len(head)), "diff": d}}
 
 
 def parse(argv):
@@ -1003,20 +1039,27 @@ def main(argv=None, environ=None):
     os.makedirs(run_dir)
     chain = None
     meter = None
-    if a.spend_file:
-        try:
-            cfg = json.loads(environ.get("FLOTILLA_MODELS") or "{}")
-        except ValueError:
-            cfg = {}
-        meter = spend.Meter(spend.keys_of(cfg, {a.worker_model, a.advisor_model, a.reviewer_model}, environ),
-                            a.spend_poll, a.spend_settle)
     terminated = []
 
     def on_term(signum, frame):
         terminated.append(signum)
         raise Terminated()
 
+    # before the first spend reads: a SIGTERM during them still leaves a number (no model has run: 0)
     old_term = signal.signal(signal.SIGTERM, on_term)
+    if a.spend_file:
+        try:
+            cfg = json.loads(environ.get("FLOTILLA_MODELS") or "{}")
+        except ValueError:
+            cfg = {}
+        try:
+            meter = spend.Meter(spend.keys_of(cfg, {a.worker_model, a.advisor_model, a.reviewer_model}, environ),
+                                a.spend_poll, a.spend_settle)
+        except Terminated:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), 0.0)
+            shutil.rmtree(run_dir, ignore_errors=True)
+            raise
     try:
         chain = Chain(a, case, run_dir, environ)
         out = chain.run()
