@@ -38,7 +38,7 @@ run:
 autonomy: shadow
 max_autonomy: propose
 budget:
-  day_usd: 5
+  day_usd: 1
 # What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/fix.py.
 explain:
   trigger: >-
