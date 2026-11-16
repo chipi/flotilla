@@ -184,16 +184,25 @@ def _parse_ts(ts_iso):
     return datetime.datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
 
 
+# How many unresolved GlitchTip issues a cycle reads (one API page). `limit` caps the triages (model calls) a cycle
+# makes, not the issues it reads: reading only the `limit` most recently seen left a burst's older issues undecided
+# until they happened to recur (37 new errors on 2026-11-11, ROADMAP T0.2). Decided issues cost nothing to skip.
+POLL_WIDTH = 100
+
+
 def run_glitchtip(limit=5, dry_run=True):
     """Phase B: process unresolved GlitchTip errors through the same spine.
+
+    Reads up to POLL_WIDTH issues, most recently seen first, and triages at most `limit` of them; the rest wait
+    for the next cycle, when the ones triaged now are skipped as decided.
 
     Recurrence handling (R5-4 follow-up + R2-2): a fingerprint that already has
     a disposition and shows NEW events is a `recurrence` ledger row (the
     implicit-overturn signal), not a fresh full-cost triage — unless the last
     triage is older than RETRIAGE_HOURS, in which case one re-triage is due."""
-    issues = sources.glitchtip_unresolved(limit)
+    issues = sources.glitchtip_unresolved(max(limit, POLL_WIDTH))
     print(f"glitchtip unresolved: {len(issues)}")
-    disps = []
+    disps, triaged, waiting = [], 0, 0
     for issue in issues:
         sig = sources.to_error_signal(issue)
         prior_occ = actions.already_done(sig["occurrence_id"])
@@ -213,6 +222,10 @@ def run_glitchtip(limit=5, dry_run=True):
             else:
                 print(f"  idempotent: {sig['occurrence_id']} -> {prior_occ}; skip")
                 continue
+        if triaged >= limit:
+            waiting += 1
+            continue
+        triaged += 1
         print(f"--- {sig['alertname'][:60]} (fp {sig['fingerprint']}) ---")
         sources.attach_backend(sig)    # LiteLLM only: which backend failed (assistant failover)
         disp = _triage_or_defer(sig)   # investigation self-probes (§7.3)
@@ -222,6 +235,8 @@ def run_glitchtip(limit=5, dry_run=True):
         disps.append(disp)
         m = disp.get("_meta", {})
         print(f"  => {disp['disposition']} (gates {m.get('gates')} · probes {m.get('n_probes')})")
+    if waiting:
+        print(f"glitchtip: triage cap {limit} reached; {waiting} wait for the next cycle")
     return disps
 
 

@@ -1205,6 +1205,61 @@ class TestFollowDuplicate(unittest.TestCase):
         self.assertTrue(self._run().startswith("REOPENED: r/x#42"))
 
 
+class TestPollWide(unittest.TestCase):
+    """ROADMAP T0.2: the poll reads a full page of unresolved issues, not only the `limit` most recently seen, and
+    `limit` caps the triages (model calls) per cycle. A burst (37 new errors on 2026-11-11) used to leave every issue
+    past the 10th undecided until it happened to recur; now it drains over the next cycles."""
+
+    def setUp(self):
+        import tempfile
+        import observ
+        import orchestrator
+        self.o = orchestrator
+        self._tmp = tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False)
+        self._tmp.close()
+        os.unlink(self._tmp.name)
+        self._orig = (actions.config.LEDGER, orchestrator.sources.glitchtip_unresolved,
+                      orchestrator.sources.to_error_signal, orchestrator.sources.attach_backend,
+                      orchestrator._triage_or_defer, observ.push_disposition_metric)
+        actions.config.LEDGER = self._tmp.name
+        orchestrator.sources.to_error_signal = lambda issue: issue
+        orchestrator.sources.attach_backend = lambda sig: sig
+        observ.push_disposition_metric = lambda *a, **k: None
+        self.asked, self.triaged = [], []
+        self.issues = [{"fingerprint": f"glitchtip:X-{n}", "occurrence_id": f"glitchtip:X-{n}@t0",
+                        "source": "glitchtip", "alertname": "x", "labels": {"count": 1}} for n in range(15)]
+        for n in (0, 1, 2):   # the three most recently seen are decided already
+            actions.ledger_append(self.issues[n], {"disposition": "file", "_meta": {}})
+
+        def unresolved(limit):
+            self.asked.append(limit)
+            return self.issues[:limit]
+        orchestrator.sources.glitchtip_unresolved = unresolved
+        orchestrator._triage_or_defer = lambda sig: self.triaged.append(sig["fingerprint"])
+
+    def tearDown(self):
+        import observ
+        (actions.config.LEDGER, self.o.sources.glitchtip_unresolved, self.o.sources.to_error_signal,
+         self.o.sources.attach_backend, self.o._triage_or_defer, observ.push_disposition_metric) = self._orig
+        if os.path.exists(self._tmp.name):
+            os.unlink(self._tmp.name)
+
+    def test_reads_a_full_page_and_caps_the_triages(self):
+        self.o.run_glitchtip(limit=10, dry_run=True)
+        self.assertEqual(self.asked, [self.o.POLL_WIDTH])
+        # decided issues cost nothing and take no place; the next 10 undecided are triaged, newest first
+        self.assertEqual(self.triaged, [f"glitchtip:X-{n}" for n in range(3, 13)])
+
+    def test_the_rest_wait_for_the_next_cycle(self):
+        self.o.run_glitchtip(limit=10, dry_run=True)
+        for fp in self.triaged:
+            actions.ledger_append({"fingerprint": fp, "occurrence_id": fp + "@t0", "source": "glitchtip",
+                                   "labels": {"count": 1}}, {"disposition": "dismiss", "_meta": {}})
+        self.triaged.clear()
+        self.o.run_glitchtip(limit=10, dry_run=True)
+        self.assertEqual(self.triaged, ["glitchtip:X-13", "glitchtip:X-14"])
+
+
 class TestRecurrenceOncePerCountChange(unittest.TestCase):
     """A GlitchTip count bump writes ONE recurrence row, not one per cycle."""
 
