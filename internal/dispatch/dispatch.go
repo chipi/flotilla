@@ -742,7 +742,11 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 		cv.Left = &caseLeft{USD: max(l.USD-bug.SpentUSD, 0), Seconds: max(float64(l.Minutes)*60-bug.SpentS, 0)}
 	}
 	cj, _ := json.Marshal(cv)
-	r, out, err := d.API.Sched.RunWith(ctx, j.ID(), "case", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj)})
+	var within time.Duration // the case's time left caps the run: 90 minutes are the case's, not 3 h a run
+	if cv.Left != nil {
+		within = time.Duration(cv.Left.Seconds) * time.Second
+	}
+	r, out, err := d.API.Sched.RunWithin(ctx, j.ID(), "case", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj)}, within)
 	if err != nil {
 		return d.noDecision(ctx, c.ID, j.ID(), "the run did not start: "+err.Error())
 	}

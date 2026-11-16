@@ -118,6 +118,17 @@ class TestRunJob(unittest.TestCase):
         self.assertAlmostEqual(res["spend_usd"], 0.0123)
         with open(os.path.join(self.home, "r", "spend")) as f:
             self.assertEqual(f.read(), "", "consumed once, as fleetd did")
+        self.assertTrue(res["spend_reported"])
+
+    def test_no_spend_report_is_not_a_reported_zero(self):
+        # the Fable advisor's review (2026-11-16): "no report" and "$0" were the same number
+        res = fw.run_job(self.req("true", spend_file="r/spend"), self.environ)
+        self.assertEqual((res["spend_usd"], res["spend_reported"]), (0.0, False))
+        os.makedirs(os.path.join(self.home, "r"), exist_ok=True)
+        res = fw.run_job(self.req("echo 0 > $HOME/r/spend", spend_file="r/spend"), self.environ)
+        self.assertEqual((res["spend_usd"], res["spend_reported"]), (0.0, True))
+        res = fw.run_job(self.req("true"), self.environ)   # no spend file named: nothing was due
+        self.assertTrue(res["spend_reported"])
 
     def test_calls_are_returned_and_the_file_removed(self):
         cmd = ('echo \'{"alias":"a","tokens_in":3}\' >> "$FLOTILLA_CALLS_FILE"; echo not-json >> "$FLOTILLA_CALLS_FILE";'

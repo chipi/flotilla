@@ -42,6 +42,9 @@ type Result struct {
 	ExitCode   *int    `json:"exit_code"`
 	DurationS  float64 `json:"duration_s"`
 	SpendUSD   float64 `json:"spend_usd"`
+	// SpendReported is false when the routine names a spend file and left no number in it: SpendUSD is then 0
+	// by default, not by report. nil from a worker older than the field.
+	SpendReported *bool `json:"spend_reported,omitempty"`
 	OutputTail string  `json:"output_tail"`
 	// What a routine on a case decided (pipeline v1 step 5): one JSON object, from an ok run only, or why
 	// it could not be read.

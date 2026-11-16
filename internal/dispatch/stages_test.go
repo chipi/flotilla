@@ -89,6 +89,31 @@ func TestHandOverRefused(t *testing.T) {
 
 // A case's runs share one limit: their spend and time add up on the case, FLOTILLA_CASE says what is left,
 // and a case past either is escalated instead of run again (RFC-0013 §2).
+// A case's run gets no more time than its case has left (the Fable advisor's review, 2026-11-16: a 3 h run
+// timeout let one run spend twice the case's 90 minutes); with no limit, the spec's timeout as before.
+func TestRunTimeoutIsTheCasesTimeLeft(t *testing.T) {
+	f := setup(t)
+	f.d.API.Sched.Routines[0].Limit = 3 * time.Hour
+	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
+	id := f.handOver(t, "")
+	if err := f.st.AddCaseSpend(context.Background(), id, 0.1, 60*60); err != nil {
+		t.Fatal(err)
+	}
+	f.decide(`{"outcome": "nothing"}`)
+	f.pass(t)
+	if got := f.w.got[len(f.w.got)-1].TimeoutS; got != 30*60 {
+		t.Fatalf("the run's timeout is %v s, want the case's 1800 s left", got)
+	}
+	g := setup(t)
+	g.d.API.Sched.Routines[0].Limit = 3 * time.Hour
+	g.handOver(t, "")
+	g.decide(`{"outcome": "nothing"}`)
+	g.pass(t)
+	if got := g.w.got[len(g.w.got)-1].TimeoutS; got != 3*60*60 {
+		t.Fatalf("without a limit the run's timeout is %v s, want the spec's 10800 s", got)
+	}
+}
+
 func TestCaseLimitIsShared(t *testing.T) {
 	for name, c := range map[string]struct {
 		spend, secs float64

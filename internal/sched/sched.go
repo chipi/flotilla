@@ -252,10 +252,20 @@ type AfterRun func(ctx context.Context, j *spec.Routine, r *store.Run, out *Case
 // RunWith is RunNow with the run's case (pipeline v1 step 5): caseEnv is added to the run's environment
 // (FLOTILLA_CASE), and the run gets a plan file whose content comes back. caseEnv nil is RunNow.
 func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, caseEnv map[string]string) (*store.Run, *CaseOutcome, error) {
+	return s.RunWithin(ctx, id, trigger, actor, caseEnv, 0)
+}
+
+// RunWithin is RunWith with the run's timeout at most `within` (0: the spec's limit alone): a case's runs share
+// one time limit (RFC-0013 §2), so a run gets no more than what is left of it.
+func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, caseEnv map[string]string, within time.Duration) (*store.Run, *CaseOutcome, error) {
 	s.init()
 	j := s.Routine(id)
 	if j == nil {
 		return nil, nil, fmt.Errorf("no routine %s", id)
+	}
+	timeout := j.Limit
+	if within > 0 && within < timeout {
+		timeout = within
 	}
 	runner, ok := s.Workers[j.Worker]
 	if !ok {
@@ -353,7 +363,7 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 	}
 	s.Log.Info("run start", "routine", id, "run_id", runID, "autonomy", autonomy, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
 	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Routine: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
-		TimeoutS: j.Limit.Seconds(), SpendFile: j.Run.SpendFile, PlanFile: planFile, Env: env})
+		TimeoutS: timeout.Seconds(), SpendFile: j.Run.SpendFile, PlanFile: planFile, Env: env})
 
 	status, detail, spend, dur := store.StatusError, "", 0.0, 0.0
 	var exit *int
@@ -366,6 +376,10 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		}
 	} else {
 		status, exit, spend, dur = res.Status, res.ExitCode, res.SpendUSD, res.DurationS
+		if j.Run.SpendFile != "" && res.SpendReported != nil && !*res.SpendReported {
+			// a budget, the day's cap and a case's limit read this spend: an unreported one counts 0, say so
+			s.Log.Warn("run reported no spend", "routine", id, "run_id", runID, "status", status)
+		}
 		if reports {
 			outcome = &CaseOutcome{Plan: res.Plan, PlanError: res.PlanError}
 		}

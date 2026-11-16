@@ -95,15 +95,22 @@ def resolve(base, rel):
 
 def read_spend(path):
     """Consume the routine's spend report (USD, one number), as fleetd did: read, then truncate."""
+    return spend_report(path)[0]
+
+
+def spend_report(path):
+    """(USD, reported): the routine's spend report, read then truncated. `reported` is False when the routine
+    names a spend file but left no number in it (missing, empty, unreadable): the run's spend is then 0 by
+    default, not by report, and flotillad says so."""
     if not path:
-        return 0.0
+        return 0.0, True
     try:
         with open(path) as f:
             raw = f.read().strip()
         open(path, "w").close()
-        return float(raw) if raw else 0.0
+        return (float(raw), True) if raw else (0.0, False)
     except (OSError, ValueError):
-        return 0.0
+        return 0.0, False
 
 
 CALLS_MAX = 500  # model calls returned per run; a run that makes more reports the first CALLS_MAX
@@ -236,8 +243,9 @@ def run_job(req, environ=None, cancel=None):
     if status == "ok" and proc.returncode != 0:
         status = "error"
     out = b"".join(chunks).decode("utf-8", "replace")
+    spend = spend_report(spend_path)
     res = {"status": status, "exit_code": proc.returncode, "duration_s": round(time.monotonic() - start, 3),
-           "spend_usd": read_spend(spend_path), "output_tail": out[-TAIL:], "calls": read_calls(calls),
+           "spend_usd": spend[0], "spend_reported": spend[1], "output_tail": out[-TAIL:], "calls": read_calls(calls),
            "loaded": read_calls(loaded, LOADED_MAX)}
     plan, plan_error = read_plan(plan_path)
     if status == "ok":  # a failed run's plan is not a decision
