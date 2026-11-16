@@ -385,6 +385,37 @@ exec {real} "$@"
         plan, _ = h.run("--kickback-max", "0")
         self.assertEqual((plan["outcome"], h.calls()), ("plan", ["triage", "fix", "review"]), plan)
 
+    def test_a_sent_back_round_that_fails_keeps_the_last_clean_fix(self):
+        """Round 0 is gate-clean and the review asks for changes; the round that follows fails a gate or its
+        verdict is not actionable. The run returns round 0's plan with the review attached, not an escalation."""
+        f = self.fixture(["actionable", "actionable", "needs-info"], ["good", "notest"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\n")
+        plan, _ = f.run()
+        self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), plan)
+        self.assertIn("+module.exports = () => 2;", plan["params"]["diff"])
+        self.assertIn("VERDICT: request-changes", plan["params"]["body"])
+        self.assertIn("round 0: the review requested changes", plan["params"]["body"])
+        self.assertIn("round 1: repro-first violated", plan["params"]["body"])
+        self.assertIn("a clean fix in round 0", plan["detail"])
+        # the verdict after the review's kick-back is not actionable: the same
+        e = self.fixture(["actionable", "needs-info"], ["good"])
+        with open(os.path.join(e.state, "reviews"), "w") as fh:
+            fh.write("request-changes\n")
+        plan, _ = e.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        # the limit reached by a failing round keeps it too
+        g = self.fixture(["actionable"], ["good", "notest"])
+        with open(os.path.join(g.state, "reviews"), "w") as fh:
+            fh.write("request-changes\n")
+        plan, _ = g.run("--kickback-max", "1")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("a clean fix in round 0", plan["detail"])
+        # no round was ever gate-clean: still an escalation with no plan
+        h = self.fixture(["actionable", "needs-info"], ["notest"])
+        plan, _ = h.run()
+        self.assertEqual(plan["outcome"], "escalate", plan)
+
     def test_only_the_fixer_may_change_the_tree(self):
         """SR-0001 H8: the verdict, the advisor and the review read; only the fix step gets pi's default
         tools (the advisor once started a dev server). Read-only is a tool allowlist, not a prompt."""

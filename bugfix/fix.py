@@ -443,6 +443,19 @@ class Chain:
         return f"(no review: {tail(err, 300)})" if err else f"(no review: the reviewer episode ended {code} with no text)"
 
     def run(self):
+        self.kept = None   # the last gate-clean round the review sent back: (rnd, diff, review, checked, unloaded)
+        try:
+            return self.rounds()
+        except Stop as e:
+            if not self.kept:
+                raise
+            # a good fix is not thrown away because a later round failed: the operator gets the last clean one
+            # with the review's requested changes in it, and the reason the later rounds ended
+            rnd, d, review, checked, unloaded = self.kept
+            self.note("kept", f"round {rnd}'s clean fix; the run ended: {tail(str(e), 300)}")
+            return self.plan(rnd, d, review, checked, unloaded)
+
+    def rounds(self):
         self.checkout()
         # 1 · the verdict, on the base
         v, vpath = self.verdict()
@@ -467,6 +480,7 @@ class Chain:
                 if REQUEST_CHANGES.search(review or "") and reviewed_back < self.a.review_kickback_max \
                         and rnd < self.a.kickback_max:
                     reviewed_back += 1
+                    self.kept = (rnd, d, review, self.checked, self.unloaded_on_base)
                     from_review = True
                     # one line: the reason goes into result.tsv, the leaves' kick-back evidence
                     reason = "the review requested changes: " + tail(" ".join(review.split()), 400)
@@ -517,14 +531,16 @@ class Chain:
                 "rejected": "rejected as not a bug"}.get(verdict, f"no usable verdict ({verdict})")
         return " ".join(x for x in [head, after, (": " + why) if why else ""] if x).replace(" :", ":")
 
-    def plan(self, rnd, d, review):
+    def plan(self, rnd, d, review, checked=None, unloaded=None):
+        checked = self.checked if checked is None else checked
+        unloaded = self.unloaded_on_base if unloaded is None else unloaded
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
         body = "\n".join([
             f"An automated fix for {self.repo}#{self.n} by flotilla's bugfix fleet (RFC-0010), in beta evaluation.",
-            "", f"Gates (base {self.base[:12]}, round {rnd}): {self.checked}; nothing in CI, hooks, config or the lockfile. "
+            "", f"Gates (base {self.base[:12]}, round {rnd}): {checked}; nothing in CI, hooks, config or the lockfile. "
             "The whole suite is this PR's CI.",
-            *([f"Not loadable on the base (they import what the fix adds): {', '.join(self.unloaded_on_base)}."]
-              if self.unloaded_on_base else []),
+            *([f"Not loadable on the base (they import what the fix adds): {', '.join(unloaded)}."]
+              if unloaded else []),
             "", "The chain:", *[f"- {x}" for x in self.log],
             "", "Review (fleet reviewer, comment only):", tail(review, 3000),
             "", "The operator merges, always: the fleet never does."])
