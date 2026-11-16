@@ -30,6 +30,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostalert"
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostlink"
+	"github.com/chipi/flotilla/internal/knowledge"
 	"github.com/chipi/flotilla/internal/mcpserver"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/registry"
@@ -79,6 +80,10 @@ type Config struct {
 	// the model aliases routines may name and their OpenAI-compatible endpoints (ADR-0004); every run gets
 	// it as JSON in FLOTILLA_MODELS. Optional: without it, a routine that needs a model fails its run.
 	Models *models.Config `yaml:"models"`
+	// the external knowledge sources routines may name (RFC-0002 §7): the volume the deploy fills, the
+	// paths it copies, and the path maps a routine reads by key. Every run gets its spec's part as JSON in
+	// FLOTILLA_KNOWLEDGE. Optional: a spec that names a source fails -check without it.
+	Knowledge knowledge.Config `yaml:"knowledge"`
 	// Optional: how long a case may stay detected (then an alert) or handed over (then escalated);
 	// RFC-0004 §3.5. Unset: 30m and 24h.
 	CaseTimers casetimer.Config `yaml:"case_timers"`
@@ -174,6 +179,9 @@ func loadConfig(path string) (*Config, error) {
 		if err := c.Models.Validate(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if err := c.Knowledge.Validate(); err != nil {
+		errs = append(errs, err)
 	}
 	if err := c.Hosts.validate(); err != nil {
 		errs = append(errs, err)
@@ -294,6 +302,12 @@ func main() {
 				os.Exit(2)
 			}
 		}
+		if !j.Knowledge.Empty() {
+			if _, err := cfg.Knowledge.Subset(j.Knowledge); err != nil {
+				fmt.Fprintf(os.Stderr, "specs: %s: %v\n", j.ID(), err)
+				os.Exit(2)
+			}
+		}
 	}
 	if *check {
 		for _, j := range routines {
@@ -365,7 +379,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
+	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models, Knowledge: cfg.Knowledge,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline

@@ -54,6 +54,9 @@ func (j *Routine) ExplainKeys() []string {
 	if len(j.Models) > 0 {
 		keys = append(keys, "models")
 	}
+	if !j.Knowledge.Empty() {
+		keys = append(keys, "knowledge")
+	}
 	if len(j.Detects) > 0 {
 		keys = append(keys, "detects")
 	}
@@ -86,7 +89,7 @@ func (j *Routine) validateExplain(bad func(string, ...any)) {
 			bad("steps: id %q (lower-case, digits, _)", s.ID)
 		case seen[s.ID]:
 			bad("steps: id %q named twice", s.ID)
-		case in([]string{"trigger", "worker", "run", "autonomy", "budget", "freshness", "skills", "models", "detects"}, s.ID):
+		case in([]string{"trigger", "worker", "run", "autonomy", "budget", "freshness", "skills", "models", "knowledge", "detects"}, s.ID):
 			bad("steps: id %q is a spec part's own key", s.ID)
 		}
 		seen[s.ID] = true

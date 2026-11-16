@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chipi/flotilla/internal/knowledge"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -450,5 +451,20 @@ func TestRemoteWorkerNotConnectedSkips(t *testing.T) {
 	why, err := s.SkipReason(context.Background(), s.Routines[0])
 	if err != nil || why != "worker triage is not connected" {
 		t.Fatalf("skip reason %q %v", why, err)
+	}
+}
+
+func TestRunGetsItsKnowledge(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.Knowledge = knowledge.Config{"handbook": {Kind: "files", Volume: "v", Paths: []string{"docs"},
+		Maps: map[string]map[string]string{"by_service": {"litellm": "docs/litellm.md"}, "other": {"a": "docs/a.md"}}}}
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if _, ok := fr.got[0].Env["FLOTILLA_KNOWLEDGE"]; ok {
+		t.Fatal("FLOTILLA_KNOWLEDGE set for a routine that declares no knowledge")
+	}
+	s.Routines[0].Knowledge = knowledge.Use{Sources: []string{"handbook"}, Queries: []string{"by_service"}}
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if got := fr.got[1].Env["FLOTILLA_KNOWLEDGE"]; got != `{"sources":{"handbook":{"kind":"files","maps":{"by_service":{"litellm":"docs/litellm.md"}}}}}` {
+		t.Fatalf("the routine's knowledge: %s", got)
 	}
 }

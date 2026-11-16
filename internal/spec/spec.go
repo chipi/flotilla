@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/chipi/flotilla/internal/knowledge"
 )
 
 // Autonomy levels, a lifecycle (ADR-0008): shadow, then propose, then auto. What each allows is the
@@ -75,6 +77,9 @@ type Routine struct {
 	// The model aliases (flotillad.yaml models) this routine may call (security T4): its runs get only
 	// these in FLOTILLA_MODELS, so an alias it does not name does not exist for it. Default none.
 	Models []string `yaml:"models"`
+	// The external knowledge (flotillad.yaml knowledge, RFC-0002 §7) this routine may read: the sources and
+	// the queries on them. Its runs get only these in FLOTILLA_KNOWLEDGE. Default none.
+	Knowledge knowledge.Use `yaml:"knowledge"`
 	// The brief's section a monitor's summary lines go to (RFC-0012 §4): a monitor may report up to 20
 	// lines with its detections, and the brief written after its run shows them under this title. Only
 	// a monitor (one that detects) has one.
@@ -486,6 +491,24 @@ func (j *Routine) validate() error {
 			bad("models: %q is empty or named twice", m)
 		}
 		seenModel[m] = true
+	}
+	if k := j.Knowledge; !k.Empty() {
+		if len(k.Sources) == 0 || len(k.Queries) == 0 {
+			bad("knowledge: sources and queries are both required")
+		}
+		seenSource, seenQuery := map[string]bool{}, map[string]bool{}
+		for _, s := range k.Sources {
+			if !knowledge.NameRe.MatchString(s) || seenSource[s] {
+				bad("knowledge.sources: %q is not a source name, or is named twice", s)
+			}
+			seenSource[s] = true
+		}
+		for _, q := range k.Queries {
+			if !knowledge.QueryRe.MatchString(q) || seenQuery[q] {
+				bad("knowledge.queries: %q is not a query name, or is named twice", q)
+			}
+			seenQuery[q] = true
+		}
 	}
 	for _, k := range j.Detects {
 		if !caseFieldRe.MatchString(k) {

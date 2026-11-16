@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chipi/flotilla/internal/knowledge"
 	"github.com/chipi/flotilla/internal/spec"
 )
 
@@ -17,9 +18,10 @@ func TestRoutinePage(t *testing.T) {
 		Trigger: spec.Trigger{Every: "10m"}, Freshness: "35m",
 		Harness: &spec.Harness{Protocol: "json", Tools: []string{"event_detail"}, Gates: []string{"edge"},
 			Limits: spec.HarnessLimits{MaxToolCalls: 3, MaxSteps: 4, ToolCallsPerTurn: 1}},
-		Explain: map[string]string{"trigger": "Every ten minutes. Then more.", "gate.edge": "A burst during a restart is never dismissed."},
-		Steps:   []spec.Step{{ID: "dedup", Lane: "sort", Who: "code", Title: "already decided", Short: "a recurrence", Explain: "Written as a recurrence.", Count: "recurrences"}},
-		Chain:   []spec.ChainLink{{Routine: "bugfix/fix", Via: "a GitHub issue"}}}
+		Knowledge: knowledge.Use{Sources: []string{"homelab-handbook"}, Queries: []string{"by_service"}},
+		Explain:   map[string]string{"trigger": "Every ten minutes. Then more.", "gate.edge": "A burst during a restart is never dismissed.", "knowledge": "The handbook page for a service."},
+		Steps:     []spec.Step{{ID: "dedup", Lane: "sort", Who: "code", Title: "already decided", Short: "a recurrence", Explain: "Written as a recurrence.", Count: "recurrences"}},
+		Chain:     []spec.ChainLink{{Routine: "bugfix/fix", Via: "a GitHub issue"}}}
 	fix := &spec.Routine{Fleet: "bugfix", Routine: "fix", Description: "fixes", Enabled: true, Worker: "bugfix", Autonomy: "shadow",
 		Run: spec.Run{Command: "python3 fix.py", Timeout: "3h"}, Limit: time.Hour, Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "code_bug"}},
 		Explain: map[string]string{"run": "fix.py fixes the bug."},
@@ -33,6 +35,7 @@ func TestRoutinePage(t *testing.T) {
 		"node node--agent", "the model", "node node--tool", "node node--code", "already decided", "a recurrence",
 		"The chain after it", "a GitHub issue", "bugfix/fix", "coding agent", "Open a block",
 		`href="/fleets/triage/cycle?b=gate.edge#block"`,
+		"knowledge homelab-handbook", `href="/fleets/triage/cycle?b=knowledge#block"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the routine page lacks %q", want)

@@ -197,6 +197,9 @@ func specBlocks(j *spec.Routine, c mixCounts, href func(string) string) []rLane 
 	if len(j.Models) > 0 {
 		add("where", rBlock{ID: "models", Name: "models " + strings.Join(j.Models, ", "), Who: "agent", Where: "spec", Key: "models", YAML: yamlOf(map[string]any{"models": j.Models})})
 	}
+	if !j.Knowledge.Empty() {
+		add("where", rBlock{ID: "knowledge", Name: "knowledge " + strings.Join(j.Knowledge.Sources, ", "), Who: "tool", Where: "spec", Key: "knowledge", YAML: yamlOf(map[string]any{"knowledge": j.Knowledge})})
+	}
 	if len(j.Detects) > 0 {
 		add("outcome", rBlock{ID: "detects", Name: "detects " + strings.Join(j.Detects, ", "), Who: "code", Where: "spec", Key: "detects", YAML: yamlOf(map[string]any{"detects": j.Detects})})
 	}

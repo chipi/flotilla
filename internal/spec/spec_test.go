@@ -111,6 +111,12 @@ func TestRejects(t *testing.T) {
 		"a brief section, no monitor": {"triage/cycle.yaml", good + "brief_section: Search\n", "only a monitor"},
 		"a brief section, bad title":  {"triage/cycle.yaml", good + "detects: [x]\nbrief_section: search-weekly\n", "not a short title"},
 		"a brief section of its own":  {"triage/cycle.yaml", good + "detects: [x]\nbrief_section: Watch\n", "one of the brief's own sections"},
+		"knowledge without queries":   {"triage/cycle.yaml", good + "knowledge: {sources: [homelab-handbook]}\n", "sources and queries are both required"},
+		"knowledge without sources":   {"triage/cycle.yaml", good + "knowledge: {queries: [by_service]}\n", "sources and queries are both required"},
+		"a bad knowledge source":      {"triage/cycle.yaml", good + "knowledge: {sources: [Bad_Name], queries: [by_service]}\n", `knowledge.sources: "Bad_Name"`},
+		"a source named twice":        {"triage/cycle.yaml", good + "knowledge: {sources: [a, a], queries: [by_service]}\n", "named twice"},
+		"a bad knowledge query":       {"triage/cycle.yaml", good + "knowledge: {sources: [a], queries: [\"*\"]}\n", `knowledge.queries: "*"`},
+		"unknown knowledge field":     {"triage/cycle.yaml", good + "knowledge: {sources: [a], queries: [b], paths: [c]}\n", "field paths not found"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

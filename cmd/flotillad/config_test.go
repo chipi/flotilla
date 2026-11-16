@@ -91,3 +91,29 @@ func TestRemoteWorkersConfig(t *testing.T) {
 		}
 	}
 }
+
+// RFC-0002 §7: the knowledge section is validated at load, and a misspelled field is refused.
+func TestKnowledgeConfig(t *testing.T) {
+	good := "knowledge:\n  homelab-handbook:\n    kind: files\n    volume: flotilla-knowledge\n    paths: [docs/recipes]\n" +
+		"    maps:\n      by_service: {litellm: docs/recipes/litellm.md}\n"
+	c, err := load(t, good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Knowledge["homelab-handbook"].Maps["by_service"]["litellm"]; got != "docs/recipes/litellm.md" {
+		t.Fatalf("parsed: %+v", c.Knowledge)
+	}
+	if c, err := load(t, ""); err != nil || len(c.Knowledge) != 0 {
+		t.Fatalf("unset: %+v %v", c.Knowledge, err)
+	}
+	for what, extra := range map[string]string{
+		"a glob in paths":          strings.Replace(good, "[docs/recipes]", "[docs/**]", 1),
+		"a key outside the paths":  strings.Replace(good, "docs/recipes/litellm.md", "infra/litellm.md", 1),
+		"a kind that is not files": strings.Replace(good, "kind: files", "kind: git", 1),
+		"a misspelled field":       strings.Replace(good, "volume:", "volum:", 1),
+	} {
+		if _, err := load(t, extra); err == nil {
+			t.Errorf("%s: accepted", what)
+		}
+	}
+}

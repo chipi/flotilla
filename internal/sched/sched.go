@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/chipi/flotilla/internal/knowledge"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -64,6 +65,9 @@ type Scheduler struct {
 	ModelsJSON string
 	// the same, parsed: each run gets only the aliases its spec names (security T4)
 	Models *models.Config
+	// the installation's validated knowledge section: each run gets only the sources and queries its spec
+	// names (RFC-0002 §7), as FLOTILLA_KNOWLEDGE
+	Knowledge knowledge.Config
 	// where a routine sends its own spans (flotillad's otlp_traces_url) and the environment label: every run
 	// gets them as FLOTILLA_OTLP_TRACES_URL and FLOTILLA_ENVIRONMENT (runtime/telemetry.py)
 	OTLPTracesURL string
@@ -311,6 +315,18 @@ func (s *Scheduler) RunWith(ctx context.Context, id, trigger, actor string, case
 		}
 		if err != nil {
 			s.Log.Error("the routine's models", "routine", id, "err", err) // -check refuses this config
+		}
+	}
+	if !j.Knowledge.Empty() {
+		sub, err := s.Knowledge.Subset(j.Knowledge)
+		if err == nil {
+			var js string
+			if js, err = sub.JSON(); err == nil {
+				env["FLOTILLA_KNOWLEDGE"] = js
+			}
+		}
+		if err != nil {
+			s.Log.Error("the routine's knowledge", "routine", id, "err", err) // -check refuses this config
 		}
 	}
 	if sk := j.SkillsJSON(); sk != "" {
