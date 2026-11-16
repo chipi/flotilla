@@ -365,7 +365,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	s := &sched.Scheduler{StartDelay: 30 * time.Second, Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
+	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline

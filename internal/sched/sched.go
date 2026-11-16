@@ -50,16 +50,16 @@ const (
 var ErrRunning = errors.New("already running")
 
 type Scheduler struct {
-	// StartDelay holds the first timed runs after Loop starts: a deploy recreates the workers and the
-	// egress proxy beside flotillad, and runs started at once met them half up (2026-11-15).
-	StartDelay time.Duration
-	Store      *store.Store
-	Routines   []*spec.Routine
-	Workers    map[string]Runner
-	Metrics    Metrics
-	Location   *time.Location
-	Log        *slog.Logger
-	Now        func() time.Time
+	// ReadyWait bounds how long a routine's first run after Loop starts waits for its worker to answer
+	// (the default 2 minutes): a deploy recreates the workers beside flotillad.
+	ReadyWait time.Duration
+	Store     *store.Store
+	Routines  []*spec.Routine
+	Workers   map[string]Runner
+	Metrics   Metrics
+	Location  *time.Location
+	Log       *slog.Logger
+	Now       func() time.Time
 	// the installation's validated models section, as JSON, for the UI's Models page
 	ModelsJSON string
 	// the same, parsed: each run gets only the aliases its spec names (security T4)
@@ -101,7 +101,12 @@ func (s *Scheduler) Routine(id string) *spec.Routine {
 	return nil
 }
 
-// Loop runs every enabled routine on its trigger until ctx ends: once at start, then every interval.
+// Loop runs every enabled routine on its trigger until ctx ends: when it is due (its last run that was
+// not skipped, plus its interval; at once if it has none), then every interval. A restart, a deploy's
+// included, so starts nothing that is not due: before (2026-11-16) every routine ran the moment flotillad
+// started, while compose was recreating its workers and the egress proxies, and failed on their names or
+// its sources; a weekly routine ran again at every deploy. A run due at start first waits for its worker
+// to answer (ReadyWait).
 func (s *Scheduler) Loop(ctx context.Context) {
 	s.init()
 	var wg sync.WaitGroup
@@ -121,14 +126,16 @@ func (s *Scheduler) Loop(ctx context.Context) {
 		wg.Add(1)
 		go func(j *spec.Routine) {
 			defer wg.Done()
-			s.Log.Info("routine loop started", "routine", j.ID(), "every", j.Every.String(), "worker", j.Worker)
-			if s.StartDelay > 0 {
+			wait := s.FirstWait(ctx, j)
+			s.Log.Info("routine loop started", "routine", j.ID(), "every", j.Every.String(), "worker", j.Worker, "first_in", wait.Round(time.Second).String())
+			if wait > 0 {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(s.StartDelay):
+				case <-time.After(wait):
 				}
 			}
+			s.AwaitWorker(ctx, j)
 			t := time.NewTicker(j.Every)
 			defer t.Stop()
 			for {
@@ -145,6 +152,67 @@ func (s *Scheduler) Loop(ctx context.Context) {
 	}
 	wg.Wait()
 }
+
+// FirstWait is how long a routine's first timed run waits after Loop starts: until its last run that was
+// not skipped plus its interval, zero when that is past or it has never run.
+func (s *Scheduler) FirstWait(ctx context.Context, j *spec.Routine) time.Duration {
+	s.init()
+	runs, err := s.Store.Runs(ctx, j.ID(), 50)
+	if err != nil {
+		s.Log.Error("first run: the routine's runs", "routine", j.ID(), "err", err)
+		return 0
+	}
+	for _, r := range runs {
+		if r.Status == store.StatusSkipped {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339Nano, r.StartedAt)
+		if err != nil {
+			return 0
+		}
+		if d := t.Add(j.Every).Sub(s.Clock()); d > 0 {
+			return d
+		}
+		return 0
+	}
+	return 0
+}
+
+// AwaitWorker waits, at most ReadyWait (2 minutes by default), for the routine's worker to answer: a local
+// worker its health check, a remote one its link. A worker that never answers is left to the run, which
+// is then skipped.
+func (s *Scheduler) AwaitWorker(ctx context.Context, j *spec.Routine) {
+	s.init()
+	ready, ok := s.Workers[j.Worker].(interface{ Ready(context.Context) bool })
+	if !ok {
+		if a, isA := s.Workers[j.Worker].(interface{ Available() bool }); isA {
+			ready, ok = readyFunc(func(context.Context) bool { return a.Available() }), true
+		}
+	}
+	if !ok {
+		return
+	}
+	limit := s.ReadyWait
+	if limit == 0 {
+		limit = 2 * time.Minute
+	}
+	deadline := time.Now().Add(limit)
+	for !ready.Ready(ctx) {
+		if time.Now().After(deadline) {
+			s.Log.Warn("worker did not answer before the first run", "routine", j.ID(), "worker", j.Worker, "waited", limit.String())
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+type readyFunc func(context.Context) bool
+
+func (f readyFunc) Ready(ctx context.Context) bool { return f(ctx) }
 
 // RunNow runs one routine now and waits for it. trigger says why ("schedule", "manual"), actor who.
 // A skipped run (STOP, paused, budget) is recorded with its reason and returned without error.

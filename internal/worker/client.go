@@ -141,6 +141,12 @@ func (c *Client) Run(ctx context.Context, r Request) (*Result, error) {
 	return &res, nil
 }
 
+// Ready is whether the worker answers its health check now.
+func (c *Client) Ready(ctx context.Context) bool {
+	_, err := c.Health(ctx)
+	return err == nil
+}
+
 func (c *Client) Health(ctx context.Context) (*Health, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

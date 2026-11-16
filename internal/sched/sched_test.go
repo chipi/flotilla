@@ -258,6 +258,78 @@ func TestWorkerNotReachedIsSkipped(t *testing.T) {
 	}
 }
 
+// A restart starts a routine when it is due, not at once (2026-11-16): from its last run that was not
+// skipped, plus its interval.
+func TestFirstWait(t *testing.T) {
+	s, _, _ := setup(t, 2)
+	ctx := context.Background()
+	j := s.Routines[0]
+	// in the past: the store stamps a skipped run with its own (real) clock, so the skip below is the newest run
+	now := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	if d := s.FirstWait(ctx, j); d != 0 {
+		t.Fatalf("never ran: %s, want 0", d)
+	}
+	s.Now = func() time.Time { return now.Add(-2 * time.Minute) }
+	if _, err := s.RunNow(ctx, j.ID(), "schedule", "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	s.Now = func() time.Time { return now }
+	if d := s.FirstWait(ctx, j); d != 8*time.Minute {
+		t.Fatalf("ran 2m ago, every 10m: %s, want 8m", d)
+	}
+	// a skipped run since does not count: it did not do the work
+	if err := s.Store.SetControl(ctx, j.ID(), KeyPaused, "1", "t", "test"); err != nil {
+		t.Fatal(err)
+	}
+	s.Now = func() time.Time { return now.Add(-time.Minute) }
+	if r, _ := s.RunNow(ctx, j.ID(), "schedule", "flotillad"); r.Status != store.StatusSkipped {
+		t.Fatalf("paused run: %s", r.Status)
+	}
+	s.Now = func() time.Time { return now }
+	if d := s.FirstWait(ctx, j); d != 8*time.Minute {
+		t.Fatalf("after a skip: %s, want 8m (from the run before it)", d)
+	}
+	s.Now = func() time.Time { return now.Add(20 * time.Minute) }
+	if d := s.FirstWait(ctx, j); d != 0 {
+		t.Fatalf("overdue: %s, want 0", d)
+	}
+}
+
+type readyRunner struct {
+	fakeRunner
+	mu    sync.Mutex
+	calls int
+	after int
+}
+
+func (r *readyRunner) Ready(context.Context) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	return r.calls > r.after
+}
+
+// The first run waits for its worker to answer, at most ReadyWait.
+func TestAwaitWorker(t *testing.T) {
+	s, _, _ := setup(t, 2)
+	rr := &readyRunner{after: 1}
+	s.Workers["triage"] = rr
+	s.ReadyWait = 10 * time.Second
+	s.AwaitWorker(context.Background(), s.Routines[0])
+	if rr.calls != 2 {
+		t.Fatalf("asked %d times, want 2 (no, then yes)", rr.calls)
+	}
+	never := &readyRunner{after: 1 << 30}
+	s.Workers["triage"] = never
+	s.ReadyWait = 50 * time.Millisecond
+	start := time.Now()
+	s.AwaitWorker(context.Background(), s.Routines[0])
+	if el := time.Since(start); el > 5*time.Second {
+		t.Fatalf("did not give up: %s", el)
+	}
+}
+
 func TestOneRunPerJob(t *testing.T) {
 	s, fr, _ := setup(t, 2)
 	fr.block = make(chan struct{})
