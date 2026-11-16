@@ -13,11 +13,11 @@ trigger:
   # RFC-0013 §2 (operator, 2026-11-16): all of a case's runs together get $1 and 90 minutes; a case past
   # either is escalated instead of run again. Money counts only what the runs report as spend.
   case: {kind: code_bug, limit: {usd: 1, minutes: 90}}
-models: [bugfix-flash, bugfix-reviewer]
+models: [fix-flash, fix-reviewer]
 run:
   command: >-
-    python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model bugfix-flash
-    --advisor-model bugfix-reviewer --reviewer-model bugfix-reviewer
+    python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model fix-flash
+    --advisor-model fix-reviewer --reviewer-model fix-reviewer
     --exclude-path static/images --exclude-path static/audio --exclude-path masters
     --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2 --spend-file .bugfix-fix-spend
   workdir: .
@@ -41,8 +41,9 @@ explain:
     fix.py checks orrery out at main, asks for a verdict, then runs fix rounds with gates on what each
     fix touches. Up to three kick-backs with the advisor, a review, then a plan or an escalation.
   models: >-
-    The only aliases its runs can call: bugfix-flash for the coding agent, bugfix-reviewer for the
-    advisor and the reviewer.
+    The only aliases its runs can call: fix-flash for the coding agent, fix-reviewer for
+    the advisor and the reviewer. Both use this routine's own LiteLLM key (fleet-bugfix-fix, its own
+    daily budget), so a run's spend is this routine's alone.
   autonomy: >-
     shadow records the plan inside flotilla; at propose the plan waits for your approval before a PR is
     opened. It can never act on its own.
@@ -64,7 +65,7 @@ steps:
     title: coding agent
     short: writes the fix and a failing test
     explain: >-
-      pi on bugfix-flash writes the fix and a test that fails on the base and passes with the fix, in a
+      pi on fix-flash writes the fix and a test that fails on the base and passes with the fix, in a
       worktree of orrery's main.
   - id: advisor
     lane: agent
@@ -72,7 +73,7 @@ steps:
     title: advisor
     short: sends a weak round back, up to 3 times
     explain: >-
-      pi on bugfix-reviewer, read-only tools. When a round fails its gates (not when the review asked for
+      pi on fix-reviewer, read-only tools. When a round fails its gates (not when the review asked for
       changes) it only pins the file that owns the bug, unless the fix was already at an earlier pin; the
       verdict is then asked again with that evidence, and a verdict that is not actionable escalates. At
       most three kick-backs.
