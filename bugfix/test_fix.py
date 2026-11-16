@@ -27,7 +27,7 @@ TRIAGE = POP + textwrap.dedent('''\
     ID=$(jq -r .id "$BUG_JSON")
     V=$(pop verdicts)
     IMG=no; [ -e "$BAKEOFF_WT/static/images/x.png" ] && IMG=yes
-    echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER img=$IMG" >> "$FAKE_STATE/calls"
+    echo "triage $V ev=${EV:+yes} gap=$ACCEPTANCE_GAP model=$TRIAGE_MODEL provider=$PI_PROVIDER img=$IMG tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     KB=0; [ -n "$EV" ] && KB=$(( $(jq -r '.kickback_round // 0' "$PRIOR") + 1 ))
     SUF=""; [ "$KB" -gt 0 ] && SUF="-kb$KB"
     OUT="$BAKEOFF_ROOT/results/${ID}-triage${SUF}/pi"; mkdir -p "$OUT"
@@ -41,7 +41,7 @@ TRIAGE = POP + textwrap.dedent('''\
 
 PI_HARNESS = POP + textwrap.dedent('''\
     WT="$1"; F=$(pop fixes)
-    echo "fix $F model=$PI_MODEL" >> "$FAKE_STATE/calls"
+    echo "fix $F model=$PI_MODEL tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     cd "$WT"
     case "$F" in
       good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
@@ -60,13 +60,14 @@ PI_HARNESS = POP + textwrap.dedent('''\
     ''')
 
 ADVISOR = textwrap.dedent('''\
-    echo "advisor" >> "$FAKE_STATE/calls"
+    echo "advisor tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     printf '{"file": "src/a.js", "function": "value", "decoy": "src/b.js", "rationale": "it computes it"}' > "$2/advisor.json"
     ''')
 
 # the reviewer is pi itself, on PATH
 PI_BIN = textwrap.dedent('''\
-    echo "review model=$6" >> "$FAKE_STATE/calls"
+    T=all; prev=; for a in "$@"; do [ "$prev" = --tools ] && T="$a"; prev="$a"; done
+    echo "review model=$6 tools=$T" >> "$FAKE_STATE/calls"
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Fine.\\\\nVERDICT: approve"}]}}\\n'
     ''')
 
@@ -351,6 +352,22 @@ exec {real} "$@"
         self.assertIn("round 0: repro-first violated: no test in the diff", plan["params"]["body"])
         self.assertIn("advisor: src/a.js", plan["params"]["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage", "fix", "review"])
+
+    def test_only_the_fixer_may_change_the_tree(self):
+        """SR-0001 H8: the verdict, the advisor and the review read; only the fix step gets pi's default
+        tools (the advisor once started a dev server). Read-only is a tool allowlist, not a prompt."""
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        f.run()
+        with open(os.path.join(f.state, "calls")) as fh:
+            raw = [ln for ln in fh.read().splitlines() if ln.strip()]
+        lines = [ln.split() for ln in raw]
+        tools = {ln[0]: [w for w in ln if w.startswith("tools=")] for ln in lines}
+        for step in ("triage", "advisor", "review"):
+            self.assertEqual(tools[step], ["tools=read,grep,find,ls"], step)
+        self.assertEqual(tools["fix"], ["tools=all"])
+        for leaf in ("triage_run.sh", "advisor_run.sh"):
+            with open(os.path.join(fix.BAKEOFF, leaf)) as fh:
+                self.assertIn('${PI_TOOLS:+--tools "$PI_TOOLS"}', fh.read(), leaf)
 
     def test_a_new_failure_kicks_back_and_needs_info_escalates(self):
         """The fix breaks src/b.js, which keep.test.js (related, passing on the base) checks."""

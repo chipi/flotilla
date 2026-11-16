@@ -47,6 +47,9 @@ import pi_config  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE), "bugfix-fleet", "bakeoff"))
+# SR-0001 H8: the steps that only read (verdict, advisor, review) get pi's read tools, no shell and no
+# writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
+READ_ONLY_TOOLS = "read,grep,find,ls"
 TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/]*\.py$")
 # CI and hooks, and what `vitest related` cannot see: the repo's config, manifest and lockfile (the
 # advisor's review, 2026-11-15); a spec adds its repo's own with --out-of-scope
@@ -328,7 +331,7 @@ class Chain:
                        "description": (self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
                        "oracle_test_file": "", "code_files": []}, f)
         args = [os.path.join(BAKEOFF, "triage_run.sh"), ticket, "pi"] + ([evidence, prior] if evidence else [])
-        env = dict(self.env, ACCEPTANCE_GAP="1" if acceptance_gap else "0")
+        env = dict(self.env, ACCEPTANCE_GAP="1" if acceptance_gap else "0", PI_TOOLS=READ_ONLY_TOOLS)
         results = os.path.join(self.root, "results")
         started = time.time() - 1
         code, out = sh(args, BAKEOFF, env, self.a.episode_timeout + 120)
@@ -429,7 +432,8 @@ class Chain:
         prompt = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}). Read only: do not edit any "
                   f"file.\n\nDIFF:\n{diff}\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy. "
                   "End with VERDICT: approve or VERDICT: request-changes.")
-        code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer, prompt],
+        code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer,
+                           "--tools", READ_ONLY_TOOLS, prompt],
                           self.wt, self.env, self.a.review_timeout)
         text = assistant_text(stream)
         if text:
@@ -470,7 +474,7 @@ class Chain:
                 self.note("acceptance gap", f"fixed at the pin {gap} and still failing")
             elif self.a.advisor:
                 code, out = sh([os.path.join(BAKEOFF, "advisor_run.sh"), os.path.join(self.run_dir, "ticket.json"), ev],
-                               BAKEOFF, self.env, self.a.episode_timeout)
+                               BAKEOFF, dict(self.env, PI_TOOLS=READ_ONLY_TOOLS), self.a.episode_timeout)
                 try:
                     with open(os.path.join(ev, "advisor.json")) as f:
                         pin = json.load(f).get("file") or ""
