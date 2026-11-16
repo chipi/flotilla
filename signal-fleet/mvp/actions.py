@@ -174,7 +174,23 @@ def _utc(ts):
         t = datetime.datetime.fromisoformat(v)
     except ValueError:
         return ""
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=datetime.timezone.utc)
     return t.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _span_safe(value, cap=200):
+    """A GlitchTip value (SDK-supplied, so untrusted) made safe for one line of a public issue: whitespace
+    collapsed, backticks removed so it cannot leave its code span, a zero-width space after every '@' so it
+    cannot ping a team, and capped."""
+    v = " ".join(str(value).replace("`", "").split()).replace("@", "@\u200b")
+    return v if len(v) <= cap else v[:cap - 1] + "\u2026"
+
+
+def _safe_url(url):
+    u = str(url or "")
+    ok = u.startswith(("https://", "http://")) and not any(c.isspace() or c in ")>" for c in u)
+    return u if ok else ""
 
 
 def signal_facts(signal):
@@ -182,18 +198,21 @@ def signal_facts(signal):
     since when (ROADMAP T0.7 Q3; the issue-quality rubric's R2, R3, R5). None of it comes from the model."""
     raw = signal.get("raw") or {}
     out = []
-    if raw.get("permalink"):
-        out.append(f"**Source:** [{raw.get('shortId') or 'GlitchTip issue'}]({raw['permalink']})")
-    if raw.get("culprit"):
-        out.append(f"**Where:** `{raw['culprit']}`")
+    link = _safe_url(raw.get("permalink"))
+    if link:
+        out.append(f"**Source:** [{_span_safe(raw.get('shortId') or 'GlitchTip issue')}]({link})")
+    culprit = _span_safe(raw.get("culprit") or "")
+    if culprit:
+        out.append(f"**Where:** `{culprit}`")
     first, last = _utc(raw.get("firstSeen")), _utc(raw.get("lastSeen"))
     if raw.get("count") not in (None, "") and first:
         users = raw.get("userCount")
         seen = f"{raw['count']} events" + (f", {users} users" if users not in (None, "") else "")
         out.append(f"**Seen:** {seen}; first {first}" + (f", last {last}" if last else ""))
     ev = signal.get("event_facts") or {}
-    rel = ev.get("release") if not signal_code_version(signal) else ""   # the Code version line says it otherwise
-    parts = [p for p in (ev.get("environment"), f"release `{rel}`" if rel else "") if p]
+    rel = _span_safe(ev.get("release") or "") if not signal_code_version(signal) else ""   # the Code version line says it otherwise
+    env = _span_safe(ev.get("environment") or "")
+    parts = [p for p in (env, f"release `{rel}`" if rel else "") if p]
     if parts:
         out.append("**Environment:** " + ", ".join(parts))
     return out

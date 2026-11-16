@@ -9,6 +9,7 @@ TestCase here as it lands; same input → same verdict, every run.
 """
 import collections
 import os
+import time
 import unittest
 
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
@@ -314,6 +315,57 @@ class TestCodeVersion(unittest.TestCase):
             self.assertEqual(actions.event_facts({"source": "grafana"}, {}, fetch=True), {})
         finally:
             correlate._event_summary = saved
+
+    def test_build_issue_facts_cannot_break_out_of_their_code_span(self):
+        # culprit, environment, release and shortId come from SDK-supplied GlitchTip events: untrusted
+        sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1",
+               "raw": {"permalink": "https://g.example/i/1", "shortId": "P-1`]\n@org/team",
+                       "culprit": "a`\n## injected @org/team\r\nb", "count": "1",
+                       "firstSeen": "2026-11-14T08:01:02Z"},
+               "event_facts": {"environment": "prod\n@ops", "release": "r`1\n@x"}}
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        self.assertIn("**Where:** `a ## injected @​org/team b`", body)
+        self.assertIn("**Environment:** prod @​ops, release `r1 @​x`", body)
+        self.assertNotIn("\n## injected", body)
+        self.assertNotIn("@org", body)
+        self.assertNotIn("@ops", body)
+        src = next(l for l in body.splitlines() if l.startswith("**Source:**"))
+        self.assertNotIn("`", src)
+        self.assertNotIn("@x", src)
+
+    def test_build_issue_caps_a_long_fact(self):
+        sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1",
+               "raw": {"culprit": "x" * 5000}}
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        line = next(l for l in body.splitlines() if l.startswith("**Where:**"))
+        self.assertLess(len(line), 260)
+        self.assertIn("…`", line)
+
+    def test_build_issue_drops_an_unsafe_permalink(self):
+        for bad in ("javascript:alert(1)", "https://x.example/a b", "https://x.example/a)b",
+                    "https://x.example/a>b", "https://x.example/a\nb", "ftp://x.example/a"):
+            sig = {"alertname": "a", "source": "glitchtip", "fingerprint": "glitchtip:P-1",
+                   "raw": {"permalink": bad, "shortId": "P-1"}}
+            body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+            self.assertNotIn("**Source:**", body, bad)
+        sig["raw"]["permalink"] = "http://x.example/a"
+        body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
+        self.assertIn("**Source:** [P-1](http://x.example/a)", body)
+
+    def test_utc_reads_a_timestamp_without_an_offset_as_utc(self):
+        saved = os.environ.get("TZ")
+        os.environ["TZ"] = "America/Los_Angeles"
+        time.tzset()
+        try:
+            self.assertEqual(actions._utc("2026-11-14T08:01:02"), "2026-11-14 08:01 UTC")
+            self.assertEqual(actions._utc("2026-11-14T08:01:02.25"), "2026-11-14 08:01 UTC")
+            self.assertEqual(actions._utc("2026-11-14T08:01:02+02:00"), "2026-11-14 06:01 UTC")
+        finally:
+            if saved is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = saved
+            time.tzset()
 
     def test_build_issue_without_facts_adds_no_empty_lines(self):
         for sig in ({"alertname": "a", "source": "grafana", "fingerprint": "grafana:h", "raw": {}},
