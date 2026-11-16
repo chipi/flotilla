@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 
 FROM node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 git jq procps ca-certificates \
+ && apt-get install -y --no-install-recommends python3 python3-pip python3-venv git jq procps ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker \
  && install -d -o 10001 -g 10001 /scratch   # an empty scratch volume takes this owner
