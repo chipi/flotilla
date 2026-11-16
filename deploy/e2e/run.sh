@@ -188,7 +188,7 @@ else
 fi
 [ ! -e "$WORK/config/host-ca/root.key" ] || bad "root.key beside the intermediate"
 SK="$(caf signing-key /w/config/host-ca e2e1 2>&1)"
-echo "$SK" | grep -q '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/config/host-ca/signing.key" ] \
+echo "$SK" | grep >/dev/null '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/config/host-ca/signing.key" ] \
   && ok "the execution-signing key made; its public line printed for the hosts' configs" || bad "signing-key: $SK"
 SIGNPUB="$(echo "$SK" | sed -n 's/^  "e2e1": "\(.*\)"$/\1/p')"
 
@@ -206,7 +206,7 @@ if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG >"$WORK/secret
 else
   cat "$WORK/secrets.log"; bad "secrets.sh"
 fi
-FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep -q "SEED SKIP" \
+FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep >/dev/null "SEED SKIP" \
   && ok "a seeded state volume is never overwritten" || bad "seeding twice did not skip"
 
 echo "== an old, real-sized store for flotillad (schema step 1, 5000 runs)"
@@ -221,18 +221,18 @@ if ! compose up -d >"$WORK/up.log" 2>&1; then
 fi
 cli() { $D exec flotillad /usr/local/bin/flotilla "$@"; }
 for i in $(seq 1 60); do
-  cli runs platform/heartbeat 2>/dev/null | grep -q -E " (ok|error|timeout) " && break; sleep 2
+  cli runs platform/heartbeat 2>/dev/null | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 2
 done
 mkdir -p "$WORK/storecopy" && $D cp flotillad:/var/lib/flotilla "$WORK/storecopy/" 2>/dev/null
 STORE="$(python3 "$ROOT/deploy/e2e/old_store.py" check "$WORK/storecopy/flotilla/flotilla.db")"
 echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if "error" not in d and d["schema"] == d["latest"] and d["old_runs"] == 5000 and d["old_auto"] == 2500 and d["live_left"] == 0 and d["stage_controls"] == 0 and d["heartbeat_autonomy"] == "auto" else 1)' \
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-echo "$OUT" | grep -q "^action backup.rerun_observability$" && echo "$OUT" | grep -q "^action host.true$" && echo "$OUT" | grep -q "^action host.absent$" \
-  && echo "$OUT" | grep -q "^action repo.process_change$" && echo "$OUT" | grep -q "^action github.open_pr$" && echo "$OUT" | grep -q "^CHECK PASS.*, 5 actions$" \
+echo "$OUT" | grep >/dev/null "^action backup.rerun_observability$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
+  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 5 actions$" \
   && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, repo.process_change, github.open_pr, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
-echo "$RUNS" | grep -q " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
+echo "$RUNS" | grep >/dev/null " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
 # grep reads all of `docker logs`, never -q: under pipefail an early exit can SIGPIPE docker logs and fail
 # the pipe although the line is there (and turn a `!` check into a false pass)
@@ -243,18 +243,18 @@ $D logs flotilla-worker-triage 2>&1 | grep '"line": "HEARTBEAT PASS"' >/dev/null
 seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep "$2" >/dev/null && return 0; sleep 1; done; return 1; }
 seen flotilla-egress "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"
 [ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
-cli status | grep -E "^platform/heartbeat" | grep -q -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
+cli status | grep -E "^platform/heartbeat" | grep >/dev/null -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
 
 echo "== the model client (runtime/), from the heartbeat's model step"
 L="$($D logs flotilla-worker-triage 2>&1)"
-echo "$L" | grep -q 'ok   model   triage-flash: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
+echo "$L" | grep >/dev/null 'ok   model   triage-flash: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
   && ok "a model call through the client: alias, deployment id, reported cost, traced" \
   || bad "no model step line: $(echo "$L" | grep -o 'model   triage-flash[^"]*' | head -2)"
 $D logs e2e-litellm 2>&1 | grep "CHAT auth=bearer model=fleet-triage-flash" >/dev/null && ok "the endpoint got the key from the fleet's secrets file and the alias's model" \
   || bad "the LiteLLM stand-in saw no authorised chat call"
 T="$($D exec flotilla-worker-triage python3 /opt/flotilla/runtime/test_telemetry.py 2>&1)"
 # with the SDK, the no-SDK test is the one that skips; the SDK test must have run and passed
-if echo "$T" | grep -q "test_model_call_span_under_the_run .* ok$" && echo "$T" | tail -1 | grep -q "^OK"; then
+if echo "$T" | grep >/dev/null "test_model_call_span_under_the_run .* ok$" && echo "$T" | tail -1 | grep >/dev/null "^OK"; then
   ok "runtime/test_telemetry.py in the image: the model call's span under the run's trace"
 else
   bad "telemetry test in the image: $(echo "$T" | tail -4 | tr '\n' ' ')"
@@ -277,74 +277,74 @@ echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
 # (every 15s) hands the case to ops/rerun-backup, whose plan policy records in shadow, closing the case.
 for i in $(seq 1 45); do
   CASES="$(cli case list --all 2>&1)"
-  echo "$CASES" | grep -q "failed_backup .*host:mini .*closed .*shadow_plan_recorded" && break; sleep 2
+  echo "$CASES" | grep >/dev/null "failed_backup .*host:mini .*closed .*shadow_plan_recorded" && break; sleep 2
 done
-echo "$CASES" | grep -q "failed_backup .*host:mini .*closed .*shadow_plan_recorded" \
+echo "$CASES" | grep >/dev/null "failed_backup .*host:mini .*closed .*shadow_plan_recorded" \
   && ok "the backup monitor's detection became a case, planned and closed as a shadow plan" || bad "the chain: $CASES"
 CID="$(echo "$CASES" | awk '/failed_backup/ {print $1; exit}')"
 SHOW="$(cli case show "$CID" 2>&1)"
-echo "$SHOW" | grep -q "case.handed_over .*ops/backup-monitor .*by detector" && ok "opened by ops/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
-echo "$SHOW" | grep -q "case.planned .*ops/rerun-backup .*by act .*backup_age_above(25h): holds" \
+echo "$SHOW" | grep >/dev/null "case.handed_over .*ops/backup-monitor .*by detector" && ok "opened by ops/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
+echo "$SHOW" | grep >/dev/null "case.planned .*ops/rerun-backup .*by act .*backup_age_above(25h): holds" \
   && ok "planned by ops/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
-echo "$SHOW" | grep -q "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
+echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*instance%3D%22homelab%22' >/dev/null \
   && ok "the ops workers queried VictoriaMetrics through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
 
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"
-echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot change a routine's autonomy ($OUT)" || bad "agent autonomy change: $OUT"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot change a routine's autonomy ($OUT)" || bad "agent autonomy change: $OUT"
 cli stop platform >/dev/null && cli run platform/heartbeat >/dev/null
 sleep 3
-cli runs platform/heartbeat -n 1 | grep -q " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
+cli runs platform/heartbeat -n 1 | grep >/dev/null " skipped " && ok "a STOPped fleet's run is recorded as skipped" || bad "STOP did not skip"
 cli start platform --reason "e2e: start after the STOP check" >/dev/null
 # STOP also ends a run in flight: e2e/hang blocks for 5 minutes on the triage worker; the STOP must cancel it
 cli run e2e/hang >/dev/null
-for i in $(seq 1 20); do cli status | grep -E "^e2e/hang " | grep -q "running " && break; sleep 1; done
-cli status | grep -E "^e2e/hang " | grep -q "running " && ok "e2e/hang is in flight on the worker" || bad "e2e/hang did not start: $(cli runs e2e/hang -n 1 2>&1)"
+for i in $(seq 1 20); do cli status | grep -E "^e2e/hang " | grep >/dev/null "running " && break; sleep 1; done
+cli status | grep -E "^e2e/hang " | grep >/dev/null "running " && ok "e2e/hang is in flight on the worker" || bad "e2e/hang did not start: $(cli runs e2e/hang -n 1 2>&1)"
 cli stop e2e >/dev/null
-for i in $(seq 1 30); do cli runs e2e/hang -n 1 | grep -q " running " || break; sleep 1; done
-cli runs e2e/hang -n 1 | grep -q " cancelled .*cancelled: operator, fleet e2e STOPped" \
+for i in $(seq 1 30); do cli runs e2e/hang -n 1 | grep >/dev/null " running " || break; sleep 1; done
+cli runs e2e/hang -n 1 | grep >/dev/null " cancelled .*cancelled: operator, fleet e2e STOPped" \
   && ok "a STOPped fleet's run in flight ends as cancelled, with who and why" || bad "STOP did not cancel the run in flight: $(cli runs e2e/hang -n 1 2>&1)"
 cli start e2e --reason "e2e: start after the cancel check" >/dev/null
-cli events -n 5 | grep -q "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
+cli events -n 5 | grep >/dev/null "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
 # The freeze (ADR-0014 decision 8), through the real scheduler and worker: the heartbeat's own autonomy is auto.
 agent() { $D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla "$@"; }
 OUT="$(agent autonomy freeze 2>&1)"
-echo "$OUT" | grep -q '"frozen":"1"' && ok "an agent pulls the freeze" || bad "agent freeze: $OUT"
-cli status | grep -q "^FROZEN since .* by e2e-agent" && ok "status says frozen, and who froze it" || bad "status while frozen: $(cli status 2>&1 | head -3)"
+echo "$OUT" | grep >/dev/null '"frozen":"1"' && ok "an agent pulls the freeze" || bad "agent freeze: $OUT"
+cli status | grep >/dev/null "^FROZEN since .* by e2e-agent" && ok "status says frozen, and who froze it" || bad "status while frozen: $(cli status 2>&1 | head -3)"
 N0=$(cli runs platform/heartbeat -n 500 | wc -l)
 cli run platform/heartbeat >/dev/null
 for i in $(seq 1 30); do
   L="$(cli runs platform/heartbeat -n 500)"
-  [ "$(echo "$L" | wc -l)" -gt "$N0" ] && ! echo "$L" | sed -n 2p | grep -q " running " && break; sleep 1
+  [ "$(echo "$L" | wc -l)" -gt "$N0" ] && ! echo "$L" | sed -n 2p | grep >/dev/null " running " && break; sleep 1
 done
-echo "$L" | sed -n 2p | grep -q " shadow " && ok "frozen, a heartbeat run (set auto) ran at shadow" || bad "frozen run: $(echo "$L" | sed -n 2p)"
+echo "$L" | sed -n 2p | grep >/dev/null " shadow " && ok "frozen, a heartbeat run (set auto) ran at shadow" || bad "frozen run: $(echo "$L" | sed -n 2p)"
 OUT="$(agent autonomy unfreeze --reason "e2e" 2>&1)"
-echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot lift the freeze" || bad "agent unfreeze: $OUT"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot lift the freeze" || bad "agent unfreeze: $OUT"
 OUT="$(cli autonomy unfreeze 2>&1)"
-echo "$OUT" | grep -q "needs a reason" && ok "lifting the freeze needs a reason" || bad "unfreeze without a reason: $OUT"
+echo "$OUT" | grep >/dev/null "needs a reason" && ok "lifting the freeze needs a reason" || bad "unfreeze without a reason: $OUT"
 cli autonomy unfreeze --reason "e2e: lift the freeze" >/dev/null
 OUT="$(cli status 2>&1)"
-! echo "$OUT" | grep -q "^FROZEN" && echo "$OUT" | grep -q "^platform/heartbeat  *auto  *auto " \
+! echo "$OUT" | grep >/dev/null "^FROZEN" && echo "$OUT" | grep >/dev/null "^platform/heartbeat  *auto  *auto " \
   && ok "lifted, the heartbeat is back at auto (its own control untouched)" || bad "after unfreeze: $OUT"
 # Holds (RFC-0004 §5.1 step 4) through the CLI: an agent holds a host, only an operator lifts it, with a reason.
 OUT="$(agent hold host:mini 2h --reason "e2e: disk work" 2>&1)"
 HID="$(echo "$OUT" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')"
-[ -n "$HID" ] && cli hold list | grep -q "host:mini .*e2e-agent .*e2e: disk work" && ok "an agent holds a host; hold list shows it" || bad "hold: $OUT / $(cli hold list 2>&1)"
+[ -n "$HID" ] && cli hold list | grep >/dev/null "host:mini .*e2e-agent .*e2e: disk work" && ok "an agent holds a host; hold list shows it" || bad "hold: $OUT / $(cli hold list 2>&1)"
 OUT="$(agent hold lift "$HID" --reason "e2e" 2>&1)"
-echo "$OUT" | grep -q "HTTP 403" && ok "an agent cannot lift a hold" || bad "agent lift: $OUT"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot lift a hold" || bad "agent lift: $OUT"
 OUT="$(cli hold lift "$HID" 2>&1)"
-echo "$OUT" | grep -q "needs a reason" && ok "lifting a hold needs a reason" || bad "lift without a reason: $OUT"
+echo "$OUT" | grep >/dev/null "needs a reason" && ok "lifting a hold needs a reason" || bad "lift without a reason: $OUT"
 cli hold lift "$HID" --reason "e2e: disk done" >/dev/null
 [ -z "$(cli hold list | sed 1d)" ] && ok "lifted, no hold is active" || bad "after lift: $(cli hold list 2>&1)"
 # The deploy stand-down (deploy/mini/standdown.sh, as deploy.sh and the homelab's pre-pull hook run it):
 # a hold by the deploy caller, its token read from flotillad's secrets volume; it never fails its caller.
 OUT="$(DOCKER="$D" bash "$ROOT/deploy/mini/standdown.sh" mini 5m "e2e deploy" 2>&1)"; RC=$?
-[ $RC = 0 ] && echo "$OUT" | grep -q "^STANDDOWN host:mini for 5m" && cli hold list | grep -q "host:mini .*deploy .*deploy stand-down: e2e deploy" \
+[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN host:mini for 5m" && cli hold list | grep >/dev/null "host:mini .*deploy .*deploy stand-down: e2e deploy" \
   && ok "a deploy stand-down is a hold on the host, taken by the deploy caller" || bad "stand-down: rc=$RC $OUT / $(cli hold list 2>&1)"
 OUT="$(DOCKER=false bash "$ROOT/deploy/mini/standdown.sh" mini 5m "e2e" 2>&1)"; RC=$?
-[ $RC = 0 ] && echo "$OUT" | grep -q "^STANDDOWN SKIPPED" && ok "a stand-down that cannot be taken never fails the deploy" || bad "stand-down failure path: rc=$RC $OUT"
+[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN SKIPPED" && ok "a stand-down that cannot be taken never fails the deploy" || bad "stand-down failure path: rc=$RC $OUT"
 SID="$(cli hold list | awk '/deploy stand-down/ {print $1; exit}')"
 cli hold lift "$SID" --reason "e2e: done" >/dev/null
 W="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
@@ -370,7 +370,7 @@ echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's wor
 LR="$($D exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485 \
   -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad -e SF_OBSERV_DISABLED=1 \
   flotilla-worker-triage python3 gate_ledger_backend_replay.py --synthetic 300 2>&1)"
-echo "$LR" | grep -q "LEDGER BACKEND REPLAY: PASS" \
+echo "$LR" | grep >/dev/null "LEDGER BACKEND REPLAY: PASS" \
   && ok "dedup through the ledger equals filed.tsv: $(echo "$LR" | grep '^lookup:' | cut -c1-90)" \
   || bad "ledger replay: $(echo "$LR" | tail -4 | tr '\n' ' ')"
 WL="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
@@ -391,10 +391,10 @@ CE="$($D inspect flotilla-worker-triage-candidate --format '{{range .Config.Env}
 [ "$CE" = "ROUTINE_SF_GLITCHTIP_SYNC=0 ROUTINE_SF_SERVICE=triage-fleet-candidate " ] \
   && ok "the candidate keeps its own name and no GlitchTip sync over the live fleet's env file" || bad "candidate env: '$CE'"
 OUT="$(cli autonomy triage/cycle-shadow propose 2>&1)"
-echo "$OUT" | grep -q "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
+echo "$OUT" | grep >/dev/null "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
   || bad "autonomy on the capped routine: $OUT"
 OUT="$(cli status 2>&1)"
-echo "$OUT" | grep -q 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"
+echo "$OUT" | grep >/dev/null 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
 [ "$NW" = "${P}_flotilla " ] && ok "the candidate is on the internal network only" || bad "candidate networks: '$NW'"
 
@@ -413,10 +413,10 @@ for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 cli run ops/backup-monitor >/dev/null
 for i in $(seq 1 20); do
   CID="$(agent case list --all 2>&1 | awk '/failed_backup/ {print $1}')"
-  agent case show $CID 2>/dev/null | grep -q -E "signal.absorbed|^repeated [0-9]+ times unchanged" && break; sleep 2
+  agent case show $CID 2>/dev/null | grep >/dev/null -E "signal.absorbed|^repeated [0-9]+ times unchanged" && break; sleep 2
 done
 N="$(agent case list --all 2>&1 | grep -c failed_backup)"
-[ "$N" = 1 ] && agent case show $CID 2>&1 | grep -q -E "signal.absorbed .*ops/backup-monitor|^repeated [0-9]+ times unchanged" \
+[ "$N" = 1 ] && agent case show $CID 2>&1 | grep >/dev/null -E "signal.absorbed .*ops/backup-monitor|^repeated [0-9]+ times unchanged" \
   && ok "after the restart the monitor's repeat went into the incident's case (one case, absorbed or counted)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
 
@@ -440,7 +440,7 @@ $D run -d --name flotilla-e2e-host --label $LABEL --network ${P}_flotilla --memo
   -v flotilla-e2e-host-audit:/var/log/flotilla-host -v "$WORK/host:/stage-src:ro" "$HOST_AGENT_IMAGE" >/dev/null || bad "the stand-in host did not start"
 hx() { $D exec "$@"; }
 hostlog() { $D exec flotilla-e2e-host cat /var/log/flotilla-host/agent.log 2>/dev/null; }
-hseen() { for _ in $(seq 1 30); do hostlog | grep -q "$1" && return 0; sleep 1; done; return 1; }
+hseen() { for _ in $(seq 1 30); do hostlog | grep >/dev/null "$1" && return 0; sleep 1; done; return 1; }
 HT="$(cli host enrolment e2e-host 2>&1 | sed -n 's/.*"token":"\(fle_[0-9a-f]*\)".*/\1/p')"
 [ ${#HT} = 68 ] && ok "an operator minted an enrolment token" || bad "host enrolment: $(cli host enrolment e2e-host 2>&1)"
 # stage as install.sh does: the files, the binary, the token (mode 600)
@@ -448,7 +448,7 @@ hx flotilla-e2e-host sh -c 'mkdir -m 700 /stage && cp /stage-src/* /stage/ && cp
   && cp "$ROOT/deploy/host/remote-install.sh" "$WORK/host-remote-install.sh" && $D cp "$WORK/host-remote-install.sh" flotilla-e2e-host:/stage/remote-install.sh >/dev/null \
   && printf '%s\n' "$HT" | hx -i flotilla-e2e-host sh -c 'umask 077 && cat > /stage/token' || bad "staging"
 OUT="$(hx flotilla-e2e-host bash /stage/remote-install.sh /stage install --no-service 2>&1)"; echo "$OUT"
-echo "$OUT" | grep -q "^INSTALL PASS" && echo "$OUT" | grep -q "sudoers: 1 line(s) in /etc/sudoers.d/flotilla-host, checked with visudo" \
+echo "$OUT" | grep >/dev/null "^INSTALL PASS" && echo "$OUT" | grep >/dev/null "sudoers: 1 line(s) in /etc/sudoers.d/flotilla-host, checked with visudo" \
   && ok "remote-install.sh: user, files, sudoers (checked with visudo), enrolled" || bad "install: $OUT"
 hx flotilla-e2e-host test ! -e /stage/token && ok "the token is gone from the staging folder" || bad "the token was left on the host"
 M="$(hx flotilla-e2e-host sh -c 'stat -c "%n %a %U" /usr/local/libexec/flotilla-host/flotilla-host /etc/flotilla-host/config.json /etc/flotilla-host/root.crt /var/db/flotilla-host /var/db/flotilla-host/key.pem /var/log/flotilla-host /var/log/flotilla-host/audit.jsonl /etc/sudoers.d/flotilla-host' 2>&1 | tr '\n' ';')"
@@ -456,7 +456,7 @@ M="$(hx flotilla-e2e-host sh -c 'stat -c "%n %a %U" /usr/local/libexec/flotilla-
   && ok "owners and modes: binary and config root's, state and key the agent's (700/600), audit log the agent's in a root-owned directory, sudoers 440" || bad "owners and modes: $M"
 S="$(hx flotilla-e2e-host grep -v '^#' /etc/sudoers.d/flotilla-host 2>&1)"   # the rules, below the generated header
 [ "$S" = '_flotilla ALL=(root) NOPASSWD: /bin/true ""  # host.true_root' ] && ok "the sudoers line: exactly the privileged action, no arguments allowed ($S)" || bad "sudoers: $S"
-hx flotilla-e2e-host sh -c 'lsattr /var/log/flotilla-host/audit.jsonl' 2>&1 | grep -q '^-*a' \
+hx flotilla-e2e-host sh -c 'lsattr /var/log/flotilla-host/audit.jsonl' 2>&1 | grep >/dev/null '^-*a' \
   && hx flotilla-e2e-host sudo -u _flotilla sh -c 'echo x >> /var/log/flotilla-host/audit.jsonl' 2>/dev/null \
   && ! hx flotilla-e2e-host sudo -u _flotilla sh -c ': > /var/log/flotilla-host/audit.jsonl' 2>/dev/null \
   && ok "the audit log is append-only (chattr +a): the agent's user appends, cannot truncate" || bad "append-only: $(hx flotilla-e2e-host lsattr /var/log/flotilla-host/audit.jsonl 2>&1)"
@@ -465,8 +465,8 @@ hx flotilla-e2e-host sh -c 'lsattr /var/log/flotilla-host/audit.jsonl' 2>&1 | gr
 hx flotilla-e2e-host sh -c 'chattr -a /var/log/flotilla-host/audit.jsonl && : > /var/log/flotilla-host/audit.jsonl && chattr +a /var/log/flotilla-host/audit.jsonl'
 OUT="$(printf '%s\n' "$HT" | hx -i flotilla-e2e-host sudo -u _flotilla /usr/local/libexec/flotilla-host/flotilla-host enrol -config /etc/flotilla-host/config.json \
   -state /var/db/flotilla-host -audit /var/log/flotilla-host/audit.jsonl -root /etc/flotilla-host/root.crt -addr flotillad:8487 -server-name flotillad 2>&1)"
-echo "$OUT" | grep -q "enrolment refused" && ok "the same token a second time is refused" || bad "a used token: $OUT"
-cli host list | grep -q "^e2e-host  *no  *- .*[0-9]T" && ok "host list shows it enrolled, not yet connected, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
+echo "$OUT" | grep >/dev/null "enrolment refused" && ok "the same token a second time is refused" || bad "a used token: $OUT"
+cli host list | grep >/dev/null "^e2e-host  *no  *- .*[0-9]T" && ok "host list shows it enrolled, not yet connected, with its certificate's expiry" || bad "host list: $(cli host list 2>&1)"
 $D logs flotillad 2>&1 | grep '"msg":"host executions are signed".*"key_id":"e2e1"' >/dev/null \
   && ok "flotillad loaded the execution-signing key from its secrets volume (secrets.sh)" || bad "no signing key at start: $($D logs flotillad 2>&1 | grep -i 'sign' | tail -2)"
 # the service: what launchd or systemd would run, as the agent's user (the container has neither)
@@ -480,7 +480,7 @@ sleep 8   # four heartbeats at 2s; silent for three, flotillad would drop it
   || bad "the connection dropped: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
 HL="$(cli host list 2>&1)"
 # nothing has run on the host, so its audit log is empty and has no chain head yet ("-")
-echo "$HL" | grep -q "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
+echo "$HL" | grep >/dev/null "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
   && ok "host list: connected, its version, last contact and clock offset, from the store (no chain head: nothing ran)" || bad "host list while connected: $HL"
 ! $D logs flotillad 2>&1 | grep '"msg":"host alert"' >/dev/null && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
 # H9c, real executions through the whole path: a detection, a case, the acting routine's plan, policy
@@ -499,73 +499,73 @@ proposed() {  # proposed KIND MONITOR: run the monitor, print the case it opened
   echo "$id"
 }
 status_is() {  # status_is CASE STATUS: wait for it
-  for _ in $(seq 1 45); do cli case list --all 2>&1 | grep -q "^$1 .* $2 " && return 0; sleep 2; done
+  for _ in $(seq 1 45); do cli case list --all 2>&1 | grep >/dev/null "^$1 .* $2 " && return 0; sleep 2; done
   return 1
 }
 cli action autonomy host.true propose --reason "e2e: the security e2e's harmless action" >/dev/null 2>&1
-cli action list 2>&1 | grep -q "^host.true  *propose " && ok "host.true promoted to propose (operator, with a reason)" || bad "promote: $(cli action list 2>&1)"
+cli action list 2>&1 | grep >/dev/null "^host.true  *propose " && ok "host.true promoted to propose (operator, with a reason)" || bad "promote: $(cli action list 2>&1)"
 HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
   || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
 OUT="$(cli case approve "$HC" 2>&1)"
-echo "$OUT" | grep -q '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"
+echo "$OUT" | grep >/dev/null '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"
 status_is "$HC" closed
 SHOW="$(cli case show "$HC" 2>&1)"
-echo "$SHOW" | grep -q "case.executing .*operator .*by operator .*approved host.true on host:e2e-host" \
-  && echo "$SHOW" | grep -q "case.checking .*flotillad .*by act .*on e2e-host: done" \
+echo "$SHOW" | grep >/dev/null "case.executing .*operator .*by operator .*approved host.true on host:e2e-host" \
+  && echo "$SHOW" | grep >/dev/null "case.checking .*flotillad .*by act .*on e2e-host: done" \
   && ok "signed, sent, run on the host as _flotilla (/bin/true), done: the case went to checking" || bad "the execution: $SHOW"
-echo "$SHOW" | grep -q "case.closed .*e2e/host-true-verify .*by check .*e2e: nothing to verify" \
+echo "$SHOW" | grep >/dev/null "case.closed .*e2e/host-true-verify .*by check .*e2e: nothing to verify" \
   && ok "the check routine verified it: closed verified, the target released" || bad "the check: $SHOW"
 # the target is free again: a second host.true reaches the host, which refuses it (per_hour 1)
 H2="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$H2" ] && cli case approve "$H2" >/dev/null 2>&1 && status_is "$H2" escalated \
-  && cli case show "$H2" 2>&1 | grep -q "case.escalated .*flotillad .*by act .*on e2e-host: refused: host.true ran 1 times in the last hour here, its limit" \
+  && cli case show "$H2" 2>&1 | grep >/dev/null "case.escalated .*flotillad .*by act .*on e2e-host: refused: host.true ran 1 times in the last hour here, its limit" \
   && ok "a second host.true on the released target: the host refused it, its own rate limit ($H2 escalated)" \
   || bad "the rate limit: $H2 $(cli case show "$H2" 2>&1 | tail -3)"
 OUT="$(cli case close "$H2" 2>&1)"
-echo "$OUT" | grep -q "reason" && ok "closing an escalated case needs a reason" || bad "close without a reason: $OUT"
+echo "$OUT" | grep >/dev/null "reason" && ok "closing an escalated case needs a reason" || bad "close without a reason: $OUT"
 cli case close "$H2" --reason "e2e: refused by the host, as it should" >/dev/null 2>&1 && status_is "$H2" closed \
   && ok "the operator closed it; the target is released" || bad "close: $(cli case show "$H2" 2>&1 | tail -2)"
 # an action flotillad's registry declares and the host's allowlist does not
 cli action autonomy host.absent propose --reason "e2e: an action the host does not allow" >/dev/null 2>&1
 H3="$(proposed e2e_host_absent host-absent-monitor)"
 [ -n "$H3" ] && cli case approve "$H3" >/dev/null 2>&1 && status_is "$H3" escalated \
-  && cli case show "$H3" 2>&1 | grep -q "case.escalated .*flotillad .*by act .*on e2e-host: refused: .*host.absent is not allowed on this host" \
+  && cli case show "$H3" 2>&1 | grep >/dev/null "case.escalated .*flotillad .*by act .*on e2e-host: refused: .*host.absent is not allowed on this host" \
   && ok "host.absent, signed and approved: the host refused it, not on its allowlist ($H3 escalated)" \
   || bad "the allowlist: $H3 $(cli case show "$H3" 2>&1 | tail -3)"
 # reassigned, it goes back to its acting routine, which plans again; the three executions above are
 # the host's hourly limit (policy's per-host cap), so policy defers the new plan
 cli case reassign "$H3" --reason "e2e: hand it back" >/dev/null 2>&1
-for _ in $(seq 1 45); do cli case show "$H3" 2>&1 | grep -q "by policy .*planned->handed_over .*defer" && break; sleep 2; done
+for _ in $(seq 1 45); do cli case show "$H3" 2>&1 | grep >/dev/null "by policy .*planned->handed_over .*defer" && break; sleep 2; done
 SHOW="$(cli case show "$H3" 2>&1)"
-echo "$SHOW" | grep -q "case.handed_over .*operator .*by operator .*escalated->handed_over .*reassigned: e2e: hand it back" \
-  && echo "$SHOW" | grep -q "case.planned .*e2e/host-absent-act .*by act .*handed_over->planned" \
-  && echo "$SHOW" | grep -q "case.handed_over .*by policy .*planned->handed_over .*defer at propose.*3 of 3 executions on this host this hour" \
+echo "$SHOW" | grep >/dev/null "case.handed_over .*operator .*by operator .*escalated->handed_over .*reassigned: e2e: hand it back" \
+  && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/host-absent-act .*by act .*handed_over->planned" \
+  && echo "$SHOW" | grep >/dev/null "case.handed_over .*by policy .*planned->handed_over .*defer at propose.*3 of 3 executions on this host this hour" \
   && ok "the operator reassigned it: its acting routine planned again, and policy deferred it at the host's hourly cap (3 of 3)" \
   || bad "reassign $H3: $(echo "$SHOW" | tail -4) flotillad: $($D logs flotillad 2>&1 | grep "$H3" | tail -4)"
 hx flotilla-e2e-host cat /var/log/flotilla-host/audit.jsonl > "$WORK/host-audit.jsonl" 2>/dev/null
 AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit.jsonl" 2>&1)"; ARC=$?
-[ $ARC = 0 ] && echo "$AUD" | grep -q "^AUDIT PASS: e2e-host, 3 executions on record" && echo "$AUD" | grep -q "done on both sides" \
+[ $ARC = 0 ] && echo "$AUD" | grep >/dev/null "^AUDIT PASS: e2e-host, 3 executions on record" && echo "$AUD" | grep >/dev/null "done on both sides" \
   && ok "flotilla host audit: the host's real log matches flotillad's record (AUDIT PASS, 3 executions)" || bad "audit: rc=$ARC $AUD"
 sed '0,/"status":"done"/s//"status":"failed"/' "$WORK/host-audit.jsonl" > "$WORK/host-audit-tampered.jsonl"
 AUD="$($D exec -i flotillad /usr/local/bin/flotilla host audit e2e-host --log - < "$WORK/host-audit-tampered.jsonl" 2>&1)"; ARC=$?
-[ $ARC = 1 ] && echo "$AUD" | grep -q "^AUDIT FAIL" && ok "a rewritten copy of the host's log fails the audit" || bad "tampered audit: rc=$ARC $AUD"
+[ $ARC = 1 ] && echo "$AUD" | grep >/dev/null "^AUDIT FAIL" && ok "a rewritten copy of the host's log fails the audit" || bad "tampered audit: rc=$ARC $AUD"
 $D restart flotillad >/dev/null
 for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 for i in $(seq 1 30); do [ "$(hostlog | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && break; sleep 1; done
-[ "$(hostlog | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && hostlog | grep -q '"msg":"connection to flotillad lost"' \
+[ "$(hostlog | grep -c '"msg":"connected to flotillad"')" -ge 2 ] && hostlog | grep >/dev/null '"msg":"connection to flotillad lost"' \
   && ok "after a flotillad restart the agent lost the connection and reconnected by itself" || bad "reconnect: $(hostlog | tail -4)"
 cli host revoke e2e-host >/dev/null
 seen flotillad '"msg":"host cut off".*"host":"e2e-host"' && ok "revoked: flotillad cut the connected host off at its next heartbeat" \
   || bad "revoke: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
 sleep 3
-seen flotillad '"msg":"host endpoint: refused"' && hostlog | grep -q 'flotillad refused: refused' \
+seen flotillad '"msg":"host endpoint: refused"' && hostlog | grep >/dev/null 'flotillad refused: refused' \
   && ok "its reconnects are refused" || bad "after revoke: $(hostlog | tail -3)"
-cli host list | grep -q "^e2e-host  *no .* -  *[0-9-]*T[0-9:.]*Z " && ok "host list shows it revoked, not connected, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
+cli host list | grep >/dev/null "^e2e-host  *no .* -  *[0-9-]*T[0-9:.]*Z " && ok "host list shows it revoked, not connected, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
 hx flotilla-e2e-host sh -c 'pkill -u _flotilla flotilla-host; true'
 OUT="$(hx flotilla-e2e-host bash /stage/remote-install.sh /stage remove 2>&1)"
 R="$(hx flotilla-e2e-host sh -c 'ls -d /usr/local/libexec/flotilla-host /etc/flotilla-host /var/db/flotilla-host /etc/sudoers.d/flotilla-host /var/log/flotilla-host/audit.jsonl 2>/dev/null' | tr '\n' ' ')"
-echo "$OUT" | grep -q "^REMOVE PASS" && [ "$R" = "/var/log/flotilla-host/audit.jsonl " ] \
+echo "$OUT" | grep >/dev/null "^REMOVE PASS" && [ "$R" = "/var/log/flotilla-host/audit.jsonl " ] \
   && ok "remove: binary, config, state and sudoers gone; the audit log stays" || bad "remove: $OUT / left: $R"
 $D rm -f flotilla-e2e-host >/dev/null
 
@@ -574,11 +574,11 @@ UA="$(cli user add ada --role admin 2>&1)"
 ADMIN="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
 [ ${#ADMIN} = 68 ] && ok "the first admin, with the operator token (a 256-bit token, shown once)" || bad "first admin: $UA"
 OUT="$(cli status 2>&1)"
-echo "$OUT" | grep -q "HTTP 403" && ok "after it, the operator token is retired" || bad "operator token after the first admin: $OUT"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "after it, the operator token is retired" || bad "operator token after the first admin: $OUT"
 OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat 2>&1)"
-echo "$OUT" | grep -q "needs a reason" && ok "loosening without a reason is refused" || bad "resume without a reason: $OUT"
+echo "$OUT" | grep >/dev/null "needs a reason" && ok "loosening without a reason is refused" || bad "resume without a reason: $OUT"
 OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat --reason "e2e" 2>&1)"
-echo "$OUT" | grep -q '"by":"user:ada"' && ok "the admin resumes with a reason, as user:ada" || bad "admin resume: $OUT"
+echo "$OUT" | grep >/dev/null '"by":"user:ada"' && ok "the admin resumes with a reason, as user:ada" || bad "admin resume: $OUT"
 UIC="$($D exec -i flotilla-worker-triage python3 - "$ADMIN" "$OP" "$AGENT" < "$ROOT/deploy/e2e/ui_check.py" 2>&1)"; UIRC=$?
 while IFS= read -r line; do
   case "$line" in PASS*) ok "UI: ${line#PASS }" ;; FAIL*) bad "UI: ${line#FAIL }" ;; esac
@@ -597,7 +597,7 @@ echo "== hardening"
 echo "== a remote worker (RFC-0011): its link dials the host endpoint, flotillad's network never reaches it"
 acli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # the first admin has retired the operator token
 R="$(acli run e2e/remote-echo 2>&1)"
-acli runs e2e/remote-echo 2>&1 | grep -q "skipped.*worker remote-e2e is not connected" \
+acli runs e2e/remote-echo 2>&1 | grep >/dev/null "skipped.*worker remote-e2e is not connected" \
   && ok "before its link connects, the remote worker's routine is skipped: not connected" || bad "not connected: $R $(acli runs e2e/remote-echo 2>&1 | head -3)"
 mkdir -p "$WORK/remote" && tok > "$WORK/remote/worker.token" && chmod 600 "$WORK/remote/worker.token" \
   && cp "$WORK/config/host-ca/root.crt" "$WORK/remote/root.crt"
@@ -608,20 +608,20 @@ $D run -d --name flotilla-e2e-remote-worker "${RW[@]}" -e FLOTILLA_WORKER=remote
 mkdir -p "$WORK/remote/state" && chmod 700 "$WORK/remote/state"
 OUT="$(printf '%s\n' "$RT" | $D run --rm -i "${RW[@]}" --entrypoint /usr/local/bin/flotilla-host local/flotilla-worker-bugfix:$TAG \
   enrol -identity w-remote-e2e -state /remote/state -root /remote/root.crt -addr flotillad:8487 -server-name flotillad 2>&1)"
-echo "$OUT" | grep -q "^enrolled w-remote-e2e" && ok "the link enrolled under the worker's identity ($OUT)" || bad "link enrol: $OUT"
+echo "$OUT" | grep >/dev/null "^enrolled w-remote-e2e" && ok "the link enrolled under the worker's identity ($OUT)" || bad "link enrol: $OUT"
 $D run -d --name flotilla-e2e-remote-link "${RW[@]}" --entrypoint /usr/local/bin/flotilla-host local/flotilla-worker-bugfix:$TAG \
   link -identity w-remote-e2e -worker remote-e2e -worker-url http://flotilla-e2e-remote-worker:8081 -worker-token-file /remote/worker.token \
   -state /remote/state -root /remote/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s >/dev/null || bad "the link did not start"
 seen flotillad '"msg":"remote worker connected".*"worker":"remote-e2e"' \
   && ok "flotillad authenticated the link as remote-e2e's (identity w-remote-e2e, version $TAG)" || bad "link connect: $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
 acli run e2e/remote-echo >/dev/null
-for _ in $(seq 1 20); do acli runs e2e/remote-echo 2>&1 | grep -q " ok " && break; sleep 1; done
-acli runs e2e/remote-echo 2>&1 | grep -q " ok " && $D logs flotilla-e2e-remote-link 2>&1 | grep '"msg":"run ended"' >/dev/null \
+for _ in $(seq 1 20); do acli runs e2e/remote-echo 2>&1 | grep >/dev/null " ok " && break; sleep 1; done
+acli runs e2e/remote-echo 2>&1 | grep >/dev/null " ok " && $D logs flotilla-e2e-remote-link 2>&1 | grep '"msg":"run ended"' >/dev/null \
   && ok "a run went to the remote worker through its link and came back ok" || bad "remote run: $(acli runs e2e/remote-echo 2>&1 | head -3) $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
 $D rm -f flotilla-e2e-remote-link >/dev/null
 for _ in $(seq 1 15); do $D logs flotillad 2>&1 | grep '"msg":"remote worker disconnected".*"worker":"remote-e2e"' >/dev/null && break; sleep 1; done
 acli run e2e/remote-echo >/dev/null 2>&1
-acli runs e2e/remote-echo 2>&1 | head -2 | grep -q "skipped.*not connected" \
+acli runs e2e/remote-echo 2>&1 | head -2 | grep >/dev/null "skipped.*not connected" \
   && ok "with its link gone, the remote worker's routine is skipped again" || bad "after the link: $(acli runs e2e/remote-echo 2>&1 | head -3)"
 $D rm -f flotilla-e2e-remote-worker >/dev/null
 
