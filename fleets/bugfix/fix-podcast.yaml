@@ -31,8 +31,9 @@ run:
     --test-format pytest
     --related pytest-dirs --source-root src/podcast_scraper --test-root tests/unit/podcast_scraper
     --exclude-path tests/fixtures/audio
-    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2
+    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2 --spend-file .bugfix-fix-podcast-spend
   workdir: .
+  spend_file: .bugfix-fix-podcast-spend
   timeout: 3h
 autonomy: shadow
 max_autonomy: propose
@@ -60,6 +61,7 @@ explain:
     opened. It can never act on its own.
   budget: >-
     The day's model spend; once it is reached, the routine's runs are skipped for the rest of the day.
+    A run's spend is the gateway's bill for its keys, read before and after the run (bugfix/spend.py).
 steps:
   - id: verdict
     lane: agent

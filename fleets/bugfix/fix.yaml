@@ -19,8 +19,9 @@ run:
     python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model bugfix-flash
     --advisor-model bugfix-reviewer --reviewer-model bugfix-reviewer
     --exclude-path static/images --exclude-path static/audio --exclude-path masters
-    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2
+    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2 --spend-file .bugfix-fix-spend
   workdir: .
+  spend_file: .bugfix-fix-spend
   timeout: 3h
 autonomy: shadow
 max_autonomy: propose
@@ -47,6 +48,7 @@ explain:
     opened. It can never act on its own.
   budget: >-
     The day's model spend; once it is reached, the routine's runs are skipped for the rest of the day.
+    A run's spend is the gateway's bill for its keys, read before and after the run (bugfix/spend.py).
 steps:
   - id: verdict
     lane: agent

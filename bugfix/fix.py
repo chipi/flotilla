@@ -45,6 +45,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_config  # noqa: E402
+import spend  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE), "bugfix-fleet", "bakeoff"))
@@ -793,6 +794,10 @@ def parse(argv):
     ap.add_argument("--setup-timeout", type=int, default=1200)
     ap.add_argument("--review-timeout", type=int, default=600)
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
+    ap.add_argument("--spend-file", default="", help="the routine's spend_file, relative to HOME: the run writes its cost "
+                    "there (the gateway's bill for its keys; bugfix/spend.py)")
+    ap.add_argument("--spend-poll", type=float, default=5.0, help="seconds between the spend reads after the run")
+    ap.add_argument("--spend-settle", type=float, default=60.0, help="most seconds to wait for the spend to settle")
     a = ap.parse_args(argv)
     if (a.related == "pytest-dirs" or a.test_format == "pytest") and not (a.source_root and a.test_root):
         ap.error("--related pytest-dirs and --test-format pytest need --source-root and --test-root (the scope rules use them)")
@@ -806,6 +811,14 @@ def main(argv=None, environ=None):
     run_dir = os.path.join(a.scratch, "runs", f"{case.get('id', 'case')}-{int(time.time())}")
     os.makedirs(run_dir)
     chain = None
+    meter = None
+    if a.spend_file:
+        try:
+            cfg = json.loads(environ.get("FLOTILLA_MODELS") or "{}")
+        except ValueError:
+            cfg = {}
+        meter = spend.Meter(spend.keys_of(cfg, {a.worker_model, a.advisor_model, a.reviewer_model}, environ),
+                            a.spend_poll, a.spend_settle)
     try:
         chain = Chain(a, case, run_dir, environ)
         out = chain.run()
@@ -814,6 +827,10 @@ def main(argv=None, environ=None):
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
     finally:
+        if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
+            usd, source, why = meter.cost(os.path.join(run_dir, "pi"))
+            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
+            print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else ""))
         if chain is not None:
             chain.restore_config("the run")
         shutil.rmtree(run_dir, ignore_errors=True)

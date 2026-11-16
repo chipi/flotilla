@@ -62,6 +62,14 @@ from GitHub's public issues API (`api.github.com`, already in the bugfix proxy's
 credential) before the verdict, and notes it in the chain; if that read fails it keeps the cut
 body and says so.
 
+**What a run cost.** `fix.py --spend-file` writes the run's cost to the routine's `spend_file`, so
+the day's budget and the case's limit count it. The cost is the gateway's bill: LiteLLM's spend
+of each key the run's aliases use, read (`/key/info`, key in the header) before the run and after
+it, until two reads 5 s apart agree (at most 60 s). pi's own figure is its catalog's list price,
+5 to 7 times the bill on 2026-11-15, so it is used only when the gateway cannot be read; it errs
+high, so a limit acts early. A key another run spends on meanwhile makes the cost larger, never
+smaller; a key per routine makes it exact. The run's log ends with `BUGFIX SPEND ... source=`.
+
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could
 delete the test its change breaks and add a new passing one, and both repro and the related gate would
