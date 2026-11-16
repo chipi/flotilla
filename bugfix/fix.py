@@ -267,15 +267,15 @@ def usage(stream):
     return turns, out
 
 
-def issue_for_case(issue, environ):
+def issue_for_case(issue, repo, environ):
     """The issue as filed: intake cuts long bodies so its whole report fits flotillad's 64 KiB (body_cut), and the
     fix step should not reason from a cut report. When the body was cut, read it whole from GitHub's public issues
-    API (GITHUB_API, default https://api.github.com; the bugfix proxy allows api.github.com, no credential).
+    API for `repo` (GITHUB_API, default https://api.github.com; the bugfix proxy allows api.github.com, no credential).
     On any failure keep the cut body. Returns the issue and a note for the chain's log ("" when nothing was done)."""
     if not issue.get("body_cut"):
         return issue, ""
     api = (environ.get("GITHUB_API") or "https://api.github.com").rstrip("/")
-    url = f"{api}/repos/{issue.get('repo')}/issues/{int(issue['number'])}"
+    url = f"{api}/repos/{repo}/issues/{int(issue['number'])}"
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
@@ -304,7 +304,7 @@ class Chain:
         self.wt = os.path.join(run_dir, "wt")              # BAKEOFF_WT: the worktree
         self.triaged = os.path.join(run_dir, "triaged")    # BAKEOFF_TRIAGED_DIR: the manifests
         self.log = []
-        self.issue, body_note = issue_for_case(self.issue, environ)
+        self.issue, body_note = issue_for_case(self.issue, self.repo, environ)
         if body_note:
             self.note(body_note)
         self.rel_targets, self.rel_unmapped, self.rel_considered = [], [], []

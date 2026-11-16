@@ -963,7 +963,7 @@ class FullIssueBody(unittest.TestCase):
     def test_a_cut_body_is_fetched_whole(self):
         api = self.serve(200, "the whole report, " * 500)
         issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "the whole rep", "body_cut": True}
-        got, note = fix.issue_for_case(issue, {"GITHUB_API": api})
+        got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
         self.assertEqual(got["body"], "the whole report, " * 500)
         self.assertFalse(got["body_cut"])
         self.assertEqual(self.paths, ["/repos/chipi/podcast_scraper/issues/7"])
@@ -972,12 +972,19 @@ class FullIssueBody(unittest.TestCase):
     def test_a_body_that_was_not_cut_is_not_fetched(self):
         api = self.serve(200, "other")
         issue = {"repo": "chipi/orrery", "number": 7, "body": "short", "body_cut": False}
-        got, note = fix.issue_for_case(issue, {"GITHUB_API": api})
+        got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
         self.assertEqual((got["body"], self.paths, note), ("short", [], ""))
 
     def test_a_failed_fetch_keeps_the_cut_body_and_says_so(self):
         api = self.serve(404, "x")
         issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "cut", "body_cut": True}
-        got, note = fix.issue_for_case(issue, {"GITHUB_API": api})
+        got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
         self.assertEqual((got["body"], got["body_cut"]), ("cut", True))
         self.assertIn("kept the cut body", note)
+
+    def test_an_issue_without_its_repo_is_read_from_the_chains_repo(self):
+        # Chain falls back to --repo when the case's issue names none; the read must use the same repo
+        api = self.serve(200, "whole")
+        issue = {"number": 7, "body": "cut", "body_cut": True}
+        got, note = fix.issue_for_case(issue, "chipi/podcast_scraper", {"GITHUB_API": api})
+        self.assertEqual((got["body"], self.paths), ("whole", ["/repos/chipi/podcast_scraper/issues/7"]))
