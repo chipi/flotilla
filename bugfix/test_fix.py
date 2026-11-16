@@ -127,7 +127,9 @@ PI_BIN = POP + textwrap.dedent('''\
     R=approve; [ -s "$FAKE_STATE/reviews" ] && R=$(pop reviews)
     echo "review model=$6 tools=$T verdict=$R" >> "$FAKE_STATE/calls"
     [ "$R" = fail ] && exit 1
-    printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$R"
+    V="$R"; [ "$R" = request-changes ] && V="request-changes CLASS: test-proves-nothing"
+    [ "$R" = request-changes-unverified ] && V="request-changes CLASS: unverified"
+    printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a constant.\\\\nVERDICT: %s"}]}}\\n' "$V"
     ''')
 
 # a vitest-shaped runner. `run REPORT FILES`: those test files; `related REPORT SOURCES`: every *.test.js
@@ -537,6 +539,32 @@ exec {real} "$@"
         self.assertIn("the review did not run: (no review", plan["params"]["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "review"])
 
+    def test_only_a_fault_the_review_can_show_sends_a_fix_back(self):
+        # C4b: "unverified" and the like cost a whole round under C4a (#335: $0.11 -> $0.31) with nothing better at
+        # the end; they go on the plan, and the fix is not sent back
+        f = self.fixture(["actionable"], ["good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes-unverified\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(f.calls(), ["triage", "fix", "review"])
+        self.assertIn("unresolved: the review raised points it cannot show from the diff", plan["detail"])
+        self.assertIn("(class unverified)", plan["params"]["body"])
+
+    def test_the_review_is_given_the_gates_and_the_task(self):
+        f = self.fixture(["actionable"], ["good"])
+        f.run()
+        p = self.review_prompt(f)
+        self.assertIn("THE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix", p)
+        self.assertIn("THE TASK THE FIX WAS GIVEN (the verdict step's analysis):\nmake value() return 2", p)
+        for c in fix.KICK_CLASSES:
+            self.assertIn(c, p)
+
+    def test_review_class_reads_the_last_verdict_line(self):
+        self.assertEqual(fix.review_class("x\nVERDICT: request-changes CLASS: over-broad"), "over-broad")
+        self.assertEqual(fix.review_class("VERDICT: request-changes CLASS: hides-symptom\nlater\n**VERDICT: approve**"), "")
+        self.assertEqual(fix.review_class("VERDICT: request-changes"), "")
+
     def test_the_kick_back_limits_are_two_and_one(self):
         a = fix.parse(["--repo", "r", "--worker-model", "w", "--advisor-model", "a", "--reviewer-model", "v"])
         self.assertEqual((a.kickback_max, a.review_kickback_max), (2, 1))
@@ -797,7 +825,8 @@ exec {real} "$@"
         self.assertEqual(plan["outcome"], "plan", plan)
         path = os.path.join(os.path.dirname(os.path.abspath(fix.__file__)), "fleet_rules.md")
         self.assertTrue(os.path.isfile(path))
-        self.assertEqual(self.rules(f), [f"verdict {path}", f"fix {path}", f"review {path} no-context-files=yes"])
+        # the review has no tools (C4a), so it gets no rules about using them: only --no-context-files
+        self.assertEqual(self.rules(f), [f"verdict {path}", f"fix {path}", "review none no-context-files=yes"])
 
     def review_prompt(self, f):
         with open(os.path.join(f.state, "review_prompt")) as fh:
@@ -814,7 +843,7 @@ exec {real} "$@"
         self.assertIn("=== src/a.js ===\nmodule.exports = () => 2;", p)
         self.assertIn("=== src/a.test.js ===\nexpect src/a.js 2", p)
         self.assertIn("You have no tools", p)
-        self.assertTrue(p.rstrip().endswith("VERDICT: request-changes."))
+        self.assertTrue(p.rstrip().endswith("VERDICT: request-changes CLASS: <one of the classes>."))
 
     def test_review_tools_read_keeps_the_exploring_review(self):
         f = self.fixture(["actionable"], ["good"])
@@ -847,7 +876,7 @@ exec {real} "$@"
         self.assertIn("=== src/big.js ===\nmodule.exports = () => 2;", p)
         self.assertIn("[... cut:", p)
         self.assertIn("THE ISSUE AS FILED:\nvalue() returns 1, want 2", p)
-        self.assertTrue(p.rstrip().endswith("VERDICT: request-changes."))
+        self.assertTrue(p.rstrip().endswith("VERDICT: request-changes CLASS: <one of the classes>."))
 
     def test_an_empty_pi_rules_keeps_pis_default(self):
         f = self.fixture(["actionable"], ["good"])

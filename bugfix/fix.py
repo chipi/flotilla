@@ -58,6 +58,11 @@ REVIEW_PROMPT_MAX = 100_000   # bytes; pi takes the prompt as one argument and L
 REQUEST_CHANGES = re.compile(r"VERDICT:\s*\**\s*request[- ]changes", re.I)
 VERDICT_LINE = re.compile(r"^[\s*_>#-]*VERDICT:", re.I)
 VERDICT_LINE_REQUESTS = re.compile(r"^[\s*_>#-]*VERDICT:\s*\**\s*request[- ]changes", re.I)
+# The objections a review can judge from what it is given (C4b, the advisor's review of 2026-11-16): only these send a
+# fix back, since a kick-back costs a whole fix round (#335: $0.11 -> $0.31 under C4a for "uninvestigated, unverified,
+# invented"); anything else the review raises goes on the plan for the operator.
+KICK_CLASSES = ("hides-symptom", "over-broad", "test-proves-nothing", "breaks-behaviour", "wrong-place")
+REVIEW_CLASS = re.compile(r"CLASS:\s*\**\s*([a-z-]+)", re.I)
 TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[tj]sx?$|(^|/)tests?/|(^|/)test_[^/]*\.py$")
 # CI and hooks, and what `vitest related` cannot see: the repo's config, manifest and lockfile (the
 # advisor's review, 2026-11-15); a spec adds its repo's own with --out-of-scope
@@ -86,6 +91,13 @@ def review_requests_changes(review):
     if lines:
         return bool(VERDICT_LINE_REQUESTS.match(lines[-1]))
     return bool(REQUEST_CHANGES.search(_unquoted(review or "")))
+
+
+def review_class(review):
+    """The class the review's last VERDICT line names (CLASS: x), "" without one."""
+    lines = [ln for ln in (review or "").splitlines() if VERDICT_LINE.match(ln)]
+    m = REVIEW_CLASS.search(lines[-1]) if lines else None
+    return m.group(1).lower() if m else ""
 
 
 def _unquoted(text):
@@ -655,7 +667,7 @@ class Chain:
                   self.run_dir, self.env, 60, check=True)
         return d
 
-    def review_prompt(self, diff):
+    def review_prompt(self, diff, task="", summary=""):
         """The review's whole input: the issue as filed, the diff, and the files the fix touched as they are after it.
         With --review-tools none the reviewer judges from this alone, in one call: on 2026-11-15/16 a review explored
         the repo for 5 to 38 calls on glm-5.2, the fleet's dearest model (fleet-eval-data projects/bugfix-cost, C4).
@@ -663,7 +675,10 @@ class Chain:
         REVIEW_PROMPT_MAX, the diff first, then the issue, then the files, each cut said where it is."""
         head = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}).\n\n")
         ask = ("\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes "
-               "the issue as filed rather than hiding its symptom. End with VERDICT: approve or VERDICT: request-changes.")
+               "the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what "
+               "is above, and name its class: " + ", ".join(KICK_CLASSES) + ". Write anything else (what could not be "
+               "checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or "
+               "VERDICT: request-changes CLASS: <one of the classes>.")
         if self.a.review_tools == "none":
             ask = "\n\nYou have no tools: judge from what is above." + ask
         room = REVIEW_PROMPT_MAX - len((head + ask).encode())
@@ -672,11 +687,22 @@ class Chain:
             b = text.encode()
             return text if len(b) <= n else b[:max(n - 80, 0)].decode(errors="ignore") + f"\n[... cut: {len(b) - n + 80} more bytes]"
 
-        parts = [("DIFF:\n", cut(diff, min(room, 40000)))]
-        room -= len(parts[0][1].encode()) + 20
+        parts = []
+        gates = getattr(self, "checked", "") or ""
+        if gates:
+            parts.append(("THE GATES (run by the chain on this diff): ", gates + "\n\n"))
+            room -= len(gates.encode()) + 60
+        parts.append(("DIFF:\n", cut(diff, min(room, 40000))))
+        room -= len(parts[-1][1].encode()) + 20
+        if task:
+            parts.append(("\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis):\n", cut(task, min(room, 6000))))
+            room -= len(parts[-1][1].encode()) + 70
+        if summary:
+            parts.append(("\n\nTHE FIX AGENT'S OWN SUMMARY:\n", cut(summary, min(room, 3000))))
+            room -= len(parts[-1][1].encode()) + 40
         body = self.issue.get("body") or ""
         parts.append(("\n\nTHE ISSUE AS FILED:\n", cut(body, min(room, 8000))))
-        room -= len(parts[1][1].encode()) + 30
+        room -= len(parts[-1][1].encode()) + 30
         _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=d", self.base],
                       self.run_dir, self.env, 60)
         files = []
@@ -696,9 +722,11 @@ class Chain:
             parts.append(("\n\nTHE CHANGED FILES, AFTER THE FIX:\n", "\n".join(files)))
         return head + "".join(a + b for a, b in parts) + ask
 
-    def review(self, diff):
-        prompt = self.review_prompt(diff)
+    def review(self, diff, task="", summary=""):
+        prompt = self.review_prompt(diff, task, summary)
         rules = ["--no-context-files", "--append-system-prompt", self.env["BUGFIX_PI_RULES"]] if self.env.get("BUGFIX_PI_RULES") else []
+        if self.a.review_tools == "none" and rules:   # the rules are about using tools; a review without them has none
+            rules = ["--no-context-files"]
         tools = ["--no-tools"] if self.a.review_tools == "none" else ["--tools", READ_ONLY_TOOLS]
         code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer,
                            *tools, *rules, prompt],
@@ -745,13 +773,20 @@ class Chain:
                 d = self.diff()
                 if len(d) > DIFF_MAX:
                     raise Stop(f"the clean fix's diff is {len(d)} characters, more than the {DIFF_MAX} a plan may carry")
-                review = self.review(d)
+                with open(manifest) as mf:
+                    task = json.load(mf).get("description") or ""
+                review = self.review(d, task, assistant_text(stream or ""))
                 self.note("review", tail(review.splitlines()[-1] if review else "", 80))
                 if review.startswith("(no review"):   # a failed review is not an approval: the plan says so
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
                     return self.plan(rnd, d, review, unresolved="the review did not run: " + tail(review, 200))
                 # the review saw what the gates did not on 3 of phase A's 4 plans: request-changes sends the fix
                 # back while the budget lasts; after that the operator sees the plan with the review in it
+                if review_requests_changes(review) and review_class(review) not in KICK_CLASSES:
+                    self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
+                    return self.plan(rnd, d, review, unresolved=(
+                        f"the review asked for changes it cannot show from the diff (class {review_class(review) or 'none'}), "
+                        "so the fix was not sent back"))
                 if review_requests_changes(review) and reviewed_back < self.a.review_kickback_max \
                         and rnd < self.a.kickback_max:
                     reviewed_back += 1
@@ -836,6 +871,8 @@ class Chain:
         title = f"fix #{self.n}: {self.issue.get('title', '')}"[:TITLE_MAX]
         flag = (f"unresolved: the review did not run; round {rnd}'s clean fix kept"
                 if unresolved.startswith("the review did not run") else
+                f"unresolved: the review raised points it cannot show from the diff; round {rnd}'s clean fix kept"
+                if unresolved.startswith("the review asked for changes it cannot show") else
                 f"unresolved: the review asked for changes; round {rnd}'s clean fix kept")
         body = "\n".join([
             *([f"**{flag}**: {unresolved} (see the review below).", ""]

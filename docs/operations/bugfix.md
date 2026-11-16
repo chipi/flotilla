@@ -83,12 +83,20 @@ and `bugfix/fleet_rules.md` instead (`--pi-rules`; `''` keeps pi's default). The
 results small: find before reading, ranges of long files, no generated or vendored files, no
 `git log -p`. On orrery pi's first request went from 123,326 to 7,082 characters.
 
-**The review judges what it is given.** The reviewer gets the issue as filed, the diff and the
+**The review judges what it is given.** The reviewer gets the gates' result, the diff, the task
+the fix was given (the verdict's analysis), the fix agent's own summary, the issue as filed and the
 files the fix touched as they are after it, and no tools (`--review-tools none`, the default): one
 call, where an exploring review took 5 to 38 calls on the reviewer model, the fleet's dearest. The
-prompt is one argument to pi, which Linux caps at 128 KiB, so the parts are cut to 100,000 bytes
-(the diff first, then the issue, then the files), each cut marked. `--review-tools read` gives the
-reviewer pi's read tools again. No tools is stricter than read-only, so SR-0001 H8 still holds.
+prompt is one argument to pi, which Linux caps at 128 KiB, so the parts are cut to 100,000 bytes,
+each cut marked. `--review-tools read` gives the reviewer pi's read tools again. No tools is
+stricter than read-only, so SR-0001 H8 still holds.
+
+**What sends a fix back.** A kick-back costs a whole fix round, so the review sends a fix back
+only for a fault it can show from what it was given, and names its class (`hides-symptom`,
+`over-broad`, `test-proves-nothing`, `breaks-behaviour`, `wrong-place`), at most once
+(`--review-kickback-max 1`; all kick-backs together `--kickback-max 2`). The fix step then gets
+the whole review and the diff it judged, without a new verdict. Any other objection goes on the
+plan as unresolved; a review that did not run is said on the plan, never read as an approval.
 
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could
