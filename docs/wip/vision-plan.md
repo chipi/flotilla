@@ -43,8 +43,9 @@ Done when one real plan was approved in Slack and ran, and the gate's decision i
 
 **Built 2026-11-15** ([ADR-0015](../adr/ADR-0015-mcp-server.md), [runbook](../operations/mcp.md)):
 17 tools at `/mcp` on the UI node, one token per caller, the official SDK, agents reading the ledger
-and proposing notes, a dry run. Left: a first real caller (a Claude session on the X3) and the done
-check below on the mini.
+and proposing notes, a dry run. **Done 2026-11-16:** a headless Claude session on the X3 (caller
+`claude-x3`) listed the 13 open cases, ran `platform/heartbeat` (run trigger `manual/claude-x3`) and
+found no tool that approves; every call is in the events under its identity.
 
 Promised from the start (RFC-0001): other agents (Claude sessions, the X3 assistant) see and steer
 flotilla through the same API as the CLI and the UI.
@@ -63,7 +64,8 @@ tested.
 **Built 2026-11-15** ([ADR-0016](../adr/ADR-0016-post-incident-review.md)): `ops/case-review` with
 the five rules, monitors' measures, `process_change` as a real plan (`repo.process_change`), applied
 by hand with its commit recorded. The done check passes on the frozen first shadow case (25 h, with
-its evidence). Left: deployed, and `repo.process_change` promoted to propose.
+its evidence). **Done 2026-11-16:** deployed, and `repo.process_change` promoted to propose (the
+operator).
 
 The operator, 2026-11-15: after a case closes, a review looks at what happened and what to learn, as
 a post-mortem would. Found by the first shadow case (`case-20261114-6983646f65`): the chain was right
@@ -129,6 +131,10 @@ search-console routines are next.
 Done when the design is accepted and the first routine runs in shadow.
 
 ### 6. Move the fleet code out of agentic-ai-homelab
+
+**Done 2026-11-16** (agentic-ai-homelab 9e3ab73): `fleetd/`, `signal-fleet/` and `bugfix-fleet/` removed;
+the mini's `com.homelab.fleetd` and `com.homelab.bugfix-metrics` jobs retired (archived in
+`~/flotilla/retired/`); their three alert rules deleted; fleet-eval-data's scripts read flotilla's copy.
 
 - Check that nothing on the mini or the DGX runs the homelab copies (launchd jobs, crontabs, deploy
   scripts reading them).
