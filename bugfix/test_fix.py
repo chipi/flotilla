@@ -571,6 +571,10 @@ exec {real} "$@"
         self.assertIn("THE TASK THE FIX WAS GIVEN (the verdict step's analysis):\nmake value() return 2", p)
         for c in fix.KICK_CLASSES:
             self.assertIn(c, p)
+        # #553 r2 (2026-11-16): the review saw "a skip is not an attach" against the issue's acceptance criterion and
+        # approved, its rule being "only a fault you can show"; a missed acceptance criterion is one it can show
+        self.assertIn("does not meet an acceptance criterion the issue states", p)
+        self.assertIn("silently dropping behaviour", p)
 
     def test_review_class_reads_the_last_verdict_line(self):
         self.assertEqual(fix.review_class("x\nVERDICT: request-changes CLASS: over-broad"), "over-broad")

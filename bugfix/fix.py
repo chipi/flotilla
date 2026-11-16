@@ -744,7 +744,9 @@ class Chain:
         head = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}).\n\n")
         ask = ("\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes "
                "the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what "
-               "is above, and name its class: " + ", ".join(KICK_CLASSES) + ". Write anything else (what could not be "
+               "is above, and name its class: " + ", ".join(KICK_CLASSES) + ". A fix that does not meet an acceptance "
+               "criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, "
+               "filtering it out), is such a fault: class hides-symptom. Write anything else (what could not be "
                "checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or "
                "VERDICT: request-changes CLASS: <one of the classes>.")
         if self.a.review_tools == "none":
