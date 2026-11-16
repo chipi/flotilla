@@ -669,12 +669,43 @@ exec {real} "$@"
         self.assertIn("unresolved: the review raised points it cannot show from the diff", plan["detail"])
         self.assertIn("(class unverified)", plan["params"]["body"])
 
+    def test_b11_assertions_a_fix_removes_from_tests_on_main_are_found_and_shown(self):
+        # #553 (2026-11-16): `.not.toBeNull()` became `.toBeNull()` in a test on main, and the review approved it
+        import types
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        git("init", "-q", d, cwd=d)
+        os.makedirs(os.path.join(d, "src"))
+        with open(os.path.join(d, "src", "sentry.test.ts"), "w") as fh:
+            fh.write("it('still reports', () => {\n  expect(beforeSend(ev)).not.toBeNull();\n});\n")
+        with open(os.path.join(d, "src", "sentry.ts"), "w") as fh:
+            fh.write("export const beforeSend = (e) => e;\n")
+        git("add", "-A", cwd=d)
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base", cwd=d)
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True).stdout.strip()
+        with open(os.path.join(d, "src", "sentry.test.ts"), "w") as fh:
+            fh.write("it('drops it', () => {\n  expect(beforeSend(ev)).toBeNull();\n});\n")
+        with open(os.path.join(d, "src", "new.test.ts"), "w") as fh:   # a new test file is not "on main"
+            fh.write("it('x', () => { expect(1).toBe(1); });\n")
+        git("add", "-A", cwd=d)
+        got = fix.changed_assertions(d, base, d, dict(os.environ))
+        self.assertEqual(got, [("src/sentry.test.ts", ["expect(beforeSend(ev)).not.toBeNull();"])])
+        chain = types.SimpleNamespace(repo="chipi/orrery", n=553, issue={"title": "t", "body": "b"}, checked="",
+                                      a=types.SimpleNamespace(review_tools="none"), wt=d, base=base, run_dir=d, env=dict(os.environ))
+        p = fix.Chain.review_prompt(chain, "diff")
+        self.assertIn("THE FIX REMOVES OR REWRITES ASSERTIONS OF TESTS THAT ARE ON MAIN (found by the chain): "
+                      "src/sentry.test.ts: expect(beforeSend(ev)).not.toBeNull();", p)
+        self.assertIn("weakens or inverts an assertion of a test that is on main is class test-proves-nothing", p)
+
     def test_the_review_is_given_the_gates_and_the_task(self):
         f = self.fixture(["actionable"], ["good"])
         f.run()
         p = self.review_prompt(f)
         self.assertIn("THE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix", p)
-        self.assertIn("THE TASK THE FIX WAS GIVEN (the verdict step's analysis):\nmake value() return 2", p)
+        # #553 (2026-11-16): the review took the verdict's task ("mandates the filter") for the acceptance criteria
+        self.assertIn("THE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against "
+                      "the issue as filed below, not against this task):\nmake value() return 2", p)
+        self.assertIn("the issue's acceptance criteria are the ones in the issue as filed, not in the task", p)
         for c in fix.KICK_CLASSES:
             self.assertIn(c, p)
         # #553 r2 (2026-11-16): the review saw "a skip is not an attach" against the issue's acceptance criterion and

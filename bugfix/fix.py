@@ -101,6 +101,26 @@ def review_requests_changes(review):
     return bool(REQUEST_CHANGES.search(_unquoted(review or "")))
 
 
+ASSERTION = re.compile(r"\b(expect|assert)\w*\s*\(|\bassert\s|\.(not\.)?to[A-Z]\w*\(|\bself\.assert\w+\(|\bpytest\.raises\(")
+
+
+def changed_assertions(wt, base, run_dir, env):
+    """B11: [(test file, [assertion lines the fix removed or rewrote])] for test files that exist at the base. A fix
+    that inverts or drops an assertion of a test on main can make its own gates pass while the bug stays (#553 on
+    2026-11-16: `.not.toBeNull()` became `.toBeNull()` in a test whose comment said no filter ships without evidence)."""
+    _, names = sh(["git", "-C", wt, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=M", base],
+                  run_dir, env, 60)
+    out = []
+    for f in [n for n in names.split("\0") if n.strip() and TEST_FILE.search(n)]:
+        _, d = sh(["git", "-C", wt, "diff", "--cached", "-U0", base, "--", f], run_dir, env, 60)
+        removed = [ln[1:].strip() for ln in d.splitlines() if ln.startswith("-") and not ln.startswith("---")]
+        added = {ln[1:].strip() for ln in d.splitlines() if ln.startswith("+") and not ln.startswith("+++")}
+        gone = [ln for ln in removed if ASSERTION.search(ln) and ln not in added]
+        if gone:
+            out.append((f, gone))
+    return out
+
+
 def review_class(review):
     """The class the review's last VERDICT line names (CLASS: x), "" without one."""
     lines = [ln for ln in (review or "").splitlines() if VERDICT_LINE.match(ln)]
@@ -1147,7 +1167,9 @@ class Chain:
                "the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what "
                "is above, and name its class: " + ", ".join(KICK_CLASSES) + ". A fix that does not meet an acceptance "
                "criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, "
-               "filtering it out), is such a fault: class hides-symptom. Write anything else (what could not be "
+               "filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue "
+               "as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class "
+               "test-proves-nothing. Write anything else (what could not be "
                "checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or "
                "VERDICT: request-changes CLASS: <one of the classes>.")
         if self.a.review_tools == "none":
@@ -1163,10 +1185,17 @@ class Chain:
         if gates:
             parts.append(("THE GATES (run by the chain on this diff): ", gates + "\n\n"))
             room -= len(gates.encode()) + 60
+        self.changed_tests = changed_assertions(self.wt, self.base, self.run_dir, self.env)
+        if self.changed_tests:
+            text = "\n".join(f"{f}: " + " | ".join(lines[:8]) for f, lines in self.changed_tests)
+            parts.append(("THE FIX REMOVES OR REWRITES ASSERTIONS OF TESTS THAT ARE ON MAIN (found by the chain): ",
+                          cut(text, min(room, 3000)) + "\n\n"))
+            room -= len(parts[-1][1].encode()) + 90
         parts.append(("DIFF:\n", cut(diff, min(room, 40000))))
         room -= len(parts[-1][1].encode()) + 20
         if task:
-            parts.append(("\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis):\n", cut(task, min(room, 6000))))
+            parts.append(("\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against "
+                          "the issue as filed below, not against this task):\n", cut(task, min(room, 6000))))
             room -= len(parts[-1][1].encode()) + 70
         if summary:
             parts.append(("\n\nTHE FIX AGENT'S OWN SUMMARY:\n", cut(summary, min(room, 3000))))
@@ -1450,6 +1479,9 @@ class Chain:
             "The whole suite is this PR's CI.",
             *([f"Not loadable on the base (they import what the fix adds): {', '.join(unloaded)}."]
               if unloaded else []),
+            *([f"Assertions of tests on main removed or rewritten by the fix: "
+               + "; ".join(f"{f} ({len(lines)})" for f, lines in getattr(self, "changed_tests", []))]
+              if getattr(self, "changed_tests", None) else []),
             "", "The chain:", *[f"- {x}" for x in self.log],
             "", "Review (fleet reviewer, comment only):", tail(review, 3000),
             "", "The operator merges, always: the fleet never does."])
