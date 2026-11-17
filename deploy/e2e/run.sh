@@ -114,9 +114,10 @@ workers:
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
   # the site watch runs on ops-read (its spec); marketing is the installation's worker for its own SEO fleet
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
-# the candidate triage needs a candidate worker's model; the bugfix fleet's intake and fix reach a git
-# server and a coding agent: not in the e2e yet
-disabled_routines: [triage/cycle-shadow, bugfix/intake, bugfix/fix]
+# the candidate triage needs a candidate model; bugfix/fix clones the repo, installs its toolchain and runs a
+# coding agent on a real model through many tool calls: a stand-in for that would show the stand-in, not
+# flotilla. Its unit tests cover it on local repos (bugfix/test_fix.py); here its intake opens the case.
+disabled_routines: [triage/cycle-shadow, bugfix/fix]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -380,9 +381,8 @@ for _ in $(seq 1 60); do
   TRI="$(cli runs triage/cycle 2>&1)"; echo "$TRI" | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 3
 done
 echo "$TRI" | grep >/dev/null " ok " && ok "triage/cycle ran to the end in shadow" || bad "triage/cycle: $TRI"
-TRID="$(echo "$TRI" | awk '/ ok / {print $1; exit}')"
-# the run's own lines, as the worker logs them (one JSON line each, with its run id)
-TRO="$($D logs flotilla-worker-triage 2>&1 | grep -F "\"run_id\": \"$TRID\"" | sed -n 's/.*"line": "\(.*\)"}$/\1/p')"
+# the routine's own lines, as the worker logs them (one JSON line each, with its routine and run id)
+TRO="$($D logs flotilla-worker-triage 2>&1 | grep -F "\"routine\": \"triage/cycle\"" | sed -n 's/.*"line": "\(.*\)"}$/\1/p')"
 echo "$TRO" | grep >/dev/null "cycle done: 2 triaged" && ok "triage: the cycle triaged both signals, the shop's error and the api's alert" \
   || bad "triage cycle: $(echo "$TRO" | tail -5 | tr '\n' ' ')"
 echo "$TRO" | grep >/dev/null "=> file" && ok "triage: the shop's TypeError is decided file (repo example/shop); in shadow nothing is filed" \
@@ -393,6 +393,11 @@ $D logs e2e-world 2>&1 | grep >/dev/null "world GET errors.example.com/api/0/org
   && ok "triage read GlitchTip's issues for the installation's organization (glitchtip_org)" || bad "no GlitchTip issues request at the world stand-in"
 $D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT auth=bearer model=fleet-triage-flash" && ok "triage asked the model through the gateway, with its key" \
   || bad "no triage model call at the gateway stand-in"
+
+echo "== the bugfix example's intake, on the world's GitHub"
+want_case code_bug "repo:example/shop/issues/7" "handed_over" \
+  && ok "bugfix: the open bug issue became a code_bug case (its fix needs a real coding model: off here)" \
+  || bad "bugfix intake: $(cli case list --all 2>&1 | grep code_bug)"
 
 if [ "${DEMO:-}" = 1 ]; then
   echo "== the demo"

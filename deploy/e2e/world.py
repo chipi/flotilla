@@ -4,7 +4,7 @@ CA, so the examples run unchanged against it.
 
   www.example.com, docs.example.com, shop.example.org   the sites/site-check example's sites
   errors.example.com, grafana.example.com               the triage example's sources (GlitchTip, Grafana)
-  api.github.com, pypi.org, api.osv.dev                 the deps example's sources
+  api.github.com, pypi.org, api.osv.dev                 the deps example's sources; GitHub also for triage and bugfix/intake
 
 Some answers are wrong on purpose, so each example has something to find: a page with no description, a
 link that answers 404, the certificate (its validity is the stack's choice: run.sh makes it short), a
@@ -76,6 +76,16 @@ ALERTS = [{
     "status": {"state": "active"}, "startsAt": "2026-11-17T09:00:00Z", "fingerprint": "a1b2c3d4e5f60718",
 }]
 
+# The bugfix example's intake: one open bug issue in the shop, as triage would have filed it.
+BUG_ISSUES = [{
+    "number": 7, "title": "Cart total crashes on a line without a price", "state": "open",
+    "html_url": "https://github.com/example/shop/issues/7", "updated_at": "2026-11-17T09:40:00Z",
+    "labels": [{"name": "bug"}],
+    "body": "sumLines in cart/total.js throws TypeError: Cannot read properties of undefined (reading 'price') "
+            "when a cart line has no price.\n\nAcceptance: sumLines skips or rejects a line without a price "
+            "instead of throwing (code-invariant).",
+}]
+
 SHA = "4f2c1d0e9b8a7f6e5d4c3b2a19087f6e5d4c3b2a"
 FILES = {
     ("example/shop", "requirements.txt"): "flask==3.0.0\nrequests==2.31.0\nidna>=3.0\n",
@@ -121,6 +131,8 @@ class H(BaseHTTPRequestHandler):
             return self.json(ALERTS)
         if host == "api.github.com" and path == "/search/issues":
             return self.json({"total_count": 0, "items": []})
+        if host == "api.github.com" and path == "/repos/example/shop/issues":   # bugfix/intake's open bug issues
+            return self.json(BUG_ISSUES if "labels=bug" in self.path else [])
         if host == "api.github.com":
             parts = path.strip("/").split("/")   # repos/OWNER/NAME/commits/HEAD | repos/OWNER/NAME/contents/PATH...
             if len(parts) >= 5 and parts[0] == "repos":
