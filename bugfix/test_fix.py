@@ -66,6 +66,8 @@ PI_HARNESS = POP + textwrap.dedent('''\
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
       chatty)   for i in 1 2 3 4 5; do echo '{"type": "message_end", "message": {"role": "assistant", "usage": {"output": 1}}}'; done
                 sleep 60 ;;
+      srctext)  echo 'module.exports = () => 2;' > src/a.js
+                printf "const p = 'src/a.js';\nconst t = readFileSync(p, 'utf-8');\nexpect src/a.js 2\n" > src/a.test.js ;;
       built)    echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
                 mkdir -p static/images; echo thumb > static/images/x.thumb.jpg ;;
       flip)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
@@ -597,6 +599,28 @@ exec {real} "$@"
         with open(os.path.join(g.state, "acceptance"), "w") as fh:
             json.dump({"acceptance": [{"criterion": "verified by a new test: assert zero pageerrors"}]}, fh)
         self.assertEqual(g.run()[0]["outcome"], "plan")
+
+    def test_a_test_that_reads_source_text_fails_its_round(self):
+        # #553 on 2026-11-17: a regex over AudioOverlay.svelte's text fails on the base and passes with the fix by
+        # construction; the review approved it as "source-text guards"
+        f = self.fixture(["actionable", "actionable"], ["srctext", "good"])
+        plan, _ = f.run("--no-resume")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("round 0: test-proves-nothing: a test reads a source file's text instead of running its code: "
+                      "src/a.test.js: const t = readFileSync(p, 'utf-8');", plan["params"]["body"])
+        self.assertNotIn("readFileSync", plan["params"]["diff"], "round 1's clean fix is the plan")
+
+    def test_reads_source_text_cases(self):
+        r = fix.reads_source_text
+        self.assertTrue(r(["const overlayPath = 'src/lib/components/AudioOverlay.svelte';",
+                           "const overlay = readFileSync(join(process.cwd(), overlayPath), 'utf-8');"]))
+        self.assertTrue(r(["src = open('src/podcast_scraper/pkg/mod.py').read()"]))
+        self.assertTrue(r(["text = Path('src/app.ts').read_text()"]))
+        # a fixture read, with the code under test imported, is a real test
+        self.assertEqual(r(["import { merge } from '../lib/mission-event-merge.ts';",
+                            "const data = JSON.parse(readFileSync('fixtures/cassini.json', 'utf-8'));"]), "")
+        self.assertEqual(r(["from podcast_scraper.pkg import mod", "with open('tests/data/feed.yaml') as f:"]), "")
+        self.assertEqual(r(["const m = await import('./a.js');", "expect(m.value()).toBe(2);"]), "")
 
     def test_change_criteria_reads_code_not_prose(self):
         v = lambda *c: {"problem": {"acceptance": list(c)}}   # noqa: E731

@@ -116,6 +116,40 @@ def changed_assertions(wt, base, run_dir, env):
     return out
 
 
+READS_FILE = re.compile(r"readFileSync\(|readFile\(|fs\.read|\.read_text\(|\bopen\(")
+SOURCE_NAMED = re.compile(r"""['"`][^'"`]*\.(?:svelte|[cm]?[tj]sx?|py)['"`]""")
+
+
+def source_text_tests(wt, base, run_dir, env):
+    """[(test file, line)]: lines a fix adds to a test file that read a source file's text (not a .json/.yaml fixture)
+    instead of running its code. Such a test fails on the base and passes with the fix by construction (#553 on
+    2026-11-17: a regex over AudioOverlay.svelte's text, the review approved it); of the 18 plans recorded until then,
+    no other has one."""
+    _, names = sh(["git", "-C", wt, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=AM", base],
+                  run_dir, env, 60)
+    out = []
+    for f in [n for n in names.split("\0") if n.strip() and TEST_FILE.search(n)]:
+        _, d = sh(["git", "-C", wt, "diff", "--cached", "-U0", base, "--", f], run_dir, env, 60)
+        added = [ln[1:] for ln in d.splitlines() if ln.startswith("+") and not ln.startswith("+++")]
+        hit = reads_source_text(added)
+        if hit:
+            out.append((f, hit))
+    return out
+
+
+IMPORT_LINE = re.compile(r"^\s*(?:import\b|export\b.*\bfrom\b|from\s+\S+\s+import\b)|\brequire\(|\bimport\(|\bvi\.mock\(")
+
+
+def reads_source_text(added):
+    """The first added test line that reads a file's text when the test names a source file outside an import (the
+    path may sit on the line before, `const p = 'src/x.svelte'; readFileSync(p)`), else ""."""
+    named = any(SOURCE_NAMED.search(ln) and not TEST_FILE.search(ln) and not IMPORT_LINE.search(ln) for ln in added)
+    for ln in added:
+        if READS_FILE.search(ln) and not IMPORT_LINE.search(ln) and (named or SOURCE_NAMED.search(ln)):
+            return ln.strip()[:160]
+    return ""
+
+
 # a test file, or an assertion in code form (no space before its bracket): a criterion's prose may say "assert zero
 # pageerrors" (#466) or "assert (a) the returned promise rejects" (#517, 2026-11-17) for a new test
 TEST_NAMED = re.compile(r"[\w./-]+\.(?:test|spec)\.[cm]?[tj]sx?\b|\btest_\w+\.py\b"
@@ -699,6 +733,10 @@ class Chain:
             what = "; ".join(f"{f}: " + " | ".join(lines[:4]) for f, lines in changed)
             return (f"out of scope: a fix may not remove or rewrite an assertion of a test on main (add a test instead): "
                     f"{what[:600]}"), files, stream, stats
+        reads = source_text_tests(self.wt, self.base, self.run_dir, self.env)
+        if reads:
+            return ("test-proves-nothing: a test reads a source file's text instead of running its code: "
+                    + "; ".join(f"{f}: {line}" for f, line in reads)[:600]), files, stream, stats
         tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
         if pytest:   # only .py files go to pytest; a conftest or config is never a test
             tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]

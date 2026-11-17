@@ -112,6 +112,10 @@ asks for, and each review approved it). A one-call review anchors on what it rea
   then escalates as needs-info at once (on #553 another verdict and round cost $0.52 and $0.88
   to reach the same); a pin goes to the re-verdict as one hypothesis, not as strong evidence;
 - a round that removes or rewrites an assertion of a test on main fails as out of scope (below);
+- a round whose test reads a source file's text (`readFileSync`, `open`, `read_text` of a
+  `.svelte`, `.ts`, `.js` or `.py` named outside an import) fails as test-proves-nothing: such a
+  test fails on the base and passes with the fix by construction (#553 on 2026-11-17, approved
+  by the review; no other of 18 recorded plans had one);
 - a fix episode stops after `--fix-max-turns` assistant turns (default 90): every round whose fix
   passed the oracle took at most 67, #553's round 0s took 105 to 194 and gave no right fix.
 
