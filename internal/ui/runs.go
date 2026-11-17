@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -137,6 +136,7 @@ type runData struct {
 	Untrusted           int
 	CallsInSpans        bool          // every model call sits on its model.chat span: no separate table
 	Decisions           []runDecision // the decisions the run wrote to the ledger, in time order
+	Flow                *runFlowView  // the run role by role; nil when no call carries a role
 }
 
 type runDecision struct {
@@ -145,9 +145,10 @@ type runDecision struct {
 
 // toolNames is the tool names a call recorded (a JSON array) as "bash, read"; "" when none or unreadable.
 func toolNames(raw string) string {
-	var names []string
-	if raw == "" || json.Unmarshal([]byte(raw), &names) != nil {
-		return ""
+	tcs := parseTools(raw)
+	names := make([]string, len(tcs))
+	for i, t := range tcs {
+		names[i] = t.Name
 	}
 	return strings.Join(names, ", ")
 }
@@ -246,6 +247,9 @@ func (u *Server) runPage(w http.ResponseWriter, r *http.Request, s *store.Sessio
 	d.Read = ld[run.ID]
 	d.Untrusted = countUntrusted(d.Read)
 	d.CallsInSpans = callsOnSpans(&d.Trace, d.Row.Calls)
+	if fl := buildFlow(d.Row.Calls); fl != nil {
+		d.Flow = u.runFlowView(fl, *run, d.Row.Calls, r.URL.Query())
+	}
 	decs, err := u.API.Store.DecisionsOfRun(r.Context(), run.ID)
 	if err != nil {
 		http.Error(w, "run failed", 500)

@@ -2,7 +2,7 @@
 {{template "nav" .}}
 <main class="page">
   {{$csrf := .CSRF}}{{$act := .CanAct}}
-  {{with .Data}}{{$back := .Back}}
+  {{with .Data}}{{$back := .Back}}{{$panel := .Panel}}
   <nav class="crumb" aria-label="Breadcrumb"><a href="/fleets">Fleets</a> / <a href="/fleets/{{.Fleet}}">{{.FleetName}}</a> / {{.ID}}</nav>
   <section class="head">
     <div>
@@ -30,6 +30,11 @@
 
   <section class="scores scores--wide" aria-label="Today">{{range .Cards}}{{template "score" .}}{{end}}</section>
 
+  {{with .Inst}}<section class="card inst" aria-labelledby="inst-h">
+    <div class="inst__head"><h2 id="inst-h">Instruments</h2><span class="meta">grey is normal · amber: outside its usual range or past 70% of a limit · red: a limit crossed</span></div>
+    {{template "instruments" .}}
+  </section>{{end}}
+
   <section class="board rboard" aria-label="The routine, drawn from its spec">
     <div class="board__head"><strong>{{.ID}} · drawn from its spec</strong><span>counts: {{.Counted}} · open a block for what it does</span></div>
     <div class="board__stages rboard__stages">
@@ -51,6 +56,7 @@
     {{if .Explain}}<p>{{.Explain}}</p>{{else}}<p class="gap"><strong>Not explained in the spec yet.</strong> Add <span class="exact">explain: {{.ID}}</span> to the routine's spec.</p>{{end}}
     <p class="meta">{{if eq .Where "spec"}}Set in the routine's spec{{else if eq .Where "code"}}Done by the routine's code, described in its spec{{else}}Kept by flotillad{{end}}{{if .Key}} · <span class="exact">{{.Key}}</span>{{end}}</p>
     {{if .Nums}}<p class="bpanel__nums">{{.Nums}}</p>{{end}}
+    {{with $panel}}{{template "modelpanel" .}}{{end}}
     {{if .YAML}}<h3>In the spec</h3><pre class="log log--small">{{.YAML}}</pre>{{end}}
     {{else}}<p class="meta">Open a block: what it does, where it is set, the spec it comes from and its counts.</p>{{end}}
   </aside>
@@ -69,6 +75,8 @@
     </div>
   </section>
   {{end}}
+
+  {{with .Paths}}{{template "paths" .}}{{end}}
 
   <section class="card" aria-labelledby="runs-h">
     <h2 id="runs-h">Last runs</h2>
@@ -90,4 +98,5 @@
   <span class="node__name"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Name}}</span>
   {{if .Sub}}<span class="node__sub">{{.Sub}}</span>{{end}}
   {{if .Nums}}<span class="node__nums"><span>{{.Nums}}</span></span>{{end}}
+  {{template "nums" .Extra}}
 {{if .Href}}</a>{{else}}</span>{{end}}{{end}}

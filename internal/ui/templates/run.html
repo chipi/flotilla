@@ -10,6 +10,62 @@
     </div>
   </section>
 
+
+  {{with .Flow}}
+  <p class="say"><b>In short:</b> {{.Say}}</p>
+  <section class="card inst" aria-labelledby="inst-h">
+    <div class="inst__head"><h2 id="inst-h">Instruments</h2><span class="meta">grey is normal · amber: off its usual · red: a limit crossed</span></div>
+    {{template "instruments" .Inst}}
+  </section>
+  <section class="card" aria-labelledby="flow-h">
+    <h2 id="flow-h">The flow, role by role</h2>
+    <div class="swim-box">{{template "swim" .Swim}}</div>
+    <div class="legend">
+      <span><i class="lg lg--ep" aria-hidden="true"></i>an agent's episode, a tick per turn (open it for its turns)</span>
+      <span><i class="lg lg--r" aria-hidden="true"></i>a tool call</span>
+      <span><i class="lg lg--w" aria-hidden="true"></i>edit, write: it changed a file</span>
+      <span><i class="lg lg--err" aria-hidden="true"></i>the call failed</span>
+      <span>→ the harness hands the work on</span>
+      <span>dashed box: the episode did not end with a stop</span>
+    </div>
+    <h3 class="seqh">In order</h3>
+    <ol class="seq">{{range .Order}}<li><b>{{.Who}}</b> {{if .Href}}<a href="{{.Href}}">{{.Text}}</a>{{else}}{{.Text}}{{end}} <span class="meta">{{.Meta}}</span>{{if .Chip}} <span class="chip chip--small chip--{{.Tone}}">{{.Chip}}</span>{{end}}</li>{{end}}</ol>
+  </section>
+
+  <section class="card" aria-labelledby="eps-h">
+    <h2 id="eps-h">Episodes</h2>
+    <div class="table-box"><table class="data data--small">
+      <thead><tr><th scope="col">Episode</th><th scope="col">Model</th><th scope="col">Turns</th><th scope="col">Tool calls</th><th scope="col">Tokens out</th><th scope="col">Cost</th><th scope="col">Took</th><th scope="col">Ended</th></tr></thead>
+      <tbody>{{range .Eps}}<tr{{if .Sel}} class="is-sel"{{end}}>
+        <td data-label="Episode"><a href="{{.Href}}"{{if .Sel}} aria-current="true"{{end}}>{{.N}} · <b>{{.Label}}</b></a></td>
+        <td data-label="Model" class="exact">{{.Alias}}</td>
+        <td data-label="Turns" class="n">{{.Turns}}</td>
+        <td data-label="Tool calls" class="exact">{{.Tools}}</td>
+        <td data-label="Tokens out" class="n">{{.Out}}</td>
+        <td data-label="Cost" class="n">{{if .CostGap}}<span class="gap gap--inline">{{.Cost}}</span>{{else}}{{.Cost}}{{end}}</td>
+        <td data-label="Took" class="n">{{.Took}}</td>
+        <td data-label="Ended"><span class="chip chip--small chip--{{.EndedTone}}">{{.Ended}}</span></td>
+      </tr>{{end}}</tbody>
+    </table></div>
+  </section>
+
+  {{with .Open}}<section class="card sel" id="turns" aria-labelledby="turns-h">
+    <h2 id="turns-h">{{.Title}}</h2>
+    <p class="say">{{.Say}}</p>
+    <div class="table-box"><table class="data data--small ttab{{if .Expanded}} ttab--open{{end}}">
+      <thead><tr><th scope="col">Turn</th><th scope="col">At</th><th scope="col">Tool calls (what it ran or read)</th><th scope="col">Out</th><th scope="col">Cost</th><th scope="col">Ended</th></tr></thead>
+      <tbody>{{range .Rows}}{{if .Fold}}<tr class="more"><td colspan="6"><a href="{{.FoldHref}}">{{.FoldText}}</a></td></tr>{{else}}<tr>
+        <td data-label="Turn" class="n">{{.Turn}}</td>
+        <td data-label="At" class="n">{{.At}}</td>
+        <td data-label="Tool calls" class="stack">{{if .Tools}}<ul class="calls">{{range .Tools}}<li><span class="tname{{if .Writes}} tname--edit{{end}}">{{.Name}}</span> {{if .Arg}}<code>{{short .Arg 160}}</code>{{end}}{{if .Failed}} <span class="chip chip--small chip--stop">failed</span>{{end}}</li>{{end}}</ul>{{else}}<span class="meta">no tool call: it answered</span>{{end}}</td>
+        <td data-label="Out" class="n">{{if .Out}}{{.Out}}{{else}}–{{end}}</td>
+        <td data-label="Cost" class="n">{{if .CostGap}}<span class="gap gap--inline">no cost</span>{{else}}{{.Cost}}{{end}}</td>
+        <td data-label="Ended" class="exact soft">{{.Ended}}</td>
+      </tr>{{end}}{{end}}</tbody>
+    </table></div>
+    {{if .More}}<p class="ttab-more"><a href="{{.AllHref}}">show all turns</a></p>{{end}}
+  </section>{{end}}
+  {{end}}
   {{with .Trace}}{{if .Spans}}
   <div class="split split--tight">
     <section class="main trace" aria-label="Spans">
@@ -45,12 +101,13 @@
   {{end}}
 
   <div class="split split--tight">
-    {{if not .CallsInSpans}}<section class="main card" aria-labelledby="calls-h">
+    {{if or (not .CallsInSpans) .Flow}}{{$calls := $r.Calls}}{{with .Flow}}{{$calls = .Calls}}{{end}}<section class="main card{{if .Flow}} card--wide{{end}}" aria-labelledby="calls-h">
       <h2 id="calls-h">Model calls</h2>
+      {{with .Flow}}<div class="pills" role="navigation" aria-label="Filter by role">{{range .Roles}}<a class="pill" href="{{.Href}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>{{end}}
       {{if $r.Calls}}<div class="table-box">
         <table class="data data--small">
-          <thead><tr><th scope="col">When</th><th scope="col">Role</th><th scope="col">Step</th><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Tokens in / out</th><th scope="col">Cost</th><th scope="col">Took</th><th scope="col">Tools</th><th scope="col">Stopped</th><th scope="col">Result</th></tr></thead>
-          <tbody>{{range $r.Calls}}<tr>
+          <thead><tr><th scope="col">When</th><th scope="col">Role</th><th scope="col">{{if .Flow}}Turn{{else}}Step{{end}}</th><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Tokens in / out</th><th scope="col">Cost</th><th scope="col">Took</th><th scope="col">Tools</th><th scope="col">Stopped</th><th scope="col">Result</th></tr></thead>
+          <tbody>{{range $calls}}<tr>
             <td data-label="When" class="nowrap">{{short .At 19}}</td>
             <td data-label="Role" class="exact">{{if .Role}}{{.Role}}{{else}}–{{end}}</td>
             <td data-label="Step">{{if .Step}}{{deref .Step}}{{else}}–{{end}}</td>
@@ -64,7 +121,7 @@
             <td data-label="Result">{{if .Error}}<span class="chip chip--stop">{{.Error}}</span>{{else}}<span class="chip chip--ok">ok</span>{{end}}</td>
           </tr>{{end}}</tbody>
         </table>
-      </div>{{else}}<p class="panel-note">This run recorded no model call (a code-only routine, or a run from before 2026-11-14; triage's calls are recorded from 2026-11-16).</p>{{end}}
+      </div>{{with .Flow}}{{if .CallsMore}}<p class="meta">Showing the first 12 of {{.Total}}: {{.CallsMore}}. <a href="?calls=all#calls-h">Show all</a></p>{{end}}{{end}}{{else}}<p class="panel-note">This run recorded no model call (a code-only routine, or a run from before 2026-11-14; triage's calls are recorded from 2026-11-16).</p>{{end}}
     </section>{{end}}
     <section class="main card" aria-labelledby="read-h">
       <h2 id="read-h">What the agent read</h2>

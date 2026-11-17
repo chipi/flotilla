@@ -1,0 +1,64 @@
+{{define "gauge"}}<div class="gauge"{{if .Aria}} role="img" aria-label="{{.Aria}}"{{else}} aria-hidden="true"{{end}}>
+{{- if .Band}}<i class="gauge__band gp-{{.BandLo}} gw-{{.BandW}}"></i>{{end}}
+{{- if .HasFill}}<i class="gauge__fill gw-{{.Fill}}"></i>{{end}}
+{{- range .Ticks}}<i class="gauge__tick{{if .Soft}} gauge__tick--soft{{end}}{{if .End}} gauge__tick--end{{end}} gp-{{.Pct}}"><span>{{.Label}}</span></i>{{end}}</div>{{end}}
+
+{{define "instruments"}}<p class="inst__say"><b>{{.Lead}}</b> {{.Rest}}</p>
+<div class="inst__rows">{{range .Rows}}<div class="irow{{if eq .Level "alert"}} irow--alert{{else if eq .Level "bad"}} irow--bad{{end}}">
+  <span class="irow__label">{{.Label}}{{if eq .Level "alert"}} <span class="chip chip--small chip--wait">worth a look</span>{{else if eq .Level "bad"}} <span class="chip chip--small chip--stop">past a limit</span>{{end}}</span>
+  {{template "gauge" .G}}
+  <span class="irow__val">{{.Val}}</span>
+  {{if or .Note .Gap .Tail}}<span class="irow__note">{{.Note}}{{if .Gap}} <span class="gap gap--inline">{{.Gap}}</span>{{end}}{{if .Tail}} {{.Tail}}{{end}}</span>{{end}}
+</div>{{end}}</div>{{end}}
+
+{{define "swim"}}<svg class="swim" viewBox="0 0 {{f1 .W}} {{f1 .H}}" role="img" aria-label="{{.Aria}}">
+<defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="swim__head"></path></marker></defs>
+{{range .Lanes}}<rect x="0" y="{{f1 .Y}}" width="1100" height="{{f1 .H}}" class="swim__lane{{if .Tool}} swim__lane--tool{{end}}"></rect><rect x="0" y="{{f1 .AY}}" width="4" height="{{f1 .AH}}" class="swim__acc swim__acc--{{.Who}}"></rect><text x="{{if .Tool}}24{{else}}12{{end}}" y="{{f1 .Text}}" class="swim__label{{if .Tool}} swim__label--tool{{end}}">{{.Label}}</text>{{end}}
+{{if .Tools}}<text x="12" y="{{f1 .GroupY}}" class="swim__group">tools the agents called</text>{{end}}
+{{range .Grid}}<line x1="{{f1 .X}}" x2="{{f1 .X}}" y1="{{f1 $.GridY1}}" y2="{{f1 $.GridY2}}" class="swim__grid"></line><text x="{{f1 .X}}" y="{{f1 $.TimeY}}" class="swim__time">{{.Label}}</text>{{end}}
+{{with .Harness}}<rect x="{{f1 .X}}" y="{{f1 .Y}}" width="{{f1 .W}}" height="{{f1 .H}}" rx="2" class="swim__harness"></rect>{{end}}
+{{range .Eps}}<a href="{{.Href}}"><title>{{.Title}}</title><rect x="{{f1 .X}}" y="{{f1 .Y}}" width="{{f1 .W}}" height="{{f1 .H}}" rx="3" class="swim__ep{{if .Sel}} swim__ep--sel{{end}}{{if .Cut}} swim__ep--cut{{end}}"></rect>{{$e := .}}{{range .Ticks}}<line x1="{{f1 .}}" x2="{{f1 .}}" y1="{{f1 $e.TickY1}}" y2="{{f1 $e.TickY2}}" class="swim__turn"></line>{{end}}</a><text x="{{f1 .LX}}" y="{{f1 .LY}}" text-anchor="{{.LAnchor}}" class="swim__eplabel">{{.Label}}</text>{{end}}
+{{range .Calls}}<rect x="{{f1 .X}}" y="{{f1 .Y}}" width="3" height="12" class="{{.Class}}"><title>{{.Title}}</title></rect>{{end}}
+{{range .Arrows}}<line x1="{{f1 .X1}}" y1="{{f1 .Y1}}" x2="{{f1 .X2}}" y2="{{f1 .Y2}}" class="swim__hand" marker-end="url(#ah)"></line>{{end}}
+{{range .Steps}}<circle cx="{{f1 .X}}" cy="{{f1 .Y}}" r="3.5" class="swim__step{{if .Bad}} swim__step--bad{{end}}"></circle><text x="{{f1 .Text.X}}" y="{{f1 .Text.Y}}" text-anchor="{{.Text.Anchor}}" class="{{.Text.Class}}">{{.Text.Text}}</text>{{end}}
+{{range .Cuts}}<text x="{{f1 .X}}" y="{{f1 .Y}}" text-anchor="{{.Anchor}}" class="{{.Class}}">{{.Text}}</text>{{end}}
+</svg>{{end}}
+
+{{define "nums"}}{{if .}}<span class="node__nums node__nums--cost">{{range .}}<span{{if .Soft}} class="soft"{{end}}>{{if .Gap}}<span class="gap gap--inline">{{.Text}}</span>{{else}}{{.Text}}{{end}}</span>{{end}}</span>{{end}}{{end}}
+
+{{define "kvrows"}}{{range .}}<div class="kv kv--tight"><span>{{.K}}</span><span>{{if .V}}{{if .Exact}}<span class="exact">{{.V}}</span>{{else}}{{.V}}{{end}}{{end}}{{if .Gap}}<span class="gap gap--inline">{{.Gap}}</span>{{end}}</span></div>{{end}}{{end}}
+
+{{define "modelpanel"}}
+<p class="say"><b>In short:</b> {{.Say}}</p>
+<h3>What it cost</h3>
+<div class="mtab-box"><table class="mtab">
+<thead><tr><th scope="col">{{.Unit}}</th><th scope="col">{{.CostHead}}</th><th scope="col">its usual</th></tr></thead>
+<tbody>{{range .Cost}}<tr><td data-label="{{$.Unit}}">{{.Label}}</td><td class="n" data-label="{{$.CostHead}}">{{.Today}}</td><td class="n" data-label="its usual">{{if .Usual}}{{.Usual}}{{end}}{{if .Gap}}<span class="gap gap--inline">{{.Gap}}</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="meta">{{.CostNote}}</p>
+{{if .Model}}<h3>Model and where it runs</h3>{{template "kvrows" .Model}}{{end}}
+{{if .Harness}}<h3>Harness</h3>{{template "kvrows" .Harness}}{{end}}
+<h3>What it sees</h3>{{template "kvrows" .Sees}}
+<h3>Tools it called</h3>
+{{if .Dist}}<div class="dist" role="img" aria-label="{{.DistLabel}}">{{range .Dist}}<span class="dh-{{.H}}"></span>{{end}}</div>
+<div class="dist-l">{{range .Dist}}<span>{{.Label}}</span>{{end}}</div>
+<p class="meta">{{.DistLabel}}</p>{{else}}<p class="meta"><span class="gap gap--inline">no tool call recorded</span></p>{{end}}
+{{if .ToolNames}}<p class="say">{{.ToolNames}}</p>{{end}}{{if .ToolGap}}<p class="meta"><span class="gap gap--inline">{{.ToolGap}}</span></p>{{end}}
+<h3>Last calls</h3>
+<div class="mtab-box"><table class="mtab">
+<thead><tr><th scope="col">at</th><th scope="col">turn</th><th scope="col">in / out</th><th scope="col">cost</th><th scope="col">took</th><th scope="col">ended</th></tr></thead>
+<tbody>{{range .Last}}<tr><td class="n" data-label="at">{{.At}}</td><td class="n" data-label="turn">{{if .TurnGap}}<span class="gap gap--inline">not recorded</span>{{else}}{{.Turn}}{{end}}</td><td class="n" data-label="in / out">{{.InOut}}</td><td class="n" data-label="cost">{{if .CostGap}}<span class="gap gap--inline">no cost</span>{{else}}{{.Cost}}{{end}}</td><td class="n" data-label="took">{{.Took}}</td><td data-label="ended">{{if .EndedGap}}<span class="gap gap--inline">not recorded</span>{{else}}{{.Ended}}{{end}}</td></tr>{{else}}<tr><td colspan="6">No call in the window.</td></tr>{{end}}</tbody>
+</table></div>
+{{end}}
+
+{{define "paths"}}<section class="card" aria-labelledby="paths-h">
+  <h2 id="paths-h">The paths its runs take</h2>
+  <p class="insight">{{.Insight}}</p>
+  {{$n := .Runs}}{{range .Paths}}<div class="path">
+    <svg class="path__bar" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Share}}% of the runs"><rect width="100" height="6" rx="3" class="path__track"></rect><rect width="{{.Share}}" height="6" rx="3" class="path__fill"></rect></svg>
+    <div class="path__head"><b>{{.Count}} of {{$n}}</b><span class="meta">{{range $i, $id := .Shown}}{{if $i}}, {{end}}<a class="exact" href="/runs/{{$id}}">{{short $id 28}}</a>{{end}}{{if .MoreRuns}} and {{.MoreRuns}} more{{end}}</span></div>
+    <div class="path__steps">{{range $i, $s := .Steps}}{{if $i}}<i class="arr" aria-hidden="true">→</i>{{end}}<span class="pstep{{if eq .Tone "agent"}} pstep--agent{{else if eq .Tone "bad"}} pstep--bad{{else if eq .Tone "ok"}} pstep--ok{{else if eq .Tone "warn"}} pstep--warn{{end}}">{{.Label}}</span>{{end}}</div>
+    <div class="path__nums">{{if .CostGap}}<span class="gap gap--inline">{{.CostText}}</span>{{else}}<span class="meta">{{.CostText}}</span>{{end}}</div>
+  </div>{{end}}
+  <p class="meta">The last {{.Runs}} runs that made an agent call. Steps: blue an agent, red a refusal, green an approval, amber changes asked for.</p>
+</section>{{end}}

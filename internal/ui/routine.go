@@ -24,6 +24,7 @@ type rBlock struct {
 	ID, Name, Sub, Who, Lamp, Nums string
 	Explain, Where, Key, YAML      string
 	Href                           string
+	Extra                          []numItem // small numbers from the routine's calls (cost, turns, tools)
 	On                             bool
 }
 
@@ -49,6 +50,9 @@ type routineData struct {
 	SpecURL, Back                     string
 	Routine                           *api.RoutineStatus
 	Counted                           string // the counts' window, as words
+	Inst                              *instruments
+	Panel                             *modelPanel
+	Paths                             *pathSummary
 }
 
 var laneTitles = map[string]string{"when": "When", "where": "Where and what", "sort": "Sort", "agent": "The agent", "gates": "Gates", "outcome": "Outcome and action"}
@@ -61,10 +65,12 @@ type mixCounts struct {
 	disp        map[string]int
 	gate        map[string]int
 	probes      map[string]int
+	byDay       map[string]int // decided (not recurrences), by UTC day
+	decs        []store.LedgerDecision
 }
 
 func (u *Server) routineCounts(ctx context.Context, id string, since time.Time) (mixCounts, map[string][2]int, error) {
-	c := mixCounts{runs: map[string]int{}, disp: map[string]int{}, gate: map[string]int{}, probes: map[string]int{}}
+	c := mixCounts{runs: map[string]int{}, disp: map[string]int{}, gate: map[string]int{}, probes: map[string]int{}, byDay: map[string]int{}}
 	perRun := map[string][2]int{}
 	runs, _, err := u.API.Store.RunsPage(ctx, store.RunQuery{Routine: id, Since: since.UTC().Format(time.RFC3339), Limit: 100000})
 	if err != nil {
@@ -77,6 +83,7 @@ func (u *Server) routineCounts(ctx context.Context, id string, since time.Time) 
 	if err != nil {
 		return c, nil, err
 	}
+	c.decs = ds
 	for _, d := range ds {
 		pr := perRun[d.RunID]
 		if mixRecurrence(d) {
@@ -94,6 +101,9 @@ func (u *Server) routineCounts(ctx context.Context, id string, since time.Time) 
 			continue
 		}
 		c.decided++
+		if len(d.TS) >= 10 {
+			c.byDay[d.TS[:10]]++
+		}
 		c.disp[mixLabel(d.Disposition)]++
 		if d.NProbes != "" {
 			c.probes[d.NProbes]++
@@ -365,6 +375,16 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 			}
 		}
 	}
+	if err := u.routineModel(ctx, &d, j, id, c, now, window); err != nil {
+		http.Error(w, "calls failed", 500)
+		return
+	}
+	ps, err := u.routinePaths(ctx, id)
+	if err != nil {
+		http.Error(w, "paths failed", 500)
+		return
+	}
+	d.Paths = ps
 	// today's cards
 	day0 := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	today, _, err := u.API.Store.RunsPage(ctx, store.RunQuery{Routine: id, Since: day0.Format(time.RFC3339), Limit: 100000})

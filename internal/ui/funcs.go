@@ -64,6 +64,7 @@ var funcs = template.FuncMap{
 		return min(100, n*100/of)
 	},
 	"add":        func(a, b int) int { return a + b },
+	"f1":         func(v float64) string { return fmt.Sprintf("%.1f", v) },
 	"whyWaiting": whyWaiting,
 	"plural":     plural,
 	"hash":       shortHash,
