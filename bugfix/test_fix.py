@@ -74,6 +74,8 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
       good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
       hang)     echo $$ > "$FAKE_STATE/harness.pid"; sleep 60 ;;
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
+      built)    echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
+                mkdir -p static/images; echo thumb > static/images/x.thumb.jpg ;;
       flip)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
                 echo '// expect(value()).toBeNull()' > guard.test.js ;;
       breaks)   echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo 'module.exports = () => 2;' > src/b.js ;;
@@ -473,6 +475,15 @@ class Chain(unittest.TestCase):
         g.run()
         with open(os.path.join(g.state, "calls")) as fh:
             self.assertIn("img=yes", fh.read(), "without --exclude-path the whole tree is checked out")
+
+    def test_a_build_that_writes_into_an_excluded_tree_does_not_end_the_case(self):
+        # #553 on 2026-11-17: the agent ran `vite build`, which wrote thumbnails into static/images/ (left out of the
+        # sparse checkout); `git add -A` failed on them and the case escalated on git's error after $0.24
+        f = self.fixture(["actionable"], ["built"])
+        plan, _ = f.run("--exclude-path", "static/images")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertNotIn("static/images", plan["params"]["diff"])
+        self.assertIn("+++ b/src/a.js", plan["params"]["diff"])
 
     def test_a_tampered_cache_is_refused_and_no_hook_runs(self):
         """The repo cache is shared between runs: a URL rewrite left in its config stops the next run, and a

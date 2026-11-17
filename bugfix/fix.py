@@ -1008,7 +1008,7 @@ class Chain:
             grown = [f for f, n in after.items() if before.get(f) != n]
             self.last_session = max(grown, key=os.path.getmtime) if grown else (cont["session"] if cont else None)
         turns, out_tok = usage(stream)
-        sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
+        self.stage()
         # -z: names raw, never git's quoted form for a non-ASCII path; --no-renames: both sides of a rename
         # are listed, so a file moved out of an out-of-scope path is still seen
         _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", self.base],
@@ -1182,8 +1182,15 @@ class Chain:
             return Tests(set(), set(), set())
         return self.tests(self.a.test_cmd, targets)
 
+    def stage(self):
+        """Stage the worktree. The trees --exclude-path leaves out of the sparse checkout are left out here too: a build
+        the agent runs can write into them (#553 on 2026-11-17: `vite build` made thumbnails in static/images/), and a
+        plain `git add -A` then fails on paths outside the sparse checkout, ending the case on git's error ($0.24)."""
+        sh(["git", "-C", self.wt, "add", "-A", "--", "."] + [f":(exclude){x.strip('/')}" for x in self.a.exclude_path],
+           self.run_dir, self.env, 60, check=True)
+
     def diff(self):
-        sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
+        self.stage()
         _, d = sh(["git", "-C", self.wt, "diff", "--cached", "--no-renames", self.base, "--", ".", ":(exclude).flotilla-suite.json"],
                   self.run_dir, self.env, 60, check=True)
         return d
