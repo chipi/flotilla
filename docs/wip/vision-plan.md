@@ -175,6 +175,11 @@ flotilla from there.
     the checkout to a commit, runs `flotillad -check` and the replays against it, then recreates the
     containers. Proof: every routine's spec hash is unchanged by the switch. Then flotilla's own
     `fleets/` becomes the example fleets.
+  - **B is live since 2026-11-17 14:42Z:** the mini runs the private repo's `fleets/` (cdd472a,
+    `deploy_fleets.sh`, `FLEETS DEPLOY PASS`, all 18 spec hashes unchanged; the first triage cycle on
+    it, 14:45Z, ended ok). Left in B: flotilla's own `fleets/` becomes the example fleets, with the
+    installation-facts test; the facts still in code (`signal-fleet/mvp/filing.py`, `config.py`,
+    `fleetd/deploy/*.json`) move to config the private repo supplies.
   - **A, next:** [ADR-0013](../adr/ADR-0013-fleet-packs.md)'s installation packs (RFC-0006 §10 step
     3): the mount becomes a pack folder; a change is shown, approved by its set hash, recorded and
     starts at shadow; runs read the approved snapshot, not the folder; rollback approves the previous
