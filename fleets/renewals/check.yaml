@@ -1,0 +1,16 @@
+fleet: renewals
+routine: check
+description: >-
+  Checks that the account carries the flag after the action ran, reading the stand-in CRM; flotillad
+  escalates the case if it is not there within the check's window.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: account_flagged}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/apply.py check
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0

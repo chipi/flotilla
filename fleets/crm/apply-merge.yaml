@@ -1,0 +1,17 @@
+fleet: crm
+routine: apply-merge
+description: >-
+  Carries out an approved crm.merge plan on the stand-in CRM (business/apply.py): checks the plan's
+  hash is the approved one, re-checks what the plan assumed, then does it once. An installation points
+  this at its own CRM.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: crm.merge}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/crm BIZ_SEED=/opt/flotilla/fleets/crm/data python3 /opt/flotilla/business/apply.py execute
+  workdir: .
+  timeout: 2m
+autonomy: propose
+budget:
+  day_usd: 0

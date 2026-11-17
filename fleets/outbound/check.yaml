@@ -1,0 +1,16 @@
+fleet: outbound
+routine: check
+description: >-
+  Checks that the email is in the outbox after the action ran, reading the stand-in mail service;
+  flotillad escalates the case if it is not there within the check's window.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: email_in_outbox}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/data python3 /opt/flotilla/business/apply.py check
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0

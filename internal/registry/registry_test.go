@@ -42,6 +42,41 @@ func write(t *testing.T, body string) string {
 const good = `{"name": "x.y", "for_kinds": ["k"], "params": {"host": {"kind": "target_host"}}, "risk": "low",
   "reversible": "yes", "pre": ["a(1h)"], "check": {"verify": "v", "within": "5m"}, "limits": {"per_target_per_day": 1}, "timeout": "1m"}`
 
+// A routine action: a routine carries it out against the system it reaches. Its params may be text, it
+// needs no host precondition, and it may earn auto unless it cannot be undone; a host param is refused.
+func TestRoutineActions(t *testing.T) {
+	r, err := Load(repoFile(t, "host/registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"crm.update_field": "auto", "crm.flag_account": "auto", "campaign.hold": "auto",
+		"crm.merge": "propose", "campaign.launch": "propose", "email.send": "propose"} {
+		a, ok := r.Action(name)
+		if !ok || !a.ByRoutine() || a.Repo() || a.MaxAutonomy() != want {
+			t.Errorf("%s: ok %v, by routine %v, repo %v, max %s, want %s", name, ok, a.ByRoutine(), a.Repo(), a.MaxAutonomy(), want)
+		}
+	}
+	routine := `{"name": "crm.note", "executor": "routine", "for_kinds": ["k"], "params": {"note": {"kind": "text", "max": 100}},
+		"risk": "low", "reversible": "yes", "pre": [], "check": {"verify": "noted", "within": "5m"},
+		"limits": {"per_target_per_day": 1}, "timeout": "1m"}`
+	if _, err := Load(write(t, `{"component": "c", "actions": [`+routine+`]}`)); err != nil {
+		t.Fatalf("a routine action with text params and no precondition: %v", err)
+	}
+	for name, c := range map[string]struct{ from, to string }{
+		"a host param on a routine action": {`{"kind": "text", "max": 100}`, `{"kind": "target_host"}`},
+		"an executor out of its set":       {`"executor": "routine"`, `"executor": "anyone"`},
+		"text past its limit":              {`"max": 100`, `"max": 20000`},
+	} {
+		if _, err := Load(write(t, `{"component": "c", "actions": [`+strings.Replace(routine, c.from, c.to, 1)+`]}`)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	host := strings.Replace(strings.Replace(routine, `"executor": "routine", `, "", 1), `{"kind": "text", "max": 100}`, `{"kind": "target_host"}`, 1)
+	if _, err := Load(write(t, `{"component": "c", "actions": [`+host+`]}`)); err == nil {
+		t.Error("a host action with no precondition: accepted")
+	}
+}
+
 func TestBadDeclarationsAreRefused(t *testing.T) {
 	if _, err := Load(write(t, `{"component": "c", "actions": [`+good+`]}`)); err != nil {
 		t.Fatalf("the good one: %v", err)

@@ -1,0 +1,17 @@
+fleet: renewals
+routine: flag
+description: >-
+  The acting routine for renewal_risk cases: re-scores the account now and plans crm.flag_account with
+  the reasons as the note for its owner, or closes the case when the risk is gone.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: renewal_risk}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/renewals.py flag
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+max_autonomy: auto
+budget:
+  day_usd: 0

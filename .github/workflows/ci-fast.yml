@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           # The list of images.yml's old `paths:`. deploy/**: deploy.sh takes the compose file from the
           # image tag's commit, so a compose change needs images too.
-          re='^(cmd/|internal/|go\.mod$|go\.sum$|fleets/|worker/|runtime/|signal-fleet/mvp/|ops/|bugfix/|deps/|bugfix-fleet/|seo/|host/|deploy/|\.github/workflows/images\.yml$)'
+          re='^(cmd/|internal/|go\.mod$|go\.sum$|fleets/|worker/|runtime/|signal-fleet/mvp/|ops/|bugfix/|deps/|business/|bugfix-fleet/|seo/|host/|deploy/|\.github/workflows/images\.yml$)'
           if [ "$EVENT" != push ]; then
             echo "images=true" >> "$GITHUB_OUTPUT"; echo "$EVENT: build the images"; exit 0
           fi

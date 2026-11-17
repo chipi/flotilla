@@ -63,3 +63,4 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0014 — The operator UI, users and roles](ADR-0014-operator-ui.md) (Accepted, 2026-11-13)
 - [ADR-0015 — The MCP server](ADR-0015-mcp-server.md) (Accepted, 2026-11-15)
 - [ADR-0016 — Post-incident review](ADR-0016-post-incident-review.md) (Accepted, 2026-11-15)
+- [ADR-0017 — Routine actions](ADR-0017-routine-actions.md) (Accepted, 2026-11-17)

@@ -46,7 +46,7 @@ credentials and toolchain (`triage`, `ops-read`, `ops-act-host`, …). Each run 
 | **Tool calls** | tools, scoped and size-capped, recorded; actions only as entries of a plan |
 | **Model client** | any OpenAI-compatible endpoint; aliases with capabilities; cost from the endpoint, a price table, or unknown (never zero); typed errors; a span per call |
 | **Case client** | opens, updates and hands over cases through flotillad's API; never writes the database |
-| **Executor** | carries out an approved plan's repo writes (issues, PRs) with the role's credentials; host writes go from flotillad, signed, to the host agent |
+| **Executor** | carries out an approved plan: repo writes (issues, PRs) and routine actions (ADR-0017: a CRM, a campaign tool, a mail service) by their executing routine with that role's credentials; host writes go from flotillad, signed, to the host agent |
 
 ## The host agent: `flotilla-host` (Go)
 

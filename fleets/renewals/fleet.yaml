@@ -1,0 +1,6 @@
+fleet: renewals
+description: >-
+  Customer success: accounts at risk before they renew. A risk score in code (seats lost, escalated
+  tickets, an overdue invoice, no admin login) flags the account with its reasons as a note for its
+  owner; it never writes to the customer. The score is replayed over past renewals (renewals.py
+  replay) before a change to it ships. A flag can earn auto.

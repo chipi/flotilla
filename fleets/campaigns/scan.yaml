@@ -1,0 +1,17 @@
+fleet: campaigns
+routine: scan
+description: >-
+  Each campaign marked ready is a campaign_ready detection. Code only, read only.
+enabled: true
+worker: ops-read
+trigger:
+  every: 15m
+detects: [campaign_ready]
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/campaigns BIZ_SEED=/opt/flotilla/fleets/campaigns/data python3 /opt/flotilla/business/campaigns.py scan
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 45m

@@ -1,0 +1,17 @@
+fleet: renewals
+routine: apply-flag
+description: >-
+  Carries out an approved crm.flag_account plan on the stand-in CRM (business/apply.py): checks the
+  plan's hash is the approved one, re-checks what the plan assumed, then does it once. An installation
+  points this at its own CRM.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: crm.flag_account}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/apply.py execute
+  workdir: .
+  timeout: 2m
+autonomy: propose
+budget:
+  day_usd: 0

@@ -1,0 +1,17 @@
+fleet: campaigns
+routine: apply-hold
+description: >-
+  Carries out an approved campaign.hold plan on the stand-in campaign tool (business/apply.py): checks
+  the plan's hash is the approved one, re-checks what the plan assumed, then does it once. An
+  installation points this at its own campaign tool.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: campaign.hold}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/campaigns BIZ_SEED=/opt/flotilla/fleets/campaigns/data python3 /opt/flotilla/business/apply.py execute
+  workdir: .
+  timeout: 2m
+autonomy: propose
+budget:
+  day_usd: 0

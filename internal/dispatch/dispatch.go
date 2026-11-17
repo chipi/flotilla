@@ -254,8 +254,8 @@ func (d *Dispatcher) deadlines(ctx context.Context, now time.Time) error {
 			return fmt.Errorf("case %s: status_at %q: %w", c.ID, c.StatusAt, err)
 		}
 		if len(plans) > 0 && d.API.Registry != nil && executeRoutine(d.API.Sched.Routines, action) != nil {
-			if a, ok := d.API.Registry.Action(action); ok && a.Repo() {
-				// an approved repo action waits for its executing routine (its machine may be off: RFC-0011
+			if a, ok := d.API.Registry.Action(action); ok && a.ByRoutine() {
+				// an approved repo or routine action waits for its executing routine (its machine may be off: RFC-0011
 				// §4); the deadline counts from the run's start, and there is none before it starts
 				started, at, err := d.executeStarted(ctx, c.ID, plans[len(plans)-1].ID)
 				if err != nil {
@@ -460,7 +460,7 @@ const (
 	executeNotStartedEvent = "execute.not_started" // the scheduler refused or skipped it: nothing ran
 )
 
-// executions starts the executing routine of each approved repo action (RFC-0010 §3), once per plan:
+// executions starts the executing routine of each approved repo or routine action (RFC-0010 §3), once per plan:
 // the execute.started event, written before the run, is the at-most-once guard, with the lease.
 func (d *Dispatcher) executions(ctx context.Context) error {
 	st := d.API.Store
@@ -484,7 +484,7 @@ func (d *Dispatcher) executions(ctx context.Context) error {
 			continue
 		}
 		p := plans[len(plans)-1]
-		if a, ok := d.API.Registry.Action(p.Action); !ok || !a.Repo() {
+		if a, ok := d.API.Registry.Action(p.Action); !ok || !a.ByRoutine() {
 			continue // a host action: its host agent executes it (SendExecutions)
 		}
 		j := executeRoutine(d.API.Sched.Routines, p.Action)

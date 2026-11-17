@@ -14,6 +14,16 @@ documentation addresses.
 | `deps` | `scan`, `upgrade` | vulnerable or outdated pins become cases and one-line upgrade PRs; no model: code finds and plans, the repo's CI tests, a person approves and merges |
 | `sites` | `site-check` | what a site serves live (robots, sitemaps, head tags, broken links, certificate expiry), read only; findings are cases |
 | `platform` | `heartbeat`, `model-contract` | the platform's own canary and the model aliases' contract checks |
+| `crm` | `scan`, `fix`, `apply-update`, `apply-merge`, `check-field`, `check-merge` | sales ops: CRM fields normalized and duplicates merged; allowed fields only, never a field a person edited; a field fix can earn auto, a merge is always approved |
+| `campaigns` | `scan`, `decide`, `apply-launch`, `apply-hold`, `check` | marketing: launch checks in code decide; a launch is always approved, a hold can earn auto |
+| `outbound` | `scan`, `draft`, `send`, `check` | a first email per prospect, every personal sentence citing a fact; do-not-contact, consent and a daily cap in code; every send approved |
+| `renewals` | `scan`, `flag`, `apply-flag`, `check` | customer success: a risk score in code, replayed over past renewals, flags the account for its owner; it never writes to the customer |
+
+The business examples (`crm`, `campaigns`, `outbound`, `renewals`) act on stand-in systems: JSON files
+seeded from each fleet's `data/` (`business/store.py`), carried out by `business/apply.py` as routine
+actions (ADR-0017). They run on the `ops-read` worker so the e2e runs them end to end; an installation
+gives them their own worker with its CRM's, campaign tool's or mail service's credentials, and replaces
+`business/store.py` with an adapter to that system.
 
 ## An installation's own fleets
 

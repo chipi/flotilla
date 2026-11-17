@@ -1,0 +1,18 @@
+fleet: campaigns
+routine: decide
+description: >-
+  The acting routine for campaign_ready cases: runs the launch checks and plans campaign.launch when
+  all pass, or campaign.hold with each failed check, or closes the case when the campaign is no longer
+  ready. No model decides whether a campaign is fine.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: campaign_ready}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/campaigns BIZ_SEED=/opt/flotilla/fleets/campaigns/data python3 /opt/flotilla/business/campaigns.py decide
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+max_autonomy: auto
+budget:
+  day_usd: 0

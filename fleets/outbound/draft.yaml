@@ -1,0 +1,18 @@
+fleet: outbound
+routine: draft
+description: >-
+  The acting routine for prospect_new cases: drafts the first touch from the template and the
+  prospect's own facts, runs the gates, and plans email.send, or escalates with the gate that refused
+  it, or closes the case when the prospect was contacted meanwhile.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: prospect_new}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/data python3 /opt/flotilla/business/outbound.py draft
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+max_autonomy: propose
+budget:
+  day_usd: 0

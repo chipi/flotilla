@@ -30,9 +30,9 @@ agents on narrow verifiable jobs, pipeline babysitting, approval gates on writes
 `platform` (heartbeat, model contract) stays: it is flotilla checking itself, already generic.
 
 **Business processes too** (the operator, 2026-11-17): more examples beyond engineering, focused on
-marketing, sales and sales ops, outbound, and customer success. Researched and designed like the six
-(what teams run there, what each example shows about trust), then proposed to the operator before
-building. They carry the site's angle: agents as operationalized business processes.
+marketing, sales and sales ops, outbound, and customer success, researched like the six, built on the
+operator's "write them all now". They carry the site's angle: agents as operationalized business
+processes. Their actions are routine actions (ADR-0017), carried out on stand-in systems.
 
 Researched 2026-11-17; one per area, each showing a different trust mechanism, all runnable on JSON
 stand-in data (a fake CRM, helpdesk and campaign store):
@@ -90,7 +90,7 @@ installation can add its own host actions, so the example registry holds only ge
 4. `jobs`: the shared backup names, with the private repo in the same deploy.
 5. `review`: on the generalized `jobs` cases.
 6. `deps`: new code.
-7. The business examples (marketing, sales, outbound, customer success): research, then propose.
+7. The business examples (`crm`, `campaigns`, `outbound`, `renewals`): built 2026-11-17, in the e2e.
 8. `fleets/README.md`, then the docs and site scrub (a separate plan).
 
 Step 1 left: `sites/site-check` is not in the e2e yet (it reads the live web); a stand-in site in the

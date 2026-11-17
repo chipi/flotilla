@@ -1,0 +1,16 @@
+fleet: crm
+routine: check-field
+description: >-
+  Checks that the contact's field has the new value after the action ran, reading the stand-in CRM;
+  flotillad escalates the case if it is not there within the check's window.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: crm_field_set}
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/crm BIZ_SEED=/opt/flotilla/fleets/crm/data python3 /opt/flotilla/business/apply.py check
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0

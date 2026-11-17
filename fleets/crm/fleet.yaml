@@ -1,0 +1,7 @@
+fleet: crm
+description: >-
+  Sales ops: CRM data hygiene. Contacts with a field to normalize, and duplicate contacts, become
+  cases; each plans a field update or a merge. Gates in code keep it to allowed fields, never a field
+  a person edited, and merges of the same email only. A field update can earn auto; a merge cannot be
+  undone, so a person approves every one. The CRM here is a stand-in (JSON files); an installation
+  brings an adapter to its own.

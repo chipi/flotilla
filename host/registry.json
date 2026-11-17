@@ -46,6 +46,101 @@
       "check": {"verify": "pr_resolved", "within": "336h"},
       "limits": {"per_target_per_day": 1},
       "timeout": "30m"
+    },
+    {
+      "name": "crm.update_field",
+      "executor": "routine",
+      "for_kinds": ["crm_fix"],
+      "params": {
+        "contact": {"kind": "text", "max": 64},
+        "field": {"kind": "enum", "enum": ["email", "country"]},
+        "from": {"kind": "text", "max": 200},
+        "to": {"kind": "text", "max": 200}
+      },
+      "risk": "low",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "crm_field_set", "within": "10m"},
+      "limits": {"per_target_per_day": 5},
+      "timeout": "5m"
+    },
+    {
+      "name": "crm.merge",
+      "executor": "routine",
+      "for_kinds": ["crm_fix"],
+      "params": {
+        "keep": {"kind": "text", "max": 64},
+        "drop": {"kind": "text", "max": 64}
+      },
+      "risk": "medium",
+      "reversible": "no",
+      "pre": [],
+      "check": {"verify": "crm_merged", "within": "10m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "5m"
+    },
+    {
+      "name": "campaign.launch",
+      "executor": "routine",
+      "for_kinds": ["campaign_ready"],
+      "params": {
+        "campaign": {"kind": "text", "max": 64}
+      },
+      "risk": "medium",
+      "reversible": "no",
+      "pre": [],
+      "check": {"verify": "campaign_status", "within": "10m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "5m"
+    },
+    {
+      "name": "campaign.hold",
+      "executor": "routine",
+      "for_kinds": ["campaign_ready"],
+      "params": {
+        "campaign": {"kind": "text", "max": 64},
+        "reason": {"kind": "text", "max": 2000}
+      },
+      "risk": "low",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "campaign_status", "within": "10m"},
+      "limits": {"per_target_per_day": 2},
+      "timeout": "5m"
+    },
+    {
+      "name": "email.send",
+      "executor": "routine",
+      "for_kinds": ["prospect_new"],
+      "params": {
+        "prospect": {"kind": "text", "max": 64},
+        "to": {"kind": "text", "max": 200},
+        "subject": {"kind": "text", "max": 200},
+        "body": {"kind": "text", "max": 4000},
+        "facts": {"kind": "text", "max": 200}
+      },
+      "risk": "medium",
+      "reversible": "no",
+      "pre": [],
+      "check": {"verify": "email_in_outbox", "within": "10m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "5m"
+    },
+    {
+      "name": "crm.flag_account",
+      "executor": "routine",
+      "for_kinds": ["renewal_risk"],
+      "params": {
+        "account": {"kind": "text", "max": 64},
+        "risk": {"kind": "enum", "enum": ["medium", "high"]},
+        "note": {"kind": "text", "max": 1000}
+      },
+      "risk": "low",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "account_flagged", "within": "10m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "5m"
     }
   ]
 }

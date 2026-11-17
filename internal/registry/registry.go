@@ -52,6 +52,9 @@ type Param struct {
 const (
 	ExecHost = "host" // the host agent runs it (the default)
 	ExecRepo = "repo" // a change to the repo: a person applies it (later a PR), never automatic
+	// a routine carries it out (its spec's `execute:` trigger) against the system it reaches, such as a
+	// CRM or a mail service; unlike a repo change it may earn auto, unless it cannot be undone
+	ExecRoutine = "routine"
 )
 
 type Check struct {
@@ -75,11 +78,15 @@ type Action struct {
 	Check      Check            `json:"check"`
 	Limits     Limits           `json:"limits"`
 	Timeout    Duration         `json:"timeout"`            // past it, executing becomes unknown (RFC-0004 §3.5)
-	Executor   string           `json:"executor,omitempty"` // host (default) or repo (ADR-0016)
+	Executor   string           `json:"executor,omitempty"` // host (default), repo (ADR-0016) or routine
 }
 
 // Repo reports whether the action changes the repo rather than a host.
 func (a Action) Repo() bool { return a.Executor == ExecRepo }
+
+// ByRoutine reports whether a routine carries the action out (a repo change, or a routine action),
+// rather than a host agent.
+func (a Action) ByRoutine() bool { return a.Repo() || a.Executor == ExecRoutine }
 
 // MaxAutonomy is the highest level the action may run at: an irreversible action or a repo change
 // only ever proposes (a person approves each).
@@ -163,17 +170,17 @@ func validAction(a Action) error {
 		errs = append(errs, errors.New("params is required"))
 	}
 	switch a.Executor {
-	case "", ExecHost, ExecRepo:
+	case "", ExecHost, ExecRepo, ExecRoutine:
 	default:
-		errs = append(errs, fmt.Errorf("executor %q: host or repo", a.Executor))
+		errs = append(errs, fmt.Errorf("executor %q: host, repo or routine", a.Executor))
 	}
 	for name, p := range a.Params {
 		switch {
-		case p.Kind == "target_host" && len(p.Enum) == 0 && !a.Repo():
+		case p.Kind == "target_host" && len(p.Enum) == 0 && !a.ByRoutine():
 		case p.Kind == "enum" && len(p.Enum) > 0:
-		case p.Kind == "text" && a.Repo() && p.Max > 0 && p.Max <= 16000:
+		case p.Kind == "text" && a.ByRoutine() && p.Max > 0 && p.Max <= 16000:
 		default:
-			errs = append(errs, fmt.Errorf("param %s: kind is target_host (host actions), enum with values, or text with a max of 1 to 16000 (repo actions)", name))
+			errs = append(errs, fmt.Errorf("param %s: kind is target_host (host actions), enum with values, or text with a max of 1 to 16000 (repo and routine actions)", name))
 		}
 	}
 	switch a.Risk {
@@ -186,7 +193,7 @@ func validAction(a Action) error {
 	default:
 		errs = append(errs, errors.New("reversible is yes, regenerable or no"))
 	}
-	if len(a.Pre) == 0 && !a.Repo() {
+	if len(a.Pre) == 0 && !a.ByRoutine() {
 		errs = append(errs, errors.New("pre is required: the host re-checks it before it runs"))
 	}
 	for _, c := range append(append([]string{}, a.Pre...), a.PreShadow...) {
@@ -194,7 +201,7 @@ func validAction(a Action) error {
 			errs = append(errs, fmt.Errorf("precondition %q is not name or name(arg)", c))
 		}
 	}
-	if !(a.Repo() && a.Check.Verify == "") && (!condRe.MatchString(a.Check.Verify) || a.Check.Within <= 0) {
+	if !(a.ByRoutine() && a.Check.Verify == "") && (!condRe.MatchString(a.Check.Verify) || a.Check.Within <= 0) {
 		errs = append(errs, errors.New("check needs verify (a name) and within (> 0)"))
 	}
 	if a.Limits.PerTargetPerDay < 1 {

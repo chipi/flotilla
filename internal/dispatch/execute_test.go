@@ -75,6 +75,50 @@ func TestExecuteRunsOnceAndMovesToChecking(t *testing.T) {
 	}
 }
 
+// A routine action (registry executor "routine", here the crm example's crm.update_field) goes to its
+// executing routine like a repo change: once, with the approved plan, then to checking. No host agent
+// is involved: its target is not a host.
+func TestARoutineActionRunsItsExecutor(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	j := f.withExecutor("crm.update_field")
+	j.Fleet, j.Routine = "crm", "apply-update"
+	k := store.Key{Kind: "target", Value: "crm_fix/crm:contact/c-101/email"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "crm_fix", Target: "crm:contact/c-101/email", Keys: []store.Key{k}, Canonical: k}, "crm/scan", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []struct{ to, by string }{{cases.HandedOver, cases.ByDetector}, {cases.Planned, cases.ByAct}} {
+		if err := f.st.MoveCase(ctx, id, m.to, m.by, "", "crm/fix", "run r1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	params := map[string]string{"contact": "c-101", "field": "email", "from": "Ana@Example.org", "to": "ana@example.org"}
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "crm.update_field", Params: params,
+		PlanHash: "0123456789abcdef", Outcome: "propose", Autonomy: "propose"}, cases.AwaitingApproval, "", "crm:contact/c-101/email", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.MoveCase(ctx, id, cases.Executing, cases.ByOperator, "", "user:operator", "approved"); err != nil {
+		t.Fatal(err)
+	}
+	f.result(`{"outcome": "executed", "detail": "c-101 email -> 'ana@example.org'", "ref": "contact c-101"}`)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Checking {
+		t.Fatalf("after executed: %+v", c)
+	}
+	if e := lastEvent(t, f, id); e.Actor != "crm/apply-update" || !strings.Contains(e.Detail, "(contact c-101)") {
+		t.Fatalf("the move: %+v", e)
+	}
+	f.pass(t)
+	if f.w.runs() != 1 {
+		t.Fatalf("%d runs, want 1: a plan is carried out once", f.w.runs())
+	}
+	var pj planJSON
+	if err := json.Unmarshal([]byte(f.w.got[0].Env["FLOTILLA_PLAN"]), &pj); err != nil || pj.Action != "crm.update_field" || pj.Params["to"] != "ana@example.org" {
+		t.Fatalf("FLOTILLA_PLAN %q", f.w.got[0].Env["FLOTILLA_PLAN"])
+	}
+}
+
 // escalate escalates; a run with no result is unknown (it may have pushed): escalated, never run again.
 func TestExecuteEscalatesAndUnknown(t *testing.T) {
 	f := setup(t)

@@ -1,0 +1,6 @@
+fleet: outbound
+description: >-
+  Outbound: a first email to each new prospect, written only from what is known about them. Every
+  personal sentence comes from one fact in the enrichment data and cites it; do-not-contact, consent
+  for EU contacts and a daily cap are checked in code before a draft becomes a plan. An email cannot
+  be unsent, so a person approves every send. The mail service here is a stand-in outbox.

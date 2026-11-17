@@ -1,0 +1,18 @@
+fleet: renewals
+routine: scan
+description: >-
+  Each account renewing within 60 days whose risk score reaches 50 is a renewal_risk detection, with
+  the score's reasons. Code only, read only.
+enabled: true
+worker: ops-read
+trigger:
+  every: 24h
+detects: [renewal_risk]
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/renewals.py scan
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0
+freshness: 26h

@@ -660,11 +660,14 @@ type caseRunRead struct {
 	Untrusted           int
 }
 
-// repoExecutor is the routine that carries out the case's newest plan, a repo action, "" when there is
-// none (a person applies it, or it is not a repo action).
+// repoExecutor is the routine that carries out the case's newest plan, a repo or routine action, "" when
+// there is none (a person applies it, or a host agent runs it).
 func (u *Server) repoExecutor(ctx context.Context, id string) string {
 	plans, err := u.API.Store.Plans(ctx, id)
-	if err != nil || len(plans) == 0 || !u.repoCase(ctx, id) {
+	if err != nil || len(plans) == 0 {
+		return ""
+	}
+	if a, ok := registryAction(u, plans[len(plans)-1].Action); !ok || !a.ByRoutine() {
 		return ""
 	}
 	return u.executorOf(plans[len(plans)-1].Action)

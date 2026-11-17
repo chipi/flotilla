@@ -226,8 +226,9 @@ echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
-  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 5 actions$" \
-  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun, repo.process_change, github.open_pr, host.true, host.absent)" || bad "-check: $OUT"
+  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 11 actions$" \
+  && echo "$OUT" | grep >/dev/null "^action crm.merge$" && echo "$OUT" | grep >/dev/null "^action email.send$" \
+  && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep >/dev/null " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
@@ -287,6 +288,31 @@ echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*shadow_plan_recorded.*
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
   && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
+
+echo "== the business examples (crm, campaigns, outbound, renewals), on their stand-in data, in shadow"
+# Each monitor runs at start on the ops-read worker; its detections become cases, the acting routine plans
+# each, and policy records the plan in shadow and closes the case. The gates' refusals escalate instead.
+want_closed() {  # kind target: a case of that kind on that target closed as a recorded shadow plan
+  for _ in $(seq 1 45); do
+    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*shadow_plan_recorded" && return 0; sleep 2
+  done
+  return 1
+}
+want_closed crm_fix "crm:contact/c-101/email" && ok "crm: the email to normalize became a case, planned and recorded in shadow" \
+  || bad "crm: $(cli case list --all 2>&1 | grep crm_fix)"
+want_closed crm_fix "crm:contact/c-103/merge" && ok "crm: the duplicate became a merge plan, recorded in shadow" \
+  || bad "crm merge: $(cli case list --all 2>&1 | grep crm_fix)"
+cli case list --all 2>&1 | grep >/dev/null "crm:contact/c-104/country" && bad "crm: a field a person edited became a case" \
+  || ok "crm: a field a person edited is never proposed"
+want_closed campaign_ready "campaign:k-201" && want_closed campaign_ready "campaign:k-202" \
+  && ok "campaigns: both ready campaigns decided (launch and hold), recorded in shadow" || bad "campaigns: $(cli case list --all 2>&1 | grep campaign_ready)"
+want_closed prospect_new "prospect:p-301" && ok "outbound: a first touch drafted from cited facts, recorded in shadow" \
+  || bad "outbound: $(cli case list --all 2>&1 | grep prospect_new)"
+for _ in $(seq 1 45); do cli case list --all 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && break; sleep 2; done
+cli case list --all 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && ok "outbound: the do-not-contact prospect is refused by the gate, escalated" \
+  || bad "outbound gate: $(cli case list --all 2>&1 | grep prospect_new)"
+want_closed renewal_risk "account:a-401" && ok "renewals: the account at risk flagged for its owner, recorded in shadow" \
+  || bad "renewals: $(cli case list --all 2>&1 | grep renewal_risk)"
 
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"
