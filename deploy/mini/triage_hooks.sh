@@ -34,7 +34,12 @@ triage_filing_gate() {
     echo "filing gate: NOT RUN ($missing): the deploy fails; set SF_FILING_GATE_ACCEPT=\"<why>\" to deploy without it"
     return 1
   fi
-  if SF_CHECKOUT="$REPO" python3 "$gate" "$prev" "$now" >"$log" 2>&1; then
+  # The new code reads the installation's facts (repo maps, the edge instance) from the fleet folder: the
+  # gate replays it with the installation's own, as the workers run it (FLOTILLA_FLEETS_DIR), not with the
+  # checkout's example fleet (2026-11-17: 2 decisions "changed" only because of that).
+  local envs=(SF_CHECKOUT="$REPO")
+  [ -z "${FLOTILLA_FLEETS_DIR:-}" ] || envs+=(SF_INSTALLATION="$FLOTILLA_FLEETS_DIR/triage/installation.json")
+  if env "${envs[@]}" python3 "$gate" "$prev" "$now" >"$log" 2>&1; then
     echo "filing gate: $(tail -1 "$log")"
     return 0
   fi

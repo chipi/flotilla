@@ -69,6 +69,7 @@ STATE_VOL="$(envget FLOTILLA_STATE_VOLUME)"; STATE_VOL="${STATE_VOL:-flotilla-st
 REGISTRY="$(envget FLOTILLA_REGISTRY)"; REGISTRY="${REGISTRY:-ghcr.io/chipi}"
 TRIAGE_DEPLOY_LOG="$(envget TRIAGE_DEPLOY_LOG)"
 TRIAGE_FILING_GATE="$(envget TRIAGE_FILING_GATE)"
+FLOTILLA_FLEETS_DIR="$(envget FLOTILLA_FLEETS_DIR)"   # the filing gate replays with these fleets' facts
 EVENT=deploy
 if [ "${1:-}" = --rollback ]; then
   TAG="$(awk -F'\t' '$4=="pass"{p=c; c=$2} END{print p}' "$LOG" 2>/dev/null)"

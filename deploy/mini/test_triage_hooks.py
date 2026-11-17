@@ -37,7 +37,8 @@ FAKE_GATE = textwrap.dedent("""\
     import json, os, sys
     with open(os.environ["GATE_CALLS"], "a") as f:
         f.write(json.dumps({"argv": sys.argv[1:], "checkout": os.environ.get("SF_CHECKOUT"),
-                            "accept": os.environ.get("SF_FILING_GATE_ACCEPT")}) + "\\n")
+                            "accept": os.environ.get("SF_FILING_GATE_ACCEPT"),
+                            **({"installation": os.environ["SF_INSTALLATION"]} if os.environ.get("SF_INSTALLATION") else {})}) + "\\n")
     if os.environ.get("GATE_MODE") == "fail" and not os.environ.get("SF_FILING_GATE_ACCEPT"):
         print("filing changed on 3 decisions"); print("FILING GATE: FAIL"); sys.exit(1)
     print("FILING GATE: PASS (0 changed)")
@@ -228,6 +229,15 @@ class FilingGateTest(Base):
         self.assertIn("FILING GATE: PASS", r.stdout)
         self.assertEqual(self.gate_calls(), [{"argv": [self.commits[0], self.commits[1]],
                                               "checkout": self.repo, "accept": None}])
+
+    def test_the_gate_replays_with_the_installations_facts(self):
+        """With the installation's own fleets mounted, the gate reads their triage/installation.json, not the
+        checkout's example (2026-11-17: 2 decisions "changed" on the example's repo map)."""
+        env = dict(self.env, TRIAGE_FILING_GATE=self.gate, FLOTILLA_FLEETS_DIR="/srv/fleets")
+        r = self.hook(f"triage_filing_gate {self.commits[0]} {self.commits[1]}", env)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(self.gate_calls(), [{"argv": [self.commits[0], self.commits[1]], "checkout": self.repo,
+                                              "accept": None, "installation": "/srv/fleets/triage/installation.json"}])
 
     def test_fail(self):
         env = dict(self.env, TRIAGE_FILING_GATE=self.gate, GATE_MODE="fail")
