@@ -142,10 +142,14 @@ type runDecision struct {
 	Off, Title, Fingerprint, Disposition, Chip, Certainty, Probes, Gates, Model, Reason string
 }
 
-// callLine is a model call as one line on its span: alias, the check it served, tokens, cost, result.
+// callLine is a model call as one line on its span: alias, its turn, the check it served, tokens, cost,
+// how the reply ended (only when it was not a plain stop), result.
 func callLine(c store.ModelCall) string {
 	var parts []string
 	parts = append(parts, c.Alias)
+	if c.Step != nil {
+		parts = append(parts, fmt.Sprintf("turn %d", *c.Step))
+	}
 	if c.Check != "" {
 		r := "pass"
 		if c.CheckOK != nil && !*c.CheckOK {
@@ -158,6 +162,13 @@ func callLine(c store.ModelCall) string {
 	}
 	if c.CostUSD != nil {
 		parts = append(parts, fmt.Sprintf("$%.6f", *c.CostUSD))
+	}
+	switch c.FinishReason {
+	case "", "stop":
+	case "length":
+		parts = append(parts, "cut at the token cap")
+	default:
+		parts = append(parts, "ended: "+c.FinishReason)
 	}
 	if c.Error != "" {
 		parts = append(parts, c.Error)

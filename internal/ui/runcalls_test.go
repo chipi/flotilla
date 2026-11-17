@@ -37,3 +37,18 @@ func TestRunPageShowsStepAndFinishReason(t *testing.T) {
 		t.Errorf("%d calls are said to be cut at the cap, want 1", n)
 	}
 }
+
+// When the calls sit on their spans (no calls table), the span's line carries the turn and a cut reply.
+func TestCallLineShowsTurnAndCut(t *testing.T) {
+	s2, in, out := int64(2), int64(1800), int64(8192)
+	got := callLine(store.ModelCall{Alias: "triage-pro", Step: &s2, TokensIn: &in, TokensOut: &out, FinishReason: "length"})
+	if got != "triage-pro · turn 2 · 1800 → 8192 tokens · cut at the token cap" {
+		t.Errorf("callLine = %q", got)
+	}
+	if got := callLine(store.ModelCall{Alias: "a", FinishReason: "stop"}); got != "a" {
+		t.Errorf("a plain stop adds nothing: %q", got)
+	}
+	if got := callLine(store.ModelCall{Alias: "a", FinishReason: "content_filter"}); got != "a · ended: content_filter" {
+		t.Errorf("another reason is named: %q", got)
+	}
+}
