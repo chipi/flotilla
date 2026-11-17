@@ -9,6 +9,7 @@ with their CSRF field and follow the redirect, the CSP blocks nothing the pages 
 fonts load, and a phone-width page does not scroll sideways. Prints one PASS or FAIL line per check;
 exits 1 on any FAIL.
 """
+import re
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -61,10 +62,10 @@ with sync_playwright() as pw:
     check(page.locator("aside.selaside form[action$='/pause']").count() == 1 and page.locator(".flash--ok").count() == 1,
           "resume with a reason from the fleet page")
 
-    # the chain's case (run.sh's cases section ran first): its page, reached from the list
+    # the backup chain's case (run.sh's cases section ran first; the business examples close theirs too): its page, reached from the list
     page.goto(BASE + "/cases?status=closed")
     # the closed one: flotillad restarts during the e2e and its monitor runs again, opening a newer case
-    link = page.locator("tr", has_text="shadow plan recorded").locator("a[href^='/cases/case-']").first
+    link = page.locator("tr", has_text="shadow plan recorded").filter(has_text=re.compile("backup")).locator("a[href^='/cases/case-']").first
     case_path = link.get_attribute("href") if link.count() else ""
     check(case_path != "", "the cases page lists the chain's case")
     for path in ["/", "/approvals", "/cases", "/runs", "/fleets", "/fleets/platform", "/fleets/platform?tab=stats", "/hosts",

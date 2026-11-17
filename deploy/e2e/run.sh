@@ -363,10 +363,10 @@ cli hold lift "$HID" --reason "e2e: disk done" >/dev/null
 [ -z "$(cli hold list | sed 1d)" ] && ok "lifted, no hold is active" || bad "after lift: $(cli hold list 2>&1)"
 # The deploy stand-down (deploy/mini/standdown.sh, as deploy.sh and the homelab's pre-pull hook run it):
 # a hold by the deploy caller, its token read from flotillad's secrets volume; it never fails its caller.
-OUT="$(DOCKER="$D" bash "$ROOT/deploy/mini/standdown.sh" mini 5m "e2e deploy" 2>&1)"; RC=$?
+OUT="$(DOCKER="$D" bash "$ROOT/deploy/mini/standdown.sh" backup-01 5m "e2e deploy" 2>&1)"; RC=$?
 [ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN host:backup-01 for 5m" && cli hold list | grep >/dev/null "host:backup-01 .*deploy .*deploy stand-down: e2e deploy" \
   && ok "a deploy stand-down is a hold on the host, taken by the deploy caller" || bad "stand-down: rc=$RC $OUT / $(cli hold list 2>&1)"
-OUT="$(DOCKER=false bash "$ROOT/deploy/mini/standdown.sh" mini 5m "e2e" 2>&1)"; RC=$?
+OUT="$(DOCKER=false bash "$ROOT/deploy/mini/standdown.sh" backup-01 5m "e2e" 2>&1)"; RC=$?
 [ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN SKIPPED" && ok "a stand-down that cannot be taken never fails the deploy" || bad "stand-down failure path: rc=$RC $OUT"
 SID="$(cli hold list | awk '/deploy stand-down/ {print $1; exit}')"
 cli hold lift "$SID" --reason "e2e: done" >/dev/null
