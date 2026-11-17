@@ -30,10 +30,10 @@ for g in gate_hardening.py gate_dedup.py gate_filing_replay.py gate_stale_replay
 done
 rm -rf "$GATE_HOME"
 
-# the filing gate (private repo chipi/fleet-eval-data): when filing/stale or what they import changed, replay the
+# the filing gate (the installation's private fleets repo, SF_FILING_GATE): when filing/stale or what they import changed, replay the
 # newest frozen week with $PREV and $NOW; any change in what filing does fails unless SF_FILING_GATE_ACCEPT="<why>".
 # Real HOME: it reads ~/signal-fleet/frozen, the deploy log and fleetd.log (read-only).
-FILING_GATE="${SF_FILING_GATE:-$HOME/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py}"
+FILING_GATE="${SF_FILING_GATE:-}"
 if [ "$ok" -eq 1 ] && [ -f "$FILING_GATE" ]; then
   if SF_CHECKOUT="$CHECKOUT" python3 "$FILING_GATE" "$PREV" "$NOW" >/tmp/sf-deploy-filing_gate.log 2>&1; then
     say "$(tail -1 /tmp/sf-deploy-filing_gate.log)"
@@ -41,7 +41,7 @@ if [ "$ok" -eq 1 ] && [ -f "$FILING_GATE" ]; then
     say "FAIL filing_gate (full list: /tmp/sf-deploy-filing_gate.log):"; tail -8 /tmp/sf-deploy-filing_gate.log | sed 's/^/    /'; ok=0
   fi
 elif [ "$ok" -eq 1 ]; then
-  say "filing gate: NOT RUN (no $FILING_GATE)"
+  say "filing gate: NOT RUN (${FILING_GATE:-SF_FILING_GATE unset})"
 fi
 
 [ "$ok" -eq 1 ]

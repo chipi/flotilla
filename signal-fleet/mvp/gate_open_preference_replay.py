@@ -30,7 +30,7 @@ import os
 import subprocess
 import sys
 import tempfile
-import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
+import evaldata  # noqa: E402  (the private corpora, SF_REPLAY_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LEDGER = evaldata.path("reference-filing", "filed-2026-10-02.tsv")

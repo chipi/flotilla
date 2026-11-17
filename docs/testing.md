@@ -85,7 +85,7 @@ The target. **Today** (GitHub Actions, `.github/workflows/`):
   `make test-e2e`) on the runner's own Docker engine, on pushes to main and on PRs that touch more
   than docs.
 - `docs.yml`: the Markdown lint and the strict docs build.
-- Not in CI: `make replay` reads the private corpora (`SF_EVAL_DATA`, `SF_ALERT_RULES`) that a
+- Not in CI: `make replay` reads the private corpora (`SF_REPLAY_DATA`, `SF_ALERT_RULES`) that a
   hosted runner cannot read; it runs on a host before a fleet's code switches.
 - `deploy/mini/checks_green.sh <sha>` reads a commit's check runs from GitHub and exits non-zero
   unless `ci-fast` succeeded. `deploy.sh` does not call it yet (it is to, before it pulls an image).

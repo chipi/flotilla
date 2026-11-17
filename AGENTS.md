@@ -50,7 +50,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
      specifics (host names, tailnet addresses, user paths, real repo maps). Specs and examples use
      placeholders, and the real values live in host config.
    - Run the secrets scan before every push.
-   - Real-data test corpora live in the private `fleet-eval-data` repo.
+   - Real-data test corpora and the operator's own fleets live in a private fleets repo, never here
+     (vision plan step 7). flotilla does not depend on `fleet-eval-data`, the research repo.
 2. **An agent is never the operator.**
    - Approving an outward action (an issue, a PR, a push, a published change) is operator-only, in
      the UI or the CLI, or from the operator's pinned Slack user within ADR-0005's limits (low and
@@ -83,8 +84,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 
 - Imported from agentic-ai-homelab at `f0ed072` with their history (`git filter-repo`), without
   `signal-fleet/reference*`: the replay corpora are real scrubbed production data and live in the
-  private `fleet-eval-data` repo, `projects/signal-fleet-replays`. The replays find them through
-  `SF_EVAL_DATA`, and the alert rules through `SF_ALERT_RULES` (`signal-fleet/replays.sh`).
+  private fleets repo, `triage/replays` (moved there from `fleet-eval-data` on 2026-11-17). The
+  replays find them through `SF_REPLAY_DATA`, and the alert rules through `SF_ALERT_RULES` (`signal-fleet/replays.sh`).
 - A replay's `BASE_REV` is a commit in **this** repo's history; each carries the homelab commit it
   replaced in a comment.
 - **Known deviation from rule 1 until the config pass:** the imported code still holds real

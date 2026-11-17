@@ -23,7 +23,7 @@ import os
 import sys
 
 import filing
-import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
+import evaldata  # noqa: E402  (the private corpora, SF_REPLAY_DATA)
 
 CORPUS = evaldata.path("reference-filing", "replay-2026-09-30.json")
 # The live alert rules, from the homelab checkout that provisions Grafana (another repo):

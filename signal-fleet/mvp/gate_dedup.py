@@ -22,7 +22,7 @@ os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 import filing
 import sources
 import triage
-import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
+import evaldata  # noqa: E402  (the private corpora, SF_REPLAY_DATA)
 
 CORPUS = evaldata.path("reference-dedup", "corpus.json")
 

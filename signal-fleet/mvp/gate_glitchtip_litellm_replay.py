@@ -31,7 +31,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
+import evaldata  # noqa: E402  (the private corpora, SF_REPLAY_DATA)
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")

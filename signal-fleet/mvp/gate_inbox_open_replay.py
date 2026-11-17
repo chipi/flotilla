@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
+import evaldata  # noqa: E402  (the private corpora, SF_REPLAY_DATA)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORPUS = evaldata.path("reference-inbox-open", "corpus-2026-11-04.json")

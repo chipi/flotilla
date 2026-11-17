@@ -353,7 +353,7 @@ behaviour. Its part is to make every run a good input.
 
 | Place | Holds | Does not hold |
 | --- | --- | --- |
-| **flotilla** | the system; its recording (captures, filing and sweep records, run rows); the export; the replay entry point; development tests and deploy gates | scores, labels, gold answers, variants, held-out splits, production data in the tree (corpora come from a private path, `SF_EVAL_DATA` for triage) |
+| **flotilla** | the system; its recording (captures, filing and sweep records, run rows); the export; the replay entry point; development tests and deploy gates | scores, labels, gold answers, variants, held-out splits, production data in the tree (corpora come from a private path, `SF_REPLAY_DATA` for triage) |
 | **a fleet's evaluation project** (for triage: the private `fleet-eval-data`) | that fleet's freezes, corpora, readers from flotilla's records to items, outcome rules and labels, its held-out split | generic evaluation machinery |
 | **the evaluation harness** | the generic machinery: datasets, runs, scoring, rounds, label import, splits | any one fleet's data or readers |
 
@@ -362,7 +362,8 @@ Applied to what exists:
 - **The replays stay, renamed.** flotilla's 19 `eval_*` scripts in `signal-fleet/mvp/` (the 15
   `replays.sh` ran and the four same-result replays) are development tests (same result, or expected
   actions on recorded cases). They were renamed `gate_*` (15442c3), so "eval" means one thing.
-  `evaldata.py` and `SF_EVAL_DATA` keep the word: they name the evaluation project's data.
+  `evaldata.py` keeps the word. (Amended 2026-11-17: the corpora moved from the evaluation project to
+  the private fleets repo, and `SF_EVAL_DATA` became `SF_REPLAY_DATA`.)
 - **The scorer moves out, after the entry point.** `score.py` and the model replay as a scored
   evaluation (RFC-0002 §8) are evaluation; they move once the replay entry point can run a model
   replay (below). The exact replay of a model step, byte for byte, is a refactor test and stays.

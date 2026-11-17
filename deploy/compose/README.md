@@ -37,7 +37,7 @@ TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's
 TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (shadow copy, or live after the switch)
 FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
 TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (mirror-test's until the switch)
-TRIAGE_FILING_GATE=<filing_gate.py>                    # optional: default ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py
+TRIAGE_FILING_GATE=<filing_gate.py>                    # the private fleets repo's triage/filing/scripts/filing_gate.py; unset: the deploy fails unless SF_FILING_GATE_ACCEPT says why
 # FLOTILLA_BACKUPS_KEEP=10                             # optional: how many store snapshots deploy.sh keeps
 # the services' Docker networks, when they are not the defaults
 # NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default

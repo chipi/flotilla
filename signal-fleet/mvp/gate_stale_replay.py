@@ -23,7 +23,7 @@ import sys
 
 import filing
 import stale
-import evaldata  # noqa: E402  (the private corpora, SF_EVAL_DATA)
+import evaldata  # noqa: E402  (the private corpora, SF_REPLAY_DATA)
 
 CORPUS = evaldata.path("reference-stale", "replay-2026-09-30.json")
 REPO = "chipi/agentic-ai-homelab"

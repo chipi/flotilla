@@ -17,18 +17,21 @@
 #   TRIAGE_DEPLOY_LOG   the deploy log to append to. Unset: no row. Until the switch it is mirror-test's
 #                       results/deploys.tsv, since the live fleet still runs homelab code; at the switch it
 #                       becomes ~/signal-fleet/results/deploys.tsv.
-#   TRIAGE_FILING_GATE  the gate script (default ~/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py)
+#   TRIAGE_FILING_GATE  the gate script, in the installation's private fleets repo
+#                       (triage/filing/scripts/filing_gate.py there). Unset: the gate does not run, and the
+#                       deploy fails unless SF_FILING_GATE_ACCEPT says why.
 # Both need REPO (the flotilla checkout) and H (FLOTILLA_HOME) from deploy.sh.
 
 triage_filing_gate() {
-  local prev="$1" now="$2" gate="${TRIAGE_FILING_GATE:-$HOME/fleet-eval-data/projects/signal-fleet-filing/scripts/filing_gate.py}"
-  local log="$H/filing_gate.log"
+  local prev="$1" now="$2" gate="${TRIAGE_FILING_GATE:-}"
+  local log="$H/filing_gate.log" missing
   if [ -z "$prev" ]; then echo "filing gate: NOT RUN (no earlier deploy to compare with: a first install, so it passes)"; return 0; fi
-  if [ ! -f "$gate" ]; then
+  if [ -z "$gate" ]; then missing="TRIAGE_FILING_GATE unset"; elif [ ! -f "$gate" ]; then missing="no $gate"; fi
+  if [ -n "${missing:-}" ]; then
     if [ -n "${SF_FILING_GATE_ACCEPT:-}" ]; then
-      echo "filing gate: NOT RUN (no $gate); accepted: $SF_FILING_GATE_ACCEPT"; return 0
+      echo "filing gate: NOT RUN ($missing); accepted: $SF_FILING_GATE_ACCEPT"; return 0
     fi
-    echo "filing gate: NOT RUN (no $gate): the deploy fails; set SF_FILING_GATE_ACCEPT=\"<why>\" to deploy without it"
+    echo "filing gate: NOT RUN ($missing): the deploy fails; set SF_FILING_GATE_ACCEPT=\"<why>\" to deploy without it"
     return 1
   fi
   if SF_CHECKOUT="$REPO" python3 "$gate" "$prev" "$now" >"$log" 2>&1; then

@@ -100,7 +100,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@echo "test-unit PASS"
 
 .PHONY: replay
-replay: ## The triage fleet's replay gates (needs SF_EVAL_DATA and SF_ALERT_RULES; see signal-fleet/replays.sh)
+replay: ## The triage fleet's replay gates (needs SF_REPLAY_DATA and SF_ALERT_RULES; see signal-fleet/replays.sh)
 	@bash signal-fleet/replays.sh
 
 .PHONY: test-e2e

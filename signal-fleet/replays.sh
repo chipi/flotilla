@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # The triage fleet's replay gates: every decision change replayed against recorded real cases.
 #
-# The corpora are real (scrubbed) production data and live in the private fleet-eval-data repo, so
+# The corpora are real (scrubbed) production data and live in the installation's private fleets repo, so
 # this runs on a host that has a checkout of it, not in public CI:
-#   SF_EVAL_DATA    fleet-eval-data's projects/signal-fleet-replays
+#   SF_REPLAY_DATA  the private fleets repo's triage/replays
 #   SF_ALERT_RULES  the homelab checkout's .../grafana/provisioning/alerting/rules.yaml
 # HOME is an empty directory for each run: every live state path is under ~/signal-fleet, so no
 # replay can read a host's ledgers (2026-10-17: a replay passed on a laptop, failed on the mini).
 set -uo pipefail
 cd "$(dirname "$0")/mvp" || exit 1
-for v in SF_EVAL_DATA SF_ALERT_RULES; do
+for v in SF_REPLAY_DATA SF_ALERT_RULES; do
   [ -n "${!v:-}" ] || { echo "REPLAYS FAIL: $v is not set (see the header of $0)"; exit 1; }
 done
 LOGS="$(mktemp -d)"; GATE_HOME="$(mktemp -d)"; ok=0; bad=0

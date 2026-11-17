@@ -250,6 +250,13 @@ class FilingGateTest(Base):
         self.assertIn("NOT RUN (no ", r.stdout)
         self.assertIn("SF_FILING_GATE_ACCEPT", r.stdout)
 
+    def test_unset_gate_is_not_run_and_fails(self):
+        """No default path: the gate script lives in the installation's private repo and is named in config."""
+        env = {k: v for k, v in self.env.items() if k != "TRIAGE_FILING_GATE"}
+        r = self.hook(f"triage_filing_gate {self.commits[0]} {self.commits[1]}", env)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("NOT RUN (TRIAGE_FILING_GATE unset)", r.stdout)
+
     def test_not_run_is_accepted_with_a_reason(self):
         env = dict(self.env, TRIAGE_FILING_GATE=os.path.join(self.tmp, "absent.py"),
                    SF_FILING_GATE_ACCEPT="gate checkout is being moved")
