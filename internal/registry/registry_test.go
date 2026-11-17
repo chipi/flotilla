@@ -79,3 +79,34 @@ func TestBadDeclarationsAreRefused(t *testing.T) {
 		t.Errorf("one action in two files: %v", err)
 	}
 }
+
+func TestTheInstallationNamesAnEnumsValues(t *testing.T) {
+	r, err := Load(repoFile(t, "host/registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := r.Action("github.open_pr")
+	if err := r.SetEnum("github.open_pr", "repo", []string{"acme/one", "acme/two"}); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := r.Action("github.open_pr")
+	if strings.Join(a.Params["repo"].Enum, ",") != "acme/one,acme/two" || a.Params["base"].Kind != before.Params["base"].Kind {
+		t.Fatalf("after SetEnum: %+v", a.Params)
+	}
+	if strings.Join(before.Params["repo"].Enum, ",") == "acme/one,acme/two" {
+		t.Fatal("SetEnum changed the action returned before it")
+	}
+	for _, c := range []struct {
+		action, param string
+		values        []string
+	}{
+		{"no.such", "repo", []string{"x"}},
+		{"github.open_pr", "nope", []string{"x"}},
+		{"github.open_pr", "title", []string{"x"}}, // a text parameter, not an enum
+		{"github.open_pr", "repo", nil},
+	} {
+		if err := r.SetEnum(c.action, c.param, c.values); err == nil {
+			t.Errorf("SetEnum(%s, %s, %v) was accepted", c.action, c.param, c.values)
+		}
+	}
+}

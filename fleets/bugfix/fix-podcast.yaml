@@ -1,14 +1,14 @@
 fleet: bugfix
 routine: fix-podcast
 description: >-
-  The per-repo profile of bugfix/fix for chipi/podcast_scraper (pytest): the same chain as fix, with
+  The per-repo profile of bugfix/fix for example/api (pytest): the same chain as fix, with
   a venv installed in the worker's scratch, pytest-json-report's reports, the related tests of the
   mirrored test directories, and (built in under --test-format pytest) an allowlist of what a fix may
   change: a .py under the source root, a test_*.py or *_test.py under the test root, nothing else.
 enabled: true
 # ROADMAP B8, enabled in shadow on 2026-11-16 (operator's go). It relies on: its own case kind
 # (flotillad allows one acting routine per kind, and code_bug is fix's), intake-podcast detecting it,
-# chipi/podcast_scraper in github.open_pr's repo enum (host/registry.json), and pypi.org and
+# example/api in github.open_pr's repo enum (host/registry.json), and pypi.org and
 # files.pythonhosted.org in the bugfix proxy's allowlist.
 worker: bugfix-fix-podcast
 trigger:
@@ -23,7 +23,7 @@ run:
   # files (or the related directories) are appended. --continue-on-collection-errors: a test file
   # that cannot load on the base must not stop the others from running.
   command: >-
-    python3 /opt/flotilla/bugfix/fix.py --repo chipi/podcast_scraper --worker-model fix-podcast-flash
+    python3 /opt/flotilla/bugfix/fix.py --repo example/api --worker-model fix-podcast-flash
     --advisor-model fix-podcast-reviewer --reviewer-model fix-podcast-reviewer
     --setup 'python3 -m venv "$BUGFIX_VENV" && "$BUGFIX_VENV/bin/pip" install -q -e ".[dev]"'
     --setup-timeout 1800

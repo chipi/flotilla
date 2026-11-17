@@ -10,7 +10,7 @@ trigger:
   every: 1h
 detects: [code_bug]
 run:
-  command: python3 /opt/flotilla/bugfix/intake.py --repo chipi/orrery --label bug --label triage-fleet/routed:bugfix
+  command: python3 /opt/flotilla/bugfix/intake.py --repo example/shop --label bug --label triage-fleet/routed:bugfix
   workdir: .
   timeout: 2m
 autonomy: shadow

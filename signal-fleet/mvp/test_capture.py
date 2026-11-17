@@ -367,7 +367,7 @@ class ExactRecord(unittest.TestCase):
         self.assertEqual(triage._EXACT["turns"][0]["status"], 401)
 
     def test_edge_gate_lookup_recorded(self):
-        sig = dict(SIGNAL, alertname=triage.guards.EDGE_5XX_PREFIX + " closelistening.app",
+        sig = dict(SIGNAL, alertname=triage.guards.EDGE_5XX_PREFIX + " shop.example",
                    startsAt="2026-11-09T07:00:00Z")
         with mock.patch.object(config, "CAPTURE_PROBES", True):
             triage._exact_start()
@@ -379,7 +379,7 @@ class ExactRecord(unittest.TestCase):
             self.assertEqual(why, "downgraded (lookup failed)")
         looks = triage._EXACT["lookups"]
         self.assertEqual(looks[0], {"kind": "restarts_near", "result": ["player-api"],
-                                    "args": {"instance": "prod-podcast", "at": "2026-11-09T07:00:00Z"}})
+                                    "args": {"instance": "prod-edge", "at": "2026-11-09T07:00:00Z"}})
         self.assertIn("vm down", looks[1]["error"])
 
     def test_capture_writes_exact_and_keeps_its_old_fields(self):

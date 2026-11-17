@@ -67,7 +67,7 @@ class Console:
 
     def query(self, prop, start, end, dims, host, limit=1000):
         body = {"startDate": start, "endDate": end, "dimensions": dims, "rowLimit": limit,
-                # one property can hold several sites (humancopilot.eu holds www and evals): this site's pages only
+                # one property can hold several sites (example.com can hold www and docs): this site's pages only
                 "dimensionFilterGroups": [{"filters": [{"dimension": "page", "operator": "contains", "expression": f"://{host}/"}]}]}
         url = f"{API}/webmasters/v3/sites/{urllib.parse.quote(prop, safe='')}/searchAnalytics/query"
         return self.http(url, token=self.tok, body=body).get("rows", [])

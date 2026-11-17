@@ -4,6 +4,7 @@ FROM python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4f
 RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker
 COPY worker /opt/flotilla/worker
 COPY seo /opt/flotilla/seo
+COPY fleets /opt/flotilla/fleets
 ARG VERSION=dev
 ENV FLOTILLA_VERSION=${VERSION} \
     FLOTILLA_WORKER=marketing \

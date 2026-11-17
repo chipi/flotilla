@@ -55,12 +55,13 @@ format: ## Apply gofmt to every Go file
 	@$(GOFMT) -w cmd internal fleetd && echo "format PASS"
 
 .PHONY: lint
-lint: ## gofmt check + go vet (both modules), byte-compile every Python file, llms.txt up to date
+lint: ## gofmt check + go vet (both modules), byte-compile every Python file, llms.txt up to date, no installation facts
 	@out="$$($(GOFMT) -l cmd internal fleetd)"; test -z "$$out" || { echo "lint FAIL: gofmt would change:"; echo "$$out"; exit 1; }
 	@$(GO) vet ./...
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
 	@python3 -m compileall -q signal-fleet worker deploy runtime >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@python3 scripts/llms_txt.py --check >/dev/null || { echo "lint FAIL: llms.txt"; python3 scripts/llms_txt.py --check; exit 1; }
+	@python3 scripts/installation_facts.py >/tmp/flotilla-installation-facts.log 2>&1 || { echo "lint FAIL: installation facts in the code (vision plan step 7):"; cat /tmp/flotilla-installation-facts.log; exit 1; }
 	@echo "lint PASS"
 
 .PHONY: llms-txt

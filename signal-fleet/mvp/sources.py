@@ -139,8 +139,8 @@ def _gt(path):
                     headers={"Authorization": f"Bearer {config.GLITCHTIP_TOKEN}"})
 
 
-# host:port of a backend, as LiteLLM's events name it: "('100.92.54.65', 11435)" in a refused
-# connection, "http://100.92.54.65:11435/v1/..." in a timed-out request.
+# host:port of a backend, as LiteLLM's events name it: "('192.0.2.10', 11435)" in a refused
+# connection, "http://192.0.2.10:11435/v1/..." in a timed-out request.
 _BACKEND_RX = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})(?:', |:)(\d{2,5})\b")
 
 

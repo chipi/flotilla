@@ -16,7 +16,7 @@ trigger:
 models: [fix-flash, fix-reviewer]
 run:
   command: >-
-    python3 /opt/flotilla/bugfix/fix.py --repo chipi/orrery --worker-model fix-flash
+    python3 /opt/flotilla/bugfix/fix.py --repo example/shop --worker-model fix-flash
     --advisor-model fix-reviewer --reviewer-model fix-reviewer
     --exclude-path static/images --exclude-path static/audio --exclude-path masters
     --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2 --spend-file .bugfix-fix-spend

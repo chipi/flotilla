@@ -1,6 +1,6 @@
 Unhandled WebGLUnavailableError when WebGL context creation fails
 
-Regression of chipi/orrery#523 (closed 37d ago).
+Regression of example/shop#523 (closed 37d ago).
 
 **Signal:** `WebGLUnavailableError: WebGL is unavailable on this device` (source: glitchtip, fp: `glitchtip:ORRERY-1I`)
 **Code version:** `gha-393a5a52`  _(frames resolve against this revision)_

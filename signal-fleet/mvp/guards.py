@@ -1,6 +1,6 @@
 """Deterministic container facts the triager cannot argue past (2026-10-27).
 
-Two misses on prod-podcast, 2026-10-26/27:
+Two misses on the production edge host, 2026-10-26/27:
 - "Kernel OOM killer fired" is one alert per host. While evals-inspector was OOM-killed
   every ~5 min the alert never stopped firing, so player-api's kills (10-26 13:46:07,
   13:46:31; 10-27 07:13:37) never produced a new occurrence. `oom_killed_containers`

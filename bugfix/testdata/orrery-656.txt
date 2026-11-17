@@ -1,6 +1,6 @@
 orrery: unhandled error when WebGL context creation fails
 
-Promoted out of low-signal rollup chipi/orrery#647 — crossed threshold (recurred / gained users).
+Promoted out of low-signal rollup example/shop#647 — crossed threshold (recurred / gained users).
 
 **Signal:** `Error: THREE.WebGLRenderer: Error creating WebGL context.` (source: glitchtip, fp: `glitchtip:ORRERY-1O`)
 **Code version:** `gha-c18930b8`  _(frames resolve against this revision)_

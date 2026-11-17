@@ -28,7 +28,7 @@ end, whatever happened; the npm cache stays for the next run.
 Whether the fixes are any good is phase B (RFC-0010 §8). This routine is the form: the same steps, gates
 and limits as the chain the bake-off measured.
 
-  python3 bugfix/fix.py --repo chipi/orrery --worker-model bugfix-flash --advisor-model bugfix-reviewer \\
+  python3 bugfix/fix.py --repo example/shop --worker-model bugfix-flash --advisor-model bugfix-reviewer \\
       --reviewer-model bugfix-reviewer
 Environment: FLOTILLA_CASE, FLOTILLA_PLAN_FILE, FLOTILLA_MODELS (the worker's); BUGFIX_SCRATCH (the
 scratch volume); GIT_REMOTE_BASE (default https://github.com, a test's local path).

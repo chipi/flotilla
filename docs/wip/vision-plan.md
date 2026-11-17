@@ -177,10 +177,15 @@ flotilla from there.
     `fleets/` becomes the example fleets.
   - **B is live since 2026-11-17 14:42Z:** the mini runs the private repo's `fleets/` (cdd472a,
     `deploy_fleets.sh`, `FLEETS DEPLOY PASS`, all 18 spec hashes unchanged; the first triage cycle on
-    it, 14:45Z, ended ok). Left in B: flotilla's own `fleets/` becomes the example fleets, with the
-    installation-facts test; the facts still in code (`signal-fleet/mvp/filing.py`, `config.py`,
-    `fleetd/deploy/*.json`) move to config the private repo supplies.
-  - **A, next:** [ADR-0013](../adr/ADR-0013-fleet-packs.md)'s installation packs (RFC-0006 §10 step
+    it, 14:45Z, ended ok).
+  - **B done 2026-11-17:** `fleets/` are example fleets (`fleets/README.md`); the triage facts are the
+    fleet folder's `triage/installation.json`, the sites `seo/sites.json`, the repos `github.open_pr`
+    may act on `action_enums` in flotillad's config; the 18 replay gates moved to the private repo
+    (`REPLAYS PASS (18)` with its facts, 5 fail with the example's); `make lint` refuses installation
+    facts in the code (`scripts/installation_facts.py`). The retired deploy files and the research
+    datasets left the repo.
+  - **A, parked** (the operator, 2026-11-17: B, then back to the rest of the MVP):
+    [ADR-0013](../adr/ADR-0013-fleet-packs.md)'s installation packs (RFC-0006 §10 step
     3): the mount becomes a pack folder; a change is shown, approved by its set hash, recorded and
     starts at shadow; runs read the approved snapshot, not the folder; rollback approves the previous
     set. Triage becomes a pack once RFC-0006 §9 is done; until then its private facts (the repo maps)

@@ -193,7 +193,7 @@ class SpendTest(unittest.TestCase):
                               "bugfix-reviewer": {"endpoint": "gw", "model": "fleet-bugfix-reviewer"}}}
         home = os.path.join(self.d, "home")
         os.makedirs(home)
-        out = fix.main(["--repo", "chipi/orrery", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
+        out = fix.main(["--repo", "example/shop", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
                         "--reviewer-model", "bugfix-reviewer", "--scratch", os.path.join(self.d, "scratch"),
                         "--spend-file", ".bugfix-fix-spend", "--spend-poll", "0.01"],
                        environ={"FLOTILLA_CASE": json.dumps({"id": "c", "data": {}}), "HOME": home,
@@ -236,7 +236,7 @@ class SpendTest(unittest.TestCase):
         os.makedirs(home)
         env = dict(os.environ, FLOTILLA_CASE=json.dumps({"id": "c", "data": {}}), HOME=home,
                    FLOTILLA_PLAN_FILE=os.path.join(self.d, "p.json"), FLOTILLA_MODELS=json.dumps(models))
-        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "chipi/orrery", "--worker-model", "bugfix-flash",
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
                               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer",
                               "--scratch", os.path.join(self.d, "scratch"), "--spend-file", ".spend", "--spend-poll", "0.5"],
                              env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -262,7 +262,7 @@ class SpendTest(unittest.TestCase):
         os.makedirs(home)
         env = dict(os.environ, FLOTILLA_CASE=json.dumps({"id": "c", "data": {}}), HOME=home,
                    FLOTILLA_PLAN_FILE=os.path.join(self.d, "p.json"), FLOTILLA_MODELS=json.dumps(models))
-        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "chipi/orrery", "--worker-model", "bugfix-flash",
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
                               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer",
                               "--scratch", os.path.join(self.d, "scratch"), "--spend-file", ".spend", "--spend-poll", "0.5"],
                              env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -279,7 +279,7 @@ class SpendTest(unittest.TestCase):
         os.makedirs(home)
         models = {"endpoints": {"gw": {"base_url": g.base, "key_env": "K"}},
                   "aliases": {"bugfix-flash": {"endpoint": "gw", "model": "m"}, "bugfix-reviewer": {"endpoint": "gw", "model": "m"}}}
-        fix.main(["--repo", "chipi/orrery", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
+        fix.main(["--repo", "example/shop", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
                   "--reviewer-model", "bugfix-reviewer", "--scratch", os.path.join(self.d, "scratch")],
                  environ={"FLOTILLA_CASE": json.dumps({"id": "c", "data": {}}), "HOME": home, "K": "sk",
                           "FLOTILLA_PLAN_FILE": os.path.join(self.d, "p.json"), "FLOTILLA_MODELS": json.dumps(models),

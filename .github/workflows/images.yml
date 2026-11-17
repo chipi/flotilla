@@ -34,7 +34,7 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          # buildx --push (as chipi/podcast_scraper's docker.yml does); plain `docker push` had its
+          # buildx --push (as other projects' docker.yml does); plain `docker push` had its
           # manifest refused ("denied") by ghcr on 2026-11-08 after the layers were uploaded.
           # No attestations: one plain image manifest per tag.
           docker buildx create --use --name flotilla >/dev/null

@@ -23,6 +23,7 @@ import urllib.error
 
 import config
 import guards
+import installation
 import http_util
 import observ
 import probes
@@ -463,13 +464,13 @@ def _dismiss_gate(d, trace):
     return d, "downgraded (no corroboration)"
 
 
-EDGE_INSTANCE = "prod-podcast"   # the prod Caddy edge; the edge alert carries only `host`
+EDGE_INSTANCE = installation.get("edge_instance", "")   # the prod edge (the installation's); its alert carries only `host`
 
 
 def _edge_gate(d, signal, data=None):
     """An edge-5xx burst that coincided with a container start or OOM kill on the edge's
     host is not dismissable: probes run after the restart look healthy because the
-    container is back. 2026-10-26 13:46:30 burst (closelistening.app, 11 5xx) was
+    container is back. 2026-10-26 13:46:30 burst (a production site, 11 5xx) was
     dismissed on exactly that while player-api was being OOM-killed."""
     if d.get("disposition") != "dismiss" or not signal.get("alertname", "").startswith(guards.EDGE_5XX_PREFIX):
         return d, "n/a"

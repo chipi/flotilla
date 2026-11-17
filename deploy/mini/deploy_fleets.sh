@@ -103,7 +103,7 @@ for i in $(seq 1 60); do cli status | grep -E '^triage/' | grep -q running || br
 PREV="$(readlink "$LIVE" 2>/dev/null || true)"
 ln -sfn "$DIR" "$LIVE" && [ "$(readlink "$LIVE")" = "$DIR" ] || die "cannot point $LIVE at $DIR"
 say "== $LIVE -> $DIR (was ${PREV:-the image fleets})"
-svcs=(flotillad worker-triage)
+svcs=(flotillad worker-triage worker-marketing)
 docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-candidate && svcs+=(worker-triage-candidate)
 FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed 's/^/   /'
 

@@ -89,12 +89,11 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
   (`make replay` with `SF_REPLAYS` and `SF_ALERT_RULES`).
 - A replay's `BASE_REV` is a commit in **this** repo's history; each carries the homelab commit it
   replaced in a comment.
-- **Known deviation from rule 1 until the config pass:** the imported code still holds real
-  repo maps and host defaults (`signal-fleet/mvp/filing.py`, `config.py`, `fleetd/deploy/*.json`).
-  They were already public in agentic-ai-homelab; moving them into host config is the rest of
-  phase 1.
-- Until phase 2 the live fleet runs agentic-ai-homelab's copy. A fix the live fleet needs lands
-  there first and is ported here.
+- **Rule 1 is enforced** (vision plan step 7, 2026-11-17): `fleets/` holds example fleets only
+  (`fleets/README.md`); an installation's facts live in its private fleets repo and host config, and
+  `make lint` runs `scripts/installation_facts.py`, which fails on a repo slug, tailnet name or
+  address, or home path in the code (and on the installation's own names with
+  `SF_FACTS_DENYLIST`). Docs and history are narrative and exempt.
 
 ## Domain knowledge
 

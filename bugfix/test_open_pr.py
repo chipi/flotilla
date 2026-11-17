@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import open_pr  # noqa: E402
 import pr_check  # noqa: E402
 
-CASE = {"id": "case-20261115-abc", "kind": "code_bug", "target": "repo:chipi/orrery/issues/12"}
+CASE = {"id": "case-20261115-abc", "kind": "code_bug", "target": "repo:example/shop/issues/12"}
 
 
 def git(*a, cwd):
@@ -48,10 +48,10 @@ class FakeGitHub:
                     if len(jwt.split(".")) != 3 or claims.get("iss") != "4242":
                         return self.reply(401, {})
                     return self.reply(201, {"token": "fake-tok"})
-                if self.path == "/repos/chipi/orrery/pulls":
+                if self.path == "/repos/example/shop/pulls":
                     if outer.refuse_pr or auth != "Bearer fake-tok":
                         return self.reply(422, {"message": "no"})
-                    pr = {"number": 7, "html_url": "https://github.com/chipi/orrery/pull/7", "head": body["head"], "base": body["base"],
+                    pr = {"number": 7, "html_url": "https://github.com/example/shop/pull/7", "head": body["head"], "base": body["base"],
                           "draft": body.get("draft"), "state": "open", "merged_at": None, "title": body["title"]}
                     outer.pulls.append(pr)
                     return self.reply(201, pr)
@@ -60,15 +60,15 @@ class FakeGitHub:
             def do_GET(self):
                 u = urllib.parse.urlparse(self.path)
                 outer.calls.append(("GET", self.path, self.headers.get("Authorization", ""), None))
-                if u.path == "/repos/chipi/orrery":
+                if u.path == "/repos/example/shop":
                     return self.reply(200, {"default_branch": "main"})
-                if u.path.startswith("/repos/chipi/orrery/commits/"):
+                if u.path.startswith("/repos/example/shop/commits/"):
                     want = u.path.rsplit("/", 1)[1]
                     full = [x for x in outer.commits if x.startswith(want)]
                     return self.reply(200, {"sha": full[0]}) if full else self.reply(422, {"message": "No commit found"})
-                if u.path == "/repos/chipi/orrery/pulls":
+                if u.path == "/repos/example/shop/pulls":
                     head = urllib.parse.parse_qs(u.query).get("head", [""])[0]
-                    return self.reply(200, [p for p in outer.pulls if "chipi:" + p["head"] == head])
+                    return self.reply(200, [p for p in outer.pulls if "example:" + p["head"] == head])
                 self.reply(404, {})
 
             def log_message(self, *a):
@@ -89,7 +89,7 @@ class Fixture:
         git("init", "-q", "-b", "main", cwd=src)
         git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A", cwd=src)
         git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base", cwd=src)
-        self.remote = os.path.join(self.d, "remotes", "chipi", "orrery")
+        self.remote = os.path.join(self.d, "remotes", "example", "shop")
         os.makedirs(os.path.dirname(self.remote))
         git("clone", "-q", "--bare", src, self.remote, cwd=self.d)
         git("config", "uploadpack.allowReachableSHA1InWant", "true", cwd=self.remote)  # GitHub serves a commit by its sha
@@ -106,7 +106,7 @@ class Fixture:
                      "diff --git a/a.test.js b/a.test.js\nnew file mode 100644\n--- /dev/null\n+++ b/a.test.js\n@@ -0,0 +1 @@\n+expect value 2\n")
 
     def plan(self, **over):
-        prm = {"repo": "chipi/orrery", "base": self.base, "title": "fix #12: value is 1", "body": "why <b>&</b>", "diff": self.diff}
+        prm = {"repo": "example/shop", "base": self.base, "title": "fix #12: value is 1", "body": "why <b>&</b>", "diff": self.diff}
         prm.update(over)
         return {"id": 3, "action": "github.open_pr", "params": prm, "plan_hash": open_pr.plan_hash(CASE["id"], "github.open_pr", prm)}
 
@@ -128,7 +128,7 @@ class OpenPR(unittest.TestCase):
     def test_the_approved_diff_is_what_is_pushed_as_a_draft(self):
         f = self.fixture()
         out = f.run(f.plan())
-        self.assertEqual((out["outcome"], out["ref"]), ("executed", "chipi/orrery#7"), out)
+        self.assertEqual((out["outcome"], out["ref"]), ("executed", "example/shop#7"), out)
         branch = "flotilla/" + CASE["id"]
         pushed = git("diff", f.base, branch, cwd=f.remote)
         self.assertIn("+module.exports = () => 2;", pushed)
@@ -139,7 +139,7 @@ class OpenPR(unittest.TestCase):
         self.assertFalse([c for c in f.gh.calls if "merge" in c[1]], "nothing merges")
         self.assertNotIn("fake-tok", git("config", "--list", cwd=f.remote))
         asked = [c[3] for c in f.gh.calls if c[1] == "/app/installations/77/access_tokens"]
-        self.assertEqual(asked, [{"repositories": ["orrery"], "permissions": {"contents": "write", "pull_requests": "write",
+        self.assertEqual(asked, [{"repositories": ["shop"], "permissions": {"contents": "write", "pull_requests": "write",
                                                                              "metadata": "read"}}],
                          "the token is narrowed to the plan's repository and to contents and pull requests")
         self.assertEqual(os.listdir(f.d).count("plan.json"), 1)
@@ -197,7 +197,7 @@ class PRCheck(unittest.TestCase):
     def test_open_merged_closed(self):
         f = Fixture()
         self.addCleanup(f.close)
-        env = dict(f.env, FLOTILLA_CASE=json.dumps(CASE), FLOTILLA_CHECK=json.dumps({"verify": "pr_resolved", "params": {"repo": "chipi/orrery"}}))
+        env = dict(f.env, FLOTILLA_CASE=json.dumps(CASE), FLOTILLA_CHECK=json.dumps({"verify": "pr_resolved", "params": {"repo": "example/shop"}}))
         self.assertEqual(pr_check.main(env)["outcome"], "not_yet")
         f.run(f.plan())
         out = pr_check.main(env)
@@ -214,10 +214,10 @@ class PRCheck(unittest.TestCase):
 class Hash(unittest.TestCase):
     def test_the_go_vector(self):
         """internal/policy/hash_vector_test.go asserts the same value for policy.Plan.Hash."""
-        p = {"repo": "chipi/orrery", "base": "abc1234", "title": "fix #12: a < b && c > d — été",
+        p = {"repo": "example/shop", "base": "abc1234", "title": "fix #12: a < b && c > d — été",
              "body": "line 1\nline \"2\"\t\\   \U0001F680", "diff": "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-<a href=\"x\">&amp;</a>\n+ok\n"}
         self.assertEqual(open_pr.plan_hash("case-20261115-abc", "github.open_pr", p),
-                         "9a41a15da7f89b53fda5fe9ac8777d8f798af5011944cd4eb4c6e8295d63b7f1")
+                         "79b7446711ccdf04b2d82cd0c1a2b934f882da092f2443bf3cb317d5f99a26aa")
 
 
 if __name__ == "__main__":

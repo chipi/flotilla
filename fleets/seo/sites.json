@@ -1,0 +1,4 @@
+[
+  {"name": "shop", "base": "https://www.example.com", "brand": "Example Shop", "bots": ["Googlebot", "Bingbot"], "pages": ["/", "/products", "/about", "/de/"], "sample_prefixes": ["/products/", "/guides/"], "json_ld": ["/", "/products/"], "hreflang": true, "locales": 2, "retired": ["https://shop.example.org/"], "umami": ["00000000-0000-4000-8000-000000000001"], "search_console": "sc-domain:example.com"},
+  {"name": "docs", "base": "https://docs.example.com", "pages": ["/", "/guide/"], "umami": ["00000000-0000-4000-8000-000000000002"], "search_console": "sc-domain:example.com"}
+]

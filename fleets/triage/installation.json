@@ -9,6 +9,7 @@
   "ops_repo": "example/ops",
   "chain_repos": ["example/shop"],
   "assistant_backend": "",
+  "edge_instance": "prod-api",
   "probe_log_selector": {
     "shop-web": "service:shop-web",
     "api-prod": "service:api"

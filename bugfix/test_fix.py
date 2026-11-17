@@ -246,7 +246,7 @@ def git(*a, cwd):
 class Fixture:
     def __init__(self, verdicts, fixes, py=False):
         self.py = py
-        self.repo = "chipi/podcast_scraper" if py else "chipi/orrery"
+        self.repo = "example/api" if py else "example/shop"
         self.d = tempfile.mkdtemp()
         b = os.path.join(self.d, "bakeoff")
         write(os.path.join(b, "triage_run.sh"), TRIAGE)
@@ -260,7 +260,7 @@ class Fixture:
         for name, items in (("verdicts", verdicts), ("fixes", fixes)):
             with open(os.path.join(self.state, name), "w") as f:
                 f.write("".join(x + "\n" for x in items))
-        # the remote: chipi/orrery with one passing test and one already red on main
+        # the remote: example/shop with one passing test and one already red on main
         src = os.path.join(self.d, "src")
         os.makedirs(os.path.join(src, "src"))
         os.makedirs(os.path.join(src, "static", "images"))
@@ -425,7 +425,7 @@ class Chain(unittest.TestCase):
         plan, _ = f.run()
         self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), plan)
         p = plan["params"]
-        self.assertEqual((p["repo"], p["base"]), ("chipi/orrery", f.base))
+        self.assertEqual((p["repo"], p["base"]), ("example/shop", f.base))
         self.assertEqual(p["title"], "fix #12: value is 1")
         self.assertIn("+++ b/src/a.test.js", p["diff"])
         self.assertIn("+module.exports = () => 2;", p["diff"])
@@ -435,7 +435,7 @@ class Chain(unittest.TestCase):
         self.assertIn("VERDICT: approve", p["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "review"])
         self.assertEqual(os.listdir(os.path.join(f.scratch, "runs")), [], "the run's directory is deleted")
-        cache = os.path.join(f.scratch, "repos", "chipi__orrery.git")
+        cache = os.path.join(f.scratch, "repos", "example__shop.git")
         wl = subprocess.run(["git", "-C", cache, "worktree", "list"], capture_output=True, text=True).stdout.splitlines()
         self.assertEqual(len(wl), 1, f"the cache stays and the run's worktree is gone: {wl}")
         # a second case reuses the cache: it fetches what is new, not the whole repo again
@@ -463,7 +463,7 @@ class Chain(unittest.TestCase):
         hook left in it does not run."""
         f = self.fixture(["needs-info", "needs-info"], [])
         f.run()
-        cache = os.path.join(f.scratch, "repos", "chipi__orrery.git")
+        cache = os.path.join(f.scratch, "repos", "example__shop.git")
         hook = os.path.join(cache, ".git", "hooks", "post-checkout")
         os.makedirs(os.path.dirname(hook), exist_ok=True)
         marker = os.path.join(f.d, "hook-ran")
@@ -492,7 +492,7 @@ class Chain(unittest.TestCase):
         plan, _ = f.run("--setup", "git config core.hooksPath .husky")
         self.assertEqual(plan["outcome"], "escalate")
         self.assertNotIn("config was changed", plan["detail"])
-        cache = os.path.join(f.scratch, "repos", "chipi__orrery.git")
+        cache = os.path.join(f.scratch, "repos", "example__shop.git")
         got = subprocess.run(["git", "-C", cache, "config", "--local", "--get", "core.hooksPath"], capture_output=True, text=True)
         self.assertEqual(got.returncode, 1, f"core.hooksPath stayed in the cache: {got.stdout!r}")
         plan2, _ = f.run("--setup", "git config core.hooksPath .husky")
@@ -765,7 +765,7 @@ exec {real} "$@"
         with open(os.path.join(wt, "src", "a.js"), "w") as fh:
             fh.write("module.exports = () => 2;\n")
         git("add", "-A", cwd=wt)
-        chain = types.SimpleNamespace(repo="chipi/orrery", n=12, issue={"title": "t", "body": "b"}, checked="",
+        chain = types.SimpleNamespace(repo="example/shop", n=12, issue={"title": "t", "body": "b"}, checked="",
                                       a=types.SimpleNamespace(review_tools="none"), wt=wt, base=base, run_dir=d, env=dict(os.environ))
         p = fix.Chain.review_prompt(chain, "diff --git a/src/a.js b/src/a.js\n")
         self.assertNotIn("sk-SECRET-KEY", p)
@@ -774,7 +774,7 @@ exec {real} "$@"
 
     def test_the_unresolved_flag_survives_a_long_plan_body(self):
         import types
-        chain = types.SimpleNamespace(repo="chipi/orrery", n=12, issue={"title": "t"}, base="a" * 40, checked="gates ok",
+        chain = types.SimpleNamespace(repo="example/shop", n=12, issue={"title": "t"}, base="a" * 40, checked="gates ok",
                                       unloaded_on_base=[], log=["step " + "x" * 3000] * 5)
         plan = fix.Chain.plan(chain, 1, "diff", "VERDICT: request-changes", unresolved="the review asked for changes")
         body = plan["params"]["body"]
@@ -1059,7 +1059,7 @@ exec {real} "$@"
         f = self.fixture([], [])
         old = os.environ.get("FLOTILLA_CASE")
         plan_path = os.path.join(f.d, "p.json")
-        out = fix.main(["--repo", "chipi/orrery", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
+        out = fix.main(["--repo", "example/shop", "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
                         "--reviewer-model", "bugfix-reviewer", "--scratch", f.scratch],
                        environ={"FLOTILLA_CASE": json.dumps({"id": "c", "data": {}}), "FLOTILLA_PLAN_FILE": plan_path,
                                 "FLOTILLA_MODELS": json.dumps(MODELS), "PATH": os.environ["PATH"]})
@@ -1123,7 +1123,7 @@ exec {real} "$@"
         with open(os.path.join(d, "src", "big.js"), "r+") as fh:
             fh.write("module.exports = () => 2;")
         git("add", "-A", cwd=d)
-        chain = types.SimpleNamespace(repo="chipi/orrery", n=12, issue={"title": "t", "body": "value() returns 1, want 2"},
+        chain = types.SimpleNamespace(repo="example/shop", n=12, issue={"title": "t", "body": "value() returns 1, want 2"},
                                       a=types.SimpleNamespace(review_tools="none"), wt=d, base=base, run_dir=d, env=dict(os.environ))
         p = fix.Chain.review_prompt(chain, "diff --git a/src/big.js b/src/big.js\n-1\n+2\n")
         self.assertLessEqual(len(p.encode()), fix.REVIEW_PROMPT_MAX)
@@ -1169,10 +1169,10 @@ exec {real} "$@"
                    FAKE_STATE=f.state, GIT_ALLOW_PROTOCOL="file", GIT_REMOTE_BASE=f.remotes, HOME=home, BUGFIX_BAKEOFF_DIR=f.bakeoff,
                    PATH=os.path.join(f.d, "bin") + os.pathsep + os.environ["PATH"],
                    GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
-                   FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": "repo:chipi/orrery/issues/12",
-                                             "data": {"issue": {"repo": "chipi/orrery", "number": 12, "title": "value is 1",
+                   FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": "repo:example/shop/issues/12",
+                                             "data": {"issue": {"repo": "example/shop", "number": 12, "title": "value is 1",
                                                                 "body": "value() returns 1, want 2", "url": "u"}}}))
-        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "chipi/orrery", "--worker-model", "bugfix-flash",
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
                               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
                               "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
                               "--scratch", f.scratch, "--spend-file", ".spend", "--spend-poll", "0.1"],
@@ -1230,7 +1230,7 @@ class PythonRepo(unittest.TestCase):
         plan, _ = f.run()
         self.assertEqual((plan["outcome"], plan["action"]), ("plan", "github.open_pr"), plan)
         p = plan["params"]
-        self.assertEqual(p["repo"], "chipi/podcast_scraper")
+        self.assertEqual(p["repo"], "example/api")
         self.assertIn("1 test files fail on the base and pass with the fix", p["body"])
         self.assertIn("4 related files, none newly failing", p["body"], "test_keep, test_red, sub/test_s and the fix's test_mod under pkg/")
         self.assertIn("related: tests/unit/podcast_scraper/pkg", p["body"])
@@ -1421,23 +1421,23 @@ class FullIssueBody(unittest.TestCase):
 
     def test_a_cut_body_is_fetched_whole(self):
         api = self.serve(200, "the whole report, " * 500)
-        issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "the whole rep", "body_cut": True}
+        issue = {"repo": "example/api", "number": 7, "body": "the whole rep", "body_cut": True}
         got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
         self.assertEqual(got["body"], "the whole report, " * 500)
         self.assertFalse(got["body_cut"])
-        self.assertEqual(self.paths, ["/repos/chipi/podcast_scraper/issues/7"])
+        self.assertEqual(self.paths, ["/repos/example/api/issues/7"])
         self.assertIn("full body", note)
 
     def test_a_body_that_was_not_cut_is_not_fetched(self):
         api = self.serve(200, "other")
-        issue = {"repo": "chipi/orrery", "number": 7, "body": "short", "body_cut": False}
+        issue = {"repo": "example/shop", "number": 7, "body": "short", "body_cut": False}
         got, note = fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api})
         self.assertEqual((got["body"], self.paths, note), ("short", [], ""))
 
     def test_a_failed_fetch_is_retried_once_then_stops_the_case(self):
         # intake's fixed share cuts most bodies: the fix must not work from the first few hundred bytes, silently
         api = self.serve(404, "x")
-        issue = {"repo": "chipi/podcast_scraper", "number": 7, "body": "cut", "body_cut": True}
+        issue = {"repo": "example/api", "number": 7, "body": "cut", "body_cut": True}
         with self.assertRaises(fix.Stop) as e:
             fix.issue_for_case(issue, issue["repo"], {"GITHUB_API": api, "BUGFIX_BODY_RETRY_S": "0"})
         self.assertIn("could not be read whole from GitHub (HTTPError", str(e.exception))
@@ -1447,5 +1447,5 @@ class FullIssueBody(unittest.TestCase):
         # Chain falls back to --repo when the case's issue names none; the read must use the same repo
         api = self.serve(200, "whole")
         issue = {"number": 7, "body": "cut", "body_cut": True}
-        got, note = fix.issue_for_case(issue, "chipi/podcast_scraper", {"GITHUB_API": api})
-        self.assertEqual((got["body"], self.paths), ("whole", ["/repos/chipi/podcast_scraper/issues/7"]))
+        got, note = fix.issue_for_case(issue, "example/api", {"GITHUB_API": api})
+        self.assertEqual((got["body"], self.paths), ("whole", ["/repos/example/api/issues/7"]))

@@ -22,7 +22,7 @@ class IPv4(unittest.TestCase):
         self.assertEqual(scrub.scrub_str("client 203.0.113.7 connected"), "client <ip> connected")
         self.assertEqual(scrub.scrub_str("upstream=10.1.2.3:8080"), "upstream=<ip>:8080")
         self.assertNotIn("192.168.1.20", scrub.scrub_str("GET http://192.168.1.20/health"))
-        self.assertNotIn("100.64.0.9", scrub.scrub_str('{"ip": "100.64.0.9"}'))
+        self.assertNotIn("100.64.0.9", scrub.scrub_str('{"ip": "100.64.0.9"}'))  # facts: allow (an invented tailnet address)
 
     def test_idempotent(self):
         once = scrub.scrub_str("from 203.0.113.7 via " + UA)

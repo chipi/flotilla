@@ -198,7 +198,7 @@ class Sweep(unittest.TestCase):
 class Gates(unittest.TestCase):
     EDGE = {"fingerprint": "grafana:edge1", "source": "grafana", "alertname": "Edge 5xx burst on example.invalid",
             "labels": {}, "startsAt": "2026-10-26T13:46:30Z"}
-    LOOK = {"kind": "restarts_near", "args": {"instance": "prod-podcast", "at": "2026-10-26T13:46:30Z"}}
+    LOOK = {"kind": "restarts_near", "args": {"instance": "prod-edge", "at": "2026-10-26T13:46:30Z"}}
     LOGS = [{"probe": "service_logs", "args": {}, "result": "200 OK for the last hour"}]
 
     def run_gates(self, signal, decision, trace=(), gates=None):

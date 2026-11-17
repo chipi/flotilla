@@ -1012,7 +1012,7 @@ class TestAlertKeyDedup(unittest.TestCase):
         # two synthetic per-container OOM signals, shaped like a probe capture records them
         name = "prod OOM kill: a container hit its own limit"
         return {"fingerprint": fp, "source": "grafana", "alertname": name, "raw": {},
-                "summary": f"{container} on prod-podcast was OOM-killed",
+                "summary": f"{container} on prod-edge was OOM-killed",
                 "labels": {"__alert_rule_uid__": "prod-oom-kill-other", "alertname": name,
                            "container": container, "kind": "infra", "severity": "warning"}}
 
@@ -2254,15 +2254,15 @@ class TestAssistantFailover(unittest.TestCase):
 
     def test_event_backends_both_forms(self):
         import sources
-        ev = self._ev("Connect call failed ('100.92.54.65', 11435); POST http://100.69.49.126:8003/v1")
-        self.assertEqual(sources.event_backends(ev), ["100.69.49.126:8003", "100.92.54.65:11435"])
+        ev = self._ev("Connect call failed ('192.0.2.10', 11435); POST http://192.0.2.20:8003/v1")
+        self.assertEqual(sources.event_backends(ev), ["192.0.2.10:11435", "192.0.2.20:8003"])
         self.assertEqual(sources.event_backends({}), [])
 
     def test_gate(self):
         import triage
         x3 = triage.config.ASSISTANT_BACKEND
         self.assertEqual(triage.operational_class(self._sig("litellm", [x3])), "assistant-failover")
-        self.assertIsNone(triage.operational_class(self._sig("litellm", [x3, "100.69.49.126:8003"])))
+        self.assertIsNone(triage.operational_class(self._sig("litellm", [x3, "192.0.2.20:8003"])))
         self.assertIsNone(triage.operational_class(self._sig("litellm", [])))
         self.assertIsNone(triage.operational_class(self._sig("podcast", [x3])))
 
@@ -2270,10 +2270,10 @@ class TestAssistantFailover(unittest.TestCase):
         import sources
         seen = []
         old = sources._gt
-        sources._gt = lambda p: seen.append(p) or self._ev("('100.92.54.65', 11435)")
+        sources._gt = lambda p: seen.append(p) or self._ev("('192.0.2.10', 11435)")
         try:
             s = sources.attach_backend({"labels": {"project": "litellm"}, "issue_id": 7, "raw": {}})
-            self.assertEqual(s["raw"]["_backends"], ["100.92.54.65:11435"])
+            self.assertEqual(s["raw"]["_backends"], ["192.0.2.10:11435"])
             sources.attach_backend({"labels": {"project": "podcast"}, "issue_id": 8, "raw": {}})
             self.assertEqual(seen, ["/issues/7/events/latest/"])
         finally:

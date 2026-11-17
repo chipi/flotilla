@@ -1,8 +1,0 @@
-[
-  {"name": "orrery", "base": "https://www.orrerylearn.com", "brand": "Orrery", "bots": ["Googlebot", "Bingbot"], "pages": ["/", "/missions", "/fleet", "/explore", "/plan", "/lab", "/science", "/de/"], "sample_prefixes": ["/missions/", "/fleet/", "/science/", "/lab/", "/explore/", "/programs/", "/moon/", "/mars/", "/essays/"], "json_ld": ["/", "/missions/", "/fleet/", "/lab/", "/explore/", "/programs/", "/moon/", "/mars/", "/essays/"], "hreflang": true, "locales": 14, "retired": ["https://chipi.github.io/orrery/"], "umami": ["4a25d8da-63a1-4ef7-b9d3-1b6b8c8a6bce"], "search_console": "sc-domain:orrerylearn.com"},
-  {"name": "humancopilot", "base": "https://www.humancopilot.eu", "json_ld": true, "umami": ["5f4eb50a-4831-43b7-874c-5ff29f253a6d"], "search_console": "sc-domain:humancopilot.eu"},
-  {"name": "evals", "base": "https://evals.humancopilot.eu", "pages": ["/", "/docs/"], "umami": ["76169139-07c1-4806-bde6-f9014e803e7f"], "search_console": "sc-domain:humancopilot.eu"},
-  {"name": "devwhateverops", "base": "https://www.devwhateverops.com", "json_ld": true, "umami": ["4bd6a4f9-aaf2-400b-9f26-8e9282561615"], "search_console": "sc-domain:devwhateverops.com"},
-  {"name": "markodragoljevic", "base": "https://www.markodragoljevic.com", "umami": ["f4dde7dd-d482-4c75-8942-e2a9ba7f62c5"], "search_console": "sc-domain:markodragoljevic.com"},
-  {"name": "airandspacehistory", "base": "https://airandspacehistory.com", "umami": ["8e0e4da6-46f2-40ac-b453-5ec80f7a6719"], "search_console": "sc-domain:airandspacehistory.com"}
-]

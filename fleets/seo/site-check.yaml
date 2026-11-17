@@ -1,7 +1,7 @@
 fleet: seo
 routine: site-check
 description: >-
-  RFC-0012 §2: for each site in seo/sites.json, robots.txt lets the named crawlers in, every sitemap
+  RFC-0012 §2: for each site in the fleet folder's sites.json (fleets/seo/sites.json), robots.txt lets the named crawlers in, every sitemap
   answers and lists URLs, a fixed set of pages and one page per sampled prefix answer 200 on the site's
   own host, indexable, with a title, a description, a self canonical, and (where the site declares them)
   JSON-LD that parses and hreflang alternates that answer; retired hosts answer 404 or noindex. Each

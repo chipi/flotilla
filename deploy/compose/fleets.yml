@@ -1,8 +1,8 @@
 # The installation's own fleets over the image's (vision plan step 7, route B). flotillad reads the specs
-# from /opt/flotilla/fleets, and the triage workers read playbooks, skills and harness settings from there,
-# so all three mount the same folder. deploy.sh adds this file when FLOTILLA_FLEETS_DIR is set in
-# FLOTILLA_HOME/.env; deploy_fleets.sh fills that folder from a commit of the private fleets repo. Unset:
-# the image's own fleets, the example fleets.
+# from /opt/flotilla/fleets, the triage workers their playbooks, skills, harness settings and facts
+# (triage/installation.json), the marketing worker its sites (seo/sites.json): all of them mount the same
+# folder. deploy.sh adds this file when FLOTILLA_FLEETS_DIR is set in FLOTILLA_HOME/.env; deploy_fleets.sh
+# fills that folder from a commit of the private fleets repo. Unset: the image's own, the example fleets.
 services:
   flotillad:
     volumes:
@@ -11,5 +11,8 @@ services:
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
   worker-triage-candidate:
+    volumes:
+      - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
+  worker-marketing:   # the SEO routines read fleets/seo/sites.json
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro

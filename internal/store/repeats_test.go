@@ -28,9 +28,9 @@ func signals(t *testing.T, s *Store, id string) int {
 func TestRepeatedDetectionsAreCounted(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
-	k := Key{Kind: "target", Value: "code_bug/repo:chipi/orrery/issues/656"}
+	k := Key{Kind: "target", Value: "code_bug/repo:example/shop/issues/656"}
 	n := func(data string) NewCase {
-		return NewCase{Kind: "code_bug", Target: "repo:chipi/orrery/issues/656", Keys: []Key{k}, Canonical: k, Data: data}
+		return NewCase{Kind: "code_bug", Target: "repo:example/shop/issues/656", Keys: []Key{k}, Canonical: k, Data: data}
 	}
 	issue := `{"issue":{"number":656,"updated_at":"2026-11-15T13:00:00Z"}}`
 	id, how, err := s.DetectIncident(ctx, n(issue), "bugfix/intake", "run i1")
@@ -58,7 +58,7 @@ func TestRepeatedDetectionsAreCounted(t *testing.T) {
 	_ = s.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "bugfix/intake", "")
 	_ = s.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "bugfix/fix", "")
 	if _, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: "r", Action: "a.b", Params: map[string]string{}, Outcome: "shadow",
-		Autonomy: "shadow"}, cases.Closed, cases.ShadowPlan, "repo:chipi/orrery", false); err != nil {
+		Autonomy: "shadow"}, cases.Closed, cases.ShadowPlan, "repo:example/shop", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, how, _ := s.DetectIncident(ctx, n(edited), "bugfix/intake", "run"); how != Absorbed || signals(t, s, id) != 3 {

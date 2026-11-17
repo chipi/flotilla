@@ -34,7 +34,7 @@
       "executor": "repo",
       "for_kinds": ["code_bug", "code_bug_python", "process_change"],
       "params": {
-        "repo": {"kind": "enum", "enum": ["chipi/orrery", "chipi/flotilla", "chipi/podcast_scraper"]},
+        "repo": {"kind": "enum", "enum": ["example/shop", "chipi/flotilla", "example/api"]},
         "base": {"kind": "text", "max": 40},
         "title": {"kind": "text", "max": 200},
         "body": {"kind": "text", "max": 8000},

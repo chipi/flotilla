@@ -141,22 +141,22 @@ class Intake(unittest.TestCase):
         # routine takes a case kind of its own; orrery keeps code_bug, the default
         gh = FakeGitHub([issue(31, "ffprobe chokes on non-UTF-8", ["bug"])])
         self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug", "--kind", "code_bug_python")
+        out = self.run_intake(gh, "--repo", "example/api", "--label", "bug", "--kind", "code_bug_python")
         self.assertEqual([(d["kind"], d["target"]) for d in out["detections"]],
-                         [("code_bug_python", "repo:chipi/podcast_scraper/issues/31")])
-        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+                         [("code_bug_python", "repo:example/api/issues/31")])
+        out = self.run_intake(gh, "--repo", "example/api", "--label", "bug")
         self.assertEqual([d["kind"] for d in out["detections"]], ["code_bug"])
 
     def test_one_case_per_issue_either_label_no_prs(self):
         gh = FakeGitHub([issue(12, "the orbit is wrong", ["bug"]), issue(15, "crash on /fly", ["triage-fleet/routed:bugfix", "bug"]),
                          issue(16, "a PR", ["bug"], pr=True), issue(17, "routed only", ["triage-fleet/routed:bugfix"])])
         self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug", "--label", "triage-fleet/routed:bugfix", token="tok-1")
+        out = self.run_intake(gh, "--repo", "example/shop", "--label", "bug", "--label", "triage-fleet/routed:bugfix", token="tok-1")
         self.assertEqual(out["outcome"], "detections")
         got = {d["target"]: d for d in out["detections"]}
-        self.assertEqual(sorted(got), ["repo:chipi/orrery/issues/12", "repo:chipi/orrery/issues/15", "repo:chipi/orrery/issues/17"])
-        d = got["repo:chipi/orrery/issues/15"]
-        self.assertEqual((d["kind"], d["title"]), ("code_bug", "orrery #15: crash on /fly"))
+        self.assertEqual(sorted(got), ["repo:example/shop/issues/12", "repo:example/shop/issues/15", "repo:example/shop/issues/17"])
+        d = got["repo:example/shop/issues/15"]
+        self.assertEqual((d["kind"], d["title"]), ("code_bug", "shop #15: crash on /fly"))
         self.assertEqual(d["data"]["issue"]["number"], 15)
         self.assertEqual(d["data"]["issue"]["labels"], ["bug", "triage-fleet/routed:bugfix"])
         self.assertTrue(all(s[2] == "open" and s[3] == "Bearer tok-1" for s in gh.seen), gh.seen)
@@ -168,8 +168,8 @@ class Intake(unittest.TestCase):
         prod = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-PROD-25`)"
         gh = FakeGitHub([issue(14, "prod", ["bug"], body=prod), issue(15, "dev", ["bug"], body=dev)])
         self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
-        self.assertEqual([d["target"] for d in out["detections"]], ["repo:chipi/orrery/issues/14"])
+        out = self.run_intake(gh, "--repo", "example/shop", "--label", "bug")
+        self.assertEqual([d["target"] for d in out["detections"]], ["repo:example/shop/issues/14"])
 
     def test_the_whole_report_stays_under_flotillads_limit(self):
         # B8 (2026-11-16): podcast_scraper's 35 open bug issues at up to 7,500 bytes each made a report over the
@@ -177,7 +177,7 @@ class Intake(unittest.TestCase):
         big = [issue(n, f"bug {n}", ["bug"], body="x" * 9000) for n in range(1, 51)]
         gh = FakeGitHub(big)
         self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        out = self.run_intake(gh, "--repo", "example/api", "--label", "bug")
         self.assertEqual(len(out["detections"]), 50)
         self.assertLess(len(json.dumps(out).encode()), 64 * 1024)
         self.assertTrue(all(d["data"]["issue"]["body_cut"] for d in out["detections"]))
@@ -185,7 +185,7 @@ class Intake(unittest.TestCase):
         small = [issue(n, f"bug {n}", ["bug"], body="short body") for n in range(1, 6)]
         gh2 = FakeGitHub(small)
         self.addCleanup(gh2.close)
-        out = self.run_intake(gh2, "--repo", "chipi/orrery", "--label", "bug")
+        out = self.run_intake(gh2, "--repo", "example/shop", "--label", "bug")
         self.assertEqual({d["data"]["issue"]["body"] for d in out["detections"]}, {"short body"})
 
     def test_long_titles_shrink_the_bodies_until_the_report_fits(self):
@@ -193,7 +193,7 @@ class Intake(unittest.TestCase):
         long_title = "t" * 300
         gh = FakeGitHub([issue(n, long_title, ["bug"], body="x" * 9000) for n in range(1, 51)])
         self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        out = self.run_intake(gh, "--repo", "example/api", "--label", "bug")
         self.assertEqual(len(out["detections"]), 50)
         self.assertLess(len(json.dumps(out).encode()), 64 * 1024)
 
@@ -206,7 +206,7 @@ class Intake(unittest.TestCase):
         intake.MAX_REPORT = 20000
         try:
             with self.assertRaises(intake.IntakeError):
-                self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+                self.run_intake(gh, "--repo", "example/api", "--label", "bug")
         finally:
             intake.MAX_REPORT = old
 
@@ -215,7 +215,7 @@ class Intake(unittest.TestCase):
         # with the bodies cut away, and the whole intake failed
         gh = FakeGitHub([issue(n, "é" * 256, ["bug"], body="ü" * 9000) for n in range(1, 51)])
         self.addCleanup(gh.close)
-        out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+        out = self.run_intake(gh, "--repo", "example/api", "--label", "bug")
         self.assertEqual(len(out["detections"]), 50)
         for d in out["detections"]:
             self.assertLessEqual(len(d["data"]["issue"]["title"].encode()), intake.TITLE_BYTES)
@@ -227,14 +227,14 @@ class Intake(unittest.TestCase):
         def data_of(n_open):
             gh = FakeGitHub([issue(n, "t", ["bug"], body="x" * 9000) for n in range(1, n_open + 1)])
             self.addCleanup(gh.close)
-            out = self.run_intake(gh, "--repo", "chipi/podcast_scraper", "--label", "bug")
+            out = self.run_intake(gh, "--repo", "example/api", "--label", "bug")
             return next(d["data"] for d in out["detections"] if d["target"].endswith("/issues/1"))
         self.assertEqual(data_of(3), data_of(30))
 
     def test_a_long_body_is_cut_to_fit(self):
         gh = FakeGitHub([issue(3, "long", ["bug"], body="x" * 40000)])
         self.addCleanup(gh.close)
-        d = self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")["detections"][0]
+        d = self.run_intake(gh, "--repo", "example/shop", "--label", "bug")["detections"][0]
         self.assertTrue(d["data"]["issue"]["body_cut"])
         self.assertLessEqual(len(json.dumps(d["data"]).encode()), intake.DATA_SHARE)
         self.assertGreater(len(d["data"]["issue"]["body"]), 400, "a fixed share still carries the start of the body")
@@ -245,11 +245,11 @@ class Intake(unittest.TestCase):
         gh = FakeGitHub([], status=403)
         self.addCleanup(gh.close)
         with self.assertRaises(intake.IntakeError):
-            self.run_intake(gh, "--repo", "chipi/orrery", "--label", "bug")
+            self.run_intake(gh, "--repo", "example/shop", "--label", "bug")
         many = FakeGitHub([issue(n, "b", ["bug"]) for n in range(1, intake.MAX_DETECTIONS + 2)])
         self.addCleanup(many.close)
         with self.assertRaises(intake.IntakeError):
-            self.run_intake(many, "--repo", "chipi/orrery", "--label", "bug")
+            self.run_intake(many, "--repo", "example/shop", "--label", "bug")
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ UA = "flotilla-seo/1 (+https://github.com/chipi/flotilla)"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAX_BODY = 4_000_000
 # A request that got no HTTP answer is tried again after these pauses: Cloudflare reset 7 of 204 of
-# the mini's connections to orrerylearn.com in one run (2026-11-15), and a reset is about the network,
+# the host's connections to one site in one run (2026-11-15), and a reset is about the network,
 # not the page. One that fails every time is still reported. PACE spaces the requests to one host.
 RETRY_PAUSES = (5, 15)
 PACE = 0.3
@@ -253,7 +253,8 @@ class Check:
 
 
 def main(fetcher=fetch):
-    path = os.environ.get("SEO_SITES", os.path.join(HERE, "sites.json"))
+    path = os.environ.get("SEO_SITES") or os.path.join(   # as common.sites_path(): the fleet folder's
+        os.environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE), "fleets", "seo", "sites.json")
     with open(path) as f:
         sites = json.load(f)
     found, lines = [], []

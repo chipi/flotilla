@@ -36,7 +36,7 @@ func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 }
 
 type ChainConfig struct {
-	Repo        string `json:"repo"`         // chipi/orrery
+	Repo        string `json:"repo"`         // example/shop
 	IntakeQuery string `json:"intake_query"` // label filter for gh issue list
 	BakeoffDir  string `json:"bakeoff_dir"`  // .../bugfix-fleet/bakeoff (leaf executors)
 	Worktree    string `json:"worktree"`     // production worktree (node env ready)

@@ -212,6 +212,32 @@ func (r *Registry) Action(name string) (Action, bool) {
 	return a, ok
 }
 
+// SetEnum replaces the values of an action's enum parameter with the installation's (flotillad.yaml
+// `action_enums`): the registry declares the parameter and its example values, the installation names
+// its own, such as the repos github.open_pr may act on.
+func (r *Registry) SetEnum(action, param string, values []string) error {
+	a, ok := r.actions[action]
+	if !ok {
+		return fmt.Errorf("action_enums: no action %q in the registry", action)
+	}
+	p, ok := a.Params[param]
+	if !ok || p.Kind != "enum" {
+		return fmt.Errorf("action_enums: %s has no enum parameter %q", action, param)
+	}
+	if len(values) == 0 {
+		return fmt.Errorf("action_enums: %s.%s needs at least one value", action, param)
+	}
+	params := make(map[string]Param, len(a.Params))
+	for k, v := range a.Params {
+		params[k] = v
+	}
+	p.Enum = append([]string(nil), values...)
+	params[param] = p
+	a.Params = params
+	r.actions[action] = a
+	return nil
+}
+
 // Actions lists every action's name, sorted.
 func (r *Registry) Actions() []string {
 	var out []string

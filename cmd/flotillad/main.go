@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -85,12 +86,38 @@ type Config struct {
 	// Optional: the registry's declarations (ADR-0011, RFC-0006 §10 step 4). Unset: the host agent's,
 	// which the image carries. An installation's extension adds its own file here.
 	RegistryFiles []string `yaml:"registry_files"`
+	// Optional: the installation's values for an action's enum parameter, replacing the registry's
+	// examples ({github.open_pr: {repo: [owner/repo, ...]}}). Unset: the registry's own.
+	ActionEnums map[string]map[string][]string `yaml:"action_enums"`
 	// Optional: the host agents' endpoint (ADR-0006). Unset: no host can enrol or connect.
 	Hosts HostsConfig `yaml:"hosts"`
 }
 
 // defaultRegistry is the declaration flotillad's image carries for its own tag.
 var defaultRegistry = []string{"/opt/flotilla/host/registry.json"}
+
+// applyActionEnums puts the installation's enum values (action_enums) into the loaded registry, in
+// sorted order so an error names the same entry every time.
+func applyActionEnums(reg *registry.Registry, enums map[string]map[string][]string) error {
+	actions := make([]string, 0, len(enums))
+	for a := range enums {
+		actions = append(actions, a)
+	}
+	sort.Strings(actions)
+	for _, a := range actions {
+		params := make([]string, 0, len(enums[a]))
+		for p := range enums[a] {
+			params = append(params, p)
+		}
+		sort.Strings(params)
+		for _, p := range params {
+			if err := reg.SetEnum(a, p, enums[a][p]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 type WorkerConfig struct {
 	URL       string `yaml:"url"`
@@ -239,6 +266,10 @@ func main() {
 	}
 	reg, err := registry.Load(regFiles...)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "registry:", err)
+		os.Exit(2)
+	}
+	if err := applyActionEnums(reg, cfg.ActionEnums); err != nil {
 		fmt.Fprintln(os.Stderr, "registry:", err)
 		os.Exit(2)
 	}

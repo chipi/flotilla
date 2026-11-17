@@ -20,8 +20,15 @@ class Error(Exception):
     """A source that cannot be read: the run fails, so no finding is made from a missing number."""
 
 
+def sites_path():
+    """The installation's sites: the fleet folder's sites.json (on a host the installation's own fleets,
+    mounted over the image's; in the image and a checkout, the example's), or SEO_SITES."""
+    return os.environ.get("SEO_SITES") or os.path.join(
+        os.environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE), "fleets", "seo", "sites.json")
+
+
 def sites():
-    with open(os.environ.get("SEO_SITES", os.path.join(HERE, "sites.json"))) as f:
+    with open(sites_path()) as f:
         return json.load(f)
 
 

@@ -9,7 +9,7 @@ acting routine; the body is the reporter's text, untrusted evidence.
 A failed read fails the run: a run that could not see the issues must not report none (that would
 clear every case).
 
-  python3 bugfix/intake.py --repo chipi/orrery --label bug --label triage-fleet/routed:bugfix
+  python3 bugfix/intake.py --repo example/shop --label bug --label triage-fleet/routed:bugfix
 Environment: FLOTILLA_PLAN_FILE (the worker's), GITHUB_API (default https://api.github.com),
 GITHUB_TOKEN_FILE (optional: a read token, for the rate limit; public repos need none).
 """
