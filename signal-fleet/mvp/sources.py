@@ -180,8 +180,11 @@ def _left_out(slug):
 
 def _issue_query(limit):
     """The issues query; with a project left out in the org, it names every other project."""
-    q = f"/organizations/homelab/issues/?limit={limit}&sort=-last_seen"
-    projects = _gt("/organizations/homelab/projects/")
+    org = config.GLITCHTIP_ORG
+    if not org:
+        raise RuntimeError("glitchtip: no organization (glitchtip_org in installation.json, or SF_GLITCHTIP_ORG)")
+    q = f"/organizations/{org}/issues/?limit={limit}&sort=-last_seen"
+    projects = _gt(f"/organizations/{org}/projects/")
     if not isinstance(projects, list):
         raise RuntimeError(f"glitchtip projects error: {str(projects)[:160]}")
     if not any(_left_out(p.get("slug")) for p in projects):

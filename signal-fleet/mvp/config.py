@@ -1,8 +1,9 @@
-"""signal-fleet MVP config — endpoints + creds from env, homelab defaults.
+"""The triage fleet's config: endpoints and credentials from the environment, the installation's facts
+from its installation.json.
 
-Stdlib-only. The fleet runs on the mini (`homelab`), where every source is on
-localhost/tailnet. Endpoints default to the `homelab` tailnet name; creds come
-from env (source the stack .envs before running — see run.sh). No secrets in code.
+Stdlib-only. Each endpoint is the installation's (SF_*_URL in the worker's environment); without one it
+defaults to SF_HOST (localhost) on the service's usual port. Credentials come from the environment
+only. No secrets in code.
 """
 import os
 
@@ -16,7 +17,7 @@ def env(key, default=None, required=False):
     return v
 
 
-HOST = env("SF_HOST", "homelab")
+HOST = env("SF_HOST", "localhost")
 
 # the fleet's OWN identity as a telemetry PRODUCER — kept separate from the
 # monitored projects (dgx / orrery / podcast use dev|staging|prod). The fleet is
@@ -37,6 +38,7 @@ GRAFANA_USER = env("GRAFANA_ADMIN_USER", "admin")          # basic-auth fallback
 GRAFANA_PW = env("GRAFANA_ADMIN_PASSWORD")
 GLITCHTIP_URL = env("SF_GLITCHTIP_URL", f"http://{HOST}:8090")
 GLITCHTIP_TOKEN = env("GLITCHTIP_TOKEN")                   # signal-fleet token (read-only)
+GLITCHTIP_ORG = env("SF_GLITCHTIP_ORG", installation.get("glitchtip_org", ""))   # the organization's slug
 GLITCHTIP_WRITE_TOKEN = env("GLITCHTIP_WRITE_TOKEN")       # event:write — sync + notes (#100)
 GLITCHTIP_SYNC = env("SF_GLITCHTIP_SYNC", "") == "1"       # mirror GitHub closes into GlitchTip
 # The assistant backend behind LiteLLM's `assistant` alias (RFC-0008), host:port as LiteLLM's events name
@@ -49,7 +51,7 @@ OPENROUTER_URL = env("SF_OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/com
 
 
 def via_gateway():
-    """True when the triager calls the homelab LiteLLM gateway (which logs each call to
+    """True when the triager calls the installation's LiteLLM gateway (which logs each call to
     Langfuse itself), not OpenRouter direct (which logs nothing and takes no metadata)."""
     return "openrouter.ai" not in OPENROUTER_URL
 TRIAGE_MODEL = env("SF_TRIAGE_MODEL", "deepseek/deepseek-v4-flash")

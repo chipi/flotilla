@@ -2290,7 +2290,7 @@ class TestSubstrateGlitchTipProjects(unittest.TestCase):
 
         def gt(path):
             seen.append(path)
-            if path.startswith("/organizations/homelab/projects/"):
+            if path.startswith("/organizations/example/projects/"):
                 return projects
             return [{"status": "unresolved", "shortId": "ORRERY-1", "title": "Error", "metadata": {}}]
 
@@ -2302,18 +2302,18 @@ class TestSubstrateGlitchTipProjects(unittest.TestCase):
 
     def test_query_unchanged_without_a_substrate_project(self):
         _, seen = self._run([{"id": 6, "slug": "orrery"}, {"id": 9, "slug": "podcast-pipeline"}])
-        self.assertEqual(seen[-1], "/organizations/homelab/issues/?limit=10&sort=-last_seen")
+        self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen")
 
     def test_flotilla_left_out_of_the_query(self):
         _, seen = self._run([{"id": 6, "slug": "orrery"}, {"id": 40, "slug": "flotilla"},
                              {"id": 9, "slug": "podcast-pipeline"}])
-        self.assertEqual(seen[-1], "/organizations/homelab/issues/?limit=10&sort=-last_seen&project=6&project=9")
+        self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6&project=9")
 
     def test_dev_projects_left_out_of_the_query(self):
         _, seen = self._run([{"id": 6, "slug": "orrery"}, {"id": 30, "slug": "orrery-dev"},
                              {"id": 9, "slug": "podcast-pipeline"}, {"id": 12, "slug": "Podcast-Pipeline-Dev"},
                              {"id": 14, "slug": "devwhateverops-web"}])
-        self.assertEqual(seen[-1], "/organizations/homelab/issues/?limit=10&sort=-last_seen&project=6&project=9&project=14")
+        self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6&project=9&project=14")
 
     def test_project_list_error_is_loud(self):
         with self.assertRaises(RuntimeError):

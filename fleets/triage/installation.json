@@ -7,6 +7,7 @@
     "prod-api": "example/api"
   },
   "ops_repo": "example/ops",
+  "glitchtip_org": "example",
   "chain_repos": ["example/shop"],
   "assistant_backend": "",
   "edge_instance": "prod-api",

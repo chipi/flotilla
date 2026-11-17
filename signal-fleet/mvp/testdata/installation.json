@@ -13,6 +13,7 @@
     "prod-edge": "example/podcast"
   },
   "ops_repo": "example/ops",
+  "glitchtip_org": "example",
   "chain_repos": ["example/orrery"],
   "assistant_backend": "192.0.2.10:11435",
   "edge_instance": "prod-edge",
