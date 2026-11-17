@@ -45,3 +45,30 @@ func TestRunCalls(t *testing.T) {
 		t.Fatalf("no calls: %v", err)
 	}
 }
+
+// finish_reason, step and decision_key come back as recorded; a call that gave none reads as "", nil, "".
+func TestCallsKeepFinishReasonStepAndDecisionKey(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	step := int64(3)
+	if err := s.RecordCalls(ctx, []ModelCall{
+		{RunID: "r1", Routine: "triage/cycle", At: "2026-11-17T10:00:00.000000000Z", Alias: "a", FinishReason: "length", Step: &step, DecisionKey: "fp-1"},
+		{RunID: "r1", Routine: "triage/cycle", At: "2026-11-17T10:00:01.000000000Z", Alias: "a"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RunCalls(ctx, []string{"r1"})
+	if err != nil || len(got["r1"]) != 2 {
+		t.Fatalf("calls: %+v %v", got, err)
+	}
+	if c := got["r1"][0]; c.FinishReason != "length" || c.Step == nil || *c.Step != 3 || c.DecisionKey != "fp-1" {
+		t.Fatalf("the first call: %+v", c)
+	}
+	if c := got["r1"][1]; c.FinishReason != "" || c.Step != nil || c.DecisionKey != "" {
+		t.Fatalf("a call with none of them: %+v", c)
+	}
+	since, err := s.CallsSince(ctx, "2026-11-17T00:00:00Z")
+	if err != nil || len(since) != 2 || since[0].FinishReason != "length" || *since[0].Step != 3 {
+		t.Fatalf("calls since: %+v %v", since, err)
+	}
+}

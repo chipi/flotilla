@@ -23,6 +23,7 @@ LEDGER_COLS = ["ts", "occurrence_id", "fingerprint", "source", "alertname",
                "disposition", "work_type", "followup", "model", "prompt_ver",
                "prompt_sha", "gates", "n_probes", "certainty", "reason",
                "signal_count", "cycle_id", "stage"]
+TURN_KEYS = ("turns", "quirks", "cap_hits")   # a decision's model turns (triage._finish), on the store row only
 
 
 def _now():
@@ -65,7 +66,11 @@ def ledger_append(signal, disp, followup=""):
     if os.environ.get("SF_LEDGER_BACKEND", "tsv") == "api":   # RFC-0002 §9 step 5: the store first, then the TSV
         import filing
         kind = "recurrence" if disp["disposition"] == "recurrence" else "decision"
-        filing._ledger_client().append_entry(kind, dict(zip(LEDGER_COLS, cells)))
+        entry = dict(zip(LEDGER_COLS, cells))
+        # the store keeps a row whole and every reader takes its columns by name, so these ride along there;
+        # the TSV header is the ledger's contract (a changed header archives the file), so they stay out of it
+        entry.update({k: _cell(meta[k]) for k in TURN_KEYS if k in meta})
+        filing._ledger_client().append_entry(kind, entry)
     with open(config.LEDGER, "a") as f:
         if new:
             f.write("\t".join(LEDGER_COLS) + "\n")

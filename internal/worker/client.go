@@ -86,6 +86,10 @@ type Call struct {
 	Check   string `json:"check,omitempty"`
 	CheckOK *bool  `json:"check_ok,omitempty"`
 	Detail  string `json:"detail,omitempty"`
+	// the model client's finish reason, the turn within a step, and what the call served (model_client.py)
+	FinishReason string `json:"finish_reason"`
+	Step         *int64 `json:"step"`
+	DecisionKey  string `json:"decision_key"`
 }
 
 type Health struct {

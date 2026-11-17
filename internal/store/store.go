@@ -342,6 +342,25 @@ var schema = []string{
 	ALTER TABLE cases ADD COLUMN stage_changes INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE cases ADD COLUMN spent_usd REAL NOT NULL DEFAULT 0;
 	ALTER TABLE cases ADD COLUMN spent_s REAL NOT NULL DEFAULT 0;`,
+	// What a model call recorded about its step: why it stopped, which turn of a harness step it was, and the decision
+	// it served (run_calls); and what an eval measured for a routine, prompt and model (eval_results, eval.go).
+	`ALTER TABLE run_calls ADD COLUMN finish_reason TEXT NOT NULL DEFAULT '';
+	ALTER TABLE run_calls ADD COLUMN step INTEGER;
+	ALTER TABLE run_calls ADD COLUMN decision_key TEXT;
+	CREATE TABLE eval_results (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		routine TEXT NOT NULL,
+		prompt_sha TEXT NOT NULL,
+		model TEXT NOT NULL,
+		metric TEXT NOT NULL,
+		value REAL NOT NULL,
+		n INTEGER NOT NULL DEFAULT 0,
+		repeats INTEGER NOT NULL DEFAULT 0,
+		source TEXT NOT NULL DEFAULT '',
+		recorded_at TEXT NOT NULL,
+		recorded_by TEXT NOT NULL
+	);
+	CREATE INDEX eval_results_key ON eval_results(routine, prompt_sha, model);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

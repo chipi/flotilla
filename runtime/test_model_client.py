@@ -46,11 +46,14 @@ class Transport:
         return a
 
 
-def ok(content='{"action":"decide"}', usage=None, headers=None, tool_calls=None, model="fleet-triage-pro"):
+def ok(content='{"action":"decide"}', usage=None, headers=None, tool_calls=None, model="fleet-triage-pro", finish_reason=None):
     msg = {"content": content}
     if tool_calls:
         msg["tool_calls"] = tool_calls
-    return 200, headers or {}, json.dumps({"choices": [{"message": msg}], "model": model,
+    choice = {"message": msg}
+    if finish_reason:
+        choice["finish_reason"] = finish_reason
+    return 200, headers or {}, json.dumps({"choices": [choice], "model": model,
                                            "usage": usage if usage is not None else {"prompt_tokens": 10, "completion_tokens": 5}})
 
 
@@ -181,6 +184,25 @@ class Chat(unittest.TestCase):
         self.assertEqual((lines[1]["error"], lines[1]["status"], lines[1]["tokens_in"]), ("Transient", 500, None))
         with open(path) as f:
             self.assertNotIn("sk-test", f.read())
+
+    def test_calls_file_has_finish_reason_step_and_decision_key(self):
+        """Why the model stopped, which turn of a harness step it was and what it served are in the line; none of
+        them is sent to the endpoint. A call that gave none writes "" and null."""
+        path = os.path.join(tempfile.mkdtemp(), "calls.jsonl")
+        env = {"OPENROUTER_API_KEY": "sk-test", "FLOTILLA_CALLS_FILE": path}
+        c, tr = client(ok(finish_reason="length"), ok(finish_reason="stop"), ok(), (500, {}, "down"), environ=env)
+        c.chat("triage-default", [], step=2, decision_key="fp-1")
+        c.chat_policy({"model": "triage-default"}, [], step=3)
+        c.chat("triage-default", [])
+        with self.assertRaises(mc.Transient):
+            c.chat("triage-default", [], step=1, decision_key="fp-2")
+        with open(path) as f:
+            lines = [json.loads(l) for l in f]
+        self.assertEqual([(l["finish_reason"], l["step"], l["decision_key"]) for l in lines],
+                         [("length", 2, "fp-1"), ("stop", 3, None), ("", None, None), ("", 1, "fp-2")])
+        for sent in tr.sent:
+            self.assertNotIn(b"decision_key", sent["data"])
+            self.assertNotIn(b'"step"', sent["data"])
 
     def test_no_calls_file_without_the_variable(self):
         c, _ = client(ok())

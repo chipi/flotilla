@@ -33,13 +33,18 @@ brings the case tables.
 | `controls` | pause, STOP, autonomy, hold, freeze, with who changed them |
 | `spend` | per fleet and routine: spend and tokens per day |
 | `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, routine) |
+| `run_calls` | each model call of a run, as the model client wrote it to the run's calls file (`FLOTILLA_CALLS_FILE`): alias, model, tokens, cost, latency, error, `finish_reason` (`length` is a reply cut at the token cap; `""` when unknown), `step` (the turn within a harness step, 1-based, null when not given) and `decision_key` (what the call served; triage: the signal's fingerprint) |
+| `eval_results` | what an eval measured for a routine, prompt (`prompt_sha`) and model: metric, value, cases (`n`) and runs it averaged (`repeats`), where it came from, who recorded it and when. Appended, never edited; an operator or admin records one (`flotilla eval record`), an agent cannot; the newest per metric is current |
 
 Nothing is deleted or rewritten. A status change is an event; the case row carries the current
 status. The transition table decides which status changes are allowed.
 
 **History from the existing fleets:** the triage fleet's ledgers (`dispositions.tsv`, `filed.tsv`)
 are imported as cases with their keys, marked `imported`, keeping their timestamps; the mirror keeps
-writing the TSVs while their readers use them ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §9).
+writing the TSVs while their readers use them ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §9). A
+triage decision's row in the store also carries `turns` (model calls made for it), `quirks`
+(comma-joined harness quirk names, `""` for none) and `cap_hits` (turns cut at the token cap); the TSV
+keeps its columns, and a reader takes columns by name, so older readers ignore the extra keys.
 
 ## Memory and knowledge
 

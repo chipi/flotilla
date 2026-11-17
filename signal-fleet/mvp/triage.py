@@ -60,11 +60,16 @@ _FLEET_DIR = os.path.join(_CODE_ROOT, "fleets", _FLEET)
 # as `_exact`, and capture.record writes it as the capture's `exact` field. Off: None, nothing kept.
 _EXACT = None
 
+# What each decision records about its own turns (the ledger row: turns, quirks, cap_hits), kept whether or
+# not capture is on. Reset with the exact record; `key` is the signal fingerprint the calls file joins on.
+_TURNS = {"turns": 0, "quirks": [], "cap_hits": 0, "key": None}
+
 
 def _exact_start():
     global _EXACT
     _EXACT = ({"now": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                "turns": [], "lookups": [], "skills": []} if config.CAPTURE_PROBES else None)
+    _TURNS.update(turns=0, quirks=[], cap_hits=0, key=None)
 
 
 def _exact_add(kind, item):
@@ -312,8 +317,10 @@ def _call(messages, trace_id=None, step=None):
     # The gateway's Langfuse logger adds its generation (model, usage, cost) to this trace;
     # `existing_trace_id` leaves the trace's name/input/output to the fleet.
     kw = {"trace_id": trace_id, "generation_name": f"triage-turn-{(step or 0) + 1}"} if trace_id else {}
+    _TURNS["turns"] += 1
     try:
-        rec = client.chat(alias, messages, timeout=90, max_tokens=REPLY_MAX_TOKENS, **kw)
+        rec = client.chat(alias, messages, timeout=90, max_tokens=REPLY_MAX_TOKENS,
+                          step=None if step is None else step + 1, decision_key=_TURNS["key"], **kw)
     except model_client.EmptyCompletion as e:
         rec = e.record   # a 200 without content: triage retries the turn, as before
     except model_client.ModelError as e:
@@ -332,6 +339,8 @@ def _call(messages, trace_id=None, step=None):
             raise TriagerDown(f"HTTP 402 Payment Required from the triager gateway "
                               f"({config.OPENROUTER_URL}) — provider credit exhausted") from e
         raise   # investigate() turns it into TriageDeferred("triager call failed: …")
+    if rec.get("finish_reason") == "length":
+        _TURNS["cap_hits"] += 1
     resp = _LAST_RESPONSE
     _exact_add("turns", {"step": step, "request": rec.get("request"),
                          "reply": ((resp.get("choices") or [{}])[0].get("message") or {}).get("content"),
@@ -511,6 +520,8 @@ def _harness_cfg():
 
 def _mark_quirk(name):
     """The quirk a turn hit, on that turn's record (step 6 counts the turns each quirk touches)."""
+    if name not in _TURNS["quirks"]:
+        _TURNS["quirks"].append(name)
     if _EXACT is not None and _EXACT["turns"]:
         _EXACT["turns"][-1]["quirk"] = name
 
@@ -526,6 +537,8 @@ def _finish(signal, disp, trace, gates, usage, t0, trace_id=None):
                      "prompt_sha": PROMPT_SHA, "gates": gates,
                      "probes": [t["probe"] for t in trace], "n_probes": len(trace),
                      "table_miss": table_miss, "cost_usd": round(cost, 6),
+                     "turns": _TURNS["turns"], "quirks": ",".join(_TURNS["quirks"]),
+                     "cap_hits": _TURNS["cap_hits"],
                      "certainty": disp.get("certainty"), "usage": usage}
     # what the model asked and got, for capture.py; "shown" is the exact trimmed text it read
     disp["_probe_trace"] = [dict(t, shown=_trim(t["result"])) for t in trace]
@@ -544,6 +557,7 @@ def _probe(signal, name, args, table):
 def investigate(signal, max_probes=None, probe_table=None):
     n = MAX_PROBES if max_probes is None else max_probes
     _exact_start()
+    _TURNS["key"] = signal.get("fingerprint") or None
     # what enters the model's context (G7): the playbook (flotilla's own, pinned), and the signal's text
     loaded.record("playbook", "source", "triage playbook", f"fleets/triage/playbooks/triage.md @ {PROMPT_SHA}",
                   hashlib.sha256(_SYSTEM.encode()).hexdigest())
@@ -602,6 +616,7 @@ def triage(signal, evidence=None, attempts=3):
                       "prompt_ver": config.TRIAGE_PROMPT_VER, "prompt_sha": PROMPT_SHA,
                       "gates": f"operational:{cls}", "probes": [], "n_probes": 0,
                       "table_miss": 0, "cost_usd": 0.0, "certainty": "high",
+                      "turns": 0, "quirks": "", "cap_hits": 0,
                       "operational_class": cls, "usage": {}},
         }
         if _EXACT is not None:

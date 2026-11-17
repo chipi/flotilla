@@ -1652,6 +1652,104 @@ class TestCallsFile(unittest.TestCase):
         self.assertEqual(self.lines(), [])
 
 
+class TestDecisionTurns(unittest.TestCase):
+    """A decision records how many model turns it took, the quirks they hit and how many were cut at the
+    token cap (_meta turns, quirks, cap_hits), and each call's line in the calls file carries its 1-based
+    step, finish reason and the signal's fingerprint. Only the store's ledger row gets the three keys: the
+    TSV header is the ledger's contract."""
+
+    SIG = {"source": "glitchtip", "alertname": "a", "summary": "s", "labels": {}, "fingerprint": "glitchtip:FP-1"}
+    DECIDE = '{"action":"decide","disposition":"escalate","reason":"r","question":"q","certainty":"low"}'
+
+    def setUp(self):
+        import tempfile
+        import triage as t
+        self.t = t
+        self.orig = (t.post_json, t.config.OPENROUTER_URL, t.config.OPENROUTER_KEY, t.observ.finalize,
+                     os.environ.get("FLOTILLA_CALLS_FILE"))
+        t.config.OPENROUTER_KEY, t.config.OPENROUTER_URL = "k", "http://localhost:4001/v1/chat/completions"
+        t.observ.finalize = lambda *a, **k: None
+        fd, self.path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+        os.environ["FLOTILLA_CALLS_FILE"] = self.path
+
+    def tearDown(self):
+        t = self.t
+        t.post_json, t.config.OPENROUTER_URL, t.config.OPENROUTER_KEY, t.observ.finalize, calls = self.orig
+        if calls is None:
+            os.environ.pop("FLOTILLA_CALLS_FILE", None)
+        else:
+            os.environ["FLOTILLA_CALLS_FILE"] = calls
+        os.unlink(self.path)
+
+    def _replies(self, *replies):
+        it = iter(replies)
+
+        def post(url, body, headers=None, timeout=None):
+            content, finish = next(it)
+            return {"model": body["model"], "choices": [{"message": {"content": content}, "finish_reason": finish}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+        self.t.post_json = post
+
+    def _keys(self, d):
+        m = d["_meta"]
+        return m["turns"], m["quirks"], m["cap_hits"]
+
+    def test_turns_quirks_and_cap_hits_are_on_the_decision(self):
+        self._replies(("cut off {", "length"), ("not json", "stop"), (self.DECIDE, "stop"))
+        d = self.t.investigate(self.SIG, probe_table={})
+        self.assertEqual(self._keys(d), (3, "bad_json_uses_turn", 1))
+        with open(self.path) as f:
+            lines = [json.loads(x) for x in f if x.strip()]
+        self.assertEqual([(x["step"], x["finish_reason"], x["decision_key"]) for x in lines],
+                         [(1, "length", "glitchtip:FP-1"), (2, "stop", "glitchtip:FP-1"), (3, "stop", "glitchtip:FP-1")])
+
+    def test_quirk_names_are_distinct_and_joined(self):
+        self._replies(("", "stop"), ("not json", "stop"), ("also not", "stop"), (self.DECIDE, "stop"))
+        self.assertEqual(self._keys(self.t.investigate(self.SIG, probe_table={})), (4, "empty_retry,bad_json_uses_turn", 0))
+
+    def test_a_decision_without_a_model_has_none(self):
+        d = self.t.triage({"source": "glitchtip", "alertname": "cost cap exceeded", "summary": "", "labels": {}})
+        self.assertEqual(self._keys(d), (0, "", 0))
+
+    def test_a_new_decision_starts_from_zero(self):
+        self._replies(("x", "length"), (self.DECIDE, "stop"))
+        self.t.investigate(self.SIG, probe_table={})
+        self._replies((self.DECIDE, "stop"))
+        self.assertEqual(self._keys(self.t.investigate(self.SIG, probe_table={})), (1, "", 0))
+
+    def test_the_store_row_has_the_keys_and_the_tsv_does_not(self):
+        import tempfile
+        import filing
+
+        rows = []
+
+        class Client:
+            def append_entry(self, kind, row):
+                rows.append(row)
+        orig = (actions.config.LEDGER, filing._ledger_client, os.environ.get("SF_LEDGER_BACKEND"))
+        with tempfile.TemporaryDirectory() as tmp:
+            actions.config.LEDGER = os.path.join(tmp, "dispositions.tsv")
+            filing._ledger_client = lambda: Client()
+            os.environ["SF_LEDGER_BACKEND"] = "api"
+            try:
+                meta = {"turns": 3, "quirks": "bad_json_uses_turn", "cap_hits": 1}
+                actions.ledger_append(self.SIG, {"disposition": "escalate", "reason": "r", "_meta": meta})
+                actions.ledger_append(self.SIG, {"disposition": "escalate", "reason": "r", "_meta": {}})
+                with open(actions.config.LEDGER) as f:
+                    header = f.readline().rstrip("\n")
+            finally:
+                actions.config.LEDGER, filing._ledger_client = orig[0], orig[1]
+                if orig[2] is None:
+                    os.environ.pop("SF_LEDGER_BACKEND", None)
+                else:
+                    os.environ["SF_LEDGER_BACKEND"] = orig[2]
+        with_keys, without = rows
+        self.assertEqual((with_keys["turns"], with_keys["quirks"], with_keys["cap_hits"]), ("3", "bad_json_uses_turn", "1"))
+        self.assertTrue(all(k not in without for k in actions.TURN_KEYS), "a row without the meta gets no keys")
+        self.assertEqual(header, "\t".join(actions.LEDGER_COLS), "the TSV header is unchanged")
+
+
 class TestLangfuseJoin(unittest.TestCase):
     """2026-10-15: every triage landed in Langfuse twice, as two unrelated traces: the fleet's
     own trace (context, no cost) and the gateway's per-call generations (model, usage, cost,

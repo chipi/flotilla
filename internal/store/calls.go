@@ -8,22 +8,25 @@ import (
 // ModelCall is one model call of a run, as the model client recorded it (runtime/model_client.py).
 // Tokens and cost are nil when the endpoint did not report them: never counted as zero.
 type ModelCall struct {
-	RunID      string   `json:"run_id"`
-	Routine    string   `json:"routine"`
-	At         string   `json:"at"`
-	Alias      string   `json:"alias"`
-	Endpoint   string   `json:"endpoint"`
-	Model      string   `json:"model"`
-	Deployment string   `json:"deployment"`
-	TokensIn   *int64   `json:"tokens_in"`
-	TokensOut  *int64   `json:"tokens_out"`
-	CostUSD    *float64 `json:"cost_usd"`
-	CostSource string   `json:"cost_source"`
-	LatencyS   *float64 `json:"latency_s"`
-	Error      string   `json:"error"`
-	Check      string   `json:"check,omitempty"`    // a contract check's name (G15); "" for an ordinary call
-	CheckOK    *bool    `json:"check_ok,omitempty"` // its result
-	Detail     string   `json:"detail,omitempty"`   // why it failed, or what it saw
+	RunID        string   `json:"run_id"`
+	Routine      string   `json:"routine"`
+	At           string   `json:"at"`
+	Alias        string   `json:"alias"`
+	Endpoint     string   `json:"endpoint"`
+	Model        string   `json:"model"`
+	Deployment   string   `json:"deployment"`
+	TokensIn     *int64   `json:"tokens_in"`
+	TokensOut    *int64   `json:"tokens_out"`
+	CostUSD      *float64 `json:"cost_usd"`
+	CostSource   string   `json:"cost_source"`
+	LatencyS     *float64 `json:"latency_s"`
+	Error        string   `json:"error"`
+	Check        string   `json:"check,omitempty"`        // a contract check's name (G15); "" for an ordinary call
+	CheckOK      *bool    `json:"check_ok,omitempty"`     // its result
+	Detail       string   `json:"detail,omitempty"`       // why it failed, or what it saw
+	FinishReason string   `json:"finish_reason"`          // why the model stopped ("length" = cut at the token cap); "" when unknown
+	Step         *int64   `json:"step"`                   // the turn within a harness step/decision, 1-based; nil when not given
+	DecisionKey  string   `json:"decision_key,omitempty"` // what the call served (triage: the signal's fingerprint)
 }
 
 // RecordCalls keeps a run's model calls, in one transaction.
@@ -42,10 +45,10 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 			at = s.now().Format(ts)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_calls (run_id, routine, at, alias, endpoint, model, deployment,
-			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail, finish_reason, step, decision_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.RunID, c.Routine, at, c.Alias, c.Endpoint, c.Model, c.Deployment, c.TokensIn, c.TokensOut, c.CostUSD,
-			c.CostSource, c.LatencyS, c.Error, c.Check, c.CheckOK, c.Detail); err != nil {
+			c.CostSource, c.LatencyS, c.Error, c.Check, c.CheckOK, c.Detail, c.FinishReason, c.Step, nullIfEmpty(c.DecisionKey)); err != nil {
 			return err
 		}
 	}
@@ -53,7 +56,14 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 }
 
 const callCols = `run_id, routine, at, alias, endpoint, model, deployment, tokens_in, tokens_out, cost_usd, cost_source, latency_s, error,
-	check_name, check_ok, detail`
+	check_name, check_ok, detail, finish_reason, step, decision_key`
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
 
 func scanCalls(rows *sql.Rows) ([]ModelCall, error) {
 	defer rows.Close()
@@ -63,13 +73,19 @@ func scanCalls(rows *sql.Rows) ([]ModelCall, error) {
 		var tin, tout sql.NullInt64
 		var cost, lat sql.NullFloat64
 		var ok sql.NullBool
+		var step sql.NullInt64
+		var key sql.NullString
 		if err := rows.Scan(&c.RunID, &c.Routine, &c.At, &c.Alias, &c.Endpoint, &c.Model, &c.Deployment, &tin, &tout,
-			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail); err != nil {
+			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail, &c.FinishReason, &step, &key); err != nil {
 			return nil, err
 		}
 		if ok.Valid {
 			c.CheckOK = &ok.Bool
 		}
+		if step.Valid {
+			c.Step = &step.Int64
+		}
+		c.DecisionKey = key.String
 		if tin.Valid {
 			c.TokensIn = &tin.Int64
 		}

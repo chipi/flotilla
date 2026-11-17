@@ -28,6 +28,7 @@ const (
 	ActNotes       Action = "notes"        // activate or drop a note agents will read
 	ActNotePropose Action = "note-propose" // propose a note from a case; a person still activates it (RFC-0008 Q4)
 	ActCaseRead    Action = "case-read"    // a worker's routine reads cases (ops/case-review, ADR-0016)
+	ActEval        Action = "eval"         // record an eval result (what a prompt measured on a model); never an agent's
 )
 
 // Roles of people (ADR-0014); callers keep RoleAgent, RoleOperator (the callers file's) and RoleWorker.
@@ -61,6 +62,7 @@ var may = map[Action]map[string]bool{
 	ActNotes:       {RoleOperator: true, RoleAdmin: true},
 	ActNotePropose: {RoleAgent: true, RoleWorker: true, RoleOperator: true, RoleAdmin: true},
 	ActCaseRead:    {RoleWorker: true},
+	ActEval:        {RoleOperator: true, RoleAdmin: true},
 }
 
 // Authorize reports whether a caller holding role may do action.

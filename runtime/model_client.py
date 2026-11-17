@@ -231,22 +231,25 @@ class Client:
             b["metadata"] = {"existing_trace_id": trace_id, "generation_name": generation_name}
         return b
 
-    def chat(self, alias, messages, timeout=90, **kw):
-        """One call. Returns its record; raises a ModelError (with .record) or ConfigError."""
+    def chat(self, alias, messages, timeout=90, step=None, decision_key=None, **kw):
+        """One call. Returns its record; raises a ModelError (with .record) or ConfigError. `step` (the turn
+        within a harness step, 1-based) and `decision_key` (what the call decides, e.g. a signal fingerprint)
+        are only recorded in the calls file; they are not part of the request."""
         a = self._alias(alias)
+        meta = {"step": step, "decision_key": decision_key}
         body = self.body(alias, messages, **kw)
         with self._span(a) as span:
             try:
                 rec = self._call(a, body, timeout)
             except ModelError as e:
                 self._annotate(span, e.record, error=e)
-                self._log_call(a, e.record, e)
+                self._log_call(a, e.record, e, meta)
                 raise
             self._annotate(span, rec)
-            self._log_call(a, rec)
+            self._log_call(a, rec, meta=meta)
             return rec
 
-    def _log_call(self, a, rec, error=None):
+    def _log_call(self, a, rec, error=None, meta=None):
         """One line per call in the run's calls file (FLOTILLA_CALLS_FILE, set by the worker), which the
         worker returns with the run so flotillad records each call's model, tokens and cost. Without the
         variable nothing is written; a failure to write never fails the call."""
@@ -259,7 +262,9 @@ class Client:
                 "tokens_in": usage.get("prompt_tokens"), "tokens_out": usage.get("completion_tokens"),
                 "cost_usd": rec.get("cost_usd"), "cost_source": rec.get("cost_source"),
                 "latency_s": rec.get("latency_s"), "status": rec.get("status"),
-                "error": type(error).__name__ if error else None}
+                "error": type(error).__name__ if error else None,
+                "finish_reason": rec.get("finish_reason") or "", "step": (meta or {}).get("step"),
+                "decision_key": (meta or {}).get("decision_key")}
         try:
             with open(path, "a") as f:
                 f.write(json.dumps(line) + "\n")

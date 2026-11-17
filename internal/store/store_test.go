@@ -300,3 +300,43 @@ func TestCheckSchemaWhileTheStoreIsOpen(t *testing.T) {
 		t.Fatal("a newer store beside a running flotillad must still be refused")
 	}
 }
+
+// A database at schema 22 (before run_calls had finish_reason, step and decision_key) keeps its calls: the new
+// columns read as their defaults, and the new eval table works on it.
+func TestMigrationAddsCallColumnsWithDefaults(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 22; i++ {
+		if _, err := db.Exec(schema[i]); err != nil {
+			t.Fatalf("step %d: %v", i+1, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (n) VALUES (?)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO run_calls (run_id, routine, at, alias) VALUES ('old', 'triage/cycle', '2026-11-16T00:00:00Z', 'a')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("migrating a schema-22 database: %v", err)
+	}
+	defer s.Close()
+	got, err := s.RunCalls(context.Background(), []string{"old"})
+	if err != nil || len(got["old"]) != 1 {
+		t.Fatalf("the old call must survive: %+v %v", got, err)
+	}
+	if c := got["old"][0]; c.FinishReason != "" || c.Step != nil || c.DecisionKey != "" {
+		t.Fatalf("the old call must read with the defaults: %+v", c)
+	}
+	if _, err := s.RecordEval(context.Background(), EvalResult{Routine: "r", PromptSHA: "p", Model: "m", Metric: "x", Value: 1, RecordedBy: "u"}); err != nil {
+		t.Fatalf("eval_results on a migrated database: %v", err)
+	}
+}

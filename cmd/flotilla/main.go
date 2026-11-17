@@ -15,6 +15,8 @@
 //	flotilla case reassign ID --reason "..."            (operator: an escalated case back to its routine)
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
+//	flotilla eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT]   (operator)
+//	flotilla eval list [--routine R]                     (what evals measured for a routine's prompt on a model)
 //	flotilla hash-token < token                        (the line for flotillad's callers file)
 //	flotilla host list | enrolment NAME | revoke NAME     (operator: host agents; the token is shown once)
 //	flotilla host audit NAME --log FILE                (the host's audit log against flotillad's record)
@@ -33,6 +35,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -198,6 +201,8 @@ func main() {
 		actionCmd(args, reason)
 	case "host":
 		hostCmd(args)
+	case "eval":
+		evalCmd(args, n)
 	case "user":
 		userCmd(args, role)
 	default:
@@ -436,6 +441,68 @@ func userCmd(args []string, role string) {
 	}
 }
 
+// evalCmd is `flotilla eval record … | eval list [--routine R]`: the numbers an eval measured for a routine's
+// prompt on a model. --metric may repeat, one result each.
+func evalCmd(args []string, n string) {
+	need(args, 1, "eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R]")
+	switch args[0] {
+	case "list":
+		rest := args[1:]
+		q := "/v1/evals?limit=" + n
+		if r := flagValue(&rest, "--routine"); r != "" {
+			q += "&routine=" + r
+		}
+		var out struct{ Evals []map[string]any }
+		get(q, &out)
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "RECORDED\tROUTINE\tPROMPT\tMODEL\tMETRIC\tVALUE\tN\tREPEATS\tBY\tSOURCE")
+		for _, e := range out.Evals {
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n", e["recorded_at"], e["routine"], e["prompt_sha"], e["model"], e["metric"], e["value"],
+				e["n"], e["repeats"], e["recorded_by"], orDash(e["source"]))
+		}
+		w.Flush()
+	case "record":
+		rest := args[1:]
+		var metrics []string
+		for m := flagValue(&rest, "--metric"); m != ""; m = flagValue(&rest, "--metric") {
+			metrics = append(metrics, m)
+		}
+		base := map[string]any{"routine": flagValue(&rest, "--routine"), "prompt_sha": flagValue(&rest, "--prompt-sha"),
+			"model": flagValue(&rest, "--model"), "source": flagValue(&rest, "--source")}
+		for _, f := range []string{"--n", "--repeats"} {
+			v := flagValue(&rest, f)
+			if v == "" {
+				continue
+			}
+			i, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || i < 0 {
+				fmt.Fprintf(os.Stderr, "%s: a whole number, not %q\n", f, v)
+				os.Exit(2)
+			}
+			base[strings.TrimPrefix(f, "--")] = i
+		}
+		if len(metrics) == 0 || len(rest) > 0 {
+			fmt.Fprintln(os.Stderr, "usage: flotilla eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT]")
+			os.Exit(2)
+		}
+		for _, m := range metrics {
+			name, val, ok := strings.Cut(m, "=")
+			v, err := strconv.ParseFloat(val, 64)
+			if !ok || name == "" || err != nil {
+				fmt.Fprintf(os.Stderr, "--metric %q: NAME=NUMBER\n", m)
+				os.Exit(2)
+			}
+			body := map[string]any{"metric": name, "value": v}
+			for k, x := range base {
+				body[k] = x
+			}
+			post("/v1/evals", body)
+		}
+	default:
+		usage()
+	}
+}
+
 // flagValue removes `name value` from args and returns the value ("" when absent).
 func flagValue(args *[]string, name string) string {
 	a := *args
@@ -450,7 +517,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 
