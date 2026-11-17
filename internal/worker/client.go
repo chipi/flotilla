@@ -23,6 +23,10 @@ var ErrUnreachable = errors.New("worker unreachable")
 // ErrNoSuchRun: the worker is not running that run id (never started there, or already answered).
 var ErrNoSuchRun = errors.New("the worker is not running that run")
 
+// MaxResultBytes bounds a worker's answer: the output tail and up to the worker's CALLS_MAX (5000) calls, a few hundred
+// bytes each and more with tool arguments. A longer answer would be cut mid-JSON and fail the whole run.
+const MaxResultBytes = 16 << 20
+
 // Request is one run, as flotillad hands it to a worker.
 type Request struct {
 	RunID     string            `json:"run_id"`
@@ -50,8 +54,12 @@ type Result struct {
 	// it could not be read.
 	Plan      json.RawMessage `json:"plan,omitempty"`
 	PlanError string          `json:"plan_error,omitempty"`
-	// Each model call the run made through runtime/model_client.py (its FLOTILLA_CALLS_FILE).
+	// Each model call the run made through runtime/model_client.py (its FLOTILLA_CALLS_FILE), and the harness's
+	// steps (bugfix/fix.py): at most the worker's CALLS_MAX, in order.
 	Calls []Call `json:"calls,omitempty"`
+	// How many more lines the run's calls file had than the worker returned (the first CALLS_MAX are kept); 0 from a
+	// worker older than the field or a run within the cap.
+	CallsDropped int `json:"calls_dropped,omitempty"`
 	// What the run read into a model's context (G7, runtime/loaded.py: its FLOTILLA_LOADED_FILE).
 	Loaded []Loaded `json:"loaded,omitempty"`
 }
@@ -90,11 +98,15 @@ type Call struct {
 	FinishReason string `json:"finish_reason"`
 	Step         *int64 `json:"step"`
 	DecisionKey  string `json:"decision_key"`
-	// who made the call and in which session, and the names of the tools it called (model_client.py, bugfix/callrec_pi.py)
-	Role       string   `json:"role"`
-	Episode    string   `json:"episode"`
-	EpisodeSeq *int64   `json:"episode_seq"`
-	Tools      []string `json:"tools"`
+	// who made the call and in which session, and the tools it called (model_client.py, bugfix/callrec_pi.py)
+	Role       string `json:"role"`
+	Episode    string `json:"episode"`
+	EpisodeSeq *int64 `json:"episode_seq"`
+	// Tools is a JSON array of the turn's tool calls, [{"name","arg","ok"}]; a worker older than that sends names
+	// ["bash"]. Kept raw: store.NormalizeTools reads either form, and a re-marshal (the host link) loses nothing.
+	Tools json.RawMessage `json:"tools,omitempty"`
+	// "call" (a model call, and what a line without it is) or "step" (a harness step: no model, tokens or cost)
+	Kind string `json:"kind,omitempty"`
 }
 
 type Health struct {
@@ -141,7 +153,7 @@ func (c *Client) Run(ctx context.Context, r Request) (*Result, error) {
 		return nil, fmt.Errorf("worker %s: %w", c.URL, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, MaxResultBytes))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("worker %s: HTTP %d: %s", c.URL, resp.StatusCode, bytes.TrimSpace(raw))
 	}

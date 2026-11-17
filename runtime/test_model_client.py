@@ -221,11 +221,27 @@ class Chat(unittest.TestCase):
         with open(path) as f:
             lines = [json.loads(l) for l in f]
         self.assertEqual([(l["role"], l["episode"], l["episode_seq"], l["tools"]) for l in lines],
-                         [("coder", "ep-1", 2, ["bash", "read"]), ("triage", "fp-1", 1, ["probe:probe"]),
+                         [("coder", "ep-1", 2, [{"name": "bash", "arg": ""}, {"name": "read", "arg": ""}]),
+                          ("triage", "fp-1", 1, [{"name": "probe:probe", "arg": ""}]),
                           ("", "", None, []), ("advisor", "", None, []), ("", "", None, [])])
         for sent in tr.sent:
             for k in (b"role", b"episode", b"tools"):
                 self.assertNotIn(k, sent["data"])
+
+    def test_tool_entries_carry_a_clean_argument_and_the_result(self):
+        """A tool given as a dict keeps its argument (redacted, cut at 160) and its ok; a nameless one is dropped."""
+        path = os.path.join(tempfile.mkdtemp(), "calls.jsonl")
+        env = {"OPENROUTER_API_KEY": "sk-test", "FLOTILLA_CALLS_FILE": path}
+        c, _ = client(ok(), environ=env)
+        c.chat("triage-default", [], tool_names=[{"name": "bash", "arg": "fetch -H 'Authorization: Bearer abcdefghij1234567890' x", "ok": False},
+                                                 {"name": "read", "arg": "src/" + "a" * 300, "ok": True}, {"arg": "no name"}, "ls"])
+        with open(path) as f:
+            tools = json.loads(f.readline())["tools"]
+        self.assertEqual([t["name"] for t in tools], ["bash", "read", "ls"])
+        self.assertNotIn("abcdefghij", tools[0]["arg"])
+        self.assertIs(tools[0]["ok"], False)
+        self.assertEqual(len(tools[1]["arg"]), 160)
+        self.assertNotIn("ok", tools[2])
 
     def test_no_calls_file_without_the_variable(self):
         c, _ = client(ok())

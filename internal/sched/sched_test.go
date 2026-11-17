@@ -2,6 +2,7 @@ package sched
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -409,8 +410,8 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 	in, cost, no, step := int64(120), 0.002, false, int64(2)
 	fr.res.Calls = []worker.Call{{At: "2026-11-14T10:00:01Z", Alias: "triage-pro", Model: "m", TokensIn: &in, CostUSD: &cost,
 		FinishReason: "length", Step: &step, DecisionKey: "fp-1",
-		Role: "triage", Episode: "fp-1", EpisodeSeq: &step, Tools: []string{"bash", "read"}},
-		{At: "not a time", Alias: "triage-flash", Error: "Transient"},
+		Role: "triage", Episode: "fp-1", EpisodeSeq: &step, Tools: json.RawMessage(`["bash","read"]`)},
+		{At: "not a time", Alias: "triage-flash", Error: "Transient", Tools: json.RawMessage(`[{"name":"get_metric","arg":"up","ok":true}]`)},
 		{At: "2026-11-14T10:00:02Z", Alias: "triage-flash", Check: "tools", CheckOK: &no, Detail: "no get_metric call"}}
 	fr.res.Loaded = []worker.Loaded{{At: "2026-11-14T10:00:00Z", Kind: "playbook", Trust: "source", Title: "triage playbook", Source: "p @ x", SHA256: "ab"},
 		{Kind: "input", Trust: "untrusted", Title: "glitchtip: X", Source: "s"}}
@@ -429,7 +430,7 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 	if cs[0].FinishReason != "length" || cs[0].Step == nil || *cs[0].Step != 2 || cs[0].DecisionKey != "fp-1" || cs[1].FinishReason != "" || cs[1].Step != nil {
 		t.Fatalf("a call's finish reason, step and decision key reach the store: %+v / %+v", cs[0], cs[1])
 	}
-	if cs[0].Role != "triage" || cs[0].Episode != "fp-1" || cs[0].EpisodeSeq == nil || *cs[0].EpisodeSeq != 2 || cs[0].Tools != `["bash","read"]` || cs[1].Tools != "" || cs[1].EpisodeSeq != nil {
+	if cs[0].Role != "triage" || cs[0].Episode != "fp-1" || cs[0].EpisodeSeq == nil || *cs[0].EpisodeSeq != 2 || cs[0].Tools != `[{"name":"bash"},{"name":"read"}]` || cs[1].Tools != `[{"name":"get_metric","arg":"up","ok":true}]` || cs[1].EpisodeSeq != nil {
 		t.Fatalf("a call's role, episode and tools reach the store: %+v / %+v", cs[0], cs[1])
 	}
 	if cs[1].Error != "Transient" || cs[1].At == "" {
@@ -458,5 +459,34 @@ func TestRemoteWorkerNotConnectedSkips(t *testing.T) {
 	why, err := s.SkipReason(context.Background(), s.Routines[0])
 	if err != nil || why != "worker triage is not connected" {
 		t.Fatalf("skip reason %q %v", why, err)
+	}
+}
+
+// A run whose calls file outgrew the worker's cap keeps the lines it got, and one step row says how many were not; its
+// harness steps keep their kind and role.
+func TestRunRecordsDroppedCallsAndSteps(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	fr.res.Calls = []worker.Call{{Alias: "a", Role: "coder"}, {Kind: "step", Role: "gates", Detail: "round 1: gates clean"}}
+	fr.res.CallsDropped = 41
+	r, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Store.RunCalls(context.Background(), []string{r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := got[r.ID]
+	if len(cs) != 3 || cs[0].Kind != "call" || cs[1].Kind != "step" || cs[1].Role != "gates" || cs[1].Detail != "round 1: gates clean" {
+		t.Fatalf("the rows: %+v", cs)
+	}
+	if last := cs[2]; last.Kind != "step" || last.Role != "harness" || !strings.Contains(last.Detail, "41 more model calls") || !strings.Contains(last.Detail, "first 2 lines") {
+		t.Fatalf("the dropped-calls row: %+v", last)
+	}
+	fr.res.CallsDropped = 0
+	r2, _ := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	got, _ = s.Store.RunCalls(context.Background(), []string{r2.ID})
+	if len(got[r2.ID]) != 2 {
+		t.Fatalf("a run within the cap has no dropped-calls row: %+v", got[r2.ID])
 	}
 }

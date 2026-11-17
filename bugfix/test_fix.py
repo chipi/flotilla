@@ -561,18 +561,83 @@ exec {real} "$@"
         self.assertEqual(plan["outcome"], "plan", plan)
         with open(path) as fh:
             lines = [json.loads(x) for x in fh]
-        self.assertEqual([(c["role"], c["episode_seq"], c["tools"], c["step"], c["alias"], c["decision_key"]) for c in lines],
-                         [("verdict", 1, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
-                          ("coder", 2, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
-                          ("advisor", 3, ["read"], 1, "bugfix-reviewer", "case-20261115-abc"),
-                          ("verdict", 4, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
-                          ("coder", 5, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
-                          ("reviewer", 6, ["read"], 1, "bugfix-reviewer", "case-20261115-abc")])
-        self.assertTrue(all(c["cost_source"] == "pi" and c["cost_usd"] == 0.5 and c["finish_reason"] == "tool_calls" for c in lines))
+        turns = [c for c in lines if c.get("kind") != "step"]
+        read = [{"name": "read", "arg": ""}]
+        self.assertEqual([(c["role"], c["episode_seq"], c["tools"], c["step"], c["alias"], c["decision_key"]) for c in turns],
+                         [("verdict", 1, read, 1, "bugfix-flash", "case-20261115-abc"),
+                          ("coder", 2, read, 1, "bugfix-flash", "case-20261115-abc"),
+                          ("advisor", 3, read, 1, "bugfix-reviewer", "case-20261115-abc"),
+                          ("verdict", 4, read, 1, "bugfix-flash", "case-20261115-abc"),
+                          ("coder", 5, read, 1, "bugfix-flash", "case-20261115-abc"),
+                          ("reviewer", 6, read, 1, "bugfix-reviewer", "case-20261115-abc")])
+        # no meter (no --spend-file): the bill of an episode is not known, and pi's own figure (0.5 in these sessions) is not used
+        self.assertTrue(all(c["cost_source"] == "" and c["cost_usd"] is None and c["finish_reason"] == "tool_calls" for c in turns))
         g = self.fixture(["actionable"], ["good"])
         with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1"}):
             g.run()
         self.assertFalse(os.path.exists(os.path.join(g.d, "calls.jsonl")))
+
+    def test_the_chain_s_notes_are_step_rows_among_the_calls_in_the_order_they_happened(self):
+        """Each note of the chain (verdict, a round's outcome, the advisor's pin, the review) is a line of kind step, with
+        the role it concerns, its short text and its position among the steps; the episodes' turns sit between them."""
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        path = os.path.join(f.d, "calls.jsonl")
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "FLOTILLA_CALLS_FILE": path}):
+            plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        with open(path) as fh:
+            lines = [json.loads(x) for x in fh]
+        steps = [c for c in lines if c.get("kind") == "step"]
+        self.assertEqual([c["episode_seq"] for c in steps], list(range(1, len(steps) + 1)))
+        for c in steps:
+            self.assertEqual((c["alias"], c["model"], c["tokens_in"], c["tokens_out"], c["cost_usd"], c["cost_source"], c["finish_reason"]),
+                             ("", "", None, None, None, "", ""), c)
+        by_role = [(c["role"], c["detail"]) for c in steps]
+        self.assertIn(("verdict", "verdict: actionable"), by_role)
+        self.assertIn(("gates", "round 0: repro-first violated: no test in the diff"), by_role)
+        self.assertIn(("advisor", "pin: src/a.js"), by_role)
+        self.assertTrue(any(r == "reviewer" and d.startswith("review: ") and "VERDICT" not in d for r, d in by_role), by_role)
+        self.assertTrue(any(r == "gates" and d.startswith("round 1: gates clean") for r, d in by_role), by_role)
+        self.assertTrue(any(r == "harness" and d.startswith("base: ") for r, d in by_role), by_role)
+        order = [(c["role"], c.get("kind", "call")) for c in lines]
+        self.assertLess(order.index(("coder", "call")), order.index(("gates", "step")), "a round's outcome follows its episode")
+        self.assertLess(order.index(("advisor", "call")), order.index(("advisor", "step")), "the pin follows the advisor's episode")
+
+    def test_each_episode_takes_its_gateway_bill_from_the_meter_and_the_run_reports_their_sum_without_waiting_again(self):
+        """main hands its meter to the chain: each pi episode is measured when it ends (spend.Meter.episode), its turns
+        carry that bill, and the run's cost is read with quiet=True once every episode was measured."""
+        class Meter:
+            made = []
+
+            def __init__(m, keys, *a, **kw):
+                m.bills, m.quiet, m.hurried = [0.10, 0.20, 0.05, 0.10, 0.30, 0.25], None, False
+                Meter.made.append(m)
+
+            def episode(m):
+                return m.bills.pop(0)
+
+            def cost(m, agent_dir, quiet=False):
+                m.quiet = quiet
+                return 1.0, "gateway", ""
+
+            def hurry(m, *a, **kw):
+                m.hurried = True
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        path = os.path.join(f.d, "calls.jsonl")
+        home = os.path.join(f.d, "home")
+        os.makedirs(home)
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "FLOTILLA_CALLS_FILE": path, "HOME": home}), \
+                unittest.mock.patch.object(fix.spend, "Meter", Meter):
+            plan, _ = f.run("--spend-file", ".spend")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        (m,) = Meter.made
+        self.assertIs(m.quiet, True, "every episode was measured: nothing is waited for again")
+        with open(path) as fh:
+            turns = [c for c in map(json.loads, fh) if c.get("kind") != "step"]
+        self.assertEqual([c["cost_usd"] for c in turns], [0.10, 0.20, 0.05, 0.10, 0.30, 0.25])
+        self.assertEqual({c["cost_source"] for c in turns}, {"gateway-share"})
+        with open(os.path.join(home, ".spend")) as fh:
+            self.assertEqual(float(fh.read()), 1.0)
 
     def test_a_review_that_did_not_run_is_said_on_the_plan(self):
         # it used to read as an approval: "(no review: ...)" has no VERDICT line

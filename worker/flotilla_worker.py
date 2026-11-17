@@ -113,7 +113,7 @@ def spend_report(path):
         return 0.0, False
 
 
-CALLS_MAX = 500  # model calls returned per run; a run that makes more reports the first CALLS_MAX
+CALLS_MAX = 5000  # calls-file lines returned per run (model calls and harness steps); a run that writes more reports the first CALLS_MAX and how many it dropped
 LOADED_MAX = 200  # what a run read (runtime/loaded.py), per run
 
 
@@ -125,29 +125,37 @@ def calls_path(env, run_id, what="calls"):
     return os.path.join(env.get("TMPDIR") or tempfile.gettempdir(), f".flotilla-{what}-{safe}.jsonl")
 
 
-def read_calls(path, limit=CALLS_MAX):
+def read_calls(path, limit=None):
     """Consume the run's model calls (runtime/model_client.py writes one JSON line per call), or what it
     read (runtime/loaded.py), then remove the file. Lines that are not JSON objects are skipped."""
-    out = []
+    return read_calls_counted(path, limit)[0]
+
+
+def read_calls_counted(path, limit=None):
+    """(the first `limit` lines of the file that are JSON objects, how many more there were), then the file removed."""
+    limit = CALLS_MAX if limit is None else limit
+    out, dropped = [], 0
     try:
         with open(path) as f:
             for line in f:
-                if len(out) >= limit:
-                    break
                 try:
                     c = json.loads(line)
                 except ValueError:
                     continue
-                if isinstance(c, dict):
+                if not isinstance(c, dict):
+                    continue
+                if len(out) < limit:
                     out.append(c)
+                else:
+                    dropped += 1
     except OSError:
-        return out
+        return out, dropped
     finally:
         try:
             os.remove(path)
         except OSError:
             pass
-    return out
+    return out, dropped
 
 
 PLAN_MAX = 64 * 1024
@@ -244,9 +252,12 @@ def run_job(req, environ=None, cancel=None):
         status = "error"
     out = b"".join(chunks).decode("utf-8", "replace")
     spend = spend_report(spend_path)
+    kept, dropped = read_calls_counted(calls)
     res = {"status": status, "exit_code": proc.returncode, "duration_s": round(time.monotonic() - start, 3),
-           "spend_usd": spend[0], "spend_reported": spend[1], "output_tail": out[-TAIL:], "calls": read_calls(calls),
+           "spend_usd": spend[0], "spend_reported": spend[1], "output_tail": out[-TAIL:], "calls": kept,
            "loaded": read_calls(loaded, LOADED_MAX)}
+    if dropped:
+        res["calls_dropped"] = dropped
     plan, plan_error = read_plan(plan_path)
     if status == "ok":  # a failed run's plan is not a decision
         if plan is not None:

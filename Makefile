@@ -91,6 +91,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_contract_routine.py >/tmp/flotilla-test_contract_routine.log 2>&1 && echo "PASS runtime/test_contract_routine.py" || { echo "FAIL runtime/test_contract_routine.py"; tail -30 /tmp/flotilla-test_contract_routine.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_loaded.py >/tmp/flotilla-test_loaded.log 2>&1 && echo "PASS runtime/test_loaded.py" || { echo "FAIL runtime/test_loaded.py"; tail -30 /tmp/flotilla-test_loaded.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@python3 runtime/test_skills.py >/tmp/flotilla-test_skills.log 2>&1 && echo "PASS runtime/test_skills.py" || { echo "FAIL runtime/test_skills.py"; tail -30 /tmp/flotilla-test_skills.log; exit 1; }
+	@python3 runtime/test_toolrec.py >/tmp/flotilla-test_toolrec.log 2>&1 && echo "PASS runtime/test_toolrec.py" || { echo "FAIL runtime/test_toolrec.py"; tail -30 /tmp/flotilla-test_toolrec.log; exit 1; }
 	@python3 runtime/test_harness.py >/tmp/flotilla-test_harness.log 2>&1 && echo "PASS runtime/test_harness.py" || { echo "FAIL runtime/test_harness.py"; tail -30 /tmp/flotilla-test_harness.log; exit 1; }
 	@python3 runtime/test_ledger.py >/tmp/flotilla-test_ledger.log 2>&1 && echo "PASS runtime/test_ledger.py" || { echo "FAIL runtime/test_ledger.py"; tail -30 /tmp/flotilla-test_ledger.log; exit 1; }
 	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py test_replay_api.py test_dev_filter.py; do \

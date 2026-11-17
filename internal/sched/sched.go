@@ -416,7 +416,13 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 				Model: c.Model, Deployment: c.Deployment, TokensIn: c.TokensIn, TokensOut: c.TokensOut, CostUSD: c.CostUSD,
 				CostSource: c.CostSource, LatencyS: c.LatencyS, Error: c.Error, Check: c.Check, CheckOK: c.CheckOK, Detail: c.Detail,
 				FinishReason: c.FinishReason, Step: c.Step, DecisionKey: c.DecisionKey,
-				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: toolsJSON(c.Tools)}
+				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: store.NormalizeTools(c.Tools), Kind: c.Kind}
+		}
+		if res.CallsDropped > 0 {
+			// the worker keeps the first lines of a run's calls file; say how many it did not, in the run's own rows
+			calls = append(calls, store.ModelCall{RunID: runID, Routine: id, At: s.Now().UTC().Format(store.TimeFormat), Role: "harness",
+				Kind: store.KindStep, Detail: fmt.Sprintf("%d more model calls were made and not recorded: the worker keeps the first %d lines of a run's calls file",
+					res.CallsDropped, len(res.Calls))})
 		}
 		// the calls are a record of the run, not its outcome: a failure to keep them is logged, not fatal
 		if err := s.Store.RecordCalls(fctx, calls); err != nil {
@@ -670,16 +676,4 @@ func tail(s string, n int) string {
 		return s[len(s)-n:]
 	}
 	return s
-}
-
-// toolsJSON is a call's tool names as the JSON array the store keeps; "" when the turn called none.
-func toolsJSON(names []string) string {
-	if len(names) == 0 {
-		return ""
-	}
-	b, err := json.Marshal(names)
-	if err != nil {
-		return ""
-	}
-	return string(b)
 }

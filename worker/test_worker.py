@@ -137,6 +137,34 @@ class TestRunJob(unittest.TestCase):
         self.assertEqual([c["alias"] for c in res["calls"]], ["a", "b"], "every JSON line, a bad one skipped")
         self.assertFalse(os.path.exists(fw.calls_path({"HOME": self.home}, "r1")), "consumed once")
 
+    def test_the_cap_is_5000_and_the_lines_over_it_are_counted(self):
+        self.assertEqual(fw.CALLS_MAX, 5000)
+        path = os.path.join(self.home, "calls.jsonl")
+        with open(path, "w") as f:
+            for i in range(8):
+                f.write(json.dumps({"alias": f"a{i}"}) + "\n")
+                if i == 2:
+                    f.write("not json\n[1]\n")   # neither is a line, nor counted as dropped
+        kept, dropped = fw.read_calls_counted(path, 5)
+        self.assertEqual([c["alias"] for c in kept], ["a0", "a1", "a2", "a3", "a4"], "the first lines are the ones kept")
+        self.assertEqual(dropped, 3)
+        self.assertFalse(os.path.exists(path), "consumed once")
+        with open(path, "w") as f:
+            f.write('{"alias":"x"}\n')
+        self.assertEqual(fw.read_calls_counted(path, 5), ([{"alias": "x"}], 0))
+        self.assertEqual(fw.read_calls_counted(os.path.join(self.home, "missing"), 5), ([], 0))
+
+    def test_a_run_over_the_cap_reports_calls_dropped(self):
+        old, fw.CALLS_MAX = fw.CALLS_MAX, 3
+        try:
+            res = fw.run_job(self.req("for i in 1 2 3 4 5; do echo '{\"alias\":\"a'$i'\"}' >> \"$FLOTILLA_CALLS_FILE\"; done"), self.environ)
+        finally:
+            fw.CALLS_MAX = old
+        self.assertEqual(len(res["calls"]), 3)
+        self.assertEqual(res["calls_dropped"], 2)
+        res = fw.run_job(self.req("true"), self.environ)
+        self.assertNotIn("calls_dropped", res)
+
     def test_calls_of_an_earlier_run_are_not_this_runs(self):
         with open(fw.calls_path({"HOME": self.home}, "r1"), "w") as f:
             f.write('{"alias":"stale"}\n')

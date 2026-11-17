@@ -377,3 +377,43 @@ func TestMigrationAddsRoleEpisodeAndTools(t *testing.T) {
 		t.Fatalf("the old call must keep its columns and read the new ones as defaults: %+v", c)
 	}
 }
+
+// Schema 25 adds run_calls.kind: a database at 24 keeps its calls, as kind 'call', with the old array-of-names tools.
+func TestMigrationAddsCallKind(t *testing.T) {
+	if len(schema) != 25 {
+		t.Fatalf("this test is for schema 25, the schema has %d steps", len(schema))
+	}
+	p := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 24; i++ {
+		if _, err := db.Exec(schema[i]); err != nil {
+			t.Fatalf("step %d: %v", i+1, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (n) VALUES (?)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO run_calls (run_id, routine, at, alias, role, tools) VALUES ('old', 'bugfix/fix', '2026-11-17T00:00:00Z', 'a', 'coder', '["bash","read"]')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("migrating a schema-24 database: %v", err)
+	}
+	defer s.Close()
+	got, err := s.RunCalls(context.Background(), []string{"old"})
+	if err != nil || len(got["old"]) != 1 {
+		t.Fatalf("the old call must survive: %+v %v", got, err)
+	}
+	c := got["old"][0]
+	if c.Kind != KindCall || c.Role != "coder" || c.Tools != `["bash","read"]` || len(c.ToolCalls()) != 2 {
+		t.Fatalf("the old call reads as a call and keeps its tools: %+v", c)
+	}
+}

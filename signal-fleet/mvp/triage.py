@@ -35,6 +35,7 @@ try:
     import loaded
     import model_client
     import skills
+    import toolrec
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
     try:
@@ -42,8 +43,9 @@ except ImportError:
         import loaded
         import model_client
         import skills
+        import toolrec
     except ImportError as e:
-        raise ImportError("triage needs flotilla's runtime/ (harness.py, model_client.py, skills.py) beside "
+        raise ImportError("triage needs flotilla's runtime/ (harness.py, model_client.py, skills.py, toolrec.py) beside "
                           "signal-fleet/ (../../runtime from signal-fleet/mvp)") from e
 
 # The playbook and the class hints (RFC-0002 §9 step 3) live in fleets/triage/, beside signal-fleet/:
@@ -311,14 +313,17 @@ def _post_json_transport(url, data, headers, timeout):
 
 
 def _requested_tools(rec):
-    """The probe a turn's reply asked for (the harness's tool request), as a list; [] for a decision, an
-    unparseable reply or a failed call."""
+    """The probe a turn's reply asked for (the harness's tool request), as a one-entry list of {"name", "arg"}: the
+    probe's name and its main parameter. [] for a decision, an unparseable reply or a failed call. No `ok`: the
+    probe has not run when the call is recorded."""
     try:
         out = _parse(rec.get("content") or "")
     except ValueError:   # no object, or one that is not JSON (JSONDecodeError is a ValueError)
         return []
     name = out.get("probe") if isinstance(out, dict) and out.get("action") == "probe" else None
-    return [name] if isinstance(name, str) and name else []
+    if not (isinstance(name, str) and name):
+        return []
+    return [toolrec.entry(name, toolrec.primary_arg(out.get("probe_args")))]
 
 
 def _call(messages, trace_id=None, step=None):

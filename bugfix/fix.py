@@ -340,9 +340,30 @@ def issue_for_case(issue, repo, environ):
                "not fixing from its first few hundred bytes")
 
 
+def step_row(step, detail):
+    """(role, text) of a note of the chain as a step row of the run's calls: the role it concerns (verdict, reviewer,
+    advisor; gates for a round's outcome, harness for any other hand-off) and its short text."""
+    line = f"{step}: {detail}" if detail else step
+    if step == "verdict":
+        return "verdict", line
+    if step == "review":
+        outcome = re.sub(r"^[\s*_>#-]*VERDICT:\s*", "", detail or "", flags=re.I).strip(" *_")
+        return "reviewer", f"review: {outcome}"
+    if step == "advisor":
+        return "advisor", f"pin: {detail}"
+    if step == "acceptance gap":
+        return "gates", line
+    if re.fullmatch(r"round \d+", step):
+        return ("reviewer" if (detail or "").startswith("the review") else "gates"), line
+    return "harness", line
+
+
 class Chain:
-    def __init__(self, a, case, run_dir, environ):
+    def __init__(self, a, case, run_dir, environ, meter=None):
         self.a, self.case, self.run_dir = a, case, run_dir
+        # each pi episode's turns go to the run's calls file once it ends (role: verdict, coder, reviewer, advisor),
+        # with the episode's share of the gateway's bill when there is a meter; the chain's notes go there as steps
+        self.calls = callrec_pi.Recorder(os.path.join(run_dir, "pi"), environ, case.get("id"), meter)
         self.issue = ((case.get("data") or {}).get("issue")) or {}
         if not self.issue.get("number"):
             raise Stop("the case carries no issue (its detection's data has none)")
@@ -387,13 +408,12 @@ class Chain:
                          # docs/security-reviews)
                          "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"})
         self.env.pop("FLOTILLA_PLAN_FILE", None)  # the leaves write nothing of the run's own
-        # each pi episode's turns go to the run's calls file once it ends (role: verdict, coder, reviewer, advisor)
-        self.calls = callrec_pi.Recorder(os.path.join(run_dir, "pi"), environ, case.get("id"))
 
     def note(self, step, detail=""):
         line = f"{step}: {detail}" if detail else step
         self.log.append(line)
         print(f"BUGFIX FIX #{self.n} {line}", flush=True)
+        self.calls.step(*step_row(step, detail))
 
     # 2 · the base
     def checkout(self):
@@ -1088,7 +1108,7 @@ def main(argv=None, environ=None):
             shutil.rmtree(run_dir, ignore_errors=True)
             raise
     try:
-        chain = Chain(a, case, run_dir, environ)
+        chain = Chain(a, case, run_dir, environ, meter)
         out = chain.run()
     except Stop as e:
         out = {"outcome": "escalate", "detail": str(e)}
@@ -1108,7 +1128,9 @@ def main(argv=None, environ=None):
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
             # pi's figure first, so a SIGKILL during the gateway read still leaves a number; then the bill over it
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi")))
-            usd, source, why = meter.cost(os.path.join(run_dir, "pi"))
+            # every episode's settled spend is already known when the chain measured them all: nothing to wait for again
+            quiet = chain is not None and chain.calls.measures and not terminated
+            usd, source, why = meter.cost(os.path.join(run_dir, "pi"), quiet=quiet)
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
             print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else ""))
         if chain is not None:

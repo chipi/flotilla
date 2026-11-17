@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -97,5 +98,83 @@ func TestCallsKeepRoleEpisodeAndTools(t *testing.T) {
 	since, err := s.CallsSince(ctx, "2026-11-17T00:00:00Z")
 	if err != nil || len(since) != 2 || since[0].Role != "coder" || since[0].Tools != `["bash","read"]` || *since[0].EpisodeSeq != 2 {
 		t.Fatalf("calls since: %+v %v", since, err)
+	}
+}
+
+func TestParseToolsReadsBothForms(t *testing.T) {
+	yes, no := true, false
+	for _, c := range []struct {
+		in   string
+		want []ToolCall
+	}{
+		{"", nil},
+		{"[]", nil},
+		{"not json", nil},
+		{`{"name":"bash"}`, nil},
+		{`["bash","read"]`, []ToolCall{{Name: "bash"}, {Name: "read"}}},
+		{`[{"name":"bash","arg":"grep -n foo src/x.ts","ok":true},{"name":"read","ok":false},{"name":"ls"}]`,
+			[]ToolCall{{Name: "bash", Arg: "grep -n foo src/x.ts", OK: &yes}, {Name: "read", OK: &no}, {Name: "ls"}}},
+		{`["bash",{"name":"read","arg":"a"},{"arg":"nameless"},"",7]`, []ToolCall{{Name: "bash"}, {Name: "read", Arg: "a"}}},
+	} {
+		got := ParseTools(c.in)
+		if len(got) != len(c.want) {
+			t.Fatalf("%q: %+v, want %+v", c.in, got, c.want)
+		}
+		for i := range got {
+			w := c.want[i]
+			if got[i].Name != w.Name || got[i].Arg != w.Arg || (got[i].OK == nil) != (w.OK == nil) || (w.OK != nil && *got[i].OK != *w.OK) {
+				t.Fatalf("%q[%d]: %+v, want %+v", c.in, i, got[i], w)
+			}
+		}
+	}
+	long := strings.Repeat("é", MaxToolArg+40)
+	if got := ParseTools(`[{"name":"bash","arg":"` + long + `"}]`); len(got) != 1 || len([]rune(got[0].Arg)) != MaxToolArg {
+		t.Fatalf("an over-long argument is cut at %d characters: %+v", MaxToolArg, got)
+	}
+}
+
+func TestNormalizeToolsWritesTheObjectForm(t *testing.T) {
+	if got := NormalizeTools([]byte(`["bash"]`)); got != `[{"name":"bash"}]` {
+		t.Fatalf("names become objects: %q", got)
+	}
+	if got := NormalizeTools([]byte(`[{"name":"bash","arg":"ls","ok":true}]`)); got != `[{"name":"bash","arg":"ls","ok":true}]` {
+		t.Fatalf("objects stay: %q", got)
+	}
+	for _, in := range []string{"", "null", "[]", "garbage"} {
+		if got := NormalizeTools([]byte(in)); got != "" {
+			t.Fatalf("%q reads as none, not %q", in, got)
+		}
+	}
+}
+
+// Both forms of tools, a step row's kind, and the default kind come back as recorded; CallsSince leaves steps out.
+func TestCallsKeepToolObjectsAndKind(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	seq := int64(1)
+	if err := s.RecordCalls(ctx, []ModelCall{
+		{RunID: "r1", Routine: "bugfix/fix", At: "2026-11-17T10:00:00.000000000Z", Alias: "a", Role: "coder", Tools: `[{"name":"bash","arg":"ls","ok":true}]`},
+		{RunID: "r1", Routine: "bugfix/fix", At: "2026-11-17T10:00:01.000000000Z", Alias: "a", Role: "coder", Tools: `["read"]`},
+		{RunID: "r1", Routine: "bugfix/fix", At: "2026-11-17T10:00:02.000000000Z", Role: "gates", Kind: KindStep, EpisodeSeq: &seq, Detail: "round 1: gates clean"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RunCalls(ctx, []string{"r1"})
+	cs := got["r1"]
+	if err != nil || len(cs) != 3 {
+		t.Fatalf("calls: %+v %v", cs, err)
+	}
+	if cs[0].Kind != KindCall || cs[0].IsStep() || cs[1].Kind != KindCall || !cs[2].IsStep() || cs[2].Detail != "round 1: gates clean" || cs[2].Role != "gates" {
+		t.Fatalf("kinds: %+v", cs)
+	}
+	if tc := cs[0].ToolCalls(); len(tc) != 1 || tc[0].Arg != "ls" || tc[0].OK == nil || !*tc[0].OK {
+		t.Fatalf("object tools: %+v", tc)
+	}
+	if tc := cs[1].ToolCalls(); len(tc) != 1 || tc[0].Name != "read" || tc[0].OK != nil {
+		t.Fatalf("old-form tools: %+v", tc)
+	}
+	since, err := s.CallsSince(ctx, "2026-11-17T00:00:00Z")
+	if err != nil || len(since) != 2 {
+		t.Fatalf("CallsSince leaves the step out: %+v %v", since, err)
 	}
 }

@@ -110,6 +110,68 @@ class SpendTest(unittest.TestCase):
         usd, source, _ = m.cost(os.path.join(self.d, "pi"))
         self.assertEqual((round(usd, 6), source), (0.75, "gateway"))
 
+    def meter(self, *reads, keys=1):
+        """A Meter whose reads are scripted (None: unreadable; the last repeats) and settle on the first read: one read
+        per settle, so the script is the sequence of before, each episode's after, ..."""
+        script, seen = list(reads), []
+
+        def read(key, base, timeout):
+            seen.append(key)
+            return script.pop(0) if len(script) > 1 else script[0]
+        m = spend.Meter([("http://g/v1", f"sk-{i}") for i in range(keys)], poll_s=0.001, settle_s=1, read=read, stable_s=0)
+        return m, seen
+
+    def test_an_episode_is_the_spend_since_the_last_mark_and_the_episodes_add_up_to_the_run(self):
+        m, seen = self.meter(1.0, 1.25, 1.75, 2.0)
+        self.assertEqual([round(m.episode(), 6) for _ in range(3)], [0.25, 0.5, 0.25])
+        n = len(seen)
+        usd, source, why = m.cost(os.path.join(self.d, "pi"), quiet=True)
+        self.assertEqual((round(usd, 6), source, why, len(seen)), (1.0, "gateway", "", n), "the run's bill, with no new read")
+        # the run's bill is what it was without episodes: the end minus the start
+        m2, _ = self.meter(1.0, 2.0)
+        self.assertEqual(m2.cost(os.path.join(self.d, "pi"))[:2], (1.0, "gateway"))
+
+    def test_not_quiet_the_run_s_cost_is_settled_again(self):
+        m, seen = self.meter(1.0, 1.25, 1.5)
+        m.episode()
+        n = len(seen)
+        usd, _, _ = m.cost(os.path.join(self.d, "pi"))
+        self.assertEqual((round(usd, 6), len(seen) > n), (0.5, True), "a spend that came after the mark is counted")
+
+    def test_an_episode_that_could_not_be_read_is_unknown_and_its_bill_is_not_carried_into_the_next(self):
+        m, _ = self.meter(1.0, 1.25, None, 2.0, 2.5)
+        got = [m.episode() for _ in range(4)]
+        self.assertEqual([None if x is None else round(x, 6) for x in got], [0.25, None, None, 0.5])
+
+    def test_a_spend_that_went_down_is_unknown_for_that_episode_only(self):
+        m, _ = self.meter(3.0, 0.1, 0.4)
+        self.assertIsNone(m.episode())
+        self.assertEqual(round(m.episode(), 6), 0.3)
+
+    def test_a_key_without_a_mark_is_settled_by_the_run_s_cost_even_when_quiet(self):
+        m, seen = self.meter(1.0, None, 1.5)
+        self.assertIsNone(m.episode())
+        usd, source, _ = m.cost(os.path.join(self.d, "pi"), quiet=True)
+        self.assertEqual((round(usd, 6), source), (0.5, "gateway"))
+
+    def test_no_keys_no_episode_bill(self):
+        self.assertIsNone(spend.Meter([]).episode())
+
+    def test_two_keys_add_up_per_episode_and_one_unreadable_makes_it_unknown(self):
+        m, _ = self.meter(1.0, 10.0, 1.5, 10.25, 2.0, None, keys=2)
+        self.assertEqual(round(m.episode(), 6), 0.75)
+        self.assertIsNone(m.episode())
+
+    def test_an_episode_s_wait_is_the_stable_window_and_no_more(self):
+        import time
+        g = self.gateway([1.0, 1.5])
+        m = spend.Meter([(g.base, "sk-test")], poll_s=0.05, settle_s=10, stable_s=0.4)
+        t0 = time.monotonic()
+        usd = m.episode()
+        waited = time.monotonic() - t0
+        self.assertEqual(round(usd, 6), 0.5)
+        self.assertTrue(0.4 <= waited < 1.0, waited)
+
     def test_keys_of_reads_key_env_and_key_file_and_skips_keyless_endpoints(self):
         kf = os.path.join(self.d, "k")
         with open(kf, "w") as f:

@@ -14,9 +14,10 @@ import (
 	"time"
 )
 
-// MaxFrame bounds a frame: an execution's envelope, or a result with its 16 KiB of output, fits many
-// times over; a peer announcing more is cut off before anything is read.
-const MaxFrame = 1 << 20
+// MaxFrame bounds a frame: an execution's envelope fits many times over; so does a run's result with its 16 KiB of
+// output and up to 5000 recorded model calls (worker.MaxResultBytes). A peer announcing more is cut off before
+// anything is read.
+const MaxFrame = 16 << 20
 
 // Frame types.
 const (

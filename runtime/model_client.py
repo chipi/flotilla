@@ -43,6 +43,9 @@ import time
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolrec  # noqa: E402
+
 TOOLS = ("native", "json", "none")
 JSON_MODES = ("schema", "object", "none")
 COSTS = ("reported", "table", "zero", "unknown")
@@ -236,8 +239,9 @@ class Client:
         """One call. Returns its record; raises a ModelError (with .record) or ConfigError. `step` (the turn
         within a harness step, 1-based), `decision_key` (what the call decides, e.g. a signal fingerprint),
         `role` (who is calling: triage, coder, ...), `episode` and `episode_seq` (the agent session the call
-        belongs to and its order within the run) and `tool_names` (the tool names the reply asked for: a list, or a
-        function of the call's record, as the reply is only known after the call) are only recorded in the
+        belongs to and its order within the run) and `tool_names` (the tools the reply asked for, each a name or a
+        {"name", "arg", "ok"} dict (runtime/toolrec.py): a list, or a function of the call's record, as the reply is
+        only known after the call) are only recorded in the
         calls file; they are not part of the request."""
         a = self._alias(alias)
         meta = {"step": step, "decision_key": decision_key, "role": role, "episode": episode,
@@ -281,11 +285,13 @@ class Client:
 
     @staticmethod
     def _tool_names(tools, rec):
-        """The tools a call asked for, as a list of names: `tools` itself or, when callable, its answer for
-        the record. Never raises: a call's line is a record, not a step of the run."""
+        """The tools a call asked for, as the line's list of {"name", "arg", "ok"} (toolrec.entry: the argument is
+        redacted and cut, `ok` is left out unless given): `tools` itself or, when callable, its answer for the record;
+        a plain name is an entry with just the name. Never raises: a call's line is a record, not a step of the run."""
         try:
-            names = tools(rec) if callable(tools) else tools
-            return [str(n) for n in names or []]
+            items = tools(rec) if callable(tools) else tools
+            return [toolrec.entry(t.get("name") or "", t.get("arg"), t.get("ok")) if isinstance(t, dict) else toolrec.entry(t)
+                    for t in items or [] if not isinstance(t, dict) or t.get("name")]
         except Exception:  # noqa: BLE001
             return []
 

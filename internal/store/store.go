@@ -367,6 +367,9 @@ var schema = []string{
 	ALTER TABLE run_calls ADD COLUMN episode TEXT NOT NULL DEFAULT '';
 	ALTER TABLE run_calls ADD COLUMN episode_seq INTEGER;
 	ALTER TABLE run_calls ADD COLUMN tools TEXT NOT NULL DEFAULT '';`,
+	// What a run_calls row is: a model call ('call') or a step the harness took between calls ('step': a verdict, a gate's outcome, a pin;
+	// no model, tokens or cost), so a run's flow can show both. Aggregates over calls skip 'step' rows.
+	`ALTER TABLE run_calls ADD COLUMN kind TEXT NOT NULL DEFAULT 'call';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

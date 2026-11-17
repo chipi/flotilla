@@ -72,6 +72,9 @@ class Meter:
         self.keys, self.poll_s, self.settle_s, self.read, self.read_timeout = list(keys), poll_s, settle_s, read, read_timeout
         self.stable_s = stable_s
         self.before = [read(k, b, read_timeout) for b, k in self.keys]
+        # each key's settled spend at the last episode's end (the run's start before one): the next episode's bill is
+        # measured from it. None: unknown (an unreadable key), the next episode's bill is then not measurable either.
+        self.mark = list(self.before)
 
     def hurry(self, within_s=6.0, read_timeout=2.0, poll_s=1.0):
         """The worker's SIGTERM, before or during cost(): the reads and the settle still to come end within within_s of
@@ -111,14 +114,40 @@ class Meter:
                 last, since = cur, time.monotonic()
         return None
 
-    def cost(self, agent_dir):
+    def episode(self):
+        """The gateway's bill for what ran since the last mark (the previous episode's end, or the run's start), in USD:
+        each key's spend once settled (settled(): at least stable_s, 20 s by default, of wall time, the price of an
+        episode's own cost), minus the key's spend at the mark; the mark moves to it. None, with the mark moved or made
+        unknown, when a key could not be read in time, went down (a budget reset), or had no mark: a bill is never
+        guessed, and never carried into the next episode's. A key per routine, and a run's episodes never
+        overlapping, make the difference this episode's own."""
+        if not self.keys:
+            return None
+        total, known = 0.0, True
+        for i, (base, key) in enumerate(self.keys):
+            before, after = self.mark[i], self.settled(base, key)
+            self.mark[i] = after
+            if before is None or after is None or after < before:
+                known = False
+            else:
+                total += after - before
+        return total if known else None
+
+    def cost(self, agent_dir, quiet=False):
         """(USD, source, note): the gateway's bill when every key could be read before and after, before the deadline
-        (hurry), else pi's figure."""
+        (hurry), else pi's figure. `quiet` says nothing has spent since the last episode()'s mark (every episode of the
+        run was measured and none is in flight): the mark is then the settled "after" and nothing is waited for again,
+        so the run's total is exactly the sum of its episodes'. A key with no mark is settled as usual."""
         if not self.keys:
             return pi_cost(agent_dir), "pi", "no endpoint key to read the gateway's spend with"
         total = 0.0
-        for (base, key), before in zip(self.keys, self.before):
-            after = self.settled(base, key) if before is not None else None
+        for i, ((base, key), before) in enumerate(zip(self.keys, self.before)):
+            if before is None:
+                after = None
+            elif quiet and self.mark[i] is not None:
+                after = self.mark[i]
+            else:
+                after = self.settled(base, key)
             if before is None or after is None or after < before:
                 why = "unreadable in time" if before is None or after is None else "went down (a budget reset?)"
                 return pi_cost(agent_dir), "pi", f"the gateway's spend at {base} {why}"

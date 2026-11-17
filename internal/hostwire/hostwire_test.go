@@ -65,3 +65,20 @@ func TestRefusals(t *testing.T) {
 		t.Error("an oversize frame written")
 	}
 }
+
+// A remote worker's result with the worker's whole cap of calls is a few MiB: one frame carries it.
+func TestFrameCarriesAFullCallsResult(t *testing.T) {
+	var buf bytes.Buffer
+	body := RunResultBody{RunID: "r", Result: []byte(`{"detail":"` + strings.Repeat("d", 3<<20) + `"}`)}
+	if err := Write(&buf, RunResult, body); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Read(&buf)
+	var back RunResultBody
+	if err != nil || f.Decode(&back) != nil || len(back.Result) != len(body.Result) {
+		t.Fatalf("%+v %v", f.Type, err)
+	}
+	if err := Write(&buf, RunResult, RunResultBody{RunID: "r", Result: []byte(`"` + strings.Repeat("d", MaxFrame) + `"`)}); err == nil {
+		t.Fatal("a frame over MaxFrame must be refused")
+	}
+}

@@ -113,7 +113,7 @@ func TestRunCancelledIsAResult(t *testing.T) {
 // A result's calls cross the link (hostagent marshals the worker's Result, hostlink unmarshals it) with their role,
 // episode, its order and tool names: a Call without those fields would drop them from every remote run.
 func TestResultCallsKeepRoleEpisodeAndTools(t *testing.T) {
-	in := `{"status":"ok","calls":[{"alias":"a","role":"coder","episode":"ep-1","episode_seq":2,"tools":["bash","read"],"step":1}]}`
+	in := `{"status":"ok","calls":[{"alias":"a","role":"coder","episode":"ep-1","episode_seq":2,"tools":["bash","read"],"step":1},{"alias":"b","tools":[{"name":"bash","arg":"ls","ok":false}]},{"kind":"step","role":"gates","detail":"round 1: gates clean"}],"calls_dropped":7}`
 	var res Result
 	if err := json.Unmarshal([]byte(in), &res); err != nil {
 		t.Fatal(err)
@@ -123,11 +123,36 @@ func TestResultCallsKeepRoleEpisodeAndTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	var back Result
-	if err := json.Unmarshal(b, &back); err != nil || len(back.Calls) != 1 {
+	if err := json.Unmarshal(b, &back); err != nil || len(back.Calls) != 3 || back.CallsDropped != 7 {
 		t.Fatalf("round trip: %v %+v", err, back)
 	}
 	c := back.Calls[0]
-	if c.Role != "coder" || c.Episode != "ep-1" || c.EpisodeSeq == nil || *c.EpisodeSeq != 2 || len(c.Tools) != 2 || c.Tools[1] != "read" {
+	if c.Role != "coder" || c.Episode != "ep-1" || c.EpisodeSeq == nil || *c.EpisodeSeq != 2 || string(c.Tools) != `["bash","read"]` {
 		t.Fatalf("the call after the round trip: %+v", c)
+	}
+	if string(back.Calls[1].Tools) != `[{"name":"bash","arg":"ls","ok":false}]` || back.Calls[2].Kind != "step" || back.Calls[2].Role != "gates" || back.Calls[2].Tools != nil {
+		t.Fatalf("object tools and a step line after the round trip: %+v / %+v", back.Calls[1], back.Calls[2])
+	}
+}
+
+// A run that recorded the worker's whole cap of calls answers with several MiB: the client reads all of it.
+func TestRunReadsAResultOfAFullCallsCap(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"status":"ok","calls":[`)
+	for i := 0; i < 5000; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"alias":"a","role":"coder","tools":[{"name":"bash","arg":"` + strings.Repeat("x", 160) + `","ok":true}],"detail":"` + strings.Repeat("d", 100) + `"}`)
+	}
+	b.WriteString(`],"calls_dropped":12}`)
+	if b.Len() < 1<<20 {
+		t.Fatalf("the fixture must be over the old 1 MiB bound, is %d", b.Len())
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(b.String())) }))
+	defer ts.Close()
+	res, err := New(ts.URL, "s").Run(context.Background(), Request{RunID: "r", Routine: "j/a", Command: "true", TimeoutS: 5})
+	if err != nil || len(res.Calls) != 5000 || res.CallsDropped != 12 {
+		t.Fatalf("%d calls, dropped %d, %v", len(res.Calls), res.CallsDropped, err)
 	}
 }

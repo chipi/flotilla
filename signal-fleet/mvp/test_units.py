@@ -1717,8 +1717,18 @@ class TestDecisionTurns(unittest.TestCase):
         with open(self.path) as f:
             lines = [json.loads(x) for x in f if x.strip()]
         self.assertEqual([(x["role"], x["episode"], x["episode_seq"], x["tools"]) for x in lines],
-                         [("triage", "glitchtip:FP-1", 1, ["get_logs"]), ("triage", "glitchtip:FP-1", 1, []),
+                         [("triage", "glitchtip:FP-1", 1, [{"name": "get_logs", "arg": ""}]), ("triage", "glitchtip:FP-1", 1, []),
                           ("triage", "glitchtip:FP-1", 1, []), ("triage", "glitchtip:FP-2", 2, [])])
+
+    def test_the_requested_probe_carries_its_main_parameter_scrubbed(self):
+        """The call's tool entry names the probe and its main parameter (first value, redacted, cut); no `ok`: the
+        probe has not run when the call is recorded."""
+        ask = lambda args: self.t._requested_tools({"content": json.dumps({"action": "probe", "probe": "get_logs", "probe_args": args})})
+        self.assertEqual(ask({"service": "api", "since": "1h"}), [{"name": "get_logs", "arg": "api"}])
+        self.assertEqual(ask({"query": "token=abcd1234 from 10.1.2.3"}), [{"name": "get_logs", "arg": "token=<redacted> from <ip>"}])
+        self.assertEqual(ask({"n": 5}), [{"name": "get_logs", "arg": "5"}])
+        self.assertEqual(ask(None), [{"name": "get_logs", "arg": ""}])
+        self.assertEqual(self.t._requested_tools({"content": '{"action":"decide"}'}), [])
 
     def test_quirk_names_are_distinct_and_joined(self):
         self._replies(("", "stop"), ("not json", "stop"), ("also not", "stop"), (self.DECIDE, "stop"))
