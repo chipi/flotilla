@@ -18,3 +18,8 @@ services:
       - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
     environment:
       ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem
+  worker-triage:
+    volumes:
+      - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
+    environment:
+      ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem

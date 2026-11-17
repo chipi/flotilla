@@ -3,6 +3,7 @@ every host the examples' own specs name (Docker network aliases), with a certifi
 CA, so the examples run unchanged against it.
 
   www.example.com, docs.example.com, shop.example.org   the sites/site-check example's sites
+  errors.example.com, grafana.example.com               the triage example's sources (GlitchTip, Grafana)
   api.github.com, pypi.org, api.osv.dev                 the deps example's sources
 
 Some answers are wrong on purpose, so each example has something to find: a page with no description, a
@@ -60,6 +61,21 @@ SITES = {
     "shop.example.org": {},   # the retired host: every page answers 404, as it should
 }
 
+# The triage example's sources: one unresolved error in the shop (GlitchTip) and one firing alert on the api
+# (Grafana's Alertmanager). The scripted model (stub.py) files the first and escalates the second.
+GLITCHTIP_PROJECTS = [{"id": 1, "slug": "shop"}, {"id": 2, "slug": "api"}]
+GLITCHTIP_ISSUES = [{
+    "id": "101", "shortId": "SHOP-12", "title": "TypeError: Cannot read properties of undefined (reading 'price')",
+    "culprit": "cart/total.js in sumLines", "status": "unresolved", "level": "error", "count": 42,
+    "firstSeen": "2026-11-17T08:00:00Z", "lastSeen": "2026-11-17T09:30:00Z", "project": {"id": 1, "slug": "shop"},
+    "metadata": {"type": "TypeError", "value": "Cannot read properties of undefined (reading 'price')"},
+}]
+ALERTS = [{
+    "labels": {"alertname": "ApiErrorRateHigh", "instance": "prod-api", "severity": "warning"},
+    "annotations": {"summary": "5xx responses above 2% for 10 minutes on the api"},
+    "status": {"state": "active"}, "startsAt": "2026-11-17T09:00:00Z", "fingerprint": "a1b2c3d4e5f60718",
+}]
+
 SHA = "4f2c1d0e9b8a7f6e5d4c3b2a19087f6e5d4c3b2a"
 FILES = {
     ("example/shop", "requirements.txt"): "flask==3.0.0\nrequests==2.31.0\nidna>=3.0\n",
@@ -93,6 +109,18 @@ class H(BaseHTTPRequestHandler):
                 return self.send(404, "not found")
             ctype = "application/xml" if path.endswith(".xml") else "text/plain" if path.endswith(".txt") else "text/html; charset=utf-8"
             return self.send(200, body, ctype)
+        if host == "errors.example.com":   # GlitchTip's API
+            if path.endswith("/projects/"):
+                return self.json(GLITCHTIP_PROJECTS)
+            if path.endswith("/issues/"):
+                return self.json(GLITCHTIP_ISSUES)
+            if "/events/latest/" in path:
+                return self.json({"entries": [], "tags": [], "message": GLITCHTIP_ISSUES[0]["title"]})
+            return self.json([])
+        if host == "grafana.example.com" and path == "/api/alertmanager/grafana/api/v2/alerts":
+            return self.json(ALERTS)
+        if host == "api.github.com" and path == "/search/issues":
+            return self.json({"total_count": 0, "items": []})
         if host == "api.github.com":
             parts = path.strip("/").split("/")   # repos/OWNER/NAME/commits/HEAD | repos/OWNER/NAME/contents/PATH...
             if len(parts) >= 5 and parts[0] == "repos":
@@ -116,6 +144,8 @@ class H(BaseHTTPRequestHandler):
         host = self.host()
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         print(f"world POST {host}{self.path}", flush=True)
+        if host == "api.github.com" and self.path == "/graphql":   # triage's sync and stale reads: nothing open
+            return self.json({"data": {"repository": None, "search": {"nodes": []}}})
         if host == "api.osv.dev" and self.path == "/v1/querybatch":
             qs = json.loads(body or b"{}").get("queries", [])
             return self.json({"results": [{"vulns": [{"id": i} for i in VULNS.get((q["package"]["name"], q["version"]), [])]}

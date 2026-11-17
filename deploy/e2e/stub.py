@@ -12,6 +12,28 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 NAME = sys.argv[1] if len(sys.argv) > 1 else "stub"
 
 
+def scripted(req):
+    """The scripted model: the same answer for the same prompt, every run. A triage prompt (its playbook asks
+    for one flat JSON decision) gets the triage example's decisions: the shop's TypeError is a bug to file,
+    with an acceptance criterion that names its intent source (the intent gate's rule); anything else is
+    escalated with a question. Any other prompt gets {"ok": true}."""
+    text = "\n".join(str(m.get("content") or "") for m in req.get("messages") or [])
+    if '"action":"decide"' not in text:
+        return '{"ok": true}'
+    if "Cannot read properties of undefined (reading 'price')" in text:
+        return json.dumps({
+            "action": "decide", "disposition": "file", "certainty": "high",
+            "reason": "A TypeError in the cart's total: a line without a price crashes the sum for every visitor.",
+            "file": {"work_type": "bug", "title": "Cart total crashes on a line without a price",
+                     "symptom": "TypeError: Cannot read properties of undefined (reading 'price') in sumLines, 42 times",
+                     "area": "cart/total.js", "evidence": ["GlitchTip SHOP-12: 42 events since 08:00 UTC"],
+                     "acceptance": [{"criterion": "sumLines skips or rejects a line without a price instead of throwing",
+                                     "intent_source": "code-invariant"}]}})
+    return json.dumps({"action": "decide", "disposition": "escalate", "certainty": "med",
+                       "reason": "The error rate is high but the alert alone does not say which change caused it.",
+                       "question": "Was the api deployed in the last hour, and should that release be rolled back?"})
+
+
 class H(BaseHTTPRequestHandler):
     def _done(self, code, body=b'{"ok":true}'):
         self.send_response(code)
@@ -41,7 +63,7 @@ class H(BaseHTTPRequestHandler):
             auth = self.headers.get("Authorization", "")
             print(f"{NAME} CHAT auth={'bearer' if auth.startswith('Bearer ') and len(auth) > 7 else 'none'} "
                   f"model={json.loads(body).get('model')}", flush=True)
-            out = json.dumps({"choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}],
+            out = json.dumps({"choices": [{"message": {"content": scripted(json.loads(body))}, "finish_reason": "stop"}],
                               "model": json.loads(body).get("model"),
                               "usage": {"prompt_tokens": 12, "completion_tokens": 4, "cost": 0.0000021}}).encode()
             self.send_response(200)

@@ -114,9 +114,9 @@ workers:
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
   # the site watch runs on ops-read (its spec); marketing is the installation's worker for its own SEO fleet
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
-# triage's cycle and the bugfix fleet's intakes and fixes reach GitHub issues, real models or a coding
-# agent: not in the e2e yet
-disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix]
+# the candidate triage needs a candidate worker's model; the bugfix fleet's intake and fix reach a git
+# server and a coding agent: not in the e2e yet
+disabled_routines: [triage/cycle-shadow, bugfix/intake, bugfix/fix]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -138,6 +138,12 @@ ROUTINE_HEARTBEAT_DENIED_URL=http://forbidden:8080/
 ROUTINE_HEARTBEAT_MODEL_ALIAS=triage-flash
 ROUTINE_SF_SERVICE=triage-fleet
 ROUTINE_SF_GLITCHTIP_SYNC=1
+ROUTINE_SF_GLITCHTIP_URL=https://errors.example.com
+ROUTINE_SF_GRAFANA_URL=https://grafana.example.com
+ROUTINE_SF_OPENROUTER_URL=http://litellm:8080/v1/chat/completions
+ROUTINE_SF_TRIAGE_MODEL=fleet-triage-flash
+ROUTINE_SF_VM_URL=http://victoriametrics:8080
+ROUTINE_SF_VT_URL=http://victoriatraces:8080
 EOF
 # the ops workers' installation facts; the VictoriaMetrics stand-in answers the backup's age (25.5h)
 cat > "$WORK/config/worker-ops.env" <<EOF
@@ -148,7 +154,7 @@ EOF
 # The outside world the example fleets read (sites, deps): deploy/e2e/world.py answers as these hosts, with a
 # certificate from the stack's own CA (the workers that reach it trust that CA, docker-compose.e2e.yml). The
 # certificate is valid for 9 days, below the example sites' 21: the certificate check has something to find.
-WORLD_HOSTS="www.example.com docs.example.com shop.example.org api.github.com pypi.org api.osv.dev"
+WORLD_HOSTS="www.example.com docs.example.com shop.example.org errors.example.com grafana.example.com api.github.com pypi.org api.osv.dev"
 WORLD_HOSTS_ACL="$(echo $WORLD_HOSTS | sed 's/ /, /g')"
 W="$WORK/config/world"; mkdir -p "$W"
 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=flotilla e2e world CA" -keyout "$W/ca.key" -out "$W/ca.pem" \
@@ -214,7 +220,8 @@ echo "$SK" | grep >/dev/null '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/con
 SIGNPUB="$(echo "$SK" | sed -n 's/^  "e2e1": "\(.*\)"$/\1/p')"
 
 echo "== secrets and seeded state (deploy/server/secrets.sh, as a deploy runs it)"
-printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/fleet.env"   # a random stand-in key, made per run
+printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\nOPENROUTER_API_KEY=%s\nGLITCHTIP_TOKEN=%s\nGRAFANA_TOKEN=%s\nGITHUB_TOKEN=%s\n' \
+  "$(tok)" "$(tok)" "$(tok)" "$(tok)" "$(tok)" > "$WORK/config/fleet.env"   # random stand-in keys, made per run
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/STOP"
 # the mini's folder also holds backups of the secrets file: they must stay out too
@@ -366,6 +373,26 @@ cli case list --all 2>&1 | grep >/dev/null "repo:example/shop/deps/flask" && bad
   || ok "deps: an outdated pin of a repo that does not ask for them is no case"
 $D logs e2e-world 2>&1 | grep >/dev/null "world GET api.github.com/repos/example/shop/commits/HEAD" \
   && ok "deps reached the GitHub stand-in through the bugfix proxy, over TLS from the stack's CA" || bad "no GitHub request at the world stand-in"
+
+echo "== the triage example, on the world's GlitchTip and Grafana and the scripted model, in shadow"
+TRI=""
+for _ in $(seq 1 60); do
+  TRI="$(cli runs triage/cycle 2>&1)"; echo "$TRI" | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 3
+done
+echo "$TRI" | grep >/dev/null " ok " && ok "triage/cycle ran to the end in shadow" || bad "triage/cycle: $TRI"
+TRID="$(echo "$TRI" | awk '/ ok / {print $1; exit}')"
+# the run's own lines, as the worker logs them (one JSON line each, with its run id)
+TRO="$($D logs flotilla-worker-triage 2>&1 | grep -F "\"run_id\": \"$TRID\"" | sed -n 's/.*"line": "\(.*\)"}$/\1/p')"
+echo "$TRO" | grep >/dev/null "cycle done: 2 triaged" && ok "triage: the cycle triaged both signals, the shop's error and the api's alert" \
+  || bad "triage cycle: $(echo "$TRO" | tail -5 | tr '\n' ' ')"
+echo "$TRO" | grep >/dev/null "=> file" && ok "triage: the shop's TypeError is decided file (repo example/shop); in shadow nothing is filed" \
+  || bad "triage file decision: $(echo "$TRO" | grep -E '=>|ESCALATE' | tr '\n' ' ')"
+echo "$TRO" | grep >/dev/null "=> escalate" && ok "triage: the api's alert is escalated with a question" \
+  || bad "triage escalate decision: $(echo "$TRO" | grep -E '=>|ESCALATE' | tr '\n' ' ')"
+$D logs e2e-world 2>&1 | grep >/dev/null "world GET errors.example.com/api/0/organizations/example/issues/" \
+  && ok "triage read GlitchTip's issues for the installation's organization (glitchtip_org)" || bad "no GlitchTip issues request at the world stand-in"
+$D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT auth=bearer model=fleet-triage-flash" && ok "triage asked the model through the gateway, with its key" \
+  || bad "no triage model call at the gateway stand-in"
 
 if [ "${DEMO:-}" = 1 ]; then
   echo "== the demo"
