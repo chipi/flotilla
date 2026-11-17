@@ -164,6 +164,22 @@ flotilla from there.
   ranges) and refuses real-looking repo slugs, domains, tailnet names and host paths. Plus a replay
   that the operator's fleets, installed from the private repo, decide exactly as they do today.
 - To decide per fleet: is its example a cut-down copy of the operator's fleet, or written on its own?
+- **The repos** (the operator, 2026-11-17): `fleet-eval-data` is research only; what a fleet needs is
+  crafted from it into the private fleets repo, and flotilla runs only that, with no link back. Done
+  for the triage gates on 2026-11-17 (4a82e1d): the replay corpora, the filing gate and the weekly
+  freeze come from the private repo.
+- **The route** (the operator, 2026-11-17): B now, then A as the next MVP step.
+  - **B, now:** the private repo holds the operator's `fleets/`, and the installation mounts its
+    checkout read-only over `/opt/flotilla/fleets` in flotillad and in every worker that reads fleet
+    files (they load specs, playbooks and skills from there), named in config. A deploy script pins
+    the checkout to a commit, runs `flotillad -check` and the replays against it, then recreates the
+    containers. Proof: every routine's spec hash is unchanged by the switch. Then flotilla's own
+    `fleets/` becomes the example fleets.
+  - **A, next:** [ADR-0013](../adr/ADR-0013-fleet-packs.md)'s installation packs (RFC-0006 §10 step
+    3): the mount becomes a pack folder; a change is shown, approved by its set hash, recorded and
+    starts at shadow; runs read the approved snapshot, not the folder; rollback approves the previous
+    set. Triage becomes a pack once RFC-0006 §9 is done; until then its private facts (the repo maps)
+    move to config files the private repo supplies.
 
 Done when flotilla's repo holds no fleet of the operator's, the mini runs its fleets from the private
 repo with the same decisions (replayed), and the example fleets run in the demo installation.
