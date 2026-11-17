@@ -621,6 +621,8 @@ acli runs e2e/remote-echo 2>&1 | grep >/dev/null " ok " && $D logs flotilla-e2e-
 $D rm -f flotilla-e2e-remote-link >/dev/null
 for _ in $(seq 1 15); do $D logs flotillad 2>&1 | grep '"msg":"remote worker disconnected".*"worker":"remote-e2e"' >/dev/null && break; sleep 1; done
 acli run e2e/remote-echo >/dev/null 2>&1
+# The run is recorded after `run` returns: wait for its row (2026-11-17 c93ddc7, read 0.1 s before it).
+for _ in $(seq 1 10); do acli runs e2e/remote-echo 2>&1 | head -2 | grep >/dev/null "skipped.*not connected" && break; sleep 1; done
 acli runs e2e/remote-echo 2>&1 | head -2 | grep >/dev/null "skipped.*not connected" \
   && ok "with its link gone, the remote worker's routine is skipped again" || bad "after the link: $(acli runs e2e/remote-echo 2>&1 | head -3)"
 $D rm -f flotilla-e2e-remote-worker >/dev/null
