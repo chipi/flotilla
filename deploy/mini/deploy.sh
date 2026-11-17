@@ -80,9 +80,12 @@ else
 fi
 [[ "$TAG" =~ ^sha-[0-9a-f]{7}$ ]] || die "usage: deploy.sh sha-<7> | --rollback"
 
+# With FLOTILLA_FLEETS_DIR set, the installation's own fleets are mounted over the image's
+# (deploy/compose/fleets.yml); a commit older than that file runs the image's.
 compose() {
-  (cd "$REPO" && set -a && . "$H/.env" && set +a && FLOTILLA_TAG="$1" \
-    docker compose --env-file "$H/.env" -f deploy/compose/docker-compose.yml "${@:2}")
+  (cd "$REPO" && set -a && . "$H/.env" && set +a && export FLOTILLA_TAG="$1" && f=(-f deploy/compose/docker-compose.yml) &&
+    { [ -z "${FLOTILLA_FLEETS_DIR:-}" ] || [ ! -f deploy/compose/fleets.yml ] || f+=(-f deploy/compose/fleets.yml); } &&
+    docker compose --env-file "$H/.env" "${f[@]}" "${@:2}")
 }
 
 # store_run TAG MODE: store_snapshot.py in a throwaway container of that tag's worker image (python3 and

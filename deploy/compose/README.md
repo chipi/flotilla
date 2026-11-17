@@ -37,6 +37,9 @@ TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's
 TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (shadow copy, or live after the switch)
 FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
 TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (mirror-test's until the switch)
+FLOTILLA_FLEETS_REPO=<checkout of the private fleets repo>  # optional: the installation's own fleets (deploy_fleets.sh)
+FLOTILLA_FLEETS_DIR=<FLOTILLA_HOME>/fleets            # optional: mounted over the image's fleets (fleets.yml); unset: the image's
+FLOTILLA_ADMIN_TOKEN_FILE=<admin token file>          # deploy_fleets.sh pauses and resumes the triage routines with it
 TRIAGE_FILING_GATE=<filing_gate.py>                    # the private fleets repo's triage/filing/scripts/filing_gate.py; unset: the deploy fails unless SF_FILING_GATE_ACCEPT says why
 # FLOTILLA_BACKUPS_KEEP=10                             # optional: how many store snapshots deploy.sh keeps
 # the services' Docker networks, when they are not the defaults
@@ -318,6 +321,27 @@ A deploy fails when the gate fails, and also when it did not run: its script is 
 accepted by naming the reason: `SF_FILING_GATE_ACCEPT="<why>" deploy.sh sha-<7>`. Only a first
 install (no earlier deploy to compare with) passes without it, and the output says `NOT RUN (no
 earlier deploy ...)`. A rollback never runs the gate.
+
+### The installation's own fleets
+
+The images carry flotilla's fleets, the examples. An installation runs its own from a private repo
+(vision plan step 7, route B): `FLOTILLA_FLEETS_DIR` makes `deploy.sh` add `fleets.yml`, which
+mounts that folder read-only over `/opt/flotilla/fleets` in flotillad and the triage workers (the
+specs, and the playbooks, skills and harness settings the triage worker reads).
+
+```sh
+~/flotilla/repo/deploy/mini/deploy_fleets.sh --diff <commit>   # what it changes against the running fleets
+~/flotilla/repo/deploy/mini/deploy_fleets.sh <commit>          # FLEETS DEPLOY PASS / FLEETS DEPLOY FAIL
+~/flotilla/repo/deploy/mini/deploy_fleets.sh --rollback
+```
+
+Each commit of `FLOTILLA_FLEETS_REPO` is exported once to `~/flotilla/fleets-<sha7>/`, read-only;
+`~/flotilla/fleets` is a symlink to the deployed one. A deploy lists the files that differ from what
+the triage worker runs, runs the running tag's `flotillad -check` with the new folder, pauses the
+triage routines (resumed on any exit), points the symlink, recreates flotillad and the triage
+workers, and prints every routine whose spec hash changed. `fleets-deployed.tsv` records each one.
+An image deploy (`deploy.sh`) keeps the mounted fleets. A fleets commit that needs a newer flotilla
+is refused by `-check`: deploy the tag first.
 
 ### Snapshots
 
