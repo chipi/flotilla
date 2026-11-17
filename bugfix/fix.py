@@ -122,9 +122,10 @@ def changed_assertions(wt, base, run_dir, env):
     return out
 
 
-# a test file, or an assertion in code form: a criterion's prose may say "assert zero pageerrors" for a new test (#466)
+# a test file, or an assertion in code form (no space before its bracket): a criterion's prose may say "assert zero
+# pageerrors" (#466) or "assert (a) the returned promise rejects" (#517, 2026-11-17) for a new test
 TEST_NAMED = re.compile(r"[\w./-]+\.(?:test|spec)\.[cm]?[tj]sx?\b|\btest_\w+\.py\b"
-                        r"|\.(?:not\.)?to[A-Z]\w*\(|\bexpect\s*\(|\bassert\w*\s*\(|\bself\.assert\w+\(")
+                        r"|\.(?:not\.)?to[A-Z]\w*\(|\bexpect\(|\bassert\w*\(|\bself\.assert\w+\(")
 
 
 def test_change_criteria(v):
