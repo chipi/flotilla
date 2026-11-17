@@ -7,9 +7,9 @@ RFC-0002). It never touches production and never fixes code; its `File` output
 chains to Fleet 1 as a labelled GitHub issue. This is RFC-0002's own Phase-3
 ("o11y-reactive agents"), promoted to its own project.
 
-**Start here (updated 2026-11-05):** [Triage fleet guide](../docs/signal-fleet-guide.md) — the parts,
+**Start here (updated 2026-11-05):** [Triage fleet guide](../docs/operations/triage.md) — the parts,
 one signal's path, the two ledgers and the reasoning behind each rule — and the
-[runbook](../docs/recipes/signal-fleet-runbook.md): install on a new host, operate, the weekly
+[runbook](../docs/operations/triage-runbook.md): install on a new host, operate, the weekly
 review, and the replay-proven loop every fleet change goes through. How it is evaluated and what that
 found: [`EVAL-LESSONS-0.6.0.md`](EVAL-LESSONS-0.6.0.md) section 7 (round r4, 2026-11-04). The notes below are older
 context.
@@ -45,7 +45,7 @@ context.
   ONE `fleet-triager-down` issue, not N escalations); #4 storm group-rules
   (cost-cap/budget/402); #5 operational classifier (cost-cap/402 → dismiss-not-ticket,
   no LLM); #7 test/synthetic suppression at ingestion. Full write-up:
-  [`docs/signal-fleet-guide.md`](../docs/signal-fleet-guide.md) (fail closed in one place; operational markers).
+  [`docs/operations/triage.md`](../docs/operations/triage.md) (fail closed in one place; operational markers).
 - **Gotcha — recreation casualties:** a colima/DB recreate wipes the litellm virtual
   key, the Grafana/GlitchTip source tokens, and the Langfuse keys → the fleet 401s and
   fails (historically fails-open → issue flood). If it's misbehaving, check those creds
@@ -74,7 +74,7 @@ context.
 ## Read in this order
 | # | Artifact | What it is |
 |---|---|---|
-| 0 | [guide](../docs/signal-fleet-guide.md), [runbook](../docs/recipes/signal-fleet-runbook.md), [`EVAL-LESSONS-0.6.0.md`](EVAL-LESSONS-0.6.0.md) | how it works today, how to run and change it, what its evaluation found |
+| 0 | [guide](../docs/operations/triage.md), [runbook](../docs/operations/triage-runbook.md), [`EVAL-LESSONS-0.6.0.md`](EVAL-LESSONS-0.6.0.md) | how it works today, how to run and change it, what its evaluation found |
 | 1 | [`SIGNALS.md`](SIGNALS.md) | **north-star living design** — architecture, the intent gate (§4.1), dispositions/taxonomy (§7), correlation (§6), sources (§8), state (§9), autonomy (§10), open questions (§12), **the MVP plan (§13)**, discussion log (§14) |
 | 2 | [`../docs/rfc/RFC-0003-signal-to-action-fleet.md`](../docs/rfc/RFC-0003-signal-to-action-fleet.md) | crystallized RFC (mirrors RFC-0002) |
 | 3 | [`PHASE-0-infra.md`](PHASE-0-infra.md) | per-surface consume recipe + live test evidence |

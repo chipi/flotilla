@@ -4,8 +4,8 @@ The code fleetd runs every 10 minutes on the Mac mini (`python3 orchestrator.py 
 --no-dry-run`, from the git checkout). The directory keeps its MVP name; the code has been the live
 fleet since August 2026.
 
-- **How it works and why:** [Triage fleet guide](../../docs/signal-fleet-guide.md).
-- **How to run, deploy, review and change it:** [Triage fleet runbook](../../docs/recipes/signal-fleet-runbook.md).
+- **How it works and why:** [Triage fleet guide](../../docs/operations/triage.md).
+- **How to run, deploy, review and change it:** [Triage fleet runbook](../../docs/operations/triage-runbook.md).
 
 Stdlib-only Python (3.9 on the mini). No secrets in the repo: credentials come from
 `~/signal-fleet/fleet-gateway.env` on the host; state lives in `~/signal-fleet/` (ledgers, queue).

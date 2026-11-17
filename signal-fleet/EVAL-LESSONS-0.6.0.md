@@ -7,7 +7,7 @@ that will improve the homelab triage fleet (signal-fleet, Fleet 2) on its own, o
 `research/internal/TRIAGE_FLEET_LESSONS_0.6.0.md` at chipi/eval-harness commit `d42e0437c`. Paths and commits below are
 the ones it was written against (signal-fleet `c739792`, the dataset builder `21bc902`).
 
-**Read first:** the fleet's own guide, `agentic-ai-homelab/docs/signal-fleet-guide.md` (how it works and why), and
+**Read first:** the fleet's own guide, `docs/operations/triage.md` (moved from agentic-ai-homelab 2026-11-17) (how it works and why), and
 `signal-fleet/EVAL.md` (its evaluation design). This document only adds what building a gold dataset from the
 fleet's production decisions showed. Every number below was measured; the command or file is named beside it.
 

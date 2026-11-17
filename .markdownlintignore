@@ -9,3 +9,5 @@ node_modules/
 # Playbooks and skills are prompt text: the bytes are the contract (a wrapped line is a behaviour change)
 fleets/*/playbooks/
 fleets/*/skills/
+# Homelab's fleet docs, moved 2026-11-17 and kept as the record as they were written (docs/fleets/README.md)
+docs/history/homelab/

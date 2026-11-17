@@ -85,6 +85,9 @@ nav:
     - MCP for other agents: operations/mcp.md
     - The bugfix fleet: operations/bugfix.md
     - The seo fleet: operations/seo.md
+    - The triage fleet: operations/triage.md
+    - The triage runbook: operations/triage-runbook.md
+  - Fleets, every note: fleets/README.md
   - Testing and validation: testing.md
   - Decisions (ADR):
     - Overview: adr/README.md
@@ -135,6 +138,15 @@ nav:
     - Overview: history/README.md
     - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
     - 0001 — Genesis: history/0001-genesis.md
+    - From homelab (moved 2026-11-17):
+      - Fleet architecture: history/homelab/fleet-architecture.md
+      - fleetd deploy: history/homelab/fleetd-deploy.md
+      - "RFC-0002 (homelab): autonomous bug-fix fleet": history/homelab/RFC-0002-autonomous-bug-fix-fleet.md
+      - "RFC-0003 (homelab): signal to action": history/homelab/RFC-0003-signal-to-action-fleet.md
+      - "RFC-0004 (homelab): fleetd supervisor": history/homelab/RFC-0004-fleetd-supervisor.md
+      - "RFC-0005 (homelab): remediation fleet": history/homelab/RFC-0005-remediation-fleet-post-reboot-recovery.md
+      - "ADR-0008 (homelab): fleet daemon tech": history/homelab/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md
+      - "0005 (homelab): bake-off matrix": history/homelab/0005-bakeoff-matrix-arc.md
 
 extra:
   social:
