@@ -7,7 +7,8 @@ The vision is the operator's of 2026-11-08 ([RFC-0001](../rfc/RFC-0001-fleet-pla
 ops and a digital-marketing fleet (SEO first); a ledger of every decision; specs and config; a small
 control plane with a CLI, an API, its own UI and an MCP server; the homelab's observability from the
 first deploy. The order: redesign what exists into the platform, add SEO, then move every fleet
-out of agentic-ai-homelab. The order of the steps below is the operator's (2026-11-14).
+out of agentic-ai-homelab. The order of the steps below is the operator's (2026-11-14). The operator
+calls closing them **the MVP** (2026-11-17), and added steps 7 and 8.
 
 ## Where it stands (2026-11-14, sha-ccfef86 on the mini)
 
@@ -141,6 +142,43 @@ the mini's `com.homelab.fleetd` and `com.homelab.bugfix-metrics` jobs retired (a
 - Delete `fleetd/`, `signal-fleet/`, `bugfix-fleet/` there, with a pointer to flotilla.
 
 Done when the homelab's CI and the mini's deploy pass without them.
+
+### 7. Example fleets in flotilla, the operator's fleets in a private repo
+
+The operator, 2026-11-17: flotilla must not be drowned in the operator's exact fleets. The public repo
+holds the platform and **example fleets** only; the operator's own fleets (their routines, playbooks,
+prompts, repos, sites and thresholds) live in a **private repo** and are installed into the operator's
+flotilla from there.
+
+- The mechanism is [ADR-0013](../adr/ADR-0013-fleet-packs.md)'s fleet packs: a pack is a folder of
+  text with named slots, and an installation fills the slots in its own config. It is designed, not
+  built: `fleets/` is in the old layout, and real values are still in code (`seo/sites.json`,
+  `signal-fleet/mvp/filing.py` and `config.py`, `fleetd/deploy/*.json`; the AGENTS.md deviation from
+  rule 1).
+- The example fleets (triage, bugfix, ops, SEO) are generic, carry no real repo, site or host, and
+  run in a demo installation against stand-in data.
+- **Refactor to config only** (the operator, 2026-11-17): every installation fact moves out of code
+  into config files (slots); code and example packs hold placeholders only.
+- **A test that keeps it so:** a CI check that fails when code or an example pack holds an
+  installation fact. It allows only placeholders (`example.com`, `example/repo`, documentation IP
+  ranges) and refuses real-looking repo slugs, domains, tailnet names and host paths. Plus a replay
+  that the operator's fleets, installed from the private repo, decide exactly as they do today.
+- To decide per fleet: is its example a cut-down copy of the operator's fleet, or written on its own?
+
+Done when flotilla's repo holds no fleet of the operator's, the mini runs its fleets from the private
+repo with the same decisions (replayed), and the example fleets run in the demo installation.
+
+### 8. Docs, README and a public site
+
+The operator, 2026-11-17: the MVP is also something to show people.
+
+- **Complete docs:** every page current. `docs/history/` gets the sessions since 2026-11-08, finished
+  wip plans are closed, and AGENTS.md describes what runs today.
+- **A README worthy of a world-class project.**
+- **A public site** that presents the work, as eval-harness has (a landing page built from the repo,
+  with the docs under it), showing the example fleets.
+
+Done when the site is live, and the README and docs describe flotilla as it is.
 
 Then: the robotics lab's asks (its FLOTILLA-ASKS.md), assessed only after the steps above.
 
