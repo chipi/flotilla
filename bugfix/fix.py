@@ -43,6 +43,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import traceback
 
@@ -172,13 +173,20 @@ def tail(s, n):
     return s if len(s) <= n else "…" + s[-(n - 1):]
 
 
-def sh(cmd, cwd, env=None, timeout=None, check=False):
+TURN_CAPPED = 125
+
+
+def sh(cmd, cwd, env=None, timeout=None, check=False, max_turns=None):
     """Run a command in its own process group; (exit code, combined output). A timeout kills the whole
     group and is exit 124: subprocess.run's timeout kills only the direct child, and a timed-out pi or
     vitest under `bash pi.sh` or `sh -c npx` kept running (holding the CPUs, editing the worktree the next
-    round resets) until the worker's own run limit (the advisor's review, 2026-11-15)."""
+    round resets) until the worker's own run limit (the advisor's review, 2026-11-15). With max_turns the output
+    is read as it comes, and the group is killed once that many assistant turns (pi's JSON stream, as usage()
+    counts them) have ended: exit TURN_CAPPED."""
     p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                          shell=isinstance(cmd, str), start_new_session=True)
+    if max_turns:
+        return _sh_capped(p, timeout, max_turns)
     try:
         out, _ = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -202,6 +210,48 @@ def sh(cmd, cwd, env=None, timeout=None, check=False):
     if check and p.returncode != 0:
         raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: exit {p.returncode}: {tail(out, 300)}")
     return p.returncode, out
+
+
+def _sh_capped(p, timeout, max_turns):
+    """sh()'s max_turns: a reader thread keeps the lines and counts the turns; the caller waits for the exit or the
+    timeout. Either limit kills the whole group, as sh() does."""
+    lines, capped = [], threading.Event()
+
+    def kill():
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def read():
+        turns = 0
+        for line in p.stdout:
+            lines.append(line)
+            if '"message_end"' in line and turns < max_turns:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if (e.get("message") or {}).get("role") == "assistant":
+                    turns += 1
+                    if turns >= max_turns:
+                        capped.set()
+                        kill()
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    try:
+        p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill()
+        p.wait()
+        reader.join(10)
+        return 124, "".join(lines)
+    except BaseException:
+        kill()
+        raise
+    reader.join(10)
+    return (TURN_CAPPED if capped.is_set() else p.returncode), "".join(lines)
 
 
 # A fetch GitHub refused or that broke off: worth trying again. Anonymous fetches were refused in bursts
@@ -600,7 +650,7 @@ class Chain:
             raise Stop(f"no harness {self.a.harness!r} in {os.path.dirname(harness)}")
         desc = cap_bytes(desc, REVIEW_PROMPT_MAX)   # one argv string to pi: Linux caps it at 128 KiB
         before = self.sessions()
-        code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout)
+        code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout, max_turns=self.a.fix_max_turns)
         after = self.sessions()
         grown = [f for f, n in after.items() if before.get(f) != n]
         self.last_session = max(grown, key=os.path.getmtime) if grown else None
@@ -618,6 +668,8 @@ class Chain:
             return "the fix changed nothing since its last round", files, stream, stats
         if code == 124 and not files:
             return "the fix episode ran out of time with no change", files, stream, stats
+        if code == TURN_CAPPED and not files:
+            return f"the fix episode reached its turn cap ({self.a.fix_max_turns}) with no change", files, stream, stats
         if not files:
             return "the fix changed nothing", files, stream, stats
         pytest = self.a.test_format == "pytest"
@@ -996,6 +1048,11 @@ class Chain:
                 self.note("advisor", pin or (f"not locatable: {lost[:200]}" if lost else f"no usable pin (exit {code})"))
                 if pin:
                     pins.append(pin)
+                elif lost:
+                    # a fix failed and the advisor cannot find where the fault is: another verdict and round cost
+                    # more and on #553 ended in needs-info anyway ($0.52 and $0.88, 2026-11-17)
+                    raise Stop(f"needs info from the reporter after round {rnd}: the advisor could not locate the fault "
+                               f"in this repository: {lost[:400]}")
             kv, kpath = self.verdict(ev, prior, bool(gap))
             if gap and kv.get("verdict") == "actionable":  # acceptance mode may not re-pin (chain.go's downgrade)
                 kv = dict(kv, verdict="needs-info")
@@ -1109,6 +1166,10 @@ def parse(argv):
                     help="times the review's request-changes sends a gate-clean fix back (within --kickback-max)")
     ap.add_argument("--no-advisor", dest="advisor", action="store_false")
     ap.add_argument("--episode-timeout", type=int, default=1200)
+    ap.add_argument("--fix-max-turns", type=int, default=90,
+                    help="stop a fix episode after this many assistant turns (0: no cap). Of the eval runs of 2026-11-16/17 "
+                         "every round whose fix passed the oracle took at most 67 turns; #553's round 0s took 105 to 194 "
+                         "($0.14-0.36 each) and none gave a right fix")
     ap.add_argument("--test-timeout", type=int, default=900)
     ap.add_argument("--setup-timeout", type=int, default=1200)
     ap.add_argument("--review-timeout", type=int, default=600)

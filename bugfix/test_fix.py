@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,6 +64,8 @@ PI_HARNESS = POP + textwrap.dedent('''\
       good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
       hang)     echo $$ > "$FAKE_STATE/harness.pid"; sleep 60 ;;
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
+      chatty)   for i in 1 2 3 4 5; do echo '{"type": "message_end", "message": {"role": "assistant", "usage": {"output": 1}}}'; done
+                sleep 60 ;;
       built)    echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
                 mkdir -p static/images; echo thumb > static/images/x.thumb.jpg ;;
       flip)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
@@ -617,6 +620,36 @@ exec {real} "$@"
             plan, _ = f.run()
         self.assertEqual(plan["outcome"], "escalate", plan)
         self.assertIn("BUGFIX FIX #12 advisor: not locatable: the throw is in code this repo does not have", buf.getvalue())
+        # and the chain escalates there: no second verdict, no second round (#553: $0.52 and $0.88 to reach needs-info)
+        self.assertEqual(plan["detail"], "needs info from the reporter after round 0: the advisor could not locate the "
+                                         "fault in this repository: the throw is in code this repo does not have")
+        self.assertEqual(f.calls(), ["triage", "fix", "advisor"])
+
+    def test_a_fix_episode_stops_at_its_turn_cap(self):
+        # #553's round 0s took 105-194 turns and never gave a right fix; every good round took <= 67 (2026-11-16/17)
+        import contextlib
+        import io
+        f = self.fixture(["actionable", "needs-info"], ["chatty"])
+        buf, t0 = io.StringIO(), time.time()
+        with contextlib.redirect_stdout(buf):
+            plan, _ = f.run("--fix-max-turns", "3", "--no-advisor")
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertIn("BUGFIX FIX #12 round 0: the fix episode reached its turn cap (3) with no change", buf.getvalue())
+        self.assertLess(time.time() - t0, 30, "the fake fixer sleeps 60 s after its turns: it was stopped, not waited for")
+
+    def test_sh_kills_the_group_at_the_turn_cap_and_reads_like_before_without_it(self):
+        turn = json.dumps({"type": "message_end", "message": {"role": "assistant", "usage": {"output": 1}}})
+        script = f"for i in 1 2 3 4 5; do echo '{turn}'; done; sleep 30; echo late"
+        t0 = time.time()
+        code, out = fix.sh(["sh", "-c", script], ".", dict(os.environ), 60, max_turns=3)
+        self.assertEqual(code, fix.TURN_CAPPED)
+        self.assertLess(time.time() - t0, 15, "the group was killed, not waited for")
+        self.assertNotIn("late", out)
+        self.assertGreaterEqual(fix.usage(out)[0], 3, "turns written before the kill landed are kept")
+        code, out = fix.sh(["sh", "-c", f"echo '{turn}'; echo done"], ".", dict(os.environ), 60, max_turns=3)
+        self.assertEqual((code, fix.usage(out)[0], out.endswith("done\n")), (0, 1, True))
+        code, out = fix.sh(["sh", "-c", "echo a; sleep 30"], ".", dict(os.environ), 1, max_turns=3)
+        self.assertEqual((code, out), (124, "a\n"))
 
     def test_a_review_that_did_not_run_is_said_on_the_plan(self):
         # it used to read as an approval: "(no review: ...)" has no VERDICT line
