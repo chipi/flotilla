@@ -9,7 +9,7 @@ worker: ops-read
 trigger:
   execute: {action: email.send}
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/data python3 /opt/flotilla/business/apply.py execute
+  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/seed python3 /opt/flotilla/business/apply.py execute
   workdir: .
   timeout: 2m
 autonomy: propose

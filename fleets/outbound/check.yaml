@@ -8,7 +8,7 @@ worker: ops-read
 trigger:
   check: {verify: email_in_outbox}
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/data python3 /opt/flotilla/business/apply.py check
+  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/seed python3 /opt/flotilla/business/apply.py check
   workdir: .
   timeout: 2m
 autonomy: shadow

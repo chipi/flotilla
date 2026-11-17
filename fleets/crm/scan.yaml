@@ -9,7 +9,7 @@ trigger:
   every: 1h
 detects: [crm_fix]
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/crm BIZ_SEED=/opt/flotilla/fleets/crm/data python3 /opt/flotilla/business/crm.py scan
+  command: env BIZ_DATA=/tmp/flotilla-example/crm BIZ_SEED=/opt/flotilla/fleets/crm/seed python3 /opt/flotilla/business/crm.py scan
   workdir: .
   timeout: 2m
 autonomy: shadow

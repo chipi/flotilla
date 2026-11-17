@@ -8,7 +8,7 @@ trigger:
   every: 1h
 detects: [prospect_new]
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/data python3 /opt/flotilla/business/outbound.py scan
+  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/seed python3 /opt/flotilla/business/outbound.py scan
   workdir: .
   timeout: 2m
 autonomy: shadow

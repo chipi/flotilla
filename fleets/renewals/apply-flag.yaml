@@ -9,7 +9,7 @@ worker: ops-read
 trigger:
   execute: {action: crm.flag_account}
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/apply.py execute
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/seed python3 /opt/flotilla/business/apply.py execute
   workdir: .
   timeout: 2m
 autonomy: propose

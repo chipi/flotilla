@@ -8,7 +8,7 @@ trigger:
   every: 15m
 detects: [campaign_ready]
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/campaigns BIZ_SEED=/opt/flotilla/fleets/campaigns/data python3 /opt/flotilla/business/campaigns.py scan
+  command: env BIZ_DATA=/tmp/flotilla-example/campaigns BIZ_SEED=/opt/flotilla/fleets/campaigns/seed python3 /opt/flotilla/business/campaigns.py scan
   workdir: .
   timeout: 2m
 autonomy: shadow

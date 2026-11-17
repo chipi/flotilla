@@ -8,7 +8,7 @@ worker: ops-read
 trigger:
   case: {kind: renewal_risk}
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/renewals.py flag
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/seed python3 /opt/flotilla/business/renewals.py flag
   workdir: .
   timeout: 2m
 autonomy: shadow

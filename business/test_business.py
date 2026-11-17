@@ -29,7 +29,7 @@ TODAY = datetime.date(2026, 11, 17)
 
 
 def seed(fleet, name):
-    with open(os.path.join(FLEETS, fleet, "data", name + ".json")) as f:
+    with open(os.path.join(FLEETS, fleet, "seed", name + ".json")) as f:
         return json.load(f)
 
 
@@ -42,7 +42,7 @@ class Data(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.dir)
         self.plan = os.path.join(self.dir, "plan.json")
-        self.env = {"BIZ_DATA": os.path.join(self.dir, "data"), "BIZ_SEED": os.path.join(FLEETS, self.fleet, "data"),
+        self.env = {"BIZ_DATA": os.path.join(self.dir, "data"), "BIZ_SEED": os.path.join(FLEETS, self.fleet, "seed"),
                     "FLOTILLA_PLAN_FILE": self.plan}
         self.old = {k: os.environ.get(k) for k in list(self.env) + ["FLOTILLA_CASE", "FLOTILLA_PLAN", "FLOTILLA_CHECK"]}
         os.environ.update(self.env)

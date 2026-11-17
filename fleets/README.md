@@ -20,7 +20,7 @@ documentation addresses.
 | `renewals` | `scan`, `flag`, `apply-flag`, `check` | customer success: a risk score in code, replayed over past renewals, flags the account for its owner; it never writes to the customer |
 
 The business examples (`crm`, `campaigns`, `outbound`, `renewals`) act on stand-in systems: JSON files
-seeded from each fleet's `data/` (`business/store.py`), carried out by `business/apply.py` as routine
+seeded from each fleet's `seed/` (`business/store.py`), carried out by `business/apply.py` as routine
 actions (ADR-0017). They run on the `ops-read` worker so the e2e runs them end to end; an installation
 gives them their own worker with its CRM's, campaign tool's or mail service's credentials, and replaces
 `business/store.py` with an adapter to that system.

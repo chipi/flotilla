@@ -1,0 +1,6 @@
+[
+  {"id": "p-301", "first_name": "Riley", "company": "Northwind Analytics", "email": "riley@northwind.example", "country": "US"},
+  {"id": "p-302", "first_name": "Jonas", "company": "Brightline GmbH", "email": "jonas@brightline.example", "country": "DE"},
+  {"id": "p-303", "first_name": "Mia", "company": "Lakeside Labs", "email": "mia@lakeside.example", "country": "US", "do_not_contact": true},
+  {"id": "p-304", "first_name": "Lena", "company": "Fjord Systems", "email": "lena@fjord.example", "country": "NL", "lawful_basis": "legitimate interest, recorded 2026-10-02"}
+]

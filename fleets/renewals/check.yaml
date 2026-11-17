@@ -8,7 +8,7 @@ worker: ops-read
 trigger:
   check: {verify: account_flagged}
 run:
-  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/data python3 /opt/flotilla/business/apply.py check
+  command: env BIZ_DATA=/tmp/flotilla-example/renewals BIZ_SEED=/opt/flotilla/fleets/renewals/seed python3 /opt/flotilla/business/apply.py check
   workdir: .
   timeout: 2m
 autonomy: shadow

@@ -1,0 +1,10 @@
+[
+  {"id": "h-1", "seats_90d_ago": 40, "seats_active": 22, "escalated_tickets": 1, "invoice_overdue": false, "days_since_admin_login": 5, "churned": true},
+  {"id": "h-2", "seats_90d_ago": 30, "seats_active": 29, "escalated_tickets": 0, "invoice_overdue": false, "days_since_admin_login": 2, "churned": false},
+  {"id": "h-3", "seats_90d_ago": 25, "seats_active": 14, "escalated_tickets": 0, "invoice_overdue": true, "days_since_admin_login": 40, "churned": true},
+  {"id": "h-4", "seats_90d_ago": 60, "seats_active": 58, "escalated_tickets": 2, "invoice_overdue": true, "days_since_admin_login": 1, "churned": false},
+  {"id": "h-5", "seats_90d_ago": 12, "seats_active": 12, "escalated_tickets": 0, "invoice_overdue": false, "days_since_admin_login": 45, "churned": false},
+  {"id": "h-6", "seats_90d_ago": 80, "seats_active": 50, "escalated_tickets": 0, "invoice_overdue": false, "days_since_admin_login": 3, "churned": true},
+  {"id": "h-7", "seats_90d_ago": 15, "seats_active": 15, "escalated_tickets": 1, "invoice_overdue": true, "days_since_admin_login": 8, "churned": true},
+  {"id": "h-8", "seats_90d_ago": 35, "seats_active": 36, "escalated_tickets": 0, "invoice_overdue": false, "days_since_admin_login": 1, "churned": false}
+]

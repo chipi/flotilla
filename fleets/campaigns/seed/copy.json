@@ -1,0 +1,6 @@
+{
+  "k-201": {"subject": "The spring sale starts today",
+            "body": "Hello,\n\nOur spring sale is on: https://www.example.com/sale?utm_source=newsletter&utm_medium=email&utm_campaign=spring-sale\n\nUnsubscribe: https://www.example.com/unsubscribe\nExample Shop, 1 Example Street, 10115 Example City"},
+  "k-202": {"subject": "Join our product webinar",
+            "body": "Hello,\n\nSign up here: https://www.example.com/webinar?utm_source=newsletter&utm_medium=email&utm_campaign=webinar\n\nUnsubscribe: https://www.example.com/unsubscribe\nExample Shop, 1 Example Street, 10115 Example City"}
+}
