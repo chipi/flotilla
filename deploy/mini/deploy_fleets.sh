@@ -67,7 +67,7 @@ fi
 say "== fleets ${SHA:0:7} in $DIR"
 
 # What the triage worker runs now (the image's fleets, or the folder mounted over them) against the commit.
-RUN="$(mktemp -d)"; trap 'rm -rf "$RUN"' EXIT
+RUN="$(mktemp -d)"; trap 'chmod -R u+w "$RUN"; rm -rf "$RUN"' EXIT   # the image's files are read-only
 docker exec flotilla-worker-triage tar -C /opt/flotilla -cf - fleets | tar -x -C "$RUN" || die "cannot read the running fleets"
 CHANGED="$(diff -rq "$RUN/fleets" "$DIR" | sed "s#$RUN/fleets#running#; s#$DIR#${SHA:0:7}#")"
 if [ -z "$CHANGED" ]; then say "== against the running fleets: identical"; else say "== against the running fleets:"; say "$CHANGED" | sed 's/^/   /'; fi
@@ -77,7 +77,7 @@ say "== flotillad -check at $TAG with these fleets"
 OUT="$(FLEETS="$DIR" compose run --rm --no-deps flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)" \
   || { say "$OUT" | tail -15 | sed 's/^/   /'; die "flotillad -check refused fleets ${SHA:0:7}"; }
 
-hashes() { cli -json status | /usr/bin/python3 -c 'import json,sys; [print(r["id"], r.get("spec_hash","-")) for r in json.load(sys.stdin)["routines"]]'; }
+hashes() { cli status -json | /usr/bin/python3 -c 'import json,sys; [print(r["id"], r.get("spec_hash","-")) for r in json.load(sys.stdin)["routines"]]'; }
 BEFORE="$(hashes)" || die "cannot read the routines' spec hashes"
 
 # The triage routines are paused while their workers restart; they are resumed on any exit from here on.
@@ -97,7 +97,7 @@ for r in triage/cycle triage/cycle-shadow; do
   admin pause "$r" --reason "fleets ${SHA:0:7} deploying" >/dev/null || die "cannot pause $r"
   paused+=("$r")
 done
-trap 'rm -rf "$RUN"; resume' EXIT
+trap 'chmod -R u+w "$RUN"; rm -rf "$RUN"; resume' EXIT
 for i in $(seq 1 60); do cli status | grep -E '^triage/' | grep -q running || break; sleep 5; done
 
 PREV="$(readlink "$LIVE" 2>/dev/null || true)"
@@ -107,10 +107,11 @@ svcs=(flotillad worker-triage)
 docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-candidate && svcs+=(worker-triage-candidate)
 FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed 's/^/   /'
 
+# As deploy.sh waits: flotillad's own health command and the triage worker answering it, not Docker's
+# health status, which flotillad's 60 s interval leaves at "starting" for a minute (2026-11-17, a false FAIL).
 ok=0
-for i in $(seq 1 30); do
-  [ "$(docker inspect -f '{{.State.Health.Status}}' flotillad 2>/dev/null)" = healthy ] &&
-    [ "$(docker inspect -f '{{.State.Health.Status}}' flotilla-worker-triage 2>/dev/null)" = healthy ] && { ok=1; break; }
+for i in $(seq 1 45); do
+  cli health >/dev/null 2>&1 && cli status 2>/dev/null | grep -q '^worker triage: {"ok":true' && { ok=1; break; }
   sleep 2
 done
 mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/opt/flotilla/fleets"}}{{.Source}}{{end}}{{end}}' flotillad)"
