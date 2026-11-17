@@ -121,6 +121,25 @@ def changed_assertions(wt, base, run_dir, env):
     return out
 
 
+# a test file, or an assertion in code form: a criterion's prose may say "assert zero pageerrors" for a new test (#466)
+TEST_NAMED = re.compile(r"[\w./-]+\.(?:test|spec)\.[cm]?[tj]sx?\b|\btest_\w+\.py\b"
+                        r"|\.(?:not\.)?to[A-Z]\w*\(|\bexpect\s*\(|\bassert\w*\s*\(|\bself\.assert\w+\(")
+
+
+def test_change_criteria(v):
+    """The acceptance criteria of a re-verdict that name a test file or an assertion: a criterion the issue never states,
+    written after a failed round. Over the recorded verdicts (2026-11-16/17) it names 5 of #553's 6 actionable kick-back
+    verdicts ("the test ... is changed to assert toBeNull()") and none of #335's or #466's; the sixth is left to the
+    assertion gate in attempt()."""
+    acc = ((v.get("problem") or {}).get("acceptance") or []) if isinstance(v, dict) else []
+    out = []
+    for a in acc:
+        text = a if isinstance(a, str) else str((a or {}).get("criterion") or "")
+        if TEST_NAMED.search(text):
+            out.append(text.strip()[:160])
+    return out
+
+
 def review_class(review):
     """The class the review's last VERDICT line names (CLASS: x), "" without one."""
     lines = [ln for ln in (review or "").splitlines() if VERDICT_LINE.match(ln)]
@@ -890,6 +909,12 @@ class Chain:
             raise Stop(f"the verdict step's verdict is not JSON (exit {code}): {tail(out, 300)}")
         kb = re.search(r"-kb(\d+)$", os.path.basename(os.path.dirname(os.path.dirname(path))))
         self.kb_round = int(kb.group(1)) if kb else 0
+        # the verdict prompt's own contract (agents/triage.md: "missing": only for needs-info): an actionable verdict
+        # that lists what is unknown is needs-info (#553: 2 of 3 first passes on 2026-11-16/17, each fix then wrong)
+        missing = (v.get("missing") if isinstance(v, dict) else None) or []
+        if isinstance(v, dict) and v.get("verdict") == "actionable" and (missing if isinstance(missing, list) else str(missing).strip()):
+            v = dict(v, verdict="needs-info")
+            self.note("downgrade", "the verdict said actionable but listed what is missing: needs-info")
         return v, path
 
     # 3 · one fix attempt and its gates
@@ -1019,6 +1044,13 @@ class Chain:
         deleted = [x for x in gone.split("\0") if x.strip() and TEST_FILE.search(x)]
         if deleted:
             return f"out of scope: a fix may not delete a test: {', '.join(deleted)}", files, stream, stats
+        # nor remove or invert an assertion of a test on main: that alone made a symptom-hiding filter pass the repro
+        # gate (#553, 2026-11-16/17: `.not.toBeNull()` -> `.toBeNull()` in all 5 filter plans; 0 in the 7 #335 plans)
+        changed = changed_assertions(self.wt, self.base, self.run_dir, self.env)
+        if changed:
+            what = "; ".join(f"{f}: " + " | ".join(lines[:4]) for f, lines in changed)
+            return (f"out of scope: a fix may not remove or rewrite an assertion of a test on main (add a test instead): "
+                    f"{what[:600]}"), files, stream, stats
         tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
         if pytest:   # only .py files go to pytest; a conftest or config is never a test
             tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]
@@ -1195,7 +1227,7 @@ class Chain:
         room -= len(parts[-1][1].encode()) + 20
         if task:
             parts.append(("\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against "
-                          "the issue as filed below, not against this task):\n", cut(task, min(room, 6000))))
+                          "the issue as filed above, not against this task):\n", cut(task, min(room, 6000))))
             room -= len(parts[-1][1].encode()) + 70
         if summary:
             parts.append(("\n\nTHE FIX AGENT'S OWN SUMMARY:\n", cut(summary, min(room, 3000))))
@@ -1229,7 +1261,11 @@ class Chain:
             room -= len(piece.encode()) + len(x) + 20
         if files:
             parts.append(("\n\nTHE CHANGED FILES, AFTER THE FIX:\n", "\n".join(files)))
-        return head + "".join(a + b for a, b in parts) + ask
+        # the room goes diff first, but the reviewer reads the issue first and the task last: a one-call review anchors on
+        # what it reads first, and on #553 each review deferred to a task the issue does not support (2026-11-16/17)
+        order = ["THE ISSUE AS FILED", "THE GATES", "THE FIX REMOVES", "DIFF", "THE CHANGED FILES", "THE FIX AGENT", "THE TASK"]
+        parts.sort(key=lambda p: next(i for i, k in enumerate(order) if p[0].lstrip("\n").startswith(k)))
+        return head + "\n\n".join(a.lstrip("\n") + b.rstrip("\n") for a, b in parts) + ask
 
     def review(self, diff, task="", summary=""):
         prompt = self.review_prompt(diff, task, summary)
@@ -1413,10 +1449,11 @@ class Chain:
                 self.calls.record("advisor", self.a.advisor_model)
                 try:
                     with open(os.path.join(ev, "advisor.json")) as f:
-                        pin = json.load(f).get("file") or ""
-                except (OSError, ValueError):
-                    pin = ""
-                self.note("advisor", pin or f"no usable pin (exit {code})")
+                        adv = json.load(f)
+                    pin, lost = adv.get("file") or "", str(adv.get("not_locatable") or "")
+                except (OSError, ValueError, AttributeError):
+                    pin, lost = "", ""
+                self.note("advisor", pin or (f"not locatable: {lost[:200]}" if lost else f"no usable pin (exit {code})"))
                 if pin:
                     pins.append(pin)
             kv, kpath = self.verdict(ev, prior, bool(gap))
@@ -1425,6 +1462,10 @@ class Chain:
                 self.note("downgrade", "an acceptance gap's verdict came back actionable: needs-info")
             if kv.get("verdict") != "actionable":
                 raise Stop(self.not_actionable(kv, after=f"after round {rnd}"))
+            prescribed = test_change_criteria(kv)
+            if prescribed:
+                raise Stop(f"after round {rnd} the verdict's acceptance criteria prescribe changing a test, which the issue "
+                           f"does not: {'; '.join(prescribed)[:400]}")
             manifest = os.path.join(self.triaged, f"{self.tid}-triaged-kb{self.kb_round}.json")
             prior = kpath
             if self.a.resume and self.last_session and os.path.exists(manifest):

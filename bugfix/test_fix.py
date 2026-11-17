@@ -43,7 +43,12 @@ TRIAGE = POP + SESS + textwrap.dedent('''\
     KB=0; [ -n "$EV" ] && KB=$(( $(jq -r '.kickback_round // 0' "$PRIOR") + 1 ))
     SUF=""; [ "$KB" -gt 0 ] && SUF="-kb$KB"
     OUT="$BAKEOFF_ROOT/results/${ID}-triage${SUF}/pi"; mkdir -p "$OUT"
-    printf '{"verdict": "%s", "kickback_round": %s, "missing": ["the expected value"], "problem": {}}' "$V" "$KB" > "$OUT/triage.json"
+    # "missing" is for needs-info (agents/triage.md); actionable-missing is the shape that contract forbids
+    MISSING='["the expected value"]'; [ "$V" = actionable ] && MISSING='[]'
+    [ "$V" = actionable-missing ] && V=actionable-x
+    printf '{"verdict": "%s", "kickback_round": %s, "missing": %s, "problem": %s}' "${V%-x}" "$KB" "$MISSING" \
+      "$( [ -f "$FAKE_STATE/acceptance" ] && cat "$FAKE_STATE/acceptance" || echo '{}')" > "$OUT/triage.json"
+    V=${V%-x}
     if [ "$V" = actionable ]; then
       mkdir -p "$BAKEOFF_TRIAGED_DIR"
       printf '{"id": "%s", "description": "make value() return 2"}' "$ID" > "$BAKEOFF_TRIAGED_DIR/${ID}-triaged${SUF}.json"
@@ -69,6 +74,8 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
       good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
       hang)     echo $$ > "$FAKE_STATE/harness.pid"; sleep 60 ;;
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
+      flip)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js
+                echo '// expect(value()).toBeNull()' > guard.test.js ;;
       breaks)   echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo 'module.exports = () => 2;' > src/b.js ;;
       norepro)  echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/b.js 1' > src/a.test.js ;;
       halffix)  echo 'module.exports = () => 3;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
@@ -134,7 +141,8 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
 ADVISOR = SESS + textwrap.dedent('''\
     sess advisor
     echo "advisor tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
-    printf '{"file": "src/a.js", "function": "value", "decoy": "src/b.js", "rationale": "it computes it"}' > "$2/advisor.json"
+    if [ -f "$FAKE_STATE/advisor.json" ]; then cp "$FAKE_STATE/advisor.json" "$2/advisor.json"; else
+    printf '{"file": "src/a.js", "function": "value", "decoy": "src/b.js", "rationale": "it computes it"}' > "$2/advisor.json"; fi
     ''')
 
 # the reviewer is pi itself, on PATH
@@ -268,6 +276,7 @@ class Fixture:
         os.makedirs(os.path.join(src, "static", "images"))
         files = (("src/a.js", "module.exports = () => 1;\n"), ("src/b.js", "module.exports = () => 1;\n"),
                  ("keep.test.js", "expect src/b.js 1\n"), ("red.test.js", "expect src/a.js 9\n"),
+                 ("guard.test.js", "// expect(value()).not.toBeNull()\n"),   # an assertion on main the suite ignores
                  ("static/images/x.png", "a big image\n"), ("package.json", '{"name": "x"}\n'))
         if py:
             # api's shape: src/<pkg>/<a>/<b>.py, tests mirrored under tests/unit/<pkg>/<a>/
@@ -646,6 +655,64 @@ exec {real} "$@"
         with open(os.path.join(home, ".spend")) as fh:
             self.assertEqual(float(fh.read()), 1.0)
 
+    def test_a_round_that_inverts_an_assertion_on_main_fails_its_gates(self):
+        # #553 (2026-11-16/17): every filter fix flipped `.not.toBeNull()` to `.toBeNull()` in a test on main, which
+        # alone made it pass the repro gate; the advisor's second opinion: a gate, not advice to the review
+        f = self.fixture(["actionable", "actionable"], ["flip", "good"])
+        plan, _ = f.run("--no-resume")   # the fake fixer cannot undo the flip a resumed round starts from; pi is told why
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("round 0: out of scope: a fix may not remove or rewrite an assertion of a test on main (add a test "
+                      "instead): guard.test.js: // expect(value()).not.toBeNull()", plan["params"]["body"])
+        self.assertNotIn("guard.test.js", plan["params"]["diff"], "round 1's clean fix is the plan")
+
+    def test_an_actionable_verdict_that_lists_what_is_missing_is_needs_info(self):
+        # agents/triage.md: "missing" is only for needs-info; #553's wrong fixes followed 2 such first passes of 3
+        f = self.fixture(["actionable-missing"], [])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertEqual(plan["detail"], "needs info from the reporter: the expected value")
+        self.assertEqual(f.calls(), ["triage"], "no fix was attempted")
+
+    def test_a_kick_back_verdict_that_prescribes_a_test_change_escalates(self):
+        # #553: "the test ... is changed to assert toBeNull()" in 5 of 6 kick-back verdicts, never in the issue
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        with open(os.path.join(f.state, "acceptance"), "w") as fh:
+            json.dump({"acceptance": [{"criterion": "the test in sentry.test.ts expects beforeSend(e).toBeNull()",
+                                       "intent_source": "repo-data"}]}, fh)
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertIn("after round 0 the verdict's acceptance criteria prescribe changing a test, which the issue does "
+                      "not: the test in sentry.test.ts expects", plan["detail"])
+        self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage"], "no second fix")
+        # a first pass with the same criteria is not judged by this rule (its own shape check is triage_run.sh's)
+        g = self.fixture(["actionable"], ["good"])
+        with open(os.path.join(g.state, "acceptance"), "w") as fh:
+            json.dump({"acceptance": [{"criterion": "verified by a new test: assert zero pageerrors"}]}, fh)
+        self.assertEqual(g.run()[0]["outcome"], "plan")
+
+    def test_change_criteria_reads_code_not_prose(self):
+        v = lambda *c: {"problem": {"acceptance": list(c)}}   # noqa: E731
+        self.assertEqual(fix.test_change_criteria(v("Navigating away never throws; verified by a Playwright test: "
+                                                    "assert zero pageerrors")), [])
+        self.assertEqual(fix.test_change_criteria(v({"criterion": "mergeFlightEvents() keeps both"})), [])
+        self.assertEqual(len(fix.test_change_criteria(v("expect(beforeSend(e)).toBeNull() for the hook",
+                                                        {"criterion": "tests/unit/test_mod.py checks it"},
+                                                        "src/x.spec.ts is updated"))), 3)
+        self.assertEqual(fix.test_change_criteria({"verdict": "actionable"}), [])
+        self.assertEqual(fix.test_change_criteria(["not", "a", "dict"]), [])
+
+    def test_an_advisor_that_cannot_locate_says_so_on_the_chain(self):
+        import contextlib
+        import io
+        f = self.fixture(["actionable", "needs-info"], ["notest"])
+        with open(os.path.join(f.state, "advisor.json"), "w") as fh:
+            json.dump({"file": "", "not_locatable": "the throw is in code this repo does not have"}, fh)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertIn("BUGFIX FIX #12 advisor: not locatable: the throw is in code this repo does not have", buf.getvalue())
+
     def test_a_review_that_did_not_run_is_said_on_the_plan(self):
         # it used to read as an approval: "(no review: ...)" has no VERDICT line
         f = self.fixture(["actionable"], ["good"])
@@ -704,8 +771,12 @@ exec {real} "$@"
         self.assertIn("THE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix", p)
         # #553 (2026-11-16): the review took the verdict's task ("mandates the filter") for the acceptance criteria
         self.assertIn("THE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against "
-                      "the issue as filed below, not against this task):\nmake value() return 2", p)
+                      "the issue as filed above, not against this task):\nmake value() return 2", p)
         self.assertIn("the issue's acceptance criteria are the ones in the issue as filed, not in the task", p)
+        # the reviewer reads the issue first and the task last (the advisor's second opinion, 2026-11-17)
+        at = [p.index(k) for k in ("THE ISSUE AS FILED:", "THE GATES", "DIFF:", "THE CHANGED FILES", "THE FIX AGENT'S",
+                                   "THE TASK THE FIX WAS GIVEN", "You have no tools")]
+        self.assertEqual(at, sorted(at), p[:400])
         for c in fix.KICK_CLASSES:
             self.assertIn(c, p)
         # #553 r2 (2026-11-16): the review saw "a skip is not an attach" against the issue's acceptance criterion and

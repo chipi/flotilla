@@ -42,6 +42,11 @@ in a \`\`\`json fenced block:
 {"file": "path of the true owner", "function": "the function to change",
  "decoy": "the wrong-but-tempting path the failed patch fell into",
  "rationale": "2-3 sentences: why this owner, traced how"}
+If you cannot trace the symptom to code in this repository from the report
+and the code (the failing code is not here, or the report does not say enough
+to find it), say so instead; do not pick a place to change, and never a test
+or a filter that hides the error:
+{"file": "", "not_locatable": "1-2 sentences: what is missing to locate it"}
 EOF
 
 echo "══ advisor episode ($MODEL) ══"
@@ -88,7 +93,7 @@ json.dump(obj, open(sys.argv[2], "w"), indent=2)
 print("ADVISOR: ok")
 PY
 if [ -f "$WOUT/advisor.json" ]; then
-  echo "ADVISOR PIN: $(jq -r '.file + " :: " + .function' "$WOUT/advisor.json")  (${WALL}s)"
+  echo "ADVISOR PIN: $(jq -r 'if (.file // "") == "" then "not locatable: " + (.not_locatable // "-") else .file + " :: " + (.function // "") end' "$WOUT/advisor.json")  (${WALL}s)"
 else
   echo "ADVISOR: no usable output (${WALL}s)"; exit 4
 fi
