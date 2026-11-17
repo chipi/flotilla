@@ -1,0 +1,5 @@
+fleet: deps
+description: >-
+  Dependency upkeep: pinned packages with known vulnerabilities (and, where a repo asks, ones behind
+  the latest release) become cases, and each case becomes a one-line upgrade PR the repo's own CI
+  tests. No model anywhere: code finds, code plans, CI decides, a person approves and merges.

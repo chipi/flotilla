@@ -18,6 +18,9 @@ services:
   worker-marketing:
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
+  worker-bugfix:   # deps/scan reads the repos file its spec names, in the fleet folder
+    volumes:
+      - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
   worker-ops-read:
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro

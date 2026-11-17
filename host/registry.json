@@ -32,7 +32,7 @@
     {
       "name": "github.open_pr",
       "executor": "repo",
-      "for_kinds": ["code_bug", "code_bug_python", "process_change"],
+      "for_kinds": ["code_bug", "code_bug_python", "process_change", "dependency_update"],
       "params": {
         "repo": {"kind": "enum", "enum": ["example/shop", "example/api", "example/fleets"]},
         "base": {"kind": "text", "max": 40},

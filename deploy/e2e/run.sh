@@ -111,7 +111,7 @@ workers:
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
 # triage's cycle, the bugfix fleet's intakes and fixes and the site watch reach GitHub, real models or the
 # live web: not in the e2e
-disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix,
+disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix, deps/scan, deps/upgrade,
   sites/site-check]
 models:
   endpoints:

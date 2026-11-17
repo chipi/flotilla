@@ -11,6 +11,7 @@ documentation addresses.
 | `bugfix` | `intake`, `fix`, `open-pr`, `pr-check` | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan and always merges |
 | `jobs` | `backup-monitor`, `rerun-backup`, `verify-backup` | a monitor opens a case, an acting routine plans a rerun on a host, the host agent runs only what its own config allows, a check verifies it; shadow, propose, then auto |
 | `review` | `case-review`, `process-change` | closed cases become proposed lessons and process changes with their evidence; a person approves every change |
+| `deps` | `scan`, `upgrade` | vulnerable or outdated pins become cases and one-line upgrade PRs; no model: code finds and plans, the repo's CI tests, a person approves and merges |
 | `sites` | `site-check` | what a site serves live (robots, sitemaps, head tags, broken links, certificate expiry), read only; findings are cases |
 | `platform` | `heartbeat`, `model-contract` | the platform's own canary and the model aliases' contract checks |
 
@@ -24,6 +25,7 @@ installation's own fleets"). Its facts live there, never in flotilla:
 | File | Holds |
 | --- | --- |
 | `triage/installation.json` | which repo each error project and alert instance files into, the ops repo, the repos the bugfix chain builds, the assistant backend, the edge instance, the probes' log and metric labels, the scrubber's own rules (`signal-fleet/mvp/installation.py`) |
+| the repos file a deps scan names (`--repos`) | the repos, their requirements file, and whether outdated pins count (`deps/common.py`) |
 | the sites file a site-check spec names (`--sites`) | the sites, their pages and what to check on each (`seo/common.py`) |
 | the routine specs | the repos and models each routine uses (`bugfix/*.yaml`'s `--repo`, the model aliases), and the names each job routine runs with (`BACKUP_ACTION`, `BACKUP_METRIC` on the `jobs` commands) |
 | an action registry of its own | the installation's own actions, named in `flotillad.yaml`'s `registry_files` and in the ops workers' `FLOTILLA_REGISTRY`; the image carries the examples' (`host/registry.json`) |

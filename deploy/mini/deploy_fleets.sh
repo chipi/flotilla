@@ -107,9 +107,9 @@ ln -sfn "$DIR" "$LIVE" && [ "$(readlink "$LIVE")" = "$DIR" ] || die "cannot poin
 say "== $LIVE -> $DIR (was ${PREV:-the image fleets})"
 svcs=(flotillad worker-triage worker-marketing)
 docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-candidate && svcs+=(worker-triage-candidate)
-# the ops workers read the folder too (an action registry of the installation's own) on a tag whose
+# the bugfix and ops workers read the folder too (a repos file, a registry of the installation's own) on a tag whose
 # fleets.yml mounts it into them
-for w in worker-ops-read worker-ops-act-host; do
+for w in worker-bugfix worker-ops-read worker-ops-act-host; do
   grep -q "^  $w:" "$REPO/deploy/compose/fleets.yml" && docker ps -a --format '{{.Names}}' | grep -qx "flotilla-$w" && svcs+=("$w")
 done
 FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed 's/^/   /'
