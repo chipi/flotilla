@@ -202,7 +202,9 @@ The operator, 2026-11-17: the MVP is also something to show people.
   wip plans are closed, and AGENTS.md describes what runs today.
 - **A README worthy of a world-class project.**
 - **A public site** that presents the work, as eval-harness has (a landing page built from the repo,
-  with the docs under it), showing the example fleets.
+  with the docs under it), showing the example fleets. At `flotilla.humancopilot.eu` (the operator,
+  2026-11-17), built the way eval-harness's `evals.humancopilot.eu` is: the landing page with the
+  docs under `/docs/`.
 
 Done when the site is live, and the README and docs describe flotilla as it is.
 
