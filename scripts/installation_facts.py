@@ -5,7 +5,7 @@ in its private fleets repo and its host config.
 
 Checks every tracked file except prose (docs/, *.md, the built site, llms.txt) for:
   - a GitHub slug of the owner's other repos (chipi/<repo> other than chipi/flotilla);
-  - a tailnet host name (<node>.tail<hex>.ts.net) or a tailnet address (100.64.0.0/10);
+  - a tailnet host name (<node>.tail<hex>.ts.net) or a tailnet address (100.64.0.0/10; facts: allow);
   - a home path of a person (/Users/<name>, /home/<name>; the images' and CI's own users allowed);
   - with SF_FACTS_DENYLIST (a file, one word or domain per line, kept in the private fleets repo):
     any of its entries, so a host that has it checks the installation's own names too.
@@ -27,7 +27,7 @@ TAILNET = re.compile(r"\b[a-z0-9-]+\.tail[0-9a-f]+\.ts\.net\b")
 IPV4 = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d.])")
 HOME = re.compile(r"/(?:Users|home)/([A-Za-z0-9._-]+)")
 HOME_OK = {"worker", "dev", "runner", "user", "nonroot", "tester", "example", "you", "USER", "name", "w", "operator"}
-CGNAT = ipaddress.ip_network("100.64.0.0/10")
+CGNAT = ipaddress.ip_network("100.64.0.0/10")  # the range itself; facts: allow
 # Tailscale's own fixed addresses, the same on every tailnet: not an installation's.
 TAILSCALE_FIXED = {ipaddress.ip_address("100.100.100.100")}
 
