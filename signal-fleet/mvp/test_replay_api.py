@@ -4,6 +4,9 @@ no production data. The equivalence with the evaluation project's own replay on 
 
   SF_OBSERV_DISABLED=1 python3 test_replay_api.py     # non-zero on failure
 """
+import os  # noqa: E402
+os.environ.setdefault("SF_INSTALLATION", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "testdata", "installation.json"))  # example facts
 import datetime
 import os
 import unittest
@@ -66,8 +69,8 @@ class EntryPointContract(unittest.TestCase):
             out = ra.file(w, SIG, {"title": "TypeError", "body": "b"}, "bug")
         self.assertEqual(out["api"], ra.API_VERSION)
         self.assertTrue(out["result"].startswith("FILED"), out["result"])
-        self.assertIn(("POST", "/repos/chipi/orrery/issues"), [(m, p) for m, p, _ in gh.calls])
-        self.assertEqual([x["path"] for x in out["writes"] if x["path"].endswith("/issues")], ["/repos/chipi/orrery/issues"])
+        self.assertIn(("POST", "/repos/example/orrery/issues"), [(m, p) for m, p, _ in gh.calls])
+        self.assertEqual([x["path"] for x in out["writes"] if x["path"].endswith("/issues")], ["/repos/example/orrery/issues"])
         row = next(r for r in out["ledger"] if r["fingerprint"] == SIG["fingerprint"])
         self.assertEqual(row["issue"], "7")                       # the caller's answer, read back
         self.assertEqual(row["filed_at"][:19], NOW[:19])          # the world's clock
@@ -145,7 +148,7 @@ class EntryPointContract(unittest.TestCase):
 class Sweep(unittest.TestCase):
     def world(self, gh, seen_days_ago):
         now = datetime.datetime(2026, 10, 20, 8, tzinfo=datetime.timezone.utc)
-        ledger = [{"fingerprint": SIG["fingerprint"], "repo": "chipi/orrery", "issue": "5", "group_key": "",
+        ledger = [{"fingerprint": SIG["fingerprint"], "repo": "example/orrery", "issue": "5", "group_key": "",
                    "filed_at": "2026-09-01T00:00:00+00:00", "last_comment_day": "", "norm_key": "", "alert_key": ""}]
         occ = [{"ts": (now - datetime.timedelta(days=seen_days_ago)).isoformat(), "fingerprint": SIG["fingerprint"],
                 "source": "glitchtip", "alertname": SIG["alertname"]}]
@@ -161,8 +164,8 @@ class Sweep(unittest.TestCase):
         nudge_env = os.environ.get("SF_STALE_NUDGE")
         with w:
             out = ra.sweep(w, occ, firing=[])
-        self.assertIn("chipi/orrery#5", out["result"])
-        self.assertIn("/repos/chipi/orrery/issues/5/comments", [x["path"] for x in out["writes"]])
+        self.assertIn("example/orrery#5", out["result"])
+        self.assertIn("/repos/example/orrery/issues/5/comments", [x["path"] for x in out["writes"]])
         self.assertEqual(out["record"]["summary"], out["result"])
         self.assertEqual(os.environ.get("SF_STALE_NUDGE"), nudge_env)   # forced on only inside the call
 
@@ -171,7 +174,7 @@ class Sweep(unittest.TestCase):
         w, occ = self.world(gh, seen_days_ago=10)
         with w:
             out = ra.sweep(w, occ, firing=[], quiet_days=14)
-        self.assertNotIn("chipi/orrery#5", out["result"])
+        self.assertNotIn("example/orrery#5", out["result"])
         self.assertEqual(out["writes"], [])
         self.assertIs(stale.is_stale.__module__, "stale")         # restored
 

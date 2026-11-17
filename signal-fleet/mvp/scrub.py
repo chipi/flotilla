@@ -21,6 +21,8 @@ import json
 import re
 import sys
 
+import installation
+
 # ── tier 1: secrets (hard-redact; presence = failure) ───────────────────────
 SECRETS = [
     (re.compile(r"sk-or-v1-[a-f0-9]{16,}"), "<redacted-openrouter-key>"),
@@ -42,18 +44,16 @@ IDENTIFIERS = [
     # alone so the evidence the agent reads is unchanged. URLs (//10.1.2.3) still scrub.
     (re.compile(r"(?<![A-Za-z]/)\b\d{1,3}(?:\.\d{1,3}){3}\b"), "<ip>"),
     (re.compile(r"\b(?:[0-9a-fA-F]{0,4}:){3,7}[0-9a-fA-F]{0,4}\b(?=.*::|.*:[0-9a-f])"), "<ip6>"),
-    # real production domains (operator products) -> synthetic, consistent mapping
-    (re.compile(r"\b(?:www\.)?orrerylearn\.com\b"), "example-orrery.test"),
-    (re.compile(r"\bclose ?listening\.app\b", re.I), "example-cl.test"),
     (re.compile(r"\buptimerobot(\.com)?\b", re.I), "example-monitor"),
-    # tailnet + internal hostnames
+    # tailnet hostnames
     (re.compile(r"\b[a-z0-9-]+\.tail[0-9a-f]+\.ts\.net\b"), "<node>.ts.net"),
-    (re.compile(r"\bhomelab\.local\b"), "<host>.local"),
-    # operator home paths + handle
-    (re.compile(r"/(?:Users|home)/markodragoljevic\b"), "/home/dev"),
-    (re.compile(r"\bchipi\b"), "acme"),
+] + [
+    # the installation's own: its production domains, host names, home paths, handle and instance
+    # names -> synthetic, consistent replacements (installation.json `scrub`, in its order)
+    (re.compile(r["pattern"], re.I if r.get("ignore_case") else 0), r["replace"])
+    for r in installation.get("scrub", [])
+] + [
     # internal topology (instance/cluster/container names seen in log streams)
-    (re.compile(r"\bprod-podcast\b"), "prod-host"),
     (re.compile(r'\b(instance|container|server_name)(["\s:=]+)[A-Za-z0-9_.\-]+'),
      lambda m: f"{m.group(1)}{m.group(2)}<host>"),
     # git build refs

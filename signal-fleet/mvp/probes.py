@@ -9,6 +9,7 @@ import json
 import re
 
 import correlate
+import installation
 
 
 def _event_detail(signal, args):
@@ -30,21 +31,9 @@ def _occurrence_history(signal, args):
 # 2026-11-16 (VictoriaLogs `stats by (app, service)`, VictoriaMetrics `count by (job) (up)`). Without this map
 # app:<slug> matched no logs for most projects, so their dismissals could not be corroborated and escalated.
 # A slug not here keeps the old query; the model's own `service` argument still wins.
-LOG_SELECTOR = {
-    "podcast-pipeline": "service:podcast-pipeline", "podcast-api": "service:podcast-api",
-    "player-api": "service:player-api", "player-mcp": "service:player-mcp",
-    "player-obs": "service:player-obs",
-    "orrery-prod": "service:orrery-web", "orrery-lab-api": "service:orrery-lab-api", "orrery-mcp": "service:orrery-mcp",
-    "evals-inspector": "service:evals-inspector", "evals-web": "service:evals-web",
-    "litellm-prod": "service:litellm-gateway",
-    "humancopilot-web": "app:websites", "devwhateverops-web": "app:websites",
-}
-METRIC_JOB = {
-    "player-mcp": "player_mcp", "player-obs": "player_obs",
-    "orrery-prod": "orrery", "orrery-lab-api": "orrery", "orrery-mcp": "orrery",
-    "evals-inspector": "evals-inspector", "evals-mcp": "evals-mcp",
-    "moss-dgx-transcription": "moss-app", "pyannote-dgx-diarization": "pyannote-app", "delivery": "delivery",
-}
+# Both maps are the installation's (installation.py): probe_log_selector and probe_metric_job.
+LOG_SELECTOR = dict(installation.get("probe_log_selector", {}))
+METRIC_JOB = dict(installation.get("probe_metric_job", {}))
 
 
 # The name and the window go into LogsQL and PromQL strings: a plain name and a plain duration only.

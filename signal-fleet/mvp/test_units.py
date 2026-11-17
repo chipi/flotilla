@@ -7,6 +7,9 @@ covers the pure functions the enhancements add, stage by stage.
 Each enhancement item (#1..#8, the 2026-08-27 triage enhancements; see docs/signal-fleet-guide.md) adds a
 TestCase here as it lands; same input → same verdict, every run.
 """
+import os  # noqa: E402
+os.environ.setdefault("SF_INSTALLATION", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "testdata", "installation.json"))  # example facts
 import collections
 import json
 import os
@@ -196,7 +199,7 @@ class TestInboxExport(unittest.TestCase):
             f.write("fingerprint\trepo\tissue\tgroup_key\tfiled_at\tlast_comment_day\tnorm_key\talert_key\n")
             for fp, n, at in [("glitchtip:X-1", 5, "2026-08-01"), ("glitchtip:X-1", 9, "2026-08-20"),
                               ("glitchtip:X-4", 11, "2026-11-01"), ("glitchtip:X-5", 12, "2026-11-01")]:
-                f.write(f"{fp}\tchipi/a\t{n}\t\t{at}\t\t\t\n")
+                f.write(f"{fp}\texample/a\t{n}\t\t{at}\t\t\t\n")
         self.saved = (inbox.DISPOSITIONS, filing.FILED)
         inbox.DISPOSITIONS, filing.FILED = disp, filed
         self.now = now
@@ -223,7 +226,7 @@ class TestInboxExport(unittest.TestCase):
         self.assertEqual(doc["needs_you"], 4)
         self.assertEqual(doc["needs_you"], len(esc) + 1)                     # the gauge's rows plus the bug
         by = {e["alertname"]: e["issue"] for e in doc["escalations_7d"]}
-        self.assertEqual(by["boom"], {"repo": "chipi/a", "number": 9, "url": "https://github.com/chipi/a/issues/9",
+        self.assertEqual(by["boom"], {"repo": "example/a", "number": 9, "url": "https://github.com/example/a/issues/9",
                                       "state": "open", "title": "boom issue"})   # the NEWEST filed row
         self.assertIsNone(by["never filed"])
         self.assertIsNone(by["unreadable one"]["state"])
@@ -548,7 +551,7 @@ class TestLedgerDedup(unittest.TestCase):
         # inherit the mute — else a different bug is silently buried forever
         sig = _psig("glitchtip:PODCAST-NEW", "Audio eviction size mismatch: cold (999999) != local (1) for /a/b/c")
         nk = filing.normalized_key(sig)
-        self._seed([{"fingerprint": "glitchtip:PODCAST-OLD", "repo": "chipi/podcast_scraper",
+        self._seed([{"fingerprint": "glitchtip:PODCAST-OLD", "repo": "example/podcast",
                      "issue": "5", "group_key": "", "norm_key": nk}])
         filing.issue_state = lambda repo, num: {"state": "open", "labels": [filing.MUTE_LABEL],
                                                 "closed_at": None, "url": ""}
@@ -560,7 +563,7 @@ class TestLedgerDedup(unittest.TestCase):
     def test_exact_fp_hit_DOES_honor_mute(self):
         # control: an EXACT fingerprint hit on a muted issue is honored (no new file)
         sig = _psig("glitchtip:PODCAST-OLD", "whatever")
-        self._seed([{"fingerprint": "glitchtip:PODCAST-OLD", "repo": "chipi/podcast_scraper",
+        self._seed([{"fingerprint": "glitchtip:PODCAST-OLD", "repo": "example/podcast",
                      "issue": "5", "group_key": "", "norm_key": ""}])
         filing.issue_state = lambda repo, num: {"state": "open", "labels": [filing.MUTE_LABEL],
                                                 "closed_at": None, "url": ""}
@@ -572,7 +575,7 @@ class TestFilingLink(unittest.TestCase):
     """A fingerprint matched on another key gets a linked row naming the issue; ledger_lookup
     never returns linked rows, so no decision changes and no mute spreads through a link."""
 
-    REPO = "chipi/podcast_scraper"
+    REPO = "example/podcast"
     TITLE = "Audio eviction size mismatch: cold (999999) != local (1) for /a/b/c"
 
     def setUp(self):
@@ -750,7 +753,7 @@ class TestLowSignal(unittest.TestCase):
     def test_promotion_out_of_rollup(self):
         # seed: this fp is already folded into the podcast rollup (issue 50)
         nk = filing.normalized_key(_lowsig("glitchtip:PODCAST-Z", "flaky thing"))
-        filing._ledger_write([{"fingerprint": "glitchtip:PODCAST-Z", "repo": "chipi/podcast_scraper",
+        filing._ledger_write([{"fingerprint": "glitchtip:PODCAST-Z", "repo": "example/podcast",
                                "issue": "50", "group_key": "low-signal:podcast",
                                "last_comment_day": "", "norm_key": nk}])
         # it recurs at count=12 → no longer low-signal → must break OUT to its own issue
@@ -911,7 +914,7 @@ class TestSourceGuards(unittest.TestCase):
     def test_promotion_beats_mute(self):
         sig = _lowsig("glitchtip:PODCAST-PROMO", "flaky", count="20")   # crossed threshold
         nk = filing.normalized_key(sig)
-        filing._ledger_write([{"fingerprint": "glitchtip:PODCAST-PROMO", "repo": "chipi/podcast_scraper",
+        filing._ledger_write([{"fingerprint": "glitchtip:PODCAST-PROMO", "repo": "example/podcast",
                                "issue": "5", "group_key": "low-signal:podcast",
                                "last_comment_day": "", "norm_key": nk}])
         filing.issue_state = lambda r, n: {"state": "open", "labels": [filing.MUTE_LABEL],
@@ -940,7 +943,7 @@ class TestAlertKeyDedup(unittest.TestCase):
             "state": "open" if str(num) in self.open else "closed",
             "labels": ["triage-fleet/muted"] if str(num) == "77" else [],
             "closed_at": None, "url": ""}
-        self.repo = "chipi/agentic-ai-homelab"
+        self.repo = "example/ops"
         self.ak = filing.alert_key(self.repo, "grafana", "Enrichment/job drain paused")
 
     def tearDown(self):
@@ -1093,7 +1096,7 @@ class TestStaleNudge(unittest.TestCase):
         import stale
         self.s = stale
         self.now = stale._ts("2026-09-30T08:00:00Z")
-        self.repo = "chipi/agentic-ai-homelab"
+        self.repo = "example/ops"
         self.names = {"fpA": ("grafana", "Enrichment/job drain paused")}
         self.ledger = [{"fingerprint": "fpA", "repo": self.repo, "issue": "48"}]
 
@@ -2082,7 +2085,7 @@ class TestIdentityAndFoldFixes(unittest.TestCase):
         orig = filing.FILED
         filing.FILED = tmp.name
         try:
-            filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-DEV-1", "repo": "chipi/orrery", "issue": "429",
+            filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-DEV-1", "repo": "example/orrery", "issue": "429",
                                    "filed_at": "2026-07-29T15:03:45+00:00"}])
             self.assertIsNone(filing.ledger_lookup("glitchtip:ORRERY-DEV-1", first_seen="2026-10-17T07:51:32Z"))
             hit = filing.ledger_lookup("glitchtip:ORRERY-DEV-1", first_seen="2026-07-29T15:00:00Z")
@@ -2102,7 +2105,7 @@ class TestPromoteRolledUpOnRecurrence(unittest.TestCase):
         self._tmp.close()
         self._orig = filing.FILED
         filing.FILED = self._tmp.name
-        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "chipi/podcast_scraper", "issue": "2000",
+        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "example/podcast", "issue": "2000",
                                "group_key": "low-signal:player", "filed_at": "2026-10-17T06:33:04+00:00"}])
 
     def tearDown(self):
@@ -2127,7 +2130,7 @@ class TestPromoteRolledUpOnRecurrence(unittest.TestCase):
 
     def test_own_issue_does_not_retriage_early(self):
         import orchestrator
-        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "chipi/podcast_scraper", "issue": "2400",
+        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "example/podcast", "issue": "2400",
                                "group_key": "", "filed_at": "2026-10-17T06:33:04+00:00"}])
         self.assertFalse(orchestrator._promote_now(self._sig(), {"disposition": "file"}))
 
@@ -2196,20 +2199,20 @@ class TestRepoFor(unittest.TestCase):
         return filing.repo_for({"fingerprint": fp})
 
     def test_new_projects_route_to_their_repos(self):
-        self.assertEqual(self._r("glitchtip:EVALS-INSPECTOR-1"), "chipi/eval-harness")
-        self.assertEqual(self._r("glitchtip:EVALS-WEB-3"), "chipi/eval-harness")
-        self.assertEqual(self._r("glitchtip:HUMANCOPILOT-WEB-2"), "chipi/humancopilot.eu")
-        self.assertEqual(self._r("glitchtip:DEVWHATEVEROPS-WEB-1"), "chipi/humancopilot.eu")
+        self.assertEqual(self._r("glitchtip:EVALS-INSPECTOR-1"), "example/evals")
+        self.assertEqual(self._r("glitchtip:EVALS-WEB-3"), "example/evals")
+        self.assertEqual(self._r("glitchtip:HUMANCOPILOT-WEB-2"), "example/site")
+        self.assertEqual(self._r("glitchtip:DEVWHATEVEROPS-WEB-1"), "example/site")
 
     def test_the_kg_viewer_routes_to_podcast_scraper(self):
         # ROADMAP T0.3: podcast_scraper's web/gi-kg-viewer reports to GlitchTip project gi-kg-viewer (GI-KG-VIEWER-1)
-        self.assertEqual(self._r("glitchtip:GI-KG-VIEWER-1"), "chipi/podcast_scraper")
+        self.assertEqual(self._r("glitchtip:GI-KG-VIEWER-1"), "example/podcast")
 
     def test_existing_routes_unchanged(self):
-        self.assertEqual(self._r("glitchtip:PODCAST-PIPELINE-5E"), "chipi/podcast_scraper")
-        self.assertEqual(self._r("glitchtip:PLAYER-1I"), "chipi/podcast_scraper")
-        self.assertEqual(self._r("glitchtip:ORRERY-PROD-1P"), "chipi/orrery")
-        self.assertEqual(self._r("glitchtip:LITELLM-PROD-4"), "chipi/agentic-ai-homelab")
+        self.assertEqual(self._r("glitchtip:PODCAST-PIPELINE-5E"), "example/podcast")
+        self.assertEqual(self._r("glitchtip:PLAYER-1I"), "example/podcast")
+        self.assertEqual(self._r("glitchtip:ORRERY-PROD-1P"), "example/orrery")
+        self.assertEqual(self._r("glitchtip:LITELLM-PROD-4"), "example/ops")
 
 
 class TestEdgeGate(unittest.TestCase):

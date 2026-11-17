@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 
 import callrec
 import config
+import installation
 
 # #8 — new signals drop into this milestone so release-planning sees them (184/200
 # open issues had no milestone at the cleanup pass). Resolve-or-skip; never fail a file.
@@ -235,8 +236,8 @@ ESCALATE_LABEL = "triage-fleet/escalated"
 FILED_LABEL = "triage-fleet/filed"
 ACTIONABLE_LABEL = "triage-fleet/actionable"
 ROUTE_LABEL = "triage-fleet/routed:bugfix"
-# repos Fleet 1's chain can actually build+test today (B3 extends this)
-CHAIN_REPOS = {"chipi/orrery"}
+# repos Fleet 1's chain can actually build+test today (B3 extends this): the installation's chain_repos
+CHAIN_REPOS = set(installation.get("chain_repos", []))
 # A dev environment runs a branch's unmerged code (GlitchTip project <name>-dev: environment=dev, a `worktree` tag
 # holding the branch, no release). The poll leaves dev projects out (sources._left_out); one that arrives anyway is
 # refused here: a dev error never becomes a GitHub issue (operator 2026-11-16).
@@ -252,23 +253,12 @@ def is_dev_signal(signal):
     slug = str((signal.get("labels") or {}).get("project", ""))
     return proj.upper().endswith("-DEV") or slug.lower().endswith("-dev")
 
-# glitchtip project prefix → GitHub repo (operator mapping 2026-07-29).
+# glitchtip project prefix → GitHub repo (the installation's repo_map, first since 2026-07-29).
 # Unmapped projects fall back to SF_OPS_REPO, else the ops repo, as unmapped grafana signals do.
 # Until 2026-11-12 they fell back to SF_OPS_REPO alone, unset on the mini, and a refusal was only
 # printed: 15 file and escalate decisions before 2026-11-07 (6 fingerprints, 4 projects) went nowhere.
-REPO_MAP = {
-    "ORRERY": "chipi/orrery",
-    "LITELLM": "chipi/agentic-ai-homelab",
-    "PODCAST": "chipi/podcast_scraper",
-    "PLAYER": "chipi/podcast_scraper",
-    "GI-KG-VIEWER": "chipi/podcast_scraper",   # podcast_scraper's web/gi-kg-viewer (GlitchTip project gi-kg-viewer)
-    # 2026-10-27, once the fleet token covered these repos: the eval-harness projects
-    # (evals-web CSP, evals-inspector) and the websites' CSP projects. Unmapped, they
-    # were refused (no SF_OPS_REPO), not filed.
-    "EVALS": "chipi/eval-harness",
-    "HUMANCOPILOT": "chipi/humancopilot.eu",
-    "DEVWHATEVEROPS": "chipi/humancopilot.eu",
-}
+# The map itself is the installation's repo_map (installation.py), matched in its order.
+REPO_MAP = dict(installation.get("repo_map", {}))
 OPS_REPO = os.environ.get("SF_OPS_REPO", "")
 
 # storm rules: alertname regex → group key. Curated, reviewed like config.
@@ -379,11 +369,9 @@ def group_key_for(alertname, title="", project=""):
 
 
 # grafana-source signals: route by instance label (which BOX the symptom is
-# on); homelab-operated boxes fall through to the homelab ops repo.
-INSTANCE_REPO_MAP = {
-    "prod-podcast": "chipi/podcast_scraper",
-}
-OPS_REPO_DEFAULT = "chipi/agentic-ai-homelab"
+# on), the installation's instance_repo_map; any other box falls through to its ops_repo.
+INSTANCE_REPO_MAP = dict(installation.get("instance_repo_map", {}))
+OPS_REPO_DEFAULT = installation.get("ops_repo", "")
 
 
 def repo_for(signal):

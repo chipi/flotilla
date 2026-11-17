@@ -100,8 +100,9 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@echo "test-unit PASS"
 
 .PHONY: replay
-replay: ## The triage fleet's replay gates (needs SF_REPLAY_DATA and SF_ALERT_RULES; see signal-fleet/replays.sh)
-	@bash signal-fleet/replays.sh
+replay: ## The installation's triage replay gates, from its private fleets repo (SF_REPLAYS: its triage/gates/run.sh; SF_ALERT_RULES)
+	@test -n "$${SF_REPLAYS:-}" || { echo "REPLAYS FAIL: SF_REPLAYS is not set (the private fleets repo's triage/gates/run.sh)"; exit 1; }
+	@SF_FLOTILLA_MVP=$(CURDIR)/$(SF_MVP) bash "$$SF_REPLAYS"
 
 .PHONY: test-e2e
 test-e2e: ## The compose stack on the dev Docker engine with stand-in services (deploy/e2e/run.sh)

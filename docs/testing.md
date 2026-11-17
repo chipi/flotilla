@@ -55,7 +55,7 @@ this repo. It is synthetic, deterministic and harmless:
 
 | Check | What it answers | How |
 | --- | --- | --- |
-| **Replay corpus** | does a change alter decisions on known cases? | recorded inputs with the expected decisions (the triage fleet already has 17 such gates, `signal-fleet/replays.sh`). Every change to a playbook, gate, monitor or spec replays them; any changed decision fails unless accepted with a reason. |
+| **Replay corpus** | does a change alter decisions on known cases? | recorded inputs with the expected decisions (the triage fleet has 18 such gates, in the installation's private fleets repo, `triage/gates/run.sh`). Every change to a playbook, gate, monitor or spec replays them; any changed decision fails unless accepted with a reason. |
 | **Evaluation modes** | which proof does a change need? | four modes: code replay, exact replay, model replay and shadow comparison, with a table of which change needs which ([ADR-0004](adr/ADR-0004-job-runtime.md), RFC-0002 §8). Code and exact replay are development tests here; scoring a model replay and judging a shadow comparison are evaluation, done by the evaluation harness on flotilla's records (RFC-0002 §8 amendment) |
 | **Shadow comparison** | does the new platform decide like the old one? | during migration, the fleet runs in `shadow` on flotilla beside the existing implementation for N days; decisions are compared per subject; differences are explained before switching |
 | **Routine autonomy** | is a routine ready to act? | `shadow` → `propose` → `auto`, each step on evidence: shadow agreement, then the operator's approval rate in `propose` |
@@ -85,8 +85,8 @@ The target. **Today** (GitHub Actions, `.github/workflows/`):
   `make test-e2e`) on the runner's own Docker engine, on pushes to main and on PRs that touch more
   than docs.
 - `docs.yml`: the Markdown lint and the strict docs build.
-- Not in CI: `make replay` reads the private corpora (`SF_REPLAY_DATA`, `SF_ALERT_RULES`) that a
-  hosted runner cannot read; it runs on a host before a fleet's code switches.
+- Not in CI: `make replay` runs the installation's gates and corpora (`SF_REPLAYS`,
+  `SF_ALERT_RULES`) that a hosted runner cannot read; it runs on a host before a fleet's code switches.
 - `deploy/mini/checks_green.sh <sha>` reads a commit's check runs from GitHub and exits non-zero
   unless `ci-fast` succeeded. `deploy.sh` does not call it yet (it is to, before it pulls an image).
 - The secrets scan is a pre-commit hook.

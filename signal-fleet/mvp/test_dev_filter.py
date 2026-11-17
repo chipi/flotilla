@@ -2,10 +2,13 @@
 ROADMAP T0.1; operator 2026-11-16).
 
 A dev build runs a branch's unmerged code (orrery's GlitchTip project orrery-dev: environment=dev, a `worktree`
-tag holding the branch, no release). Its errors were filed in chipi/orrery as `bug` + actionable and routed to
+tag holding the branch, no release). Its errors were filed in example/orrery as `bug` + actionable and routed to
 bugfix, which fixed main, where the code does not exist: both wrong fixes of phase A (#651, #659) came from there.
 The poll leaves dev projects out (test_units TestSubstrateGlitchTipProjects); filing refuses one that gets through.
 """
+import os  # noqa: E402
+os.environ.setdefault("SF_INSTALLATION", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "testdata", "installation.json"))  # example facts
 import os
 import sys
 import tempfile

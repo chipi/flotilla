@@ -2,6 +2,9 @@
 
   SF_OBSERV_DISABLED=1 python3 test_capture.py     # non-zero on failure
 """
+import os  # noqa: E402
+os.environ.setdefault("SF_INSTALLATION", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "testdata", "installation.json"))  # example facts
 import json
 import os
 import stat
@@ -215,7 +218,7 @@ class FilingAndSweepRecords(unittest.TestCase):
 
     def test_a_match_records_its_dimension(self):
         nk = self.filing.normalized_key(SIGNAL)
-        self.filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-PROD-1", "repo": "chipi/orrery", "issue": "5",
+        self.filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-PROD-1", "repo": "example/orrery", "issue": "5",
                                     "group_key": "", "norm_key": nk, "alert_key": "", "last_comment_day": ""}])
         with mock.patch.object(config, "CAPTURE_PROBES", True):
             out = self._file()
@@ -256,7 +259,7 @@ class FilingAndSweepRecords(unittest.TestCase):
         import sources
         import stale
         now = datetime.datetime(2026, 11, 9, 0, 4, 12, tzinfo=datetime.timezone.utc)
-        self.filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-PROD-9", "repo": "chipi/orrery", "issue": "5"}])
+        self.filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-PROD-9", "repo": "example/orrery", "issue": "5"}])
         occ = [("2026-10-01T00:00:00+00:00", "glitchtip:ORRERY-PROD-9", "glitchtip", "TypeError: x is undefined")]
 
         def gh(method, path, payload=None):
@@ -273,7 +276,7 @@ class FilingAndSweepRecords(unittest.TestCase):
         self.assertEqual((rec["now"], rec["dry_run"], rec["firing"]), (now.isoformat(), True, ["A"]))
         self.assertEqual(rec["occurrences"]["count"], 1)
         self.assertEqual([c["path"].split("?")[0] for c in rec["github"]],
-                         ["/search/issues", "/repos/chipi/orrery/issues/5/comments"])
+                         ["/search/issues", "/repos/example/orrery/issues/5/comments"])
 
 
 class ExactRecord(unittest.TestCase):

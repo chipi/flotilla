@@ -1,0 +1,24 @@
+{
+  "repo_map": {
+    "SHOP": "example/shop",
+    "API": "example/api"
+  },
+  "instance_repo_map": {
+    "prod-api": "example/api"
+  },
+  "ops_repo": "example/ops",
+  "chain_repos": ["example/shop"],
+  "assistant_backend": "",
+  "probe_log_selector": {
+    "shop-web": "service:shop-web",
+    "api-prod": "service:api"
+  },
+  "probe_metric_job": {
+    "shop-web": "shop",
+    "api-prod": "api"
+  },
+  "scrub": [
+    {"pattern": "\\b(?:www\\.)?shop\\.example\\b", "replace": "example-shop.test"},
+    {"pattern": "\\bprod-api\\b", "replace": "prod-host"}
+  ]
+}

@@ -79,13 +79,14 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | Path | What | Runs from |
 | --- | --- | --- |
 | `fleetd/` | the Go scheduler and the bugfix chain; becomes `flotillad` in phase 2 | still agentic-ai-homelab's copy on the mini |
-| `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests, `deploy/` the homelab deploy hooks, `replays.sh` the replay gates | still agentic-ai-homelab's copy on the mini |
+| `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests; its facts come from `fleets/triage/installation.json` (`mvp/installation.py`) | flotilla's images on the mini |
 | `bugfix-fleet/` | the bugfix fleet: bake-off harness scripts (used by `fleetd chain`) and a TypeScript MVP (no CI, RFC-0001 §11) | still agentic-ai-homelab's copy on the mini |
 
 - Imported from agentic-ai-homelab at `f0ed072` with their history (`git filter-repo`), without
   `signal-fleet/reference*`: the replay corpora are real scrubbed production data and live in the
   private fleets repo, `triage/replays` (moved there from `fleet-eval-data` on 2026-11-17). The
-  replays find them through `SF_REPLAY_DATA`, and the alert rules through `SF_ALERT_RULES` (`signal-fleet/replays.sh`).
+  replays and the gates that run them are the installation's too, in its `triage/gates/`
+  (`make replay` with `SF_REPLAYS` and `SF_ALERT_RULES`).
 - A replay's `BASE_REV` is a commit in **this** repo's history; each carries the homelab commit it
   replaced in a comment.
 - **Known deviation from rule 1 until the config pass:** the imported code still holds real

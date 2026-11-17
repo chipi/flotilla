@@ -2,6 +2,9 @@
 
   python3 test_scrub.py     # non-zero on failure
 """
+import os  # noqa: E402
+os.environ.setdefault("SF_INSTALLATION", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "testdata", "installation.json"))  # example facts
 import unittest
 
 import scrub
