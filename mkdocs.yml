@@ -138,6 +138,7 @@ nav:
     - Overview: history/README.md
     - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
     - 0001 — Genesis: history/0001-genesis.md
+    - 0002 — From a design to a running platform: history/0002-design-to-running-platform.md
     - From homelab (moved 2026-11-17):
       - Fleet architecture: history/homelab/fleet-architecture.md
       - fleetd deploy: history/homelab/fleetd-deploy.md

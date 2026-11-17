@@ -9,7 +9,10 @@ parallel decision log.
   led to flotilla, written in agentic-ai-homelab and kept here.
 - `0001-genesis.md` — the founding session that produced v0.1. The most
   important doc here; future sessions should read it first.
-- `0002-decisions.md` — *(optional)* append-only decision log (D-NNNN
+- `0002-design-to-running-platform.md` — 2026-11-08 to 11-17: the ten days that built flotilla, by
+  arc (phases 1 to 3, the pipeline, host agents, the UI, MCP, bugfix and SEO, the MVP and the private
+  fleets).
+- `decisions.md` — *(optional, not started)* append-only decision log (D-NNNN
   entries). Newer decisions at the top. Use this if you make operational
   decisions worth grep-finding later (port picks, image bumps, tooling
   swaps) that don't rise to ADR-level.
