@@ -95,3 +95,14 @@ func isStep(c store.ModelCall) bool { return c.Alias == "" && c.Model == "" }
 
 // isAgentCall is a real call a routine made to do its work: no step row, no model-contract check.
 func isAgentCall(c store.ModelCall) bool { return !isStep(c) && c.Check == "" }
+
+// realCalls counts a run's model calls: harness step rows are milestones, not calls.
+func realCalls(cs []store.ModelCall) int {
+	n := 0
+	for _, c := range cs {
+		if !isStep(c) {
+			n++
+		}
+	}
+	return n
+}

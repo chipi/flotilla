@@ -26,6 +26,9 @@ func modelText(calls []store.ModelCall) (string, string) {
 	var order []string
 	var tok int64
 	for _, c := range calls {
+		if isStep(c) {
+			continue
+		}
 		if n[c.Alias] == 0 {
 			order = append(order, c.Alias)
 		}
