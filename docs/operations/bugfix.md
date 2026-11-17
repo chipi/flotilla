@@ -96,11 +96,21 @@ read, no further than the room left: a symlink the fix adds (to a key file, say)
 followed. `--review-tools read` gives the reviewer pi's read tools again. No tools is
 stricter than read-only, so SR-0001 H8 still holds.
 
-**Judged against the issue as filed.** The review is told the verdict's task can be wrong and to
-judge against the issue's own acceptance criteria (on 2026-11-16 a re-verdict's task said a filter
-was mandated, the issue did not, and the review approved the filter). The chain also lists the
-assertion lines a fix removes or rewrites in tests that are on main (B11): the review sees them
-(weakening one is class `test-proves-nothing`) and the plan names them.
+**Judged against the issue as filed.** The review reads the issue first and the verdict's task
+last, and is told the task can be wrong and to judge against the issue's own acceptance criteria
+(on 2026-11-16/17 every #553 re-verdict's task prescribed a `beforeSend` filter the issue never
+asks for, and each review approved it). A one-call review anchors on what it reads first.
+
+**The chain's own checks on #553's failure (2026-11-17).** Each is deterministic:
+
+- an actionable verdict that lists what is `missing` is needs-info, the verdict prompt's own
+  contract (2 of 3 #553 first passes);
+- a kick-back verdict whose acceptance criteria name a test file or an assertion in code form
+  (`.toBeNull()`, `expect(`) escalates: a criterion the issue does not state (5 of #553's 6;
+  none of #335's or #466's);
+- the advisor may answer "not locatable in this repository" instead of naming a file, and the
+  re-verdict gets its pin as one hypothesis, not as strong evidence;
+- a round that removes or rewrites an assertion of a test on main fails as out of scope (below).
 
 **What sends a fix back.** A kick-back costs a whole fix round, so the review sends a fix back
 only for a fault it can show from what it was given, and names its class (`hides-symptom`,
@@ -137,7 +147,11 @@ always does).
 **No fix may delete a test (both formats).** A round whose staged diff deletes a test file, or
 renames one out of a test path, is rejected as out of scope, naming the file: otherwise a round could
 delete the test its change breaks and add a new passing one, and both repro and the related gate would
-pass.
+pass. Nor may it remove or rewrite an assertion of a test on main (B11): a line an assertion pattern
+matches (`expect(`, `.toBe…(`, `assert…(`, `self.assert…(`) that the diff removes and does not add
+back unchanged. Every #553 filter fix inverted `.not.toBeNull()` to `.toBeNull()`, which alone made
+it pass the repro gate; none of the seven #335 fixes touched an assertion on main. A fix that must
+correct a wrong assertion escalates, naming the lines.
 
 **What a pytest fix may change (an allowlist).** Under `--test-format pytest` a changed path is
 allowed only if it is a `.py` under `--source-root`, or a `test_*.py` / `*_test.py` under

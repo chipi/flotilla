@@ -107,14 +107,20 @@ $PRIOR_PROBLEM
 ${REFUTED:+
 $REFUTED}
 EOF
-  # advisor findings (BAKEOFF §4.2): a senior read-only consultation ran after
-  # the failure — its pin is EVIDENCE the triager should normally adopt
+  # advisor findings (BAKEOFF §4.2): a read-only consultation ran after the
+  # failure. Its pin is one hypothesis, never acceptance: on #553 (2026-11-16/17)
+  # "treat as strong evidence" turned its beforeSend pin into criteria the issue
+  # never states, and each fix filtered the error out.
   if [ -f "$KB_EVIDENCE/advisor.json" ]; then
     read -r -d '' ADV <<EOF || true
 
-## Advisor findings (senior read-only consultation — treat as strong evidence)
+## Advisor findings (a read-only consultation: one hypothesis about where the fix belongs)
 
-$(jq -r '"True owner: " + .file + " :: " + .function + "\nDecoy to warn off: " + (.decoy // "-") + "\nRationale: " + (.rationale // "")' "$KB_EVIDENCE/advisor.json")
+$(jq -r 'if (.file // "") == "" then "Not locatable in this repository: " + (.not_locatable // "-") + "\nIf the report does not say enough to locate the fault, the verdict is needs-info."
+         else "Possible owner: " + .file + " :: " + (.function // "") + "\nDecoy to warn off: " + (.decoy // "-") + "\nRationale: " + (.rationale // "") end' "$KB_EVIDENCE/advisor.json")
+
+The acceptance criteria stay the issue's own: do not add criteria that name a
+file to change, a test to rewrite, or a filter that drops the error.
 EOF
     TASK="$TASK$ADV"
   fi
