@@ -10,6 +10,30 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
+// On the day decision keys began, the earlier calls carry none: cost per decision divides the day's cost by the
+// ledger's decisions, not by the few keyed ones (a real copy of the store showed $0.24 for "1 decision, 58 calls").
+func TestDecisionsOnTheDayKeysBegan(t *testing.T) {
+	day := "2026-11-17"
+	var calls []store.ModelCall
+	for i := 0; i < 8; i++ {
+		c := store.ModelCall{At: day + "T08:0" + fmt.Sprint(i) + ":00Z", Model: "m", CostUSD: f64(0.01)}
+		if i >= 6 {
+			c.DecisionKey = "fp-late"
+		}
+		calls = append(calls, c)
+	}
+	d := dayStatsOf(calls, map[string]int{day: 4})[day]
+	if d.Decisions != 4 || d.DecisionCalls != 8 {
+		t.Errorf("mixed day: %d decisions over %d calls, want the ledger's 4 over all 8", d.Decisions, d.DecisionCalls)
+	}
+	for i := range calls {
+		calls[i].DecisionKey = fmt.Sprintf("fp-%d", i/2)
+	}
+	if d := dayStatsOf(calls, map[string]int{day: 9})[day]; d.Decisions != 4 || d.DecisionCalls != 8 {
+		t.Errorf("all keyed: %d decisions, want the 4 distinct keys", d.Decisions)
+	}
+}
+
 func TestMedianAndPercentile(t *testing.T) {
 	if got := median([]float64{5, 1, 3}); got != 3 {
 		t.Errorf("median of 1,3,5 = %v", got)
@@ -209,6 +233,11 @@ func TestStepClassification(t *testing.T) {
 		{"round 2: gates clean", "r2 clean", ""},
 		{"review: approve", "approve", "ok"},
 		{"review: request-changes", "changes", "warn"},
+		// the wording bugfix/fix.py's step_row writes (f89b0fa)
+		{"round 0: out of scope: the diff touches package-lock.json, package.json", "r0 out of scope", "bad"},
+		{"round 1: the fix's own tests fail with the fix: a.test.ts::x", "r1 the fix's own tests fail with the fix", "bad"},
+		{"round 2: gates clean (2 files, 53 turns, 11160 output tokens): 1 test files fail on the base", "r2 clean", ""},
+		{"verdict: actionable", "verdict: actionable", ""},
 	}
 	for _, c := range cases {
 		s := classifyStep("gates", c.detail, &cur)

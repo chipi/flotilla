@@ -137,7 +137,10 @@ func dayStatsOf(calls []store.ModelCall, ledger map[string]int) map[string]*dayS
 		}
 	}
 	for day, d := range out {
-		if len(keys[day]) > 0 {
+		// the calls' own decision keys only when every call of the day has one: on the day the keys began
+		// (2026-11-17 for triage) the earlier calls have none, and counting only the keyed decisions divided
+		// the whole day's cost by a few of its decisions
+		if len(keys[day]) > 0 && (keyed[day] == d.Calls || ledger[day] == 0) {
 			d.Decisions, d.DecisionCalls = len(keys[day]), keyed[day]
 		} else {
 			d.Decisions, d.DecisionCalls = ledger[day], d.Calls

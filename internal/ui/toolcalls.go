@@ -90,8 +90,9 @@ func toolCounts(tcs []toolCall) string {
 	return strings.Join(parts, ", ")
 }
 
-// isStep is a harness milestone row, not a model call: it has neither an alias nor a model.
-func isStep(c store.ModelCall) bool { return c.Alias == "" && c.Model == "" }
+// isStep is a harness milestone row, not a model call: kind "step" (schema 25), or a row from before it with
+// neither an alias nor a model.
+func isStep(c store.ModelCall) bool { return c.IsStep() || (c.Alias == "" && c.Model == "") }
 
 // isAgentCall is a real call a routine made to do its work: no step row, no model-contract check.
 func isAgentCall(c store.ModelCall) bool { return !isStep(c) && c.Check == "" }

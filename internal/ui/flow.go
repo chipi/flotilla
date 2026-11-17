@@ -69,9 +69,15 @@ func classifyStep(role, detail string, cur *int) flowStep {
 		n, _ := strconv.Atoi(m[1])
 		*cur = n
 		rest := strings.TrimPrefix(strings.TrimSpace(m[2]), "gates ")
-		s.Label, s.Round = fmt.Sprintf("r%d %s", n, rest), true
-		if strings.Contains(rest, "fail") || strings.Contains(rest, "refus") || strings.Contains(rest, "error") {
-			s.Tone, s.Reason, s.Refused = "bad", rest, true
+		// fix.py's round notes: "gates clean (…)" or the refusal, e.g. "out of scope: the diff touches …",
+		// "the fix's own tests fail with the fix: …"; the label keeps the refusal's name, before its colon
+		short := rest
+		if i := strings.IndexAny(short, ":("); i > 0 {
+			short = strings.TrimSpace(short[:i])
+		}
+		s.Label, s.Round = fmt.Sprintf("r%d %s", n, short), true
+		if !strings.HasPrefix(rest, "clean") {
+			s.Tone, s.Reason, s.Refused = "bad", short, true
 		}
 	case strings.HasPrefix(low, "review:"):
 		v := strings.TrimSpace(low[len("review:"):])

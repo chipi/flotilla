@@ -53,6 +53,9 @@ func (u *Server) routineModel(ctx context.Context, d *routineData, j *spec.Routi
 		in.MaxSteps, in.FinalCall = h.Limits.MaxSteps, h.Quirks.FinalDecisionCall
 	}
 	sha, model := latestPrompt(c.decs)
+	if m := calls[len(calls)-1].Model; m != "" {
+		model = m // the model the routine's latest call reached; a gate's decision names none(…)
+	}
 	switch {
 	case sha == "":
 		in.EvalGap = "no decision in the ledger names its prompt, so no eval result can be matched"
