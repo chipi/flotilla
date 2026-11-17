@@ -1686,6 +1686,14 @@ class TestLangfuseJoin(unittest.TestCase):
         self.assertEqual(self.sent[0]["metadata"],
                          {"existing_trace_id": "tid-1", "generation_name": "triage-turn-3"})
 
+    def test_every_turn_caps_its_reply(self):
+        # a reply ran away to 131,072 tokens on 2026-11-11 ($0.41): each turn asks for at most REPLY_MAX_TOKENS
+        for url in (self.GW, self.OR):
+            self.t.config.OPENROUTER_URL = url
+            self.t._call([{"role": "user", "content": "x"}], step=0)
+        self.assertEqual([b.get("max_tokens") for b in self.sent], [8192, 8192])
+        self.assertEqual(self.t.REPLY_MAX_TOKENS, 8192)
+
     def test_openrouter_direct_gets_no_metadata(self):
         self.t.config.OPENROUTER_URL = self.OR
         self.t._call([{"role": "user", "content": "x"}], trace_id="tid-1", step=0)

@@ -124,7 +124,8 @@ class Golden(unittest.TestCase):
     def test_through_the_gateway_with_a_trace(self):
         t = self.triage_request("http://litellm:4000/v1/chat/completions", self.MESSAGES, "abc123", 2)
         c, tr = client(ok())
-        c.chat("triage-default", self.MESSAGES, trace_id="abc123", generation_name="triage-turn-3")
+        c.chat("triage-default", self.MESSAGES, trace_id="abc123", generation_name="triage-turn-3",
+               max_tokens=self.triage.REPLY_MAX_TOKENS)
         self.assertEqual(tr.sent[0]["data"], t["data"], "same bytes on the wire")
         self.assertEqual(tr.sent[0]["url"], t["url"])
         self.assertEqual(tr.sent[0]["headers"]["Authorization"], t["headers"]["Authorization"])
@@ -137,7 +138,8 @@ class Golden(unittest.TestCase):
                                                 "defaults": {"json": "object", "cost": "reported", "tools": "json"}}},
                            "aliases": {"a": {"endpoint": "or", "model": "fleet-triage-pro"}}})
         tr = Transport(ok())
-        mc.Client(aliases, transport=tr, tracer=None).chat("a", self.MESSAGES, trace_id="abc123", generation_name="triage-turn-1")
+        mc.Client(aliases, transport=tr, tracer=None).chat("a", self.MESSAGES, trace_id="abc123", generation_name="triage-turn-1",
+                                                                  max_tokens=self.triage.REPLY_MAX_TOKENS)
         self.assertEqual(tr.sent[0]["data"], t["data"])
 
 

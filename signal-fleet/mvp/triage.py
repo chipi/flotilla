@@ -93,6 +93,9 @@ class TriageDeferred(Exception):
 ALLOWED_INTENT = {"reporter", "spec", "repo-data", "code-invariant", "baseline",
                   "operator-rule", "slo"}
 MAX_PROBES = int(config.env("SF_MAX_PROBES", "3"))
+# A turn's reply cap. Of 8,376 triage replies at the gateway (2026-10..11-17) the largest real one was 4,157 tokens;
+# two ran away to 131,072 (one $0.41 call, a third of 11-11's spend). A cut reply is bad JSON: a turn, as before.
+REPLY_MAX_TOKENS = int(config.env("SF_TRIAGE_MAX_TOKENS", "8192"))
 # occurrence_history stays a corroborator but is content-checked, not just usability-
 # checked (review R7): it is self-derived from the same issue, so it is ALWAYS usable
 # — only a BENIGN-looking history (low count / low level / resolved) may corroborate.
@@ -310,7 +313,7 @@ def _call(messages, trace_id=None, step=None):
     # `existing_trace_id` leaves the trace's name/input/output to the fleet.
     kw = {"trace_id": trace_id, "generation_name": f"triage-turn-{(step or 0) + 1}"} if trace_id else {}
     try:
-        rec = client.chat(alias, messages, timeout=90, **kw)
+        rec = client.chat(alias, messages, timeout=90, max_tokens=REPLY_MAX_TOKENS, **kw)
     except model_client.EmptyCompletion as e:
         rec = e.record   # a 200 without content: triage retries the turn, as before
     except model_client.ModelError as e:

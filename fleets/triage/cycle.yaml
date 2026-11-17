@@ -17,7 +17,7 @@ run:
 # propose with `flotilla autonomy triage/cycle propose` at the switch; the spec stays the safe default.
 autonomy: shadow
 budget:
-  day_usd: 2.0
+  day_usd: 1.0
 freshness: 35m
 # The class hints (ADR-0012): triage's code classes the signal, a rule loads its hint, rendered after
 # the SIGNAL JSON. fleets/triage/skills/default-rules.json is the same list for runs without flotillad
