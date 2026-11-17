@@ -13,19 +13,16 @@ prioritized task lists. Promotion targets:
 
 ## Open notes
 
-- [Phase 2 plan](phase-2-plan.md): flotillad runs the triage fleet (→ a history entry when phase 2 ends).
-- [Phase 3 plan](phase-3-plan.md): the runtime, and triage onto it (ADR-0004).
-- [Promotion plan](promotion-plan.md): the live triage fleet onto main and the API ledger,
-  planned for 2026-11-14.
-- [Pipeline v1 plan](pipeline-v1-plan.md): cases, policy and the first write in shadow (ADR-0005, ADR-0006).
-- [Host agent plan](host-agent-plan.md): `flotilla-host` v1 (ADR-0006 §12), after pipeline v1.
+- [Closing the initial vision](vision-plan.md): the MVP, its steps in the operator's order, where
+  each stands, and what else is open.
+- [Pipeline v1 plan](pipeline-v1-plan.md): cases, policy and the first write in shadow (ADR-0005,
+  ADR-0006); built, its gate (5 judged shadow cases) still open.
 - [UI mockup parity](ui-mockup-parity.md): every mockup v3 element against what is built,
   the overrides and the data gaps.
-- [Closing the initial vision](vision-plan.md): where the 2026-11-08 vision stands and the
-  steps left, in the operator's order.
-- [Bugfix phase A](bugfix-phase-a.md): the build order for step 4's form and flow (RFC-0010 §7).
-- [Replay entry point](replay-entry-point.md): the versioned module evaluation projects call instead
-  of patching internals (ADR-0013), agreed.
+- [The UI, next](ui-next-plan.md): the operator's three buckets; the first two largely built.
+- [Bugfix phase B brief](bugfix-phase-b-brief.md): the handover for the bugfix fleet's evaluation.
+
+Closed notes are listed in their history entry ([0003](../history/0003-wip-notes-closed.md)).
 
 WIP notes that haven't been touched in a quarter should be either promoted
 or deleted. Stale plans rot, and stale plans that look "official" rot worst.

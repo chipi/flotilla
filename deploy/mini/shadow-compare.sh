@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shadow vs live triage decisions on the mini (phase-2-plan 2.7). Read-only.
+# Shadow vs live triage decisions on the mini (the phase 2 plan's 2.7; the plan is closed, docs/history/0003-wip-notes-closed.md). Read-only.
 #   shadow-compare.sh [--since ISO] [--volume NAME] [--json] [--names]
 # Counts only by default; --names lists held-out test-side items (record them, SPLIT.md rule 7).
 # --volume compares another state volume with the live ledger, e.g. the candidate's

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The triage fleet's deploy hooks, sourced by deploy.sh. They keep the readers in fleet-eval-data working
-# (phase-2-plan, "Before the switch", items 4 and 4a):
+# (the phase 2 plan's "Before the switch", items 4 and 4a; the plan is closed, docs/history/0003-wip-notes-closed.md):
 #
 #   triage_filing_gate PREV NOW   the filing gate, as homelab's signal-fleet/deploy/gates.sh calls it: it replays
 #                                 the newest frozen week with the two flotilla commits; any change in what filing

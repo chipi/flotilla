@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mirror the triage fleet's state out of its volume into a host folder, between runs (phase-2-plan,
+"""Mirror the triage fleet's state out of its volume into a host folder, between runs (the phase 2 plan, closed: docs/history/0003-wip-notes-closed.md,
 agreed with the fleet session 2026-11-08). Host-side, every 2 minutes from launchd; stdlib only.
 
   mirror.py [--dest DIR] [--once-verbose]

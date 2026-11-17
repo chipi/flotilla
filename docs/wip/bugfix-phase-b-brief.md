@@ -126,4 +126,4 @@ Both were raised on 2026-11-16 and deliberately not done; phase B decides them.
 | Tests | `bugfix/test_*.py` (`make test-unit`) |
 | Remote stack | `deploy/remote/` (X3: `~/flotilla-remote`, unit `flotilla-remote.service`) |
 | Records | `flotilla case list`, `flotilla runs bugfix/fix`, the fleet page; X3 worker logs `BUGFIX FIX …` lines |
-| Phase A history | [bugfix-phase-a.md](bugfix-phase-a.md) |
+| Phase A history | [history 0003](../history/0003-wip-notes-closed.md) (the closed build order) |

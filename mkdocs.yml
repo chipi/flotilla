@@ -123,15 +123,9 @@ nav:
     - RFC-0013 — The bugfix clarifier: rfc/RFC-0013-bugfix-clarifier.md
   - In progress:
     - Overview: wip/README.md
-    - Phase 2 plan: wip/phase-2-plan.md
-    - Phase 3 plan: wip/phase-3-plan.md
-    - Replay entry point: wip/replay-entry-point.md
-    - Promotion plan: wip/promotion-plan.md
     - Pipeline v1 plan: wip/pipeline-v1-plan.md
-    - Host agent plan: wip/host-agent-plan.md
     - UI mockup parity: wip/ui-mockup-parity.md
     - Closing the initial vision: wip/vision-plan.md
-    - "Bugfix phase A: the build order": wip/bugfix-phase-a.md
     - "Bugfix phase B: handover brief": wip/bugfix-phase-b-brief.md
     - "The UI, next: three buckets": wip/ui-next-plan.md
   - History:
@@ -139,6 +133,7 @@ nav:
     - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
     - 0001 — Genesis: history/0001-genesis.md
     - 0002 — From a design to a running platform: history/0002-design-to-running-platform.md
+    - "0003 — Six finished wip plans closed": history/0003-wip-notes-closed.md
     - From homelab (moved 2026-11-17):
       - Fleet architecture: history/homelab/fleet-architecture.md
       - fleetd deploy: history/homelab/fleetd-deploy.md

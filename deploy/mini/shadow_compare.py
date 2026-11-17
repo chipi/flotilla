@@ -20,7 +20,7 @@ Reports:
   shadow only
 
 The model is not deterministic, so a difference is not a failure by itself: each one is read and
-explained (phase-2-plan 2.7). Exit 0 always; the numbers are the result.
+explained (the phase 2 plan's 2.7; the plan is closed, docs/history/0003-wip-notes-closed.md). Exit 0 always; the numbers are the result.
 """
 import argparse
 import csv

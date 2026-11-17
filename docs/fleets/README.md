@@ -30,7 +30,7 @@ Status is what the note itself says. "Historical" means kept as the record.
 | `fleets/triage/` (playbook, hint skills, routine specs) | flotilla | the triager's prompt, hints, routines | live |
 | [RFC-0004: agent pipeline](../rfc/RFC-0004-agent-pipeline.md) | flotilla | triage on the platform | accepted |
 | [RFC-0003 (homelab): signal to action](../history/homelab/RFC-0003-signal-to-action-fleet.md) | flotilla (from homelab) | the fleet's first design | historical |
-| `docs/wip/phase-2-plan.md`, `phase-3-plan.md`, `promotion-plan.md`, `replay-entry-point.md` | flotilla | the move onto flotilla, the promotion, the replay contract | in progress / agreed |
+| `docs/wip/phase-2-plan.md`, `phase-3-plan.md`, `promotion-plan.md`, `replay-entry-point.md` | flotilla | the move onto flotilla, the promotion, the replay contract | closed 2026-11-17 ([history 0003](../history/0003-wip-notes-closed.md)); was in progress / agreed |
 | `ROADMAP.md` | fleet-eval-data | the plan of record: triage v2, then bug fixing | live since 2026-11-16 |
 | `projects/triage-ops/OPPORTUNITIES.md` | fleet-eval-data | every improvement idea with its status | living |
 | `projects/orrery-triage/` (README, GATES.md) | fleet-eval-data | decisions replayed and scored; the gates at $0 | results |
@@ -50,7 +50,7 @@ Status is what the note itself says. "Historical" means kept as the record.
 | [The bugfix fleet](../operations/bugfix.md) | flotilla | operating it on the host | live |
 | [RFC-0010: bugfix on the platform](../rfc/RFC-0010-bugfix-on-the-platform.md), [RFC-0013: the clarifier](../rfc/RFC-0013-bugfix-clarifier.md) | flotilla | the platform's design | proposed; accepted |
 | [SR-0001: the coding harness](../security-reviews/SR-0001-bugfix-coding-harness.md) | flotilla | security review | 2026-11-15 |
-| `docs/wip/bugfix-phase-a.md`, `bugfix-phase-b-brief.md` | flotilla | build order; phase B brief | active |
+| `docs/wip/bugfix-phase-a.md` (closed 2026-11-17, history 0003), `bugfix-phase-b-brief.md` | flotilla | build order; phase B brief | B active |
 | `bugfix/fleet_rules.md` | flotilla | rules given to each headless run | live |
 | `bugfix-fleet/` (README, BAKEOFF.md, agents/, bakeoff/) | flotilla | the July prototype and its bake-off corpus | historical |
 | [RFC-0002 (homelab): autonomous bug-fix fleet](../history/homelab/RFC-0002-autonomous-bug-fix-fleet.md), [history 0005: bake-off matrix](../history/homelab/0005-bakeoff-matrix-arc.md) | flotilla (from homelab) | the first design and the bake-off | historical |
@@ -76,7 +76,7 @@ Status is what the note itself says. "Historical" means kept as the record.
 | Note | Where | What it is | Status |
 | --- | --- | --- | --- |
 | `fleets/ops/`, `fleets/platform/` | flotilla | routine specs (backups, case review, heartbeat, model contract) | live |
-| [Slack approvals](../operations/slack.md), [Host keys](../operations/host-keys.md), `docs/wip/host-agent-plan.md`, `pipeline-v1-plan.md` | flotilla | host agent, approvals, pipeline | live / planned |
+| [Slack approvals](../operations/slack.md), [Host keys](../operations/host-keys.md), `docs/wip/host-agent-plan.md` (closed, history 0003), `pipeline-v1-plan.md` | flotilla | host agent, approvals, pipeline | live / planned |
 | `docs/wip/flotilla-items.md` | homelab | the flotilla session's open items | open |
 | `docs/recipes/slack-ops.md`, `docs/rfc/RFC-0009-service-slos.md` | homelab | homelab's own Slack and service levels (cite flotilla metrics) | live |
 

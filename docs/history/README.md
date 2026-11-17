@@ -12,6 +12,8 @@ parallel decision log.
 - `0002-design-to-running-platform.md` — 2026-11-08 to 11-17: the ten days that built flotilla, by
   arc (phases 1 to 3, the pipeline, host agents, the UI, MCP, bugfix and SEO, the MVP and the private
   fleets).
+- `0003-wip-notes-closed.md` — six finished wip plans closed on 2026-11-17, and where their lasting
+  parts went.
 - `decisions.md` — *(optional, not started)* append-only decision log (D-NNNN
   entries). Newer decisions at the top. Use this if you make operational
   decisions worth grep-finding later (port picks, image bumps, tooling

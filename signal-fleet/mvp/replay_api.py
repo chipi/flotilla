@@ -1,4 +1,4 @@
-"""The replay entry point (ADR-0013; docs/wip/replay-entry-point.md): run one of the fleet's decisions over a
+"""The replay entry point (ADR-0013; its design: docs/history/0003-wip-notes-closed.md): run one of the fleet's decisions over a
 recorded world, with nothing sent, so an evaluation project never patches this code's internals.
 
     import replay_api as ra

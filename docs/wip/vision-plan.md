@@ -206,7 +206,8 @@ The operator, 2026-11-17: the MVP is also something to show people.
 - **A public site** that presents the work, as eval-harness has (a landing page built from the repo,
   with the docs under it), showing the example fleets. At `flotilla.humancopilot.eu` (the operator,
   2026-11-17), built the way eval-harness's `evals.humancopilot.eu` is: the landing page with the
-  docs under `/docs/`.
+  docs under `/docs/`. The same level of detail and kind of page as evals', with flotilla's own
+  visual style, graphics and messaging, not a copy of evals' look (the operator).
 
 Done when the site is live, and the README and docs describe flotilla as it is.
 
@@ -222,3 +223,10 @@ Then: the robotics lab's asks (its FLOTILLA-ASKS.md), assessed only after the st
 - The recurrence count of the earlier design (3 in 7 days) and `caused_by` attaching
   ([run lifecycle](../architecture/run-lifecycle.md)).
 - The contract check at a time of day (it runs every 24 h from start).
+- From the closed phase 3 plan ([history 0003](../history/0003-wip-notes-closed.md)): comparing live
+  triage and a candidate at the filing level (live's filing records against the candidate's queued
+  proposals; `shadow_compare.py` compares dispositions only); a contract check of the DGX's vLLM
+  directly (the candidate runs on it since 2026-11-16; the daily check covers the aliases); the
+  deployment-id-to-model map and an alert when an alias's deployment changes.
+- From the closed host agent plan: the [key procedures](../operations/host-keys.md) (execution key
+  rotation, the intermediate CA, a host's certificate) have not been run on a real host.
