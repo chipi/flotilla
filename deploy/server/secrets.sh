@@ -51,7 +51,7 @@ put $V-flotillad-secrets cli.token 65532 "$FLOTILLA_CONFIG/cli.token"
 put $V-flotillad-secrets worker-triage.token 65532 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets fleet.env 10001 "$TRIAGE_ENV_FILE"
-# the deploy stand-down's caller (deploy/mini/standdown.sh), where its token exists
+# the deploy stand-down's caller (deploy/server/standdown.sh), where its token exists
 if [ -s "$FLOTILLA_CONFIG/deploy.token" ]; then
   put $V-flotillad-secrets deploy.token 65532 "$FLOTILLA_CONFIG/deploy.token"
 fi

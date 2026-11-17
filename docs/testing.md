@@ -89,7 +89,7 @@ The target. **Today** (GitHub Actions, `.github/workflows/`):
 - `docs.yml`: the Markdown lint and the strict docs build.
 - Not in CI: `make replay` runs the installation's gates and corpora (`SF_REPLAYS`,
   `SF_ALERT_RULES`) that a hosted runner cannot read; it runs on a host before a fleet's code switches.
-- `deploy/mini/checks_green.sh <sha>` reads a commit's check runs from GitHub and exits non-zero
+- `deploy/server/checks_green.sh <sha>` reads a commit's check runs from GitHub and exits non-zero
   unless `ci-fast` succeeded (and `e2e`, when it ran). `deploy.sh` calls it before it pulls an
   image: a commit that is not green is not deployed.
 - The secrets scan (gitleaks) is a pre-commit hook, not a CI step.

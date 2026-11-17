@@ -29,7 +29,7 @@ gives them their own worker with its CRM's, campaign tool's or mail service's cr
 
 An installation keeps its fleets in a private repo of its own, in this same layout, and runs them
 instead of these: `deploy/compose/fleets.yml` mounts that folder over `/opt/flotilla/fleets`, and
-`deploy/mini/deploy_fleets.sh <commit>` deploys a commit of it (`deploy/compose/README.md`, "The
+`deploy/server/deploy_fleets.sh <commit>` deploys a commit of it (`deploy/compose/README.md`, "The
 installation's own fleets"). Its facts live there, never in flotilla:
 
 | File | Holds |

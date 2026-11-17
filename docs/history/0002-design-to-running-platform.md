@@ -123,7 +123,7 @@ detail.
   is the
   evaluation that started it all, kept here).
 - **Step 7, route B, done the same day:** the mini runs the private repo's fleets mounted over the
-  image's (`deploy/compose/fleets.yml`, `deploy/mini/deploy_fleets.sh`), with every spec hash
+  image's (`deploy/compose/fleets.yml`, `deploy/server/deploy_fleets.sh`), with every spec hash
   unchanged;
   the triage facts, the SEO sites and the repos `github.open_pr` may act on are the installation's
   config; the 18 replay gates moved to the private repo; `make lint` refuses installation facts in

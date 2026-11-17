@@ -111,7 +111,7 @@ execution key with a two-key window, the intermediate CA, the root, a host's cer
 
 - **Deploy:** a new image tag for each container, then `docker compose up -d`. The example fleets
   travel inside the image; an installation's own fleets are mounted over them and deployed apart
-  (`deploy/mini/deploy_fleets.sh <commit>`, see Fleet packs below). A changed config file
+  (`deploy/server/deploy_fleets.sh <commit>`, see Fleet packs below). A changed config file
   recreates the service that reads it (a config hash in the service's environment).
 - **Rollback:** the previous tag (`deploy.sh --rollback`); the previous fleets
   (`deploy_fleets.sh --rollback`); for a host agent, `install.sh upgrade` to the previous release.
@@ -157,7 +157,7 @@ commit to this page, with the reason.
 
 | What | Where |
 | --- | --- |
-| Control plane | the homelab Mac mini (Intel, macOS), in the production colima VM beside the homelab's other services, deployed by the operator account with `deploy/mini/deploy.sh` |
+| Control plane | the homelab Mac mini (Intel, macOS), in the production colima VM beside the homelab's other services, deployed by the operator account with `deploy/server/deploy.sh` |
 | Running today | `flotillad`; `worker-triage` (triage at propose) and `worker-triage-candidate` (shadow); `worker-ops-read`, `worker-ops-act-host`; `worker-marketing`; the egress proxies `egress` and `egress-seo`. The bugfix workers run on a second machine as remote workers |
 | Model endpoint | the homelab's LiteLLM gateway, reached through the egress proxy |
 | Network | a tailnet; the UI, API and MCP behind a caddy-tailscale node of their own |

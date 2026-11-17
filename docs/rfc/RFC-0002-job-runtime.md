@@ -86,7 +86,7 @@ Read from the code, 2026-11-08:
     and the decision before the gates. The per-turn messages, raw replies, the edge gate's lookups
     and the run's time are not stored. Capture is on in the live fleet: `SF_CAPTURE_PROBES=1` in
     the fleet's env file on the mini, which the shadow worker also reads (checked 2026-11-08).
-  - **Shadow comparison** (`deploy/mini/shadow_compare.py`) compares flotilla's shadow decisions
+  - **Shadow comparison** (`deploy/server/shadow_compare.py`) compares flotilla's shadow decisions
     with fleetd's, per subject.
 - **Cost.** A price table keyed by model name (`config.py:63-70`).
 
@@ -457,7 +457,7 @@ It is not:
 **To start, one kind: `files`, in a knowledge volume filled by the deploy.**
 
 - The deploy copies the declared paths from a checkout on the host into a Docker volume, and writes
-  `VERSION` with the checkout's commit. This is the pattern `deploy/mini/secrets.sh` uses.
+  `VERSION` with the checkout's commit. This is the pattern `deploy/server/secrets.sh` uses.
 - The volume changes only at deploy, so a run's version is fixed and recorded, and a replay pins it.
 - No host folder is mounted into a worker (phase 2 decided volumes over host folders, after the
   sshfs share took production down), and the worker image needs no git.

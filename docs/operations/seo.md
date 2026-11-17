@@ -78,7 +78,7 @@ All in `FLOTILLA_CONFIG` (`~/flotilla/config`), each secret created mode 600 and
      a Restricted user on each property. The token is an RS256 JWT signed with `openssl` and
      exchanged at `oauth2.googleapis.com` for a `webmasters.readonly` token.
 6. **`FLOTILLA_HOME/.env`:** add `seo` to `COMPOSE_PROFILES`.
-7. Deploy as usual (`deploy/mini/deploy.sh`): `secrets.sh` fills the worker's volume.
+7. Deploy as usual (`deploy/server/deploy.sh`): `secrets.sh` fills the worker's volume.
 
 ## Run it by hand
 

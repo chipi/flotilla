@@ -2,7 +2,7 @@
 """Tests for deploy.sh's handling of the store: the snapshot before every `up`, and the rollback that
 cannot run an older flotillad on a newer store.
 
-deploy.sh runs for real against a throwaway checkout with the stub engine of test_triage_hooks.py. The state
+deploy.sh runs for real against a throwaway checkout with the stub engine of test_deploy.py. The state
 volume is a real SQLite file and the snapshot/restore helper (store_snapshot.py) is the real one; only
 docker and flotillad are stubs. Two schema generations exist as commits: A (store.go with 2 schema steps)
 and B (3 steps). B's stub binary migrates the store to schema 3 when it starts; A refuses a store above 2.
@@ -14,7 +14,7 @@ import sqlite3
 import subprocess
 import unittest
 
-import test_triage_hooks as th
+import test_deploy as th
 
 GO_STORE = "package store\n\nvar schema = []string{\n%s}\n"
 

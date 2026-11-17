@@ -50,7 +50,7 @@ checklists, customer-success health scores); its statistics are vendor claims, n
 ## The code carries the installation too
 
 A repo-wide run of `scripts/installation_facts.py` with the installation's plain names added to the
-denylist (2026-11-17) found 965 lines outside the docs: the host's name 492 (with the `deploy/mini/`
+denylist (2026-11-17) found 965 lines outside the docs: the host's name 492 (with the `deploy/server/`
 folder), one site 166, the homelab 110, one repo 82, the model host 44, the remote host 27. Mostly
 comments and tests. After the examples: generic names in code, comments and tests; the installation's
 deploy scripts to its private repo; the private denylist grows to the plain names so the lint keeps
@@ -109,6 +109,10 @@ its own backup action moves it into a registry of its own, in this order, each w
 2. Host config: `registry_files: [/opt/flotilla/fleets/registry.json]` in `flotillad.yaml`;
    `ROUTINE_FLOTILLA_REGISTRY=/opt/flotilla/fleets/registry.json` in the ops workers' env file; and
    the installation's fleets repo in `action_enums` for `github.open_pr`'s `repo`.
+   Also in `.env`: `FLOTILLA_DEPLOY_HOOKS=<the private fleets checkout>/deploy/hooks.sh`, or the next
+   deploy runs with no installation gate (it says so); and the state mirror's LaunchDaemon re-installed
+   from the private checkout (`deploy/install-mirror.sh` there), since flotilla no longer carries
+   `mirror.py`. Both before the first deploy of a commit without `deploy/mini/`.
 3. Deploy the image whose `fleets.yml` mounts the fleets folder into the ops workers, then deploy the
    fleets commit again with this `deploy_fleets.sh`, so its folder carries `.commit` (a process
    change's PR is based on it; without it the change is by hand).

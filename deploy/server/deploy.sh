@@ -17,8 +17,11 @@
 # from the host's files on every deploy.
 #   deployed.tsv     every deploy: time, tag, commit, result (the previous tag is read from here)
 #
-# The triage fleet's hooks (triage_hooks.sh, loaded from this checkout before it moves): a deploy runs the
-# filing gate against the commit deployed now, and a deploy or rollback appends the fleet's deploy log.
+# An installation's own deploy hooks (FLOTILLA_DEPLOY_HOOKS in FLOTILLA_HOME/.env: a file in its private
+# fleets repo), sourced before the checkout moves. It may define `deploy_gate PREV NOW`, run before a deploy
+# (not a rollback); a nonzero status refuses the deploy and restores the checkout. And `deploy_log EVENT OLD
+# NEW`, run after a deploy's or a rollback's `up`; it never fails the deploy. Both may use REPO (this
+# checkout), H (FLOTILLA_HOME) and envget. Without the file, the deploy says it ran with no installation gate.
 #
 # The store (flotilla.db in the state volume) is snapshotted before every `up`, rollback included, by a
 # throwaway container of the worker image with no network (store_snapshot.py): SQLite's online backup,
@@ -37,7 +40,7 @@ LOG="$H/deployed.tsv"
 VLOGS="${VLOGS:-http://127.0.0.1:9428}"
 say() { printf '%s\n' "$*"; }
 # store_snapshot.py is read now: a rollback moves the checkout to an older commit that may not have it
-STORE_HELPER="$(cat "$REPO/deploy/mini/store_snapshot.py" 2>/dev/null)"
+STORE_HELPER="$(cat "$REPO/deploy/server/store_snapshot.py" 2>/dev/null)"
 BACKUPS="$H/backups"
 KEEP="${FLOTILLA_BACKUPS_KEEP:-10}"
 HEALTH_TRIES="${FLOTILLA_HEALTH_TRIES:-30}"
@@ -55,21 +58,22 @@ event() {  # status tag message
 
 [ -f "$H/.env" ] || die "$H/.env missing (deploy/compose/README.md)"
 [ -d "$REPO/.git" ] || die "$REPO is not a checkout of chipi/flotilla"
-[ -n "$STORE_HELPER" ] || die "$REPO/deploy/mini/store_snapshot.py missing: check out a commit that has it, then run this again"
+[ -n "$STORE_HELPER" ] || die "$REPO/deploy/server/store_snapshot.py missing: check out a commit that has it, then run this again"
 
 previous() { awk -F'\t' '$4=="pass"{t=$2} END{print t}' "$LOG" 2>/dev/null; }
 CURRENT="$(previous)"
 CURRENT_COMMIT="$(awk -F'\t' '$4=="pass"{c=$3} END{print c}' "$LOG" 2>/dev/null)"
-HOOKS="$REPO/deploy/mini/triage_hooks.sh"
-[ -f "$HOOKS" ] || die "$HOOKS missing"
-# shellcheck source=triage_hooks.sh
-. "$HOOKS"
 envget() { (set -a; . "$H/.env" >/dev/null 2>&1; eval "printf '%s' \"\${$1:-}\""); }
+HOOKS="$(envget FLOTILLA_DEPLOY_HOOKS)"
+if [ -n "$HOOKS" ]; then
+  [ -f "$HOOKS" ] || die "FLOTILLA_DEPLOY_HOOKS names $HOOKS, which is not there"
+  # shellcheck disable=SC1090
+  . "$HOOKS"
+fi
+has() { declare -F "$1" >/dev/null; }
 STATE_VOL="$(envget FLOTILLA_STATE_VOLUME)"; STATE_VOL="${STATE_VOL:-flotilla-state}"   # as the compose file names it
 REGISTRY="$(envget FLOTILLA_REGISTRY)"; REGISTRY="${REGISTRY:-ghcr.io/chipi}"
-TRIAGE_DEPLOY_LOG="$(envget TRIAGE_DEPLOY_LOG)"
-TRIAGE_FILING_GATE="$(envget TRIAGE_FILING_GATE)"
-FLOTILLA_FLEETS_DIR="$(envget FLOTILLA_FLEETS_DIR)"   # the filing gate replays with these fleets' facts
+FLOTILLA_FLEETS_DIR="$(envget FLOTILLA_FLEETS_DIR)"   # the installation's own fleets (compose/fleets.yml)
 EVENT=deploy
 if [ "${1:-}" = --rollback ]; then
   TAG="$(awk -F'\t' '$4=="pass"{p=c; c=$2} END{print p}' "$LOG" 2>/dev/null)"
@@ -168,7 +172,7 @@ git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$COMMIT" || di
 # commit has no e2e run. A rollback goes back to a tag that was deployed, so it skips this
 if [ "$EVENT" = deploy ] && [ -z "${FLOTILLA_SKIP_CHECKS:-}" ]; then
   say "== the commit's checks"
-  if ! bash "$REPO/deploy/mini/checks_green.sh" "$COMMIT" ci-fast 'e2e?' | sed 's/^/   /'; then   # pipefail: the script's status
+  if ! bash "$REPO/deploy/server/checks_green.sh" "$COMMIT" ci-fast 'e2e?' | sed 's/^/   /'; then   # pipefail: the script's status
     [ -n "$CURRENT_COMMIT" ] && git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
     die "checks are not green for $TAG (FLOTILLA_SKIP_CHECKS=\"<why>\" deploys it anyway)"
   fi
@@ -176,19 +180,21 @@ elif [ "$EVENT" = deploy ]; then
   say "== the commit's checks: skipped ($FLOTILLA_SKIP_CHECKS)"
 fi
 
-if [ "$EVENT" = deploy ]; then
-  say "== the triage fleet's filing gate (${CURRENT_COMMIT:0:7} -> ${COMMIT:0:7})"
-  if ! triage_filing_gate "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; then   # pipefail: the gate's status
+if [ "$EVENT" = deploy ] && has deploy_gate; then
+  say "== the installation's deploy gate (${CURRENT_COMMIT:0:7} -> ${COMMIT:0:7})"
+  if ! deploy_gate "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; then   # pipefail: the gate's status
     [ -n "$CURRENT_COMMIT" ] && git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
-    die "filing gate failed or did not run for $TAG (set SF_FILING_GATE_ACCEPT=\"<why>\" to accept)"
+    die "the installation's deploy gate failed or did not run for $TAG"
   fi
+elif [ "$EVENT" = deploy ]; then
+  say "== no installation deploy gate (FLOTILLA_DEPLOY_HOOKS: ${HOOKS:-unset}${HOOKS:+ defines none})"
 fi
 
 say "== pull $TAG"
 compose "$TAG" pull -q || die "images for $TAG not pullable (did the images workflow run for ${TAG#sha-}?)"
 
 say "== secrets into their volumes (a rotated secret is picked up here)"
-FLOTILLA_HOME="$H" bash "$REPO/deploy/mini/secrets.sh" "$TAG" | sed 's/^/   /'
+FLOTILLA_HOME="$H" bash "$REPO/deploy/server/secrets.sh" "$TAG" | sed 's/^/   /'
 [ "${PIPESTATUS[0]}" = 0 ] || die "secrets.sh failed"
 
 say "== check config, callers, specs and the store's schema with the new flotillad"
@@ -264,8 +270,8 @@ fall_back() {
 say "== up"
 # A deploy stand-down on this host (RFC-0004 §5.1): plans on it are deferred while the stack changes.
 # FLOTILLA_STANDDOWN_HOST in .env names it; unset, none is taken. Never blocks the deploy.
-if [ -n "$(envget FLOTILLA_STANDDOWN_HOST)" ] && [ -f "$REPO/deploy/mini/standdown.sh" ]; then   # an older tag has none
-  bash "$REPO/deploy/mini/standdown.sh" "$(envget FLOTILLA_STANDDOWN_HOST)" 30m "flotilla $TAG" | sed 's/^/   /'
+if [ -n "$(envget FLOTILLA_STANDDOWN_HOST)" ] && [ -f "$REPO/deploy/server/standdown.sh" ]; then   # an older tag has none
+  bash "$REPO/deploy/server/standdown.sh" "$(envget FLOTILLA_STANDDOWN_HOST)" 30m "flotilla $TAG" | sed 's/^/   /'
 fi
 # A container whose mounted config changed must restart to read it: compose recreates a container
 # only when its own definition changes, never for a changed bind-mounted file. Each service's config
@@ -282,13 +288,13 @@ FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egre
 FLOTILLA_CONFIG_HASH_EGRESS_SEO="$(cfghash "$CFG/smokescreen-seo.yaml" "$CFG/egress-seo-acl.yaml")"
 export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
-triage_deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'
+if has deploy_log; then deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; fi
 if ! wait_healthy; then
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$TAG" "$COMMIT" fail >> "$LOG"
   if [ -n "$CURRENT" ] && [ "$CURRENT" != "$TAG" ]; then
     say "flotillad or the worker did not come up healthy: back to $CURRENT"
     if fall_back "$CURRENT" "$CURRENT_COMMIT"; then
-      triage_deploy_log rollback "$COMMIT" "$CURRENT_COMMIT" | sed 's/^/   /'
+      if has deploy_log; then deploy_log rollback "$COMMIT" "$CURRENT_COMMIT" | sed 's/^/   /'; fi
       if [ "$EVENT" = rollback ]; then
         event failure "$TAG" "rollback target unhealthy; $CURRENT is running again"
         say "DEPLOY FAIL (rollback to $TAG): not healthy; $CURRENT is running and healthy again, $TAG is not"

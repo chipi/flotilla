@@ -80,7 +80,7 @@ func main() {
 	}
 	reason := flagValue(&args, "--reason")
 	role := flagValue(&args, "--role")
-	// -json: the API's answer as it is, for scripts (deploy/mini/mirror.sh)
+	// -json: the API's answer as it is, for scripts (deploy/server/mirror.sh)
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-json" {
 			args = append(args[:i], args[i+1:]...)

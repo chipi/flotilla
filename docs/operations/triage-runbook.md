@@ -10,8 +10,8 @@ judging a fleet PR), see [section 7](#7-operator-rituals).
 
 The deploy mechanics are not repeated here. They are in
 [Deployment](../architecture/deployment.md) and in the header comments of
-[`deploy/mini/deploy.sh`](https://github.com/chipi/flotilla/blob/main/deploy/mini/deploy.sh) and
-[`deploy/mini/deploy_fleets.sh`](https://github.com/chipi/flotilla/blob/main/deploy/mini/deploy_fleets.sh).
+[`deploy/server/deploy.sh`](https://github.com/chipi/flotilla/blob/main/deploy/server/deploy.sh) and
+[`deploy/server/deploy_fleets.sh`](https://github.com/chipi/flotilla/blob/main/deploy/server/deploy_fleets.sh).
 Host names, repo names and credentials of the real installation are not written in this repo; the
 examples use placeholders (`example/shop`, `<owner>/<repo>`, `<host>`). Commands marked **[host]**
 run on the machine that hosts the Docker engine.
@@ -26,7 +26,7 @@ run on the machine that hosts the Docker engine.
 | fleet code | in the image: `/opt/flotilla/signal-fleet/mvp`, `/opt/flotilla/runtime`, `/opt/flotilla/fleets` | **not a git checkout**: a deploy is a new image tag |
 | the installation's fleets | `FLOTILLA_FLEETS_DIR` on the host, mounted over `/opt/flotilla/fleets` | holds the real `triage/installation.json`; see section 3 |
 | fleet state | Docker volume `TRIAGE_STATE_VOLUME`, at `/home/worker/signal-fleet` in the worker | `results/` (the TSV ledgers), `queue/`, `export/`; never in git |
-| secrets | Docker volume `<prefix>-worker-triage-secrets`, at `/run/flotilla` in the worker | `worker.token`, `fleet.env`; filled by `deploy/mini/secrets.sh` on every deploy from the host's files (`TRIAGE_ENV_FILE`) |
+| secrets | Docker volume `<prefix>-worker-triage-secrets`, at `/run/flotilla` in the worker | `worker.token`, `fleet.env`; filled by `deploy/server/secrets.sh` on every deploy from the host's files (`TRIAGE_ENV_FILE`) |
 | the ledger | flotillad's store (`SF_LEDGER_BACKEND=api`), in the `flotillad` state volume | the TSVs are still written beside it |
 | egress | the `egress` proxy (Smokescreen) | the worker has no route out except through it; its allowlist is `egress-acl.yaml` in the host's config folder |
 | Grafana + VictoriaMetrics/Logs/Traces | the observability stack | alerts in, probes and metrics out |
@@ -46,7 +46,7 @@ layers: `PATH`, `HOME` and `LANG`; every `KEY=VALUE` of the secrets file `/run/f
 every `ROUTINE_<KEY>` variable of the worker container, as `<KEY>`; and the run's own variables
 (`FLEETD_STAGE`, the autonomy; `FLEETD_CYCLE_ID`, the run id; `TRACEPARENT`). Values are secrets:
 never print them or commit them. To change one, edit the host's `TRIAGE_ENV_FILE` and deploy (or run
-`deploy/mini/secrets.sh sha-<7>`); a rotated secret is read at the next run, with no restart.
+`deploy/server/secrets.sh sha-<7>`); a rotated secret is read at the next run, with no restart.
 
 | Variable | Read by | What it is |
 | --- | --- | --- |
@@ -118,7 +118,7 @@ file) and is in [Deployment](../architecture/deployment.md); the triage-specific
 2. **Carry the state.** The fleet's state is two things: the triage state volume (the TSVs,
    `queue/`) and flotillad's store (the ledger the fleet reads). Take the store from a snapshot
    (`FLOTILLA_HOME/backups/`, written by every deploy) and the state volume with
-   `deploy/mini/secrets.sh <tag> --seed-state <volume> <dir>`, which seeds an empty volume once and
+   `deploy/server/secrets.sh <tag> --seed-state <volume> <dir>`, which seeds an empty volume once and
    leaves out env files and the STOP flag. Check that row counts match on both hosts.
 3. **Write the host's files**: `.env`, `config/` with the worker's token, `TRIAGE_ENV_FILE` (the
    variables above), and the egress allowlist. The credentials must work before anything runs:
@@ -128,7 +128,7 @@ file) and is in [Deployment](../architecture/deployment.md); the triage-specific
     - a `chat/completions` call to the gateway with the key returns 200;
     - Grafana `GET /api/alertmanager/grafana/api/v2/alerts` returns 200.
 
-4. **Deploy** `deploy/mini/deploy.sh sha-<7>` (section 3). The routine comes up at `shadow`:
+4. **Deploy** `deploy/server/deploy.sh sha-<7>` (section 3). The routine comes up at `shadow`:
    check that new ledger rows say `stage` = `shadow`, and that the shadow day looks right (the
    section 4 checks).
 5. **Promote to `propose`:** `docker exec flotillad flotilla autonomy triage/cycle propose --reason
@@ -150,12 +150,12 @@ token from the container).
 | **Pause the routine** | `flotilla pause triage/cycle`; `flotilla resume triage/cycle --reason "..."`. The UI's routine page has the same controls |
 | **STOP the fleet** | `flotilla stop triage` cancels the fleet's runs in flight and skips its later starts; `flotilla start triage --reason "..."` ends it. `flotilla autonomy freeze` holds every routine at shadow |
 | **Change autonomy** | `flotilla autonomy triage/cycle shadow\|propose\|auto --reason "..."` (the routine's own cap is in its spec) |
-| **Deploy a code change** | merge to `main`, wait for CI, then **[host]** `deploy/mini/deploy.sh sha-<7>`: see "Deploy and roll back" below. A new image restarts the worker; the next cycle runs the new code |
-| **Deploy the installation's own fleets** | **[host]** `deploy/mini/deploy_fleets.sh <commit>`; first `--diff <commit>` to see what changes; `--rollback` goes back one commit |
-| **Roll back code** | **[host]** `deploy/mini/deploy.sh --rollback` |
+| **Deploy a code change** | merge to `main`, wait for CI, then **[host]** `deploy/server/deploy.sh sha-<7>`: see "Deploy and roll back" below. A new image restarts the worker; the next cycle runs the new code |
+| **Deploy the installation's own fleets** | **[host]** `deploy/server/deploy_fleets.sh <commit>`; first `--diff <commit>` to see what changes; `--rollback` goes back one commit |
+| **Roll back code** | **[host]** `deploy/server/deploy.sh --rollback` |
 | **Logs** | `docker logs flotilla-worker-triage` (the worker's own); the Logs tab of the fleet page; `docker logs flotillad` for flotillad. Kept elsewhere: the sync's writes (VictoriaLogs `{fleet="triage", event="glitchtip_sync"}`), metrics (`signal_fleet_*`), the ledgers |
 | **Check the GitHub → GlitchTip sync** | metric `signal_fleet_glitchtip_sync{kind=...}` (one sample per run; read it with `count_over_time` or the export API, an instant query can miss it), alert `glitchtip-sync-failing`, the audit lines above. Dry run by hand: see "A command in the worker" |
-| **Turn the sync off** | remove `SF_GLITCHTIP_SYNC=1` from `TRIAGE_ENV_FILE`, then run `deploy/mini/secrets.sh sha-<7>`; the next cycle skips it |
+| **Turn the sync off** | remove `SF_GLITCHTIP_SYNC=1` from `TRIAGE_ENV_FILE`, then run `deploy/server/secrets.sh sha-<7>`; the next cycle skips it |
 | **Triage the parked proposals** (`queue/*.json`) | the files are in the state volume; `signal_fleet_queue_oldest_age_seconds` says when the queue is ageing. The `triage-fleet-review` skill's `proposals.py` predates the move to flotilla and has not been checked against it |
 
 Never edit a ledger while a cycle runs. Pause the routine first, and back up before an edit: the
@@ -164,11 +164,11 @@ volume.
 
 ### Deploy and roll back
 
-`deploy/mini/deploy.sh sha-<7>` deploys the image tag CI built for a commit. It:
+`deploy/server/deploy.sh sha-<7>` deploys the image tag CI built for a commit. It:
 
 1. checks out the commit and requires its `ci-fast` and `e2e` checks green
-   (`deploy/mini/checks_green.sh`; a docs-only commit has no e2e run);
-2. runs the **triage filing gate** (`deploy/mini/triage_hooks.sh`): the newest frozen week of
+   (`deploy/server/checks_green.sh`; a docs-only commit has no e2e run);
+2. runs the **triage filing gate** (`deploy/server/triage_hooks.sh`): the newest frozen week of
    filing decisions, replayed with the previous and the new commit and the installation's own
    facts. Any change in what filing does fails the deploy. The gate script is the installation's
    (`TRIAGE_FILING_GATE`); if it is unset the deploy fails, unless `SF_FILING_GATE_ACCEPT="<why>"`

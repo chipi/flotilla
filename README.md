@@ -57,7 +57,7 @@ and errors. How it got here: [docs/history](docs/history/0002-design-to-running-
 `fleets/` holds **example fleets**, with placeholder repos, sites and hosts
 ([fleets/README.md](fleets/README.md)). An installation keeps its own fleets and their facts in a
 private repo of its own and mounts them over the examples (`deploy/compose/fleets.yml`,
-`deploy/mini/deploy_fleets.sh`); its replay gates and real recorded cases live there too. `make lint`
+`deploy/server/deploy_fleets.sh`); its replay gates and real recorded cases live there too. `make lint`
 refuses installation facts in flotilla's code.
 
 ## Shape

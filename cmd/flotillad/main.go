@@ -224,7 +224,7 @@ func readToken(path string) (string, error) {
 }
 
 // checkStore is -check's look at the store: read-only, so a rollback to a binary older than the
-// store dies in the check, before anything is stopped (deploy/mini/deploy.sh).
+// store dies in the check, before anything is stopped (deploy/server/deploy.sh).
 func checkStore(stateDir string) error {
 	return store.CheckSchema(filepath.Join(stateDir, "flotilla.db"))
 }

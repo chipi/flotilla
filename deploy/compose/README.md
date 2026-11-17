@@ -19,14 +19,14 @@ installation lives on the host, outside git. Placeholders below are in `<angle b
     worker-triage.env       the installation's overrides for routines (ROUTINE_*); no secrets
     smokescreen.yaml        the proxy: listen address, which private ranges it may reach
     egress-acl.yaml         the proxy: which host names routines may reach
-  deployed.tsv              written by deploy/mini/deploy.sh
+  deployed.tsv              written by deploy/server/deploy.sh
   backups/                  the store's snapshots, one folder per deploy or rollback (see "Roll back")
 ```
 
 **State and secrets are Docker volumes**, not host folders: `flotilla-state` (the store and its daily
 backups), the triage fleet's state (`TRIAGE_STATE_VOLUME`), and `flotilla-flotillad-secrets` /
 `flotilla-worker-triage-secrets`. Nothing writes to the host through the VM's file sharing.
-`deploy/mini/secrets.sh` copies the tokens and the triage secrets file into the secret volumes on
+`deploy/server/secrets.sh` copies the tokens and the triage secrets file into the secret volumes on
 every deploy (mode 600, owned by the reading container's uid); the token files above are read on
 the host only, by that script.
 
@@ -51,7 +51,7 @@ A shadow state volume is seeded once from the live fleet's folder, without its s
 flag, and never overwritten after:
 
 ```sh
-~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
+~/flotilla/repo/deploy/server/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
 ```
 
 `config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`,
@@ -168,7 +168,7 @@ They reach VictoriaMetrics through the proxy, already on its allowlist for floti
 
 ## The deploy stand-down (RFC-0004 §5.1)
 
-While a deploy changes a host, policy defers every plan on it. `deploy/mini/standdown.sh HOST DURATION
+While a deploy changes a host, policy defers every plan on it. `deploy/server/standdown.sh HOST DURATION
 WHY` takes that stand-down: a hold on `host:HOST` by the installation's `deploy` caller, ending on its
 own. It never fails its caller. `deploy.sh` takes one for 30m before `up` when `.env` names
 `FLOTILLA_STANDDOWN_HOST` (e.g. `mini`); the homelab's `mini-deploy.sh` takes one from its pre-pull
@@ -220,14 +220,14 @@ autonomy above the cap, even the operator's, and the scheduler never runs it abo
 a control says.
 
 1. Seed its state from the live state, once per comparison (a fresh volume name each time):
-   `~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state
+   `~/flotilla/repo/deploy/server/secrets.sh sha-<7> --seed-state
    flotilla-triage-state-candidate-<date> ~/signal-fleet`
 2. `.env`: `COMPOSE_PROFILES=candidate`, `FLOTILLA_CANDIDATE_TAG=sha-<candidate>`,
    `TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-triage-state-candidate-<date>`.
 3. `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081", token_file:
    /run/flotilla/worker-triage.token}` under `workers`, and take `triage/cycle-shadow` out of `disabled_routines`.
-4. Deploy (the live tag, unchanged). Compare with
-   `deploy/mini/shadow-compare.sh --volume flotilla-triage-state-candidate-<date> --since <seed time>`.
+4. Deploy (the live tag, unchanged). Compare the two routines' decisions with the installation's own
+   tool (the ledgers are each worker's state volume).
 5. To end it: put `triage/cycle-shadow` back in `disabled_routines`, drop `COMPOSE_PROFILES`,
    deploy. The candidate's volume stays until removed by hand.
 
@@ -308,8 +308,8 @@ step, run the new image read-only against a copy of the real store.
 ## Deploy, roll back, operate
 
 ```sh
-~/flotilla/repo/deploy/mini/deploy.sh sha-<7>        # DEPLOY PASS / DEPLOY FAIL (rolls back on an unhealthy up)
-~/flotilla/repo/deploy/mini/deploy.sh --rollback
+~/flotilla/repo/deploy/server/deploy.sh sha-<7>        # DEPLOY PASS / DEPLOY FAIL (rolls back on an unhealthy up)
+~/flotilla/repo/deploy/server/deploy.sh --rollback
 docker exec flotillad flotilla status
 docker exec flotillad flotilla runs triage/cycle -n 20
 docker exec flotillad flotilla stop triage            # any caller; starting again is the operator's
@@ -331,9 +331,9 @@ mounts that folder read-only over `/opt/flotilla/fleets` in flotillad and the tr
 specs, and the playbooks, skills and harness settings the triage worker reads).
 
 ```sh
-~/flotilla/repo/deploy/mini/deploy_fleets.sh --diff <commit>   # what it changes against the running fleets
-~/flotilla/repo/deploy/mini/deploy_fleets.sh <commit>          # FLEETS DEPLOY PASS / FLEETS DEPLOY FAIL
-~/flotilla/repo/deploy/mini/deploy_fleets.sh --rollback
+~/flotilla/repo/deploy/server/deploy_fleets.sh --diff <commit>   # what it changes against the running fleets
+~/flotilla/repo/deploy/server/deploy_fleets.sh <commit>          # FLEETS DEPLOY PASS / FLEETS DEPLOY FAIL
+~/flotilla/repo/deploy/server/deploy_fleets.sh --rollback
 ```
 
 Each commit of `FLOTILLA_FLEETS_REPO` is exported once to `~/flotilla/fleets-<sha7>/`, read-only;

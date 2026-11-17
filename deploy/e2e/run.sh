@@ -189,21 +189,21 @@ echo "$SK" | grep >/dev/null '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/con
   && ok "the execution-signing key made; its public line printed for the hosts' configs" || bad "signing-key: $SK"
 SIGNPUB="$(echo "$SK" | sed -n 's/^  "e2e1": "\(.*\)"$/\1/p')"
 
-echo "== secrets and seeded state (deploy/mini/secrets.sh, as a deploy runs it)"
+echo "== secrets and seeded state (deploy/server/secrets.sh, as a deploy runs it)"
 printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/fleet.env"   # a random stand-in key, made per run
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/STOP"
 # the mini's folder also holds backups of the secrets file: they must stay out too
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env.bak-20261027"
 cp "$WORK/config/fleet.env" "$WORK/seed/results/fleet.env.bak-presync"
-if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG >"$WORK/secrets.log" 2>&1 \
-   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1 \
-   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-candidate-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1; then
+if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/server/secrets.sh" $TAG >"$WORK/secrets.log" 2>&1 \
+   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/server/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1 \
+   && FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/server/secrets.sh" $TAG --seed-state flotilla-e2e-triage-candidate-state "$WORK/seed" >>"$WORK/secrets.log" 2>&1; then
   ok "secrets and state seeded ($(grep -c ' <- ' "$WORK/secrets.log") secret files)"
 else
   cat "$WORK/secrets.log"; bad "secrets.sh"
 fi
-FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/mini/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep >/dev/null "SEED SKIP" \
+FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/server/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep >/dev/null "SEED SKIP" \
   && ok "a seeded state volume is never overwritten" || bad "seeding twice did not skip"
 
 echo "== an old, real-sized store for flotillad (schema step 1, 5000 runs)"
@@ -361,12 +361,12 @@ OUT="$(cli hold lift "$HID" 2>&1)"
 echo "$OUT" | grep >/dev/null "needs a reason" && ok "lifting a hold needs a reason" || bad "lift without a reason: $OUT"
 cli hold lift "$HID" --reason "e2e: disk done" >/dev/null
 [ -z "$(cli hold list | sed 1d)" ] && ok "lifted, no hold is active" || bad "after lift: $(cli hold list 2>&1)"
-# The deploy stand-down (deploy/mini/standdown.sh, as deploy.sh and the homelab's pre-pull hook run it):
+# The deploy stand-down (deploy/server/standdown.sh, as deploy.sh and the homelab's pre-pull hook run it):
 # a hold by the deploy caller, its token read from flotillad's secrets volume; it never fails its caller.
-OUT="$(DOCKER="$D" bash "$ROOT/deploy/mini/standdown.sh" backup-01 5m "e2e deploy" 2>&1)"; RC=$?
+OUT="$(DOCKER="$D" bash "$ROOT/deploy/server/standdown.sh" backup-01 5m "e2e deploy" 2>&1)"; RC=$?
 [ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN host:backup-01 for 5m" && cli hold list | grep >/dev/null "host:backup-01 .*deploy .*deploy stand-down: e2e deploy" \
   && ok "a deploy stand-down is a hold on the host, taken by the deploy caller" || bad "stand-down: rc=$RC $OUT / $(cli hold list 2>&1)"
-OUT="$(DOCKER=false bash "$ROOT/deploy/mini/standdown.sh" backup-01 5m "e2e" 2>&1)"; RC=$?
+OUT="$(DOCKER=false bash "$ROOT/deploy/server/standdown.sh" backup-01 5m "e2e" 2>&1)"; RC=$?
 [ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN SKIPPED" && ok "a stand-down that cannot be taken never fails the deploy" || bad "stand-down failure path: rc=$RC $OUT"
 SID="$(cli hold list | awk '/deploy stand-down/ {print $1; exit}')"
 cli hold lift "$SID" --reason "e2e: done" >/dev/null

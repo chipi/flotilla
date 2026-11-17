@@ -6,7 +6,7 @@
 # read-only, for config only, like every other stack on the mini; writing through the VM's sshfs
 # mount would ride the lima SSH connection whose failures took production down before.
 #
-# Secrets reach the containers through their own volumes, filled by deploy/mini/secrets.sh from the
+# Secrets reach the containers through their own volumes, filled by deploy/server/secrets.sh from the
 # host's files (mode 600 there, owned by the container's uid in the volume). Nothing secret is in an
 # environment variable or a bind mount.
 #
@@ -330,7 +330,7 @@ services:
 volumes:
   state:
     name: ${FLOTILLA_STATE_VOLUME:-flotilla-state}
-  # created and filled by deploy/mini/secrets.sh before compose runs; compose never removes them
+  # created and filled by deploy/server/secrets.sh before compose runs; compose never removes them
   flotillad-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-flotillad-secrets
     external: true
