@@ -13,8 +13,7 @@ Hermes Agent, and asked for three evaluations: the brief and its use cases, Herm
 how to run it safely on the homelab), and a catalogue of use cases with outside-in website reach
 first.
 
-The evaluation, in agentic-ai-homelab's
-[`docs/wip/agent-platform-evaluation.md`](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/agent-platform-evaluation.md),
+The evaluation ([0000](0000-origin-evaluation.md), written in agentic-ai-homelab and kept here)
 kept three things apart: the problem, the constraints the homelab already lives by, and the
 candidate solutions. It found:
 

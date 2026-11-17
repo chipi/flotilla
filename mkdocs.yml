@@ -133,6 +133,7 @@ nav:
     - "The UI, next: three buckets": wip/ui-next-plan.md
   - History:
     - Overview: history/README.md
+    - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
     - 0001 — Genesis: history/0001-genesis.md
 
 extra:

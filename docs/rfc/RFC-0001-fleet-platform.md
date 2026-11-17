@@ -5,7 +5,7 @@
 **Date:** 2026-11-08
 **Inputs:**
 
-- [agent-platform-evaluation.md](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/agent-platform-evaluation.md)
+- [the evaluation](../history/0000-origin-evaluation.md)
   (agentic-ai-homelab);
 - a read-only inventory of fleetd, the triage fleet, the bugfix fleet and the daily brief
   (2026-11-08; file and line citations kept in the session notes, summarised in §2);

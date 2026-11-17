@@ -69,7 +69,7 @@ of their logic.
 ## Alternatives considered
 
 - **Adopt Hermes Agent or OpenClaw as the runtime.** Evaluated 2026-11-08 (see
-  [agentic-ai-homelab's evaluation](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/agent-platform-evaluation.md)).
+  [the evaluation](../history/0000-origin-evaluation.md)).
   Rejected for now: Hermes is unsupported on the Intel mini, has self-editing skills and cloud
   web search by default; OpenClaw has a heavy CVE stream. Both are kept as inspiration.
 - **Everything in Python** (rewrite fleetd) or **everything in Go** (rewrite the triage fleet).
