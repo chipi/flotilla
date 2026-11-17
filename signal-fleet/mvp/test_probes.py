@@ -6,6 +6,9 @@ Live on 2026-11-16 (VictoriaLogs, 24 h): app:podcast-api, player-mcp, orrery-pro
 while service:podcast-pipeline had 5,604, player-api 11,964, orrery-web 47,451. A dismissal needs a usable
 service_logs or metric (the dismiss_corroborated gate), so for most projects it escalated.
 """
+import os  # noqa: E402
+os.environ.setdefault("SF_INSTALLATION", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "testdata", "installation.json"))  # example facts
 import os
 import sys
 import unittest

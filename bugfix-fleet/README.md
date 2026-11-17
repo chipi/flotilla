@@ -1,43 +1,26 @@
-# bugfix-fleet — autonomous bug-fix fleet (MVP)
+# bugfix-fleet — the July 2026 prototype and the bake-off
 
-Prototype for **RFC-0002**. Cheap-harness workers fix `bug`-labeled GitHub issues
-on a long-lived `fixes` branch; Claude reviews the batch PR (Phase 1). Runs on the
-`homelab` Mac mini. **Unpolished — this is the Phase-0 bake-off**, not production.
+**This is not what runs.** The bugfix fleet flotilla runs is the routines in
+[`bugfix/`](../bugfix/) with their specs in [`fleets/bugfix/`](../fleets/bugfix/): intake, fix,
+open-pr and pr-check, on remote workers, operated as [docs/operations/bugfix.md](../docs/operations/bugfix.md)
+and designed in [RFC-0010](../docs/rfc/RFC-0010-bugfix-on-the-platform.md). It replaced this directory's
+code on 2026-11-15.
 
-## ⚡ Current state — read first (2026-08-19, saves you the archaeology)
+This directory keeps two earlier things, as a record (no CI, RFC-0001 §11):
 
-- **Two different things are called "bugfix-fleet" — don't conflate them:**
-  1. **This TS MVP** (`src/main.ts`) — the GitHub issue → triage → fix → PR loop.
-  2. **The bake-off rig** (`bakeoff/*.sh`) — the pi-vs-opencode *measurement study*
-     that shells the real `pi`/`opencode`/`claude` CLIs. Separate codepath entirely.
-- **Harness = `direct` only.** The `pi`/`opencode` adapters are Phase-0 **stubs that
-  `throw "not implemented"`** — don't set `HARNESS=pi`/`opencode` expecting them to
-  run (it prints "adapter not wired yet" and falls back to direct). This is fine:
-  **the bake-off concluded the harness barely moves fix-rate — ticket quality is the
-  lever** (BAKEOFF §8; [`docs/history/0005-bakeoff-matrix-arc.md`](../docs/history/0005-bakeoff-matrix-arc.md)).
-  `pi + v4-pro` was the vindicated cheap *worker seat*; Claude = the *reviewer* gate.
-- **LLM routing goes through the homelab LiteLLM gateway** (not OpenRouter-direct):
-  `LLM_BASE_URL=http://localhost:4001/v1` + `LLM_API_KEY=<LITELLM_FLEET_BUGFIX_KEY>`,
-  models are litellm aliases `fleet-bugfix-{flash,pro,reviewer}` (see
-  [`infra/litellm/config.yaml`](../infra/litellm/config.yaml) +
-  [`infra/litellm/README.md`](../infra/litellm/README.md)). Spend is budget-capped +
-  metered; Langfuse traces (fleet + gateway) land in project **"agents"**.
-- **Run:** build then run — `npm run build && node --env-file=.env dist/main.js <cmd>`,
-  or `npm run dev -- <cmd>` (cmd ∈ `poll|dispatch|cutpr|review|metrics|ship`).
-  `dispatch` is the safe no-mutation smoke test. **Verified working E2E 2026-08-19**
-  (200s through the gateway, spend metered, traces landed).
-- **Autonomous/nonstop by design — currently DORMANT on purpose (deliberate pause).**
-  It's built to run continuously, picking up the bug issues the **triage fleet
-  (`signal-fleet/`) files** — triage → bugfix is a pipeline. It is NOT on-demand and
-  NOT a work/sleep rhythm. Right now it's **paused** (`fleetd.json` bugfix cycle
-  disabled = the `"Track B gate"`): it ran ONE batch, and the operator paused it to
-  review those results and decide how to fine-tune before letting it run nonstop.
-  **Do not wake the fix-loop** (`poll`/`cutpr`/`review`/`ship` mutate GitHub) while
-  it's parked — only read-only ops (`dispatch`, `metrics`) are safe. The metrics
-  pusher (`com.homelab.bugfix-metrics`, every 120s) keeps running during dormancy.
-- **Gotcha — recreation casualties:** a colima/DB recreate wipes the litellm virtual
-  key → every call 401s. Fix = recreate the key ([`infra/litellm/README.md`](../infra/litellm/README.md)
-  → *Recreate after a DB wipe*).
+1. **The TypeScript prototype** (`src/main.ts`, July 2026): the GitHub issue → triage → fix → PR loop
+   of the homelab's first bugfix fleet. It ran one batch, was paused, and was retired with fleetd on
+   2026-11-16. Only its `direct` worker adapter was ever wired; `piAdapter.ts` and
+   `opencodeAdapter.ts` are stubs.
+2. **The bake-off rig** (`bakeoff/`): the pi-vs-opencode measurement study that shelled the real
+   coding CLIs. It found that the harness barely moves the fix rate and ticket quality is the lever
+   ([BAKEOFF.md](BAKEOFF.md) §8; the arc:
+   [history/homelab/0005](../docs/history/homelab/0005-bakeoff-matrix-arc.md)). Its real bug data
+   has left this repo (research lives in the evaluation project).
+
+"RFC-0002" below and in `BAKEOFF.md` is agentic-ai-homelab's RFC-0002 (the bugfix fleet), not
+flotilla's RFC-0002 (the job runtime). The prototype's model calls went through a LiteLLM gateway
+with the homelab's keys; its settings are in `.env.example`.
 
 ## What's here (MVP scope)
 
@@ -45,7 +28,7 @@ on a long-lived `fixes` branch; Claude reviews the batch PR (Phase 1). Runs on t
 - **Flow B — Fix** (`src/flows/fix.ts`): `flow:approved` → worktree → fix → local tests → land on `fixes`.
 - **Worker seam** (`src/worker/types.ts`): one interface, three adapters —
   `directAdapter.ts` (**the only one wired**), plus `piAdapter.ts` / `opencodeAdapter.ts`
-  which are **Phase-0 stubs that throw** (see Current state above). `direct` is both
+  which are **Phase-0 stubs that throw**. `direct` is both
   the working path and the bake-off's control baseline.
 - **Deterministic orchestrator** (`src/orchestrator.ts`): advances issues by
   swapping `flow:` labels (the state machine); LLMs only at the worker leaves.
@@ -62,7 +45,7 @@ included (Phase 1): the whole-PR review + feedback loop, batch-PR cut, deploy.
 
 ```sh
 npm install
-cp .env.example .env   # fill via sops on the mini (HARNESS=direct; litellm routing)
+cp .env.example .env   # HARNESS=direct; the gateway's URL and key
 npm run typecheck
 npm run dev -- dispatch     # safe no-mutation smoke test (real LLM via the gateway)
 # npm run dev -- poll       # the real triage→fix loop (mutates the target repo)
