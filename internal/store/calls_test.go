@@ -72,3 +72,30 @@ func TestCallsKeepFinishReasonStepAndDecisionKey(t *testing.T) {
 		t.Fatalf("calls since: %+v %v", since, err)
 	}
 }
+
+// role, episode, its order and the tools of a turn come back as recorded; a call that gave none reads as "", "", nil, "".
+func TestCallsKeepRoleEpisodeAndTools(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	seq := int64(2)
+	if err := s.RecordCalls(ctx, []ModelCall{
+		{RunID: "r1", Routine: "bugfix/fix", At: "2026-11-17T10:00:00.000000000Z", Alias: "a", Role: "coder", Episode: "ep-1", EpisodeSeq: &seq, Tools: `["bash","read"]`},
+		{RunID: "r1", Routine: "bugfix/fix", At: "2026-11-17T10:00:01.000000000Z", Alias: "a"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RunCalls(ctx, []string{"r1"})
+	if err != nil || len(got["r1"]) != 2 {
+		t.Fatalf("calls: %+v %v", got, err)
+	}
+	if c := got["r1"][0]; c.Role != "coder" || c.Episode != "ep-1" || c.EpisodeSeq == nil || *c.EpisodeSeq != 2 || c.Tools != `["bash","read"]` {
+		t.Fatalf("the first call: %+v", c)
+	}
+	if c := got["r1"][1]; c.Role != "" || c.Episode != "" || c.EpisodeSeq != nil || c.Tools != "" {
+		t.Fatalf("a call with none of them: %+v", c)
+	}
+	since, err := s.CallsSince(ctx, "2026-11-17T00:00:00Z")
+	if err != nil || len(since) != 2 || since[0].Role != "coder" || since[0].Tools != `["bash","read"]` || *since[0].EpisodeSeq != 2 {
+		t.Fatalf("calls since: %+v %v", since, err)
+	}
+}

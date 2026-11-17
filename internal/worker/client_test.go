@@ -109,3 +109,25 @@ func TestRunCancelledIsAResult(t *testing.T) {
 		t.Fatalf("%+v %v", res, err)
 	}
 }
+
+// A result's calls cross the link (hostagent marshals the worker's Result, hostlink unmarshals it) with their role,
+// episode, its order and tool names: a Call without those fields would drop them from every remote run.
+func TestResultCallsKeepRoleEpisodeAndTools(t *testing.T) {
+	in := `{"status":"ok","calls":[{"alias":"a","role":"coder","episode":"ep-1","episode_seq":2,"tools":["bash","read"],"step":1}]}`
+	var res Result
+	if err := json.Unmarshal([]byte(in), &res); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Result
+	if err := json.Unmarshal(b, &back); err != nil || len(back.Calls) != 1 {
+		t.Fatalf("round trip: %v %+v", err, back)
+	}
+	c := back.Calls[0]
+	if c.Role != "coder" || c.Episode != "ep-1" || c.EpisodeSeq == nil || *c.EpisodeSeq != 2 || len(c.Tools) != 2 || c.Tools[1] != "read" {
+		t.Fatalf("the call after the round trip: %+v", c)
+	}
+}

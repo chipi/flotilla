@@ -52,3 +52,36 @@ func TestCallLineShowsTurnAndCut(t *testing.T) {
 		t.Errorf("another reason is named: %q", got)
 	}
 }
+
+// The run page's calls table shows each call's role and the tools it called; a call with none shows a dash.
+func TestRunPageShowsRoleAndTools(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	if err := f.st.StartRun(ctx, store.Run{ID: "run-role", Routine: "bugfix/fix", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
+		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Format(store.TimeFormat)
+	if err := f.st.RecordCalls(ctx, []store.ModelCall{
+		{RunID: "run-role", Routine: "bugfix/fix", At: at, Alias: "coder-a", Model: "m", Role: "coder", Tools: `["bash","read"]`},
+		{RunID: "run-role", Routine: "bugfix/fix", At: at, Alias: "coder-a", Model: "m"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, page := f.do("GET", "/runs/run-role", f.signin(f.vic), nil, nil)
+	for _, want := range []string{`<th scope="col">Role</th>`, `<th scope="col">Tools</th>`, `<td data-label="Role" class="exact">coder</td>`,
+		`<td data-label="Tools" class="exact soft">bash, read</td>`, `<td data-label="Role" class="exact">–</td>`, `<td data-label="Tools" class="exact soft">–</td>`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the run page has no %q", want)
+		}
+	}
+}
+
+func TestCallLineShowsRoleAndTools(t *testing.T) {
+	got := callLine(store.ModelCall{Alias: "a", Role: "advisor", Tools: `["bash","read"]`})
+	if got != "a · advisor · tools bash, read" {
+		t.Errorf("callLine = %q", got)
+	}
+	if got := callLine(store.ModelCall{Alias: "a", Tools: "not json"}); got != "a" {
+		t.Errorf("unreadable tools add nothing: %q", got)
+	}
+}

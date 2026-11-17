@@ -361,6 +361,12 @@ var schema = []string{
 		recorded_by TEXT NOT NULL
 	);
 	CREATE INDEX eval_results_key ON eval_results(routine, prompt_sha, model);`,
+	// Who made a call and in which agent session: the role, the episode (an id grouping one session's calls) and its
+	// order within the run, and the tools the model called in that turn, for drawing a run's flow between roles.
+	`ALTER TABLE run_calls ADD COLUMN role TEXT NOT NULL DEFAULT '';
+	ALTER TABLE run_calls ADD COLUMN episode TEXT NOT NULL DEFAULT '';
+	ALTER TABLE run_calls ADD COLUMN episode_seq INTEGER;
+	ALTER TABLE run_calls ADD COLUMN tools TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

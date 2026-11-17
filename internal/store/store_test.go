@@ -340,3 +340,40 @@ func TestMigrationAddsCallColumnsWithDefaults(t *testing.T) {
 		t.Fatalf("eval_results on a migrated database: %v", err)
 	}
 }
+
+// A database at schema 23 keeps its calls: role, episode, episode_seq and tools read as their defaults.
+func TestMigrationAddsRoleEpisodeAndTools(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 23; i++ {
+		if _, err := db.Exec(schema[i]); err != nil {
+			t.Fatalf("step %d: %v", i+1, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (n) VALUES (?)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO run_calls (run_id, routine, at, alias, finish_reason, step, decision_key) VALUES ('old', 'triage/cycle', '2026-11-16T00:00:00Z', 'a', 'stop', 2, 'fp')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("migrating a schema-23 database: %v", err)
+	}
+	defer s.Close()
+	got, err := s.RunCalls(context.Background(), []string{"old"})
+	if err != nil || len(got["old"]) != 1 {
+		t.Fatalf("the old call must survive: %+v %v", got, err)
+	}
+	c := got["old"][0]
+	if c.FinishReason != "stop" || c.DecisionKey != "fp" || c.Role != "" || c.Episode != "" || c.EpisodeSeq != nil || c.Tools != "" {
+		t.Fatalf("the old call must keep its columns and read the new ones as defaults: %+v", c)
+	}
+}

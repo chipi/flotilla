@@ -47,6 +47,7 @@ import time
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import callrec_pi  # noqa: E402
 import pi_config  # noqa: E402
 import spend  # noqa: E402
 import stepone  # noqa: E402
@@ -386,6 +387,8 @@ class Chain:
                          # docs/security-reviews)
                          "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"})
         self.env.pop("FLOTILLA_PLAN_FILE", None)  # the leaves write nothing of the run's own
+        # each pi episode's turns go to the run's calls file once it ends (role: verdict, coder, reviewer, advisor)
+        self.calls = callrec_pi.Recorder(os.path.join(run_dir, "pi"), environ, case.get("id"))
 
     def note(self, step, detail=""):
         line = f"{step}: {detail}" if detail else step
@@ -491,6 +494,7 @@ class Chain:
         results = os.path.join(self.root, "results")
         started = time.time() - 1
         code, out = sh(args, BAKEOFF, env, self.a.episode_timeout + 120)
+        self.calls.record("verdict", self.a.worker_model)
         # the leaf names its directory from the prior verdict's kickback_round, which the model writes:
         # take the verdict this call wrote, not the one the round number predicts
         fresh = []
@@ -556,6 +560,7 @@ class Chain:
         desc = cap_bytes(desc, REVIEW_PROMPT_MAX)   # one argv string to pi: Linux caps it at 128 KiB
         before = self.sessions()
         code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout)
+        self.calls.record("coder", self.a.worker_model)
         after = self.sessions()
         grown = [f for f, n in after.items() if before.get(f) != n]
         self.last_session = max(grown, key=os.path.getmtime) if grown else None
@@ -806,6 +811,7 @@ class Chain:
         code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer,
                            *tools, *rules, prompt],
                           self.wt, self.env, self.a.review_timeout)
+        self.calls.record("reviewer", self.a.reviewer_model)
         text = assistant_text(stream)
         if text:
             return text
@@ -915,6 +921,7 @@ class Chain:
             elif self.a.advisor and not from_review:   # a review's objection is its own evidence: no pin needed
                 code, out = sh([os.path.join(BAKEOFF, "advisor_run.sh"), os.path.join(self.run_dir, "ticket.json"), ev],
                                BAKEOFF, dict(self.env, PI_TOOLS=READ_ONLY_TOOLS), self.a.episode_timeout)
+                self.calls.record("advisor", self.a.advisor_model)
                 try:
                     with open(os.path.join(ev, "advisor.json")) as f:
                         pin = json.load(f).get("file") or ""

@@ -1704,6 +1704,22 @@ class TestDecisionTurns(unittest.TestCase):
         self.assertEqual([(x["step"], x["finish_reason"], x["decision_key"]) for x in lines],
                          [(1, "length", "glitchtip:FP-1"), (2, "stop", "glitchtip:FP-1"), (3, "stop", "glitchtip:FP-1")])
 
+    def test_each_call_has_the_role_the_episode_and_the_probe_it_asked_for(self):
+        """Every triage call is role "triage" in the decision's episode (its fingerprint), episodes number the
+        decisions of the run from 1, and a turn that asked for a probe names it on its own line; a decision
+        turn, a bad reply and a truncated one name none."""
+        probe = '{"action":"probe","probe":"get_logs","probe_args":{}}'
+        self.t._EPISODES["n"] = 0
+        self._replies((probe, "stop"), ("not json", "stop"), (self.DECIDE, "stop"))
+        self.t.investigate(self.SIG, probe_table={})
+        self._replies((self.DECIDE, "stop"))
+        self.t.investigate(dict(self.SIG, fingerprint="glitchtip:FP-2"), probe_table={})
+        with open(self.path) as f:
+            lines = [json.loads(x) for x in f if x.strip()]
+        self.assertEqual([(x["role"], x["episode"], x["episode_seq"], x["tools"]) for x in lines],
+                         [("triage", "glitchtip:FP-1", 1, ["get_logs"]), ("triage", "glitchtip:FP-1", 1, []),
+                          ("triage", "glitchtip:FP-1", 1, []), ("triage", "glitchtip:FP-2", 2, [])])
+
     def test_quirk_names_are_distinct_and_joined(self):
         self._replies(("", "stop"), ("not json", "stop"), ("also not", "stop"), (self.DECIDE, "stop"))
         self.assertEqual(self._keys(self.t.investigate(self.SIG, probe_table={})), (4, "empty_retry,bad_json_uses_turn", 0))

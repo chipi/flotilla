@@ -77,6 +77,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@python3 bugfix/test_bugfix.py >/tmp/flotilla-test_bugfix.log 2>&1 && echo "PASS bugfix/test_bugfix.py" || { echo "FAIL bugfix/test_bugfix.py"; tail -30 /tmp/flotilla-test_bugfix.log; exit 1; }
 	@timeout 300 python3 bugfix/test_fix.py >/tmp/flotilla-test_fix.log 2>&1 && echo "PASS bugfix/test_fix.py" || { echo "FAIL bugfix/test_fix.py"; tail -30 /tmp/flotilla-test_fix.log; exit 1; }
 	@timeout 240 python3 bugfix/test_spend.py >/tmp/flotilla-test_spend.log 2>&1 && echo "PASS bugfix/test_spend.py" || { echo "FAIL bugfix/test_spend.py"; tail -30 /tmp/flotilla-test_spend.log; exit 1; }
+	@python3 bugfix/test_callrec_pi.py >/tmp/flotilla-test_callrec_pi.log 2>&1 && echo "PASS bugfix/test_callrec_pi.py" || { echo "FAIL bugfix/test_callrec_pi.py"; tail -30 /tmp/flotilla-test_callrec_pi.log; exit 1; }
 	@timeout 120 python3 bugfix/test_stepone.py >/tmp/flotilla-test_stepone.log 2>&1 && echo "PASS bugfix/test_stepone.py" || { echo "FAIL bugfix/test_stepone.py"; tail -30 /tmp/flotilla-test_stepone.log; exit 1; }
 	@python3 seo/test_seo.py >/tmp/flotilla-test_seo.log 2>&1 && echo "PASS seo/test_seo.py" || { echo "FAIL seo/test_seo.py"; tail -30 /tmp/flotilla-test_seo.log; exit 1; }
 	@python3 seo/test_sources.py >/tmp/flotilla-test_sources.log 2>&1 && echo "PASS seo/test_sources.py" || { echo "FAIL seo/test_sources.py"; tail -30 /tmp/flotilla-test_sources.log; exit 1; }

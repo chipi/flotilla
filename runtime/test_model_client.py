@@ -204,6 +204,29 @@ class Chat(unittest.TestCase):
             self.assertNotIn(b"decision_key", sent["data"])
             self.assertNotIn(b'"step"', sent["data"])
 
+    def test_calls_file_has_role_episode_and_tools(self):
+        """Who called, in which session and in what order, and which tools the reply asked for (a list, or a
+        function of the call's record) are in the line; a call that gave none writes "", "", null, []; a
+        function that raises costs the line its tools, not the call."""
+        path = os.path.join(tempfile.mkdtemp(), "calls.jsonl")
+        env = {"OPENROUTER_API_KEY": "sk-test", "FLOTILLA_CALLS_FILE": path}
+        c, tr = client(ok(), ok('{"action":"probe"}'), ok(), (500, {}, "down"), ok(), environ=env)
+        c.chat("triage-default", [], role="coder", episode="ep-1", episode_seq=2, tool_names=["bash", "read"])
+        c.chat("triage-default", [], role="triage", episode="fp-1", episode_seq=1,
+               tool_names=lambda rec: ["probe:" + json.loads(rec["content"])["action"]])
+        c.chat("triage-default", [])
+        with self.assertRaises(mc.Transient):
+            c.chat("triage-default", [], role="advisor", tool_names=lambda rec: [rec["content"]])
+        c.chat("triage-default", [], tool_names=lambda rec: 1 / 0)
+        with open(path) as f:
+            lines = [json.loads(l) for l in f]
+        self.assertEqual([(l["role"], l["episode"], l["episode_seq"], l["tools"]) for l in lines],
+                         [("coder", "ep-1", 2, ["bash", "read"]), ("triage", "fp-1", 1, ["probe:probe"]),
+                          ("", "", None, []), ("advisor", "", None, []), ("", "", None, [])])
+        for sent in tr.sent:
+            for k in (b"role", b"episode", b"tools"):
+                self.assertNotIn(k, sent["data"])
+
     def test_no_calls_file_without_the_variable(self):
         c, _ = client(ok())
         c.chat("triage-default", [])   # nothing to assert but that it does not fail: no variable, no file

@@ -63,6 +63,9 @@ _EXACT = None
 # What each decision records about its own turns (the ledger row: turns, quirks, cap_hits), kept whether or
 # not capture is on. Reset with the exact record; `key` is the signal fingerprint the calls file joins on.
 _TURNS = {"turns": 0, "quirks": [], "cap_hits": 0, "key": None}
+# Decisions started in this process, in order: a run's episodes are its decisions (episode_seq, 1-based). Not
+# reset per decision: it is the order within the run.
+_EPISODES = {"n": 0}
 
 
 def _exact_start():
@@ -307,6 +310,17 @@ def _post_json_transport(url, data, headers, timeout):
     return 200, dict(http_util.LAST_HEADERS), json.dumps(resp)
 
 
+def _requested_tools(rec):
+    """The probe a turn's reply asked for (the harness's tool request), as a list; [] for a decision, an
+    unparseable reply or a failed call."""
+    try:
+        out = _parse(rec.get("content") or "")
+    except ValueError:   # no object, or one that is not JSON (JSONDecodeError is a ValueError)
+        return []
+    name = out.get("probe") if isinstance(out, dict) and out.get("action") == "probe" else None
+    return [name] if isinstance(name, str) and name else []
+
+
 def _call(messages, trace_id=None, step=None):
     if not config.OPENROUTER_KEY:
         raise SystemExit("[triage] OPENROUTER_API_KEY not set")
@@ -320,7 +334,9 @@ def _call(messages, trace_id=None, step=None):
     _TURNS["turns"] += 1
     try:
         rec = client.chat(alias, messages, timeout=90, max_tokens=REPLY_MAX_TOKENS,
-                          step=None if step is None else step + 1, decision_key=_TURNS["key"], **kw)
+                          step=None if step is None else step + 1, decision_key=_TURNS["key"],
+                          role="triage", episode=_TURNS["key"], episode_seq=_EPISODES["n"] or None,
+                          tool_names=_requested_tools, **kw)
     except model_client.EmptyCompletion as e:
         rec = e.record   # a 200 without content: triage retries the turn, as before
     except model_client.ModelError as e:
@@ -558,6 +574,7 @@ def investigate(signal, max_probes=None, probe_table=None):
     n = MAX_PROBES if max_probes is None else max_probes
     _exact_start()
     _TURNS["key"] = signal.get("fingerprint") or None
+    _EPISODES["n"] += 1
     # what enters the model's context (G7): the playbook (flotilla's own, pinned), and the signal's text
     loaded.record("playbook", "source", "triage playbook", f"fleets/triage/playbooks/triage.md @ {PROMPT_SHA}",
                   hashlib.sha256(_SYSTEM.encode()).hexdigest())

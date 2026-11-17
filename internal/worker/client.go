@@ -90,6 +90,11 @@ type Call struct {
 	FinishReason string `json:"finish_reason"`
 	Step         *int64 `json:"step"`
 	DecisionKey  string `json:"decision_key"`
+	// who made the call and in which session, and the names of the tools it called (model_client.py, bugfix/callrec_pi.py)
+	Role       string   `json:"role"`
+	Episode    string   `json:"episode"`
+	EpisodeSeq *int64   `json:"episode_seq"`
+	Tools      []string `json:"tools"`
 }
 
 type Health struct {

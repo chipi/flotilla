@@ -69,6 +69,7 @@ var funcs = template.FuncMap{
 	"hash":       shortHash,
 	"kindWords":  func(k string) string { return strings.ReplaceAll(k, "_", " ") },
 	"deref":      func(p *int64) int64 { return *p },
+	"toolNames":  toolNames,
 	"usd":        func(p *float64) string { return fmt.Sprintf("$%.4f", *p) },
 	"secsp":      func(p *float64) string { return secsText(*p) },
 	"decisionCtx": func(v any, csrf string, canAct bool, back string) decisionView {

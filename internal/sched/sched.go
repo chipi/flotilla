@@ -415,7 +415,8 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 			calls[i] = store.ModelCall{RunID: runID, Routine: id, At: at.Format(store.TimeFormat), Alias: c.Alias, Endpoint: c.Endpoint,
 				Model: c.Model, Deployment: c.Deployment, TokensIn: c.TokensIn, TokensOut: c.TokensOut, CostUSD: c.CostUSD,
 				CostSource: c.CostSource, LatencyS: c.LatencyS, Error: c.Error, Check: c.Check, CheckOK: c.CheckOK, Detail: c.Detail,
-				FinishReason: c.FinishReason, Step: c.Step, DecisionKey: c.DecisionKey}
+				FinishReason: c.FinishReason, Step: c.Step, DecisionKey: c.DecisionKey,
+				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: toolsJSON(c.Tools)}
 		}
 		// the calls are a record of the run, not its outcome: a failure to keep them is logged, not fatal
 		if err := s.Store.RecordCalls(fctx, calls); err != nil {
@@ -669,4 +670,16 @@ func tail(s string, n int) string {
 		return s[len(s)-n:]
 	}
 	return s
+}
+
+// toolsJSON is a call's tool names as the JSON array the store keeps; "" when the turn called none.
+func toolsJSON(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(names)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

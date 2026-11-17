@@ -408,7 +408,8 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 	s, fr, _ := setup(t, 2)
 	in, cost, no, step := int64(120), 0.002, false, int64(2)
 	fr.res.Calls = []worker.Call{{At: "2026-11-14T10:00:01Z", Alias: "triage-pro", Model: "m", TokensIn: &in, CostUSD: &cost,
-		FinishReason: "length", Step: &step, DecisionKey: "fp-1"},
+		FinishReason: "length", Step: &step, DecisionKey: "fp-1",
+		Role: "triage", Episode: "fp-1", EpisodeSeq: &step, Tools: []string{"bash", "read"}},
 		{At: "not a time", Alias: "triage-flash", Error: "Transient"},
 		{At: "2026-11-14T10:00:02Z", Alias: "triage-flash", Check: "tools", CheckOK: &no, Detail: "no get_metric call"}}
 	fr.res.Loaded = []worker.Loaded{{At: "2026-11-14T10:00:00Z", Kind: "playbook", Trust: "source", Title: "triage playbook", Source: "p @ x", SHA256: "ab"},
@@ -427,6 +428,9 @@ func TestRunRecordsItsModelCalls(t *testing.T) {
 	}
 	if cs[0].FinishReason != "length" || cs[0].Step == nil || *cs[0].Step != 2 || cs[0].DecisionKey != "fp-1" || cs[1].FinishReason != "" || cs[1].Step != nil {
 		t.Fatalf("a call's finish reason, step and decision key reach the store: %+v / %+v", cs[0], cs[1])
+	}
+	if cs[0].Role != "triage" || cs[0].Episode != "fp-1" || cs[0].EpisodeSeq == nil || *cs[0].EpisodeSeq != 2 || cs[0].Tools != `["bash","read"]` || cs[1].Tools != "" || cs[1].EpisodeSeq != nil {
+		t.Fatalf("a call's role, episode and tools reach the store: %+v / %+v", cs[0], cs[1])
 	}
 	if cs[1].Error != "Transient" || cs[1].At == "" {
 		t.Fatalf("a call with a bad time is kept, at the run's time: %+v", cs[1])

@@ -10,6 +10,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fix  # noqa: E402
@@ -23,7 +24,14 @@ POP = textwrap.dedent('''\
     pop() { f="$FAKE_STATE/$1"; head -n1 "$f"; tail -n +2 "$f" > "$f.n"; mv "$f.n" "$f"; }
     ''')
 
-TRIAGE = POP + textwrap.dedent('''\
+# with FAKE_SESS set, a leaf saves a pi session of one assistant message that called a tool, as pi does
+SESS = textwrap.dedent('''\
+    sess() { [ -n "${FAKE_SESS:-}" ] || return 0; mkdir -p "$PI_CODING_AGENT_DIR/sessions/--wt--"
+      printf '{"type":"session","version":3,"id":"sess-%s"}\\n{"type":"message","message":{"role":"assistant","model":"m","usage":{"input":10,"output":2,"cost":{"total":0.5}},"stopReason":"toolUse","content":[{"type":"toolCall","name":"read"}]}}\\n' "$1-$RANDOM" > "$PI_CODING_AGENT_DIR/sessions/--wt--/$1-$RANDOM.jsonl"; }
+    ''')
+
+TRIAGE = POP + SESS + textwrap.dedent('''\
+    sess verdict
     BUG_JSON="$1"; EV="${3:-}"; PRIOR="${4:-}"
     ID=$(jq -r .id "$BUG_JSON")
     V=$(pop verdicts)
@@ -41,7 +49,8 @@ TRIAGE = POP + textwrap.dedent('''\
     git -C "$BAKEOFF_WT" reset -q --hard "$TRIAGE_BASE"
     ''')
 
-PI_HARNESS = POP + textwrap.dedent('''\
+PI_HARNESS = POP + SESS + textwrap.dedent('''\
+    sess coder
     WT="$1"; F=$(pop fixes)
     printf '%s' "$2" > "$FAKE_STATE/fix_desc"
     # pi's saved session: a new one per fresh run, appended to on a resume (what the chain resumes is logged)
@@ -120,13 +129,15 @@ PI_HARNESS = POP + textwrap.dedent('''\
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output":7}}}\\n'
     ''')
 
-ADVISOR = textwrap.dedent('''\
+ADVISOR = SESS + textwrap.dedent('''\
+    sess advisor
     echo "advisor tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
     printf '{"file": "src/a.js", "function": "value", "decoy": "src/b.js", "rationale": "it computes it"}' > "$2/advisor.json"
     ''')
 
 # the reviewer is pi itself, on PATH
-PI_BIN = POP + textwrap.dedent('''\
+PI_BIN = POP + SESS + textwrap.dedent('''\
+    sess reviewer
     T=all; prev=; RULES=none; for a in "$@"; do [ "$prev" = --tools ] && T="$a"; [ "$prev" = --append-system-prompt ] && RULES="$a"; prev="$a"; done
     NC=no; for a in "$@"; do [ "$a" = --no-context-files ] && NC=yes; [ "$a" = --no-tools ] && T=none; done
     echo "review $RULES no-context-files=$NC" >> "$FAKE_STATE/rules"
@@ -539,6 +550,29 @@ exec {real} "$@"
         self.assertIn("round 0: repro-first violated: no test in the diff", plan["params"]["body"])
         self.assertIn("advisor: src/a.js", plan["params"]["body"])
         self.assertEqual(f.calls(), ["triage", "fix", "advisor", "triage", "fix", "review"])
+
+    def test_every_episode_leaves_its_turns_in_the_calls_file(self):
+        """The calls file the worker returns holds each pi episode's turns with the episode's role, its order in
+        the run and the tools it called; without FLOTILLA_CALLS_FILE nothing is written."""
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        path = os.path.join(f.d, "calls.jsonl")
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "FLOTILLA_CALLS_FILE": path}):
+            plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        with open(path) as fh:
+            lines = [json.loads(x) for x in fh]
+        self.assertEqual([(c["role"], c["episode_seq"], c["tools"], c["step"], c["alias"], c["decision_key"]) for c in lines],
+                         [("verdict", 1, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
+                          ("coder", 2, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
+                          ("advisor", 3, ["read"], 1, "bugfix-reviewer", "case-20261115-abc"),
+                          ("verdict", 4, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
+                          ("coder", 5, ["read"], 1, "bugfix-flash", "case-20261115-abc"),
+                          ("reviewer", 6, ["read"], 1, "bugfix-reviewer", "case-20261115-abc")])
+        self.assertTrue(all(c["cost_source"] == "pi" and c["cost_usd"] == 0.5 and c["finish_reason"] == "tool_calls" for c in lines))
+        g = self.fixture(["actionable"], ["good"])
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1"}):
+            g.run()
+        self.assertFalse(os.path.exists(os.path.join(g.d, "calls.jsonl")))
 
     def test_a_review_that_did_not_run_is_said_on_the_plan(self):
         # it used to read as an approval: "(no review: ...)" has no VERDICT line

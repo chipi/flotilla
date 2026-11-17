@@ -49,15 +49,17 @@
       <h2 id="calls-h">Model calls</h2>
       {{if $r.Calls}}<div class="table-box">
         <table class="data data--small">
-          <thead><tr><th scope="col">When</th><th scope="col">Step</th><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Tokens in / out</th><th scope="col">Cost</th><th scope="col">Took</th><th scope="col">Stopped</th><th scope="col">Result</th></tr></thead>
+          <thead><tr><th scope="col">When</th><th scope="col">Role</th><th scope="col">Step</th><th scope="col">Alias</th><th scope="col">Model</th><th scope="col">Tokens in / out</th><th scope="col">Cost</th><th scope="col">Took</th><th scope="col">Tools</th><th scope="col">Stopped</th><th scope="col">Result</th></tr></thead>
           <tbody>{{range $r.Calls}}<tr>
             <td data-label="When" class="nowrap">{{short .At 19}}</td>
+            <td data-label="Role" class="exact">{{if .Role}}{{.Role}}{{else}}–{{end}}</td>
             <td data-label="Step">{{if .Step}}{{deref .Step}}{{else}}–{{end}}</td>
             <td data-label="Alias" class="exact">{{.Alias}}</td>
             <td data-label="Model" class="exact soft">{{.Model}}{{if .Deployment}} · {{short .Deployment 12}}{{end}}</td>
             <td data-label="Tokens in / out">{{if .TokensIn}}{{deref .TokensIn}}{{else}}–{{end}} / {{if .TokensOut}}{{deref .TokensOut}}{{else}}–{{end}}</td>
             <td data-label="Cost">{{if .CostUSD}}{{usd .CostUSD}}{{else}}unpriced{{end}}</td>
             <td data-label="Took">{{if .LatencyS}}{{secsp .LatencyS}}{{else}}–{{end}}</td>
+            <td data-label="Tools" class="exact soft">{{with toolNames .Tools}}{{.}}{{else}}–{{end}}</td>
             <td data-label="Stopped">{{if eq .FinishReason "length"}}<span class="chip chip--stop">cut at cap</span>{{else if .FinishReason}}<span class="exact soft">{{.FinishReason}}</span>{{else}}–{{end}}</td>
             <td data-label="Result">{{if .Error}}<span class="chip chip--stop">{{.Error}}</span>{{else}}<span class="chip chip--ok">ok</span>{{end}}</td>
           </tr>{{end}}</tbody>

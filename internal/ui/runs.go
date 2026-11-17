@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -142,11 +143,23 @@ type runDecision struct {
 	Off, Title, Fingerprint, Disposition, Chip, Certainty, Probes, Gates, Model, Reason string
 }
 
-// callLine is a model call as one line on its span: alias, its turn, the check it served, tokens, cost,
+// toolNames is the tool names a call recorded (a JSON array) as "bash, read"; "" when none or unreadable.
+func toolNames(raw string) string {
+	var names []string
+	if raw == "" || json.Unmarshal([]byte(raw), &names) != nil {
+		return ""
+	}
+	return strings.Join(names, ", ")
+}
+
+// callLine is a model call as one line on its span: alias, its role, its turn, the check it served, tokens, cost,
 // how the reply ended (only when it was not a plain stop), result.
 func callLine(c store.ModelCall) string {
 	var parts []string
 	parts = append(parts, c.Alias)
+	if c.Role != "" {
+		parts = append(parts, c.Role)
+	}
 	if c.Step != nil {
 		parts = append(parts, fmt.Sprintf("turn %d", *c.Step))
 	}
@@ -169,6 +182,9 @@ func callLine(c store.ModelCall) string {
 		parts = append(parts, "cut at the token cap")
 	default:
 		parts = append(parts, "ended: "+c.FinishReason)
+	}
+	if t := toolNames(c.Tools); t != "" {
+		parts = append(parts, "tools "+t)
 	}
 	if c.Error != "" {
 		parts = append(parts, c.Error)

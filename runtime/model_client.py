@@ -231,12 +231,17 @@ class Client:
             b["metadata"] = {"existing_trace_id": trace_id, "generation_name": generation_name}
         return b
 
-    def chat(self, alias, messages, timeout=90, step=None, decision_key=None, **kw):
+    def chat(self, alias, messages, timeout=90, step=None, decision_key=None, role=None, episode=None,
+             episode_seq=None, tool_names=None, **kw):
         """One call. Returns its record; raises a ModelError (with .record) or ConfigError. `step` (the turn
-        within a harness step, 1-based) and `decision_key` (what the call decides, e.g. a signal fingerprint)
-        are only recorded in the calls file; they are not part of the request."""
+        within a harness step, 1-based), `decision_key` (what the call decides, e.g. a signal fingerprint),
+        `role` (who is calling: triage, coder, ...), `episode` and `episode_seq` (the agent session the call
+        belongs to and its order within the run) and `tool_names` (the tool names the reply asked for: a list, or a
+        function of the call's record, as the reply is only known after the call) are only recorded in the
+        calls file; they are not part of the request."""
         a = self._alias(alias)
-        meta = {"step": step, "decision_key": decision_key}
+        meta = {"step": step, "decision_key": decision_key, "role": role, "episode": episode,
+                "episode_seq": episode_seq, "tools": tool_names}
         body = self.body(alias, messages, **kw)
         with self._span(a) as span:
             try:
@@ -264,13 +269,25 @@ class Client:
                 "latency_s": rec.get("latency_s"), "status": rec.get("status"),
                 "error": type(error).__name__ if error else None,
                 "finish_reason": rec.get("finish_reason") or "", "step": (meta or {}).get("step"),
-                "decision_key": (meta or {}).get("decision_key")}
+                "decision_key": (meta or {}).get("decision_key"), "role": (meta or {}).get("role") or "",
+                "episode": (meta or {}).get("episode") or "", "episode_seq": (meta or {}).get("episode_seq"),
+                "tools": self._tool_names((meta or {}).get("tools"), rec)}
         try:
             with open(path, "a") as f:
                 f.write(json.dumps(line) + "\n")
         except OSError as e:
             # never fails the call, but says so: a silent failure lost every call's record for a day
             print(f"model client: the calls file {path}: {e}", file=sys.stderr)
+
+    @staticmethod
+    def _tool_names(tools, rec):
+        """The tools a call asked for, as a list of names: `tools` itself or, when callable, its answer for
+        the record. Never raises: a call's line is a record, not a step of the run."""
+        try:
+            names = tools(rec) if callable(tools) else tools
+            return [str(n) for n in names or []]
+        except Exception:  # noqa: BLE001
+            return []
 
     def chat_policy(self, policy, messages, **kw):
         """A routine's model policy: {"model": alias, "fallback": [alias, ...], "fallback_on": ["transient", "empty"]}.
