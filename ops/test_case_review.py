@@ -180,6 +180,9 @@ class ProcessChange(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         os.makedirs(os.path.join(self.root, "host"))
         shutil.copy(os.path.join(HERE, "..", "host", "registry.json"), os.path.join(self.root, "host", "registry.json"))
+        self.path = os.path.join(self.root, "host", "registry.json")
+        # the registry on disk, the repo that holds it, its path there (the spec's PROCESS_CHANGE_*)
+        self.place = (self.path, "example/fleets", "host/registry.json")
 
     def case(self, frm, to):
         det, _ = cr.review(FakeAPI([real_case()]), NOW)
@@ -198,13 +201,13 @@ class ProcessChange(unittest.TestCase):
             f.write(text.replace(old, '"pre_shadow": [' + json.dumps(cond) + ', "not_running"]'))
 
     def test_plans_a_pr_whose_diff_applies(self):
-        """RFC-0010 §3: the change as a PR on chipi/flotilla, based on the image's commit; the diff applies
-        to the registry and changes only that entry."""
+        """RFC-0010 §3: the change as a PR on the repo that holds the registry, based on the image's commit
+        (no .commit beside it); the diff applies to the registry and changes only that entry."""
         self.set_shadow("backup_age_above(20h)")
-        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.root, version="sha-abc1234")
+        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.place, version="sha-abc1234")
         self.assertEqual((out["outcome"], out["action"]), ("plan", "github.open_pr"), out)
         prm = out["params"]
-        self.assertEqual((prm["repo"], prm["base"]), ("chipi/flotilla", "abc1234"))
+        self.assertEqual((prm["repo"], prm["base"]), ("example/fleets", "abc1234"))
         self.assertIn("backup_age_above(20h) -> backup_age_above(25h)", prm["title"])
         self.assertIn("24.02h", prm["body"])
         self.assertIn('-      "pre_shadow": ["backup_age_above(20h)", "not_running"],', prm["diff"])
@@ -225,7 +228,7 @@ class ProcessChange(unittest.TestCase):
         self.set_shadow("backup_age_above(20h)")
         c = self.case("backup_age_above(20h)", "backup_age_above(25h)")
         for version in ("dev", ""):
-            out = pc.decide(c, self.root, version=version)
+            out = pc.decide(c, self.place, version=version)
             self.assertEqual((out["action"], out["params"]["file"], out["params"]["rule"]), ("repo.process_change", "host/registry.json", "below_cycle"))
             ch = out["params"]["change"]
             self.assertIn('- "backup_age_above(20h)"', ch)
@@ -233,19 +236,41 @@ class ProcessChange(unittest.TestCase):
             self.assertIn("24.02h", ch)
             self.assertLessEqual(len(ch), pc.CHANGE_MAX)
             self.assertIn("a dev build", out["detail"])
-        self.assertEqual(pc.registry_diff("host/registry.json", "backup.rerun", "pre", "backup_age_above(20h)",
-                                          "backup_age_above(25h)", self.root), "", "pre has 26h, not 20h: no diff")
+        self.assertEqual(pc.registry_diff(self.path, "host/registry.json", "backup.rerun", "pre", "backup_age_above(20h)",
+                                          "backup_age_above(25h)"), "", "pre has 26h, not 20h: no diff")
 
     def test_already_changed_resolves(self):
         """The registry today has 25 h: the proposal from the 20 h days is already made."""
-        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.root, version="sha-abc1234")
+        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), self.place, version="sha-abc1234")
         self.assertEqual(out["outcome"], "resolved_itself", out)
 
     def test_refuses_what_it_cannot_read(self):
-        self.assertEqual(pc.decide({"kind": "process_change", "data": {}}, self.root)["outcome"], "escalate")
+        self.assertEqual(pc.decide({"kind": "process_change", "data": {}}, self.place)["outcome"], "escalate")
         bad = self.case("backup_age_above(20h)", "backup_age_above(25h)")
         bad["data"]["proposal"]["file"] = "../../etc/passwd"
-        self.assertEqual(pc.decide(bad, self.root)["outcome"], "escalate")
+        self.assertEqual(pc.decide(bad, self.place)["outcome"], "escalate")
+
+    def test_an_installations_own_registry_goes_to_its_own_repo(self):
+        """An installation's registry in its fleets folder: the PR goes to the repo the spec names, on the
+        file's path there, based on the commit deploy_fleets.sh exported (.commit beside it), not the image's."""
+        self.set_shadow("backup_age_above(20h)")
+        with open(os.path.join(self.root, "host", ".commit"), "w") as f:
+            f.write("0123456789abcdef0123456789abcdef01234567\n")
+        out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"),
+                        (self.path, "example/our-fleets", "fleets/registry.json"), version="sha-abc1234")
+        prm = out["params"]
+        self.assertEqual((out["action"], prm["repo"], prm["base"]),
+                         ("github.open_pr", "example/our-fleets", "0123456789abcdef0123456789abcdef01234567"), out)
+        self.assertIn("--- a/fleets/registry.json", prm["diff"])
+        self.assertIn("+++ b/fleets/registry.json", prm["diff"])
+
+    def test_no_repo_named_is_by_hand(self):
+        """A spec that names no repo never gets a PR on a repo the code chose: the change is by hand."""
+        self.set_shadow("backup_age_above(20h)")
+        for place in ((self.path, "", ""), (self.path, "example/fleets", "")):
+            out = pc.decide(self.case("backup_age_above(20h)", "backup_age_above(25h)"), place, version="sha-abc1234")
+            self.assertEqual(out["action"], "repo.process_change", out)
+            self.assertIn("PROCESS_CHANGE_REPO", out["detail"])
 
 
 if __name__ == "__main__":

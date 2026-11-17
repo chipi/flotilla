@@ -10,7 +10,7 @@ worker: ops-read
 trigger:
   case: {kind: process_change}
 run:
-  command: python3 /opt/flotilla/ops/process_change.py
+  command: env PROCESS_CHANGE_REPO=example/fleets PROCESS_CHANGE_FILE=host/registry.json python3 /opt/flotilla/ops/process_change.py
   workdir: .
   timeout: 1m
 autonomy: propose

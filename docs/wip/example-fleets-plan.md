@@ -104,13 +104,18 @@ its own backup action moves it into a registry of its own, in this order, each w
 
 1. Deploy the private fleets commit whose job specs set `BACKUP_ACTION` and `BACKUP_METRIC` and which
    carries `registry.json` (today's code ignores both variables, so it deploys first).
-2. Host config: `registry_files: [/opt/flotilla/fleets/registry.json]` in `flotillad.yaml`, and
-   `ROUTINE_FLOTILLA_REGISTRY=/opt/flotilla/fleets/registry.json` in the ops workers' env file.
-3. Deploy the image whose `fleets.yml` mounts the fleets folder into the ops workers.
+   Its `process-change` spec names the repo and path of that registry (`PROCESS_CHANGE_REPO`,
+   `PROCESS_CHANGE_FILE`).
+2. Host config: `registry_files: [/opt/flotilla/fleets/registry.json]` in `flotillad.yaml`;
+   `ROUTINE_FLOTILLA_REGISTRY=/opt/flotilla/fleets/registry.json` in the ops workers' env file; and
+   the installation's fleets repo in `action_enums` for `github.open_pr`'s `repo`.
+3. Deploy the image whose `fleets.yml` mounts the fleets folder into the ops workers, then deploy the
+   fleets commit again with this `deploy_fleets.sh`, so its folder carries `.commit` (a process
+   change's PR is based on it; without it the change is by hand).
 
-**Blocker until step 5:** `review/process-change` still opens its PR on flotilla's repo and reads the
-registry from the image; with the installation's action in its own registry it must target the
-installation's repo and file. No image from this work reaches a host before step 5 lands.
+Step 5 (2026-11-17): `review/process-change` reads the registry in effect (`FLOTILLA_REGISTRY`), opens
+its PR on the repo its spec names, on the registry's path there, based on the deployed commit
+(`.commit` beside the registry, else the image's); with no repo named, the change is by hand.
 
 Done when `fleets/` holds the six and `platform`, none names the operator's installation (lint and a
 grep for the private names), e2e covers each, and the mini runs unchanged from the private repo.

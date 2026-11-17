@@ -61,6 +61,8 @@ if [ ! -d "$DIR" ]; then
   if ! git -C "$FR" archive "$SHA" fleets | tar -x -C "$tmp" || [ ! -d "$tmp/fleets" ]; then
     rm -rf "$tmp"; die "commit ${SHA:0:7} has no fleets/"
   fi
+  # the commit, for a process change's PR on the registry this folder carries (review/process-change)
+  echo "$SHA" > "$tmp/fleets/.commit" || die "cannot write .commit"
   chmod -R a+rX,go-w "$tmp/fleets" && mv "$tmp/fleets" "$DIR" && rmdir "$tmp" || die "export to $DIR failed"
   chmod -R a-w "$DIR"
 fi

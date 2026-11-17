@@ -1,16 +1,23 @@
-"""ops/process-change: the acting routine for process_change cases (ADR-0016). Started by flotillad with
-the case (FLOTILLA_CASE, its proposal in `data`), it re-checks the proposal against the repo files in its
-own image (the deployed commit) and decides:
+"""review/process-change: the acting routine for process_change cases (ADR-0016). Started by flotillad
+with the case (FLOTILLA_CASE, its proposal in `data`), it re-checks the proposal against the action
+registry in effect (FLOTILLA_REGISTRY: the image's, or the installation's own in its fleets folder) and
+decides:
   the change is already made, or the file moved on -> {"outcome": "resolved_itself", ...}
   a proposal it cannot read                        -> {"outcome": "escalate", ...}
   a change it can write as a diff -> {"outcome": "plan", "action": "github.open_pr", "params": {repo,
       base, title, body, diff}}: approved, the bugfix fleet's executing routine opens it as a draft PR
-      on chipi/flotilla (RFC-0010 §3)
-  otherwise (no value proposed, or no commit to base it on) -> {"outcome": "plan", "action":
+      on the repo that holds the registry (RFC-0010 §3)
+  otherwise (no value proposed, no repo named, or no commit to base it on) -> {"outcome": "plan", "action":
       "repo.process_change", "params": {file, rule, change}}: approved, a person applies it and records
       the commit
 The diff is what a person reads in Approvals; the plan's hash binds it. Policy caps a repo change at
 propose.
+
+Where the registry lives is the installation's, set by the spec on the run's command:
+  PROCESS_CHANGE_REPO   the repo that holds the registry (owner/name); unset, every change is by hand
+  PROCESS_CHANGE_FILE   the registry's path in that repo
+The PR's base is the commit the registry was deployed from: the `.commit` file beside it (a fleets
+folder deploy_fleets.sh exported), or else the image's own commit (FLOTILLA_VERSION).
 """
 import difflib
 import json
@@ -23,19 +30,25 @@ import common  # noqa: E402
 
 ACTION = "repo.process_change"
 PR_ACTION = "github.open_pr"
-PR_REPO = "chipi/flotilla"
-CODE_ROOT = os.environ.get("FLOTILLA_CODE_ROOT", "/opt/flotilla")
-FILES = ("host/registry.json",)  # what a process change may edit (the registry's enum for `file`)
+# The proposal's `file` names the action registry (the measure's source, and the `file` enum of
+# repo.process_change); the registry in effect is FLOTILLA_REGISTRY, wherever it lives.
+FILES = ("host/registry.json",)
 CHANGE_MAX = 4000
 
 
-def current(file, action, key, root=CODE_ROOT):
-    """The list under `key` of `action` in the repo file, as the image has it."""
-    with open(os.path.join(root, file)) as f:
+def where():
+    """The registry on disk, its repo and its path there (the last two "" when the spec names none)."""
+    return (common.REGISTRY, os.environ.get("PROCESS_CHANGE_REPO", "").strip(),
+            os.environ.get("PROCESS_CHANGE_FILE", "").strip())
+
+
+def current(action, key, registry):
+    """The list under `key` of `action` in the registry in effect."""
+    with open(registry) as f:
         for a in json.load(f)["actions"]:
             if a["name"] == action:
                 return list(a.get(key) or [])
-    raise common.ConfigError(f"{action} is not declared in {file}")
+    raise common.ConfigError(f"{action} is not declared in {registry}")
 
 
 def change_text(p, extra=""):
@@ -51,6 +64,18 @@ def change_text(p, extra=""):
     return text if len(text) <= CHANGE_MAX else text[:CHANGE_MAX - 1] + "…"
 
 
+def deployed_commit(registry, version=None):
+    """The commit the registry came from: `.commit` beside it, else the image's."""
+    try:
+        with open(os.path.join(os.path.dirname(registry), ".commit")) as f:
+            c = f.read().strip()
+        if re.fullmatch(r"[0-9a-f]{7,40}", c):
+            return c
+    except OSError:
+        pass
+    return image_commit(version)
+
+
 def image_commit(version=None):
     """The commit this image was built from: FLOTILLA_VERSION is sha-<7> (images.yml); "" for a dev
     build, which has no commit to base a PR on."""
@@ -59,11 +84,11 @@ def image_commit(version=None):
     return m.group(1) if m else ""
 
 
-def registry_diff(file, action, key, frm, to, root=CODE_ROOT):
-    """The unified diff that changes `frm` to `to` in `key` of `action`, on that one line of the file as
-    the image has it, or "" when the line cannot be found exactly once. The result is checked by parsing
-    it: the list must change in that one place and nowhere else."""
-    with open(os.path.join(root, file)) as f:
+def registry_diff(registry, file, action, key, frm, to):
+    """The unified diff, against `file` in the repo, that changes `frm` to `to` in `key` of `action`, on
+    that one line of the registry in effect, or "" when the line cannot be found exactly once. The result
+    is checked by parsing it: the list must change in that one place and nowhere else."""
+    with open(registry) as f:
         old = f.read()
     lines = old.splitlines(keepends=True)
     start = [i for i, ln in enumerate(lines) if re.search(r'"name":\s*' + re.escape(json.dumps(action)), ln)]
@@ -89,27 +114,30 @@ def registry_diff(file, action, key, frm, to, root=CODE_ROOT):
     return "".join(difflib.unified_diff(lines, new_lines, "a/" + file, "b/" + file))
 
 
-def decide(case, root=CODE_ROOT, version=None):
+def decide(case, place=None, version=None):
+    registry, repo, file = place or where()
     p = (case.get("data") or {}).get("proposal")
     if case.get("kind") != "process_change" or not isinstance(p, dict) or not p.get("rule"):
         return {"outcome": "escalate", "detail": "not a process_change case with a proposal"}
     if p.get("from") and p.get("to"):
         if p.get("file") not in FILES:
             return {"outcome": "escalate", "detail": f"{p.get('file')} is not a file a process change may edit"}
-        have = current(p["file"], p["action"], p["key"], root)
+        have = current(p["action"], p["key"], registry)
         if p["to"] in have and p["from"] not in have:
             return {"outcome": "resolved_itself", "detail": f"{p['key']} of {p['action']} already has {p['to']}"}
         if p["from"] not in have:
             return {"outcome": "resolved_itself", "detail": f"{p['key']} of {p['action']} no longer has {p['from']} (it has {have})"}
-        base = image_commit(version)
-        diff = registry_diff(p["file"], p["action"], p["key"], p["from"], p["to"], root)
+        base = deployed_commit(registry, version)
+        diff = registry_diff(registry, file, p["action"], p["key"], p["from"], p["to"]) if repo and file else ""
         if base and diff:
             title = f"{p['action']} {p['key']}: {p['from']} -> {p['to']} (process change, {p['rule']})"
             body = change_text(p, f"Proposed by flotilla's post-incident review on {case.get('id')} (ADR-0016).")
             return {"outcome": "plan", "action": PR_ACTION,
-                    "detail": f"{p['from']} -> {p['to']}: re-checked against {p['file']} at {base}, as a PR",
-                    "params": {"repo": PR_REPO, "base": base, "title": title[:200], "body": body, "diff": diff}}
-        why = "no commit to base a PR on (a dev build)" if not base else f"{p['key']} of {p['action']} is not one line it can change"
+                    "detail": f"{p['from']} -> {p['to']}: re-checked against {file} at {base}, as a PR",
+                    "params": {"repo": repo, "base": base, "title": title[:200], "body": body, "diff": diff}}
+        why = ("no repo named for process changes (PROCESS_CHANGE_REPO, PROCESS_CHANGE_FILE)" if not (repo and file)
+               else "no commit to base a PR on (a dev build)" if not base
+               else f"{p['key']} of {p['action']} is not one line it can change")
         return {"outcome": "plan", "action": ACTION, "detail": f"{p['from']} -> {p['to']}: re-checked against {p['file']}; by hand: {why}",
                 "params": {"file": p["file"], "rule": p["rule"], "change": change_text(p)}}
     return {"outcome": "plan", "action": ACTION, "detail": f"{p['rule']}: no value proposed",
