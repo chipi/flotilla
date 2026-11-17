@@ -1,23 +1,18 @@
 fleet: triage
 routine: cycle-shadow
 description: >-
-  Triage beside the live routine, for shadow comparison (ADR-0004, RFC-0002 §8 and §9): the worker
-  `triage-candidate` runs with its own state volume. Capped at shadow: it never acts, whatever an
-  autonomy control says. An installation without a candidate worker lists it in disabled_routines.
-  Today (fleet-eval-data ROADMAP M2b, 2026-11-16) it is the live code on Qwen3-30B-A3B on the DGX's
-  prod vLLM (gateway alias fleet-triage-local), within that vLLM owner's terms: at most 10 model
-  requests per 10-minute cycle, so GlitchTip only and 2 triages (a triage makes at most 5: four turns
-  and the final decision call); none 00:00-05:30 UTC (Close Listening's nightly); one at a time and a
-  120 s timeout (the gateway alias). --glitchtip runs dry unless given --no-dry-run, which it never is.
-  To compare another image instead, run the live cycle's command here again.
+  A candidate beside the live triage, compared in shadow: the same code on another model (the alias
+  triage-candidate), on its own worker and state, so its decisions can be set against the live
+  routine's before anyone switches. Capped at shadow: it never acts, whatever an autonomy control says.
+  Errors only and 2 triages a cycle, to keep the candidate's model load small. An installation without
+  a candidate worker lists it in disabled_routines. To compare another image instead, run the live
+  cycle's command here.
 enabled: true
 worker: triage-candidate
 trigger:
   every: 10m
 run:
-  command: >-
-    if [ "$(date -u +%H%M)" -lt 0530 ]; then echo "not run: 00:00-05:30 UTC belongs to the DGX nightly";
-    exit 0; fi; exec env SF_TRIAGE_MODEL=fleet-triage-local python3 orchestrator.py --glitchtip --limit 2
+  command: env SF_TRIAGE_MODEL=triage-candidate python3 orchestrator.py --glitchtip --limit 2
   workdir: signal-fleet/mvp
   timeout: 20m
 autonomy: shadow

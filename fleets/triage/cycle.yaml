@@ -1,9 +1,10 @@
 fleet: triage
 routine: cycle
 description: >-
-  One triage pass over Grafana alerts and GlitchTip errors (signal-fleet/mvp/orchestrator.py),
-  unchanged from fleetd's cycle. Phase 2 wraps today's command; phase 3 moves it onto the routine
-  runtime.
+  On-call triage: one pass over the firing alerts (Grafana) and the unresolved errors (GlitchTip).
+  Code sorts out what was decided before; a model decides each new one (file, escalate, dismiss or
+  cleanup) with read-only probes; gates in code check the decision before anything leaves. Filing a
+  GitHub issue needs propose; resolving an error needs auto.
 enabled: true
 worker: triage
 trigger:
@@ -57,8 +58,8 @@ explain:
     With no run ending ok for 35 minutes the routine is stale: its block turns red and the brief says
     so. That is three missed cycles and a half.
   worker: >-
-    Runs on the worker triage: a container on the mini with the triage fleet's secrets and its egress
-    through the proxy's allowlist. No other routine uses its access.
+    Runs on the worker triage: a container with the triage fleet's secrets and its egress through the
+    proxy's allowlist. No other routine uses its access.
   run: >-
     The worker runs this command in signal-fleet/mvp. --limit 10 caps the triages a cycle makes;
     --no-dry-run lets it act, and its autonomy decides what it may do.
@@ -73,7 +74,7 @@ explain:
   harness.protocol: >-
     A model reads the signal and its hint and answers in JSON: a decision (file, escalate, dismiss or
     cleanup) with its reason and certainty, or a request for one probe. Its model is SF_TRIAGE_MODEL
-    through the LiteLLM gateway.
+    through the model gateway.
   harness.limits: >-
     At most 4 turns and one tool call a turn. A turn that asks for a probe gets the answer in the next
     turn; the 4th turn must decide.
@@ -129,8 +130,8 @@ steps:
     short: a GitHub issue, labelled bug
     count: disposition:file
     explain: >-
-      At autonomy propose and above, a GitHub issue in the project's repo, labelled bug; orrery's are also
-      routed to the bugfix fleet. In shadow nothing leaves flotilla.
+      At autonomy propose and above, a GitHub issue in the project's repo, labelled bug; for the repos the
+      installation names as the bugfix fleet's, also routed to it. In shadow nothing leaves flotilla.
   - id: escalate
     lane: outcome
     who: you
@@ -163,8 +164,8 @@ steps:
     title: every decision
     short: the ledger, a trace, its calls
     explain: >-
-      Each decision is a ledger row (the fleet's Decisions tab counts them), a Langfuse trace, and since
-      2026-11-16 its model calls and spans on the run's page.
+      Each decision is a ledger row (the fleet's Decisions tab counts them), an LLM trace, and its model
+      calls and spans on the run's page.
 chain:
   - routine: bugfix/intake
     via: a GitHub issue labelled bug, routed to bugfix

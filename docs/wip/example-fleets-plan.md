@@ -34,6 +34,28 @@ marketing, sales and sales ops, outbound, and customer success. Researched and d
 (what teams run there, what each example shows about trust), then proposed to the operator before
 building. They carry the site's angle: agents as operationalized business processes.
 
+Researched 2026-11-17; one per area, each showing a different trust mechanism, all runnable on JSON
+stand-in data (a fake CRM, helpdesk and campaign store):
+
+| Fleet | What it does | Trust it shows |
+| --- | --- | --- |
+| `campaigns` (marketing) | checks a campaign marked ready before launch: links resolve, UTM tags match the taxonomy, no unfilled merge fields, approved copy, unsubscribe footer; proposes launch or block | gates in code decide; the model only explains |
+| `crm` (sales ops) | finds duplicates, unnormalized fields and gaps in the CRM; proposes field updates and merges | action allowlists and change caps; autonomy earned per action type (a casing fix can reach auto, a merge stays at propose) |
+| `outbound` | drafts a first touch for each new prospect; proposes the send | a person approves every send; each personal claim must cite a fact from the enrichment data; do-not-contact, consent and daily caps in code |
+| `renewals` (customer success) | scores renewal risk from usage, tickets and billing in code; flags the account and drafts a note for the account owner | a score replayed against past outcomes before it may act; no customer email while a ticket is open |
+
+Sources: the research report of 2026-11-17 (CRM hygiene and AI SDR guardrail write-ups, campaign QA
+checklists, customer-success health scores); its statistics are vendor claims, not checked.
+
+## The code carries the installation too
+
+A repo-wide run of `scripts/installation_facts.py` with the installation's plain names added to the
+denylist (2026-11-17) found 965 lines outside the docs: the host's name 492 (with the `deploy/mini/`
+folder), one site 166, the homelab 110, one repo 82, the model host 44, the remote host 27. Mostly
+comments and tests. After the examples: generic names in code, comments and tests; the installation's
+deploy scripts to its private repo; the private denylist grows to the plain names so the lint keeps
+it so.
+
 ## Rules for every example
 
 - Placeholders only: `example/app`, `example.com`, `backup-01`, documentation addresses; model

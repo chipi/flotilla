@@ -1,25 +1,23 @@
 fleet: bugfix
 routine: fix
 description: >-
-  The acting routine for code_bug cases (RFC-0010 §2, §9): fleetd's chain on the platform. A verdict
-  on the issue, then fixes on orrery's main with gates on what the fix touches only (its tests fail on
-  the base and pass with the fix; no new failure in the related tests; nothing in CI, hooks, config or
-  the lockfile), up to three kick-backs with the advisor, a review, and a github.open_pr plan with the
-  diff, or an escalation with the reason. The whole suite is the PR's CI. Its models are LiteLLM's
-  fleet-bugfix aliases; it holds no GitHub credential. Runs on the X3 (RFC-0011).
+  The acting routine for code_bug cases (RFC-0010 §2, §9). A verdict on the issue, then fixes on the
+  repo's main with gates on what the fix touches only (its tests fail on the base and pass with the
+  fix; no new failure in the related tests; nothing in CI, hooks, config or the lockfile), up to three
+  kick-backs with the advisor, a review, and a github.open_pr plan with the diff, or an escalation with
+  the reason. The whole suite is the PR's CI. It holds no GitHub credential, and its worker can run on
+  another machine (RFC-0011).
 enabled: true
 worker: bugfix-fix
 trigger:
-  # RFC-0013 §2 (operator, 2026-11-16): all of a case's runs together get $1 and 90 minutes; a case past
-  # either is escalated instead of run again. Money counts only what the runs report as spend.
+  # RFC-0013 §2: all of a case's runs together get $1 and 90 minutes; a case past either is escalated
+  # instead of run again. Money counts only what the runs report as spend.
   case: {kind: code_bug, limit: {usd: 1, minutes: 90}}
 models: [fix-flash, fix-reviewer]
 run:
   command: >-
     python3 /opt/flotilla/bugfix/fix.py --repo example/shop --worker-model fix-flash
-    --advisor-model fix-reviewer --reviewer-model fix-reviewer
-    --exclude-path static/images --exclude-path static/audio --exclude-path masters
-    --upstream fleet-bugfix-flash=deepseek/deepseek-v4-flash --upstream fleet-bugfix-reviewer=z-ai/glm-5.2 --spend-file .bugfix-fix-spend
+    --advisor-model fix-reviewer --reviewer-model fix-reviewer --spend-file .bugfix-fix-spend
   workdir: .
   spend_file: .bugfix-fix-spend
   timeout: 3h
@@ -30,24 +28,24 @@ budget:
 # What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/fix.py.
 explain:
   trigger: >-
-    Runs when flotillad hands over a code_bug case: bugfix/intake found an open bug issue in orrery and
-    flotillad opened a case for it.
+    Runs when flotillad hands over a code_bug case: bugfix/intake found an open bug issue in the repo
+    and flotillad opened a case for it.
     All of a case's runs share $1 and 90 minutes; a case past either is escalated to you instead of
     run again (money counts only the spend the runs report).
   worker: >-
-    Runs on the worker bugfix-fix on the X3 (RFC-0011), its own: it holds only this routine's model key, so
-    a steered coding agent cannot read another routine's. It has orrery's repo cache, node, the pi coding agent and
-    the models' gateway; no GitHub credential.
+    Runs on the worker bugfix-fix, its own, which can be on another machine (RFC-0011): it holds only
+    this routine's model key, so a steered coding agent cannot read another routine's. It has the repo's
+    cache, node, the pi coding agent and the models' gateway; no GitHub credential.
   run: >-
-    fix.py checks orrery out at main, asks for a verdict, then runs fix rounds with gates on what each
+    fix.py checks the repo out at main, asks for a verdict, then runs fix rounds with gates on what each
     fix touches: up to two kick-backs (one from the review), each resuming the fix's session; a review,
     then a plan or an escalation.
     Step one first, no model (RFC-0013 §1), advisory: it notes on the chain what main has of the names the
     error calls missing, and never closes a case.
   models: >-
     The only aliases its runs can call: fix-flash for the coding agent, fix-reviewer for
-    the advisor and the reviewer. Both use this routine's own LiteLLM key (fleet-bugfix-fix, its own
-    daily budget), so a run's spend is this routine's alone.
+    the advisor and the reviewer. Both use this routine's own gateway key (its own daily budget), so a
+    run's spend is this routine's alone.
   autonomy: >-
     shadow records the plan inside flotilla; at propose the plan waits for your approval before a PR is
     opened. It can never act on its own.
@@ -70,7 +68,7 @@ steps:
     short: writes the fix and a failing test
     explain: >-
       pi on fix-flash writes the fix and a test that fails on the base and passes with the fix, in a
-      worktree of orrery's main.
+      worktree of the repo's main.
   - id: advisor
     lane: agent
     who: agent

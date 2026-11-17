@@ -1,7 +1,7 @@
 fleet: bugfix
 routine: intake
 description: >-
-  The bugfix fleet's monitor (RFC-0010 §1): orrery's open issues labelled bug, or routed to bugfix by
+  The bugfix fleet's monitor (RFC-0010 §1): the repo's open issues labelled bug, or routed to bugfix by
   triage, each a code_bug detection with the issue in its data; flotillad opens a case per issue and
   absorbs a known one. Code only, read only: GitHub's public issues API.
 enabled: true
@@ -27,7 +27,7 @@ explain:
   worker: >-
     Runs on the worker bugfix. Read only: GitHub's public issues API, no credential needed.
   run: >-
-    intake.py lists orrery's open issues labelled bug or routed to bugfix by triage and reports each as
+    intake.py lists the repo's open issues labelled bug or routed to bugfix by triage and reports each as
     a detection, with the issue in its data.
   detects: >-
     Each issue is a code_bug detection. flotillad opens one case per issue; a detection of a known issue

@@ -7,8 +7,8 @@ documentation addresses.
 
 | Fleet | Routines | What it shows |
 | --- | --- | --- |
-| `triage` | `cycle`, `cycle-shadow` | alerts and errors triaged by a model, filed or dismissed by code gates; a candidate image compared in shadow |
-| `bugfix` | `intake`, `fix`, `open-pr`, `pr-check`, and a per-repo profile (`intake-podcast`, `fix-podcast`) | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan |
+| `triage` | `cycle`, `cycle-shadow` | alerts and errors triaged by a model, filed or dismissed by code gates; a candidate model compared in shadow before any switch |
+| `bugfix` | `intake`, `fix`, `open-pr`, `pr-check` | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan and always merges |
 | `ops` | `backup-monitor`, `rerun-backup`, `verify-backup`, `case-review`, `process-change` | a monitor opens a case, an acting routine plans a fix on a host, a check verifies it, a review proposes what to learn |
 | `sites` | `site-check` | what a site serves live (robots, sitemaps, head tags, broken links, certificate expiry), read only; findings are cases |
 | `platform` | `heartbeat`, `model-contract` | the platform's own canary and the model aliases' contract checks |

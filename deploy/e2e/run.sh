@@ -106,13 +106,12 @@ workers:
   # the fix routines' own workers on the mini are remote (the X3); the e2e runs neither routine, so they
   # name the local bugfix worker
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
-  bugfix-fix-podcast: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
   # the site watch's worker is named by its spec; the e2e does not run it yet (it reads the live web)
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
 # triage's cycle, the bugfix fleet's intakes and fixes and the site watch reach GitHub, real models or the
 # live web: not in the e2e
-disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix, bugfix/intake-podcast, bugfix/fix-podcast,
+disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix,
   sites/site-check]
 models:
   endpoints:
@@ -126,8 +125,6 @@ models:
     # one key per fix routine on the mini (2026-11-16); here every alias reads the same stand-in key
     fix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
-    fix-podcast-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
-    fix-podcast-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
