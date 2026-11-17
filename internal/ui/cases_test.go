@@ -22,7 +22,7 @@ func TestCasesPages(t *testing.T) {
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "run r: backup_age_above(20h): holds")
-	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun_observability",
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun",
 		Params: map[string]string{"host": evil}, PlanHash: "abc123", Outcome: "shadow", Autonomy: "shadow", Would: "propose",
 		Reasons: []string{"registry: ok", evil}}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestCasesPages(t *testing.T) {
 		t.Fatal("a target pivot does not keep only that target's cases")
 	}
 	_, page := f.do("GET", "/cases/"+id, ck, nil, nil)
-	for _, want := range []string{"backup.rerun_observability", "would have been", "propose", "shadow_plan_recorded",
+	for _, want := range []string{"backup.rerun", "would have been", "propose", "shadow_plan_recorded",
 		"backup_age_above(20h): holds", "registry: ok", "Planned", "(act)", "abc123"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the case page has no %q", want)

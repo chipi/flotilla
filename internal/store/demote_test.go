@@ -7,7 +7,7 @@ import (
 	"github.com/chipi/flotilla/internal/cases"
 )
 
-const act = "backup.rerun_observability"
+const act = "backup.rerun"
 
 func actionAt(t *testing.T, s *Store, level string) {
 	t.Helper()

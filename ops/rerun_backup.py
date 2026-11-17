@@ -3,7 +3,7 @@ by flotillad with the case (FLOTILLA_CASE), it re-checks with fresh numbers and 
 
   the backup is fine again        -> {"outcome": "resolved_itself", ...}
   the case is not one it can act on -> {"outcome": "escalate", ...}
-  otherwise                       -> {"outcome": "plan", "action": "backup.rerun_observability", ...}
+  otherwise                       -> {"outcome": "plan", "action": "backup.rerun", ...}
 
 It plans only; policy decides and the host agent runs (ADR-0005 decision 4). The preconditions are the
 registry's for the run's stage: backup_age_above is evaluated here; not_running is the host's to check
@@ -49,7 +49,7 @@ def decide(case, a, stage, age):
 def main():
     case = json.loads(common.env("FLOTILLA_CASE"))
     stage = os.environ.get("FLEETD_STAGE", "shadow")
-    a = common.action(common.RERUN)
+    a = common.action(common.rerun_action())
     out = decide(case, a, stage, common.backup_age_hours())
     common.report(out)
     print(f"RERUN BACKUP case={case.get('id')} stage={stage} outcome={out['outcome']} {out.get('detail', '')}")

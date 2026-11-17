@@ -1,0 +1,6 @@
+fleet: review
+description: >-
+  Post-incident review: after cases close, the system looks at what happened and proposes what to
+  learn, as a post-mortem would. A threshold set below its source's normal cycle, a check that keeps
+  clearing itself, a fix that does not hold, a wrong diagnosis or a refused plan each become a
+  proposal with its evidence. It never changes itself: a person approves every change.

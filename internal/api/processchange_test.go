@@ -17,7 +17,7 @@ const repoAction = "repo.process_change"
 func repoCase(t *testing.T, s *Server, key, runID string) string {
 	t.Helper()
 	ctx := context.Background()
-	target := "repo:host/registry.json/backup.rerun_observability/pre_shadow" + key
+	target := "repo:host/registry.json/backup.rerun/pre_shadow" + key
 	k := store.Key{Kind: "target", Value: "process_change/" + target}
 	id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: "process_change", Target: target, Keys: []store.Key{k}, Canonical: k}, "ops/case-review", "")
 	if err != nil {

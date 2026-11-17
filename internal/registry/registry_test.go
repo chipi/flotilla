@@ -20,14 +20,14 @@ func TestTheHostAgentsDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, ok := r.Action("backup.rerun_observability")
+	a, ok := r.Action("backup.rerun")
 	if !ok {
 		t.Fatal("v1's action is not declared")
 	}
 	if !a.For("failed_backup") || a.For("memory_growth") || a.Risk != "low" || a.Reversible != "regenerable" ||
 		time.Duration(a.Check.Within) != time.Hour || a.Limits.PerTargetPerDay != 2 || a.Params["host"].Kind != "target_host" ||
 		strings.Join(a.Pre, ",") != "backup_age_above(26h),not_running" || strings.Join(a.PreShadow, ",") != "backup_age_above(25h),not_running" {
-		t.Fatalf("backup.rerun_observability: %+v", a)
+		t.Fatalf("backup.rerun: %+v", a)
 	}
 }
 

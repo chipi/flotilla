@@ -19,7 +19,7 @@ func TestOpenPRInTheUI(t *testing.T) {
 		Trigger: spec.Trigger{Execute: &spec.ExecuteTrigger{Action: "github.open_pr"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	f := setupWith(t, []*spec.Routine{ex})
 	ctx := context.Background()
-	target := "repo:host/registry.json/backup.rerun_observability/pre_shadow"
+	target := "repo:host/registry.json/backup.rerun/pre_shadow"
 	k := store.Key{Kind: "target", Value: "process_change/" + target}
 	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "process_change", Target: target, Keys: []store.Key{k}, Canonical: k}, "ops/case-review", "")
 	if err != nil {
@@ -59,7 +59,7 @@ func TestOpenPRInTheUI(t *testing.T) {
 func TestOpenPRByHandWithoutItsRoutine(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	target := "repo:host/registry.json/backup.rerun_observability/pre_shadow"
+	target := "repo:host/registry.json/backup.rerun/pre_shadow"
 	k := store.Key{Kind: "target", Value: "process_change/" + target}
 	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "process_change", Target: target, Keys: []store.Key{k}, Canonical: k}, "ops/case-review", "")
 	if err != nil {

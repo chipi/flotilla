@@ -149,7 +149,7 @@ func Load(paths ...string) (*Registry, error) {
 func validAction(a Action) error {
 	var errs []error
 	if !actionRe.MatchString(a.Name) {
-		errs = append(errs, errors.New("name must be dotted lowercase words (backup.rerun_observability)"))
+		errs = append(errs, errors.New("name must be dotted lowercase words (backup.rerun)"))
 	}
 	if len(a.ForKinds) == 0 {
 		errs = append(errs, errors.New("for_kinds is required: the case kinds it may act on"))

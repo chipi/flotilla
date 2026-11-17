@@ -127,7 +127,7 @@ func TestExecuteAtMostOnceAndOnlyRepoActions(t *testing.T) {
 	}
 
 	h := setup(t)
-	h.withExecutor("backup.rerun_observability")
+	h.withExecutor("backup.rerun")
 	x, _ := h.executing(t, "#h")
 	h.result(`{"outcome": "executed"}`)
 	h.pass(t)

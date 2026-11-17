@@ -8,13 +8,13 @@ import (
 )
 
 func rerun() registry.Action {
-	return registry.Action{Name: "backup.rerun_observability", ForKinds: []string{"failed_backup"},
+	return registry.Action{Name: "backup.rerun", ForKinds: []string{"failed_backup"},
 		Params: map[string]registry.Param{"host": {Kind: "target_host"}}, Risk: "low", Reversible: "regenerable",
 		Pre: []string{"not_running"}, Limits: registry.Limits{PerTargetPerDay: 2}}
 }
 
 func plan() Plan {
-	return Plan{CaseID: "case-1", RunID: "run-1", Action: "backup.rerun_observability", Params: map[string]string{"host": "mini"}}
+	return Plan{CaseID: "case-1", RunID: "run-1", Action: "backup.rerun", Params: map[string]string{"host": "mini"}}
 }
 
 // all clear, everything at auto: the plan runs.

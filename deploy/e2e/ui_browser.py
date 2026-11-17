@@ -76,7 +76,7 @@ with sync_playwright() as pw:
     if case_path:
         page.goto(BASE + case_path)
         body = page.content()
-        missing = [w for w in ("backup.rerun_observability", "would have been", "shadow_plan_recorded") if w not in body]
+        missing = [w for w in ("backup.rerun", "would have been", "shadow_plan_recorded") if w not in body]
         check(not missing, f"the case page shows the plan, what it would have been, and the close (missing: {missing})")
     faces = page.evaluate("[...document.fonts].filter(f => f.status === 'loaded').map(f => f.family.replace(/\"/g, ''))")
     check("Inter" in faces and "JetBrains Mono" in faces, f"the self-hosted fonts load ({sorted(set(faces))})")

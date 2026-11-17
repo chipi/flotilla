@@ -14,6 +14,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 os.environ["FLOTILLA_REGISTRY"] = os.path.join(HERE, "..", "host", "registry.json")
+# the example fleet's own names, as its specs set them on the run's command
+ACTION, METRIC = "backup.rerun", "backup_last_success_timestamp"
+os.environ.update(BACKUP_ACTION=ACTION, BACKUP_METRIC=METRIC)
 import common  # noqa: E402
 import backup_monitor  # noqa: E402
 import rerun_backup  # noqa: E402
@@ -29,23 +32,23 @@ SINCE_S = 1794652260.123456789
 class TestRegistryAndCode(unittest.TestCase):
     def test_every_precondition_name_is_implemented(self):
         """The registry's declaration and the routine's code agree (RFC-0006 §10 step 4)."""
-        a = common.action(common.RERUN)
+        a = common.action(ACTION)
         for c in a["pre"] + a.get("pre_shadow", []):
             name, _ = common.parse(c)
             self.assertIn(name, rerun_backup.CONDITIONS, f"{c} is declared but not implemented")
 
     def test_thresholds_come_from_the_registry(self):
-        a = common.action(common.RERUN)
+        a = common.action(ACTION)
         self.assertEqual(backup_monitor.threshold_hours(a, "shadow"), 25)
         self.assertEqual(backup_monitor.threshold_hours(a, "propose"), 26)
         self.assertEqual(backup_monitor.threshold_hours(a, "live"), 26)
 
     def test_the_check_is_the_one_verify_backup_does(self):
-        self.assertEqual(common.action(common.RERUN)["check"]["verify"], verify_backup.VERIFY)
+        self.assertEqual(common.action(ACTION)["check"]["verify"], verify_backup.VERIFY)
 
 
 class TestVerify(unittest.TestCase):
-    CHECK = {"verify": "backup_newer_than_execution", "action": "backup.rerun_observability", "since": SINCE}
+    CHECK = {"verify": "backup_newer_than_execution", "action": "backup.rerun", "since": SINCE}
 
     def test_since_as_flotillad_writes_it(self):
         self.assertAlmostEqual(verify_backup.parse_time(SINCE), SINCE_S, places=3)
@@ -97,7 +100,7 @@ class TestMeasure(unittest.TestCase):
         self.assertIsNone(common.cycle_hours([0, day]), "two successes are not a cycle")
 
     def test_detection_carries_the_measure(self):
-        a = common.action(common.RERUN)
+        a = common.action(ACTION)
         m = backup_monitor.measure(25.4, 25, 24.02, "shadow", a)["measure"]
         self.assertEqual((m["value"], m["threshold"], m["cycle_hours"], m["source"]["key"]), (25.4, 25, 24.02, "pre_shadow"))
         self.assertEqual(backup_monitor.measure(27.0, 26, None, "propose", a)["measure"]["source"]["key"], "pre")
@@ -107,11 +110,11 @@ class TestMeasure(unittest.TestCase):
 
 class TestDecide(unittest.TestCase):
     def setUp(self):
-        self.a = common.action(common.RERUN)
+        self.a = common.action(ACTION)
 
     def test_plan_in_shadow_above_25h(self):
         out = rerun_backup.decide(CASE, self.a, "shadow", 25.4)
-        self.assertEqual((out["outcome"], out["action"], out["params"]), ("plan", common.RERUN, {"host": "mini"}))
+        self.assertEqual((out["outcome"], out["action"], out["params"]), ("plan", ACTION, {"host": "mini"}))
         self.assertIn("backup_age_above(25h): holds", out["detail"])
         self.assertIn("not_running: the host's to check", out["detail"])
 
@@ -135,9 +138,10 @@ class TestDecide(unittest.TestCase):
 
 class VM(BaseHTTPRequestHandler):
     value = "91800"  # 25.5h in seconds; None answers an empty result
+    queries = []
 
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        VM.queries.append(self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode())
         result = [] if VM.value is None else [{"metric": {}, "value": [0, VM.value]}]
         body = json.dumps({"status": "success", "data": {"resultType": "vector", "result": result}}).encode()
         self.send_response(200)
@@ -147,6 +151,23 @@ class VM(BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+
+class TestNames(unittest.TestCase):
+    def test_the_metric_and_the_action_are_the_installations(self):
+        old = os.environ.pop("BACKUP_METRIC")
+        try:
+            with self.assertRaises(common.ConfigError):
+                common._metric()
+        finally:
+            os.environ["BACKUP_METRIC"] = old
+        self.assertEqual(common.rerun_action(), ACTION)
+        os.environ["BACKUP_METRIC"] = 'x{a="b"} or vector(1)'
+        try:
+            with self.assertRaises(common.ConfigError):
+                common._metric()
+        finally:
+            os.environ["BACKUP_METRIC"] = METRIC
 
 
 class TestRuns(unittest.TestCase):
@@ -163,7 +184,8 @@ class TestRuns(unittest.TestCase):
 
     def run_script(self, name, extra=None):
         plan = os.path.join(tempfile.mkdtemp(), "plan.json")
-        env = {"PATH": os.environ["PATH"], "VM_URL": f"http://127.0.0.1:{self.srv.server_port}", "BACKUP_INSTANCE": "homelab",
+        env = {"PATH": os.environ["PATH"], "VM_URL": f"http://127.0.0.1:{self.srv.server_port}", "BACKUP_INSTANCE": "backup-01",
+               "BACKUP_ACTION": ACTION, "BACKUP_METRIC": METRIC,
                "BACKUP_TARGET": "host:mini", "FLOTILLA_PLAN_FILE": plan, "FLEETD_STAGE": "shadow",
                "FLOTILLA_REGISTRY": common.REGISTRY, **(extra or {})}
         p = subprocess.run([sys.executable, os.path.join(HERE, name)], env=env, capture_output=True, text=True, timeout=30)
@@ -175,8 +197,10 @@ class TestRuns(unittest.TestCase):
 
     def test_monitor_reports(self):
         VM.value = "91800"
+        VM.queries.clear()
         p, out = self.run_script("backup_monitor.py")
         self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(VM.queries and all(METRIC in q for q in VM.queries), VM.queries)
         self.assertEqual(out["outcome"], "detections")
         self.assertEqual(len(out["detections"]), 1)
         self.assertIn("BACKUP MONITOR age=25.5h threshold=25h", p.stdout)

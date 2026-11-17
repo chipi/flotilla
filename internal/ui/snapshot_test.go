@@ -115,13 +115,13 @@ func TestSnapshots(t *testing.T) {
 	plan := func(id, target, run, outcome, autonomy, would, to, resolution string, lock bool) {
 		_ = st.StartRun(ctx, store.Run{ID: run, Routine: "ops/rerun-backup", SpecHash: "9a1c", Trigger: "case", Actor: "flotillad",
 			Autonomy: "propose", StartedAt: at(50 * time.Minute), Status: "running"})
-		_ = st.FinishRun(ctx, run, store.StatusOK, nil, 0, 31, "rechecked: the backup is 27h old and not running\nplan: backup.rerun_observability")
+		_ = st.FinishRun(ctx, run, store.StatusOK, nil, 0, 31, "rechecked: the backup is 27h old and not running\nplan: backup.rerun")
 		_ = st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup",
 			"run "+run+": backup_age_above(26h): holds (age 27.1h); not_running: holds")
-		if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: run, Action: "backup.rerun_observability",
+		if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: run, Action: "backup.rerun",
 			Params: map[string]string{"host": strings.TrimPrefix(target, "host:")}, PlanHash: "4f1c9a20b7d3e8c15d6f20a4b9e7c3d19e07",
 			Outcome: outcome, Autonomy: autonomy, Would: would,
-			Reasons: []string{"registry: backup.rerun_observability for failed_backup on " + target,
+			Reasons: []string{"registry: backup.rerun for failed_backup on " + target,
 				"autonomy: routine propose, action propose, host ceiling propose", "limits: 0 of 3 on this host this hour"}},
 			to, resolution, target, lock); err != nil {
 			t.Fatal(err)
@@ -133,7 +133,7 @@ func TestSnapshots(t *testing.T) {
 	_ = st.MoveCase(ctx, escID, cases.Escalated, cases.ByTimer, "", "flotillad", "handed over for longer than 24h0m0s: no routine planned it")
 	okID := open("failed_backup", "host:vps", "run ops-backup-monitor-0003: the newest offsite backup is 26.4 hours old (limit 26h)")
 	plan(okID, "host:vps", "ops-rerun-backup-0002", "propose", "propose", "", cases.AwaitingApproval, "", true)
-	_ = st.MoveCase(ctx, okID, cases.Executing, cases.ByOperator, "", "user:ada", "approved backup.rerun_observability on host:vps (plan 4f1c9a20b7d3)")
+	_ = st.MoveCase(ctx, okID, cases.Executing, cases.ByOperator, "", "user:ada", "approved backup.rerun on host:vps (plan 4f1c9a20b7d3)")
 	_ = st.MoveCase(ctx, okID, cases.Checking, cases.ByAct, "", "flotillad", "the host ran it: exit 0")
 	_ = st.MoveCase(ctx, okID, cases.Closed, cases.ByCheck, cases.Verified, "ops/verify-backup", "run ops-verify-backup-0001: a new backup, 3 minutes old")
 	shadowID := open("failed_backup", "host:nas", "run ops-backup-monitor-0004: the newest offsite backup is 26.1 hours old (limit 26h)")
@@ -156,11 +156,11 @@ func TestSnapshots(t *testing.T) {
 		}
 		_ = st.RecordHostContact(ctx, c)
 	}
-	_ = st.StartHostExecution(ctx, store.HostExecution{ID: "exe-8pz4", CaseID: okID, PlanID: 2, Host: "vps", Action: "backup.rerun_observability", Approved: "user:ada", Envelope: []byte("{}")})
+	_ = st.StartHostExecution(ctx, store.HostExecution{ID: "exe-8pz4", CaseID: okID, PlanID: 2, Host: "vps", Action: "backup.rerun", Approved: "user:ada", Envelope: []byte("{}")})
 	_ = st.EndHostExecution(ctx, "exe-8pz4", "done", 0, "ab", "exit 0 in 2.1 s", "9b1e5d2a")
 
 	// An autonomy change, for Autonomy's Recent changes.
-	_ = st.SetControlBecause(ctx, "action:backup.rerun_observability", "autonomy", "propose", "user:ada", "ui", "5 shadow plans I agreed with")
+	_ = st.SetControlBecause(ctx, "action:backup.rerun", "autonomy", "propose", "user:ada", "ui", "5 shadow plans I agreed with")
 	_ = st.SetControl(ctx, "ops/backup-monitor", "paused", "0", "user:ada", "api")
 
 	op := f.addOperator()

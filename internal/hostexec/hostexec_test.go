@@ -27,7 +27,7 @@ func config(t *testing.T, ceiling string) *hostcfg.Config {
 	c, err := hostcfg.Parse([]byte(`{"host": "mini", "user": "_flotilla", "ceiling": "` + ceiling + `",
 	  "signing_keys": {"k1": "` + pub + `"},
 	  "actions": {
-	    "backup.rerun_observability": {
+	    "backup.rerun": {
 	      "argv": ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.homelab.db-backup"],
 	      "params": {"host": {"kind": "this_host"}}, "per_hour": 2, "timeout": "1s",
 	      "pre": [{"kind": "launchd_not_running", "args": {"label": "system/com.homelab.db-backup"}}]}}}`))
@@ -61,7 +61,7 @@ func (f fakeCheck) Check(ctx context.Context, p hostcfg.Pre) (bool, string, erro
 var now = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
 func exe(id string) envelope.Execution {
-	return envelope.Execution{ID: id, CaseID: "case-1", Host: "mini", Action: "backup.rerun_observability",
+	return envelope.Execution{ID: id, CaseID: "case-1", Host: "mini", Action: "backup.rerun",
 		Params: map[string]string{"host": "mini"}, PlanHash: "h", Approved: "user:ada", SignedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
 }
 
@@ -274,7 +274,7 @@ func TestStartedIsUnknownAfterARestart(t *testing.T) {
 	x, run, path := setup(t, "propose")
 	raw := sign(t, exe("crash"))
 	_, payload, _ := envelope.Verify(raw, x.Cfg.Keys(), "mini", now.Add(time.Minute))
-	if _, err := x.db.Exec(`INSERT INTO executions (id, payload, action, argv, status, started_at) VALUES ('crash', ?, 'backup.rerun_observability', '[]', 'started', ?)`,
+	if _, err := x.db.Exec(`INSERT INTO executions (id, payload, action, argv, status, started_at) VALUES ('crash', ?, 'backup.rerun', '[]', 'started', ?)`,
 		payload, now.Format(timeFormat)); err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the installation's own fleets (vision plan step 7, route B): one commit of the private fleets
 # repo, checked by the running tag's flotillad, then made live by pointing FLOTILLA_FLEETS_DIR at it and
-# recreating flotillad and the triage workers, which mount it over the image's fleets (compose/fleets.yml).
+# recreating flotillad and the workers that read it, which mount it over the image's fleets (compose/fleets.yml).
 #
 #   deploy_fleets.sh <commit>       deploy that commit of FLOTILLA_FLEETS_REPO (fetched first)
 #   deploy_fleets.sh --rollback     the commit deployed before the current one
@@ -105,6 +105,11 @@ ln -sfn "$DIR" "$LIVE" && [ "$(readlink "$LIVE")" = "$DIR" ] || die "cannot poin
 say "== $LIVE -> $DIR (was ${PREV:-the image fleets})"
 svcs=(flotillad worker-triage worker-marketing)
 docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-candidate && svcs+=(worker-triage-candidate)
+# the ops workers read the folder too (an action registry of the installation's own) on a tag whose
+# fleets.yml mounts it into them
+for w in worker-ops-read worker-ops-act-host; do
+  grep -q "^  $w:" "$REPO/deploy/compose/fleets.yml" && docker ps -a --format '{{.Names}}' | grep -qx "flotilla-$w" && svcs+=("$w")
+done
 FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed 's/^/   /'
 
 # As deploy.sh waits: flotillad's own health command and the triage worker answering it, not Docker's

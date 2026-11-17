@@ -1,4 +1,4 @@
-fleet: ops
+fleet: review
 routine: case-review
 description: >-
   The post-incident review (ADR-0016): reads the cases closed in the last 7 days and proposes what to

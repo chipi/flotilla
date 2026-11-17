@@ -9,7 +9,8 @@ documentation addresses.
 | --- | --- | --- |
 | `triage` | `cycle`, `cycle-shadow` | alerts and errors triaged by a model, filed or dismissed by code gates; a candidate model compared in shadow before any switch |
 | `bugfix` | `intake`, `fix`, `open-pr`, `pr-check` | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan and always merges |
-| `ops` | `backup-monitor`, `rerun-backup`, `verify-backup`, `case-review`, `process-change` | a monitor opens a case, an acting routine plans a fix on a host, a check verifies it, a review proposes what to learn |
+| `jobs` | `backup-monitor`, `rerun-backup`, `verify-backup` | a monitor opens a case, an acting routine plans a rerun on a host, the host agent runs only what its own config allows, a check verifies it; shadow, propose, then auto |
+| `review` | `case-review`, `process-change` | closed cases become proposed lessons and process changes with their evidence; a person approves every change |
 | `sites` | `site-check` | what a site serves live (robots, sitemaps, head tags, broken links, certificate expiry), read only; findings are cases |
 | `platform` | `heartbeat`, `model-contract` | the platform's own canary and the model aliases' contract checks |
 
@@ -24,9 +25,11 @@ installation's own fleets"). Its facts live there, never in flotilla:
 | --- | --- |
 | `triage/installation.json` | which repo each error project and alert instance files into, the ops repo, the repos the bugfix chain builds, the assistant backend, the edge instance, the probes' log and metric labels, the scrubber's own rules (`signal-fleet/mvp/installation.py`) |
 | the sites file a site-check spec names (`--sites`) | the sites, their pages and what to check on each (`seo/common.py`) |
-| the routine specs | the repos and models each routine uses (`bugfix/*.yaml`'s `--repo`, the model aliases) |
+| the routine specs | the repos and models each routine uses (`bugfix/*.yaml`'s `--repo`, the model aliases), and the names each job routine runs with (`BACKUP_ACTION`, `BACKUP_METRIC` on the `jobs` commands) |
+| an action registry of its own | the installation's own actions, named in `flotillad.yaml`'s `registry_files` and in the ops workers' `FLOTILLA_REGISTRY`; the image carries the examples' (`host/registry.json`) |
 
-Two more facts are host config, not files here: the repos `github.open_pr` may act on
-(`action_enums` in `flotillad.yaml`; the registry declares example repos) and the private replay gates
+More facts are host config, not files here: the repos `github.open_pr` may act on
+(`action_enums` in `flotillad.yaml`; the registry declares example repos), what each host's agent
+runs for an action (its own config on that host), and the private replay gates
 (`make replay` with `SF_REPLAYS`). `scripts/installation_facts.py`, run by `make lint`, keeps
 installation facts out of flotilla's code.

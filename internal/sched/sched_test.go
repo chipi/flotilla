@@ -390,9 +390,9 @@ func TestLoopLeavesCaseRoutinesAlone(t *testing.T) {
 func TestRunWithACase(t *testing.T) {
 	ctx := context.Background()
 	s, fr, _ := setup(t, 2)
-	fr.res.Plan = []byte(`{"outcome":"plan","action":"backup.rerun_observability"}`)
+	fr.res.Plan = []byte(`{"outcome":"plan","action":"backup.rerun"}`)
 	r, out, err := s.RunWith(ctx, "triage/cycle", "case", "flotillad", map[string]string{"FLOTILLA_CASE": `{"id":"case-1"}`})
-	if err != nil || out == nil || string(out.Plan) != `{"outcome":"plan","action":"backup.rerun_observability"}` {
+	if err != nil || out == nil || string(out.Plan) != `{"outcome":"plan","action":"backup.rerun"}` {
 		t.Fatalf("run %+v outcome %+v err %v", r, out, err)
 	}
 	req := fr.got[0]

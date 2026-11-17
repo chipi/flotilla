@@ -25,7 +25,7 @@ import process_change as pc  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CYCLE = 24.02
-SOURCE = {"file": "host/registry.json", "action": "backup.rerun_observability", "key": "pre_shadow",
+SOURCE = {"file": "host/registry.json", "action": "backup.rerun", "key": "pre_shadow",
           "condition": "backup_age_above"}
 NOW = datetime(2026, 11, 15, 9, 0, tzinfo=timezone.utc)
 
@@ -39,7 +39,7 @@ def built_case():
               {"kind": "case.handed_over", "actor": "ops/backup-monitor", "by": "detector", "from": "detected", "to": "handed_over"},
               {"kind": "case.planned", "actor": "ops/rerun-backup", "by": "act", "from": "handed_over", "to": "planned"},
               {"kind": "case.closed", "actor": "flotillad", "by": "policy", "from": "planned", "to": "closed",
-               "detail": "shadow_plan_recorded: plan 1 backup.rerun_observability: shadow at shadow, would propose"}]
+               "detail": "shadow_plan_recorded: plan 1 backup.rerun: shadow at shadow, would propose"}]
     age = 20.3
     while age <= 24.15:
         events.append({"kind": "signal.absorbed", "actor": "ops/backup-monitor", "detail": f"run r: backup {age:.1f}h old, above 20h"})
@@ -97,7 +97,7 @@ class BelowTheCycle(unittest.TestCase):
         self.assertEqual(len(det), 1, det)
         d = det[0]
         p = d["data"]["proposal"]
-        self.assertEqual((d["kind"], d["target"]), ("process_change", "repo:host/registry.json/backup.rerun_observability/pre_shadow"))
+        self.assertEqual((d["kind"], d["target"]), ("process_change", "repo:host/registry.json/backup.rerun/pre_shadow"))
         self.assertEqual((p["rule"], p["from"], p["to"]), ("below_cycle", "backup_age_above(20h)", "backup_age_above(25h)"))
         ev = " ".join(p["evidence"])
         for want in ("case-20261114-6983646f65", "opened at 20.1h", "the highest seen 24.1h", "24.02h"):
@@ -131,7 +131,7 @@ class BelowTheCycle(unittest.TestCase):
     def test_settled_proposals_are_not_made_again(self):
         """Once a process change on the target closed after the evidence (applied, or no longer needed),
         or a person dismissed one in the last 30 days, the same proposal waits."""
-        target = "repo:host/registry.json/backup.rerun_observability/pre_shadow"
+        target = "repo:host/registry.json/backup.rerun/pre_shadow"
         for res, closed in (("verified", "2026-11-15T08:00:00Z"), ("resolved_itself", "2026-11-15T08:00:00Z"),
                             ("operator_resolved", "2026-11-01T00:00:00Z")):
             pcase = synth("case-pc", kind="process_change", target=target, resolution=res, closed=closed)
@@ -233,7 +233,7 @@ class ProcessChange(unittest.TestCase):
             self.assertIn("24.02h", ch)
             self.assertLessEqual(len(ch), pc.CHANGE_MAX)
             self.assertIn("a dev build", out["detail"])
-        self.assertEqual(pc.registry_diff("host/registry.json", "backup.rerun_observability", "pre", "backup_age_above(20h)",
+        self.assertEqual(pc.registry_diff("host/registry.json", "backup.rerun", "pre", "backup_age_above(20h)",
                                           "backup_age_above(25h)", self.root), "", "pre has 26h, not 20h: no diff")
 
     def test_already_changed_resolves(self):

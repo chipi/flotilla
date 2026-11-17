@@ -1,4 +1,4 @@
-fleet: ops
+fleet: review
 routine: process-change
 description: >-
   The acting routine for process_change cases (ADR-0016): re-checks the proposal against the repo

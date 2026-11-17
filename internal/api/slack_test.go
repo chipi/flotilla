@@ -183,7 +183,7 @@ func TestRelayedApprovalOfAHighRiskPlan(t *testing.T) {
 	ctx := context.Background()
 	s := slackServer(t)
 	dir := t.TempDir()
-	reg := `{"component": "host:actions", "actions": [{"name": "backup.rerun_observability", "for_kinds": ["failed_backup"],
+	reg := `{"component": "host:actions", "actions": [{"name": "backup.rerun", "for_kinds": ["failed_backup"],
 	  "params": {"host": {"kind": "target_host"}}, "risk": "high", "reversible": "regenerable", "pre": ["not_running"], "pre_shadow": ["not_running"],
 	  "check": {"verify": "v", "within": "5m"}, "limits": {"per_target_per_day": 1}, "timeout": "1m"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "r.json"), []byte(reg), 0o644); err != nil {

@@ -52,7 +52,7 @@ func TestSudoers(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"_flotilla ALL=(root) NOPASSWD: /bin/launchctl kickstart system/com.homelab.db-backup  # backup.rerun_observability",
+		"_flotilla ALL=(root) NOPASSWD: /bin/launchctl kickstart system/com.homelab.db-backup  # backup.rerun",
 		"_flotilla ALL=(_dockerhost) NOPASSWD: /usr/local/bin/docker restart grafana  # container.restart",
 		"_flotilla ALL=(_dockerhost) NOPASSWD: /usr/local/bin/docker restart victoriametrics  # container.restart",
 		`_flotilla ALL=(root) NOPASSWD: /usr/bin/uptime ""  # host.uptime`,
@@ -88,9 +88,9 @@ func TestArgv(t *testing.T) {
 		params map[string]string
 	}{
 		"not allowed here":         {"rm.everything", map[string]string{"host": "mini"}},
-		"another host":             {"backup.rerun_observability", map[string]string{"host": "dgx"}},
+		"another host":             {"backup.rerun", map[string]string{"host": "dgx"}},
 		"a missing parameter":      {"container.restart", map[string]string{"host": "mini"}},
-		"an extra parameter":       {"backup.rerun_observability", map[string]string{"host": "mini", "force": "1"}},
+		"an extra parameter":       {"backup.rerun", map[string]string{"host": "mini", "force": "1"}},
 		"an enum value not listed": {"container.restart", map[string]string{"host": "mini", "name": "postgres"}},
 		"an enum value smuggled":   {"container.restart", map[string]string{"host": "mini", "name": "grafana victoriametrics"}},
 		"a pattern not matched":    {"logs.tail", map[string]string{"host": "mini", "file": "/etc/sudoers"}},

@@ -138,8 +138,8 @@ EOF
 # the ops workers' installation facts; the VictoriaMetrics stand-in answers the backup's age (25.5h)
 cat > "$WORK/config/worker-ops.env" <<EOF
 ROUTINE_VM_URL=http://victoriametrics:8080
-ROUTINE_BACKUP_INSTANCE=homelab
-ROUTINE_BACKUP_TARGET=host:mini
+ROUTINE_BACKUP_INSTANCE=backup-01
+ROUTINE_BACKUP_TARGET=host:backup-01
 EOF
 cat > "$WORK/config/smokescreen.yaml" <<EOF
 ip: 0.0.0.0
@@ -225,9 +225,9 @@ STORE="$(python3 "$ROOT/deploy/e2e/old_store.py" check "$WORK/storecopy/flotilla
 echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if "error" not in d and d["schema"] == d["latest"] and d["old_runs"] == 5000 and d["old_auto"] == 2500 and d["live_left"] == 0 and d["stage_controls"] == 0 and d["heartbeat_autonomy"] == "auto" else 1)' \
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-echo "$OUT" | grep >/dev/null "^action backup.rerun_observability$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
+echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
   && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 5 actions$" \
-  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun_observability, repo.process_change, github.open_pr, host.true, host.absent)" || bad "-check: $OUT"
+  && ok "-check reads the registry the image carries and the e2e's extension (backup.rerun, repo.process_change, github.open_pr, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep >/dev/null " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
@@ -271,22 +271,22 @@ seen e2e-victoriatraces "SPAN model.chat" && ok "the routine's model.chat span r
 
 echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
 # The monitor runs at start; the stand-in says the backup is 25.5h old, above shadow's 25h. The dispatcher
-# (every 15s) hands the case to ops/rerun-backup, whose plan policy records in shadow, closing the case.
+# (every 15s) hands the case to jobs/rerun-backup, whose plan policy records in shadow, closing the case.
 for i in $(seq 1 45); do
   CASES="$(cli case list --all 2>&1)"
-  echo "$CASES" | grep >/dev/null "failed_backup .*host:mini .*closed .*shadow_plan_recorded" && break; sleep 2
+  echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*shadow_plan_recorded" && break; sleep 2
 done
-echo "$CASES" | grep >/dev/null "failed_backup .*host:mini .*closed .*shadow_plan_recorded" \
+echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*shadow_plan_recorded" \
   && ok "the backup monitor's detection became a case, planned and closed as a shadow plan" || bad "the chain: $CASES"
 CID="$(echo "$CASES" | awk '/failed_backup/ {print $1; exit}')"
 SHOW="$(cli case show "$CID" 2>&1)"
-echo "$SHOW" | grep >/dev/null "case.handed_over .*ops/backup-monitor .*by detector" && ok "opened by ops/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
-echo "$SHOW" | grep >/dev/null "case.planned .*ops/rerun-backup .*by act .*backup_age_above(25h): holds" \
-  && ok "planned by ops/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
+echo "$SHOW" | grep >/dev/null "case.handed_over .*jobs/backup-monitor .*by detector" && ok "opened by jobs/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
+echo "$SHOW" | grep >/dev/null "case.planned .*jobs/rerun-backup .*by act .*backup_age_above(25h): holds" \
+  && ok "planned by jobs/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
 echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
-$D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*instance%3D%22homelab%22' >/dev/null \
-  && ok "the ops workers queried VictoriaMetrics through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
+$D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
+  && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
 
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"
@@ -326,9 +326,9 @@ OUT="$(cli status 2>&1)"
 ! echo "$OUT" | grep >/dev/null "^FROZEN" && echo "$OUT" | grep >/dev/null "^platform/heartbeat  *auto  *auto " \
   && ok "lifted, the heartbeat is back at auto (its own control untouched)" || bad "after unfreeze: $OUT"
 # Holds (RFC-0004 §5.1 step 4) through the CLI: an agent holds a host, only an operator lifts it, with a reason.
-OUT="$(agent hold host:mini 2h --reason "e2e: disk work" 2>&1)"
+OUT="$(agent hold host:backup-01 2h --reason "e2e: disk work" 2>&1)"
 HID="$(echo "$OUT" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')"
-[ -n "$HID" ] && cli hold list | grep >/dev/null "host:mini .*e2e-agent .*e2e: disk work" && ok "an agent holds a host; hold list shows it" || bad "hold: $OUT / $(cli hold list 2>&1)"
+[ -n "$HID" ] && cli hold list | grep >/dev/null "host:backup-01 .*e2e-agent .*e2e: disk work" && ok "an agent holds a host; hold list shows it" || bad "hold: $OUT / $(cli hold list 2>&1)"
 OUT="$(agent hold lift "$HID" --reason "e2e" 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot lift a hold" || bad "agent lift: $OUT"
 OUT="$(cli hold lift "$HID" 2>&1)"
@@ -338,7 +338,7 @@ cli hold lift "$HID" --reason "e2e: disk done" >/dev/null
 # The deploy stand-down (deploy/mini/standdown.sh, as deploy.sh and the homelab's pre-pull hook run it):
 # a hold by the deploy caller, its token read from flotillad's secrets volume; it never fails its caller.
 OUT="$(DOCKER="$D" bash "$ROOT/deploy/mini/standdown.sh" mini 5m "e2e deploy" 2>&1)"; RC=$?
-[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN host:mini for 5m" && cli hold list | grep >/dev/null "host:mini .*deploy .*deploy stand-down: e2e deploy" \
+[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN host:backup-01 for 5m" && cli hold list | grep >/dev/null "host:backup-01 .*deploy .*deploy stand-down: e2e deploy" \
   && ok "a deploy stand-down is a hold on the host, taken by the deploy caller" || bad "stand-down: rc=$RC $OUT / $(cli hold list 2>&1)"
 OUT="$(DOCKER=false bash "$ROOT/deploy/mini/standdown.sh" mini 5m "e2e" 2>&1)"; RC=$?
 [ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN SKIPPED" && ok "a stand-down that cannot be taken never fails the deploy" || bad "stand-down failure path: rc=$RC $OUT"
@@ -407,13 +407,13 @@ for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 # start); the backup is still old: one case per incident (ADR-0005 decision 1, amended 2026-11-13), the repeat
 # absorbed into the closed shadow case: as an event when its data changed, else counted on the case
 # ("repeated N times unchanged", 13c46f6).
-cli run ops/backup-monitor >/dev/null
+cli run jobs/backup-monitor >/dev/null
 for i in $(seq 1 20); do
   CID="$(agent case list --all 2>&1 | awk '/failed_backup/ {print $1}')"
   agent case show $CID 2>/dev/null | grep >/dev/null -E "signal.absorbed|^repeated [0-9]+ times unchanged" && break; sleep 2
 done
 N="$(agent case list --all 2>&1 | grep -c failed_backup)"
-[ "$N" = 1 ] && agent case show $CID 2>&1 | grep >/dev/null -E "signal.absorbed .*ops/backup-monitor|^repeated [0-9]+ times unchanged" \
+[ "$N" = 1 ] && agent case show $CID 2>&1 | grep >/dev/null -E "signal.absorbed .*jobs/backup-monitor|^repeated [0-9]+ times unchanged" \
   && ok "after the restart the monitor's repeat went into the incident's case (one case, absorbed or counted)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
 

@@ -5,7 +5,7 @@
 //
 // What a run writes to its plan file (FLOTILLA_PLAN_FILE), one JSON object:
 //
-//	{"outcome": "plan", "action": "backup.rerun_observability", "params": {"host": "mini"}}
+//	{"outcome": "plan", "action": "backup.rerun", "params": {"host": "mini"}}
 //	{"outcome": "resolved_itself", "detail": "backup 2h old after a fresh look"}
 //	{"outcome": "escalate", "detail": "the re-check contradicts the diagnosis"}
 //	{"outcome": "not_reproducible", "detail": "the failing call is not on main"}

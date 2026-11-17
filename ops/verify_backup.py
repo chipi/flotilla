@@ -1,4 +1,4 @@
-"""ops/verify-backup: the check routine for backup.rerun_observability (RFC-0004 §7, its registry check
+"""ops/verify-backup: the check routine for backup.rerun (RFC-0004 §7, its registry check
 backup_newer_than_execution). Started by flotillad while a case is in checking, with the case
 (FLOTILLA_CASE) and what to verify (FLOTILLA_CHECK: since = when the host reported the rerun done):
 

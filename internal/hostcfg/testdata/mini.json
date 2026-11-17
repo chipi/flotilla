@@ -4,7 +4,7 @@
   "ceiling": "propose",
   "signing_keys": {"k1": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="},
   "actions": {
-    "backup.rerun_observability": {
+    "backup.rerun": {
       "argv": ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.homelab.db-backup"],
       "params": {"host": {"kind": "this_host"}},
       "per_hour": 1,

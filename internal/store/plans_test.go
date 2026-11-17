@@ -23,7 +23,7 @@ func plannedOn(t *testing.T, s *Store, key string) string {
 }
 
 func rec(id string) PlanRecord {
-	return PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun_observability", Params: map[string]string{"host": "mini"},
+	return PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun", Params: map[string]string{"host": "mini"},
 		PlanHash: "h", Outcome: "auto", Autonomy: "auto", Reasons: []string{"ok"}}
 }
 
@@ -79,7 +79,7 @@ func TestCountsAndHolds(t *testing.T) {
 	_, _ = s.ApplyPlan(ctx, rec(a), cases.Executing, "", "host:mini", true)
 	_ = s.MoveCase(ctx, a, cases.Escalated, cases.ByAct, "", "ops-act-host", "failed")
 	now := time.Now()
-	n, err := s.Counts(ctx, "backup.rerun_observability", "host:mini", "mini", now.Add(-time.Hour), now, 15*time.Minute)
+	n, err := s.Counts(ctx, "backup.rerun", "host:mini", "mini", now.Add(-time.Hour), now, 15*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestCountsAndHolds(t *testing.T) {
 	if n, _ := s.Counts(ctx, "other.action", "host:mini", "mini", now.Add(-time.Hour), now, 15*time.Minute); n.TargetToday != 0 {
 		t.Fatalf("another action's executions counted: %+v", n)
 	}
-	if n, _ := s.Counts(ctx, "backup.rerun_observability", "host:mini", "mini", now.Add(time.Minute), now.Add(2*time.Hour), time.Minute); n.TargetToday != 0 || n.HostHour != 0 || n.HostNewCases != 0 {
+	if n, _ := s.Counts(ctx, "backup.rerun", "host:mini", "mini", now.Add(time.Minute), now.Add(2*time.Hour), time.Minute); n.TargetToday != 0 || n.HostHour != 0 || n.HostNewCases != 0 {
 		t.Fatalf("old executions counted: %+v", n)
 	}
 	id, _ := s.AddHold(ctx, "host:mini", now.Add(time.Hour), "user:ada", "api", "disk")

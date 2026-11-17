@@ -15,16 +15,16 @@ import (
 func TestProcessChangeInTheUI(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	target := "repo:host/registry.json/backup.rerun_observability/pre_shadow"
+	target := "repo:host/registry.json/backup.rerun/pre_shadow"
 	k := store.Key{Kind: "target", Value: "process_change/" + target}
 	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "process_change", Target: target, Keys: []store.Key{k}, Canonical: k,
-		Title: "The pre_shadow threshold of backup.rerun_observability (20h) is below the source's 24h cycle"}, "ops/case-review", "")
+		Title: "The pre_shadow threshold of backup.rerun (20h) is below the source's 24h cycle"}, "ops/case-review", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/case-review", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/process-change", "")
-	change := "host/registry.json, action backup.rerun_observability, pre_shadow:\n- \"backup_age_above(20h)\"\n+ \"backup_age_above(25h)\""
+	change := "host/registry.json, action backup.rerun, pre_shadow:\n- \"backup_age_above(20h)\"\n+ \"backup_age_above(25h)\""
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "repo.process_change",
 		Params: map[string]string{"file": "host/registry.json", "rule": "below_cycle", "change": change}, PlanHash: "h-pc-0123456789",
 		Outcome: "propose", Autonomy: "propose"}, cases.AwaitingApproval, "", target, true); err != nil {

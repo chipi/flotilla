@@ -20,7 +20,7 @@ func keypair(t testing.TB, seed byte) (ed25519.PublicKey, ed25519.PrivateKey) {
 }
 
 func exe() Execution {
-	return Execution{ID: "exec-1", CaseID: "case-1", Host: "mini", Action: "backup.rerun_observability",
+	return Execution{ID: "exec-1", CaseID: "case-1", Host: "mini", Action: "backup.rerun",
 		Params: map[string]string{"host": "mini"}, PlanHash: "abc", Approved: "user:ada", SignedAt: t0, ExpiresAt: t0.Add(10 * time.Minute)}
 }
 

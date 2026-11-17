@@ -96,7 +96,7 @@ func TestPostClickAnswer(t *testing.T) {
 	c := connector(f)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	n := hostwire.NotifyBody{Nonce: "nonce-1", Case: "case-1", Title: "Backup <!channel> late", Plan: "backup.rerun_observability on host:mini",
+	n := hostwire.NotifyBody{Nonce: "nonce-1", Case: "case-1", Title: "Backup <!channel> late", Plan: "backup.rerun on host:mini",
 		PlanHash: "abc123", URL: "https://flotilla.example/cases/case-1", Approvable: true}
 	if err := c.Post(ctx, n); err != nil {
 		t.Fatal(err)

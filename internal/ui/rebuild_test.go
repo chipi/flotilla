@@ -47,7 +47,7 @@ func TestHostLoad(t *testing.T) {
 	f.ui.MetricsURL, f.ui.HostMetrics = vmsrv.URL, map[string]string{"mini": "homelab"}
 	// G10: mini's agent reported its config; dgx's (older) did not
 	if err := f.st.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, Version: "v", Ceiling: "propose", LastContact: time.Now(),
-		Allowlist: `[{"name":"backup.rerun_observability","argv":["/usr/bin/sudo","-n","/bin/launchctl","kickstart","system/com.homelab.db-backup"],"per_hour":1,"timeout":"30m0s"}]`}); err != nil {
+		Allowlist: `[{"name":"backup.rerun","argv":["/usr/bin/sudo","-n","/bin/launchctl","kickstart","system/com.homelab.db-backup"],"per_hour":1,"timeout":"30m0s"}]`}); err != nil {
 		t.Fatal(err)
 	}
 	ck := f.signin(f.vic)
@@ -183,7 +183,7 @@ func TestFeedbackAndNotes(t *testing.T) {
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
-	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun_observability", Params: map[string]string{"host": "mini"},
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun", Params: map[string]string{"host": "mini"},
 		PlanHash: "abcdef0123", Outcome: "shadow", Autonomy: "shadow", Reasons: []string{"r"}}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestApproveBindsToThePlanShown(t *testing.T) {
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
-	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun_observability",
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun",
 		Params: map[string]string{"host": "mini"}, PlanHash: "4f1c9a20b7d3e8c1", Outcome: "propose", Autonomy: "propose",
 		Reasons: []string{"autonomy: routine propose, action propose, host ceiling propose"}}, cases.AwaitingApproval, "", "host:mini", true); err != nil {
 		t.Fatal(err)
@@ -434,7 +434,7 @@ func TestShadowVerdictMeaning(t *testing.T) {
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "a", "")
-	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "backup.rerun_observability", Params: map[string]string{"host": "mini"},
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "backup.rerun", Params: map[string]string{"host": "mini"},
 		PlanHash: "h", Outcome: "shadow", Autonomy: "shadow", Would: "propose"}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
 		t.Fatal(err)
 	}

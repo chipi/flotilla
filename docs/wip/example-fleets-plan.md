@@ -96,5 +96,21 @@ installation can add its own host actions, so the example registry holds only ge
 Step 1 left: `sites/site-check` is not in the e2e yet (it reads the live web); a stand-in site in the
 e2e stack runs it there.
 
+## Deploying the examples to a running installation
+
+The image's registry now holds the examples' actions only (`backup.rerun`), and the job routines read
+their action and metric from their specs (`BACKUP_ACTION`, `BACKUP_METRIC`). An installation that runs
+its own backup action moves it into a registry of its own, in this order, each with the operator's go:
+
+1. Deploy the private fleets commit whose job specs set `BACKUP_ACTION` and `BACKUP_METRIC` and which
+   carries `registry.json` (today's code ignores both variables, so it deploys first).
+2. Host config: `registry_files: [/opt/flotilla/fleets/registry.json]` in `flotillad.yaml`, and
+   `ROUTINE_FLOTILLA_REGISTRY=/opt/flotilla/fleets/registry.json` in the ops workers' env file.
+3. Deploy the image whose `fleets.yml` mounts the fleets folder into the ops workers.
+
+**Blocker until step 5:** `review/process-change` still opens its PR on flotilla's repo and reads the
+registry from the image; with the installation's action in its own registry it must target the
+installation's repo and file. No image from this work reaches a host before step 5 lands.
+
 Done when `fleets/` holds the six and `platform`, none names the operator's installation (lint and a
 grep for the private names), e2e covers each, and the mini runs unchanged from the private repo.

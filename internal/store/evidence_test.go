@@ -31,7 +31,7 @@ func TestPromotionStreak(t *testing.T) {
 	}
 	got := func(want Streak) {
 		t.Helper()
-		st, err := s.PromotionStreak(ctx, "backup.rerun_observability")
+		st, err := s.PromotionStreak(ctx, "backup.rerun")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func TestPromotionStreak(t *testing.T) {
 	shadow("") // unjudged: neither counts nor breaks
 	got(Streak{Clean: 4})
 	shadow(VerdictRight)
-	if st, _ := s.PromotionStreak(ctx, "backup.rerun_observability"); !st.Ready() {
+	if st, _ := s.PromotionStreak(ctx, "backup.rerun"); !st.Ready() {
 		t.Fatalf("five judged right is ready: %+v", st)
 	}
 	shadow(VerdictRight) // at most PromotionNeed
@@ -57,12 +57,12 @@ func TestPromotionStreak(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		shadow(VerdictRight)
 	}
-	st, _ := s.PromotionStreak(ctx, "backup.rerun_observability")
+	st, _ := s.PromotionStreak(ctx, "backup.rerun")
 	if st.Clean != 5 || !st.Held || st.Ready() {
 		t.Fatalf("five clean after a wrong verdict this week is held, not ready: %+v", st)
 	}
 	s.now = func() time.Time { return time.Now().UTC().Add(8 * 24 * time.Hour) }
-	if st, _ := s.PromotionStreak(ctx, "backup.rerun_observability"); !st.Ready() {
+	if st, _ := s.PromotionStreak(ctx, "backup.rerun"); !st.Ready() {
 		t.Fatalf("eight days later the wrong verdict no longer holds it: %+v", st)
 	}
 	s.now = func() time.Time { return time.Now().UTC() }

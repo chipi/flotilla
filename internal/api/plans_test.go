@@ -14,7 +14,7 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-const rerun = "backup.rerun_observability"
+const rerun = "backup.rerun"
 
 // plannedCase opens a failed_backup case on host:mini (key suffix keeps two cases on one target apart),
 // hands it over, and has triage/cycle plan it in run runID, as an acting job would.

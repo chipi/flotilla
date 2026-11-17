@@ -193,7 +193,7 @@ func TestHelloReportsTheConfig(t *testing.T) {
 	w := newWorld(t)
 	a := w.agent(t, "mini", &fakeExec{})
 	a.Ceiling = "propose"
-	a.Allowlist = []hostwire.AllowedAction{{Name: "backup.rerun_observability", Argv: []string{"/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "x"},
+	a.Allowlist = []hostwire.AllowedAction{{Name: "backup.rerun", Argv: []string{"/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "x"},
 		PerHour: 1, Timeout: "30m0s"}}
 	cancel := run(t, a)
 	waitFor(t, "the agent to connect", connected(w, "mini"))
