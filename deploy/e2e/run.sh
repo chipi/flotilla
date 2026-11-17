@@ -246,10 +246,12 @@ cli() { $D exec flotillad /usr/local/bin/flotilla "$@"; }
 for i in $(seq 1 60); do
   cli runs platform/heartbeat 2>/dev/null | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 2
 done
+if [ "${DEMO:-}" != 1 ]; then   # the demo seeds no old store (above)
 mkdir -p "$WORK/storecopy" && $D cp flotillad:/var/lib/flotilla "$WORK/storecopy/" 2>/dev/null
 STORE="$(python3 "$ROOT/deploy/e2e/old_store.py" check "$WORK/storecopy/flotilla/flotilla.db")"
 echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if "error" not in d and d["schema"] == d["latest"] and d["old_runs"] == 5000 and d["old_auto"] == 2500 and d["live_left"] == 0 and d["stage_controls"] == 0 and d["heartbeat_autonomy"] == "auto" else 1)' \
   && ok "flotillad migrated the old store in its read-only container ($STORE)" || bad "the old store's migration: $STORE"
+fi
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
   && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 11 actions$" \
