@@ -108,12 +108,12 @@ workers:
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-fix-podcast: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
-  # the SEO fleet's worker is named by its specs; the e2e runs none of its routines (they read the live web)
+  # the site watch's worker is named by its spec; the e2e does not run it yet (it reads the live web)
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
-# triage's cycle, the bugfix fleet's intakes and fixes and the SEO routines reach GitHub, real models or the
+# triage's cycle, the bugfix fleet's intakes and fixes and the site watch reach GitHub, real models or the
 # live web: not in the e2e
 disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix, bugfix/intake-podcast, bugfix/fix-podcast,
-  seo/site-check, seo/traffic, seo/search-console]
+  sites/site-check]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}

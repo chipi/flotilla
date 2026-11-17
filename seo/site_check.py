@@ -9,9 +9,11 @@ that parses and hreflang alternates that answer; each retired host answers 404/4
 Each failed check is one seo_live_regression detection on site:<check>/<host><path>; flotillad opens the
 case and keeps it while the detection repeats. The run prints one line per site with its numbers.
 """
+import http.client
 import json
 import os
 import re
+import ssl
 import sys
 import time
 import urllib.error
@@ -23,6 +25,9 @@ from html.parser import HTMLParser
 
 UA = "flotilla-seo/1 (+https://github.com/chipi/flotilla)"
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import common  # noqa: E402
+
 MAX_BODY = 4_000_000
 # A request that got no HTTP answer is tried again after these pauses: Cloudflare reset 7 of 204 of
 # the host's connections to one site in one run (2026-11-15), and a reset is about the network,
@@ -39,7 +44,7 @@ class Page(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.title, self.description, self.canonical, self.robots = None, None, None, []
-        self.alternates, self.json_ld, self.h1 = [], [], 0
+        self.alternates, self.json_ld, self.h1, self.links = [], [], 0, []
         self._in_title, self._in_ld, self._buf = False, False, []
 
     def handle_starttag(self, tag, attrs):
@@ -59,6 +64,8 @@ class Page(HTMLParser):
             self._in_ld, self._buf = True, []
         elif tag == "h1":
             self.h1 += 1
+        elif tag == "a" and a.get("href"):
+            self.links.append(a["href"].strip())
 
     def handle_data(self, data):
         if self._in_title or self._in_ld:
@@ -90,6 +97,24 @@ def fetch(url, follow=True, timeout=30):
         return 0, url, {}, str(getattr(e, "reason", e))
 
 
+def cert_expiry(host, timeout=30):
+    """When the TLS certificate host serves on 443 expires (epoch seconds), through the routine's egress
+    proxy when it has one (a CONNECT tunnel), as the page requests go."""
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    ctx = ssl.create_default_context()
+    if proxy:
+        p = urllib.parse.urlsplit(proxy)
+        conn = http.client.HTTPSConnection(p.hostname, p.port or 443, timeout=timeout, context=ctx)
+        conn.set_tunnel(host, 443)
+    else:
+        conn = http.client.HTTPSConnection(host, 443, timeout=timeout, context=ctx)
+    try:
+        conn.connect()
+        return ssl.cert_time_to_seconds(conn.sock.getpeercert()["notAfter"])
+    finally:
+        conn.close()
+
+
 def norm(url):
     """For comparing canonicals: scheme and host lowercased, an empty path is /, no fragment."""
     p = urllib.parse.urlsplit(url)
@@ -104,8 +129,9 @@ def target(check, url):
 
 
 class Check:
-    def __init__(self, site, fetcher=fetch, sleep=time.sleep):
+    def __init__(self, site, fetcher=fetch, sleep=time.sleep, certifier=cert_expiry, now=time.time):
         self.site, self.fetch, self.sleep, self.found, self.requests, self.retries = site, fetcher, sleep, [], 0, 0
+        self.certifier, self.now, self.seen_links = certifier, now, []
         self.base = site["base"].rstrip("/")
         self.host = urllib.parse.urlsplit(self.base).netloc.lower()
 
@@ -175,6 +201,7 @@ class Check:
         except Exception as e:  # a page the parser cannot read is a finding, not a crash
             self.find("html", url, f"{self.host}: a page's HTML cannot be read", f"{url}: {e}", "unparsed", "HTML")
             return
+        self.seen_links += [(url, urllib.parse.urljoin(final, h)) for h in p.links]
         xr = (headers.get("X-Robots-Tag") or "").lower() if headers else ""
         if any("noindex" in r for r in p.robots) or "noindex" in xr:
             self.find("noindex", url, f"{self.host}: {urllib.parse.urlsplit(url).path or '/'} is noindex",
@@ -214,8 +241,8 @@ class Check:
 
     def wants_json_ld(self, path):
         """json_ld: true (every page), or the paths that must carry it: "/" is the home page alone, a path
-        ending in / a prefix of the pages below it (Orrery's ADR-096: the home page, reading and entity
-        pages; not the hubs)."""
+        ending in / a prefix of the pages below it (for example the home page and the article pages, not
+        the index pages that list them)."""
         want = self.site.get("json_ld")
         if want is True:
             return True
@@ -237,6 +264,43 @@ class Check:
             self.find("retired", url, f"{self.host}: the retired host {urllib.parse.urlsplit(url).netloc} is indexable",
                       f"{url}: {st}, not 404/410 and not noindex", st, "404 or noindex")
 
+    def broken_links(self):
+        """links: N (opt-in): the first N distinct links on the site's own host, from the pages checked,
+        answer 200 after redirects. A link off the site is not followed."""
+        limit = self.site.get("links")
+        if not limit:
+            return
+        done = set()
+        for page, link in self.seen_links:
+            u = urllib.parse.urlsplit(link)
+            if u.scheme not in ("http", "https") or u.netloc.lower() != self.host:
+                continue
+            link = urllib.parse.urlunsplit((u.scheme, u.netloc, u.path or "/", u.query, ""))
+            if link in done:
+                continue
+            if len(done) >= limit:
+                break
+            done.add(link)
+            st, _, _, _ = self.get(link)
+            if st != 200:
+                self.find("link", link, f"{self.host}: a link answers {st or 'nothing'}",
+                          f"{page} links to {link}: {st}", st, 200)
+
+    def certificate(self):
+        """cert_days: D (opt-in): the site's TLS certificate is valid for at least D more days."""
+        want = self.site.get("cert_days")
+        if not want:
+            return
+        url = self.base + "/"
+        try:
+            left = (self.certifier(self.host) - self.now()) / 86400
+        except (OSError, ssl.SSLError, http.client.HTTPException, KeyError, ValueError) as e:
+            self.find("certificate", url, f"{self.host}: the TLS certificate cannot be read", f"{self.host}: {e}", "unread", want)
+            return
+        if left < want:
+            self.find("certificate", url, f"{self.host}: the TLS certificate expires in {max(left, 0):.0f} days",
+                      f"{self.host}: {left:.1f} days left, the site asks for {want}", round(left, 1), want)
+
     def run(self):
         sitemaps = self.robots()
         urls = self.sitemap_urls(sitemaps)
@@ -248,15 +312,14 @@ class Check:
         for i, u in enumerate(pages):
             self.page(u, alternates=i < len(self.site.get("pages", ["/"])))
         self.retired()
+        self.broken_links()
+        self.certificate()
         return {"site": self.site["name"], "urls": len(urls), "pages": len(pages), "requests": self.requests,
                 "retries": self.retries, "findings": len(self.found)}
 
 
 def main(fetcher=fetch):
-    path = os.environ.get("SEO_SITES") or os.path.join(   # as common.sites_path(): the fleet folder's
-        os.environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE), "fleets", "seo", "sites.json")
-    with open(path) as f:
-        sites = json.load(f)
+    sites = common.sites()
     found, lines = [], []
     for site in sites:
         t = time.time()
@@ -278,6 +341,6 @@ def main(fetcher=fetch):
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, common.Error) as e:
         print(f"SEO SITE-CHECK config: {e}", file=sys.stderr)
         sys.exit(2)

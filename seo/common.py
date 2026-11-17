@@ -1,6 +1,7 @@
 """What the seo routines share: the site list, JSON over HTTP, the drop rule, the report."""
 import json
 import os
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,15 +21,19 @@ class Error(Exception):
     """A source that cannot be read: the run fails, so no finding is made from a missing number."""
 
 
-def sites_path():
-    """The installation's sites: the fleet folder's sites.json (on a host the installation's own fleets,
-    mounted over the image's; in the image and a checkout, the example's), or SEO_SITES."""
-    return os.environ.get("SEO_SITES") or os.path.join(
-        os.environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE), "fleets", "seo", "sites.json")
+def sites_path(argv=None):
+    """The sites file the routine's spec names (`--sites <path>`, in its fleet folder), or SEO_SITES. The
+    code knows no fleet's name: an installation's fleets and the examples each name their own."""
+    argv = sys.argv[1:] if argv is None else argv
+    if "--sites" in argv and argv.index("--sites") + 1 < len(argv):
+        return argv[argv.index("--sites") + 1]
+    if os.environ.get("SEO_SITES"):
+        return os.environ["SEO_SITES"]
+    raise Error("no sites file: the routine's spec passes --sites <path>")
 
 
-def sites():
-    with open(sites_path()) as f:
+def sites(argv=None):
+    with open(sites_path(argv)) as f:
         return json.load(f)
 
 

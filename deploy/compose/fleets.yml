@@ -13,6 +13,6 @@ services:
   worker-triage-candidate:
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
-  worker-marketing:   # the SEO routines read fleets/seo/sites.json
+  worker-marketing:   # its routines read the sites file their specs name, in the fleet folder
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro

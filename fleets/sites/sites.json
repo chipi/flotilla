@@ -1,0 +1,4 @@
+[
+  {"name": "shop", "base": "https://www.example.com", "brand": "Example Shop", "bots": ["Googlebot", "Bingbot"], "pages": ["/", "/products", "/about", "/de/"], "sample_prefixes": ["/products/", "/guides/"], "json_ld": ["/", "/products/"], "hreflang": true, "locales": 2, "retired": ["https://shop.example.org/"], "links": 50, "cert_days": 21},
+  {"name": "docs", "base": "https://docs.example.com", "pages": ["/", "/guide/"], "links": 30, "cert_days": 21}
+]

@@ -257,10 +257,8 @@ func TestRepoSpecs(t *testing.T) {
 	if _, ok := ids["platform/heartbeat"]; !ok {
 		t.Fatal("platform/heartbeat missing")
 	}
-	for _, id := range []string{"seo/traffic", "seo/search-console"} {
-		if j := ids[id]; j == nil || j.BriefSection != "Search" {
-			t.Errorf("%s: the brief's Search section (RFC-0012 §4)", id)
-		}
+	if j := ids["sites/site-check"]; j == nil || j.Autonomy != AutonomyShadow {
+		t.Error("sites/site-check: the example site watch, read only, in shadow")
 	}
 	// harness-default.json is what triage applies without flotillad (eval runs): the specs' harness
 	raw, err := os.ReadFile(filepath.Join("..", "..", "fleets", "triage", "harness-default.json"))

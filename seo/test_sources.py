@@ -29,6 +29,22 @@ class FakeUmami:
         return [{"x": "google.com", "y": n}, {"x": "github.com", "y": 99}, {"x": "news.ycombinator.com", "y": 5}]
 
 
+class SitesFile(unittest.TestCase):
+    def test_the_spec_names_the_file_and_the_code_names_no_fleet(self):
+        env = os.environ.pop("SEO_SITES", None)
+        try:
+            self.assertEqual(common.sites_path(["--sites", "/f/sites/sites.json"]), "/f/sites/sites.json")
+            with self.assertRaises(common.Error):
+                common.sites_path([])
+            os.environ["SEO_SITES"] = "/env/sites.json"
+            self.assertEqual(common.sites_path([]), "/env/sites.json")
+            self.assertEqual(common.sites_path(["--sites", "/spec.json"]), "/spec.json")
+        finally:
+            os.environ.pop("SEO_SITES", None)
+            if env is not None:
+                os.environ["SEO_SITES"] = env
+
+
 class Traffic(unittest.TestCase):
     def test_the_drop_rule(self):
         self.assertTrue(common.dropped(34, 50), "more than 30 % below 50")

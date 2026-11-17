@@ -175,6 +175,37 @@ class SiteCheck(unittest.TestCase):
             self.assertIn("site:status/www.example.org/", {d["target"] for d in out["detections"]})
             self.assertTrue(all(d["kind"] == "seo_live_regression" for d in out["detections"]))
 
+    def test_links_on_the_site_answer_and_only_when_asked(self):
+        body = page(B + "/").replace("<h1>Topic</h1>", '<h1>Topic</h1><a href="/things/a">a</a><a href="/gone">x</a>'
+                                     '<a href="https://elsewhere.example.net/y">off</a><a href="mailto:a@example.org">m</a>')
+        found, _, _, fake = run(**{B + "/": (200, None, {}, body)})
+        self.assertEqual(found, set(), "links are not checked unless the site asks")
+        found, c, _, fake = run(dict(SITE, links=10), **{B + "/": (200, None, {}, body)})
+        self.assertEqual(found, {"site:link/www.example.org/gone"}, [d["detail"] for d in c.found])
+        self.assertNotIn("https://elsewhere.example.net/y", fake.asked, "a link off the site is not followed")
+        found, *_ = run(dict(SITE, links=1), **{B + "/": (200, None, {}, body)})
+        self.assertEqual(found, set(), "the limit caps the links checked: only /things/a")
+
+    def test_the_certificate_has_the_days_the_site_asks_for(self):
+        def check(days_left, want=21, certifier=None):
+            c = site_check.Check(dict(SITE, cert_days=want), Site(), sleep=lambda s: None, now=lambda: 1_800_000_000,
+                                 certifier=certifier or (lambda host: 1_800_000_000 + days_left * 86400))
+            c.run()
+            return {d["target"]: d for d in c.found}
+        self.assertEqual(check(30), {})
+        got = check(10)["site:certificate/www.example.org/"]
+        self.assertEqual(got["data"]["measure"], {"name": "certificate", "value": 10.0, "threshold": 21})
+
+        def unreadable(host):
+            raise ssl_error()
+        self.assertIn("site:certificate/www.example.org/", check(0, certifier=unreadable))
+        c = site_check.Check(SITE, Site(), sleep=lambda s: None, certifier=lambda h: self.fail("asked without cert_days"))
+        c.run()
+
+
+def ssl_error():
+    return site_check.ssl.SSLError("certificate verify failed")
+
 
 if __name__ == "__main__":
     unittest.main()

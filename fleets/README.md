@@ -10,7 +10,7 @@ documentation addresses.
 | `triage` | `cycle`, `cycle-shadow` | alerts and errors triaged by a model, filed or dismissed by code gates; a candidate image compared in shadow |
 | `bugfix` | `intake`, `fix`, `open-pr`, `pr-check`, and a per-repo profile (`intake-podcast`, `fix-podcast`) | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan |
 | `ops` | `backup-monitor`, `rerun-backup`, `verify-backup`, `case-review`, `process-change` | a monitor opens a case, an acting routine plans a fix on a host, a check verifies it, a review proposes what to learn |
-| `seo` | `site-check`, `traffic`, `search-console` | what a site serves live, its visits and its search reach, as findings |
+| `sites` | `site-check` | what a site serves live (robots, sitemaps, head tags, broken links, certificate expiry), read only; findings are cases |
 | `platform` | `heartbeat`, `model-contract` | the platform's own canary and the model aliases' contract checks |
 
 ## An installation's own fleets
@@ -23,7 +23,7 @@ installation's own fleets"). Its facts live there, never in flotilla:
 | File | Holds |
 | --- | --- |
 | `triage/installation.json` | which repo each error project and alert instance files into, the ops repo, the repos the bugfix chain builds, the assistant backend, the edge instance, the probes' log and metric labels, the scrubber's own rules (`signal-fleet/mvp/installation.py`) |
-| `seo/sites.json` | the sites, their pages, analytics ids and search properties (`seo/common.py`) |
+| the sites file a site-check spec names (`--sites`) | the sites, their pages and what to check on each (`seo/common.py`) |
 | the routine specs | the repos and models each routine uses (`bugfix/*.yaml`'s `--repo`, the model aliases) |
 
 Two more facts are host config, not files here: the repos `github.open_pr` may act on
