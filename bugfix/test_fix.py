@@ -602,6 +602,9 @@ exec {real} "$@"
         v = lambda *c: {"problem": {"acceptance": list(c)}}   # noqa: E731
         self.assertEqual(fix.test_change_criteria(v("Navigating away never throws; verified by a Playwright test: "
                                                     "assert zero pageerrors")), [])
+        # #517 (2026-11-17): a new test described in prose, "assert (a) ...", wrongly escalated the case
+        self.assertEqual(fix.test_change_criteria(v("Test: force the bundle promise to reject, then call get('i18n/x') "
+                                                    "and assert (a) the returned promise rejects")), [])
         self.assertEqual(fix.test_change_criteria(v({"criterion": "mergeFlightEvents() keeps both"})), [])
         self.assertEqual(len(fix.test_change_criteria(v("expect(beforeSend(e)).toBeNull() for the hook",
                                                         {"criterion": "tests/unit/test_mod.py checks it"},
