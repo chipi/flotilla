@@ -15,25 +15,31 @@ git.
 
 One file, owned by flotillad. Workers and host agents never open it; they report through the API.
 
-Built today: `runs`, `events`, `controls`, `spend`. The rest is the ADR-0005 and ADR-0006 design; v1
-brings the case tables.
+Every table below is built (`internal/store`, schema step 25 on 2026-11-17).
 
 | Table | Holds |
 | --- | --- |
-| `specs` | each loaded spec version: fleet, routine, content hash, loaded at, git commit |
-| `runs` | run id, routine, spec version, trigger, start, end, status, cost, tokens, models, trace id |
+| `runs` | run id, routine, the spec's content hash (`spec_hash`: there is no separate specs table), trigger, start, end, status, cost, tokens, models, trace id |
 | `cases` | one row per problem: kind, typed target, project, status, holder, lease, urgency, opened and closed at |
 | `case_keys` | `(case, kind, value)`: as many keys as the kind's dedup needs; one canonical key per open case |
 | `case_events` | the timeline, append-only: detected, diagnosed, handed over, planned, approved, executed, checked, attached signals (`caused_by`, `recurrence_of`), feedback, outcomes; each with its actor, run and evidence references |
-| `executions` | execution id, case, host, action, parameters, plan hash, how approved, signed at, result (done, failed, unknown, precondition false), check result |
-| `locks` | the per-target lock: target, case, taken at |
-| `autonomy` | per action: level, who promoted or demoted it and why; per host: its autonomy cap |
+| `host_executions` | execution id, case, host, action, parameters, plan hash, how approved, signed at, result (done, failed, unknown, precondition false), check result |
+| `target_locks` | the per-target lock: target, case, taken at |
+| `plans` | each plan a run proposed for a case: action, parameters, plan hash, the policy's outcome and reasons, the autonomy it ran at and what it would have done above it, when it was decided |
+| `holds` | a hold on a scope until a time: who set it and why, and when and by whom it was lifted (a deploy's stand-down is one) |
+| `case_feedback` | an operator's verdict on a case's diagnosis (right or wrong), the evidence toward autonomy |
 | `notes` | short lessons with a scope; active only once the operator activates them |
+| `host_enrolments` | single-use enrolment tokens (their SHA-256), for which host, who made them, expiry |
 | `hosts` | each host agent: identity, the current certificate's SHA-256 (the only one accepted) and expiry, version, last contact, allowlist hash, revoked |
-| `controls` | pause, STOP, autonomy, hold, freeze, with who changed them |
+| `controls` | pause, STOP, autonomy (per routine and per action), freeze, with who changed them |
 | `spend` | per fleet and routine: spend and tokens per day |
 | `events` | the platform's own audit log of every change: who, what, when, from where (UI, CLI, Slack, MCP, routine) |
 | `run_calls` | each model call of a run, and each step its harness took between calls, as the run wrote them to its calls file (`FLOTILLA_CALLS_FILE`; the worker returns the first 5000 lines, and flotillad adds one `harness` step row saying how many more there were): alias, model, tokens, cost, latency, error, `finish_reason` (`length` is a reply cut at the token cap; `""` when unknown), `step` (the turn within a harness step, 1-based, null when not given) and `decision_key` (what the call served; triage: the signal's fingerprint), `role` (who made the call: `triage`; for a bugfix run `verdict`, `coder`, `reviewer` or `advisor`; `""` when unknown), `episode` (an id grouping one agent session's calls within the run; triage: the decision's fingerprint, bugfix: the pi session's id), `episode_seq` (the episode's order within the run, 1-based, null when not given; on a step row its position among the run's steps), `tools` (a JSON array of what the model called in that turn, `[{"name":"bash","arg":"grep -n foo src/x.ts","ok":true}]`: `arg` is the call's main argument, redacted and cut at 160 characters; `ok` is false when the tool's result was an error and absent when unknown, as in triage, whose probe has not run when the call is recorded; older rows hold the names only, `["bash","read"]`, and `store.ParseTools` reads both; `""` when none) and `kind` (`call`, or `step` for a harness step: a verdict, a round's gate outcome, an advisor's pin, a hand-off, with no alias, model, tokens or cost, its text in `detail` and its `role` the one it concerns, or `gates` / `harness`). **Sums and counts of calls, tokens or cost skip `kind = 'step'` rows** (`CallsSince` does; a step has no tokens or cost, but it is not a call). A bugfix call's `cost_usd` is its share of its episode's gateway bill (the key's spend over the pi episode, by the turn's input + output tokens, `cost_source` `gateway-share`), null with `cost_source` `""` when the episode's bill could not be measured, never pi's catalog price |
+| `run_loaded` | what each run read into its model (playbook, skills, notes, files) and how far each item is trusted |
+| `ledger_entries`, `ledger_filings`, `ledger_keys` | the fleets' ledger (RFC-0002 §9 step 5): triage's decisions, the issues it filed and their dedup keys |
+| `users`, `sessions` | the UI's and CLI's people: name, role, token hash; sign-in sessions with their CSRF token |
+| `slack_asks` | each plan posted to Slack: its single-use nonce, case and plan hash, and the answer |
+| `briefs`, `brief_marks` | the morning brief per day, and the operator's marks on its items |
 | `eval_results` | what an eval measured for a routine, prompt (`prompt_sha`) and model: metric, value, cases (`n`) and runs it averaged (`repeats`), where it came from, who recorded it and when. Appended, never edited; an operator or admin records one (`flotilla eval record`), an agent cannot; the newest per metric is current |
 
 Nothing is deleted or rewritten. A status change is an event; the case row carries the current

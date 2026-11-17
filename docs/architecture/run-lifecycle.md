@@ -68,9 +68,10 @@ From the reference installation (the v1 chain).
 7. **The morning.** The case, its execution, an annotation on the dashboards and a line in the brief
    show what was handled overnight.
 
-Triage runs the same lifecycle with a model at step 2, diagnosing alerts and errors, and the
-low-risk writes it is allowed today; a code bug becomes a `code_bug` case for the bugfix fleet, with
-its GitHub issue as the mirror.
+Triage is not a case producer: it diagnoses alerts and errors with a model and files or dismisses
+them through its own ledger and code gates, its output a GitHub issue. A code bug it routes to the
+bugfix fleet (the label `triage-fleet/routed:bugfix`) becomes a `code_bug` case there, opened by the
+bugfix fleet's intake.
 
 ## Runs and cases
 

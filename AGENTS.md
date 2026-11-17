@@ -74,13 +74,19 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 
 ---
 
-## Code layout (phase 1)
+## Code layout
 
 | Path | What | Runs from |
 | --- | --- | --- |
-| `fleetd/` | the Go scheduler and the bugfix chain; becomes `flotillad` in phase 2 | still agentic-ai-homelab's copy on the mini |
-| `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests; its facts come from `fleets/triage/installation.json` (`mvp/installation.py`) | flotilla's images on the mini |
-| `bugfix-fleet/` | the bugfix fleet: bake-off harness scripts (used by `fleetd chain`) and a TypeScript MVP (no CI, RFC-0001 §11) | still agentic-ai-homelab's copy on the mini |
+| `cmd/`, `internal/` | Go: `flotillad` (scheduler, store, cases, policy, API, UI, MCP), the `flotilla` CLI, the `flotilla-host` host agent | the flotillad image; the host agent on each host |
+| `worker/`, `runtime/` | the worker service that runs a routine, and the Python job runtime (model client, harness, skills, recording) | every worker image |
+| `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests; its facts come from `fleets/triage/installation.json` (`mvp/installation.py`) | the triage worker image |
+| `bugfix/`, `ops/`, `seo/` | the bugfix, ops and SEO fleets' routines | their worker images (bugfix's on a second machine, as remote workers) |
+| `fleets/` | the example fleets: specs, playbooks, skills, example facts (`fleets/README.md`) | the images; an installation mounts its own over them |
+| `deploy/` | compose, the mini's deploy scripts, the remote stack, the host agent's installer, the e2e stack | the hosts |
+| `host/` | the host agent's action registry (`host/registry.json`) | flotillad's image |
+| `fleetd/` | the retired scheduler and its bugfix chain, kept for its tests and history | nowhere (retired on the mini 2026-11-16) |
+| `bugfix-fleet/` | the bugfix fleet's bake-off harness and its July TypeScript prototype (no CI, RFC-0001 §11) | nowhere |
 
 - Imported from agentic-ai-homelab at `f0ed072` with their history (`git filter-repo`), without
   `signal-fleet/reference*`: the replay corpora are real scrubbed production data and live in the
@@ -93,7 +99,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
   (`fleets/README.md`); an installation's facts live in its private fleets repo and host config, and
   `make lint` runs `scripts/installation_facts.py`, which fails on a repo slug, tailnet name or
   address, or home path in the code (and on the installation's own names with
-  `SF_FACTS_DENYLIST`). Docs and history are narrative and exempt.
+  `SF_FACTS_DENYLIST`). Docs and history are narrative and exempt from the lint, but carry no
+  network identifiers, host names, home paths or credential ids either.
 
 ## Domain knowledge
 

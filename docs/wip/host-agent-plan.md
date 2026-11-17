@@ -284,7 +284,7 @@ VPS.
     `signing.key` went to `~/flotilla/config/host-ca` on the mini (mode 700; no `root.key`, which
     `secrets.sh` refuses).
   - flotillad's `hosts` section: `listen: 0.0.0.0:8487`, `ca_dir: /run/flotilla`, `server_names:
-    [flotilla-hosts.tail6d0ed4.ts.net]`, signing key `mini-2026-11`. `DEPLOY PASS (sha-83b641c)`;
+    [flotilla-hosts.<tailnet>.ts.net]`, signing key `mini-2026-11`. `DEPLOY PASS (sha-83b641c)`;
     "flotillad listening for host agents", "host executions are signed".
   - The path: a tailnet node of its own, `flotilla-hosts` (agentic-ai-homelab 35f930c, the
     reverse-proxy stack): `tailscale/tailscale` 1.104.7, `TS_SERVE_CONFIG` forwarding TCP 8487 to

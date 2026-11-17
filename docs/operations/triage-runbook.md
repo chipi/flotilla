@@ -56,7 +56,7 @@ or elsewhere). Values are secrets: never print them or commit them.
 | `SF_STALE_NUDGE` | `stale.py` | `1` = the daily "looks resolved?" pass comments and labels; unset = dry run |
 | `SF_CAPTURE_PROBES` | `config.py` → `capture.py` | `1` = keep one JSON per decision under `results/probes/` (on since 2026-10-29); unset = off |
 | `SF_CAPTURE_EAGER`, `SF_CAPTURE_DIR` | `config.py` → `capture.py` | with capture on: also record the rest of the probe menu (default `1`); where to write (default `results/probes/`) |
-| `SF_ASSISTANT_BACKEND` | `config.py` | the X3 assistant's backend address, for the `assistant-failover` operational class (default `100.92.54.65:11435`) |
+| `SF_ASSISTANT_BACKEND` | `config.py` | the X3 assistant's backend address, for the `assistant-failover` operational class (default `<assistant-host>:11435`) |
 
 Present in the file but **not read by the fleet code** (as of 2026-10-17):
 `LITELLM_FLEET_TRIAGE_KEY`, `LITELLM_FLEET_BUGFIX_KEY` (the bug-fix fleet's; its key `fleet-bugfix`

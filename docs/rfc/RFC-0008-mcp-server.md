@@ -50,7 +50,7 @@ claim, never trusted. Revoking one caller's token cuts that caller only.
 
 ### 3. Transport: Streamable HTTP on the UI's tailnet node
 
-`POST /mcp` on flotillad's UI listener, reached at `https://flotilla.tail6d0ed4.ts.net/mcp` through
+`POST /mcp` on flotillad's UI listener, reached at `https://flotilla.<tailnet>.ts.net/mcp` through
 the caddy-tailscale node that already serves the UI (TLS there; the tailnet ACL decides who reaches
 it). Bearer token per caller. No new port, no new node. Claude Code and the X3 assistant both speak
 it (`claude mcp add --transport http flotilla https://…/mcp --header "Authorization: Bearer …"`, with

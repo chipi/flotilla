@@ -1,22 +1,25 @@
 # The bugfix fleet
 
 **Why this exists:** the bugfix fleet ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) needs
-things on the host that no other fleet has: two workers, a model key of its own, its own egress
-proxy and, before a PR can be opened, a GitHub App. This page says what to put where, and how to see
-what it does. It is in beta evaluation: whether its fixes are good is RFC-0010 §8, not this page.
+things no other fleet has: four workers on a machine of their own (remote workers, RFC-0011), a
+model key per fix routine, its own egress proxy and, before a PR can be opened, a GitHub App.
+This page says what to put where, and how to see what it does. It is in beta evaluation: whether
+its fixes are good is RFC-0010 §8, not this page.
 
 ## What runs
 
 | Routine | Worker | When | What it does |
 | --- | --- | --- | --- |
-| `bugfix/intake` | `bugfix` | every hour | a `code_bug` case per open orrery issue labelled `bug` or `triage-fleet/routed:bugfix` |
-| `bugfix/fix` | `bugfix` | a `code_bug` case handed over | the chain: verdict, fixes with the gates, review; a `github.open_pr` plan or an escalation |
+| `bugfix/intake` | `bugfix` | every hour | a `code_bug` case per open issue of its repo labelled `bug` or `triage-fleet/routed:bugfix` |
+| `bugfix/fix` | `bugfix-fix` | a `code_bug` case handed over | the chain: verdict, fixes with the gates, review; a `github.open_pr` plan or an escalation |
 | `bugfix/open-pr` | `bugfix-act` | a person approved a `github.open_pr` plan | applies the diff to its base and opens a draft PR from `flotilla/<case>` |
 | `bugfix/pr-check` | `bugfix` | the case is in checking | merged: verified; closed without merging: escalated; open: looks again |
 
-`github.open_pr` starts at shadow: plans are recorded on the case and closed (`shadow_plan_recorded`),
-nothing reaches GitHub. Promote it to propose on Autonomy, after the coding harness's security review
-(RFC-0010 §5), for plans to wait in Approvals. A repo action never goes above propose.
+`github.open_pr` starts at shadow in a new installation: plans are recorded on the case and closed
+(`shadow_plan_recorded`), nothing reaches GitHub. Promoted to propose on Autonomy (after the coding
+harness's security review, RFC-0010 §5), plans wait in Approvals. A repo action never goes above
+propose. The repos it may act on are the installation's: `action_enums` in `flotillad.yaml`
+(`{github.open_pr: {repo: [owner/repo, ...]}}`); the registry declares example repos.
 
 ## Per-repo profiles
 
@@ -169,45 +172,45 @@ call phase is a failure.
 checked. The image has `python3-pip` and `python3-venv` and no compiler: a dependency with no wheel
 for it will not build.
 
-`fleets/bugfix/fix-podcast.yaml` is the profile for chipi/podcast_scraper (pytest). It is
-enabled in shadow since 2026-11-16 (ROADMAP B8, the operator's go), with `intake-podcast`, which
-detects its case kind (`code_bug_python`). It relies on the repo in `github.open_pr`'s repo enum
-(`host/registry.json`) and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
+`fleets/bugfix/fix-podcast.yaml` is the profile for a Python repo (pytest), with `intake-podcast`,
+which detects its case kind (`code_bug_python`). It relies on the repo in `github.open_pr`'s repos
+(`action_enums`) and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
 
 ## Quick reference
 
 ```bash
-# on the mini: the fleet's containers
-docker ps --filter name=flotilla-worker-bugfix --filter name=flotilla-egress-bugfix
+# on the bugfix machine: the remote stack's containers (deploy/remote/README.md)
+docker ps --filter name=flotilla-remote
 # what it did: the fleet's page in the UI, or
 docker exec flotillad /usr/local/bin/flotilla runs bugfix/fix
 docker exec flotillad /usr/local/bin/flotilla case list | grep code_bug
 ```
 
-## Install (once, on the host)
+## Install (once)
 
-All in `FLOTILLA_CONFIG` (`~/flotilla/config` on the mini), each secret file created mode 600 and never
-printed.
+The workers run on a machine of their own as remote workers: their stack, the link and the keys
+they hold are [deploy/remote/README.md](https://github.com/chipi/flotilla/blob/main/deploy/remote/README.md).
+On the control plane's host, in `FLOTILLA_CONFIG`, each secret file created mode 600 and never
+printed:
 
 1. **Worker tokens:** `worker-bugfix.token` and `worker-bugfix-act.token`, 32 random bytes as hex each,
    made the way the ops workers' were.
 2. **The model keys:** one per fix routine (`fleet-bugfix-fix`, `fleet-bugfix-fix-podcast`, $1 a
-   day each), each alone in its file and mounted only into that routine's worker on the X3, as
+   day each), each alone in its file and mounted only into that routine's remote worker, as
    `/run/flotilla/model-fix.key` and `/run/flotilla/model-fix-podcast.key`, named by the endpoints
-   `gateway-bugfix-fix` and `gateway-bugfix-fix-podcast`, so a run's spend is its key's alone. The
-   shared `fleet-bugfix` key (`bugfix-model.key`) is no longer mounted anywhere.
+   `gateway-bugfix-fix` and `gateway-bugfix-fix-podcast`, so a run's spend is its key's alone.
 3. **`flotillad.yaml`:**
 
    ```yaml
-   workers:   # on the mini they are remote, on the X3 (deploy/remote/README.md)
-     bugfix: {remote: w-bugfix-omarchy}                       # intake, intake-podcast, pr-check: no model
-     bugfix-act: {remote: w-bugfix-act-omarchy}               # open-pr
-     bugfix-fix: {remote: w-bugfix-fix-omarchy}               # fix: only fleet-bugfix-fix's key
-     bugfix-fix-podcast: {remote: w-bugfix-fix-podcast-omarchy}   # fix-podcast: only its own key
+   workers:   # remote, on the bugfix machine (deploy/remote/README.md)
+     bugfix: {remote: w-bugfix-<host>}                       # intake, intake-podcast, pr-check: no model
+     bugfix-act: {remote: w-bugfix-act-<host>}               # open-pr
+     bugfix-fix: {remote: w-bugfix-fix-<host>}               # fix: only fleet-bugfix-fix's key
+     bugfix-fix-podcast: {remote: w-bugfix-fix-podcast-<host>}   # fix-podcast: only its own key
    models:
      endpoints:
-       gateway-bugfix-fix: {base_url: "http://homelab:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix.key}
-       gateway-bugfix-fix-podcast: {base_url: "http://homelab:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix-podcast.key}
+       gateway-bugfix-fix: {base_url: "http://<gateway-host>:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix.key}
+       gateway-bugfix-fix-podcast: {base_url: "http://<gateway-host>:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix-podcast.key}
      aliases:
        fix-flash: {endpoint: gateway-bugfix-fix, model: fleet-bugfix-flash}
        fix-reviewer: {endpoint: gateway-bugfix-fix, model: fleet-bugfix-reviewer}
@@ -231,27 +234,24 @@ printed.
 
    A package whose install fetches a binary from elsewhere is denied, and the denial is logged: add
    the domain only after reading what asked for it.
-5. **`FLOTILLA_HOME/.env`:** add `bugfix` to `COMPOSE_PROFILES`.
-6. Deploy as usual (`deploy/mini/deploy.sh`): `secrets.sh` fills the two workers' volumes.
+5. **The remote stack** on the bugfix machine: deploy/remote/README.md (its `.env`, the links'
+   enrolment, the keys and the App's private key). The control plane's `COMPOSE_PROFILES` does not
+   name `bugfix`: no bugfix worker runs there.
 
 ## The GitHub App
 
-`github.open_pr` is at propose since 2026-11-16: a fix's PR plan waits in Approvals (once the
-`bugfix/fix` routine is at propose too), and the approval runs `bugfix/open-pr` on the X3's act worker.
+A fix's PR plan waits in Approvals once `github.open_pr` and the `bugfix/fix` routine are at
+propose, and the approval runs `bugfix/open-pr` on the remote act worker.
 
-- **The App:** `orrery-bugfix-fleet` (id 4354093), the old homelab bugfix fleet's, reused (operator,
-  2026-11-16). Installation 147992211 reaches the operator's 18 repositories. The App itself may write
+- **The App:** the installation's own GitHub App. The App itself may write
   contents, issues and pull requests; **every token `open_pr` asks for is narrowed** to the plan's one
   repository and to contents write, pull requests write and metadata read (`TOKEN_PERMISSIONS` in
   `bugfix/open_pr.py`). Checked against GitHub from the act worker: the narrowed token reached 1
   repository with exactly those permissions.
-- **Its private key:** on the X3 in `~/flotilla-remote/app/github-app.pem` (mode 600), mounted into
-  the act worker alone (`/run/flotilla/app/`). The original is kept in `~/flotilla/retired/bugfix-fleet-env/`
-  on the mini, with the old fleet's other credentials.
-- **Its ids** (not secrets): `BUGFIX_GITHUB_APP_ID` and `BUGFIX_GITHUB_APP_INSTALLATION_ID` in the X3's
-  `~/flotilla-remote/.env`.
-- The old fleet's second App, `bugfix-fleet-reviewer` (id 4356712, contents read, pull requests write,
-  17 repositories), is not used by flotilla.
+- **Its private key:** on the bugfix machine in `~/flotilla-remote/app/github-app.pem` (mode 600),
+  mounted into the act worker alone (`/run/flotilla/app/`).
+- **Its ids** (not secrets): `BUGFIX_GITHUB_APP_ID` and `BUGFIX_GITHUB_APP_INSTALLATION_ID` in the
+  remote stack's `~/flotilla-remote/.env`.
 
 Without the App, `bugfix/open-pr` escalates the case ("no GitHub App configured"), and the diff on the
 case page can be applied by hand.
@@ -260,8 +260,8 @@ case page can be applied by hand.
 
 - `docker exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check` lists
   `github.open_pr` and passes.
-- After the first hour, `bugfix/intake` has a run with `BUGFIX INTAKE chipi/orrery: N open issues` in
-  its log, and the fleet page shows N `code_bug` cases.
+- After the first hour, `bugfix/intake` has a run with
+  `BUGFIX INTAKE <owner>/<repo>: N open issues` in its log, and the fleet page shows N `code_bug` cases.
 - A `bugfix/fix` run ends with `BUGFIX FIX case=… outcome=plan` or `outcome=escalate` and a reason.
 
 ## Troubleshooting

@@ -1,6 +1,6 @@
 # MCP for other agents
 
-Other agents reach flotilla through MCP at `https://flotilla.tail6d0ed4.ts.net/mcp`
+Other agents reach flotilla through MCP at `https://flotilla.<tailnet>.ts.net/mcp`
 ([ADR-0015](../adr/ADR-0015-mcp-server.md)): the API's own read and tightening tools, under each
 caller's own token. Nothing there approves, rejects or loosens.
 
@@ -44,7 +44,7 @@ a minute.
    EOF
    chmod 700 ~/.config/flotilla/mcp-headers.sh
    claude mcp add-json --scope user flotilla \
-     '{"type":"http","url":"https://flotilla.tail6d0ed4.ts.net/mcp","headersHelper":"'"$HOME"'/.config/flotilla/mcp-headers.sh"}'
+     '{"type":"http","url":"https://flotilla.<tailnet>.ts.net/mcp","headersHelper":"'"$HOME"'/.config/flotilla/mcp-headers.sh"}'
    ```
 
 ## Verify

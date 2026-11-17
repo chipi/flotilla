@@ -11,9 +11,10 @@ model behaviour that is measured.
 
 ## 1. The test pyramid
 
-The target. **Today:** Go unit tests, the runtime's and the triage fleet's Python tests, and the
-e2e stack (`deploy/e2e/run.sh`); the case, policy, host-agent and Slack tests come with what they
-test.
+The target. **Today:** Go unit tests (cases, policy, the host agent, Slack, MCP, the UI and the
+rest), the runtime's and the fleets' Python tests, and the e2e stack (`deploy/e2e/run.sh`), which
+runs the whole platform in containers, with a real host agent and stand-ins for the services it
+reads or writes (the model gateway, metrics and traces; `deploy/e2e/stub.py`).
 
 | Level | What | Examples | Where it runs |
 | --- | --- | --- | --- |
@@ -30,7 +31,8 @@ test.
 - **No real model in the pyramid.** Model behaviour is measured in fleet validation (section 3),
   never asserted in unit tests.
 - **Fixtures with real data stay private.** Recorded alerts and Search Console rows from production
-  live in the private eval repo. The public repo's fixtures are synthetic.
+  live in the installation's private fleets repo, with the gates that replay them. The public
+  repo's fixtures are synthetic and use example names (`make lint` refuses installation facts).
 
 ## 2. Validating the platform on its own: the canary fleet
 
@@ -88,12 +90,13 @@ The target. **Today** (GitHub Actions, `.github/workflows/`):
 - Not in CI: `make replay` runs the installation's gates and corpora (`SF_REPLAYS`,
   `SF_ALERT_RULES`) that a hosted runner cannot read; it runs on a host before a fleet's code switches.
 - `deploy/mini/checks_green.sh <sha>` reads a commit's check runs from GitHub and exits non-zero
-  unless `ci-fast` succeeded. `deploy.sh` does not call it yet (it is to, before it pulls an image).
-- The secrets scan is a pre-commit hook.
+  unless `ci-fast` succeeded (and `e2e`, when it ran). `deploy.sh` calls it before it pulls an
+  image: a commit that is not green is not deployed.
+- The secrets scan (gitleaks) is a pre-commit hook, not a CI step.
 
 | Tier | Runs | Contains |
 | --- | --- | --- |
-| `ci-fast` | every push and PR | lint (gofmt, go vet, ruff), unit, contract, security tests, spec schema validation, secrets scan |
+| `ci-fast` | every push and PR | lint (gofmt, go vet, Python byte-compile, `llms.txt` up to date, no installation facts), unit, contract and security tests, spec validation; then the images, when an image's files changed |
 | `ci` | PRs to main and main | `ci-fast` plus integration, the docs build (strict), vulnerability scans, image builds |
 | release | before deploy | `ci` plus end to end in the dev Docker engine |
-| private replay | on the host, before switching a fleet's code | the fleet's replay corpus with real recorded data (from the private eval repo) |
+| private replay | on a host, before a fleet's decision logic ships | `make replay` with `SF_REPLAYS`: the installation's gates and real recorded cases, from its private fleets repo |

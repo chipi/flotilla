@@ -216,9 +216,9 @@ remediation-fleet/                   (in the repo — code only)
   "enabled": true,
   "interval": "5m",
   "cycle_cmd": "/usr/bin/python3 cycle.py",
-  "workdir": "/Users/markodragoljevic/agentic-ai-homelab/remediation-fleet",
-  "env_file": "/Users/markodragoljevic/remediation-fleet/.env",
-  "stop_flag": "/Users/markodragoljevic/remediation-fleet/STOP",
+  "workdir": "/Users/<user>/agentic-ai-homelab/remediation-fleet",
+  "env_file": "/Users/<user>/remediation-fleet/.env",
+  "stop_flag": "/Users/<user>/remediation-fleet/STOP",
   "budget_day_usd": 0,
   "stage": "shadow",
   "cycle_timeout": "40m"
@@ -428,7 +428,7 @@ a mismatch.
    | layer | how | required? |
    | --- | --- | --- |
    | a. structure | re-run the SSH check until `needs_recovery=false`, for up to 3 min. The recreate goes in `docker ps` order with `--no-deps`, so an nginx surface can restart-loop until its `api` is up (as `player-learning-app-1` and `operator-viewer-1` did in the incident); one early read would call a working recovery failed | yes |
-   | b. user-facing | from the mini, `GET https://prod-podcast.tail6d0ed4.ts.net/api/health` → `200`, plus the player and operator surfaces' health endpoints (the exact URLs to be taken from the deploy workflows' own post-deploy probes — not yet identified here), retried for up to 3 min (the first request after a recreate took ~70 s on 2026-09-30). Reachable today: `tag:homelab-host → tag:prod:443` is granted, and the probe returned `200` on 2026-09-30. | yes |
+   | b. user-facing | from the mini, `GET https://<prod-host>.<tailnet>.ts.net/api/health` → `200`, plus the player and operator surfaces' health endpoints (the exact URLs to be taken from the deploy workflows' own post-deploy probes — not yet identified here), retried for up to 3 min (the first request after a recreate took ~70 s on 2026-09-30). Reachable today: `tag:homelab-host → tag:prod:443` is granted, and the probe returned `200` on 2026-09-30. | yes |
    | c. secret-dependent paths | dispatch `prod-ops-health.yml` (no approval: its `prod-ops-health` environment has no protection rules by design), wait for it, then read the **fresh** `prod_ops_health_check{check=…}` from VictoriaMetrics — `last_run_timestamp` newer than the recovery. Its `gateway` check exercises the provider keys through the LLM gateway; `o11y_glitchtip` exercises the Sentry DSN. Those are exactly the paths a missing secret breaks. Runs took 33–59 s (12/12 green, 2026-09-18 → 29). | `gateway`, `o11y_glitchtip`: yes |
    | d. observability flowing | `o11y_metrics` / `o11y_logs` / `o11y_traces` from the same run, plus fresh `node_*{instance="prod-podcast"}` samples in VictoriaMetrics | reported, not required |
 

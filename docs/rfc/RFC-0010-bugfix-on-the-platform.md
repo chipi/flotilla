@@ -1,6 +1,7 @@
 # RFC-0010 — Bugfix on the platform: from a bug to a draft PR, as a case
 
-**Status:** Proposed; the six questions taken as proposed, as starting points the evaluation (§8)
+**Status:** Accepted (operator, 2026-11-15); the six questions taken as proposed, as starting
+points the evaluation (§8)
 may overturn (operator, 2026-11-15). Bugfix is in beta evaluation, not a fleet known to work. Step 4
 of the [vision plan](../wip/vision-plan.md).
 **Builds on:** [RFC-0002](RFC-0002-job-runtime.md) (the `external` step),

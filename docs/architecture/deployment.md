@@ -9,7 +9,7 @@ A flotilla installation has two parts:
 - **the control plane:** flotillad, the workers and the egress proxy, as one Compose stack on one
   host;
 - **host agents:** `flotilla-host` on each host flotilla may change, installed by the operator with
-  the `flotilla host` CLI over SSH.
+  `deploy/host/install.sh` over SSH.
 
 ```mermaid
 flowchart TB
@@ -34,7 +34,7 @@ flowchart TB
     WT & WR & WA & WO --> E
     E --> Out[(model endpoint, sources)]
     NA & NB -- outbound mTLS --> F
-    Op -- flotilla host install, over SSH --> NA & NB
+    Op -- deploy/host/install.sh, over SSH --> NA & NB
     NA --> Slack[(Slack, Socket Mode)]
 ```
 
@@ -50,9 +50,9 @@ its routines may plan.
 | `ops-act-host` | none for hosts: the only role whose routines may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation routines |
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
 | `marketing` | the sites it checks (its own proxy, `egress-seo`); later Search Console and Umami read | the seo fleet (RFC-0012) |
-| `bugfix` | its model key (LiteLLM's fleet-bugfix); git, Node and pi; no GitHub write; its own egress proxy (`egress-bugfix`: GitHub, the npm registry, LiteLLM) | the bugfix fleet's intake, fix and PR check ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) |
+| `bugfix`, `bugfix-fix`, `bugfix-fix-podcast` | `bugfix` (intake, PR check) no model key; each fix routine's worker only its own LiteLLM key; git, Node, Python and pi; no GitHub write; their own egress proxy (GitHub, the npm and Python registries, LiteLLM). They run on another machine as remote workers ([RFC-0011](../rfc/RFC-0011-remote-workers.md)) | the bugfix fleet's intake, fix and PR check ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) |
 | `bugfix-act` | the bugfix GitHub App's key; no model key, runs no repo code | the bugfix fleet's `open-pr`, after a person approved a PR |
-| `knowledge-refresh` | read access to knowledge sources | refreshing and indexing knowledge |
+| `knowledge-refresh` (later) | read access to knowledge sources | refreshing and indexing knowledge |
 
 - **No Docker socket in any container.** The host agent reaches its host's Docker through the
   engine's own user (ADR-0006 §6). Workers are long-running; each run is a process in its role's
@@ -61,14 +61,16 @@ its routines may plan.
 
 ## Host agents
 
-- **Installed by the operator:** `flotilla host install <host>` over SSH with the operator's key. It
+- **Installed by the operator:** `deploy/host/install.sh install <ssh-target>` over SSH with the
+  operator's key. It
   copies the binary for the host's platform (v1: built by the operator from a tagged commit; signed
   CI releases before the second host), creates the dedicated user, writes the service unit (systemd
   or launchd) and the host's allowlist, generates the sudoers file (checked with `visudo -c`), and
   enrols the agent with a one-time token.
-- **Upgrades are pushed:** `flotilla host upgrade`, one host at a time. `flotilla host list` shows
-  each agent's version, last contact, clock offset, certificate expiry and allowlist hash. `flotilla
-  host revoke` cuts an agent off in flotillad alone; `remove` also uninstalls.
+- **Upgrades are pushed:** `deploy/host/install.sh upgrade`, one host at a time. `flotilla host
+  list` shows each agent's version, last contact, clock offset, certificate expiry and allowlist
+  hash. `flotilla host revoke` cuts an agent off in flotillad alone; `install.sh remove` also
+  uninstalls.
 - **Connects out:** the agent opens one connection to flotillad's host endpoint; nothing on the host
   listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
   network); mutual TLS is required on any of them.
@@ -107,16 +109,23 @@ execution key with a two-key window, the intermediate CA, the root, a host's cer
 
 ## Deploy and rollback
 
-- **Deploy:** a new image tag for each container, then `docker compose up -d`. Specs travel inside
-  the image, so a spec change is a deploy. A changed config file recreates the service that reads it
-  (a config hash in the service's environment).
-- **Rollback:** the previous tag; for a host agent, `flotilla host upgrade` to the previous release.
+- **Deploy:** a new image tag for each container, then `docker compose up -d`. The example fleets
+  travel inside the image; an installation's own fleets are mounted over them and deployed apart
+  (`deploy/mini/deploy_fleets.sh <commit>`, see Fleet packs below). A changed config file
+  recreates the service that reads it (a config hash in the service's environment).
+- **Rollback:** the previous tag (`deploy.sh --rollback`); the previous fleets
+  (`deploy_fleets.sh --rollback`); for a host agent, `install.sh upgrade` to the previous release.
 - **Observability:** every deploy writes a deploy event, so deploy checks and alert stand-downs see
   it.
 - **State:** the database lives on a volume and survives restarts. Schema steps run at start-up in
   order, each in a transaction; an older flotillad refuses a newer database.
-- **Fleet packs** ([ADR-0013](../adr/ADR-0013-fleet-packs.md), not built): an installation's pack
-  folders are mounted read-only into flotillad only, never into a worker; a change to a pack runs
+- **The installation's own fleets, today:** its private repo's `fleets/`, one commit exported
+  read-only and mounted over `/opt/flotilla/fleets` in flotillad and the workers that read fleet
+  files (`deploy/compose/fleets.yml`); `deploy_fleets.sh` checks it with `flotillad -check`, pauses
+  the triage routines, switches and compares every routine's spec hash.
+- **Fleet packs** ([ADR-0013](../adr/ADR-0013-fleet-packs.md), not built, parked): an
+  installation's pack folders are mounted read-only into flotillad only, never into a worker; a
+  change to a pack runs
   only after the operator approves its set hash, not at the next deploy. flotillad's config gains
   `installation:`, its name, beside `environment:`. A second installation on one host needs the
   compose project's name and the container names parametrised.
@@ -149,8 +158,8 @@ commit to this page, with the reason.
 | What | Where |
 | --- | --- |
 | Control plane | the homelab Mac mini (Intel, macOS), in the production colima VM beside the homelab's other services, deployed by the operator account with `deploy/mini/deploy.sh` |
-| Running today | `flotillad`, `worker-triage` (shadow), `worker-triage-candidate` (Compose profile `candidate`), `egress` |
+| Running today | `flotillad`; `worker-triage` (triage at propose) and `worker-triage-candidate` (shadow); `worker-ops-read`, `worker-ops-act-host`; `worker-marketing`; the egress proxies `egress` and `egress-seo`. The bugfix workers run on a second machine as remote workers |
 | Model endpoint | the homelab's LiteLLM gateway, reached through the egress proxy |
 | Network | a tailnet; the UI, API and MCP behind a caddy-tailscale node of their own |
-| Host agents | the mini first (v1: `backup.rerun_observability`, in shadow), then the DGX and the production VPS |
+| Host agents | the mini, live since 2026-11-14 (v1: `backup.rerun_observability`, in shadow; the Slack connector once Slack is wired), then the DGX and the production VPS |
 | Credentials | each one has a row in the homelab handbook's credentials table, minted with its `mint-credential` skill |

@@ -73,7 +73,7 @@ flotillad holds no Slack credential: the agent does (ADR-0006, decided 4).
    slack:
      connector_host: mini
      team_id: T0123456789
-     ui_url: https://flotilla.tail6d0ed4.ts.net
+     ui_url: https://flotilla.<tailnet>.ts.net
      users: {U0123456789: marko}
      daily_cap: 10
    ```

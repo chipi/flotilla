@@ -3,7 +3,7 @@
 Decisions that shape the *structure* of this project: what's in scope, how
 it's organized, what conventions govern it.
 
-Distinct from `docs/history/0NNN-decisions.md` if you keep one (operational
+Distinct from `docs/history/decisions.md` if you keep one (operational
 decisions — what tool, what port, what tag). The rule of thumb:
 
 - **ADR**: would a future contributor need to know this to make a

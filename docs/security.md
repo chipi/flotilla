@@ -93,12 +93,13 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 
 ## Not covered yet
 
-- **ADR-0005's pipeline is accepted and not built** (cases, policy, taint, guardrails, channels,
-  approvals); v1 brings the first of it. Until then T1 is covered by the triage fleet's own code
-  checks and its `shadow` autonomy, and T10 by the append-only `events` table.
+- **ADR-0005's pipeline is built and runs in shadow** (pipeline v1, 2026-11-14): cases, policy with
+  taint, the circuit breaker, the host incident and recurrence rules, the freeze, and approvals in
+  the UI and the CLI. The only channel is Slack, built and not wired (no app yet). The triage fleet
+  is not a case producer: it files through its own ledger, guarded by its code gates.
 - **Redaction** of flotillad's logs and routine traces is not built.
 
-- **Host agents are built (2026-11-13) and not yet deployed.** T13 to T15 are built, and the
+- **Host agents are built and run on the mini since 2026-11-14.** T13 to T15 are built, and the
   security e2e passes (`make test-e2e`): on an installed stand-in host, an execution approved by the
   operator, signed, run and verified; a second one refused by the host's rate limit; an action off
   the host's allowlist refused; then the host's log audited against flotillad's record. Forged,
@@ -109,7 +110,9 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 - **Image signing:** planned before any routine reaches `auto`, not built.
 - **The coding harness** used by the bugfix fleet runs code from the repos it fixes: reviewed in
   [SR-0001](security-reviews/SR-0001-bugfix-coding-harness.md) (2026-11-15). The fleet may go to
-  propose once the operator has made its GitHub App; the advisor's "read only" is not by construction.
+  `github.open_pr` is at propose since 2026-11-16 (a person approves every PR plan); the fix routines
+  stay in shadow, and the fleet is STOPped while its evaluation runs. The advisor's "read only" is
+  not by construction.
 - **Model-written commands** (an investigation sandbox) are not part of the design; they get their
   own threat model if they are added.
 - **The egress proxy** has been checked for licence and activity; its configuration review and a

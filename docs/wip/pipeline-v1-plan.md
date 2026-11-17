@@ -198,7 +198,7 @@ promotion to propose).
   same triage logic.
   - **The store-copy check:** sha-f80c0c0, `--read-only --cap-drop ALL`, on a copy of the live store:
     schema 4 to 9, 27,518 ledger entries and 1,170 filings kept.
-  - **`ui_listen: 0.0.0.0:8486`, `ui_host: flotilla.tail6d0ed4.ts.net`.**
+  - **`ui_listen: 0.0.0.0:8486`, `ui_host: flotilla.<tailnet>.ts.net`.**
   - **The ops routines disabled** (`disabled_routines`): their workers come next.
   - **No deploy caller and no stand-down yet.**
   - **The store copy before the deploy:** `~/flotilla/state-bak-20261114-ui-1227` on the mini. The
@@ -209,7 +209,7 @@ promotion to propose).
   - **The UI from inside its network:** `/signin` 200 for `ui_host`, 421 for another host.
   - **Then the homelab proxy node.** The caddy-tailscale auth key had expired on 11-13, so the new
     node could not register, and that failed caddy's whole config (every node down about 90 s, then
-    restored). It came up once the operator made a new key: `https://flotilla.tail6d0ed4.ts.net`
+    restored). It came up once the operator made a new key: `https://flotilla.<tailnet>.ts.net`
     answers 303, then the sign-in page, and all 9 other nodes answer.
 
   **Two faults of mine on the way:**

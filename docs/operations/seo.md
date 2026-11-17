@@ -14,11 +14,13 @@ shows them under **Search** (their specs' `brief_section`), so the section appea
 
 ## The sites
 
-`seo/sites.json`, one entry per site, baked into the marketing image:
+The fleet folder's `seo/sites.json`, one entry per site: the image carries the example
+(`fleets/seo/sites.json`, `example.com`); an installation's own comes from its private fleets repo,
+mounted over it (`deploy/compose/fleets.yml`). `SEO_SITES` names another file.
 
 | Key | Meaning |
 | --- | --- |
-| `name`, `base` | the site's name and its canonical origin (`https://www.orrerylearn.com`) |
+| `name`, `base` | the site's name and its canonical origin (`https://www.example.com`) |
 | `pages` | paths always checked (default `/`); their hreflang alternates are fetched too |
 | `sample_prefixes` | per prefix, the first URL of the sitemap below it (sorted) is checked as well |
 | `brand` | a title equal to it alone is a finding |
@@ -34,7 +36,7 @@ A new site: an entry here, the host in `egress-seo-acl.yaml`, its Umami website 
 
 ## What a finding looks like
 
-Target `site:<check>/<host><path>`, e.g. `site:canonical/airandspacehistory.com/`. site-check's
+Target `site:<check>/<host><path>`, e.g. `site:canonical/www.example.com/`. site-check's
 checks: `robots`, `robots-<bot>`, `sitemap`, `status`, `redirect`, `html`, `noindex`, `title`,
 `description`, `canonical`, `json-ld`, `hreflang`, `retired`. traffic's: `visits`, `search-visits`.
 search-console's: `clicks`, `opportunity` (`<path>/<query>`), `index`. The case's data carries the
@@ -61,14 +63,12 @@ All in `FLOTILLA_CONFIG` (`~/flotilla/config`), each secret created mode 600 and
    default:
      project: flotilla-seo
      action: enforce
-     allowed_domains: [www.orrerylearn.com, orrerylearn.com, chipi.github.io, www.humancopilot.eu,
-       humancopilot.eu, evals.humancopilot.eu, www.devwhateverops.com, devwhateverops.com,
-       www.markodragoljevic.com, markodragoljevic.com, airandspacehistory.com, www.airandspacehistory.com,
+     allowed_domains: [www.example.com, example.com, docs.example.com,   # every host in sites.json
        umami, oauth2.googleapis.com, searchconsole.googleapis.com]
    ```
 
 4. **`smokescreen-seo.yaml`:** a copy of `smokescreen.yaml` whose `allow_ranges` is Umami's docker
-   network only (`docker network inspect umami_default`; `172.24.0.0/16` on the mini), so this proxy
+   network only (`docker network inspect umami_default`), so this proxy
    reaches no other private address.
 5. **The read credentials,** in `FLOTILLA_HOME/marketing/` (`~/flotilla/marketing/` on the mini), mode
    600; `secrets.sh` copies them into the worker's volume:

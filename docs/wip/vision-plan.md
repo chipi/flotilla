@@ -10,18 +10,21 @@ first deploy. The order: redesign what exists into the platform, add SEO, then m
 out of agentic-ai-homelab. The order of the steps below is the operator's (2026-11-14). The operator
 calls closing them **the MVP** (2026-11-17), and added steps 7 and 8.
 
-## Where it stands (2026-11-14, sha-ccfef86 on the mini)
+## Where it stands (2026-11-17, sha-69a8c58 on the mini and the X3)
+
+How it got here: [history 0002](../history/0002-design-to-running-platform.md).
 
 | Area | State |
 | --- | --- |
-| Platform | flotillad, workers, egress proxy, the UI (mockup v3, every page; [parity](ui-mockup-parity.md)), ledger, cases, policy, the host agent on the mini; schema 19 |
-| Triage | live on flotilla since 2026-11-14 ([promotion plan](promotion-plan.md)); the candidate `triage/cycle-shadow` still runs |
-| Ops | pipeline v1 in shadow: the backup monitor, rerun and verify ([pipeline v1](pipeline-v1-plan.md)); the morning brief, written by flotillad without a model; the daily model contract check |
-| Slack approvals | built and tested against a stand-in; not wired (no app) |
-| MCP server | built 2026-11-15 (ADR-0015); no real caller yet |
-| Bugfix | phase A live 2026-11-15 in shadow: intake, fix, open-pr and pr-check as routines, its workers on the X3 as remote workers (RFC-0011); phase B (the evaluation) is a separate activity |
-| SEO / digital marketing | not started |
-| agentic-ai-homelab | still holds `fleetd/`, `signal-fleet/`, `bugfix-fleet/`, frozen |
+| Platform | flotillad, workers, egress proxies, the UI, ledger, cases, policy, the host agent on the mini, the MCP server; schema 25 |
+| Fleets | flotilla ships example fleets; the mini runs the operator's from the private fleets repo (step 7, route B) |
+| Triage | live at propose on flotilla since 2026-11-11, on its own images since 2026-11-14; the candidate `triage/cycle-shadow` still runs |
+| Ops | pipeline v1 in shadow: the backup monitor, rerun and verify ([pipeline v1](pipeline-v1-plan.md)); post-incident review; the morning brief; the daily model contract check |
+| Slack approvals | built and tested against a stand-in; not wired (the operator is making the app) |
+| MCP server | live since 2026-11-16, first caller a Claude session (step 2) |
+| Bugfix | phase A in shadow, its workers remote on a second machine; `github.open_pr` at propose; the fleet STOPped while its evaluation (phase B) runs |
+| SEO | site-check, traffic and search-console in shadow on the marketing worker (step 5) |
+| agentic-ai-homelab | holds no fleet code since 2026-11-16 (step 6) |
 
 ## The steps
 
@@ -122,8 +125,8 @@ activity over the following days and weeks (RFC-0010 §7, operator 2026-11-15).
 [operations](../operations/seo.md)): `seo/site-check` runs daily in shadow on the `marketing` worker
 on the mini, over the operator's 5 sites. Its first run (19:37Z) opened 2 cases: Orrery's robots.txt
 keeps Baiduspider out, airandspacehistory.com's home canonical is `/home`. Search Console (a service
-account on the 5 properties) and Umami (a view-only user) are reachable; the traffic and
-search-console routines are next.
+account on the 5 properties) and Umami (a view-only user) are reachable. The traffic and
+search-console routines followed the same day.
 
 - Design first: Orrery as the first site; Google Search Console and Umami as sources (GA4 is out);
   what a finding is, how often, what it may do (propose only to start).
@@ -151,10 +154,9 @@ prompts, repos, sites and thresholds) live in a **private repo** and are install
 flotilla from there.
 
 - The mechanism is [ADR-0013](../adr/ADR-0013-fleet-packs.md)'s fleet packs: a pack is a folder of
-  text with named slots, and an installation fills the slots in its own config. It is designed, not
-  built: `fleets/` is in the old layout, and real values are still in code (`seo/sites.json`,
-  `signal-fleet/mvp/filing.py` and `config.py`, `fleetd/deploy/*.json`; the AGENTS.md deviation from
-  rule 1).
+  text with named slots, and an installation fills the slots in its own config. Packs are designed,
+  not built (route A, parked); route B, below, does the separation today. (When this step was
+  written, `fleets/` was in the old layout and real values were in code.)
 - The example fleets (triage, bugfix, ops, SEO) are generic, carry no real repo, site or host, and
   run in a demo installation against stand-in data.
 - **Refactor to config only** (the operator, 2026-11-17): every installation fact moves out of code

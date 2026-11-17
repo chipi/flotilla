@@ -111,7 +111,7 @@ Test and synthetic signals are suppressed at this stage.
       `limit_source=upstream_provider_shared_pool`, operator call on homelab #17);
     - a call to the X3 assistant that LiteLLM failed over (`assistant-failover`, RFC-0008): a
       `litellm` issue whose latest event names only the assistant's backend
-      (`config.ASSISTANT_BACKEND`, 100.92.54.65:11435). The orchestrator reads that event just
+      (`config.ASSISTANT_BACKEND`, `<assistant-host>:11435`). The orchestrator reads that event just
       before triage (`sources.attach_backend`).
 
     These are states, not bugs, and they hold even while the triager is down.

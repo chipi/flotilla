@@ -1,385 +1,104 @@
-# Installing flotilla on a host
-
-One compose stack (ADR-0002): `flotillad`, one worker per role (`worker-triage` today) and the egress
-proxy (`egress`, Smokescreen). The repo holds the compose file and the images; everything about one
-installation lives on the host, outside git. Placeholders below are in `<angle brackets>`.
-
-## Layout (`~/flotilla` on the host)
-
-```text
-~/flotilla/
-  repo/                     git clone https://github.com/chipi/flotilla.git repo
-  .env                      the installation (compose and the deploy scripts read it)
-  config/                   read-only into the containers: 644 for the YAML, 600 for the tokens
-    flotillad.yaml
-    callers.yaml            who may call the API, by token hash
-    cli.token               the token the CLI inside flotillad uses (an agent token: see below)
-    worker-triage.token     flotillad <-> worker, 32+ random characters
-    worker-triage.env       the installation's overrides for routines (ROUTINE_*); no secrets
-    smokescreen.yaml        the proxy: listen address, which private ranges it may reach
-    egress-acl.yaml         the proxy: which host names routines may reach
-  deployed.tsv              written by deploy/mini/deploy.sh
-  backups/                  the store's snapshots, one folder per deploy or rollback (see "Roll back")
-```
-
-**State and secrets are Docker volumes**, not host folders: `flotilla-state` (the store and its daily
-backups), the triage fleet's state (`TRIAGE_STATE_VOLUME`), and `flotilla-flotillad-secrets` /
-`flotilla-worker-triage-secrets`. Nothing writes to the host through the VM's file sharing.
-`deploy/mini/secrets.sh` copies the tokens and the triage secrets file into the secret volumes on
-every deploy (mode 600, owned by the reading container's uid); the token files above are read on
-the host only, by that script.
-
-`.env`:
-
-```sh
-FLOTILLA_CONFIG=<home>/flotilla/config
-TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's secrets volume
-TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (shadow copy, or live after the switch)
-FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
-TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (mirror-test's until the switch)
-FLOTILLA_FLEETS_REPO=<checkout of the private fleets repo>  # optional: the installation's own fleets (deploy_fleets.sh)
-FLOTILLA_FLEETS_DIR=<FLOTILLA_HOME>/fleets            # optional: mounted over the image's fleets (fleets.yml); unset: the image's
-FLOTILLA_ADMIN_TOKEN_FILE=<admin token file>          # deploy_fleets.sh pauses and resumes the triage routines with it
-TRIAGE_FILING_GATE=<filing_gate.py>                    # the private fleets repo's triage/filing/scripts/filing_gate.py; unset: the deploy fails unless SF_FILING_GATE_ACCEPT says why
-# FLOTILLA_BACKUPS_KEEP=10                             # optional: how many store snapshots deploy.sh keeps
-# the services' Docker networks, when they are not the defaults
-# NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default
-```
-
-A shadow state volume is seeded once from the live fleet's folder, without its secrets file and STOP
-flag, and never overwritten after:
-
-```sh
-~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state flotilla-triage-state-shadow <the fleet's state folder>
-```
-
-`config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`,
-`disabled_routines`, `case_timers`, `models` and `hosts`):
-
-```yaml
-listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
-worker_listen: 0.0.0.0:8485            # optional: the ledger only, for the workers' routines (RFC-0002 §9 step 5)
-specs_dir: /opt/flotilla/fleets         # in the image
-state_dir: /var/lib/flotilla
-environment: operations
-timezone: <Region/City>                 # the budget day
-vm_url: http://victoriametrics:8428     # through the proxy
-otlp_traces_url: http://victoriatraces:10428/insert/opentelemetry/v1/traces
-errors_dsn_file: /run/flotilla/errors.env     # optional: secrets.sh copies FLOTILLA_ERRORS_DSN_FILE here
-callers_file: /etc/flotilla/callers.yaml
-workers:
-  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
-disabled_routines: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a routine whose worker is missing
-case_timers: {detected_alert: 30m, handed_over_escalate: 24h}   # optional, these are the defaults: a case detected that long alerts, handed over that long escalates
-models:                                 # optional (ADR-0004): the aliases routines name; every run gets it as FLOTILLA_MODELS
-  endpoints:
-    gateway:
-      base_url: http://litellm:4000/v1   # any OpenAI-compatible endpoint; through the egress proxy
-      kind: litellm                      # litellm adds Langfuse trace metadata; openai for anything else
-      key_env: OPENROUTER_API_KEY        # a variable in the fleet's secrets file (or key_file: a path in the worker)
-      defaults: {tools: native, json: object, cost: reported}
-  aliases:
-    triage-default: {endpoint: gateway, model: fleet-triage-pro}
-    local-dgx: {endpoint: gateway, model: <model name>, tools: none, cost: zero}
-  prices: {}                             # per alias, for cost: table (input_per_mtok, output_per_mtok)
-```
-
-`-check` validates `models` with the same rules the Python client applies (shared fixtures:
-`runtime/testdata/models-*.json`) and prints the number of aliases. In `worker-triage.env`,
-`ROUTINE_HEARTBEAT_MODEL_ALIAS=<alias>` makes the heartbeat call that alias once per run through the
-model client, traced: the platform's live check of the models section, the key, the endpoint through
-the proxy and the routine's spans. Unset, the heartbeat makes no model call. The alias must be one of
-the heartbeat spec's `models:` (`fleets/platform/heartbeat.yaml`): a run gets only the aliases its
-spec names. Name the alias the
-fleets actually decide with (the mini: `triage-pro`, the model of `SF_TRIAGE_MODEL`), so the canary
-watches the model production uses; the call allows 256 tokens, room for a model that reasons first.
-
-`config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
-
-```yaml
-callers:
-  - {name: operator, role: operator, token_sha256: <64 hex>}
-  - {name: <agent name>, role: agent, token_sha256: <64 hex>}
-```
-
-The **operator's** token stays with the operator: autonomy changes, resuming a routine and starting
-a STOPped fleet need it, and no agent ever holds it (AGENTS.md rule 2). The CLI inside the container
-(`cli.token`) uses an **agent** token; the operator passes theirs per call:
-
-```sh
-docker exec -e FLOTILLA_TOKEN="$(cat <operator token file>)" flotillad flotilla autonomy triage/cycle propose
-```
-
-`config/worker-triage.env`: the triage fleet reads its services by these URLs, all through the proxy.
-
-```sh
-ROUTINE_SF_SERVICE=triage-fleet                 # the candidate worker overrides it (triage-fleet-candidate)
-ROUTINE_SF_VM_URL=http://victoriametrics:8428
-ROUTINE_SF_VL_URL=http://victorialogs:9428
-ROUTINE_SF_VT_URL=http://victoriatraces:10428
-ROUTINE_SF_GRAFANA_URL=http://grafana:3000
-ROUTINE_SF_GLITCHTIP_URL=http://<glitchtip web container>:8080
-ROUTINE_SF_OPENROUTER_URL=http://litellm:4000/v1/chat/completions
-ROUTINE_LANGFUSE_HOST=http://langfuse-web:3000
-ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:4000/health/liveliness
-ROUTINE_HEARTBEAT_DENIED_URL=http://example.com/
-```
-
-`config/smokescreen.yaml`: private addresses are refused unless a range is allowed; allow only the
-services' networks.
-
-```yaml
-ip: 0.0.0.0
-port: 4750
-acl_file: /etc/smokescreen/acl.yaml
-allow_missing_role: true       # one proxy per worker set: no client certificates, the default ACL applies
-allow_ranges: [<subnet of each service network>]
-```
-
-`config/egress-acl.yaml`: everything else is refused and logged.
-
-```yaml
-version: v1
-services: []
-default:
-  project: flotilla
-  action: enforce
-  allowed_domains: [victoriametrics, victorialogs, victoriatraces, grafana, litellm, <glitchtip web container>, langfuse-web, api.github.com]
-```
-
-## The ops workers: pipeline v1 (RFC-0004 §10)
-
-The image carries `fleets/ops/` (`backup-monitor` on `ops-read`, `rerun-backup` on `ops-act-host`).
-A host must do one of two things before deploying a tag that has them, or flotillad's `-check`
-refuses to start, before anything changes:
-
-- **Run them:** add `ops` to `COMPOSE_PROFILES` in `.env`; create `config/worker-ops-read.token` and
-  `config/worker-ops-act-host.token` (32+ random characters each) and `config/worker-ops.env`
-  (`ROUTINE_VM_URL`, `ROUTINE_BACKUP_INSTANCE`, the backup metric's `instance` label, and
-  `ROUTINE_BACKUP_TARGET`, e.g. `host:mini`); add both workers under `workers` in `flotillad.yaml`
-  (`url: http://worker-ops-read:8081`, `token_file: /run/flotilla/worker-ops-read.token`, and the
-  same for `ops-act-host`). `secrets.sh` fills their token volumes when the tokens exist.
-- **Not yet:** list `ops/backup-monitor` and `ops/rerun-backup` in `disabled_routines`.
-
-They reach VictoriaMetrics through the proxy, already on its allowlist for flotillad's metrics.
-`rerun-backup` is capped at shadow: its plans are recorded and nothing is sent to the host.
-`flotilla case list` and `flotilla case show <id>` show what they did.
-
-## The deploy stand-down (RFC-0004 §5.1)
-
-While a deploy changes a host, policy defers every plan on it. `deploy/mini/standdown.sh HOST DURATION
-WHY` takes that stand-down: a hold on `host:HOST` by the installation's `deploy` caller, ending on its
-own. It never fails its caller. `deploy.sh` takes one for 30m before `up` when `.env` names
-`FLOTILLA_STANDDOWN_HOST` (e.g. `mini`); the homelab's `mini-deploy.sh` takes one from its pre-pull
-hook. To set it up:
-
-1. Add a caller with role `agent` (it may hold, never lift) to `callers.yaml`:
-   `- {name: deploy, role: agent, token_sha256: <sha256 of the token>}`
-   (`flotilla hash-token < config/deploy.token`).
-2. Put the token in `config/deploy.token`; `secrets.sh` copies it into flotillad's secrets volume,
-   where the script reads it by path.
-3. Set `FLOTILLA_STANDDOWN_HOST=mini` in `.env`.
-
-## The host agents' endpoint (ADR-0006)
-
-Optional; without it no host can enrol or connect. The CA comes from the operator's machine, offline:
-`flotilla ca root DIR` once (the root's key stays there, kept as the backup key is), then
-`flotilla ca intermediate DIR config/host-ca`; `secrets.sh` copies the three files there
-(`intermediate.crt`, `intermediate.key`, `root.crt`) into flotillad's secrets volume, and refuses a
-`root.key` among them. In `config/flotillad.yaml`:
-
-```yaml
-hosts:
-  listen: 0.0.0.0:8486                   # its own port: mutual TLS, terminated by flotillad
-  ca_dir: /run/flotilla                  # the three files above (secrets.sh puts them at its root)
-  server_names: [<the name agents dial>]  # in flotillad's server certificate (made at start, renewed in memory)
-  heartbeat: 30s                         # optional, the default: the agents' -heartbeat; three missed, dropped
-  signing_key_file: /run/flotilla/signing.key   # optional: without it flotillad sends no execution
-  signing_key_id: <id>
-```
-
-A proxy in front may only pass TCP through. flotillad checks at start that the root signed the
-intermediate. Then `flotilla host enrolment NAME` (an operator) prints a single-use token for 15
-minutes, which goes to the host inside the SSH session only, on `flotilla-host enrol`'s stdin;
-`flotilla host list` and `flotilla host revoke NAME`.
-
-The execution-signing key: `flotilla ca signing-key config/host-ca ID` writes `signing.key`
-(`secrets.sh` copies it into flotillad's secrets volume) and prints the line each host's config lists
-under `signing_keys`. With it, an executing case on a host is signed and sent (approved `auto` by
-policy, or by the operator who approved it), valid for 10 minutes; the host's result moves the case:
-done to checking, a precondition that no longer holds closes it, anything else escalates it with the
-target still held. A host not connected is retried for 10 minutes, then the case escalates.
-
-## The candidate worker: shadow comparison of a candidate image
-
-ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs
-as a second worker beside the live one, with its own state, and the routine `triage/cycle-shadow`,
-capped at `shadow` by its spec (`max_autonomy`), runs the same command on it. flotillad refuses any
-autonomy above the cap, even the operator's, and the scheduler never runs it above the cap whatever
-a control says.
-
-1. Seed its state from the live state, once per comparison (a fresh volume name each time):
-   `~/flotilla/repo/deploy/mini/secrets.sh sha-<7> --seed-state
-   flotilla-triage-state-candidate-<date> ~/signal-fleet`
-2. `.env`: `COMPOSE_PROFILES=candidate`, `FLOTILLA_CANDIDATE_TAG=sha-<candidate>`,
-   `TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-triage-state-candidate-<date>`.
-3. `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081", token_file:
-   /run/flotilla/worker-triage.token}` under `workers`, and take `triage/cycle-shadow` out of `disabled_routines`.
-4. Deploy (the live tag, unchanged). Compare with
-   `deploy/mini/shadow-compare.sh --volume flotilla-triage-state-candidate-<date> --since <seed time>`.
-5. To end it: put `triage/cycle-shadow` back in `disabled_routines`, drop `COMPOSE_PROFILES`,
-   deploy. The candidate's volume stays until removed by hand.
-
-The candidate shares the triage worker's secrets volume and the proxy's allowlist: in shadow the fleet
-makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there. It reads the
-live worker's `worker-triage.env`, but the compose file sets `ROUTINE_SF_SERVICE=triage-fleet-candidate`
-and `ROUTINE_SF_GLITCHTIP_SYNC=0` over it, so its metrics, inbox and traces never count as the live
-fleet's.
-
-## The ledger in flotillad (RFC-0002 §9 step 5)
-
-A routine's ledger is its namespace in flotillad's store (`triage/cycle`, `triage/cycle-shadow`); workers
-reach it on `worker_listen`, which serves the ledger and nothing else. The backend is chosen per
-service in `.env`: `TRIAGE_LEDGER_BACKEND` (the live worker) and `TRIAGE_CANDIDATE_LEDGER_BACKEND`
-(the candidate), each `tsv` by default. With `api`, dedup reads the store; both TSVs are still written
-exactly as before (the readers' contract), and an empty namespace is refused rather than read as
-"nothing ever filed".
-
-To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
-
-1. Pause the routine (`flotilla pause <routine id>`) and let a run in flight end: between the import
-   and the switch the TSVs must not move on without the store.
-2. Import its namespace from its own state, once (counts only are printed):
-   `docker exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485
-   -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad
-   -e FLOTILLA_ROUTINE=<routine id> <worker container> python3 ledger_sync.py import`
-3. Check the store renders both TSVs byte for byte: the same with `check`.
-4. Set the service's backend to `api`, deploy (the live tag, unchanged), and resume the routine (the
-   operator's token).
-
-`filing.backfill_alert_keys` and `filing.retire_glitchtip_project` edit filed.tsv only; after one,
-re-import the namespace (a new namespace, or the routine's after an operator removes it).
-
-When `filing.FILED_COLS` gains a column (`linked_via`, 2026-11-12), a filed.tsv written by the older
-code keeps the old header until the routine's next filing rewrites it, and `import` refuses it. Run
-`ledger_sync.py pad` (the same `docker exec`, with the routine paused) before step 2; it rewrites the
-file with every column and the rows unchanged, and needs no store.
-
-## Users and the UI (ADR-0014)
-
-People sign in with their own token; agents and workers keep the callers file. On a new installation:
-
-1. Create the first admin, with the callers-file operator token the CLI inside flotillad uses:
-   `docker exec flotillad flotilla user add <name> --role admin`. The answer shows the token once;
-   keep it in a password manager. After that the operator token is retired, except for adding an admin
-   again (break-glass, recorded as `user.break-glass`).
-2. Use your own token from then on, in the UI, or with
-   `docker exec -e FLOTILLA_TOKEN=<token> flotillad flotilla …`. Loosening needs a reason:
-   `flotilla resume <routine> --reason "…"`, the same for `start`, and for `autonomy` when it
-   raises.
-3. Add people: `flotilla user add <name> --role admin|operator|viewer`; `user list`, `user role`,
-   `user rotate`, `user revoke`.
-
-The freeze runs every routine at `shadow`, so nothing outward happens, and leaves each routine's own
-autonomy as it is. An agent, an operator or an admin pulls it with `flotilla autonomy freeze` (or on
-the UI's Now page). Only an operator or an admin lifts it, with a reason:
-`flotilla autonomy unfreeze --reason "…"`. A run already going keeps the autonomy it started with.
-While it holds, `flotilla status` starts with a `FROZEN` line, and its AUTONOMY column shows what runs
-and SET what is set. STOP on a fleet is stronger: no runs at all.
-
-A hold keeps flotilla's actions off one host or target for a while; while it lasts, policy defers
-every plan there (RFC-0004 §5.1). An agent, an operator or an admin holds:
-`flotilla hold host:mini 2h --reason "disk work"`; `flotilla hold list` shows the active ones;
-only an operator or an admin lifts one early, with a reason: `flotilla hold lift <id> --reason "…"`.
-
-The UI listens on `ui_listen` (for example `0.0.0.0:8486`) and answers only `ui_host` (the
-`flotilla.<tailnet>` name). Put both in `flotillad.yaml`. flotillad joins the `ui` network
-(`NET_UI`, default `flotilla_ui`), which is internal. The homelab's caddy-tailscale proxy joins that
-network as an external one and serves the node with `bind tailscale/flotilla` and
-`reverse_proxy flotillad:8486`. The proxy terminates TLS and plays no part in identity; Funnel is never
-on.
-
-An older flotillad refuses a store a newer one has moved forward ("database schema N is newer than
-this flotillad"), and every schema step is one-way. So a deploy that adds a schema step cannot be
-rolled back by starting the old image: see "Roll back" below. Before the first deploy that adds a
-step, run the new image read-only against a copy of the real store.
-
-## Deploy, roll back, operate
-
-```sh
-~/flotilla/repo/deploy/mini/deploy.sh sha-<7>        # DEPLOY PASS / DEPLOY FAIL (rolls back on an unhealthy up)
-~/flotilla/repo/deploy/mini/deploy.sh --rollback
-docker exec flotillad flotilla status
-docker exec flotillad flotilla runs triage/cycle -n 20
-docker exec flotillad flotilla stop triage            # any caller; starting again is the operator's
-```
-
-### The filing gate
-
-A deploy runs the triage fleet's filing gate (`TRIAGE_FILING_GATE`) against the commit running now.
-A deploy fails when the gate fails, and also when it did not run: its script is missing. Either is
-accepted by naming the reason: `SF_FILING_GATE_ACCEPT="<why>" deploy.sh sha-<7>`. Only a first
-install (no earlier deploy to compare with) passes without it, and the output says `NOT RUN (no
-earlier deploy ...)`. A rollback never runs the gate.
-
-### The installation's own fleets
-
-The images carry flotilla's fleets, the examples. An installation runs its own from a private repo
-(vision plan step 7, route B): `FLOTILLA_FLEETS_DIR` makes `deploy.sh` add `fleets.yml`, which
-mounts that folder read-only over `/opt/flotilla/fleets` in flotillad and the triage workers (the
-specs, and the playbooks, skills and harness settings the triage worker reads).
-
-```sh
-~/flotilla/repo/deploy/mini/deploy_fleets.sh --diff <commit>   # what it changes against the running fleets
-~/flotilla/repo/deploy/mini/deploy_fleets.sh <commit>          # FLEETS DEPLOY PASS / FLEETS DEPLOY FAIL
-~/flotilla/repo/deploy/mini/deploy_fleets.sh --rollback
-```
-
-Each commit of `FLOTILLA_FLEETS_REPO` is exported once to `~/flotilla/fleets-<sha7>/`, read-only;
-`~/flotilla/fleets` is a symlink to the deployed one. A deploy lists the files that differ from what
-the triage worker runs, runs the running tag's `flotillad -check` with the new folder, pauses the
-triage routines (resumed on any exit), points the symlink, recreates flotillad and the triage
-workers, and prints every routine whose spec hash changed. `fleets-deployed.tsv` records each one.
-An image deploy (`deploy.sh`) keeps the mounted fleets. A fleets commit that needs a newer flotilla
-is refused by `-check`: deploy the tag first.
-
-### Snapshots
-
-Before every `up`, a deploy and a rollback alike, `deploy.sh` snapshots the store: a throwaway
-container of the worker image with no network (flotillad's own image has no shell) copies
-`flotilla.db` from the state volume with SQLite's online backup, so the copy is consistent beside a
-running flotillad, and streams it to the host. It lands in `~/flotilla/backups/<tag>-<UTC time>/`
-(`flotilla.db`, `SCHEMA` with the store's newest schema step, `WHY`; owner-only, as the store holds
-sessions and approvals). `<tag>` is the tag being deployed, so the snapshot is of the store as that
-deploy found it. The newest 10 are kept (`FLOTILLA_BACKUPS_KEEP`); only folders named like that are
-ever deleted. A snapshot that cannot be made, or is not a sound database, stops the deploy before
-anything is stopped. A first install has no store and takes none.
-
-The snapshot copies the database only; the first deploy that carries it must be run by the new
-script, so check out its commit in `~/flotilla/repo` first (the script that runs is the one in the
-checkout).
-
-### Roll back
-
-`deploy.sh --rollback` goes back to the tag deployed before the current one. Its `-check` opens the
-store read-only and fails, with nothing stopped, when the store is newer than that tag's flotillad;
-for a tag older than that check, deploy.sh reads the tag's schema steps from its
-`internal/store/store.go`. When the tag cannot run the store, the rollback restores a snapshot:
-
-1. it picks the newest snapshot whose schema the tag accepts (taken before the deploy that moved the
-   schema); if there is none it stops saying so, with nothing stopped, restored or changed;
-2. it snapshots the store as it is now (the newer schema, kept for a way forward), stops flotillad,
-   replaces `flotilla.db` (and removes its `-wal` and `-shm`) with the picked snapshot, and runs
-   `-check` again;
-3. it brings the stack up and prints exactly what it restored.
-
-**Rows written after the snapshot are lost on such a rollback** (runs, ledger entries, approvals,
-cases since that deploy started). The pre-rollback snapshot keeps them, for reading, not for
-merging. A deploy whose `up` is unhealthy falls back to the previous tag the same way, restoring the
-snapshot taken for that deploy. `deploy.sh` prints `rolled back to <tag> (running and healthy)` only
-when that tag is running and healthy; otherwise it ends `DEPLOY FAIL` and says which tag is running.
-
-## Test it before a host has it
-
-`deploy/e2e/run.sh` brings this compose file up on a development Docker engine with stand-in
-services, and checks the heartbeat, egress (allowed and refused), telemetry, auth and hardening.
+# Remote workers on a machine (RFC-0011)
+
+A worker can run on any machine on the tailnet. flotillad, on the mini, reaches it through a **link**
+beside it that dials flotillad's host endpoint under the worker's own identity, `w-<worker>-<node>`.
+This folder is the stack for one machine: today the bugfix fleet's four workers, each with its
+link, on a second machine.
+
+## What runs
+
+| Service | What it holds | Network |
+| --- | --- | --- |
+| `worker-bugfix` | its worker token; no model key (intake, intake-podcast and pr-check call no model) | `inner` only (out through `egress`) |
+| `worker-bugfix-fix`, `worker-bugfix-fix-podcast` | one per fix routine: its worker token, only its own routine's LiteLLM key, its own scratch (`scratch-fix/`, `scratch-fix-podcast/`) | `inner` only |
+| `worker-bugfix-act` | its worker token, the GitHub App's key (`app/`, once made) | `inner` only |
+| `link-bugfix`, `link-bugfix-act`, `link-bugfix-fix`, `link-bugfix-fix-podcast` | the identity's key and certificate (`state/<identity>/`), the worker's token | `inner` and `out` |
+| `egress` | this machine's allowlist | `inner` and `out` |
+
+Nothing is published. A link at another version than flotillad's is refused (logged as an error on the
+mini): deploy the same tag on both.
+
+## Install (once per machine)
+
+On the machine, as the operator's user, in `FLOTILLA_REMOTE` (the X3: `~/flotilla-remote`):
+
+1. **Layout**, mode 700: `secrets/`, `app/`, `state/w-bugfix/`, `state/w-bugfix-act/`, `state/w-bugfix-fix/`,
+   `state/w-bugfix-fix-podcast/`, `scratch/`, `scratch-fix/`, `scratch-fix-podcast/`.
+2. **`secrets/`**, each file mode 600, never printed:
+   - `worker-bugfix.token`, `worker-bugfix-act.token`, `worker-bugfix-fix.token`,
+     `worker-bugfix-fix-podcast.token`: 32 random bytes as hex each (`openssl rand
+     -hex 32`); they stay on this machine, between each link and its worker.
+   - `bugfix-model-fix.key`, `bugfix-model-fix-podcast.key`: the LiteLLM `fleet-bugfix-fix` and
+     `fleet-bugfix-fix-podcast` keys, one per fix routine ($1 a day each), alone in their files.
+3. **`root.crt`**: flotilla's host root certificate (the mini's `~/flotilla/config/host-ca/root.crt`).
+4. **`smokescreen.yaml`** and **`egress-acl.yaml`**:
+
+   ```yaml
+   # smokescreen.yaml
+   ip: 0.0.0.0
+   port: 4750
+   acl_file: /etc/smokescreen/acl.yaml
+   allow_missing_role: true
+   allow_ranges: [100.64.0.0/10]   # the tailnet: the LiteLLM gateway on the mini
+   ```
+
+   ```yaml
+   # egress-acl.yaml
+   version: v1
+   services: []
+   default:
+     project: flotilla-remote
+     action: enforce
+     allowed_domains: [homelab, github.com, codeload.github.com, api.github.com, registry.npmjs.org,
+                       release-assets.githubusercontent.com, objects.githubusercontent.com,
+                       pypi.org, files.pythonhosted.org]   # pypi: fix-podcast's venv
+   ```
+
+5. **`.env`** (no secrets in it):
+
+   ```bash
+   FLOTILLA_REMOTE=/home/<user>/flotilla-remote
+   FLOTILLA_UID=1000
+   FLOTILLA_GID=1000
+   FLOTILLA_NODE=<host>
+   FLOTILLA_TAG=sha-<7>              # flotillad's
+   FLOTILLA_HOSTS_ADDR=flotilla-hosts.<tailnet>:8487
+   FLOTILLA_HOSTS_NAME=flotilla-hosts.<tailnet>
+   ```
+
+6. **Enrol each link** with a token an operator mints on the mini
+   (`docker exec flotillad flotilla host enrolment w-bugfix-<host>`), passed on stdin only:
+
+   ```bash
+   docker run --rm -i --user 1000:1000 -v ~/flotilla-remote:/r --dns 100.100.100.100 \
+     --entrypoint /usr/local/bin/flotilla-host ghcr.io/chipi/flotilla-worker-bugfix:$FLOTILLA_TAG \
+     enrol -identity w-bugfix-<host> -state /r/state/w-bugfix -root /r/root.crt \
+     -addr $FLOTILLA_HOSTS_ADDR -server-name $FLOTILLA_HOSTS_NAME < token-file
+   ```
+
+   and the same for `w-bugfix-act-<host>` into `state/w-bugfix-act`, `w-bugfix-fix-<host>` into
+   `state/w-bugfix-fix` and `w-bugfix-fix-podcast-<host>` into `state/w-bugfix-fix-podcast`.
+   Delete the token files after.
+7. **On the mini**, in `flotillad.yaml`: `workers: {bugfix: {remote: w-bugfix-<host>}, bugfix-act:
+   {remote: w-bugfix-act-<host>}, bugfix-fix: {remote: w-bugfix-fix-<host>}, bugfix-fix-podcast:
+   {remote: w-bugfix-fix-podcast-<host>}}`, and the `gateway-bugfix-fix` and
+   `gateway-bugfix-fix-podcast` endpoints' `base_url` the gateway as this machine reaches it
+   (`http://<gateway-host>:4001/v1`). Drop `bugfix` from the mini's `COMPOSE_PROFILES`.
+8. **Up**, from the deploy checkout: `docker compose --env-file ~/flotilla-remote/.env -f
+   deploy/remote/docker-compose.yml up -d` (the X3: a user unit runs it).
+
+The tailnet must let this machine reach `flotilla-hosts:8487` (the tailnet's policy file).
+
+## Verification
+
+- On the mini: `docker logs flotillad | grep "remote worker connected"` names all four links.
+- A routine on them runs: `docker exec flotillad flotilla runs bugfix/intake` shows `ok`.
+- Stop the stack: their routines show `skipped … worker bugfix is not connected`, and their cases wait.
+
+## Troubleshooting
+
+- **`remote worker refused: its version is not flotillad's`:** set `FLOTILLA_TAG` to flotillad's.
+- **No connection:** from the machine, `bash -c 'echo > /dev/tcp/flotilla-hosts.<tailnet>/8487'`;
+  refused means the tailnet ACL.
+- **A routine's network denied:** `docker logs flotilla-remote-egress | grep '"allow":false'`; add the
+  domain only after reading what asked for it.

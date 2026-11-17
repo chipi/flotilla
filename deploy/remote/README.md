@@ -2,7 +2,8 @@
 
 A worker can run on any machine on the tailnet. flotillad, on the mini, reaches it through a **link**
 beside it that dials flotillad's host endpoint under the worker's own identity, `w-<worker>-<node>`.
-This folder is the stack for one machine: today the bugfix fleet's two workers on the X3 (`omarchy`).
+This folder is the stack for one machine: today the bugfix fleet's four workers, each with its
+link, on a second machine.
 
 ## What runs
 
@@ -59,38 +60,38 @@ On the machine, as the operator's user, in `FLOTILLA_REMOTE` (the X3: `~/flotill
    FLOTILLA_REMOTE=/home/<user>/flotilla-remote
    FLOTILLA_UID=1000
    FLOTILLA_GID=1000
-   FLOTILLA_NODE=omarchy
+   FLOTILLA_NODE=<host>
    FLOTILLA_TAG=sha-<7>              # flotillad's
    FLOTILLA_HOSTS_ADDR=flotilla-hosts.<tailnet>:8487
    FLOTILLA_HOSTS_NAME=flotilla-hosts.<tailnet>
    ```
 
 6. **Enrol each link** with a token an operator mints on the mini
-   (`docker exec flotillad flotilla host enrolment w-bugfix-omarchy`), passed on stdin only:
+   (`docker exec flotillad flotilla host enrolment w-bugfix-<host>`), passed on stdin only:
 
    ```bash
    docker run --rm -i --user 1000:1000 -v ~/flotilla-remote:/r --dns 100.100.100.100 \
      --entrypoint /usr/local/bin/flotilla-host ghcr.io/chipi/flotilla-worker-bugfix:$FLOTILLA_TAG \
-     enrol -identity w-bugfix-omarchy -state /r/state/w-bugfix -root /r/root.crt \
+     enrol -identity w-bugfix-<host> -state /r/state/w-bugfix -root /r/root.crt \
      -addr $FLOTILLA_HOSTS_ADDR -server-name $FLOTILLA_HOSTS_NAME < token-file
    ```
 
-   and the same for `w-bugfix-act-omarchy` into `state/w-bugfix-act`, `w-bugfix-fix-omarchy` into
-   `state/w-bugfix-fix` and `w-bugfix-fix-podcast-omarchy` into `state/w-bugfix-fix-podcast`.
+   and the same for `w-bugfix-act-<host>` into `state/w-bugfix-act`, `w-bugfix-fix-<host>` into
+   `state/w-bugfix-fix` and `w-bugfix-fix-podcast-<host>` into `state/w-bugfix-fix-podcast`.
    Delete the token files after.
-7. **On the mini**, in `flotillad.yaml`: `workers: {bugfix: {remote: w-bugfix-omarchy}, bugfix-act:
-   {remote: w-bugfix-act-omarchy}, bugfix-fix: {remote: w-bugfix-fix-omarchy}, bugfix-fix-podcast:
-   {remote: w-bugfix-fix-podcast-omarchy}}`, and the `gateway-bugfix-fix` and
+7. **On the mini**, in `flotillad.yaml`: `workers: {bugfix: {remote: w-bugfix-<host>}, bugfix-act:
+   {remote: w-bugfix-act-<host>}, bugfix-fix: {remote: w-bugfix-fix-<host>}, bugfix-fix-podcast:
+   {remote: w-bugfix-fix-podcast-<host>}}`, and the `gateway-bugfix-fix` and
    `gateway-bugfix-fix-podcast` endpoints' `base_url` the gateway as this machine reaches it
-   (`http://homelab:4001/v1`). Drop `bugfix` from the mini's `COMPOSE_PROFILES`.
+   (`http://<gateway-host>:4001/v1`). Drop `bugfix` from the mini's `COMPOSE_PROFILES`.
 8. **Up**, from the deploy checkout: `docker compose --env-file ~/flotilla-remote/.env -f
    deploy/remote/docker-compose.yml up -d` (the X3: a user unit runs it).
 
-The tailnet must let this machine reach `flotilla-hosts:8487` (chipi/infra `tailscale/policy.hujson`).
+The tailnet must let this machine reach `flotilla-hosts:8487` (the tailnet's policy file).
 
 ## Verification
 
-- On the mini: `docker logs flotillad | grep "remote worker connected"` names both workers.
+- On the mini: `docker logs flotillad | grep "remote worker connected"` names all four links.
 - A routine on them runs: `docker exec flotillad flotilla runs bugfix/intake` shows `ok`.
 - Stop the stack: their routines show `skipped … worker bugfix is not connected`, and their cases wait.
 
