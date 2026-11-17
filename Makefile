@@ -105,7 +105,13 @@ replay: ## The installation's triage replay gates, from its private fleets repo 
 	@test -n "$${SF_REPLAYS:-}" || { echo "REPLAYS FAIL: SF_REPLAYS is not set (the private fleets repo's triage/gates/run.sh)"; exit 1; }
 	@SF_FLOTILLA_MVP=$(CURDIR)/$(SF_MVP) bash "$$SF_REPLAYS"
 
-.PHONY: test-e2e
+.PHONY: demo demo-down test-e2e
+demo: ## The example fleets running on their stand-ins, left up; the UI on https://localhost:8443 (DEMO_PORT)
+	@DEMO=1 bash deploy/e2e/run.sh
+
+demo-down: ## Remove the demo (or a KEEP=1 e2e) stack
+	@bash deploy/e2e/run.sh down
+
 test-e2e: ## The compose stack on the dev Docker engine with stand-in services (deploy/e2e/run.sh)
 	@bash deploy/e2e/run.sh
 

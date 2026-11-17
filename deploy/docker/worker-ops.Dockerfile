@@ -7,6 +7,7 @@ RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker wor
 COPY worker /opt/flotilla/worker
 COPY ops /opt/flotilla/ops
 COPY business /opt/flotilla/business
+COPY seo /opt/flotilla/seo
 COPY fleets /opt/flotilla/fleets
 COPY host/registry.json /opt/flotilla/host/registry.json
 ARG VERSION=dev

@@ -6,3 +6,15 @@ services:
     volumes:
       - ${FLOTILLA_CONFIG}/specs:/etc/flotilla/specs:ro
       - ${FLOTILLA_CONFIG}/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro
+  # the stack's own CA (run.sh makes it): the example fleets that reach the outside world (sites, deps) reach
+  # deploy/e2e/world.py instead, which answers with a certificate from this CA
+  worker-ops-read:
+    volumes:
+      - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
+    environment:
+      ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem
+  worker-bugfix:
+    volumes:
+      - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
+    environment:
+      ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem

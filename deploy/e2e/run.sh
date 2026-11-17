@@ -3,6 +3,9 @@
 #
 #   deploy/e2e/run.sh            build the images, bring the stack up, check, tear down
 #   KEEP=1 deploy/e2e/run.sh     leave it up to look around (tear down: deploy/e2e/run.sh down)
+#   DEMO=1 deploy/e2e/run.sh     `make demo`: the stack with the example fleets on their stand-ins, left up,
+#                                the UI on https://localhost:$DEMO_PORT (8443) with a demo admin; it stops after
+#                                the examples' checks (tear down: `make demo-down`)
 #
 # Checks: the heartbeat runs through the worker and the proxy and passes; a host off the allowlist
 # is refused by the proxy; metrics and traces reach their stand-ins; an agent token cannot change a routine's
@@ -22,6 +25,8 @@ TAG=e2e-local
 LABEL=flotilla.e2e=1
 NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse"
 PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
+DEMO_PORT="${DEMO_PORT:-8443}"
+if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
 # The browser check's TLS front, standing in for the homelab's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 WORK="${E2E_WORK:-$ROOT/.e2e}"
@@ -87,7 +92,7 @@ cat > "$WORK/config/flotillad.yaml" <<EOF
 listen: 127.0.0.1:8484
 worker_listen: 0.0.0.0:8485
 ui_listen: 0.0.0.0:8486
-ui_host: flotilla.e2e
+ui_host: $UI_HOST
 specs_dir: /etc/flotilla/specs          # the image's fleets plus the e2e fleet (deploy/e2e/fleets), staged below
 registry_files: [/opt/flotilla/host/registry.json, /etc/flotilla/registry-e2e.json]   # plus the e2e's host.true
 state_dir: /var/lib/flotilla
@@ -107,12 +112,11 @@ workers:
   # name the local bugfix worker
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
-  # the site watch's worker is named by its spec; the e2e does not run it yet (it reads the live web)
+  # the site watch runs on ops-read (its spec); marketing is the installation's worker for its own SEO fleet
   marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
-# triage's cycle, the bugfix fleet's intakes and fixes and the site watch reach GitHub, real models or the
-# live web: not in the e2e
-disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix, deps/scan, deps/upgrade,
-  sites/site-check]
+# triage's cycle and the bugfix fleet's intakes and fixes reach GitHub issues, real models or a coding
+# agent: not in the e2e yet
+disabled_routines: [triage/cycle, triage/cycle-shadow, bugfix/intake, bugfix/fix]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -141,6 +145,21 @@ ROUTINE_VM_URL=http://victoriametrics:8080
 ROUTINE_BACKUP_INSTANCE=backup-01
 ROUTINE_BACKUP_TARGET=host:backup-01
 EOF
+# The outside world the example fleets read (sites, deps): deploy/e2e/world.py answers as these hosts, with a
+# certificate from the stack's own CA (the workers that reach it trust that CA, docker-compose.e2e.yml). The
+# certificate is valid for 9 days, below the example sites' 21: the certificate check has something to find.
+WORLD_HOSTS="www.example.com docs.example.com shop.example.org api.github.com pypi.org api.osv.dev"
+WORLD_HOSTS_ACL="$(echo $WORLD_HOSTS | sed 's/ /, /g')"
+W="$WORK/config/world"; mkdir -p "$W"
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=flotilla e2e world CA" -keyout "$W/ca.key" -out "$W/ca.pem" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" 2>/dev/null \
+  && openssl req -newkey rsa:2048 -nodes -subj "/CN=www.example.com" -keyout "$W/world.key" -out "$W/world.csr" 2>/dev/null \
+  && printf 'subjectAltName=%s\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid\n' \
+       "$(echo $WORLD_HOSTS | sed 's/[^ ]*/DNS:&/g; s/ /,/g')" > "$W/ext" \
+  && openssl x509 -req -in "$W/world.csr" -CA "$W/ca.pem" -CAkey "$W/ca.key" -CAcreateserial -days 9 -extfile "$W/ext" \
+       -out "$W/world.pem" 2>/dev/null \
+  || { echo "the world's certificate: openssl failed"; exit 1; }
+rm -f "$W/ca.key" "$W/world.csr" "$W/ext" "$W/ca.srl"; chmod 755 "$W"; chmod 644 "$W"/*
 cat > "$WORK/config/smokescreen.yaml" <<EOF
 ip: 0.0.0.0
 port: 4750
@@ -154,7 +173,7 @@ services: []
 default:
   project: flotilla
   action: ${E2E_ACL_ACTION:-enforce}   # E2E_ACL_ACTION=open is the mutation check: the run must FAIL
-  allowed_domains: [victoriametrics, victoriatraces, litellm]
+  allowed_domains: [victoriametrics, victoriatraces, litellm, $WORLD_HOSTS_ACL]
 EOF
 cat > "$WORK/config/egress-bugfix-acl.yaml" <<EOF
 version: v1
@@ -162,7 +181,7 @@ services: []
 default:
   project: flotilla-bugfix
   action: enforce
-  allowed_domains: [litellm]
+  allowed_domains: [litellm, api.github.com, pypi.org, api.osv.dev]
 EOF
 find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
 chmod -R a+rX "$WORK/config/specs"
@@ -173,6 +192,11 @@ stub() { $D run -d --label $LABEL --name "e2e-$1" --network "$2" --network-alias
 stub victoriametrics e2e-backend; stub victoriatraces e2e-backend; stub litellm e2e-litellm
 # off the allowlist but reachable and answering: refusing it is the proxy's doing, nothing else
 stub forbidden e2e-backend
+WORLD_ALIASES="$(for h in $WORLD_HOSTS; do printf -- '--alias %s ' "$h"; done)"
+$D run -d --label $LABEL --name e2e-world --network e2e-backend $(echo "$WORLD_ALIASES" | sed 's/--alias/--network-alias/g') \
+  --memory 64m -v "$ROOT/deploy/e2e/world.py:/world.py:ro" -v "$W:/w:ro" \
+  python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b python3 -u /world.py /w/world.pem /w/world.key >/dev/null \
+  && $D network connect $WORLD_ALIASES e2e-litellm e2e-world || { echo "the world stand-in did not start"; exit 1; }
 ok "stand-ins up"
 
 echo "== the host agents' CA, made as the operator makes it (flotilla ca, offline)"
@@ -206,11 +230,13 @@ fi
 FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/server/secrets.sh" $TAG --seed-state flotilla-e2e-triage-state "$WORK/seed" 2>&1 | grep >/dev/null "SEED SKIP" \
   && ok "a seeded state volume is never overwritten" || bad "seeding twice did not skip"
 
+if [ "${DEMO:-}" != 1 ]; then   # a migration fixture, not something to show
 echo "== an old, real-sized store for flotillad (schema step 1, 5000 runs)"
 # flotillad migrates it at start, in its read-only container (deploy/e2e/old_store.py says why)
 python3 "$ROOT/deploy/e2e/old_store.py" make "$WORK/oldstore/flotilla.db" 5000
 $D run --rm --user 0 -v flotilla-e2e-state:/v -v "$WORK/oldstore:/in:ro" --entrypoint sh "local/flotilla-worker-triage:$TAG" \
   -c 'cp /in/flotilla.db /v/flotilla.db && chown -R 65532:65532 /v' && ok "an old store seeded" || bad "seeding the old store"
+fi
 
 echo "== up"
 if ! compose up -d >"$WORK/up.log" 2>&1; then
@@ -313,6 +339,51 @@ cli case list --all 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && ok "o
   || bad "outbound gate: $(cli case list --all 2>&1 | grep prospect_new)"
 want_closed renewal_risk "account:a-401" && ok "renewals: the account at risk flagged for its owner, recorded in shadow" \
   || bad "renewals: $(cli case list --all 2>&1 | grep renewal_risk)"
+
+echo "== the examples that reach the outside world (sites, deps), on deploy/e2e/world.py, in shadow"
+want_case() {  # kind target status: a case of that kind on that target in that status
+  for _ in $(seq 1 45); do
+    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*$3" && return 0; sleep 2
+  done
+  return 1
+}
+want_case seo_live_regression "site:description/www.example.com/about" "" && ok "sites: the page without a description is a case" \
+  || bad "sites description: $(cli case list --all 2>&1 | grep seo_live)"
+want_case seo_live_regression "site:link/www.example.com/old-offers" "" && ok "sites: the link that answers 404 is a case" \
+  || bad "sites link: $(cli case list --all 2>&1 | grep seo_live)"
+want_case seo_live_regression "site:certificate/www.example.com/" "" && ok "sites: the certificate that expires in 9 days (under 21) is a case" \
+  || bad "sites certificate: $(cli case list --all 2>&1 | grep seo_live)"
+cli case list --all 2>&1 | grep >/dev/null "site:retired" && bad "sites: the retired host answering 404 became a case" \
+  || ok "sites: the retired host answers 404, as it should: no case"
+want_case dependency_update "repo:example/shop/deps/requests" "closed .*shadow_plan_recorded" \
+  && ok "deps: the vulnerable pin became a case, its upgrade PR planned and recorded in shadow" \
+  || bad "deps vulnerable: $(cli case list --all 2>&1 | grep dependency_update)"
+want_case dependency_update "repo:example/api/deps/fastapi" "" && ok "deps: the outdated pin of a repo that asks for them is a case" \
+  || bad "deps outdated: $(cli case list --all 2>&1 | grep dependency_update)"
+cli case list --all 2>&1 | grep >/dev/null "repo:example/shop/deps/flask" && bad "deps: an outdated pin of a repo that does not ask became a case" \
+  || ok "deps: an outdated pin of a repo that does not ask for them is no case"
+$D logs e2e-world 2>&1 | grep >/dev/null "world GET api.github.com/repos/example/shop/commits/HEAD" \
+  && ok "deps reached the GitHub stand-in through the bugfix proxy, over TLS from the stack's CA" || bad "no GitHub request at the world stand-in"
+
+if [ "${DEMO:-}" = 1 ]; then
+  echo "== the demo"
+  echo "cases the example fleets opened (they keep running on their schedules):"
+  cli case list --all 2>&1 | awk 'NR == 1 || /crm_fix|campaign_ready|prospect_new|renewal_risk|failed_backup|dependency_update|seo_live_regression|signal/' | sed 's/^/   /'
+  UA="$(cli user add demo --role admin 2>&1)"
+  DEMOTOK="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
+  [ ${#DEMOTOK} = 68 ] || { echo "DEMO FAIL: the demo admin: $UA"; exit 1; }
+  printf 'localhost {\n\ttls internal\n\treverse_proxy flotillad:8486\n}\n' > "$WORK/Caddyfile.demo"
+  $D run -d --name flotilla-e2e-caddy --label $LABEL -p "127.0.0.1:$DEMO_PORT:443" --memory 256m \
+    -v "$WORK/Caddyfile.demo:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" >/dev/null && $D network connect e2e-ui flotilla-e2e-caddy \
+    || { echo "DEMO FAIL: the TLS front did not start"; exit 1; }
+  printf '%s\n' "$DEMOTOK" > "$WORK/demo-admin.token"; chmod 600 "$WORK/demo-admin.token"
+  echo
+  echo "DEMO UP: https://localhost:$DEMO_PORT  (Caddy's own certificate: accept it once)"
+  echo "   sign in with the token in $WORK/demo-admin.token"
+  echo "   the fleets: /fleets; their cases: /cases?status=closed; tear down: make demo-down"
+  [ "$fails" -eq 0 ] || { echo "DEMO: $fails check(s) failed above"; exit 1; }
+  exit 0
+fi
 
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"

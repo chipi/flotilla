@@ -9,7 +9,7 @@ description: >-
   for (cert_days). Each failed check is one detection; flotillad opens the case. Code only, no model,
   read only: it can find a problem, never change a site.
 enabled: true
-worker: marketing
+worker: ops-read
 trigger:
   every: 24h
 detects: [seo_live_regression]
