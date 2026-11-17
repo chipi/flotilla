@@ -119,9 +119,12 @@ asks for, and each review approved it). A one-call review anchors on what it rea
 - a kick-back verdict whose acceptance criteria name a test file or an assertion in code form
   (`.toBeNull()`, `expect(`) escalates: a criterion the issue does not state (5 of #553's 6;
   none of #335's or #466's);
-- the advisor may answer "not locatable in this repository" instead of naming a file, and the
-  re-verdict gets its pin as one hypothesis, not as strong evidence;
-- a round that removes or rewrites an assertion of a test on main fails as out of scope (below).
+- the advisor may answer "not locatable in this repository" instead of naming a file, and the case
+  then escalates as needs-info at once (on #553 another verdict and round cost $0.52 and $0.88
+  to reach the same); a pin goes to the re-verdict as one hypothesis, not as strong evidence;
+- a round that removes or rewrites an assertion of a test on main fails as out of scope (below);
+- a fix episode stops after `--fix-max-turns` assistant turns (default 90): every round whose fix
+  passed the oracle took at most 67, #553's round 0s took 105 to 194 and gave no right fix.
 
 **What sends a fix back.** A kick-back costs a whole fix round, so the review sends a fix back
 only for a fault it can show from what it was given, and names its class (`hides-symptom`,
