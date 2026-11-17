@@ -21,8 +21,8 @@ Status is what the note itself says. "Historical" means kept as the record.
 
 | Note | Where | What it is | Status |
 | --- | --- | --- | --- |
-| [Triage fleet guide](../operations/triage.md) | flotilla (from homelab) | how it works and why: parts, a signal's path, the ledgers, the rules | text as of 2026-11-05; to update |
-| [Triage runbook](../operations/triage-runbook.md) | flotilla (from homelab) | install, run, review, improve; the replay-proven loop | text as of 2026-11-05; to update |
+| [Triage fleet guide](../operations/triage.md) | flotilla (from homelab) | how it works and why: parts, a signal's path, the ledgers, the rules | current (brought up to date 2026-11-17) |
+| [Triage runbook](../operations/triage-runbook.md) | flotilla (from homelab) | install, run, review, improve; the replay-proven loop | current (brought up to date 2026-11-17) |
 | `signal-fleet/README.md`, `signal-fleet/mvp/README.md` | flotilla | the fleet's code overview | fleetd-era text |
 | `signal-fleet/SIGNALS.md` | flotilla | the living design doc | pre-RFC brainstorm |
 | `signal-fleet/EVAL.md`, `signal-fleet/EVAL-LESSONS-0.6.0.md` | flotilla | the eval design; what the 233-decision replay taught (§7: 2026-11-04) | design history; living |

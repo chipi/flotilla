@@ -1,66 +1,70 @@
-# Triage fleet runbook — install, run, review, improve
+# Triage fleet runbook — run, deploy, review, improve
 
-**Moved from agentic-ai-homelab on 2026-11-17** ([`docs/recipes/signal-fleet-runbook.md` at dcc3e63][homelab-source]).
-The text is
-as it stood there on 2026-11-16, when the fleet's code had just left that repo for flotilla and the
-mini's `fleetd` and `bugfix-metrics` jobs had stopped: paths such as `~/signal-fleet/` and fleetd's
-deploy steps are that era's, and the commands that name them no longer apply. Flotilla will bring it
-up to date. The index of every fleet note: [Fleets](../fleets/README.md).
+This page was brought up to date on 2026-11-17. Its fleetd-era text, from agentic-ai-homelab, is in
+git history. The index of every fleet note: [Fleets](../fleets/README.md).
 
-How to operate the triage fleet (`signal-fleet`, Fleet 2), written so a different agent can pick it
-up each week. For what the parts are and why they work the way they do, read the [Triage fleet
-guide](triage.md) first. For the operator's own rituals (inbox, routing, labels, judging a fleet
-PR), see [§7](#7-operator-rituals).
+How to operate the triage fleet (`signal-fleet`, Fleet 2) on flotilla, written so a different agent
+can pick it up each week. For what the parts are and why they work the way they do, read the
+[Triage fleet guide](triage.md) first. For the operator's own rituals (inbox, routing, labels,
+judging a fleet PR), see [section 7](#7-operator-rituals).
 
-Facts below were checked against the running system on 2026-10-02, re-checked on 2026-10-17 where
-this page changed (env file, logs, the sync, proposals, gates), and on 2026-11-05 for the env table,
-the gate list and measuring a change (§5). Host today: the Mac mini (`homelab`), user
-`markodragoljevic`, reached from a laptop with
-`ssh -i ~/.ssh/homelab_mini -o IdentitiesOnly=yes markodragoljevic@homelab`. Commands marked
-**[host]** run on the fleet host.
+The deploy mechanics are not repeated here. They are in
+[Deployment](../architecture/deployment.md) and in the header comments of
+[`deploy/mini/deploy.sh`](https://github.com/chipi/flotilla/blob/main/deploy/mini/deploy.sh) and
+[`deploy/mini/deploy_fleets.sh`](https://github.com/chipi/flotilla/blob/main/deploy/mini/deploy_fleets.sh).
+Host names, repo names and credentials of the real installation are not written in this repo; the
+examples use placeholders (`example/shop`, `<owner>/<repo>`, `<host>`). Commands marked **[host]**
+run on the machine that hosts the Docker engine.
 
 ## 1. What has to exist
 
-| Component | Where (today) | Notes |
+| Component | Where | Notes |
 | --- | --- | --- |
-| git checkout of this repo | `~/agentic-ai-homelab` | **the fleet runs its code from here**: deploy = pull |
-| fleet state | `~/signal-fleet/` | `results/` (ledgers), `queue/`, `fleet-gateway.env`; never in git |
-| fleetd binary + config | `~/fleetd/fleetd`, `~/fleetd/fleetd.json`, log `~/fleetd/fleetd.log` | built from [`fleetd/`](https://github.com/chipi/agentic-ai-homelab/tree/main/fleetd) |
-| LaunchDaemon | `/Library/LaunchDaemons/com.homelab.fleetd.plist` | system daemon (survives logout), runs as the fleet user, `RunAtLoad` + `KeepAlive` |
-| Python | `/usr/bin/python3` (3.9 on the mini) | **standard library only**; no pip installs needed |
-| Ruby | `/usr/bin/ruby` | YAML fallback used by two evals when PyYAML is absent |
-| Grafana + VictoriaMetrics/Logs/Traces | homelab observability stack | alerts in, probes and metrics out |
-| GlitchTip | `:8090` | error source |
-| LiteLLM gateway | `:4001`, virtual key `fleet-triage`, models `fleet-triage-flash` / `fleet-triage-pro` | the triager's LLM ([LiteLLM README](https://github.com/chipi/agentic-ai-homelab/blob/main/infra/litellm/README.md)) |
+| flotillad | container `flotillad` | schedules `triage/cycle` every 10 minutes; owns autonomy, budget, pause, STOP and the ledger store |
+| the triage worker | container `flotilla-worker-triage`, image `flotilla-worker-triage:sha-<7>` | built from `deploy/docker/worker-triage.Dockerfile`; Python standard library plus the OpenTelemetry SDK; **no pip installs on the host** |
+| the candidate worker | container `flotilla-worker-triage-candidate` (compose profile `candidate`) | runs `triage/cycle-shadow` at shadow, with its own state volume |
+| fleet code | in the image: `/opt/flotilla/signal-fleet/mvp`, `/opt/flotilla/runtime`, `/opt/flotilla/fleets` | **not a git checkout**: a deploy is a new image tag |
+| the installation's fleets | `FLOTILLA_FLEETS_DIR` on the host, mounted over `/opt/flotilla/fleets` | holds the real `triage/installation.json`; see section 3 |
+| fleet state | Docker volume `TRIAGE_STATE_VOLUME`, at `/home/worker/signal-fleet` in the worker | `results/` (the TSV ledgers), `queue/`, `export/`; never in git |
+| secrets | Docker volume `<prefix>-worker-triage-secrets`, at `/run/flotilla` in the worker | `worker.token`, `fleet.env`; filled by `deploy/mini/secrets.sh` on every deploy from the host's files (`TRIAGE_ENV_FILE`) |
+| the ledger | flotillad's store (`SF_LEDGER_BACKEND=api`), in the `flotillad` state volume | the TSVs are still written beside it |
+| egress | the `egress` proxy (Smokescreen) | the worker has no route out except through it; its allowlist is `egress-acl.yaml` in the host's config folder |
+| Grafana + VictoriaMetrics/Logs/Traces | the observability stack | alerts in, probes and metrics out |
+| GlitchTip | the error source | |
+| LiteLLM gateway | the model endpoint (the reference deployment) | the triager's LLM |
 | Langfuse (optional) | project "agents" | traces of triage calls |
-| GitHub | a token that can read and write issues and labels on `chipi/podcast_scraper`, `chipi/orrery`, `chipi/agentic-ai-homelab` | filing |
+| GitHub | a token that can read and write issues and labels on the repos in the installation's `repo_map` and `ops_repo` | filing |
 
-### `~/signal-fleet/fleet-gateway.env`
+The compose file and the host's file layout are in
+[`deploy/compose/docker-compose.yml`](https://github.com/chipi/flotilla/blob/main/deploy/compose/docker-compose.yml)
+and the header of `deploy.sh`. The names above are the compose file's today.
 
-This is the **only** env file fleetd loads for the triage fleet; the old `fleet.env` next to it was
-a stale leftover and was deleted 2026-10-30 (nothing read it; its live values were all in this file
-or elsewhere). Values are secrets: never print them or commit them.
+### The worker's environment
+
+The worker builds each run's environment (`worker/flotilla_worker.py`, `build_env`) from four
+layers: `PATH`, `HOME` and `LANG`; every `KEY=VALUE` of the secrets file `/run/flotilla/fleet.env`;
+every `ROUTINE_<KEY>` variable of the worker container, as `<KEY>`; and the run's own variables
+(`FLEETD_STAGE`, the autonomy; `FLEETD_CYCLE_ID`, the run id; `TRACEPARENT`). Values are secrets:
+never print them or commit them. To change one, edit the host's `TRIAGE_ENV_FILE` and deploy (or run
+`deploy/mini/secrets.sh sha-<7>`); a rotated secret is read at the next run, with no restart.
 
 | Variable | Read by | What it is |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | `triage.py` | the LiteLLM **`fleet-triage` virtual key** (the name is historical) |
-| `SF_OPENROUTER_URL` | `config.py` | `http://localhost:4001/v1/chat/completions` (the gateway) |
-| `SF_TRIAGE_MODEL` | `config.py` | `fleet-triage-pro` (unset, the code falls back to `deepseek/deepseek-v4-flash`) |
-| `SF_HOST` | `config.py` | host of Grafana/VM/VL/VT/GlitchTip; `127.0.0.1` when they run on the same box |
-| `GITHUB_TOKEN` | `filing.py`, `stale.py` | GitHub token (issues + labels read/write on the three repos) |
-| `GLITCHTIP_TOKEN` | `sources.py` | GlitchTip API token, read access to org `homelab` |
+| `OPENROUTER_API_KEY` | `triage.py` | the key for the model endpoint (the LiteLLM virtual key; the name is historical) |
+| `SF_OPENROUTER_URL` | `config.py` | the endpoint's `.../chat/completions` URL; it must end in that path |
+| `SF_TRIAGE_MODEL` | `config.py` | the model alias (unset, the code falls back to `deepseek/deepseek-v4-flash`) |
+| `SF_HOST` | `config.py` | host of Grafana/VM/VL/VT/GlitchTip (the code's default is a tailnet name) |
+| `GITHUB_TOKEN` | `filing.py`, `stale.py` | GitHub token (issues and labels, read/write) |
+| `GLITCHTIP_TOKEN` | `sources.py` | GlitchTip API token, read access |
 | `GLITCHTIP_WRITE_TOKEN` | `glitchtip_sync.py`, `filing.py` | GlitchTip token with `event:write`: the sync's resolves, merges and "Tracked in GitHub" comments |
-| `SF_GLITCHTIP_SYNC` | `config.py` | `1` = run the GitHub → GlitchTip sync at the end of each cycle (#100); unset = off |
-| `GRAFANA_TOKEN`, or `GRAFANA_USER` + `GRAFANA_PASSWORD` | `sources.py`, `filing.py` | read firing alerts; write annotations |
+| `SF_GLITCHTIP_SYNC` | `config.py` | `1` = run the GitHub → GlitchTip sync at the end of each cycle; unset = off |
+| `GRAFANA_TOKEN`, or `GRAFANA_ADMIN_USER` + `GRAFANA_ADMIN_PASSWORD` | `config.py`, `sources.py` | read firing alerts (a Viewer token is preferred) |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` | `observ.py` | optional tracing |
 | `SF_STALE_NUDGE` | `stale.py` | `1` = the daily "looks resolved?" pass comments and labels; unset = dry run |
-| `SF_CAPTURE_PROBES` | `config.py` → `capture.py` | `1` = keep one JSON per decision under `results/probes/` (on since 2026-10-29); unset = off |
+| `SF_CAPTURE_PROBES` | `config.py` → `capture.py` | `1` = keep one JSON per decision under `results/probes/`; unset = off |
 | `SF_CAPTURE_EAGER`, `SF_CAPTURE_DIR` | `config.py` → `capture.py` | with capture on: also record the rest of the probe menu (default `1`); where to write (default `results/probes/`) |
-| `SF_ASSISTANT_BACKEND` | `config.py` | the X3 assistant's backend address, for the `assistant-failover` operational class (default `<assistant-host>:11435`) |
-
-Present in the file but **not read by the fleet code** (as of 2026-10-17):
-`LITELLM_FLEET_TRIAGE_KEY`, `LITELLM_FLEET_BUGFIX_KEY` (the bug-fix fleet's; its key `fleet-bugfix`
-was revoked 2026-11-17, the value is dead), `GLITCHTIP_FLEET_DSN`.
+| `SF_ASSISTANT_BACKEND` | `config.py` | overrides the installation's `assistant_backend`, for the `assistant-failover` class |
+| `SF_LEDGER_BACKEND` | `actions.py`, `filing.py` | `api` (flotillad's store, with the TSVs still written) or `tsv`. The compose file sets it from `TRIAGE_LEDGER_BACKEND` (`ROUTINE_SF_LEDGER_BACKEND`), default `tsv`; the live worker runs with `api` |
 
 Optional knobs, with their defaults:
 
@@ -68,162 +72,197 @@ Optional knobs, with their defaults:
 | --- | --- |
 | `SF_RETRIAGE_HOURS` | 24 |
 | `SF_MAX_PROBES` | 3 |
+| `SF_TRIAGE_MAX_TOKENS` | 8192 |
 | `SF_DEFER_LIMIT` | 6 |
 | `SF_ALERT_KEY_DEDUP` | on |
-| `SF_OPS_REPO` | unset; the fallback repo is `chipi/agentic-ai-homelab` |
+| `SF_FILING_LINK` | on (`0` turns off the linked rows) |
+| `SF_OPS_REPO` | unset; the fallback is the installation's `ops_repo` |
 | `SF_TRIAGE_MILESTONE` | `triage` |
 
-The paths can be overridden with `SF_LEDGER`, `SF_FILED_LEDGER`, `SF_QUEUE`, `SF_SPEND_FILE`,
-`SF_DEFER_STATE` and `SF_STALE_LAST_RUN`.
+The state paths can be overridden with `SF_LEDGER`, `SF_FILED_LEDGER`, `SF_QUEUE`, `SF_SPEND_FILE`,
+`SF_DEFER_STATE`, `SF_STALE_LAST_RUN` and `SF_INBOX_EXPORT`; the defaults are under
+`~/signal-fleet/`, which is the state volume in the worker.
 
-### `~/fleetd/fleetd.json` — the triage block
+### The routine's spec
 
-```json
-{
-  "name": "triage", "enabled": true, "interval": "10m",
-  "cycle_cmd": "python3 orchestrator.py --cycle --limit 10 --no-dry-run",
-  "workdir": "/Users/<user>/agentic-ai-homelab/signal-fleet/mvp",
-  "env_file": "/Users/<user>/signal-fleet/fleet-gateway.env",
-  "stop_flag": "/Users/<user>/signal-fleet/STOP",
-  "budget_day_usd": 2.0,
-  "spend_file": "/Users/<user>/signal-fleet/results/.last_cycle_spend",
-  "stage": "propose", "cycle_timeout": "20m"
-}
-```
+The schedule and limits are not a host config file any more. They are the routine's spec,
+[`fleets/triage/cycle.yaml`](https://github.com/chipi/flotilla/blob/main/fleets/triage/cycle.yaml),
+read by flotillad (`flotillad -check` validates it):
 
-- **`stage`:** `shadow` (no external writes), `propose` (GitHub issues/comments), or `live`.
+- **`trigger.every: 10m`**, `worker: triage`, `run.timeout: 20m`; the command is
+  `python3 orchestrator.py --cycle --limit 10 --no-dry-run` in `signal-fleet/mvp`.
+- **`autonomy`:** `shadow` in the spec, the safe default. The installation raises it with
+  `flotilla autonomy triage/cycle propose --reason "..."`. `shadow` takes no outward action;
+  `propose` files issues, comments and reopens; `auto` also resolves cleaned-up errors in
+  GlitchTip (ADR-0008).
 - **`--no-dry-run` alone does not make the cycle write.** `orchestrator.run_poll` forces a dry run
-  whenever `FLEETD_STAGE=shadow`.
-- **The repo copy**
-  [`fleetd/deploy/fleetd.json`](https://github.com/chipi/flotilla/blob/main/fleetd/deploy/fleetd.json)
-  can lag the live file; `make deploy` reports a difference and never overwrites the live config.
+  whenever `FLEETD_STAGE=shadow`, and flotillad sets that from the autonomy.
+- **`budget.day_usd`** (1.0 in the example spec): the routine's daily model spend, enforced by
+  flotillad from the cycle's spend file. Past it, the routine's runs are skipped for the rest of
+  the day.
+- **`freshness: 35m`:** with no run ending ok for that long the routine is stale.
+- **`skills` and `harness`:** the class hints and the probe loop's settings, the same as
+  `fleets/triage/skills/default-rules.json` and `harness-default.json` (a Go test keeps them equal).
 
-## 2. Install on a new host (or move off the mini)
+The routine's page in the UI draws the same spec with a text per block.
 
-Do it in this order. The ledgers are the part you can't recreate. Without them the fleet re-files
-every old problem as new.
+## 2. Install, or move to a new host
 
-1. **Freeze the old host** **[old host]**:
-    - `touch ~/signal-fleet/STOP` and wait for the current cycle to end
-      (`tail ~/fleetd/fleetd.log`);
-    - then `sudo launchctl bootout system/com.homelab.fleetd`.
+The ledgers are the part you can't recreate: without them the fleet re-files every old problem as
+new. The full sequence for a new host is the deploy's job (`deploy.sh`, `secrets.sh`, the compose
+file) and is in [Deployment](../architecture/deployment.md); the triage-specific parts are these:
 
-2. **Copy the state:** `rsync -a ~/signal-fleet/ newhost:~/signal-fleet/`. That covers `results/`
-   (both ledgers and the state files), `queue/` and `fleet-gateway.env`. Check that the row counts
-   match: `wc -l results/*.tsv` on both hosts.
-3. **Clone the repo** **[new host]**:
-   `git clone https://github.com/chipi/agentic-ai-homelab ~/agentic-ai-homelab`.
-4. **Point the env file at the new environment:** set `SF_HOST` and `SF_OPENROUTER_URL` if the
-   observability stack or LiteLLM live elsewhere. Then check that each credential works before going
-   further:
+1. **Freeze the old host** **[old host]**: `docker exec flotillad flotilla stop triage`, and wait
+   for the run in flight to end (`docker exec flotillad flotilla status`). Never run two fleets
+   that file at once: they would race on GitHub, each with its own ledger.
+2. **Carry the state.** The fleet's state is two things: the triage state volume (the TSVs,
+   `queue/`) and flotillad's store (the ledger the fleet reads). Take the store from a snapshot
+   (`FLOTILLA_HOME/backups/`, written by every deploy) and the state volume with
+   `deploy/mini/secrets.sh <tag> --seed-state <volume> <dir>`, which seeds an empty volume once and
+   leaves out env files and the STOP flag. Check that row counts match on both hosts.
+3. **Write the host's files**: `.env`, `config/` with the worker's token, `TRIAGE_ENV_FILE` (the
+   variables above), and the egress allowlist. The credentials must work before anything runs:
     - `curl -s -H "Authorization: Bearer $GLITCHTIP_TOKEN" http://$SF_HOST:8090/api/0/projects/`
       returns a JSON list;
     - `gh api user` with `GITHUB_TOKEN` returns the account;
-    - a `chat/completions` call to the gateway with the virtual key returns 200;
+    - a `chat/completions` call to the gateway with the key returns 200;
     - Grafana `GET /api/alertmanager/grafana/api/v2/alerts` returns 200.
 
-5. **Prove the code on this host:** `cd ~/agentic-ai-homelab && bash deploy/mini-deploy.sh` (the old
-   `signal-fleet/deploy/deploy.sh` is a wrapper around it). Every gate must say PASS. The gates read
-   frozen corpora and git history only: no LLM, no network beyond the pull.
-6. **Build and install fleetd** **[build machine]**:
-    - `cd fleetd && make vet test build`;
-    - for an Intel mini, `GOOS=darwin GOARCH=amd64` (see `make deploy`);
-    - copy the binary to `~/fleetd/fleetd` and write `fleetd.json` (block above) with
-      `"stage": "shadow"` first;
-    - install the LaunchDaemon plist (same shape as today's: `UserName` = the fleet user,
-      `RunAtLoad`, `KeepAlive`, stdout/stderr → `~/fleetd/fleetd.log`), whose program is:
-
-      ```sh
-      /bin/bash -lc 'export PATH=/usr/local/bin:$PATH HOME=<home>; exec <home>/fleetd/fleetd -config <home>/fleetd/fleetd.json'
-      ```
-
-    - `sudo launchctl bootstrap system /Library/LaunchDaemons/com.homelab.fleetd.plist`.
-
-    On Linux, the equivalent is a systemd service with `Restart=always`.
-
-7. **Remove the STOP flag** (`rm ~/signal-fleet/STOP`). Watch two cycles in `~/fleetd/fleetd.log`:
-   `cycle triage-…: ok`. Check that new ledger rows say `stage` = `shadow`.
-8. **Promote to `propose`** once a shadow day looks right (§4 checks): edit `stage` in
-   `fleetd.json`, then `sudo launchctl kickstart -k system/com.homelab.fleetd`.
-9. **Surfaces:**
-    - Grafana alert rules and dashboards are provisioned from
-      [`infra/observability/backend/grafana/provisioning`](https://github.com/chipi/agentic-ai-homelab/tree/main/infra/observability/backend/grafana/provisioning);
-    - after any rule change: `POST /api/admin/provisioning/alerting/reload`, then
-      [`rules-drift/drift.py`](https://github.com/chipi/agentic-ai-homelab/blob/main/infra/observability/rules-drift/README.md)
-      must report `drift: 0 rule(s)`.
-
-10. **Retire the old host's daemon** for good. Remove its plist so two fleets never file at once:
-    they would race on GitHub and each would have its own ledger.
+4. **Deploy** `deploy/mini/deploy.sh sha-<7>` (section 3). The routine comes up at `shadow`:
+   check that new ledger rows say `stage` = `shadow`, and that the shadow day looks right (the
+   section 4 checks).
+5. **Promote to `propose`:** `docker exec flotillad flotilla autonomy triage/cycle propose --reason
+   "..."`. The change is recorded with its actor.
+6. **Surfaces:** Grafana alert rules and dashboards are provisioned from the homelab repo, not
+   from this one. After any rule change, its drift check must report no drift.
+7. **Retire the old host's daemon for good,** so two fleets never file at once.
 
 ## 3. Day-to-day operation
 
+Run the CLI inside the control plane: `docker exec flotillad flotilla <command>` (it reads its
+token from the container).
+
 | Task | How |
 | --- | --- |
-| **Deploy a code change** | merge to `main`, then **[host]** `bash ~/agentic-ai-homelab/deploy/mini-deploy.sh` (repo-wide; the fleet's gates are a hook, see `deploy/README.md`). It refuses a dirty checkout, pulls, runs every gate, and **rolls the checkout back** if one fails. New code runs on the next cycle; no restart. |
-| **Gate-list caveat** | the first deploy after a change to `deploy.sh` runs the *old* gate list, because bash has already read the script. Run any new eval by hand once after that deploy. |
-| **Roll back code** | **[host]** `git -C ~/agentic-ai-homelab reset --hard <prev sha>` (deploy.sh prints it) |
-| **Pause the fleet** | **[host]** `touch ~/signal-fleet/STOP`; remove it to resume. `fleetd-silent` alerts after 35 min, on purpose. |
-| **Change stage** | edit `stage` in `~/fleetd/fleetd.json`, then `sudo launchctl kickstart -k system/com.homelab.fleetd` |
-| **Deploy or roll back fleetd itself** | `cd fleetd && make deploy` / `make rollback` (from the laptop; asks nothing, so get the operator's go first) |
-| **Logs** | `~/fleetd/fleetd.log` and VictoriaLogs `service:fleetd`: **one summary line per cycle** (`cycle triage-…: ok in 20s (719 bytes output)`). The cycle's own output is not kept. Kept elsewhere: the sync's writes (VictoriaLogs `{fleet="triage", event="glitchtip_sync"}`), metrics (`signal_fleet_*`), the ledgers. |
-| **Check the GitHub → GlitchTip sync** | metric `signal_fleet_glitchtip_sync{kind=...}` (one sample per run; read it with `count_over_time` or the export API, an instant query can miss it), alert `glitchtip-sync-failing`, audit lines above. Dry run by hand: **[host]** `cd ~/agentic-ai-homelab/signal-fleet/mvp && set -a && . ~/signal-fleet/fleet-gateway.env && set +a && python3 glitchtip_sync.py` |
-| **Turn the sync off** | remove `SF_GLITCHTIP_SYNC=1` from `fleet-gateway.env`; the next cycle skips it |
-| **Triage the parked proposals** (`queue/*.json`) | `~/.claude/skills/host-run/scripts/run.sh homelab ~/.claude/skills/triage-fleet-review/scripts/proposals.py` lists each with its live GlitchTip issue and a proposed action; `--apply` carries out the done/stale/resolve ones, only after the operator's go. `signal_fleet_queue_oldest_age_seconds` says when the queue is ageing. |
-| **Run one signal through by hand** | the operator asked for this once (2026-10-01). Run `run_glitchtip` from a small script with `sources.glitchtip_unresolved` filtered to one short id, `config.RETRIAGE_HOURS = 0`, the same env file, and `FLEETD_STAGE=propose`. Run it right after a cycle finishes so the two never write the ledger at the same time. |
+| **Is it alive** | `docker exec flotillad flotilla status`: per routine, its autonomy, last ok, stale, today's spend against `budget.day_usd`, and `paused` / `STOPPED` / `running` |
+| **Recent runs** | `docker exec flotillad flotilla runs triage/cycle -n 20`; the run's page in the UI shows its model calls and spans. A failed run keeps the last 800 characters of its output in its detail |
+| **Run a cycle now** | `docker exec flotillad flotilla run triage/cycle` |
+| **Pause the routine** | `flotilla pause triage/cycle`; `flotilla resume triage/cycle --reason "..."`. The UI's routine page has the same controls |
+| **STOP the fleet** | `flotilla stop triage` cancels the fleet's runs in flight and skips its later starts; `flotilla start triage --reason "..."` ends it. `flotilla autonomy freeze` holds every routine at shadow |
+| **Change autonomy** | `flotilla autonomy triage/cycle shadow\|propose\|auto --reason "..."` (the routine's own cap is in its spec) |
+| **Deploy a code change** | merge to `main`, wait for CI, then **[host]** `deploy/mini/deploy.sh sha-<7>`: see "Deploy and roll back" below. A new image restarts the worker; the next cycle runs the new code |
+| **Deploy the installation's own fleets** | **[host]** `deploy/mini/deploy_fleets.sh <commit>`; first `--diff <commit>` to see what changes; `--rollback` goes back one commit |
+| **Roll back code** | **[host]** `deploy/mini/deploy.sh --rollback` |
+| **Logs** | `docker logs flotilla-worker-triage` (the worker's own); the Logs tab of the fleet page; `docker logs flotillad` for flotillad. Kept elsewhere: the sync's writes (VictoriaLogs `{fleet="triage", event="glitchtip_sync"}`), metrics (`signal_fleet_*`), the ledgers |
+| **Check the GitHub → GlitchTip sync** | metric `signal_fleet_glitchtip_sync{kind=...}` (one sample per run; read it with `count_over_time` or the export API, an instant query can miss it), alert `glitchtip-sync-failing`, the audit lines above. Dry run by hand: see "A command in the worker" |
+| **Turn the sync off** | remove `SF_GLITCHTIP_SYNC=1` from `TRIAGE_ENV_FILE`, then run `deploy/mini/secrets.sh sha-<7>`; the next cycle skips it |
+| **Triage the parked proposals** (`queue/*.json`) | the files are in the state volume; `signal_fleet_queue_oldest_age_seconds` says when the queue is ageing. The `triage-fleet-review` skill's `proposals.py` predates the move to flotilla and has not been checked against it |
 
-Never edit a ledger while a cycle runs. Back it up first:
-`cp filed.tsv filed.tsv.bak-<date>-<reason>`.
+Never edit a ledger while a cycle runs. Pause the routine first, and back up before an edit: the
+store through a deploy snapshot, a TSV with `cp filed.tsv filed.tsv.bak-<date>-<reason>` in the
+volume.
+
+### Deploy and roll back
+
+`deploy/mini/deploy.sh sha-<7>` deploys the image tag CI built for a commit. It:
+
+1. checks out the commit and requires its `ci-fast` and `e2e` checks green
+   (`deploy/mini/checks_green.sh`; a docs-only commit has no e2e run);
+2. runs the **triage filing gate** (`deploy/mini/triage_hooks.sh`): the newest frozen week of
+   filing decisions, replayed with the previous and the new commit and the installation's own
+   facts. Any change in what filing does fails the deploy. The gate script is the installation's
+   (`TRIAGE_FILING_GATE`); if it is unset the deploy fails, unless `SF_FILING_GATE_ACCEPT="<why>"`
+   accepts it;
+3. pulls the images, refills the secret volumes (`secrets.sh`), and checks config, specs and the
+   store's schema with the new flotillad (`flotillad -check`);
+4. snapshots the store (SQLite online backup, the newest 10 kept in `FLOTILLA_HOME/backups/`);
+5. runs `docker compose up -d` and waits for flotillad and the worker to be healthy; if they are
+   not, it **rolls back by itself** to the previous tag;
+6. ends with `DEPLOY PASS` or `DEPLOY FAIL`, and writes a deploy event to VictoriaLogs.
+
+`deploy.sh --rollback` goes back to the tag deployed before the current one. An older flotillad
+refuses a newer store, so when the schema moved, the rollback restores the newest snapshot that tag
+accepts (rows written after it are lost) or stops with nothing changed. Every deploy appends a row
+to `FLOTILLA_HOME/deployed.tsv`. Agents run the script over SSH as the operator account, and need
+the operator's go first.
+
+The installation's own fleets (its `installation.json`, specs, playbooks) deploy apart with
+`deploy_fleets.sh`: it exports one commit read-only, checks it with the running tag's flotillad,
+pauses the triage routines, switches `FLOTILLA_FLEETS_DIR`, recreates flotillad and the workers,
+resumes the routines and prints every routine whose spec hash changed. It ends with
+`FLEETS DEPLOY PASS` or `FLEETS DEPLOY FAIL`.
+
+### A command in the worker
+
+A one-off command (the sync's dry run, a replay, a ledger check) needs the environment a run has.
+This sources the secrets file and maps the container's `ROUTINE_<KEY>` variables, as `build_env`
+does:
+
+```sh
+docker exec flotilla-worker-triage sh -c '
+  set -a; . /run/flotilla/fleet.env
+  for v in $(env | sed -n "s/^ROUTINE_\([A-Za-z0-9_]*\)=.*/\1/p"); do eval "$v=\$ROUTINE_$v"; done
+  set +a
+  cd /opt/flotilla/signal-fleet/mvp && python3 glitchtip_sync.py'
+```
+
+`glitchtip_sync.py` without `--apply` is a dry run. A command that **writes** a ledger must also
+run with `FLOTILLA_ROUTINE=triage/cycle` (the ledger's namespace), `FLOTILLA_API_URL` and
+`FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token` set, or it writes the TSV and not the store.
+Do that only between cycles, with the routine paused, and with the operator's go.
 
 ### GlitchTip project recreated (same slug)
 
-Recreating a project is the homelab side's change (e.g. `infra/glitchtip/projects.py`); the
-2026-10-16 `orrery-dev` recreate was one. The new project's short ids restart at 1. Since 2026-10-17
-the fleet ignores a ledger row filed before the issue now holding its short id was first seen, so a
-new error no longer reopens or resolves an unrelated old issue. Retiring the dead project's rows is
-optional tidying:
+Recreating a project is the installation's change. The new project's short ids restart at 1. Since
+2026-10-17 the fleet ignores a ledger row filed before the issue now holding its short id was
+first seen, so a new error no longer reopens or resolves an unrelated old issue. Retiring the dead
+project's rows is optional tidying, and the tool edits `filed.tsv` only. With the `api` backend,
+filing reads the store, so a retire needs the store's namespace re-imported
+(`ledger_sync.py`, see its docstring). Unless a collision still happens, leave the rows alone. If one
+does:
 
-1. Pause the fleet, or work between cycles.
-2. Back up `filed.tsv`.
-3. Dry run:
-   `python3 filing.py --retire-glitchtip-project <SLUG> <ISO time the new project was created> --dry-run`.
-   Read the list.
-4. Run it without `--dry-run`.
-5. Re-close any issue the collision reopened, with a comment saying why.
+1. Pause the routine and take a snapshot.
+2. Dry run:
+   `python3 filing.py --retire-glitchtip-project <SLUG> <ISO time the new project was created> --dry-run`
+   in the worker (see "A command in the worker"). Read the list.
+3. Get the operator's go, run it without `--dry-run`, and re-import the namespace.
+4. Re-close any issue the collision reopened, with a comment saying why.
 
 ## 4. The weekly review — "how is the fleet doing?"
 
-Automated by the **`triage-fleet-review`** skill
-(`python3 ~/.claude/skills/triage-fleet-review/scripts/review.py --days 7`), which runs every check
-below read-only and flags fan-out, reopens and rollup burials for you to judge. For what never
-reaches the fleet (warnings, logs), add the **`o11y-prod`** skill for the same window. Both skills
-live in
-[`workstation/claude/skills/`](https://github.com/chipi/agentic-ai-homelab/tree/main/workstation/claude/skills).
+The `triage-fleet-review` skill
+(`workstation/claude/skills/triage-fleet-review/` in agentic-ai-homelab) automates much of this. It
+was written for the fleetd era and has not been checked against flotilla, so use the checks below.
+For what never reaches the fleet (warnings, logs), use the `o11y-prod` skill for the same window.
 
 Run these read-only checks, then report in four parts: what it did, what went wrong, what it missed,
 what to improve. Each check states what "healthy" looks like.
 
 1. **Is it alive?**
-    - **Check:** the last cycle lines: `tail -20 ~/fleetd/fleetd.log`, plus alerts
-      `fleetd-cycle-failing` / `fleetd-silent` in Grafana.
-    - **Healthy:** `ok` every 10 min; daily spend well under $2 (`fleetd_spend_day`).
+    - **Check:** `docker exec flotillad flotilla status` and `flotilla runs triage/cycle -n 20`;
+      the fleet page's Workflow tab; the routine's stale alert (`flotilla-routine-stale`, from
+      the freshness metric below).
+    - **Healthy:** the routine is not `STALE` or `paused`; runs end `ok` every 10 min; today's
+      spend is well under `budget.day_usd`.
 
 2. **What did it decide?**
-    - **Check:** disposition counts for the week:
+    - **Check:** the fleet page's Decisions tab, or the disposition counts for the week:
 
         ```sh
-        awk -F'\t' -v s="$(date -u -v-7d +%F)" '$1>=s {print $4, $6}' \
-          ~/signal-fleet/results/dispositions.tsv | sort | uniq -c
+        docker exec flotilla-worker-triage sh -c 'awk -F"\t" -v s="$(date -u -d "7 days ago" +%F)" \
+          "\$1>=s {print \$4, \$6}" /home/worker/signal-fleet/results/dispositions.tsv' \
+          | sort | uniq -c
         ```
 
-    - **Healthy:** escalations rare. Many `recurrence` rows for one fingerprint is now a bug: since
-      `b3c4c5f` it writes one per count change, not one per cycle.
+    - **Healthy:** escalations rare. Many `recurrence` rows for one fingerprint is a bug: it writes
+      one per count change, not one per cycle.
 
 3. **What did it do on GitHub?**
     - **Check:** issues touched and fleet comments:
 
         ```sh
-        gh api "repos/chipi/<repo>/issues?since=<7 days ago>&state=all"
-        gh api "repos/chipi/<repo>/issues/comments?since=<7 days ago>"
+        gh api "repos/<owner>/<repo>/issues?since=<7 days ago>&state=all"
+        gh api "repos/<owner>/<repo>/issues/comments?since=<7 days ago>"
         ```
 
         Filter comments for `Recurred` / `signal-fleet`.
@@ -234,25 +273,40 @@ what to improve. Each check states what "healthy" looks like.
         - **burying:** a real bug as one line in a `[low-signal] aggregate`.
 
 4. **False dismissals** (the one thing no dashboard checks): sample 3–5 recent `dismiss` rows
-   (`awk -F'\t' '$6=="dismiss"' … | tail`). Check each one's cited evidence against GlitchTip or
-   Grafana.
+   (the same `awk` with `$6=="dismiss"`, then `tail`). Check each one's cited evidence against
+   GlitchTip or Grafana.
 5. **What it cannot see:**
     - recurring WARNING patterns in VictoriaLogs (`_time:7d level:warning`) — warnings never reach
       the fleet;
-    - new GlitchTip projects missing from `filing.REPO_MAP`.
+    - new GlitchTip projects missing from the installation's `repo_map`.
 
-6. **The parked proposals and the sync:** run `proposals.py` (§3) and check the sync's errors metric
-   is 0.
+6. **The parked proposals and the sync:** look at `queue/` (section 3) and check the sync's errors
+   metric is 0.
 7. **Ledger health:**
-    - row counts and growth (`wc -l results/*.tsv`);
+    - row counts and growth (`wc -l results/*.tsv` in the volume);
     - `.deferred.json` present = something is being deferred;
     - the open `triage-fleet/stale-candidate` issues waiting for the operator.
 
 Turn each finding into one of three things:
 
 - an issue action for the operator (close, mute, route);
-- a fleet fix through §5;
+- a fleet fix through section 5;
 - a known gap in the guide.
+
+### Metrics and alerts
+
+| What | Name |
+| --- | --- |
+| a run, per routine | `flotilla_run{routine, status, autonomy}` (1 per run; count with `count_over_time`), `flotilla_run_seconds` |
+| the routine's spend today | `flotilla_spend_day_usd{routine}` |
+| freshness | `flotilla_routine_last_success_timestamp_seconds{routine}` and `flotilla_routine_freshness_seconds{routine}` (the declared freshness, so the stale alert needs no per-routine threshold) |
+| flotillad alive | `flotilla_up` |
+| a store write that failed | `flotilla_store_error{op}` |
+| the fleet's own | `signal_fleet_disposition{disposition}`, `signal_fleet_cost_usd`, `signal_fleet_tokens`, `signal_fleet_probes`, `signal_fleet_queue_depth{kind}`, `signal_fleet_queue_oldest_age_seconds`, `signal_fleet_escalations_7d`, `signal_fleet_glitchtip_sync{kind}` |
+| alerts | `flotilla-routine-stale` (ADR-0007) and `glitchtip-sync-failing`; the rules are provisioned in the homelab's Grafana, not in this repo |
+
+The fleetd-era alerts `fleetd-cycle-failing` and `fleetd-silent`, and the metric
+`fleetd_spend_day`, no longer exist.
 
 ## 5. Improving the fleet — the loop every change follows
 
@@ -261,19 +315,24 @@ baseline git worktree for non-Python projects, is the **`replay-proven-fix`** sk
 
 Since 2026-09-30 every behaviour change has gone through the same loop, and the next one should too.
 The operator's requirement is: *for each fix, a replayed test case with the input, today's output,
-the problem, and the output after the fix.*
+the problem, and the output after the fix.* AGENTS.md rule 3 says the same for flotilla.
 
 1. **Find it in real data**, with counts: "10,764 of 11,700 recurrence rows repeat", not "lots of
    noise".
-2. **Freeze the evidence** as a corpus under `signal-fleet/reference-*/`: ledger snapshots, GitHub
-   issue states, GlitchTip payloads. Scrub secrets and user ids, and commit it. History moves on; a
-   frozen corpus keeps the replay reproducible.
+2. **Freeze the evidence** as a corpus: ledger snapshots, GitHub issue states, GlitchTip payloads.
+   Scrub secrets and user ids (`scrub.py`, with the installation's `scrub` rules). The corpus is
+   real production data, so it lives in the installation's private repos, never here (AGENTS.md
+   rule 1). History moves on; a frozen corpus keeps the replay reproducible.
 3. **Write the fix.** Prefer a deterministic rule over a prompt change.
-4. **Write the replay** `mvp/eval_<thing>_replay.py`:
-    - the **baseline** is the code at the commit before the fix, loaded with
-      `git show <BASE_REV>:signal-fleet/mvp/<file>.py`, so the "before" is real, not re-implemented;
+4. **Write the replay**, in the installation's private fleets repo, run by its
+   `triage/gates/run.sh`:
+    - the **baseline** is the code at the commit before the fix, loaded from git
+      (`git show <BASE_REV>:signal-fleet/mvp/<file>.py`), so the "before" is real, not
+      re-implemented; a replay's `BASE_REV` is a commit in **this** repo's history;
     - first assert that **the baseline reproduces history** (the replay is faithful);
-    - then compare against the fix, with explicit pass criteria and exit 1 on failure.
+    - then compare against the fix, with explicit pass criteria and exit 1 on failure;
+    - to run a decision over a recorded world with nothing sent, use
+      `signal-fleet/mvp/replay_api.py`, the supported entry point.
 
 5. **Mutation-check the replay:** break the fix in plausible ways and confirm each broken version
    fails the replay. A replay that passes broken code proves nothing. Two lessons:
@@ -292,144 +351,118 @@ the problem, and the output after the fix.*
       duplicate links and the ledger row's own signal before calling a move wrong.
 
 7. **Gate it — hermetically.** A gate reads frozen corpora only: set every state path it touches
-   (`SF_LEDGER`, `SF_FILED_LEDGER`, …) to a temp file, because on the mini the defaults are the live
-   ledgers. Since 2026-10-17 `deploy.sh` runs every gate with `HOME` set to an empty directory, and
-   every live state path is under `~/signal-fleet`, so a gate cannot read the host's ledgers even if
-   it forgets. Run gates by hand the same way: `HOME=$(mktemp -d) python3 eval_x.py`. (2026-10-17:
-   `eval_recurrence_replay.py` passed on a laptop and failed on the mini, because new code read the
-   live filed ledger.) Add the replay to the gate list in
-   [`signal-fleet/deploy/deploy.sh`](https://github.com/chipi/flotilla/blob/main/signal-fleet/deploy/deploy.sh),
-   add unit tests to `mvp/test_units.py`, and run every gate locally.
+   (`SF_LEDGER`, `SF_FILED_LEDGER`, ...) to a temp file, and run it with an empty `HOME`
+   (`HOME=$(mktemp -d) python3 gate_x.py`), because the defaults are the live ledgers.
+   (2026-10-17: a replay passed on a laptop and failed on the host, because new code read the live
+   filed ledger.) Run the unit tests with `make test-unit` (the triage fleet's `test_units.py`,
+   `test_capture.py`, `test_scrub.py`, `test_replay_api.py` and `test_dev_filter.py` run in an empty
+   `HOME`), and the installation's replays with
+   `SF_REPLAYS=<private fleets repo>/triage/gates/run.sh SF_ALERT_RULES=<rules file> make replay`.
 8. **Commit with the numbers** in the message (input, before, after, mutation result). Push and
    deploy only with the operator's go.
-9. **Verify live:** after deploying, prove the new behaviour on the real system. Either push one
-   real signal through by hand (§3), or run the decision read-only against the live ledger and
-   GitHub. "The replay passed" is not "it works in production".
+9. **Verify live:** after deploying, prove the new behaviour on the real system. Either run a cycle
+   (`flotilla run triage/cycle`) and read what it did, or run the decision read-only against the
+   live ledger and GitHub. "The replay passed" is not "it works in production".
 10. **Update the guide:** a new rule goes under "Why it is built this way", a new limitation under
     "Known gaps".
 
 ### The gates today
 
-| Eval | Guards |
-| --- | --- |
-| `eval_hardening.py` | the August 2026 flood: operational classes, fail-closed triager, test-signal suppression |
-| `eval_dedup.py` | normalized dedup (norm_key) over a labelled corpus |
-| `eval_filing_replay.py --cases-only` | the 2026-09-30 duplicate cases stay comments (alert_key #9) |
-| `eval_stale_replay.py` | the "looks resolved?" nudge: who gets nudged, never wrongly |
-| `eval_routing_replay.py` | prod-app alerts go to `podcast_scraper`; host/telemetry-dark alerts stay in homelab |
-| `eval_triager_failure_replay.py` | triager failures never escalate per signal |
-| `eval_glitchtip_litellm_replay.py` | retired GlitchTip rows stop colliding; upstream 429s are dismissed |
-| `eval_recurrence_replay.py` | one recurrence row per count change (about 6 min on the mini) |
-| `eval_open_preference_replay.py` | a norm_key match prefers the bug's open issue, never a rollup bucket |
-| `eval_duplicate_follow_replay.py` | a recurrence on an issue closed as a duplicate goes to its canonical issue |
-| `eval_identity_replay.py` | reused GlitchTip short ids are ignored (filing and sync); fatal events never go to a rollup; one provider-auth failure is one issue per project |
-| `eval_promotion_replay.py` | a filed-but-rolled-up signal re-triages on its first recurrence (977 historical recurrences; exactly 12 change) |
-| `eval_oom_edge_replay.py` | the host-wide OOM alert becomes one signal per container and kill episode; an edge-5xx burst next to a container restart or OOM kill is never dismissed (2026-10-26/27) |
-| `eval_assistant_failover_replay.py` | a LiteLLM error whose latest event names only the X3 assistant (`assistant` alias failed over) is dismissed, never ticketed; another backend, two backends, another project or a failed lookup still reach the triager (2026-11-03: #133-#137) |
-| `eval_inbox_open_replay.py` | "needs you" counts open escalations only; one never filed or whose issue state cannot be read still counts (2026-11-04) |
-| `test_units.py` | unit tests (135 on 2026-11-05) |
-| `test_capture.py` | per-decision probe capture: what is recorded, and that a capture replays the decision |
-| `test_scrub.py` | the scrubber's IPv4 rule (version strings are kept) |
+| Gate | Where it runs | Guards |
+| --- | --- | --- |
+| `make ci-fast` (lint, `make test-unit`) | CI, on every push | the triage unit tests, the worker, the runtime, the Go code; no installation facts in the code |
+| `deploy/e2e/run.sh` (`make test-e2e`) | CI, the dev Docker engine | the compose stack with stand-in services |
+| `gate_harness_replay.py` | `signal-fleet/mvp/`, run on a host that has captures | the probe loop on the shared harness: the same requests, decisions and gates as the old loop |
+| `gate_ledger_backend_replay.py` | in a worker | dedup through flotillad's ledger equals dedup through the TSVs, lookups and writes |
+| `gate_model_client_replay.py`, `gate_skills_replay.py` | `signal-fleet/mvp/` | the model client's requests; the class hints from `default-rules.json` and from the spec |
+| the filing gate | `deploy.sh`, before every deploy | what filing does on the newest frozen week, old code against new, with the installation's facts |
+| the installation's replays (18 until 2026-11-16) | `make replay` with `SF_REPLAYS` | the fleet's rules against real history: the August flood's operational classes, normalized dedup, duplicate following, stale nudges, routing, triager failures, recurrence rows, open-issue preference, identity (reused short ids, fatal events), promotion, the OOM and edge cases, assistant failover, inbox counts |
 
-The list is `deploy.sh`'s, 18 gates in that order; a new gate goes into both the
-`say "verifying: …"` line and the
-`for g in …` line.
+Until 2026-11-16 the eighteen replays ran in `signal-fleet/deploy/gates.sh` from the homelab repo.
+They moved to the installation's private fleets repo with their corpora, so `ci-fast` does not run
+them: run `make replay` before shipping a change to a rule.
 
 ### Measuring a change to the brief, the gates or the model
 
 A change to what the LLM sees or what the gates do is measured on real decisions in eval-harness
-([chipi/eval-harness](https://github.com/chipi/eval-harness), pin a release: `v0.7.2`),
-`examples/triage-fleet`,
-before it ships. The worked example is round r4 (2026-11-04):
-[`signal-fleet/EVAL-LESSONS-0.6.0.md`](https://github.com/chipi/flotilla/blob/main/signal-fleet/EVAL-LESSONS-0.6.0.md)
+([chipi/eval-harness](https://github.com/chipi/eval-harness), pin a release),
+`examples/triage-fleet`, before it ships. The worked example is round r4 (2026-11-04):
+[`EVAL-LESSONS-0.6.0.md`](https://github.com/chipi/flotilla/blob/main/signal-fleet/EVAL-LESSONS-0.6.0.md)
 section 7.
 
 1. Commit the change on a branch here; record what it should change, item by item, before the run (a
-   `hypothesis:`
-   block in the arm's config).
+   `hypothesis:` block in the arm's config).
 2. In an eval-harness checkout: `python examples/triage-fleet/fetch.py` (both dataset revisions),
-   then an arm config
-   naming the round, the dataset (`orrery_triage_v1_labelled_v2`) and `fleet_commit`; run it with
-   `TRIAGE_FLEET_SRC=<this repo's signal-fleet at that commit>` and the gateway key
-   (`eval-fleet-triage`, see the
-   credentials table in `docs/recipes/agent-access.md`), capped with `EVAL_MAX_COST_USD`.
+   then an arm config naming the round, the dataset and `fleet_commit`; run it with
+   `TRIAGE_FLEET_SRC=<this repo's signal-fleet at that commit>` and the evaluation's gateway key,
+   capped with `EVAL_MAX_COST_USD`.
 3. `evh arm-smoke --config <arm>` first, then `evh run --config <arm> --repeat 3` (about $1 for 65
    decisions).
-4. Compare by item:
-   `evh pair-test --dataset-id orrery_triage_v1_labelled_v2 --round <rN> --b <baseline arm>`; read
+4. Compare by item: `evh pair-test --dataset-id <dataset> --round <rN> --b <baseline arm>`; read
    the items that moved (`evh inspect --runs A,B --disagree`) before trusting the number.
 5. Ship only through the gates above and the operator's go; then watch it live.
 
-Alert-rule changes have their own checks under
-[`infra/observability/rules-drift/`](https://github.com/chipi/agentic-ai-homelab/tree/main/infra/observability/rules-drift):
-
-- `test_drift.py`;
-- `drift.py` (repo vs. live Grafana);
-- replays such as `disk_pool_replay.py`, which runs both rule versions against VictoriaMetrics
-  history.
+To compare a model or an image against the live fleet on live signals, run it as the candidate
+routine `triage/cycle-shadow` (shadow, never files; `FLOTILLA_CANDIDATE_TAG` picks its image).
 
 ## 6. Troubleshooting
 
 | Symptom | Likely cause | Check / fix |
 | --- | --- | --- |
-| every cycle fails, or one "triager unavailable" issue appears | LiteLLM virtual key wiped (a colima/DB recreate does this), or budget exhausted | gateway call with the key; recreate the `fleet-triage` key per the LiteLLM README and update `OPENROUTER_API_KEY` |
-| GlitchTip or Grafana pass errors in the log | source token wiped by a recreate | re-issue `GLITCHTIP_TOKEN` / `GRAFANA_TOKEN`; test with curl (§2 step 4) |
-| a new error reopens an unrelated old issue | GlitchTip project recreated under the same slug | handled automatically since 2026-10-17 (`reused_short_id`); if it still happens, check the row's `filed_at` against the issue's `firstSeen`, then §3 "GlitchTip project recreated" |
-| `glitchtip-sync-failing` fires | `GLITCHTIP_WRITE_TOKEN` revoked or wiped by a recreate, or a GlitchTip/GitHub API change | run the sync's dry run by hand (§3); re-mint the token with the `mint-credential` skill |
+| every cycle fails, or one "triager unavailable" issue appears | the model key wiped or its budget exhausted (a gateway database recreate does this) | a gateway call with the key; recreate the key, update `OPENROUTER_API_KEY` in `TRIAGE_ENV_FILE`, run `secrets.sh` |
+| GlitchTip or Grafana pass errors in the run's output | source token wiped by a recreate | re-issue `GLITCHTIP_TOKEN` / `GRAFANA_TOKEN`; test with curl (section 2 step 3); refill with `secrets.sh` |
+| a new error reopens an unrelated old issue | GlitchTip project recreated under the same slug | handled automatically since 2026-10-17 (`reused_short_id`); if it still happens, check the row's `filed_at` against the issue's `firstSeen`, then "GlitchTip project recreated" |
+| `glitchtip-sync-failing` fires | `GLITCHTIP_WRITE_TOKEN` revoked or wiped by a recreate, or a GlitchTip/GitHub API change | run the sync's dry run by hand (section 3); re-mint the token with the `mint-credential` skill |
 | one condition opens or reopens many issues | the alert rule fans out (labels too fine) | fix the **rule**, not the issues; replay the rule against VictoriaMetrics history |
-| issues land in the wrong repo | routing: `REPO_MAP` (GlitchTip project prefix) or `INSTANCE_REPO_MAP` / the rule's `instance` label (Grafana) | `eval_routing_replay.py` covers the Grafana side |
-| `fleetd-silent` fires | a forgotten `STOP` file, the daemon down, or the host down | `ls ~/signal-fleet/STOP`; `sudo launchctl print system/com.homelab.fleetd` |
-| a deploy refuses | dirty checkout (often another session's uncommitted work) | find out whose change it is before touching it; never stash or discard someone else's work |
+| issues land in the wrong repo | routing: `repo_map` (GlitchTip project prefix) or `instance_repo_map` (the Grafana rule's `instance` label) in the installation's `installation.json` | compare the file the worker mounts with the private fleets repo (`deploy_fleets.sh --diff <commit>`) |
+| the worker stops at start with an installation error | `installation.json` missing or unreadable: the fleet refuses to route on empty maps | check the mounted fleets folder (`FLOTILLA_FLEETS_DIR`), then `docker logs flotilla-worker-triage` |
+| the routine is `STALE` or its runs are `skipped` | `paused`, `STOPPED`, the day's budget reached, a deploy in progress, or the worker down | `flotilla status`; `docker ps` for `flotilla-worker-triage`; `flotilla start triage --reason "..."` after a STOP |
+| a deploy refuses | checks not green for the commit, the filing gate failed or did not run, or the store is newer than the tag | read the `DEPLOY FAIL` line: it names which; never skip a check without the operator's reason (`FLOTILLA_SKIP_CHECKS`, `SF_FILING_GATE_ACCEPT`) |
+| a deploy ended `rolled back` | the new flotillad or worker was not healthy | `docker logs flotillad` and `docker logs flotilla-worker-triage`; the store was restored if its schema had moved |
 
 ## 7. Operator rituals
 
 The operator's side, folded in from the 2026-07-29 operator playbook. The fleets do the volume;
 the operator glances, routes, answers and merges.
 
-**Glance.** Grafana → Homelab → "Fleet Workforce — Triage" (top row: needs attention,
-escalations 7d (open ones only, since 6a59983), oldest queued item, queue by kind); click through to
-"Triage — Operator Inbox"
-for the items themselves. Its bottom panel shows `meta=true` substrate alerts, which only the
-operator answers: a broken fleet can't triage its own substrate.
+**Glance.** The UI's brief and the fleet page for `triage` (Decisions tab); in Grafana, the
+homelab's triage dashboards ("Fleet Workforce — Triage", "Triage — Operator Inbox", provisioned in
+the homelab repo): top row needs attention, escalations 7d (open ones only), oldest queued item,
+queue by kind; the inbox dashboard shows the items themselves. Its bottom panel shows `meta=true`
+substrate alerts, which only the operator answers: a broken fleet can't triage its own substrate.
 
-**Route.** The inboxes:
+**Route.** The inboxes, as GitHub searches over the repos the installation maps (replace `<owner>`):
 
-- [machine-fixable, all
-  repos](https://github.com/search?q=owner%3Achipi+is%3Aissue+is%3Aopen+label%3A%22triage-fleet%2Factionable%22)
-- [everything the fleet
-  filed](https://github.com/search?q=owner%3Achipi+is%3Aissue+is%3Aopen+label%3A%22triage-fleet%2Ffiled%22)
-- [escalations awaiting the
-  operator](https://github.com/search?q=owner%3Achipi+is%3Aissue+is%3Aopen+label%3A%22triage-fleet%2Fescalated%22)
+- machine-fixable: `owner:<owner> is:issue is:open label:"triage-fleet/actionable"`
+- everything the fleet filed: `owner:<owner> is:issue is:open label:"triage-fleet/filed"`
+- escalations awaiting the operator: `owner:<owner> is:issue is:open label:"triage-fleet/escalated"`
 
 On a fleet-filed issue, four native GitHub actions that the fleet reads back:
 
 | The operator does | Meaning | What happens |
 | --- | --- | --- |
-| label `triage-fleet/routed:bugfix` | dispatch Fleet 1 | the bug-fix chain picks it up (below) |
+| label `triage-fleet/routed:bugfix` | dispatch Fleet 1 | the bugfix fleet picks it up (below) |
 | close the issue | not worth it | the filing ledger respects it; a recurrence within 7 days reopens it, a later one files fresh with a back-link |
 | comment | answer or add context | the fleet re-triages with the comment as reporter input |
 | label `triage-fleet/muted` | never again for this fingerprint | permanent silence for that signal |
 
 Don't route `config-enhancement` issues: Fleet 1 can't test config. They wait for Fleet 3.
 
-**Dispatch Fleet 1** (orrery only, manual; the fleet is paused by default, see
-[fleet architecture → Rollout status](../history/homelab/fleet-architecture.md#rollout-status)):
-label the
-orrery issue `triage-fleet/routed:bugfix`, then `cd fleetd && make chain`. The chain is bounded
-(3 kick-backs, $3, 20 min per episode). Outcomes land on the issue: a **draft PR** with a Claude
-review comment; **`triage-fleet/needs-info`** with a question (answer like a reporter: what you
-saw, what "fixed" means, then re-run `make chain`); or **stuck** (budget exhausted; the chain
-ledger names the wall). A bug ticket written for the fleet should read like a busy maintainer's:
-symptom, where, what correct looks like. Don't add file paths or acceptance criteria; the loop
-has to earn those, and adding them blinds the measurement.
+**Dispatch Fleet 1.** The bugfix fleet is a set of routines on flotilla ([The bugfix
+fleet](bugfix.md)). Its `bugfix/intake` routine opens a case for every open issue of a chain repo
+(the installation's `chain_repos`) labelled `bug` or `triage-fleet/routed:bugfix`, so labelling the
+issue is the dispatch; there is no manual `make chain` any more. The fix, the draft PR and the PR
+check follow as that page says, and a PR waits for the operator's approval in the UI. A bug ticket
+written for the fleet should read like a busy maintainer's: symptom, where, what correct looks
+like. Don't add file paths or acceptance criteria; the loop has to earn those, and adding them
+blinds the measurement.
 
 **Judge a draft PR** like a maintainer: does the regression test encode *this* bug, is the fix
 at the cause, what does the review comment say. Merge = shipped. Close with a one-line reason =
 rejected; every rejection becomes a fixture for the next round. Never merge a fleet PR you
 wouldn't merge from a human.
 
-**Levers** beyond §3: stage rollback (`fleetd/deploy/fleetd.json` `"stage": "shadow"`, then
-`make deploy`); binary rollback (`cd fleetd && make rollback`); GitHub token rotation (new
-fine-grained token into `~/signal-fleet/fleet-gateway.env` on the host).
-
-[homelab-source]: https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/recipes/signal-fleet-runbook.md
+**Levers** beyond section 3: autonomy back to `shadow` (`flotilla autonomy triage/cycle shadow
+--reason "..."`); `flotilla stop triage`; `flotilla autonomy freeze`; deploy rollback
+(`deploy.sh --rollback`); GitHub token rotation (a new fine-grained token into the host's
+`TRIAGE_ENV_FILE`, then `secrets.sh`; the next run reads it).

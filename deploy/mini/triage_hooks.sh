@@ -14,9 +14,8 @@
 #                                 keeps its six columns; the readers take the 7th by position). Never fails.
 #
 # Settings (FLOTILLA_HOME/.env):
-#   TRIAGE_DEPLOY_LOG   the deploy log to append to. Unset: no row. Until the switch it is mirror-test's
-#                       results/deploys.tsv, since the live fleet still runs homelab code; at the switch it
-#                       becomes ~/signal-fleet/results/deploys.tsv.
+#   TRIAGE_DEPLOY_LOG   the deploy log to append to (the triage fleet's results/deploys.tsv, which its
+#                       replays read to know which code ran when). Unset: no row.
 #   TRIAGE_FILING_GATE  the gate script, in the installation's private fleets repo
 #                       (triage/filing/scripts/filing_gate.py there). Unset: the gate does not run, and the
 #                       deploy fails unless SF_FILING_GATE_ACCEPT says why.
