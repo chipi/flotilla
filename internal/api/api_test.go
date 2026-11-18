@@ -63,7 +63,8 @@ func newServer(t *testing.T, mod func(*spec.Routine)) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
+	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{"triage": okRunner{}}}
+	s.SetRoutines([]*spec.Routine{j})
 	return &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Registry: reg,
 		Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		Callers: append([]Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-example", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}},

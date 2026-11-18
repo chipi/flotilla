@@ -137,7 +137,7 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 	t := readTable(r, "", false, func(string) bool { return false })
 	d := modelsData{Period: period, Tab: tab}
 	if u.API.Sched != nil {
-		for _, j := range u.API.Sched.Routines {
+		for _, j := range u.API.Sched.Routines() {
 			d.CanCheck = d.CanCheck || j.ID() == ContractRoutine
 		}
 	}

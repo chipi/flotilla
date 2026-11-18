@@ -151,7 +151,7 @@ func (u *Server) summarySections(ctx context.Context, since time.Time) ([]store.
 	}
 	var ids []string
 	byID := map[string]string{}
-	for _, j := range u.API.Sched.Routines {
+	for _, j := range u.API.Sched.Routines() {
 		if j.BriefSection != "" {
 			ids = append(ids, j.ID())
 			byID[j.ID()] = j.BriefSection

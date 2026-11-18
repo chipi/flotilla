@@ -139,9 +139,9 @@ func TestPauseDoesNotCancel(t *testing.T) {
 // Starting a fleet again cancels nothing, and a STOP of another fleet leaves this run alone.
 func TestStopOfAnotherFleetLeavesTheRun(t *testing.T) {
 	srv := newServer(t, func(j *spec.Routine) {})
-	other := *srv.Sched.Routines[0]
+	other := *srv.Sched.Routines()[0]
 	other.Fleet, other.Worker = "ops", "triage"
-	srv.Sched.Routines = append(srv.Sched.Routines, &other)
+	srv.Sched.SetRoutines(append(srv.Sched.Routines(), &other))
 	br := newBlockRunner()
 	srv.Sched.Workers["triage"] = br
 	ts := httptest.NewServer(srv.Handler())

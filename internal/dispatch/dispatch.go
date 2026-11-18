@@ -168,7 +168,7 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		if c.Holder != "" { // a fast path: LeaseCase below is the guard
 			continue
 		}
-		j := actingRoutine(sc.Routines, c.Kind, c.Stage)
+		j := actingRoutine(sc.Routines(), c.Kind, c.Stage)
 		if j == nil {
 			continue // no routine acts on this kind and stage here: the stuck-state timer escalates it
 		}
@@ -176,7 +176,7 @@ func (d *Dispatcher) Once(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if why := overLimit(spent, caseLimit(sc.Routines, c.Kind)); why != "" {
+		if why := overLimit(spent, caseLimit(sc.Routines(), c.Kind)); why != "" {
 			if err := st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByPolicy, "", "flotillad", why); err != nil && !errors.Is(err, store.ErrBadTransition) {
 				return err
 			}
@@ -257,7 +257,7 @@ func (d *Dispatcher) deadlines(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return fmt.Errorf("case %s: status_at %q: %w", c.ID, c.StatusAt, err)
 		}
-		if len(plans) > 0 && d.API.Registry != nil && executeRoutine(d.API.Sched.Routines, action) != nil {
+		if len(plans) > 0 && d.API.Registry != nil && executeRoutine(d.API.Sched.Routines(), action) != nil {
 			if a, ok := d.API.Registry.Action(action); ok && a.ByRoutine() {
 				// an approved repo or routine action waits for its executing routine (its machine may be off: RFC-0011
 				// §4); the deadline counts from the run's start, and there is none before it starts
@@ -332,7 +332,7 @@ func (d *Dispatcher) checks(ctx context.Context, now time.Time) error {
 			d.Log.Warn("case escalated: not verified in its window", "case", c.ID, "action", p.Action, "verify", chk.Verify)
 			continue
 		}
-		j := checkRoutine(d.API.Sched.Routines, chk.Verify)
+		j := checkRoutine(d.API.Sched.Routines(), chk.Verify)
 		if j == nil {
 			continue // no routine checks this here: the window's end escalates it
 		}
@@ -491,7 +491,7 @@ func (d *Dispatcher) executions(ctx context.Context) error {
 		if a, ok := d.API.Registry.Action(p.Action); !ok || !a.ByRoutine() {
 			continue // a host action: its host agent executes it (SendExecutions)
 		}
-		j := executeRoutine(d.API.Sched.Routines, p.Action)
+		j := executeRoutine(d.API.Sched.Routines(), p.Action)
 		if j == nil {
 			continue // applied by a person (RecordApplied)
 		}
@@ -637,7 +637,7 @@ func (d *Dispatcher) vanished(ctx context.Context, j *spec.Routine, r *store.Run
 		return
 	}
 	for _, c := range open {
-		if present[c.Key] || c.Holder != "" || !contains(j.Detects, c.Kind) || anyActs(d.API.Sched.Routines, c.Kind) {
+		if present[c.Key] || c.Holder != "" || !contains(j.Detects, c.Kind) || anyActs(d.API.Sched.Routines(), c.Kind) {
 			continue
 		}
 		if err := d.API.Store.MoveCase(ctx, c.ID, cases.Closed, cases.ByDetector, cases.ResolvedItself, j.ID(),
@@ -738,7 +738,7 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	if sd, err := st.StageData(ctx, full.ID); err == nil && sd != "" {
 		cv.StageData = json.RawMessage(sd)
 	}
-	if l := caseLimit(d.API.Sched.Routines, full.Kind); l != nil {
+	if l := caseLimit(d.API.Sched.Routines(), full.Kind); l != nil {
 		bug, err := d.bugSpend(ctx, full, d.API.Sched.Clock())
 		if err != nil {
 			return err
@@ -887,7 +887,7 @@ func (d *Dispatcher) resumption(ctx context.Context, caseID string, j *spec.Rout
 // escalates, so a case cannot loop between routines.
 func (d *Dispatcher) handOver(ctx context.Context, c store.Case, j *spec.Routine, runID string, dec Decision) error {
 	st := d.API.Store
-	if !stageRe.MatchString(dec.Stage) || actingRoutine(d.API.Sched.Routines, c.Kind, dec.Stage) == nil {
+	if !stageRe.MatchString(dec.Stage) || actingRoutine(d.API.Sched.Routines(), c.Kind, dec.Stage) == nil {
 		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: hand_over to stage %q, which no enabled routine of %s acts on", runID, dec.Stage, c.Kind))
 	}
 	data, ok := detectionData(dec.Data)

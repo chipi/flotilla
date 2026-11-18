@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 )
@@ -489,3 +490,40 @@ func (s *Store) Retire(ctx context.Context, routine string, version int, actor, 
 	}
 	return tx.Commit()
 }
+
+// VersionsRead is what a read-only look at a store found.
+type VersionsRead struct {
+	Exists bool // the file exists
+	Schema int  // its schema step (0: none yet)
+	Rows   []RoutineVersion
+}
+
+// ReadVersions reads the recorded versions of the store at path without creating, migrating or writing
+// anything (flotillad -check, before a deploy swaps fleets). A missing file or a store older than the
+// version table reads as no rows: Exists and Schema say which, so the caller can say it skipped the freeze.
+func ReadVersions(path string) (VersionsRead, error) {
+	var out VersionsRead
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return out, nil
+	}
+	out.Exists = true
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return out, err
+	}
+	defer db.Close()
+	if err := db.QueryRow(`SELECT COALESCE(MAX(n), 0) FROM schema_version`).Scan(&out.Schema); err != nil {
+		if strings.Contains(err.Error(), "no such table") {
+			return out, nil
+		}
+		return out, fmt.Errorf("store: %w", err)
+	}
+	if out.Schema < VersionsSchema {
+		return out, nil
+	}
+	out.Rows, err = versionsOf(context.Background(), db, ``)
+	return out, err
+}
+
+// VersionsSchema is the schema step that added routine_versions.
+const VersionsSchema = 26

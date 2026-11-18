@@ -58,7 +58,9 @@ func setup(t *testing.T, budget float64) (*Scheduler, *fakeRunner, *fakeMetrics)
 	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage",
 		Run: spec.Run{Command: "python3 x.py", Workdir: "signal-fleet/mvp", SpendFile: "s"}, Autonomy: spec.AutonomyRecord,
 		Budget: spec.Budget{DayUSD: budget}, Every: 10 * time.Minute, Limit: 20 * time.Minute, Fresh: 35 * time.Minute, Hash: "abc"}
-	return &Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]Runner{"triage": fr}, Metrics: fm}, fr, fm
+	s := &Scheduler{Store: st, Workers: map[string]Runner{"triage": fr}, Metrics: fm}
+	s.SetRoutines([]*spec.Routine{j})
+	return s, fr, fm
 }
 
 func TestRunPassesTheContract(t *testing.T) {
@@ -122,7 +124,7 @@ func TestFreeze(t *testing.T) {
 	if v, _ := s.Store.Control(ctx, "triage/cycle", KeyAutonomy); v != "auto" {
 		t.Fatalf("the freeze overwrote the routine's control: %q", v)
 	}
-	if set, _ := s.Configured(ctx, s.Routines[0]); set != "auto" {
+	if set, _ := s.Configured(ctx, s.Routines()[0]); set != "auto" {
 		t.Fatalf("configured while frozen: %s", set)
 	}
 	_ = s.Store.SetControl(ctx, FreezeSubject, KeyFrozen, "0", "operator", "api")
@@ -134,7 +136,7 @@ func TestFreeze(t *testing.T) {
 
 func TestControlAboveMaxAutonomyNotObeyed(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	s.Routines[0].MaxAutonomy = spec.AutonomyRecord
+	s.Routines()[0].MaxAutonomy = spec.AutonomyRecord
 	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyAutonomy, "auto", "operator", "api")
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if fr.got[0].Env["FLEETD_STAGE"] != "shadow" {
@@ -157,7 +159,7 @@ func TestRunGetsTheModelsSection(t *testing.T) {
 	if _, ok := e["FLOTILLA_MODELS"]; ok || e["FLOTILLA_OTLP_TRACES_URL"] != s.OTLPTracesURL || e["FLOTILLA_ENVIRONMENT"] != "operations" {
 		t.Fatalf("a routine that names no model got the models section, or the telemetry env is wrong: %v", e)
 	}
-	s.Routines[0].Models = []string{"flash"}
+	s.Routines()[0].Models = []string{"flash"}
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if got := fr.got[2].Env["FLOTILLA_MODELS"]; got != `{"endpoints":{"gw":{"base_url":"http://gw/v1","defaults":{}}},"aliases":{"flash":{"endpoint":"gw","model":"f"}}}` {
 		t.Fatalf("the routine's models: %s", got)
@@ -170,7 +172,7 @@ func TestRunGetsItsSkillRules(t *testing.T) {
 	if _, ok := fr.got[0].Env["FLOTILLA_SKILLS"]; ok {
 		t.Fatal("FLOTILLA_SKILLS set for a routine without rules")
 	}
-	s.Routines[0].Skills.Rule = []spec.SkillRule{{When: map[string]string{"class": "a"}, Load: []string{"hint-a"}}}
+	s.Routines()[0].Skills.Rule = []spec.SkillRule{{When: map[string]string{"class": "a"}, Load: []string{"hint-a"}}}
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if got := fr.got[1].Env["FLOTILLA_SKILLS"]; got != `{"rule":[{"when":{"class":"a"},"load":["hint-a"]}]}` {
 		t.Fatalf("FLOTILLA_SKILLS: %q", got)
@@ -183,7 +185,7 @@ func TestRunGetsItsHarness(t *testing.T) {
 	if _, ok := fr.got[0].Env["FLOTILLA_HARNESS"]; ok {
 		t.Fatal("FLOTILLA_HARNESS set for a routine without a harness")
 	}
-	s.Routines[0].Harness = &spec.Harness{Protocol: "json", Tools: []string{"t"}, Gates: []string{"g"},
+	s.Routines()[0].Harness = &spec.Harness{Protocol: "json", Tools: []string{"t"}, Gates: []string{"g"},
 		Limits: spec.HarnessLimits{MaxToolCalls: 3, MaxSteps: 4, ToolCallsPerTurn: 1}}
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if got := fr.got[1].Env["FLOTILLA_HARNESS"]; !strings.Contains(got, `"protocol":"json","tools":["t"],"gates":["g"]`) {
@@ -197,8 +199,8 @@ func TestRunGetsItsPromptsAndRecordsThem(t *testing.T) {
 	if _, ok := fr.got[0].Env["FLOTILLA_PROMPTS"]; ok {
 		t.Fatal("FLOTILLA_PROMPTS set for a routine without prompts")
 	}
-	s.Routines[0].Prompts = map[string]string{"system": "playbooks/triage.md"}
-	s.Routines[0].PromptSHA = map[string]string{"system": "ab12"}
+	s.Routines()[0].Prompts = map[string]string{"system": "playbooks/triage.md"}
+	s.Routines()[0].PromptSHA = map[string]string{"system": "ab12"}
 	r, _ := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	want := `{"system":{"path":"playbooks/triage.md","sha256":"ab12"}}`
 	if got := fr.got[1].Env["FLOTILLA_PROMPTS"]; got != want {
@@ -283,7 +285,7 @@ func TestWorkerNotReachedIsSkipped(t *testing.T) {
 func TestFirstWait(t *testing.T) {
 	s, _, _ := setup(t, 2)
 	ctx := context.Background()
-	j := s.Routines[0]
+	j := s.Routines()[0]
 	// in the past: the store stamps a skipped run with its own (real) clock, so the skip below is the newest run
 	now := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
 	s.Now = func() time.Time { return now }
@@ -336,7 +338,7 @@ func TestAwaitWorker(t *testing.T) {
 	rr := &readyRunner{after: 1}
 	s.Workers["triage"] = rr
 	s.ReadyWait = 10 * time.Second
-	s.AwaitWorker(context.Background(), s.Routines[0])
+	s.AwaitWorker(context.Background(), s.Routines()[0])
 	if rr.calls != 2 {
 		t.Fatalf("asked %d times, want 2 (no, then yes)", rr.calls)
 	}
@@ -344,7 +346,7 @@ func TestAwaitWorker(t *testing.T) {
 	s.Workers["triage"] = never
 	s.ReadyWait = 50 * time.Millisecond
 	start := time.Now()
-	s.AwaitWorker(context.Background(), s.Routines[0])
+	s.AwaitWorker(context.Background(), s.Routines()[0])
 	if el := time.Since(start); el > 5*time.Second {
 		t.Fatalf("did not give up: %s", el)
 	}
@@ -396,7 +398,7 @@ func TestClockBeforeLoop(t *testing.T) {
 // A routine on cases is never run on time (its Every is zero: a ticker would panic).
 func TestLoopLeavesCaseRoutinesAlone(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	s.Routines[0].Trigger.Case, s.Routines[0].Every = &spec.CaseTrigger{Kind: "failed_backup"}, 0
+	s.Routines()[0].Trigger.Case, s.Routines()[0].Every = &spec.CaseTrigger{Kind: "failed_backup"}, 0
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	s.Loop(ctx)
@@ -475,7 +477,7 @@ func (*offline) Available() bool { return false }
 func TestRemoteWorkerNotConnectedSkips(t *testing.T) {
 	s, _, _ := setup(t, 0)
 	s.Workers["triage"] = &offline{}
-	why, err := s.SkipReason(context.Background(), s.Routines[0])
+	why, err := s.SkipReason(context.Background(), s.Routines()[0])
 	if err != nil || why != "worker triage is not connected" {
 		t.Fatalf("skip reason %q %v", why, err)
 	}

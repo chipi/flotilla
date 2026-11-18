@@ -41,6 +41,7 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/telemetry"
 	"github.com/chipi/flotilla/internal/ui"
+	"github.com/chipi/flotilla/internal/versions"
 	"github.com/chipi/flotilla/internal/worker"
 )
 
@@ -230,6 +231,27 @@ func checkStore(stateDir string) error {
 	return store.CheckSchema(filepath.Join(stateDir, "flotilla.db"))
 }
 
+// checkVersions is -check's look at the versions: the loaded ones against the store's recorded ones, read-only.
+// A store that does not exist yet (a first deploy) or is older than the version table has nothing to freeze
+// against: the check says so and goes on, and the start records what -check found.
+func checkVersions(stateDir string, routines []*spec.Routine) (versions.Plan, string, error) {
+	read, err := store.ReadVersions(filepath.Join(stateDir, "flotilla.db"))
+	if err != nil {
+		return versions.Plan{}, "", fmt.Errorf("store: %w", err)
+	}
+	plan, err := versions.Check(routines, read.Rows)
+	if err != nil {
+		return plan, "", err
+	}
+	switch {
+	case !read.Exists:
+		return plan, "versions: freeze not checked: no store yet, a first deploy (every routine's first version goes live)", nil
+	case read.Schema < store.VersionsSchema:
+		return plan, fmt.Sprintf("versions: freeze not checked: the store is at schema %d, older than %d (the start migrates it and records each routine's first version)", read.Schema, store.VersionsSchema), nil
+	}
+	return plan, fmt.Sprintf("versions: freeze checked against %d recorded versions", len(read.Rows)), nil
+}
+
 func main() {
 	cfgPath := flag.String("config", "/etc/flotilla/flotillad.yaml", "config file")
 	check := flag.Bool("check", false, "load config, callers and specs, print them, exit")
@@ -242,16 +264,17 @@ func main() {
 		os.Exit(2)
 	}
 	log := telemetry.Logger(cfg.Environment, version)
-	routines, err := spec.Load(cfg.SpecsDir)
+	routines, err := spec.LoadVersions(cfg.SpecsDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "specs:", err)
 		os.Exit(2)
 	}
-	if err := skills.Check(cfg.SpecsDir, routines); err != nil {
+	// every version that loads can run (a shadow, the previous one after a rollback), so its skills and prompts are checked too
+	if err := skills.Check(cfg.SpecsDir, versions.Each(routines)); err != nil {
 		fmt.Fprintln(os.Stderr, "skills:", err)
 		os.Exit(2)
 	}
-	if err := prompts.Check(cfg.SpecsDir, routines); err != nil {
+	if err := prompts.Check(cfg.SpecsDir, versions.Each(routines)); err != nil {
 		fmt.Fprintln(os.Stderr, "prompts:", err)
 		os.Exit(2)
 	}
@@ -342,8 +365,21 @@ func main() {
 			fmt.Fprintln(os.Stderr, "store:", err)
 			os.Exit(1)
 		}
-		for _, j := range routines {
-			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s autonomy=%-7s spec=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Autonomy, j.Hash)
+		plan, freeze, err := checkVersions(cfg.StateDir, routines)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		for _, j := range versions.Bound(routines, plan) {
+			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s autonomy=%-7s spec=%s version=v%d versions=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Autonomy, j.Hash,
+				j.Version, plan.States(j.ID()))
+			for _, n := range j.Notes {
+				fmt.Printf("note %s: %s\n", j.ID(), n)
+			}
+		}
+		fmt.Println(freeze)
+		for _, n := range plan.Notes {
+			fmt.Println("note versions:", n)
 		}
 		n := 0
 		if cfg.Models != nil {
@@ -406,6 +442,26 @@ func main() {
 	} else if n > 0 {
 		log.Warn("runs left running by the previous flotillad marked interrupted", "count", n)
 	}
+	// The versions: refuse a live or previous version whose folder changed, record the new ones, and run each routine
+	// as its live version. Before anything can start a run.
+	routines, plan, err := versions.Reconcile(ctx, st, routines)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		log.Error("versions", "err", err)
+		os.Exit(2)
+	}
+	for _, n := range plan.Notes {
+		log.Warn("versions: tolerated", "note", n)
+	}
+	for _, j := range routines {
+		for _, n := range j.Notes {
+			log.Warn("spec: deprecated", "routine", j.ID(), "note", n)
+		}
+	}
+	if fleets, err = spec.LoadFleets(cfg.SpecsDir, routines); err != nil {
+		fmt.Fprintln(os.Stderr, "fleets:", err)
+		os.Exit(2)
+	}
 	_ = st.Event(ctx, "flotillad", "flotillad", "start", version, fmt.Sprintf("%d routines", len(routines)))
 
 	push := &telemetry.Pusher{URL: cfg.VMURL, Env: cfg.Environment, Version: version, Log: log}
@@ -416,8 +472,9 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	s := &sched.Scheduler{Store: st, Routines: routines, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
+	s := &sched.Scheduler{Store: st, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
+	s.SetRoutines(routines)
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
@@ -576,7 +633,7 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 			watchHosts(ctx, st, hostWatch, s.Clock(), log)
 		}
 		push.Up()
-		for _, j := range s.Routines {
+		for _, j := range s.Routines() {
 			if !j.Enabled {
 				continue
 			}

@@ -692,7 +692,7 @@ func (u *Server) casePath(c store.Case) string {
 	}
 	var lim *spec.CaseLimit
 	if u.API.Sched != nil {
-		for _, j := range u.API.Sched.Routines {
+		for _, j := range u.API.Sched.Routines() {
 			if j.OnCase() == c.Kind && j.OnStage() == "" && j.Trigger.Case.Limit != nil {
 				lim = j.Trigger.Case.Limit
 			}

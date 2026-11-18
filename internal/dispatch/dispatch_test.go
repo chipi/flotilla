@@ -99,8 +99,9 @@ func setup(t *testing.T) *fixture {
 		Trigger: spec.Trigger{Check: &spec.CheckTrigger{Verify: "backup_newer_than_execution"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	w := &fakeWorker{status: "ok"}
 	f := &fixture{st: st, w: w, now: time.Now(), logs: &bytes.Buffer{}}
-	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j, mon, chk}, Workers: map[string]sched.Runner{"ops": w},
+	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{"ops": w},
 		Now: func() time.Time { return f.now }}
+	s.SetRoutines([]*spec.Routine{j, mon, chk})
 	log := slog.New(slog.NewTextHandler(f.logs, nil))
 	f.d = &Dispatcher{API: &api.Server{Sched: s, Store: st, Registry: reg, Log: log}, Log: log}
 	s.AfterRun = f.d.Detected
@@ -335,7 +336,7 @@ func TestExpiredLeases(t *testing.T) {
 
 func TestNoActingRoutineNoRun(t *testing.T) {
 	f := setup(t)
-	f.d.API.Sched.Routines[0].Enabled = false
+	f.d.API.Sched.Routines()[0].Enabled = false
 	f.handOver(t, "")
 	f.pass(t)
 	if f.w.runs() != 0 {
@@ -396,7 +397,7 @@ func TestDetectionOpensAndHandsOver(t *testing.T) {
 func TestVanishedCaseResolvesItself(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	f.d.API.Sched.Routines[1].Detects = []string{"failed_backup", "seo_live_regression"}
+	f.d.API.Sched.Routines()[1].Detects = []string{"failed_backup", "seo_live_regression"}
 	both := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01"},
 		{"kind": "seo_live_regression", "target": "site:robots/www.example.org/robots.txt"}]}`
 	f.monitor(t, "ok", both)
@@ -438,7 +439,7 @@ func TestSummaryKept(t *testing.T) {
 	if !strings.Contains(f.logs.String(), "summary dropped") {
 		t.Fatal("a dropped summary is not logged")
 	}
-	f.d.API.Sched.Routines[1].BriefSection = "Search"
+	f.d.API.Sched.Routines()[1].BriefSection = "Search"
 	f.monitor(t, "ok", string(b))
 	e, err := f.st.LatestEvent(ctx, store.SummaryKind, "ops/backup-monitor")
 	if err != nil || e == nil {
@@ -699,7 +700,7 @@ func TestCheckWindowEscalates(t *testing.T) {
 // decision: the case stays in checking.
 func TestCheckWithoutRoutineOrDecision(t *testing.T) {
 	f := setup(t)
-	f.d.API.Sched.Routines[2].Enabled = false
+	f.d.API.Sched.Routines()[2].Enabled = false
 	id := f.checking(t, "#x")
 	f.pass(t)
 	if c := f.cs(t, id); c.Status != cases.Checking || f.w.runs() != 0 {
@@ -840,7 +841,7 @@ func TestReassignedCasePlansAgain(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 	op := api.Caller{Name: "operator", Role: api.RoleOperator}
-	f.d.API.Sched.Routines[0].Autonomy = "propose"
+	f.d.API.Sched.Routines()[0].Autonomy = "propose"
 	if err := f.d.API.SetActionAutonomy(ctx, op, "test", "backup.rerun", "propose", "test"); err != nil {
 		t.Fatal(err)
 	}

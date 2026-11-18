@@ -199,7 +199,7 @@ func (u *Server) executorOf(action string) string {
 	if u.API.Sched == nil {
 		return ""
 	}
-	for _, j := range u.API.Sched.Routines {
+	for _, j := range u.API.Sched.Routines() {
 		if j.Enabled && j.OnExecute() == action {
 			return j.ID()
 		}

@@ -77,7 +77,6 @@ type Scheduler struct {
 	// (the default 2 minutes): a deploy recreates the workers beside flotillad.
 	ReadyWait time.Duration
 	Store     *store.Store
-	Routines  []*spec.Routine
 	Workers   map[string]Runner
 	Metrics   Metrics
 	Location  *time.Location
@@ -92,6 +91,9 @@ type Scheduler struct {
 	OTLPTracesURL string
 	Environment   string
 	AfterRun      AfterRun
+
+	rmu      sync.RWMutex
+	routines []*spec.Routine // each bound to the version that is live (Bind); read through Routines
 
 	mu      sync.Mutex
 	running map[string]string // routine id -> run id
@@ -116,14 +118,49 @@ func (s *Scheduler) init() {
 	}
 }
 
+// Routines is the loaded routines, each bound to its live version: a copy of the list, the specs shared.
+func (s *Scheduler) Routines() []*spec.Routine {
+	s.rmu.RLock()
+	defer s.rmu.RUnlock()
+	return append([]*spec.Routine(nil), s.routines...)
+}
+
+// SetRoutines replaces the loaded routines (at start, and in tests).
+func (s *Scheduler) SetRoutines(rs []*spec.Routine) {
+	s.rmu.Lock()
+	defer s.rmu.Unlock()
+	s.routines = append([]*spec.Routine(nil), rs...)
+}
+
 // Routine returns the loaded spec for "fleet/routine".
 func (s *Scheduler) Routine(id string) *spec.Routine {
-	for _, j := range s.Routines {
+	s.rmu.RLock()
+	defer s.rmu.RUnlock()
+	for _, j := range s.routines {
 		if j.ID() == id {
 			return j
 		}
 	}
 	return nil
+}
+
+// Bind makes version n the one the routine runs from now on: it swaps in a copy of the routine bound to
+// that version. A run in flight keeps the copy it started with, so it finishes as the version it began as.
+func (s *Scheduler) Bind(id string, n int) error {
+	s.rmu.Lock()
+	defer s.rmu.Unlock()
+	for i, j := range s.routines {
+		if j.ID() != id {
+			continue
+		}
+		c, err := j.WithVersion(n)
+		if err != nil {
+			return err
+		}
+		s.routines[i] = c
+		return nil
+	}
+	return fmt.Errorf("no routine %s", id)
 }
 
 // Loop runs every enabled routine on its trigger until ctx ends: when it is due (its last run that was
@@ -135,7 +172,7 @@ func (s *Scheduler) Routine(id string) *spec.Routine {
 func (s *Scheduler) Loop(ctx context.Context) {
 	s.init()
 	var wg sync.WaitGroup
-	for _, j := range s.Routines {
+	for _, j := range s.Routines() {
 		if !j.Enabled {
 			s.Log.Info("routine disabled in its spec", "routine", j.ID())
 			continue
@@ -292,7 +329,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	if err != nil {
 		return nil, nil, err
 	}
-	rec := store.Run{ID: runID, Routine: id, SpecHash: j.Hash, Trigger: trigger, Actor: actor, Autonomy: autonomy}
+	rec := store.Run{ID: runID, Routine: id, SpecHash: j.Hash, Version: j.Version, Trigger: trigger, Actor: actor, Autonomy: autonomy}
 	if reason, err := s.skipReason(ctx, j); err != nil {
 		return nil, nil, err
 	} else if reason != "" {
@@ -315,7 +352,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	ctx, span := tracer.Start(ctx, "run "+id, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
 		attribute.String("flotilla.routine", id), attribute.String("flotilla.run_id", runID),
 		attribute.String("flotilla.autonomy", autonomy), attribute.String("flotilla.trigger", trigger),
-		attribute.String("flotilla.worker", j.Worker), attribute.String("flotilla.spec_hash", j.Hash)))
+		attribute.String("flotilla.worker", j.Worker), attribute.String("flotilla.spec_hash", j.Hash), attribute.Int("flotilla.version", j.Version)))
 	defer span.End()
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
@@ -644,7 +681,7 @@ func (s *Scheduler) Held(ctx context.Context, j *spec.Routine) (bool, error) {
 // CaseHold is casetimer.Hold: a case of this kind and stage is held while its acting routine's fleet is
 // STOPped or the routine is paused; released, the later of the two controls' last change is when.
 func (s *Scheduler) CaseHold(ctx context.Context, kind, stage string) (bool, string, error) {
-	for _, j := range s.Routines {
+	for _, j := range s.Routines() {
 		if !j.Enabled || j.OnCase() != kind || j.OnStage() != stage {
 			continue
 		}

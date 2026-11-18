@@ -406,7 +406,7 @@ func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 }
 
 func (s *Server) hasFleet(f string) bool {
-	for _, j := range s.Sched.Routines {
+	for _, j := range s.Sched.Routines() {
 		if j.Fleet == f {
 			return true
 		}

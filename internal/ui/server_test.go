@@ -53,7 +53,8 @@ func setupWith(t *testing.T, routines []*spec.Routine) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := &sched.Scheduler{Store: st, Routines: routines, Workers: map[string]sched.Runner{}}
+	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{}}
+	s.SetRoutines(routines)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
 	if err != nil {

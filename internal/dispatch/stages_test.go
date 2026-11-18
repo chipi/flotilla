@@ -16,7 +16,7 @@ import (
 func withClarify(f *fixture) *spec.Routine {
 	c := &spec.Routine{Fleet: "ops", Routine: "clarify", Description: "d", Enabled: true, Worker: "ops", Autonomy: "record",
 		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup", Stage: "clarify"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
-	f.d.API.Sched.Routines = append(f.d.API.Sched.Routines, c)
+	f.d.API.Sched.SetRoutines(append(f.d.API.Sched.Routines(), c))
 	return c
 }
 
@@ -93,8 +93,8 @@ func TestHandOverRefused(t *testing.T) {
 // timeout let one run spend twice the case's 90 minutes); with no limit, the spec's timeout as before.
 func TestRunTimeoutIsTheCasesTimeLeft(t *testing.T) {
 	f := setup(t)
-	f.d.API.Sched.Routines[0].Limit = 3 * time.Hour
-	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
+	f.d.API.Sched.Routines()[0].Limit = 3 * time.Hour
+	f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
 	id := f.handOver(t, "")
 	if err := f.st.AddCaseSpend(context.Background(), id, 0.1, 60*60); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestRunTimeoutIsTheCasesTimeLeft(t *testing.T) {
 		t.Fatalf("the run's timeout is %v s, want the case's 1800 s left", got)
 	}
 	g := setup(t)
-	g.d.API.Sched.Routines[0].Limit = 3 * time.Hour
+	g.d.API.Sched.Routines()[0].Limit = 3 * time.Hour
 	g.handOver(t, "")
 	g.decide(`{"outcome": "nothing"}`)
 	g.pass(t)
@@ -124,7 +124,7 @@ func TestCaseLimitIsShared(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := setup(t)
-			f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
+			f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
 			id := f.handOver(t, "")
 			f.w.mu.Lock()
 			f.w.spend, f.w.secs = c.spend, c.secs
@@ -153,7 +153,7 @@ func TestCaseLimitIsShared(t *testing.T) {
 // new case (the same canonical key) starts with what the earlier one spent, and is escalated, not run.
 func TestLimitIsPerBugAcrossCases(t *testing.T) {
 	f := setup(t)
-	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
+	f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
 	ctx := context.Background()
 	id := f.handOver(t, "")
 	if err := f.st.AddCaseSpend(ctx, id, 1.2, 60); err != nil {

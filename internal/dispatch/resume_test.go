@@ -15,7 +15,7 @@ import (
 )
 
 func withResume(f *fixture, on ...string) {
-	f.d.API.Sched.Routines[0].Resume = &spec.Resume{On: on, Max: 1}
+	f.d.API.Sched.Routines()[0].Resume = &spec.Resume{On: on, Max: 1}
 }
 
 func (f *fixture) resumeOf(t *testing.T, i int) *sched.Resumption {
@@ -158,7 +158,7 @@ func TestResumeNotAcrossEscalationAndReassign(t *testing.T) {
 func TestResumeStaysInsideTheCaseLimit(t *testing.T) {
 	f := setup(t)
 	withResume(f, "interrupted", "error")
-	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
+	f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 1, Minutes: 90}
 	f.w.status, f.w.spend, f.w.secs = "error", 1.2, 60
 	id := f.handOver(t, "")
 	f.pass(t)
@@ -176,8 +176,8 @@ func TestResumeStaysInsideTheCaseLimit(t *testing.T) {
 func TestResumedRunTimeoutIsTheCasesTimeLeft(t *testing.T) {
 	f := setup(t)
 	withResume(f, "error")
-	f.d.API.Sched.Routines[0].Limit = 3 * time.Hour
-	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
+	f.d.API.Sched.Routines()[0].Limit = 3 * time.Hour
+	f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
 	f.w.status, f.w.secs = "error", 60*60
 	f.handOver(t, "")
 	f.pass(t)
@@ -236,7 +236,7 @@ func TestResumeMaxIsPerChain(t *testing.T) {
 func TestResumedRunSeesTheChargedSpend(t *testing.T) {
 	f := setup(t)
 	withResume(f, "error")
-	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
+	f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
 	f.w.status, f.w.spend, f.w.secs = "error", 1.5, 600
 	f.handOver(t, "")
 	f.pass(t)
@@ -270,7 +270,7 @@ func TestNoRunStartedWithoutResume(t *testing.T) {
 func TestResumeSurvivesABusyRun(t *testing.T) {
 	f := setup(t)
 	withResume(f, "interrupted", "error")
-	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
+	f.d.API.Sched.Routines()[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
 	f.w.script, f.w.secs = []string{"error", "busy", "ok"}, 120
 	id := f.handOver(t, "")
 	f.pass(t)

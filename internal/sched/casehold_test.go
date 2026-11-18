@@ -12,8 +12,8 @@ import (
 func TestCaseHold(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := setup(t, 0)
-	s.Routines = append(s.Routines, &spec.Routine{Fleet: "bugfix", Routine: "fix", Enabled: true, Worker: "triage",
-		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "code_bug"}}})
+	s.SetRoutines(append(s.Routines(), &spec.Routine{Fleet: "bugfix", Routine: "fix", Enabled: true, Worker: "triage",
+		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "code_bug"}}}))
 	held := func() (bool, string) {
 		t.Helper()
 		h, at, err := s.CaseHold(ctx, "code_bug", "")
@@ -44,7 +44,7 @@ func TestCaseHold(t *testing.T) {
 		t.Fatal("a kind no routine acts on is held")
 	}
 	// Held (the stale alert's freshness is not pushed for a held routine)
-	j := s.Routines[len(s.Routines)-1]
+	j := s.Routines()[len(s.Routines())-1]
 	if h, err := s.Held(ctx, j); h || err != nil {
 		t.Fatalf("released: %v %v", h, err)
 	}

@@ -11,7 +11,7 @@ import (
 // one on time that never succeeded is.
 func TestStaleOnlyForRoutinesOnTime(t *testing.T) {
 	onTime := newServer(t, func(*spec.Routine) {})
-	onTime.Sched.Routines[0].Fresh = onTime.Sched.Routines[0].Every * 3
+	onTime.Sched.Routines()[0].Fresh = onTime.Sched.Routines()[0].Every * 3
 	rs, _, _ := onTime.Status(context.Background())
 	if !rs[0].Stale {
 		t.Fatal("a routine on time that never succeeded is not stale")

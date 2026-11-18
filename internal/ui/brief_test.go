@@ -18,7 +18,7 @@ import (
 func TestHandedOverWithoutARoutineNeedsYou(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	f.sch.Routines = append(f.sch.Routines, &spec.Routine{Fleet: "ops", Routine: "rerun", Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}})
+	f.sch.SetRoutines(append(f.sch.Routines(), &spec.Routine{Fleet: "ops", Routine: "rerun", Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}}))
 	open := func(kind, target, title string) string {
 		k := store.Key{Kind: "target", Value: kind + "/" + target}
 		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: kind, Target: target, Keys: []store.Key{k}, Canonical: k, Title: title}, "m", "")
@@ -96,7 +96,7 @@ func TestUnconfiguredWorkerIsNotHealthy(t *testing.T) {
 func TestBriefSummarySection(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	f.sch.Routines = append(f.sch.Routines, &spec.Routine{Fleet: "seo", Routine: "traffic", BriefSection: "Search", Detects: []string{"seo_traffic_drop"}})
+	f.sch.SetRoutines(append(f.sch.Routines(), &spec.Routine{Fleet: "seo", Routine: "traffic", BriefSection: "Search", Detects: []string{"seo_traffic_drop"}}))
 	b, _ := json.Marshal(store.Summary{Run: "seo-traffic-1", Section: "Search", Lines: []string{"www.example.org: 10 visits (+5%)"}})
 	if err := f.st.Event(ctx, "seo/traffic", "flotillad", store.SummaryKind, "seo/traffic", string(b)); err != nil {
 		t.Fatal(err)

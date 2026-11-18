@@ -170,7 +170,7 @@ func (u *Server) waitingCase(status, kind string) bool {
 	if status != cases.HandedOver || u.API.Sched == nil {
 		return false
 	}
-	for _, j := range u.API.Sched.Routines {
+	for _, j := range u.API.Sched.Routines() {
 		if j.OnCase() == kind {
 			return false
 		}
@@ -284,7 +284,7 @@ func (u *Server) specs() (map[string]string, map[string]*spec.Routine) {
 	if u.API.Sched == nil {
 		return kinds, by
 	}
-	for _, j := range u.API.Sched.Routines {
+	for _, j := range u.API.Sched.Routines() {
 		id := j.Fleet + "/" + j.Routine
 		by[id] = j
 		if k := j.OnCase(); k != "" && j.OnStage() == "" { // the kind's first routine names its fleet

@@ -40,7 +40,8 @@ func world(t *testing.T) (*api.Server, *httptest.Server) {
 	t.Cleanup(func() { st.Close() })
 	j := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops-read", Autonomy: "record",
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 25 * time.Minute}
-	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"ops-read": okRunner{}}}
+	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{"ops-read": okRunner{}}}
+	s.SetRoutines([]*spec.Routine{j})
 	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
 	if err != nil {
 		t.Fatal(err)

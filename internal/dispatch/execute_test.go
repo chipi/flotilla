@@ -17,7 +17,7 @@ import (
 func (f *fixture) withExecutor(action string) *spec.Routine {
 	j := &spec.Routine{Fleet: "bugfix", Routine: "open-pr", Description: "d", Enabled: true, Worker: "ops", Autonomy: "propose",
 		Trigger: spec.Trigger{Execute: &spec.ExecuteTrigger{Action: action}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
-	f.d.API.Sched.Routines = append(f.d.API.Sched.Routines, j)
+	f.d.API.Sched.SetRoutines(append(f.d.API.Sched.Routines(), j))
 	return j
 }
 

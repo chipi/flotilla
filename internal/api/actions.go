@@ -88,7 +88,7 @@ func (s *Server) Status(ctx context.Context) ([]RoutineStatus, map[string]any, e
 	now := s.Sched.Now()
 	day := now.In(s.Sched.Location).Format("2006-01-02")
 	var routines []RoutineStatus
-	for _, j := range s.Sched.Routines {
+	for _, j := range s.Sched.Routines() {
 		st, err := s.Sched.Autonomy(ctx, j)
 		if err != nil {
 			return nil, nil, err
@@ -185,7 +185,7 @@ func (s *Server) SetStopped(ctx context.Context, c Caller, via, fleet string, st
 	}
 	if stopped {
 		running := s.Sched.Running()
-		for _, j := range s.Sched.Routines {
+		for _, j := range s.Sched.Routines() {
 			if j.Fleet == fleet && running[j.ID()] != "" {
 				// the STOP is in force whatever the worker answers: a failed cancel is logged and recorded
 				if err := s.cancelRun(ctx, c, via, j.ID(), "fleet "+fleet+" STOPped"); err != nil && !errors.Is(err, sched.ErrNotRunning) {
