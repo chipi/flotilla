@@ -36,6 +36,7 @@ Environment: FLOTILLA_CASE, FLOTILLA_PLAN_FILE, FLOTILLA_MODELS (the worker's); 
 scratch volume); GIT_REMOTE_BASE (default https://github.com, a test's local path).
 """
 import argparse
+import fcntl
 import glob
 import hashlib
 import json
@@ -380,15 +381,121 @@ def case_run_dir(scratch, case):
     return os.path.join(scratch, "runs", cid)
 
 
+LOCK = ".lock"
+LOCK_WAIT_S = 120
+EXIT_BUSY = 75   # EX_TEMPFAIL: flotillad reads it as "this run never started" (internal/sched ExitBusy)
+
+
+class RunBusy(Exception):
+    """Another run of the case holds runs/<case id>/.lock and did not let go within the wait."""
+
+
+class RunDirStuck(Exception):
+    """The case's run directory still holds what could not be deleted."""
+
+
+def _open_up(path):
+    """Make path and what is under it writable and searchable, so that it can be deleted (a Go module cache is
+    read-only by design, and a repo's tools chmod too)."""
+    try:
+        if os.path.islink(path):
+            return
+        os.chmod(path, 0o700 if os.path.isdir(path) else 0o600)
+        if os.path.isdir(path):
+            for name in os.listdir(path):
+                _open_up(os.path.join(path, name))
+    except OSError:
+        pass
+
+
+def rmtree_force(path):
+    """Delete path, getting past read-only directories; what still cannot go (a file owned by another user) stays
+    and the caller finds it."""
+    if os.path.islink(path) or not os.path.isdir(path):   # a file, a link, or nothing
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return
+    try:
+        shutil.rmtree(path)
+        return
+    except OSError:
+        pass
+    _open_up(path)
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def remove_run_dir(scratch, run_dir):
-    shutil.rmtree(run_dir, ignore_errors=True)
-    shutil.rmtree(os.path.join(scratch, "venvs", os.path.basename(run_dir)), ignore_errors=True)
+    rmtree_force(run_dir)
+    rmtree_force(os.path.join(scratch, "venvs", os.path.basename(run_dir)))
+
+
+def clear_run_dir(scratch, run_dir):
+    """The directory of a run that starts fresh: everything in it is deleted but the lock this run holds (a waiting
+    run locks the file at the path, so it must stay). Leftovers that cannot be deleted are an error, said plainly:
+    a fresh run on top of them would fail in some later step."""
+    rmtree_force(os.path.join(scratch, "venvs", os.path.basename(run_dir)))
+    os.makedirs(run_dir, exist_ok=True)
+    for name in os.listdir(run_dir):
+        if name != LOCK:
+            rmtree_force(os.path.join(run_dir, name))
+    left = [n for n in os.listdir(run_dir) if n != LOCK]
+    if left:
+        raise RunDirStuck(f"{run_dir} cannot be cleared: {', '.join(sorted(left)[:5])} stays (permissions or another user's file)")
+
+
+def lock_run_dir(run_dir, wait_s=LOCK_WAIT_S, poll_s=0.5):
+    """An exclusive flock on runs/<case id>/.lock for the whole run, so two runs of one case never share its worktree
+    (a resume started while the interrupted run is still being stopped, a restart's cancel not yet delivered). Waits up
+    to wait_s; then RunBusy, with nothing in the directory touched but the empty lock file. The file is checked to be
+    the one at the path once locked: the run that held it may have ended and deleted the directory. Returns the fd;
+    closing it (any way the run ends, a kill included) releases the lock."""
+    path = os.path.join(run_dir, LOCK)
+    deadline = time.monotonic() + wait_s
+    while True:
+        os.makedirs(run_dir, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise RunBusy(f"another run of this case is still running (runs/{os.path.basename(run_dir)}/{LOCK} "
+                                      f"was held for {wait_s:g} s): this run ends without touching its checkpoint") from None
+                    time.sleep(poll_s)
+            try:
+                if os.stat(path).st_ino == os.fstat(fd).st_ino:
+                    return fd
+            except FileNotFoundError:
+                pass
+        except BaseException:
+            os.close(fd)
+            raise
+        os.close(fd)
+
+
+def lock_held(run_dir):
+    """Whether another process holds the directory's lock now (a live run): the sweep leaves such a directory."""
+    try:
+        fd = os.open(os.path.join(run_dir, LOCK), os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return False
+    except BlockingIOError:
+        return True
+    finally:
+        os.close(fd)
 
 
 def sweep_stale(scratch, now=None):
     """Delete the run directories (and their venvs) nobody has touched for CHECKPOINT_MAX_AGE: runs that were
     cut short and never resumed, and the per-run directories of before ADR-0019. The newest file of a directory is
-    its checkpoint, or its pi sessions, while a run is alive."""
+    its checkpoint, or its pi sessions, while a run is alive. A directory whose lock is held is a live run's."""
     now = time.time() if now is None else now
     for d in glob.glob(os.path.join(scratch, "runs", "*")):
         try:
@@ -396,7 +503,7 @@ def sweep_stale(scratch, now=None):
                                                    (os.path.join(d, CHECKPOINT),) if os.path.exists(p)])
         except OSError:
             continue
-        if now - newest > CHECKPOINT_MAX_AGE:
+        if now - newest > CHECKPOINT_MAX_AGE and not lock_held(d):
             remove_run_dir(scratch, d)
 
 
@@ -522,7 +629,7 @@ def trim_session(path):
 class Chain:
     def __init__(self, a, case, run_dir, environ, meter=None, restored=None):
         self.a, self.case, self.run_dir = a, case, run_dir
-        self.restored, self.pi_baseline, self.snap, self.in_flight, self.fixed_ok = restored, 0.0, None, None, False
+        self.restored, self.snap, self.in_flight, self.fixed_ok = restored, None, None, False
         self.resumed_from = ""   # the plan's detail says so when the run continued an earlier one
         # each pi episode's turns go to the run's calls file once it ends (role: verdict, coder, reviewer, advisor),
         # with the episode's share of the gateway's bill when there is a meter; the chain's notes go there as steps
@@ -582,9 +689,9 @@ class Chain:
         self.log = list(ck["log"])
         self.checked, self.unloaded_on_base, self.kb_round = ck["checked"], list(ck["unloaded"]), ck["kb_round"]
         self.cache = os.path.join(self.a.scratch, "repos", self.repo.replace("/", "__") + ".git")
+        self.scrub_cache(self.cache, self.env.get("GIT_REMOTE_BASE", "https://github.com").rstrip("/") + "/" + self.repo)
         self.pin_cache_config()
         pi = os.path.join(self.run_dir, "pi")
-        self.pi_baseline = spend.pi_cost(pi)
         before = (ck.get("attempt") or {}).get("before") or {}
         self.in_flight, grown = None, []
         if ck["phase"] == "attempt":
@@ -651,10 +758,7 @@ class Chain:
             sh(["git", "init", "-q", cache], self.run_dir, self.env, 60, check=True)
             sh(["git", "-C", cache, "remote", "add", "origin", remote], self.run_dir, self.env, 60, check=True)
             sh(["git", "-C", cache, "config", "extensions.worktreeConfig", "true"], self.run_dir, self.env, 60, check=True)
-        sh(["git", "-C", cache, "worktree", "prune"], self.run_dir, self.env, 60)  # a run that died left its worktree
-        # what an earlier run's code could have left in the shared cache: hooks, another origin, a URL rewrite
-        shutil.rmtree(os.path.join(cache, ".git", "hooks"), ignore_errors=True)
-        sh(["git", "-C", cache, "remote", "set-url", "origin", remote], self.run_dir, self.env, 60, check=True)
+        self.scrub_cache(cache, remote)
         self.check_cache_config(cache)
         sh(["git", "-C", cache, "fetch", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "origin", ref],
            self.run_dir, self.env, 1200, check=True)
@@ -681,6 +785,15 @@ class Chain:
             self.restore_config("setup")
             if code != 0:
                 raise Stop(f"the repo's setup failed on the base (exit {code}): {errors_of(out)}")
+
+    def scrub_cache(self, cache, remote):
+        """What the shared cache is put back to before anything reads it: also on a resume, which does not check out,
+        because the run that was cut short ran the repo's code beside the cache and a hook or another origin it left
+        would otherwise be pinned as the config to restore."""
+        sh(["git", "-C", cache, "worktree", "prune"], self.run_dir, self.env, 60)  # a run that died left its worktree
+        # what an earlier run's code could have left in the shared cache: hooks, another origin, a URL rewrite
+        rmtree_force(os.path.join(cache, ".git", "hooks"))
+        sh(["git", "-C", cache, "remote", "set-url", "origin", remote], self.run_dir, self.env, 60, check=True)
 
     def check_cache_config(self, cache):
         _, cfg = sh(["git", "-C", cache, "config", "--local", "--list"], self.run_dir, self.env, 60)
@@ -1401,6 +1514,8 @@ def parse(argv):
     ap.add_argument("--spend-settle", type=float, default=60.0, help="most seconds to wait for the spend to settle")
     ap.add_argument("--spend-stable", type=float, default=20.0,
                     help="seconds the spend must hold still to count as settled (LiteLLM records calls late)")
+    ap.add_argument("--lock-wait", type=float, default=LOCK_WAIT_S,
+                    help="seconds to wait for another run of the same case to let go of its directory before ending in error")
     a = ap.parse_args(argv)
     if (a.related == "pytest-dirs" or a.test_format == "pytest") and not (a.source_root and a.test_root):
         ap.error("--related pytest-dirs and --test-format pytest need --source-root and --test-root (the scope rules use them)")
@@ -1431,6 +1546,23 @@ def main(argv=None, environ=None):
         print(f"BUGFIX FIX case={case.get('id')} outcome=escalate {out['detail']}")
         return out
     run_dir = case_run_dir(a.scratch, case)
+    # One run of a case at a time, for the whole run: a resume can start while the run it continues is still being
+    # stopped. A run that cannot get the lock ends here as an error, having touched nothing.
+    lock = lock_run_dir(run_dir, a.lock_wait)
+    try:
+        return run_case(a, environ, case, run_dir)
+    finally:
+        os.close(lock)
+
+
+def _number(v):
+    try:
+        return max(float(v), 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def run_case(a, environ, case, run_dir):
     sweep_stale(a.scratch)
     # ADR-0019: flotillad says whether this run may continue the case's last one (FLOTILLA_RESUME); the checkpoint
     # decides whether it can. Without the word, or without a checkpoint that holds, the case starts fresh.
@@ -1445,8 +1577,13 @@ def main(argv=None, environ=None):
             print(f"BUGFIX FIX case={case.get('id')} resume of run {resumption.get('run_id')}: no usable checkpoint ({why}): starting fresh",
                   flush=True)
     if restored is None:
-        remove_run_dir(a.scratch, run_dir)
-        os.makedirs(run_dir)
+        clear_run_dir(a.scratch, run_dir)
+    # a resumed run reports its own spend, not its earlier run's: the pi sessions already in the directory are the
+    # baseline (taken here, so that a Chain that cannot even start does not count them again). What the interrupted
+    # run did not get reported (flotillad's restart reads no spend) is carried onto this run's: pi's figure for those
+    # sessions less what flotillad recorded for the run (its spend_usd in FLOTILLA_RESUME), never below 0.
+    baseline = spend.pi_cost(os.path.join(run_dir, "pi")) if restored else 0.0
+    carry = max(baseline - _number((resumption or {}).get("spend_usd")), 0.0) if restored else 0.0
     chain = None
     meter = None
     terminated = []
@@ -1495,16 +1632,23 @@ def main(argv=None, environ=None):
             meter.hurry()
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
             # pi's figure first, so a SIGKILL during the gateway read still leaves a number; then the bill over it
-            baseline = chain.pi_baseline if chain is not None else 0.0   # a resumed run reports its own spend, not its earlier run's
-            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi"), baseline))
+            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi"), baseline) + carry)
             # every episode's settled spend is already known when the chain measured them all: nothing to wait for again
             quiet = chain is not None and chain.calls.measures and not terminated
             usd, source, why = meter.cost(os.path.join(run_dir, "pi"), quiet=quiet, baseline=baseline)
+            usd += carry
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
-            print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else ""))
+            print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else "") +
+                  (f" carried={carry:.6f} of the interrupted run" if carry else ""))
         if chain is not None:
             chain.restore_config("the run")
-        if finished:   # a run cut short leaves its directory and its checkpoint for the case's next run (ADR-0019)
+        # A run cut short by a crash, a restart or an error leaves its directory and checkpoint for the case's next run
+        # (ADR-0019), unless there is no checkpoint to continue or its own timeout ended it (status timeout, which the
+        # routine does not resume): the directory holds a worktree and a venv, gigabytes on shop. A cancel's SIGTERM
+        # cannot be told from a restart's, so it keeps the directory until the 24 h sweep.
+        deadline = _number(environ.get("FLOTILLA_RUN_DEADLINE"))
+        timed_out = bool(terminated) and deadline > 0 and time.time() >= deadline - 5
+        if finished or timed_out or not os.path.exists(os.path.join(run_dir, CHECKPOINT)):
             remove_run_dir(a.scratch, run_dir)
         if chain is not None and getattr(chain, "cache", None):
             sh(["git", "-C", chain.cache, "worktree", "prune"], a.scratch, environ, 60)
@@ -1517,4 +1661,8 @@ def main(argv=None, environ=None):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RunBusy as e:
+        print(f"BUGFIX FIX {e}", flush=True)
+        sys.exit(EXIT_BUSY)

@@ -1678,7 +1678,7 @@ class Durable(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "HOME": home}):
             self.kill(f, "pi")
             self.assertEqual(fix.spend.pi_cost(os.path.join(self.run_dir(f), "pi")), 1.0)
-            f.run("--spend-file", ".spend", resume=RESUME)
+            f.run("--spend-file", ".spend", resume=dict(RESUME, spend_usd=1.0))   # flotillad has the killed run's 1.0 on record
         with open(os.path.join(home, ".spend")) as fh:
             self.assertEqual(float(fh.read()), 1.0)
 
@@ -1712,6 +1712,272 @@ class Durable(unittest.TestCase):
         r = self.resumes(f)
         self.assertEqual(len(r), 1, r)
         self.assertRegex(r[0], r"^resume s-hang-\d+\.jsonl changed=0 desc=The run was interrupted")
+
+
+class Locking(unittest.TestCase):
+    """The case's directory is held by one run at a time (flock on runs/<case id>/.lock), and what an interrupted run
+    leaves is cleaned up, charged and scrubbed when the case's next run continues it."""
+
+    CASE = Durable.CASE
+
+    def fixture(self, verdicts, fixes):
+        f = Fixture(verdicts, fixes)
+        self.addCleanup(f.close)
+        return f
+
+    def run_dir(self, f):
+        return os.path.join(f.scratch, "runs", self.CASE)
+
+    def kill(self, f, name="attempt"):
+        d = Durable()
+        d.CASE = self.CASE
+        d.kill(f, name)
+
+    def hold(self, f):
+        import fcntl
+        os.makedirs(self.run_dir(f), exist_ok=True)
+        fd = os.open(os.path.join(self.run_dir(f), fix.LOCK), os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        self.addCleanup(lambda: (os.close(fd) if self.open_fd(fd) else None))
+        return fd
+
+    @staticmethod
+    def open_fd(fd):
+        try:
+            os.fstat(fd)
+            return True
+        except OSError:
+            return False
+
+    def snapshot(self, f):
+        out = {}
+        for root, dirs, files in os.walk(self.run_dir(f)):
+            for n in files:
+                if n != fix.LOCK:
+                    p = os.path.join(root, n)
+                    out[os.path.relpath(p, self.run_dir(f))] = (os.path.getmtime(p), os.path.getsize(p))
+        return out
+
+    def can_lock(self, f):
+        try:
+            fd = fix.lock_run_dir(self.run_dir(f), 0)
+        except fix.RunBusy:
+            return False
+        os.close(fd)
+        return True
+
+    def test_a_run_that_cannot_get_the_lock_waits_then_ends_in_error_without_touching_the_checkpoint(self):
+        f = self.fixture(["actionable"], ["good"])
+        self.kill(f)
+        before = self.snapshot(f)
+        ck = Path(self.run_dir(f), fix.CHECKPOINT).read_bytes()
+        fd = self.hold(f)
+        t0 = time.monotonic()
+        with self.assertRaises(fix.RunBusy) as cm:
+            f.run("--lock-wait", "1", resume=RESUME)
+        self.assertGreaterEqual(time.monotonic() - t0, 0.9, "it waited")
+        self.assertIn("another run of this case is still running", str(cm.exception))
+        self.assertEqual(Path(self.run_dir(f), fix.CHECKPOINT).read_bytes(), ck)
+        self.assertEqual(self.snapshot(f), before, "no file of the directory touched")
+        self.assertEqual(f.calls(), ["triage"], "no leaf ran")
+        os.close(fd)
+        plan, _ = f.run(resume=RESUME)   # the lock free: the same checkpoint is resumed, so the failed wait used nothing up
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("resumed from a checkpoint", plan["detail"])
+
+    def test_a_run_waits_for_the_lock_and_goes_on_when_it_is_released(self):
+        import threading
+        f = self.fixture(["actionable"], ["good"])
+        self.kill(f)
+        fd = self.hold(f)
+        threading.Timer(1.0, os.close, (fd,)).start()
+        plan, _ = f.run("--lock-wait", "20", resume=RESUME)
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("resumed from a checkpoint", plan["detail"])
+
+    def test_the_lock_is_released_on_every_way_a_run_ends(self):
+        f = self.fixture(["actionable", "needs-info", "actionable", "actionable"], ["good", "good"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan")
+        self.assertTrue(self.can_lock(f), "a normal end")
+        shutil.rmtree(self.run_dir(f))
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertTrue(self.can_lock(f), "an escalation")
+        shutil.rmtree(self.run_dir(f))
+        real = fix.Chain.attempt
+
+        def boom(chain, *a, **kw):
+            raise RuntimeError("a bug")
+        fix.Chain.attempt = boom
+        try:
+            with self.assertRaises(RuntimeError):
+                f.run()
+        finally:
+            fix.Chain.attempt = real
+        self.assertTrue(self.can_lock(f), "an error")
+        shutil.rmtree(self.run_dir(f))
+        self.kill(f)
+        self.assertTrue(self.can_lock(f), "a kill")
+
+    def test_two_waiting_runs_do_not_both_get_it_when_the_holder_deleted_the_directory(self):
+        d = os.path.join(tempfile.mkdtemp(), "runs", "c")
+        self.addCleanup(shutil.rmtree, os.path.dirname(os.path.dirname(d)), True)
+        a = fix.lock_run_dir(d, 0)
+        import threading
+        got = []
+        t = threading.Thread(target=lambda: got.append(fix.lock_run_dir(d, 10, 0.05)))
+        t.start()
+        time.sleep(0.3)
+        shutil.rmtree(d)   # the holder ends normally and deletes its directory with the lock file in it
+        os.close(a)
+        t.join(5)
+        self.assertEqual(len(got), 1)
+        with self.assertRaises(fix.RunBusy):
+            fix.lock_run_dir(d, 0)   # the waiter holds the file now at the path, not the deleted one
+        os.close(got[0])
+
+    def test_the_command_exits_75_when_the_case_is_busy(self):
+        f = self.fixture(["actionable"], ["good"])
+        fd = self.hold(f)
+        env = dict(os.environ, FLOTILLA_PLAN_FILE=os.path.join(f.d, "plan.json"), FLOTILLA_MODELS=json.dumps(MODELS), FAKE_STATE=f.state,
+                   FLOTILLA_CASE=json.dumps({"id": self.CASE, "kind": "code_bug", "target": "t",
+                                             "data": {"issue": {"repo": "example/shop", "number": 12, "title": "t", "body": "b", "url": "u"}}}))
+        p = subprocess.run([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
+                            "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--scratch", f.scratch,
+                            "--lock-wait", "0.3"], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, fix.EXIT_BUSY, p.stdout + p.stderr)
+        self.assertIn("another run of this case is still running", p.stdout)
+        os.close(fd)
+
+    def test_a_directory_with_read_only_trees_is_deleted_and_an_undeletable_one_is_said(self):
+        f = self.fixture(["actionable", "actionable"], ["good"])
+        self.kill(f)
+        ro = os.path.join(self.run_dir(f), "go", "pkg", "mod")   # a Go module cache is read-only on purpose
+        os.makedirs(ro)
+        Path(ro, "x.go").write_text("package x\n")
+        os.chmod(ro, 0o555)
+        os.chmod(os.path.dirname(ro), 0o555)
+        plan, _ = f.run()   # no resume: a fresh run clears the directory first
+        self.assertEqual(plan["outcome"], "plan", plan)
+        # nothing deletes it: a clear error, not a FileExistsError on every retry
+        os.makedirs(os.path.join(self.run_dir(f), "stuck"), exist_ok=True)
+        with unittest.mock.patch.object(fix, "rmtree_force", lambda p: None):
+            with self.assertRaises(fix.RunDirStuck) as cm:
+                f.run()
+        self.assertIn("stuck", str(cm.exception))
+        self.assertTrue(self.can_lock(f))
+
+    def test_the_sweep_deletes_read_only_trees_and_leaves_a_directory_whose_lock_is_held(self):
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        old = time.time() - fix.CHECKPOINT_MAX_AGE - 3600
+        for name in ("case-ro", "case-live"):
+            d = os.path.join(scratch, "runs", name, "mod")
+            os.makedirs(d)
+            Path(d, "f").write_text("x")
+            os.chmod(d, 0o555)
+            for p in (os.path.join(scratch, "runs", name),):
+                os.utime(p, (old, old))
+        fd = fix.lock_run_dir(os.path.join(scratch, "runs", "case-live"), 0)
+        os.utime(os.path.join(scratch, "runs", "case-live"), (old, old))
+        fix.sweep_stale(scratch)
+        os.close(fd)
+        self.assertEqual(os.listdir(os.path.join(scratch, "runs")), ["case-live"])
+        _open = fix._open_up
+        _open(os.path.join(scratch, "runs"))
+
+    def test_a_resume_scrubs_the_shared_cache_before_it_pins_its_config(self):
+        f = self.fixture(["actionable"], ["good"])
+        self.kill(f)
+        cache = os.path.join(f.scratch, "repos", "example__shop.git")
+        os.makedirs(os.path.join(cache, ".git", "hooks"), exist_ok=True)
+        Path(cache, ".git", "hooks", "post-checkout").write_text("#!/bin/sh\ntouch /tmp/never\n")
+        subprocess.run(["git", "-C", cache, "remote", "set-url", "origin", "https://evil.example/x.git"], check=True)
+        plan, _ = f.run(resume=RESUME)
+        self.assertEqual(plan["outcome"], "plan", plan)
+        url = subprocess.run(["git", "-C", cache, "config", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(url, f.remotes + "/example/shop", "the origin is the run's own again, not what an earlier run's code set")
+        self.assertFalse(os.path.exists(os.path.join(cache, ".git", "hooks", "post-checkout")))
+
+    def spend_of(self, f, home, **resume):
+        with open(os.path.join(home, ".spend")) as fh:
+            return float(fh.read())
+
+    def test_a_resumed_run_reports_what_the_interrupted_one_never_did(self):
+        f = self.fixture(["actionable"], ["good", "nothing"])
+        home = os.path.join(f.d, "home")
+        os.makedirs(home)
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "HOME": home}):
+            self.kill(f, "pi")   # its verdict and fix episode, 1.0 on pi's figure, reported by no one
+            f.run("--spend-file", ".spend", resume=dict(RESUME, spend_usd=0.0))
+        self.assertEqual(self.spend_of(f, home), 2.0, "its own 1.0 and the interrupted run's 1.0")
+
+    def test_a_resumed_run_that_cannot_start_does_not_count_the_earlier_sessions_again(self):
+        f = self.fixture(["actionable"], ["good", "nothing"])
+        home = os.path.join(f.d, "home")
+        os.makedirs(home)
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "HOME": home}):
+            self.kill(f, "pi")
+
+            class Broken:
+                def __init__(self, *a, **kw):
+                    raise RuntimeError("cannot start")
+            with unittest.mock.patch.object(fix, "Chain", Broken):
+                with self.assertRaises(RuntimeError):
+                    f.run("--spend-file", ".spend", resume=dict(RESUME, spend_usd=1.0))
+        self.assertEqual(self.spend_of(f, home), 0.0, "the sessions the earlier run reported are not this run's")
+
+    def spawn(self, f, deadline):
+        import signal
+        env = dict(os.environ, FLOTILLA_PLAN_FILE=os.path.join(f.d, "plan.json"), FLOTILLA_MODELS=json.dumps(MODELS), FAKE_STATE=f.state,
+                   GIT_ALLOW_PROTOCOL="file", GIT_REMOTE_BASE=f.remotes, BUGFIX_BAKEOFF_DIR=f.bakeoff,
+                   PATH=os.path.join(f.d, "bin") + os.pathsep + os.environ["PATH"],
+                   GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+                   FLOTILLA_RUN_DEADLINE=repr(deadline),
+                   FLOTILLA_CASE=json.dumps({"id": self.CASE, "kind": "code_bug", "target": "repo:example/shop/issues/12",
+                                             "data": {"issue": {"repo": "example/shop", "number": 12, "title": "value is 1",
+                                                                "body": "value() returns 1, want 2", "url": "u"}}}))
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
+                              "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
+                              "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
+                              "--scratch", f.scratch],
+                             env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
+        calls = os.path.join(f.state, "calls")
+        for _ in range(300):   # until the fix step hangs
+            if os.path.exists(calls) and "fix hang" in Path(calls).read_text():
+                break
+            time.sleep(0.1)
+        return p
+
+    def test_a_run_ended_by_its_own_timeout_leaves_nothing_but_a_restart_s_or_a_cancel_s_term_keeps_the_checkpoint(self):
+        import signal
+        f = self.fixture(["actionable"], ["hang"])
+        p = self.spawn(f, time.time() + 1)   # the worker's SIGTERM at the deadline
+        time.sleep(1.2)
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(timeout=20)
+        self.assertFalse(os.path.exists(self.run_dir(f)), "status timeout is not resumed: the worktree and venv go")
+        g = self.fixture(["actionable"], ["hang"])
+        p = self.spawn(g, time.time() + 3600)   # a restart's or a cancel's SIGTERM, long before the deadline
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(timeout=20)
+        self.assertTrue(os.path.exists(os.path.join(self.run_dir(g), fix.CHECKPOINT)))
+
+    def test_an_error_with_no_checkpoint_leaves_no_directory(self):
+        f = self.fixture(["actionable"], ["good"])
+        real = fix.Chain.checkout
+
+        def boom(chain, *a, **kw):
+            raise RuntimeError("the checkout failed")
+        fix.Chain.checkout = boom
+        try:
+            with self.assertRaises(RuntimeError):
+                f.run()
+        finally:
+            fix.Chain.checkout = real
+        self.assertFalse(os.path.exists(self.run_dir(f)), "nothing to resume from: no worktree and venv left to the sweep")
 
 
 class FullIssueBody(unittest.TestCase):

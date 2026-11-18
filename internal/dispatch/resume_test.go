@@ -187,3 +187,129 @@ func TestResumedRunTimeoutIsTheCasesTimeLeft(t *testing.T) {
 		t.Fatalf("resume %+v, timeout %v s, want the 1800 s left", f.resumeOf(t, 1), f.w.got[1].TimeoutS)
 	}
 }
+
+// A run that never started on its worker (skipped: unreachable) is not the run to resume from and does not
+// spend the resume: error, skipped, then the next run still resumes the errored one.
+func TestResumeSurvivesASkippedRun(t *testing.T) {
+	f := setup(t)
+	withResume(f, "interrupted", "error")
+	f.w.script = []string{"error", "unreachable", "ok"}
+	id := f.handOver(t, "")
+	f.pass(t)
+	firstRun := strings.TrimPrefix(f.events(t, id, sched.EventRunStarted)[0].Detail, "run ")
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t) // resumes the error run, but the worker is unreachable
+	if rs := f.resumeOf(t, 1); rs == nil || rs.RunID != firstRun {
+		t.Fatalf("the second run's resume: %+v", rs)
+	}
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t)
+	if rs := f.resumeOf(t, 2); rs == nil || rs.RunID != firstRun || rs.Status != "error" {
+		t.Fatalf("after a skipped run the third run resumes the errored one: %+v, want run %s", rs, firstRun)
+	}
+}
+
+// max counts the resumes of the chain the last run belongs to: error (fresh), error (resumes it), then a
+// fresh run that is interrupted starts a new chain, so its successor resumes it.
+func TestResumeMaxIsPerChain(t *testing.T) {
+	f := setup(t)
+	withResume(f, "interrupted", "error")
+	f.w.script = []string{"error", "error", "interrupted", "ok"}
+	id := f.handOver(t, "")
+	f.pass(t) // A: fresh, error
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t) // B: resumes A, error
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t) // C: max spent, fresh, error
+	if f.resumeOf(t, 1) == nil || f.resumeOf(t, 2) != nil {
+		t.Fatalf("B resumes A and C is fresh: %+v, %+v", f.resumeOf(t, 1), f.resumeOf(t, 2))
+	}
+	c := strings.TrimPrefix(f.events(t, id, sched.EventRunStarted)[2].Detail, "run ")
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t)
+	if rs := f.resumeOf(t, 3); rs == nil || rs.RunID != c {
+		t.Fatalf("D resumes the fresh chain's run %s: %+v", c, rs)
+	}
+}
+
+// A resumed run is told what the case has left after the charged spend of the runs before it.
+func TestResumedRunSeesTheChargedSpend(t *testing.T) {
+	f := setup(t)
+	withResume(f, "error")
+	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
+	f.w.status, f.w.spend, f.w.secs = "error", 1.5, 600
+	f.handOver(t, "")
+	f.pass(t)
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t)
+	var cv struct {
+		Left caseLeft `json:"left"`
+	}
+	if err := json.Unmarshal([]byte(f.w.got[1].Env["FLOTILLA_CASE"]), &cv); err != nil {
+		t.Fatal(err)
+	}
+	if f.resumeOf(t, 1) == nil || cv.Left.USD != 3.5 || cv.Left.Seconds != 90*60-600 {
+		t.Fatalf("resume %+v, left %+v, want 3.5 USD and 4800 s", f.resumeOf(t, 1), cv.Left)
+	}
+}
+
+// A routine without resume records no run.started: the events are only for a routine that may resume.
+func TestNoRunStartedWithoutResume(t *testing.T) {
+	f := setup(t)
+	f.w.status = "error"
+	id := f.handOver(t, "")
+	f.pass(t)
+	if len(f.w.got) != 1 || len(f.events(t, id, sched.EventRunStarted)) != 0 {
+		t.Fatalf("%d runs, run.started %+v", len(f.w.got), f.events(t, id, sched.EventRunStarted))
+	}
+}
+
+// A run that ended busy (another run of the case held its directory: exit 75) never started its work: like a
+// skipped run it is not what the next run resumes from and does not spend the resume, and its wait is not the
+// case's time.
+func TestResumeSurvivesABusyRun(t *testing.T) {
+	f := setup(t)
+	withResume(f, "interrupted", "error")
+	f.d.API.Sched.Routines[0].Trigger.Case.Limit = &spec.CaseLimit{USD: 5, Minutes: 90}
+	f.w.script, f.w.secs = []string{"error", "busy", "ok"}, 120
+	id := f.handOver(t, "")
+	f.pass(t)
+	firstRun := strings.TrimPrefix(f.events(t, id, sched.EventRunStarted)[0].Detail, "run ")
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t) // resumes the error run; busy
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t)
+	if rs := f.resumeOf(t, 2); rs == nil || rs.RunID != firstRun {
+		t.Fatalf("after a busy run the third run still resumes the first: %+v, want %s", rs, firstRun)
+	}
+	c := f.cs(t, id)
+	if c.SpentS != 240 {
+		t.Fatalf("the case was charged %v s: the first run's 120 and the resumed one's 120, not the busy one's", c.SpentS)
+	}
+}
+
+// The prior run's recorded spend goes to the resumed run (it reports what the earlier run never did).
+func TestResumptionCarriesThePriorRunsSpend(t *testing.T) {
+	f := setup(t)
+	withResume(f, "error")
+	f.w.status, f.w.spend = "error", 0.4
+	f.handOver(t, "")
+	f.pass(t)
+	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pass(t)
+	if rs := f.resumeOf(t, 1); rs == nil || rs.SpendUSD != 0.4 {
+		t.Fatalf("resume %+v, want spend 0.4", rs)
+	}
+}
+
+// A run the call to the worker lost (a reset: no result, so no duration) is still charged the time it ran.
+func TestALostRunIsChargedItsWallClockTime(t *testing.T) {
+	f := setup(t)
+	f.w.script = []string{"lost"}
+	f.w.tick = func() { f.now = f.now.Add(10 * time.Minute) }
+	id := f.handOver(t, "")
+	f.pass(t)
+	if got := f.cs(t, id).SpentS; got < 599 || got > 601 {
+		t.Fatalf("charged %v s, want the 10 minutes it ran", got)
+	}
+}

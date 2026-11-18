@@ -389,6 +389,9 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		if errors.Is(callErr, worker.ErrUnreachable) {
 			// the run never started (a deploy recreating the worker): a skip, not a failure
 			status = store.StatusSkipped
+		} else if from, err := time.Parse(store.TimeFormat, rec.StartedAt); err == nil {
+			// a call lost mid-run (a reset) brings no duration: the time it ran is still the case's
+			dur = max(s.Now().Sub(from).Seconds(), 0)
 		}
 	} else {
 		status, exit, spend, dur = res.Status, res.ExitCode, res.SpendUSD, res.DurationS
@@ -494,11 +497,17 @@ const (
 	EnvResume       = "FLOTILLA_RESUME"
 )
 
-// Resumption is FLOTILLA_RESUME: the earlier run of the case the new one may continue.
+// Resumption is FLOTILLA_RESUME: the earlier run of the case the new one may continue, and the spend flotillad
+// has on record for it (0 for an interrupted run), so the new run can report what the earlier one never did.
 type Resumption struct {
-	RunID  string `json:"run_id"`
-	Status string `json:"status"`
+	RunID    string  `json:"run_id"`
+	Status   string  `json:"status"`
+	SpendUSD float64 `json:"spend_usd"`
 }
+
+// ExitBusy is the exit code of a run that ended because another run of its case held the case's directory
+// (bugfix/fix.py's lock, EX_TEMPFAIL): it never started its work, like a skipped run.
+const ExitBusy = 75
 
 // recordCaseRun puts the run on its case's timeline, and a resume's prior run beside it. A failure to write
 // is logged: the run goes on, and only a later resume of it is lost.

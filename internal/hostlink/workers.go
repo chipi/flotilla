@@ -94,9 +94,12 @@ func (s *Server) handleWorker(ctx context.Context, tc *tls.Conn, cert string, id
 	}
 	s.wconns[name] = c
 	*st = WorkerState{Worker: name, Identity: identity, Connected: true, Version: hello.Version, ConnectedAt: at, LastContact: at}
+	orphans := s.orphans[name]
+	delete(s.orphans, name)
 	s.mu.Unlock()
 	s.Log.Info("remote worker connected", "worker", name, "identity", identity, "version", hello.Version)
 	defer s.dropWorker(name, c)
+	s.cancelOrphans(name, c, orphans)
 	logBudget := budget{}
 	for {
 		tc.SetReadDeadline(time.Now().Add(3 * s.Heartbeat))
@@ -269,6 +272,30 @@ func (s *Server) CancelRemote(name, runID string) error {
 	return nil
 }
 
+// CancelOrphan stops a run of worker name that flotillad does not wait for: the previous flotillad's, still
+// running at the worker (its link keeps it going across the restart). The cancel frame is the one
+// CancelRemote sends, without needing the run in this server's table. A worker with no connection yet is
+// remembered, and its link is told when it connects (queued). Only in memory: another restart before the
+// link connects loses it, and the run then ends by its own timeout.
+func (s *Server) CancelOrphan(name, runID string) (queued bool, err error) {
+	s.mu.Lock()
+	s.initWorkers()
+	c := s.wconns[name]
+	if c == nil {
+		if s.orphans == nil {
+			s.orphans = map[string][]string{}
+		}
+		s.orphans[name] = append(s.orphans[name], runID)
+		s.mu.Unlock()
+		return true, nil
+	}
+	s.mu.Unlock()
+	if err := c.write(hostwire.Cancel, hostwire.CancelBody{RunID: runID, Stop: true}); err != nil {
+		return false, fmt.Errorf("remote worker %s: sending the cancel: %v", name, err)
+	}
+	return false, nil
+}
+
 // RemoteRunner is a remote worker as the scheduler runs it (sched.Runner, and Available for its quiet
 // skip when the worker is not connected).
 type RemoteRunner struct {
@@ -288,3 +315,19 @@ func (r RemoteRunner) Cancel(ctx context.Context, runID string) error {
 }
 
 func (r RemoteRunner) Available() bool { return r.S.WorkerConnected(r.Worker) }
+
+// CancelOrphan is Server.CancelOrphan for this worker (sched.OrphanCanceller).
+func (r RemoteRunner) CancelOrphan(ctx context.Context, runID string) (bool, error) {
+	return r.S.CancelOrphan(r.Worker, runID)
+}
+
+// cancelOrphans sends the cancels CancelOrphan kept for a worker whose link has just connected.
+func (s *Server) cancelOrphans(name string, c *conn, runIDs []string) {
+	for _, id := range runIDs {
+		if err := c.write(hostwire.Cancel, hostwire.CancelBody{RunID: id, Stop: true}); err != nil {
+			s.Log.Error("cancel of an orphaned run: sending", "worker", name, "run_id", id, "err", err)
+			continue
+		}
+		s.Log.Warn("orphaned run cancelled on connect", "worker", name, "run_id", id)
+	}
+}

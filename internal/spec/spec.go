@@ -73,7 +73,7 @@ type Routine struct {
 	// The system prompts the routine runs with (ADR-0018): a role (system, rules) to a file under the
 	// fleet's folder. `system` is optional: a harness routine without it loads its default as before.
 	Prompts map[string]string `yaml:"prompts"`
-	Resume      *Resume  `yaml:"resume"`  // ADR-0019: when flotillad lets a case's next run continue the last one
+	Resume  *Resume           `yaml:"resume"` // ADR-0019: when flotillad lets a case's next run continue the last one
 	// The case kinds this routine may open (pipeline v1 step 6): a monitor reports detections in its
 	// plan file and flotillad opens the cases; a kind not listed here is refused.
 	Detects []string `yaml:"detects"`

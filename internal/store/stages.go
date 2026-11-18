@@ -72,6 +72,17 @@ func (s *Store) AddCaseSpend(ctx context.Context, id string, usd, seconds float6
 	return err
 }
 
+// CaseOfRun is the case a run of a resumable routine was recorded on (its run.started event), "" when none:
+// the store has no run-to-case link (ADR-0019).
+func (s *Store) CaseOfRun(ctx context.Context, runID string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT case_id FROM case_events WHERE kind = 'run.started' AND detail = ? ORDER BY seq DESC LIMIT 1`, "run "+runID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
 // StageData is the data of the case's latest case.staged event: what the routine that handed it on left
 // for the next one ("" when it was never handed on).
 func (s *Store) StageData(ctx context.Context, id string) (string, error) {

@@ -58,9 +58,12 @@ same as for vitest: no failure that the base did not have.
 (`venvs/<case id>`, outside the worktree, deleted when the run ends with a plan or an escalation).
 `PIP_CACHE_DIR` is the case's own (`runs/<case id>/pip-cache`, deleted with it): a cache shared
 between cases would let a wheel that one case's test code planted be installed by the next, so every
-case downloads its wheels again. A run that is cut short leaves the case's directory and a checkpoint
-for the case's next run to continue (ADR-0019); a directory untouched for 24 hours is deleted at the
-next run's start.
+case downloads its wheels again. A run that is cut short by a restart, a crash or an error leaves the
+case's directory and a checkpoint for the case's next run to continue (ADR-0019); one that ends by its
+own timeout, or before its first checkpoint, deletes it, and a directory untouched for 24 hours is
+deleted at the next run's start. A run holds a lock on the case's directory (`runs/<case id>/.lock`):
+a second run of the case waits up to 120 s for it, then ends as an error with exit code 75 ("another
+run of this case is still running"), which flotillad does not count as an attempt.
 
 **The issue as filed.** Intake gives every detection the same share of flotillad's 64 KiB
 report (869 bytes, whatever the number of open issues, so a case's data changes only when its

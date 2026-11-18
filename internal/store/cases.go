@@ -441,6 +441,26 @@ func (s *Store) ReleaseCase(ctx context.Context, id, holder string) error {
 	return err
 }
 
+// FreeHandedOverLeases ends the leases the given jobs hold on handed-over cases and returns how many. Only
+// handed_over: a case in executing is never freed (the action must not run twice, RFC-0004 §3.5), and one
+// in checking is left to ExpireLeases. It is for flotillad's start, when the runs those jobs held were
+// interrupted and cancelled, so nothing holds the case any more.
+func (s *Store) FreeHandedOverLeases(ctx context.Context, holders []string) (int64, error) {
+	if len(holders) == 0 {
+		return 0, nil
+	}
+	args := []any{cases.HandedOver}
+	for _, h := range holders {
+		args = append(args, h)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE cases SET holder = '', lease_until = ''
+		WHERE status = ? AND holder IN (`+strings.TrimSuffix(strings.Repeat("?,", len(holders)), ",")+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ExpireLeases returns cases whose lease ended to no one, unless an execution is in flight on them
 // (executing): the action never runs again (RFC-0004 §3.5). A case in checking is freed, so the check
 // resumes: what a lease starts there is a check run, never the action. It returns how many it freed.

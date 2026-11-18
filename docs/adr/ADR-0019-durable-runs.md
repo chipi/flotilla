@@ -62,19 +62,71 @@ So both of the cases the operator named end as `error` (or, for flotillad's own 
    case fresh: the directory and its venv are deleted first. A resumed run does not check out or
    install again; it takes the worktree, the venv and pi's sessions where they are.
 
-4. **The directory is deleted when the run ends normally** (a plan or an escalation), and swept when
-   it is older than 24 h (any run, at its start). A run that is cut short (a signal, an error, a
-   crash) leaves it.
+4. **The directory is deleted unless a resume could use it.** It goes when the run ends with a plan
+   or an escalation (a case-limit escalation included), when its own timeout ended it (status
+   `timeout`, which no routine resumes: the worker tells the run its deadline in
+   `FLOTILLA_RUN_DEADLINE`, and a SIGTERM within 5 s of it is the timeout's), and when no checkpoint
+   was written yet. A run cut short by a restart, a crash or an error, with a checkpoint, leaves it.
+   A cancel's SIGTERM cannot be told from a restart's, so a cancelled run leaves its directory too.
+   Anything left is swept when older than 24 h (any run, at its start; a directory whose lock is held
+   is a live run's and is skipped). A directory that cannot be deleted whole (a read-only module
+   cache) is made writable and deleted again; if something still stays, a fresh run ends with a plain
+   error naming it, not a `FileExistsError` on every retry.
 
-5. **A resumed run reports only its own work.** Calls the earlier run recorded are not recorded
-   again; the session the earlier run was killed in is recorded whole, since the killed run never
-   wrote it. Its spend is the gateway's bill from its own start, and pi's fallback figure leaves out
-   what was already in the directory. The calls file has a step row "resumed from checkpoint: phase
-   X, round n, saved T", and the plan's detail says so.
+   **One run of a case at a time.** `fix.py` holds an exclusive `flock` on `runs/<case id>/.lock` for
+   the whole run, taken before anything else and released on every way out (the fd closes with the
+   process). A run that cannot get it within 120 s (`--lock-wait`) ends as an error, exit code 75,
+   with "another run of this case is still running", and has touched neither the checkpoint nor the
+   directory (only the empty lock file may be new). The waiter checks the file it locked is still the
+   one at the path: the holder deletes the directory when it ends normally. flotillad treats a run
+   that ended with exit 75 as it treats a skipped one: it never started its work, so it is not the
+   run the next one resumes from and its resume is not spent (`max` counts a chain's resumes, not
+   attempts). After the backoff, dispatch tries again and resumes the same checkpoint.
 
-6. **The case's limit still bounds everything** (RFC-0013 §2). A resumed run is a run: its spend and
-   time add to the case, a case past its limit is escalated and not resumed, and the run's timeout
-   is what the case has left.
+5. **A resumed run reports its own work, and what the earlier run never reported.** Calls the earlier
+   run recorded are not recorded again; the session the earlier run was killed in is recorded whole,
+   since the killed run never wrote it. Its spend is the gateway's bill from its own start, plus a
+   carry: pi's figure for the sessions already in the directory less the spend flotillad has on
+   record for the earlier run (`spend_usd` in `FLOTILLA_RESUME`; 0 for an interrupted run, which
+   reported none), never below 0. The baseline is read before the chain is built, so a run whose
+   chain cannot start does not count the earlier sessions again. The calls file has a step row
+   "resumed from checkpoint: phase X, round n, saved T", and the plan's detail says so.
+
+6. **The case's limit still bounds everything it can see** (RFC-0013 §2). A resumed run is a run: its
+   spend and time add to the case, a case past its limit is escalated and not resumed, and the run's
+   timeout is what the case has left. What the limit sees of a cut-short run:
+
+   | | Time | Money |
+   | --- | --- | --- |
+   | run ended with a result (`error`, `timeout`, `cancelled`) | the worker's duration | the spend the run reported |
+   | run lost with its call (a reset, a SIGKILL at the worker) | wall clock from its start to the lost call | nothing: no spend file was read |
+   | run interrupted by a flotillad restart | charged at flotillad's start: start to now, on the case of its `run.started` event | not at that point: the resumed run reports it (the carry above), so the limit sees it when that run ends |
+
+   A run that ended busy (exit 75) is charged no time. Not counted: a run of a routine without
+   `resume` that a restart interrupts (no `run.started` event links it to a case), and the money of
+   an interrupted run until its successor has ended.
+
+7. **A flotillad restart stops what it orphaned and hands the cases back at once.** At start, before
+   `MarkInterrupted`, flotillad reads the runs still `running`. After the workers and the host links
+   are set up and before anything dispatches, it asks each run's worker to cancel it, as an
+   operator's cancel does (SIGTERM, SIGKILL after the grace), records a `run.cancel` event with actor
+   `flotillad` for each (delivered, queued or not delivered, with why), and frees the leases those
+   routines hold on cases in `handed_over`, so dispatch starts the next run, a resume where the
+   routine declares one, in its next pass. `cases.holder` is the routine's id (`fleet/routine`), set
+   by `LeaseCase` for a lease of `lease_until`. A case in `executing` is never freed (the action must
+   not run twice, RFC-0004 §3.5; `ExpireLeases` keeps the same exclusion), and a case in `checking`
+   or any other state keeps its lease until `ExpireLeases`. A local worker is asked directly (`POST
+   /v1/runs/<id>/cancel`; a worker that no longer has the run answers "no such run", which is
+   fine). A remote worker is asked through its link, with the same `cancel` frame with `stop` that
+   an operator's cancel uses, but not through the old path: that one needs the run in the link's
+   in-memory table, which died with the old flotillad. The link's `CancelOrphan` sends the frame for
+   a run it never saw, and when the worker's link is not connected yet it remembers the run and
+   sends the frame when the link connects. That memory is in flotillad's process only: a second
+   restart before the link connects loses it, and the remote run then ends by its own timeout and
+   grace, as before. The cancel is best effort: a refused or failed one is logged and in the event,
+   and the case's next run waits for the lock (decision 4), so a cancel that arrives late costs a
+   wait, not a shared worktree. This applies to every routine, `resume` or not (see the
+   consequences).
 
 ## Consequences
 
@@ -83,15 +135,25 @@ So both of the cases the operator named end as `error` (or, for flotillad's own 
 - Positive: the decision to resume is flotillad's, in the spec and on the case's timeline, not a
   guess by the routine from what it finds on disk.
 - Negative: a case's directory, with its worktree and venv, stays on the scratch volume for up to 24
-  h after a cut-short run. The sweep bounds it.
-- Negative: after a flotillad restart the interrupted run's case is still leased to its routine, and
-  the lease ends at the run's start plus the routine's limit and 2 minutes (`store.ExpireLeases`),
-  so the resume starts then, up to 3 hours later for bugfix/fix, and before the 24 h handed-over
-  escalation. Releasing those leases at flotillad's start would make it immediate; this ADR does not
-  change leases.
-- Negative: the killed run's own spend is not always reported: after a SIGKILL the worker reads no
-  spend file, so the case's limit sees none of it. The limit counts what runs report (RFC-0013 §2),
-  as before.
+  h after a run cut short by a restart, a crash, an error or a cancel. The sweep bounds it; a timeout,
+  an escalation and a run with no checkpoint delete theirs at once.
+- Positive: after a flotillad restart the case is handed over at once (decision 7), not after the
+  lease's run-start-plus-limit-plus-2-minutes (up to 3 hours for bugfix/fix).
+- Behaviour change for every routine: a restart now cancels its orphaned runs, `resume` or not.
+  Before, such a run went on at its worker to its end or timeout, with its result discarded, because
+  flotillad's `RunWithin` that waited for it was gone. For triage/cycle that means a cycle caught by
+  a restart is stopped, where it used to finish unseen: its ledger writes and issue filings up to
+  the kill stand, the rest do not happen, the run is `interrupted` and the next heartbeat's run
+  starts a fresh cycle (it has no case and no resume); the freshness clock is the same, since an
+  interrupted run was never an ok one. Leases of such routines on handed-over cases are freed too:
+  their next run starts at once, where it waited out the lease. Not freed, as before: executing
+  cases.
+- Negative: the money of an interrupted run is only known to the limit after its successor ends,
+  and a routine without `resume` that a restart interrupts adds nothing to its case (decision 6).
+- Negative: a remote worker's cancel that is queued for a link that has not connected is lost on a
+  second restart (decision 7).
+- Not done: a sweep at worker start. The sweep is `fix.py`'s, bugfix knowledge the generic worker
+  does not have; the next fix run's sweep and the delete-unless-resumable rule bound the volume.
 - Neutral: a case that is resumed fixes the base it began with, not main's newest commit. The plan
   records the base, and the PR's CI is the whole suite.
 - Security: the repo's test code runs in the worktree with the run directory as `HOME`, so it can
@@ -119,5 +181,7 @@ So both of the cases the operator named end as `error` (or, for flotillad's own 
 
 - [A case, end to end](../architecture/run-lifecycle.md), the failure table.
 - [RFC-0013](../rfc/RFC-0013-bugfix-clarifier.md) §2, the shared case limit.
-- `bugfix/fix.py` (`save`, `load_checkpoint`, `rounds`), `internal/dispatch/dispatch.go`
-  (`resumption`), `internal/sched/sched.go` (`recordCaseRun`), `internal/spec/spec.go` (`Resume`).
+- `bugfix/fix.py` (`save`, `load_checkpoint`, `rounds`, `lock_run_dir`), `internal/dispatch/dispatch.go`
+  (`resumption`), `internal/sched/sched.go` (`recordCaseRun`), `internal/sched/recover.go`
+  (`RecoverInterrupted`), `internal/hostlink/workers.go` (`CancelOrphan`), `internal/store/cases.go`
+  (`FreeHandedOverLeases`), `internal/spec/spec.go` (`Resume`).

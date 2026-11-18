@@ -766,6 +766,10 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 		if r.DurationS != nil {
 			secs = *r.DurationS
 		}
+		busy := r.Status == store.StatusError && r.ExitCode != nil && *r.ExitCode == sched.ExitBusy
+		if busy {
+			secs = 0
+		}
 		if err := st.AddCaseSpend(ctx, c.ID, r.SpendUSD, secs); err != nil {
 			d.Log.Error("recording the case's spend", "case", c.ID, "run_id", r.ID, "err", err)
 			d.API.Sched.StoreError("case_spend")
@@ -825,27 +829,57 @@ func (d *Dispatcher) resumption(ctx context.Context, caseID string, j *spec.Rout
 	if err != nil {
 		return nil, err
 	}
-	prev, resumes := "", 0
+	// The runs of this routine since the last state change, oldest first, and which of them were resumes
+	// ("run X resumes run Y" names X).
+	var started []string
+	resumed := map[string]bool{}
+	first := 0
 	for i := len(evs) - 1; i >= 0; i-- {
-		e := evs[i]
-		if strings.HasPrefix(e.Kind, "case.") {
+		if strings.HasPrefix(evs[i].Kind, "case.") {
+			first = i + 1
 			break
 		}
-		switch {
-		case e.Kind == sched.EventRunResumed && e.Actor == j.ID():
-			resumes++
-		case e.Kind == sched.EventRunStarted && e.Actor == j.ID() && prev == "":
-			prev = strings.TrimPrefix(e.Detail, "run ")
+	}
+	for _, e := range evs[first:] {
+		if e.Actor != j.ID() {
+			continue
+		}
+		switch e.Kind {
+		case sched.EventRunResumed:
+			if f := strings.Fields(e.Detail); len(f) >= 2 {
+				resumed[f[1]] = true
+			}
+		case sched.EventRunStarted:
+			started = append(started, strings.TrimPrefix(e.Detail, "run "))
 		}
 	}
-	if prev == "" || resumes >= j.Resume.Max {
+	// A run that never started its work (skipped: the worker was unreachable; or ended busy: another run of the
+	// case still held its directory) took nothing from the chain: it is not the run to resume from and its resume
+	// was not spent.
+	var chain []*store.Run
+	for _, id := range started {
+		r, err := d.API.Store.Run(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if r != nil && r.Status != store.StatusSkipped && !(r.Status == store.StatusError && r.ExitCode != nil && *r.ExitCode == sched.ExitBusy) {
+			chain = append(chain, r)
+		}
+	}
+	if len(chain) == 0 {
 		return nil, nil
 	}
-	r, err := d.API.Store.Run(ctx, prev)
-	if err != nil || r == nil || r.Routine != j.ID() || !j.Resume.ResumesOn(r.Status) {
-		return nil, err
+	// resume.max counts the resumes in the chain the last run belongs to: back from it to the fresh run
+	// that began it. A fresh run after the max was spent begins a chain of its own.
+	resumes := 0
+	for i := len(chain) - 1; i >= 0 && resumed[chain[i].ID]; i-- {
+		resumes++
 	}
-	return &sched.Resumption{RunID: r.ID, Status: r.Status}, nil
+	prev := chain[len(chain)-1]
+	if resumes >= j.Resume.Max || prev.Routine != j.ID() || !j.Resume.ResumesOn(prev.Status) {
+		return nil, nil
+	}
+	return &sched.Resumption{RunID: prev.ID, Status: prev.Status, SpendUSD: prev.SpendUSD}, nil
 }
 
 // handOver moves the case to the stage its run named (RFC-0013 §2). A stage no enabled routine acts on, or

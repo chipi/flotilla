@@ -221,6 +221,8 @@ def run_job(req, environ=None, cancel=None):
     env["FLOTILLA_CALLS_FILE"], env["FLOTILLA_LOADED_FILE"] = calls, loaded
     timeout = float(req["timeout_s"])
     start = time.monotonic()
+    # so a run that gets SIGTERM can tell its own timeout (kill at the deadline) from a cancel or a restart
+    env["FLOTILLA_RUN_DEADLINE"] = repr(time.time() + timeout)
     proc = subprocess.Popen(["sh", "-c", req["command"]], cwd=workdir, env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     chunks = []

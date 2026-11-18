@@ -112,6 +112,12 @@ class TestRunJob(unittest.TestCase):
         self.assertGreaterEqual(time.monotonic() - t0, 1.4, "the routine ignores SIGTERM: it lives until the grace is over")
         self.assertLess(time.monotonic() - t0, 8)
 
+    def test_the_run_is_told_its_deadline(self):
+        before = time.time()
+        res = fw.run_job(self.req("echo deadline=$FLOTILLA_RUN_DEADLINE", timeout=100), self.environ)
+        deadline = float(res["output_tail"].split("deadline=")[1])
+        self.assertTrue(before + 99 <= deadline <= time.time() + 100, deadline)
+
     def test_spend_read_and_truncated(self):
         os.makedirs(os.path.join(self.home, "r"))
         res = fw.run_job(self.req("echo 0.0123 > $HOME/r/spend", spend_file="r/spend"), self.environ)

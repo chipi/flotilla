@@ -650,6 +650,28 @@ func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 	return err
 }
 
+// RunRef names a run and its routine.
+type RunRef struct{ ID, Routine, StartedAt string }
+
+// RunningRuns lists the runs recorded as running: at flotillad's start, the ones the previous flotillad
+// left in flight, read before MarkInterrupted closes them.
+func (s *Store) RunningRuns(ctx context.Context) ([]RunRef, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, routine, started_at FROM runs WHERE status = ? ORDER BY started_at`, StatusRunning)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunRef
+	for rows.Next() {
+		var r RunRef
+		if err := rows.Scan(&r.ID, &r.Routine, &r.StartedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // MarkInterrupted closes runs left running by a previous flotillad and returns how many.
 func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ?, ended_at = ?, detail = 'flotillad restarted while it ran'

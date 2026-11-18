@@ -395,6 +395,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer st.Close()
+	orphans, err := st.RunningRuns(ctx) // read before MarkInterrupted closes them
+	if err != nil {
+		log.Error("store", "err", err)
+		os.Exit(1)
+	}
 	if n, err := st.MarkInterrupted(ctx); err != nil {
 		log.Error("store", "err", err)
 		os.Exit(1)
@@ -524,6 +529,12 @@ func main() {
 				stop()
 			}
 		}()
+	}
+	// The workers and the links are set up: stop what the previous flotillad left running and free its
+	// cases, before anything can dispatch.
+	if err := s.RecoverInterrupted(ctx, orphans); err != nil {
+		log.Error("recovering the interrupted runs", "err", err)
+		os.Exit(1)
 	}
 	hbDone := make(chan struct{})
 	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, hostWatch, log) }()

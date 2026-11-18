@@ -78,6 +78,8 @@ type Server struct {
 	wconns map[string]*conn
 	wstate map[string]*WorkerState
 	runs   map[string]*remoteRun
+	// orphans: runs of a worker that the previous flotillad left in flight, to be cancelled when its link connects
+	orphans map[string][]string
 }
 
 type conn struct {

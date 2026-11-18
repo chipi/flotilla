@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -31,17 +32,37 @@ type fakeWorker struct {
 	spend  float64
 	secs   float64
 	block  chan struct{}
+	// script: the status of run i (the call's index in got), where it has one, instead of status; "unreachable"
+	// is a worker that cannot be reached (the run is skipped)
+	script    []string
+	tick      func() // called while a run is in flight: a test's clock moves
+	cancelled []string
 }
 
 func (f *fakeWorker) Run(ctx context.Context, r worker.Request) (*worker.Result, error) {
 	f.mu.Lock()
 	f.got = append(f.got, r)
 	status, plan, planEr, spend, secs, block := f.status, f.plan, f.planEr, f.spend, f.secs, f.block
+	if i := len(f.got) - 1; i < len(f.script) && f.script[i] != "" {
+		status = f.script[i]
+	}
 	f.mu.Unlock()
+	if status == "unreachable" {
+		return nil, worker.ErrUnreachable
+	}
+	if status == "lost" { // the call failed mid-run (a reset): no result, no duration
+		if f.tick != nil {
+			f.tick()
+		}
+		return nil, errors.New("read: connection reset by peer")
+	}
 	if block != nil {
 		<-block
 	}
 	z := 0
+	if status == "busy" { // fix.py's lock was held: exit 75, an error
+		status, z = "error", sched.ExitBusy
+	}
 	res := &worker.Result{Status: status, ExitCode: &z, PlanError: planEr, SpendUSD: spend, DurationS: secs}
 	if plan != "" {
 		res.Plan = json.RawMessage(plan)
