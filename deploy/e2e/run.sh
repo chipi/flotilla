@@ -18,8 +18,12 @@
 # made with `flotilla ca`, enrolment, connect and heartbeat, a flotillad restart, revocation. Routine versions
 # (docs/wip/v2-design.md): e2e/versioned, a routine folder with versions v1 to v6, promoted, rolled back and
 # retired through the CLI (an agent refused, evidence and reasons required), a v2 plan withdrawn by a rollback,
-# a promote with a run in flight, a changed live folder refusing flotillad's start and -check, a changed shadow
-# starting fine; the autonomy rename (a routine at record reads FLEETD_STAGE=shadow); the same forms in Chromium.
+# a promote with a run in flight, a rollback with a run in flight (the run cancelled, the case back with the acting
+# routine), a changed live folder refusing flotillad's start and -check (and naming the way out), a changed shadow
+# starting fine; a flat routine's playbook edit re-recorded at the start, and its move to the folder layout refused
+# until the operator's `flotilla versions rerecord`; a schema-25 store migrated and started on by the real image
+# (every routine's v1 live, the history version 1); the autonomy rename (a routine at record reads FLEETD_STAGE=shadow);
+# the same forms in Chromium.
 # Never on the production engine (the installation's ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -52,7 +56,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -254,6 +258,32 @@ $D run --rm --user 0 -v flotilla-e2e-state:/v -v "$WORK/oldstore:/in:ro" --entry
   -c 'cp /in/flotilla.db /v/flotilla.db && chown -R 65532:65532 /v' && ok "an old store seeded" || bad "seeding the old store"
 fi
 
+if [ "${DEMO:-}" != 1 ]; then
+echo "== a migrated schema-25 store, started on by the real flotillad (every routine's v1 live, the history version 1)"
+# The Go test migrates a store like this (internal/store); here the shipped image does it, in its read-only container, over
+# the repo's own fleets and the e2e's: steps 26 to 29, then the start records each routine's first version live.
+# old_store.py check28 reads every post-condition off the copy (the migrated rows are all version 1, each routine has one
+# live version, integrity_check is ok); the stack's own flotillad comes up after, so nothing else touches it.
+python3 "$ROOT/deploy/e2e/old_store.py" make25 "$WORK/store25/flotilla.db"
+$D volume create --label $LABEL flotilla-e2e-store25 >/dev/null
+$D run --rm --user 0 -v flotilla-e2e-store25:/v -v "$WORK/store25:/in:ro" --entrypoint sh "local/flotilla-worker-triage:$TAG" \
+  -c 'cp /in/flotilla.db /v/flotilla.db && chown -R 65532:65532 /v' >/dev/null && ok "a schema-25 store seeded" || bad "seeding the schema-25 store"
+$D run -d --label $LABEL --name e2e-store25 --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --memory 256m \
+  -v flotilla-e2e-store25:/var/lib/flotilla -v "$WORK/config/flotillad.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+  -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
+  "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad on the schema-25 store"
+for _ in $(seq 1 60); do $D logs e2e-store25 2>&1 | grep >/dev/null '"msg":"flotillad listening"' && break; sleep 1; done
+$D logs e2e-store25 2>&1 | grep >/dev/null '"msg":"flotillad listening"' && ! $D logs e2e-store25 2>&1 | grep >/dev/null '"msg":"versions"' \
+  && ok "flotillad migrated the schema-25 store and started: the versions reconciled with no refusal" || bad "flotillad on the schema-25 store: $($D logs e2e-store25 2>&1 | tail -4)"
+$D stop -t 30 e2e-store25 >/dev/null 2>&1
+mkdir -p "$WORK/store25out" && $D cp e2e-store25:/var/lib/flotilla/. "$WORK/store25out/" >/dev/null 2>&1 && cp "$WORK/store25/flotilla.db.counts.json" "$WORK/store25out/flotilla.db.counts.json"
+S25="$(python3 "$ROOT/deploy/e2e/old_store.py" check28 "$WORK/store25out/flotilla.db" started 2>&1)"
+echo "$S25" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if d["problems"] == [] and d["live_routines"] and d["live_routines"] > 20 else 1)' \
+  && ok "the migrated store, after flotillad started on it: $(echo "$S25" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["live_routines"], "routines, each with one live version; the old runs read version 1; integrity ok")')" \
+  || bad "the schema-25 store after the start: $S25"
+$D rm -f e2e-store25 >/dev/null 2>&1; $D volume rm flotilla-e2e-store25 >/dev/null 2>&1
+fi
+
 echo "== up"
 if ! compose up -d >"$WORK/up.log" 2>&1; then
   cat "$WORK/up.log"; bad "compose up"; [ "${KEEP:-}" = 1 ] || down; echo "E2E FAIL ($fails)"; exit 1
@@ -319,16 +349,16 @@ echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
 # (every 15s) hands the case to jobs/rerun-backup, whose plan policy records in shadow, closing the case.
 for i in $(seq 1 45); do
   CASES="$(cli case list --all 2>&1)"
-  echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*plan_recorded" && break; sleep 2
+  echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*[^_[:alnum:]]plan_recorded" && break; sleep 2
 done
-echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*plan_recorded" \
+echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*[^_[:alnum:]]plan_recorded" \
   && ok "the backup monitor's detection became a case, planned and closed as a shadow plan" || bad "the chain: $CASES"
 CID="$(echo "$CASES" | awk '/failed_backup/ {print $1; exit}')"
 SHOW="$(cli case show "$CID" 2>&1)"
 echo "$SHOW" | grep >/dev/null "case.handed_over .*jobs/backup-monitor .*by detector" && ok "opened by jobs/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
 echo "$SHOW" | grep >/dev/null "case.planned .*jobs/rerun-backup .*by act .*backup_age_above(25h): holds" \
   && ok "planned by jobs/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
-echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*plan_recorded.*would propose" \
+echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*[^_[:alnum:]]plan_recorded.*would propose" \
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
   && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
@@ -338,7 +368,7 @@ echo "== the business examples (crm, campaigns, outbound, renewals), on their st
 # each, and policy records the plan in shadow and closes the case. The gates' refusals escalate instead.
 want_closed() {  # kind target: a case of that kind on that target closed as a recorded shadow plan
   for _ in $(seq 1 45); do
-    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*plan_recorded" && return 0; sleep 2
+    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*[^_[:alnum:]]plan_recorded" && return 0; sleep 2
   done
   return 1
 }
@@ -373,7 +403,7 @@ want_case seo_live_regression "site:certificate/www.example.com/" "" && ok "site
   || bad "sites certificate: $(cli case list --all 2>&1 | grep seo_live)"
 cli case list --all 2>&1 | grep >/dev/null "site:retired" && bad "sites: the retired host answering 404 became a case" \
   || ok "sites: the retired host answers 404, as it should: no case"
-want_case dependency_update "repo:example/shop/deps/requests" "closed .*plan_recorded" \
+want_case dependency_update "repo:example/shop/deps/requests" "closed .*[^_[:alnum:]]plan_recorded" \
   && ok "deps: the vulnerable pin became a case, its upgrade PR planned and recorded in shadow" \
   || bad "deps vulnerable: $(cli case list --all 2>&1 | grep dependency_update)"
 want_case dependency_update "repo:example/api/deps/fastapi" "" && ok "deps: the outdated pin of a repo that asks for them is a case" \
@@ -626,6 +656,8 @@ echo "# one byte" >> "$SPEC2"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
 [ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/versioned v2 is live and its folder changed (recorded [0-9a-f]*, found [0-9a-f]*): spec.yaml (changed)" \
   && ok "-check refuses a changed live version, naming the file (exit $RC)" || bad "-check on a changed live folder: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -2)"
+echo "$OUT" | grep >/dev/null "ship the change as v7 (a shadow or retired folder may change), or .flotilla versions rerecord e2e/versioned v2 --reason R. if this change is deliberate" \
+  && ok "the refusal says the way out: the next number, or flotilla versions rerecord" || bad "the freeze refusal's text: $(echo "$OUT" | grep -E '^versions' | head -1)"
 $D restart flotillad >/dev/null 2>&1
 seen flotillad "versions: e2e/versioned v2 is live and its folder changed" && ok "flotillad refuses to start on it (exit 2), and says why" || bad "flotillad started over a changed live version: $($D logs flotillad 2>&1 | tail -3)"
 cli health >/dev/null 2>&1 && bad "flotillad answers while its live version is changed" || ok "flotillad does not serve while a live version is changed"
@@ -641,6 +673,71 @@ $D restart flotillad >/dev/null 2>&1
 for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
 [ "$(vrow e2e/versioned 3 "['state']")" = shadow ] && [ "$(vrow e2e/versioned 3 "['hash']")" != "$V3H" ] && cli events -n 20 | grep >/dev/null "version.update .*e2e/versioned@v3 .*shadow changed" \
   && ok "a changed shadow starts fine and its hash follows (a version.update event says so)" || bad "changed shadow: $(vrow e2e/versioned 3 "['state'] + ' ' + x['hash'][:12]") (was ${V3H:0:12})"
+
+# A flat routine's v1 is not frozen. e2e/flat-playbook is a flat spec with a playbook: an edit of the playbook is an ordinary change,
+# -check says it will re-record it (the line deploy_fleets.sh repeats), and the next start records the new hash with a version.update.
+FPB="$WORK/config/specs/e2e/playbooks/flat.md"
+FH="$(vrow e2e/flat-playbook 1 "['hash']")"
+[ "$(vstates e2e/flat-playbook)" = "1:live" ] && ok "e2e/flat-playbook (a flat spec) is its own live v1" || bad "flat-playbook versions: $(vstates e2e/flat-playbook)"
+echo "an edit of the playbook" >> "$FPB"
+OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
+[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 (flat) re-recorded: prompt-file:playbooks/flat.md (changed)$" \
+  && ok "-check passes a changed flat routine and says it will re-record it (exit $RC)" || bad "-check on a changed playbook: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -3)"
+$D restart flotillad >/dev/null 2>&1
+for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
+FH2="$(vrow e2e/flat-playbook 1 "['hash']")"
+[ "$(vrow e2e/flat-playbook 1 "['state']")" = live ] && [ "$FH2" != "$FH" ] \
+  && cli events -n 40 | grep >/dev/null "version.update .*e2e/flat-playbook@v1 .*legacy v1 (flat) re-recorded.*prompt-file:playbooks/flat.md (changed)" \
+  && ok "the start re-recorded the flat routine's v1 (still live), with a version.update event naming the playbook" || bad "flat re-record: $(vrow e2e/flat-playbook 1 "['state'] + ' ' + x['hash'][:12]") (was ${FH:0:12}) $(cli events -n 40 | grep flat-playbook | head -2)"
+# Moving it to the folder layout changes its recipe: refused, the way out named, until the operator re-records it (operators only, with a reason).
+FD="$WORK/config/specs/e2e"
+rm "$FD/flat-playbook.yaml"; mkdir -p "$FD/flat-playbook/v1"
+cat > "$FD/flat-playbook/routine.yaml" <<EOF
+fleet: e2e
+routine: flat-playbook
+description: The e2e's flat-routine check, moved to the folder layout.
+enabled: false
+worker: triage
+trigger:
+  every: 60m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m
+EOF
+cat > "$FD/flat-playbook/v1/spec.yaml" <<EOF
+run:
+  command: "true"
+  workdir: .
+  timeout: 1m
+prompts:
+  system: system.md
+EOF
+cp "$FPB" "$FD/flat-playbook/v1/system.md"; chmod -R a+rX "$FD"
+OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
+[ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 is live and its folder changed" \
+  && echo "$OUT" | grep >/dev/null "ship the change as v2 .*flotilla versions rerecord e2e/flat-playbook v1 --reason R" \
+  && ok "moved to the folder layout, the routine is refused by -check, the way out named (exit $RC)" || bad "-check on the folder move: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -2)"
+OUT="$(agent versions rerecord e2e/flat-playbook v1 --reason "e2e: an agent tries" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot re-record a version ($OUT)" || bad "agent rerecord: $OUT"
+OUT="$(cli versions rerecord e2e/flat-playbook v1 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*needs a reason" && ok "a re-record without a reason is refused" || bad "rerecord without a reason: $OUT"
+OUT="$(cli versions rerecord e2e/flat-playbook v2 --reason "e2e: no such version" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 404" && ok "a re-record of a version that is not there is refused (404)" || bad "rerecord v2: $OUT"
+OUT="$(cli versions rerecord e2e/versioned v3 --reason "e2e: a shadow follows its folder" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409.*is a shadow" && ok "a shadow is not re-recorded (409)" || bad "rerecord a shadow: $OUT"
+OUT="$(cli versions rerecord e2e/flat-playbook v1 --reason "e2e: moved to the folder layout" 2>&1)"
+NEWH="$(echo "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["new_hash"])' 2>/dev/null)"
+[ -n "$NEWH" ] && [ "$NEWH" != "$FH2" ] && echo "$OUT" | grep >/dev/null "\"old_hash\":\"$FH2\"" && echo "$OUT" | grep >/dev/null '"by":"operator"' \
+  && ok "the operator re-recorded v1 from the folder as it is now: old and new hash in the answer" || bad "rerecord: $OUT"
+cli events -n 40 | grep >/dev/null "operator .*version.rerecord .*e2e/flat-playbook@v1 .*live v1 re-recorded (loaded as folder).*$FH2 -> $NEWH.*e2e: moved to the folder layout" \
+  && ok "the event log records the re-record: who, the old and new hash, what changed and why" || bad "rerecord event: $(cli events -n 40 | grep rerecord | head -2)"
+$D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check >/dev/null 2>&1 \
+  && ok "after the re-record, -check passes over the folder layout" || bad "-check after the re-record: $($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1 | grep '^versions' | head -2)"
+$D restart flotillad >/dev/null 2>&1
+for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
+[ "$(vstates e2e/flat-playbook)" = "1:live" ] && [ "$(vrow e2e/flat-playbook 1 "['hash']")" = "$NEWH" ] \
+  && ok "flotillad starts on the folder layout: v1 still live, with the re-recorded hash" || bad "after the folder move: $(vstates e2e/flat-playbook) $($D logs flotillad 2>&1 | grep versions | tail -2)"
 
 echo "== a changed config recreates its service (deploy.sh's FLOTILLA_CONFIG_HASH_*)"
 started() { $D inspect "$1" --format '{{.State.StartedAt}}' 2>&1; }
@@ -800,6 +897,31 @@ for i in $(seq 1 30); do [ -n "$VC2" ] && break; sleep 2; VC2="$(cli case list -
   && ok "the plan v1 made stays approvable (it was live when it made it): $VC2 awaits approval, not marked rolled back" || bad "the in-flight plan: $(cli case list --all 2>&1 | grep e2e_versioned)"
 cli case reject "$VC2" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC2" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC2" closed \
   && ok "that case was rejected and closed by the operator" || bad "closing the second versions case: $(cli case show "$VC2" 2>&1 | tail -2)"
+
+# a rollback with a run in flight (the hold file again): v3 is live, v1 previous. The run of v3 is cancelled as a STOP cancels
+# it and the worker is asked to stop it; the case it was working goes back to the acting routine, v1, live again, which plans it.
+cli action autonomy host.vtrue propose --reason "e2e: back to propose after the rejection's demotion" >/dev/null 2>&1
+$D exec flotilla-worker-ops-act-host touch /tmp/e2e-versioned-hold >/dev/null 2>&1 || bad "cannot create the hold file in the ops-act-host worker"
+cli run e2e/versioned-monitor >/dev/null
+for i in $(seq 1 90); do cli status | grep -E "^e2e/versioned " | grep >/dev/null "running " && break; sleep 1; done
+RUN3="$(cli status | awk '/^e2e\/versioned / {for (i = 1; i <= NF; i++) if ($i == "running") print $(i + 1)}')"
+[ -n "$RUN3" ] && [ "$(vstates e2e/versioned | cut -d' ' -f1-3)" = "1:previous 2:retired 3:live" ] && ok "a run of the live version (v3) is in flight ($RUN3)" || bad "no v3 run in flight: $(cli status | grep '^e2e/versioned') $(vstates e2e/versioned)"
+OUT="$(cli rollback e2e/versioned --autonomy propose --reason "e2e: rolled back with a run in flight")"
+$D exec flotilla-worker-ops-act-host rm -f /tmp/e2e-versioned-hold >/dev/null 2>&1
+echo "$OUT" | grep >/dev/null '"rolled_back":3' && echo "$OUT" | grep >/dev/null '"live":1' && echo "$OUT" | grep >/dev/null "\"cancelled\":\[\"$RUN3\"\]" \
+  && ok "rolled back with the run in flight: v1 live again, the answer names the run it cancelled ($RUN3)" || bad "rollback with a run in flight: $OUT"
+for i in $(seq 1 30); do cli runs e2e/versioned -n 5 | grep "$RUN3" | grep >/dev/null " running " || break; sleep 1; done
+[ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runs"] if x["id"] == sys.argv[1]][0]; print(r["version"], r["status"], "v3 rolled back" in r["detail"])' "$RUN3")" = "3 cancelled True" ] \
+  && ok "the run ended cancelled as v3, with who and why in its detail (v3 rolled back)" || bad "the cancelled run: $(runs_json e2e/versioned | head -c 400)"
+cli events -n 60 | grep "run.cancel .*e2e/versioned .*run $RUN3: v3 rolled back" | grep -v "not delivered" >/dev/null \
+  && ok "the worker was asked to stop it (a run.cancel event, delivered)" || bad "run.cancel event: $(cli events -n 60 | grep run.cancel | head -2)"
+VC3="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"
+for i in $(seq 1 40); do [ -n "$VC3" ] && break; sleep 2; VC3="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"; done
+[ -n "$VC3" ] && cli case show "$VC3" 2>&1 | grep >/dev/null "run.no_decision .*e2e/versioned" \
+  && [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(r[0]["version"], r[0]["status"])')" = "1 ok" ] \
+  && ok "the case went back to the acting routine: the cancelled run made no decision, v1 (live again) planned it ($VC3 awaits approval)" || bad "the case after the rollback with a run in flight: $(cli case list --all 2>&1 | grep e2e_versioned)"
+cli case reject "$VC3" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC3" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC3" closed \
+  && ok "that case was rejected and closed by the operator" || bad "closing the third versions case: $(cli case show "$VC3" 2>&1 | tail -2)"
 
 HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \

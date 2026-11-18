@@ -15,6 +15,7 @@ crm/fix fc2b37dacb7a
 crm/scan 95e8f0979f4b
 deps/scan 9bebed27dd82
 deps/upgrade 3555db66003a
+e2e/flat-playbook 9f97c63e8038
 e2e/hang 222e7afd703d
 e2e/host-absent-act d41775d7d1a4
 e2e/host-absent-monitor 9a4f49870131

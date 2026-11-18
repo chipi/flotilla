@@ -7,8 +7,9 @@ runs it) to flotillad's UI listener. run.sh starts both:
 What only a browser shows: the Secure, SameSite=Strict session cookie is kept and sent back, forms post
 with their CSRF field and follow the redirect, the CSP blocks nothing the pages use, the self-hosted
 fonts load, a phone-width page does not scroll sideways, and the routine page's version forms (promote, roll
-back, retire) work. Prints one PASS or FAIL line per check;
-exits 1 on any FAIL.
+back, retire) work. Every click that submits a form waits for the navigation it causes and for the flash on the page
+it lands on, never for "the load state", which is already settled before a form's redirect begins. Prints one PASS or
+FAIL line per check; exits 1 on any FAIL.
 """
 import re
 import sys
@@ -20,6 +21,13 @@ BASE = f"https://{NAME}"
 ROUTINE = "platform/heartbeat"
 admin = sys.argv[1]
 bad = 0
+
+
+def submit(page, click):
+    """Click something that posts a form, and return once the page the redirect lands on has shown its flash."""
+    with page.expect_navigation():
+        click()
+    page.wait_for_selector(".flash--ok, .flash--err", timeout=15000)
 
 
 def check(cond, what):
@@ -41,16 +49,19 @@ with sync_playwright() as pw:
     page.goto(BASE + "/")
     check(page.url.startswith(BASE + "/signin"), f"without a session, / goes to sign in ({page.url})")
     page.fill("input[name=token]", admin)
-    page.click("button[type=submit]")
-    page.wait_for_load_state()
+    with page.expect_navigation():
+        page.click("button[type=submit]")
+    page.wait_for_selector("body")
     check(page.url == BASE + "/" and "ada" in page.content(), f"signed in, the home page ({page.url})")
     cookie = next((c for c in ctx.cookies() if c["name"] == "__Host-flotilla"), None)
     check(cookie is not None and cookie["httpOnly"] and cookie["secure"] and cookie["sameSite"] == "Strict",
           "the browser keeps the session cookie (HttpOnly, Secure, SameSite=Strict)")
 
-    # Routine versions (docs/wip/v2-design.md section 1) on e2e/versioned's page, which run.sh's versions sections
-    # leave with v3 live, v1 previous, v5 and v6 shadows: the table and every form at phone widths (360 to 430 px:
-    # no sideways scroll), then the operator's forms in a real browser: promote, roll back, retire.
+    # Routine versions (docs/wip/v2-design.md section 1) on e2e/versioned's page: the table and every form at phone widths
+    # (360 to 430 px: no sideways scroll), then the operator's forms in a real browser: promote, roll back, retire.
+    # The state is read from the page, not assumed from what run.sh left: it needs a live version and two shadows, takes
+    # the lower shadow to promote (so the live one becomes the previous one the roll back returns to) and the other to
+    # retire, and says so when the page does not offer them.
     VER = BASE + "/fleets/e2e/versioned"
     for w in (360, 390, 430):
         page.set_viewport_size({"width": w, "height": 844})
@@ -72,53 +83,64 @@ with sync_playwright() as pw:
     def vrow(n):
         return page.locator("#versions tbody tr").filter(has=page.locator("td[data-label=Version]", has_text=f"v{n}"))
 
+    def numbers(chip, label=""):
+        out = []
+        for i in range(page.locator("#versions tbody tr").count()):
+            row = page.locator("#versions tbody tr").nth(i)
+            if row.locator(".chip", has_text=chip).count() == 1 and label in row.inner_text():
+                out.append(int(row.locator("td[data-label=Version]").inner_text().strip().lstrip("v")))
+        return out
+
     page.goto(VER)
-    check("shadow: not run yet" in vrow(5).inner_text() and vrow(3).locator(".chip", has_text="live").count() == 1,
-          "the page shows v3 live and v5 a shadow that has not run")
-    vrow(5).locator("summary", has_text="Promote").click()
-    pbtn = vrow(5).locator("form[action$='/versions/5/promote'] button[type=submit]")
+    live, shadows = numbers("live"), numbers("shadow", "shadow: not run yet")
+    check(len(live) == 1 and len(shadows) >= 2,
+          f"e2e/versioned offers one live version and two shadows to work with (live {live}, shadows {shadows})")
+    if len(live) != 1 or len(shadows) < 2:
+        browser.close()
+        sys.exit(1)
+    cur, first, second = live[0], shadows[0], shadows[1]
+    check("shadow: not run yet" in vrow(first).inner_text(), f"the page shows v{cur} live and v{first} a shadow that has not run")
+    vrow(first).locator("summary", has_text="Promote").click()
+    pbtn = vrow(first).locator(f"form[action$='/versions/{first}/promote'] button[type=submit]")
     check(pbtn.is_disabled(), "Promote waits for a reason (flotilla.js runs under the CSP)")
-    pform = vrow(5).locator("form[action$='/versions/5/promote']")
+    pform = vrow(first).locator(f"form[action$='/versions/{first}/promote']")
     pform.locator("textarea[name=reason]").fill("e2e: promoted in a browser")
     pform.locator("select[name=autonomy]").select_option("propose")
     pform.locator("textarea[name=gates]").fill("replay-corpus=pass@e2e")
     pform.locator("input[name=without_pairs]").check()
-    pbtn.click()
-    page.wait_for_load_state()
-    check(page.locator(".flash--ok").count() == 1 and vrow(5).locator(".chip", has_text="live").count() == 1
-          and vrow(3).locator(".chip", has_text="previous").count() == 1 and "gate replay-corpus pass" in vrow(5).inner_text(),
-          "promote v5 from its form: live, v3 previous, the gate result and who and why kept on the row")
-    vrow(5).locator("summary", has_text="Roll back").click()
-    rbtn = vrow(5).locator("form[action$='/rollback'] button[type=submit]")
+    submit(page, pbtn.click)
+    check(page.locator(".flash--ok").count() == 1 and vrow(first).locator(".chip", has_text="live").count() == 1
+          and vrow(cur).locator(".chip", has_text="previous").count() == 1 and "gate replay-corpus pass" in vrow(first).inner_text(),
+          f"promote v{first} from its form: live, v{cur} previous, the gate result and who and why kept on the row")
+    vrow(first).locator("summary", has_text="Roll back").click()
+    rbtn = vrow(first).locator("form[action$='/rollback'] button[type=submit]")
     check(rbtn.is_disabled(), "Roll back waits for a reason")
-    vrow(5).locator("form[action$='/rollback'] textarea[name=reason]").fill("e2e: rolled back in a browser")
-    rbtn.click()
-    page.wait_for_load_state()
-    check(page.locator(".flash--ok").count() == 1 and vrow(3).locator(".chip", has_text="live").count() == 1
-          and "rolled back at" in vrow(5).inner_text() and "e2e: rolled back in a browser" in vrow(5).inner_text(),
-          "roll back from its form: v3 live again, v5 retired as rolled back with who and why")
-    vrow(6).locator("summary", has_text="Retire").click()
-    xbtn = vrow(6).locator("form[action$='/versions/6/retire'] button[type=submit]")
+    vrow(first).locator("form[action$='/rollback'] textarea[name=reason]").fill("e2e: rolled back in a browser")
+    submit(page, rbtn.click)
+    check(page.locator(".flash--ok").count() == 1 and vrow(cur).locator(".chip", has_text="live").count() == 1
+          and "rolled back at" in vrow(first).inner_text() and "e2e: rolled back in a browser" in vrow(first).inner_text(),
+          f"roll back from its form: v{cur} live again, v{first} retired as rolled back with who and why")
+    vrow(second).locator("summary", has_text="Retire").click()
+    xbtn = vrow(second).locator(f"form[action$='/versions/{second}/retire'] button[type=submit]")
     check(xbtn.is_disabled(), "Retire waits for a reason")
-    vrow(6).locator("form[action$='/versions/6/retire'] textarea[name=reason]").fill("e2e: retired in a browser")
-    xbtn.click()
-    page.wait_for_load_state()
-    check(page.locator(".flash--ok").count() == 1 and vrow(6).locator(".chip", has_text="retired").count() == 1,
+    vrow(second).locator(f"form[action$='/versions/{second}/retire'] textarea[name=reason]").fill("e2e: retired in a browser")
+    submit(page, xbtn.click)
+    check(page.locator(".flash--ok").count() == 1 and vrow(second).locator(".chip", has_text="retired").count() == 1,
           "retire a shadow from its form")
-    check(page.locator("#versions summary").count() == 0, "with no shadow and no previous version left, no form is offered")
+    left = numbers("shadow", "shadow: not run yet")
+    check(left == shadows[2:] and (bool(left) or page.locator("#versions summary").count() == 0),
+          f"the shadows left are the ones not touched ({left}); with none left and no previous version, no form is offered")
 
     # the routine's block on its fleet's workflow: pause, then resume with a reason (the Resume… details;
     # flotilla.js keeps its button disabled until the reason has text)
     page.goto(BASE + "/fleets/platform?sel=" + ROUTINE)
     sel = page.locator("aside.selaside")
-    sel.locator("form[action$='/pause'] button").click()
-    page.wait_for_load_state()
+    submit(page, sel.locator("form[action$='/pause'] button").click)
     check(page.locator("aside.selaside summary", has_text="Resume").count() == 1, "pause from the fleet page (a form with its CSRF field)")
     page.locator("aside.selaside summary", has_text="Resume").click()
     check(page.locator("aside.selaside form[action$='/resume'] button").is_disabled(), "Resume waits for a reason (flotilla.js runs under the CSP)")
     page.locator("aside.selaside form[action$='/resume'] textarea[name=reason]").fill("e2e: resumed in a browser")
-    page.locator("aside.selaside form[action$='/resume'] button").click()
-    page.wait_for_load_state()
+    submit(page, page.locator("aside.selaside form[action$='/resume'] button").click)
     check(page.locator("aside.selaside form[action$='/pause']").count() == 1 and page.locator(".flash--ok").count() == 1,
           "resume with a reason from the fleet page")
 
@@ -157,8 +179,8 @@ with sync_playwright() as pw:
         hb = page.locator('a[href^="/runs/platform-heartbeat-"]')
     check(found, "a heartbeat run shows its model call (G1: recorded from the worker)")
     page.goto(BASE + "/account")
-    page.click("form[action='/signout'] button")
-    page.wait_for_load_state()
+    with page.expect_navigation():
+        page.click("form[action='/signout'] button")
     page.goto(BASE + "/")
     check(page.url.startswith(BASE + "/signin"), "sign out ends the session")
     browser.close()

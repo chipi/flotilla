@@ -1,0 +1,20 @@
+fleet: e2e
+routine: flat-playbook
+description: >-
+  The e2e's flat-routine check, never shipped: a flat spec with a playbook. Disabled, so it never runs. The e2e
+  edits its playbook (an ordinary change: the next start re-records the version's hash) and then moves it to the
+  folder layout (a new recipe: refused until the operator re-records it).
+enabled: false
+worker: triage
+trigger:
+  every: 60m
+run:
+  command: "true"
+  workdir: .
+  timeout: 1m
+prompts:
+  system: playbooks/flat.md
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

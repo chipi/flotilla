@@ -7,8 +7,10 @@
   old_store.py make25 <path>        a store at schema step 25 (the last before routine versions), with the
                                     word shadow in every place step 28 renames it and in places it must not
                                     touch; make25 also writes <path>.counts.json (every table's row count)
-  old_store.py check28 <path>        one JSON line: every post-condition of steps 26 to 28 on a migrated
+  old_store.py check28 <path>        one JSON line: every post-condition of steps 26 to 29 on a migrated
                                     make25 store, "problems" empty when all hold; needs <path>.counts.json
+  old_store.py check28 <path> started  the same on a store flotillad then STARTED on: its version records and the runs it made
+                                     are there, the history is still version 1, every routine has one live version
 
 On 2026-11-11 schema step 3 passed every test on small stores and failed on a production store's 835 runs
 inside flotillad's read-only container ("disk I/O error (6410)"). The e2e stack starts flotillad on
@@ -139,8 +141,10 @@ def make25(path):
     db.close()
 
 
-def check28(path):
-    """Every post-condition of steps 26 to 28 on a migrated make25 store; one JSON line."""
+def check28(path, started=False):
+    """Every post-condition of steps 26 to 29 on a migrated make25 store; one JSON line. started: flotillad ran on it
+    after the migration, so the version table is filled, and tables that record what a running flotillad does may
+    have grown; the migrated rows themselves are asserted all the same."""
     db = sqlite3.connect(path)
     q = lambda sql: db.execute(sql).fetchone()[0]
     problems = []
@@ -152,11 +156,22 @@ def check28(path):
 
     before = json.load(open(path + ".counts.json"))
     after = _counts(db)
+    grew = {"runs", "run_calls", "run_loaded", "events", "case_events", "ledger_entries", "ledger_filings", "controls", "cases", "plans"} if started else set()
     for table, n in before.items():
-        if after.get(table) != n:
-            problems.append(f"{table}: {n} rows before, {after.get(table)} after")
+        got = after.get(table)
+        if (got is None or got < n) if table in grew else got != n:
+            problems.append(f"{table}: {n} rows before, {got} after")
     want("SELECT MAX(n) FROM schema_version", len(steps()))
-    want("SELECT COUNT(*) FROM routine_versions", 0)
+    live = None
+    if started:
+        live = q("SELECT COUNT(*) FROM routine_versions WHERE state = 'live'")
+        want("SELECT COUNT(*) FROM (SELECT routine FROM routine_versions GROUP BY routine HAVING SUM(state = 'live') != 1)", 0)
+        want("SELECT COUNT(*) FROM routine_versions WHERE state = 'live' AND version != 1", 0)
+        want("SELECT COUNT(*) FROM runs WHERE id IN ('r1', 'r2', 'r3', 'r4', 'r5', 'r6') AND version = 1", 6)
+        want("SELECT COUNT(*) FROM routine_versions WHERE promote_evidence != ''", 0)
+        want("SELECT COUNT(*) FROM events WHERE kind = 'version.deploy' AND detail LIKE 'live:%'", live)
+    else:
+        want("SELECT COUNT(*) FROM routine_versions", 0)
     want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'shadow'", 0)
     want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'record'", 2)
     want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'propose'", 1)
@@ -175,9 +190,11 @@ def check28(path):
     want("SELECT COUNT(*) FROM hosts WHERE ceiling = 'shadow'", 0)
     want("SELECT COUNT(*) FROM hosts WHERE ceiling = 'record'", 1)
     want("SELECT COUNT(*) FROM hosts WHERE ceiling = 'propose'", 1)
-    want("SELECT COUNT(*) FROM events WHERE detail LIKE '%shadow%'", 2)
+    want("SELECT COUNT(*) FROM events WHERE detail LIKE '%shadow%' AND kind = 'control.autonomy'", 2)
     want("SELECT COUNT(*) FROM case_events WHERE detail LIKE '%shadow%'", 2)
     for table in ("runs", "run_calls", "run_loaded", "plans", "ledger_filings", "ledger_entries"):
+        if started:  # what the running flotillad added is its own; the migrated rows are checked above and below
+            continue
         want(f"SELECT COUNT(*) FROM {table} WHERE version = 1", before[table])
     want("SELECT COUNT(*) FROM case_events WHERE actor LIKE '%/%' AND version = 1", 2)
     want("SELECT COUNT(*) FROM case_events WHERE actor NOT LIKE '%/%' AND version = 0", 3)
@@ -186,7 +203,7 @@ def check28(path):
     integrity = q("PRAGMA integrity_check")
     if integrity != "ok":
         problems.append(f"integrity_check: {integrity}")
-    print(json.dumps({"schema": q("SELECT MAX(n) FROM schema_version"), "tables": len(after), "problems": problems}))
+    print(json.dumps({"schema": q("SELECT MAX(n) FROM schema_version"), "tables": len(after), "live_routines": live, "problems": problems}))
 
 
 if __name__ == "__main__":
@@ -196,6 +213,6 @@ if __name__ == "__main__":
     elif cmd == "make25":
         make25(sys.argv[2])
     elif cmd == "check28":
-        check28(sys.argv[2])
+        check28(sys.argv[2], started=sys.argv[3:] == ["started"])
     else:
         check(sys.argv[2])
