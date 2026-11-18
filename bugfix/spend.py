@@ -9,7 +9,8 @@ last calls, so it is read until two reads in a row agree.
 
 A key that another run spends on meanwhile makes the difference larger, never smaller: a routine's runs never
 overlap (the worker runs one per routine), and a key per routine makes the difference exact. When the gateway cannot
-be read in time, the run reports pi's figure.
+be read in time, the run reports pi's figure, plus the estimates of the episodes of any other harness
+(episode_cost: a harness's own figure for what it spent, which is never the bill and is labelled so).
 """
 import glob
 import json
@@ -64,6 +65,22 @@ def pi_cost(agent_dir, baseline=0.0):
                     if m.get("role") == "assistant":
                         total += float(((m.get("usage") or {}).get("cost") or {}).get("total") or 0)
         except (OSError, ValueError, TypeError):
+            continue
+    return max(total - baseline, 0.0)
+
+
+def episode_cost(run_dir, baseline=0.0):
+    """The harness's own estimate (cost_est) summed over the episode files of the run's non-pi harnesses
+    (<run_dir>/episodes/*.json, bugfix/harness.py), less `baseline`: what a run resumed from a checkpoint found there
+    from its earlier run. An estimate, used only where the gateway's bill could not be read; an episode with none counts 0."""
+    total = 0.0
+    for f in glob.glob(os.path.join(run_dir, "episodes", "*.json")):
+        try:
+            with open(f) as fh:
+                doc = json.load(fh)
+            if doc.get("harness") != "pi":
+                total += max(float(doc.get("cost_est") or 0), 0.0)
+        except (OSError, ValueError, TypeError, AttributeError):
             continue
     return max(total - baseline, 0.0)
 
@@ -134,13 +151,15 @@ class Meter:
                 total += after - before
         return total if known else None
 
-    def cost(self, agent_dir, quiet=False, baseline=0.0):
+    def cost(self, agent_dir, quiet=False, baseline=0.0, estimate=0.0):
         """(USD, source, note): the gateway's bill when every key could be read before and after, before the deadline
-        (hurry), else pi's figure. `quiet` says nothing has spent since the last episode()'s mark (every episode of the
+        (hurry), else pi's figure plus `estimate`, the other harnesses' (episode_cost), with the source "harness-estimate"
+        when there is any. `quiet` says nothing has spent since the last episode()'s mark (every episode of the
         run was measured and none is in flight): the mark is then the settled "after" and nothing is waited for again,
         so the run's total is exactly the sum of its episodes'. A key with no mark is settled as usual."""
         if not self.keys:
-            return pi_cost(agent_dir, baseline), "pi", "no endpoint key to read the gateway's spend with"
+            return pi_cost(agent_dir, baseline) + estimate, "harness-estimate" if estimate else "pi", \
+                "no endpoint key to read the gateway's spend with"
         total = 0.0
         for i, ((base, key), before) in enumerate(zip(self.keys, self.before)):
             if before is None:
@@ -151,7 +170,8 @@ class Meter:
                 after = self.settled(base, key)
             if before is None or after is None or after < before:
                 why = "unreadable in time" if before is None or after is None else "went down (a budget reset?)"
-                return pi_cost(agent_dir, baseline), "pi", f"the gateway's spend at {base} {why}"
+                return pi_cost(agent_dir, baseline) + estimate, "harness-estimate" if estimate else "pi", \
+                    f"the gateway's spend at {base} {why}"
             total += after - before
         return total, "gateway", ""
 

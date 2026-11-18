@@ -18,6 +18,13 @@ cost null and cost_source "".
 A turn's tools are [{"name", "arg", "ok"}]: the call's main argument, redacted and cut at 160 characters, and
 `ok` from the matching toolResult message's isError (left out when the session has no result for the call).
 
+A harness other than pi (bugfix/harness.py) leaves its episode as <run>/episodes/<stem>.json, already normalized into
+turns; Recorder.record_episode writes one line per turn in the same format plus `harness`, which pi's lines do not
+carry (an absent field means pi). A turn's finish reason and tools come from the harness's normalization; its tool
+arguments are redacted here, as pi's are. Codex and dsh report per exec or per step, not per model call, so their
+lines are coarser and the episode's `notes` say so. Once recorded, an episode file gets a `.recorded` marker beside it,
+which a resumed run reads to write only what the interrupted run did not.
+
 The chain's own steps (a verdict, a gate's outcome, an advisor's pin) are lines too, kind "step", with no
 alias, model, tokens or cost and their text in `detail`: Recorder.step. A failure to write never fails the run.
 """
@@ -32,6 +39,7 @@ import time
 FINISH = {"toolUse": "tool_calls", "stop": "stop", "length": "length"}
 
 ARG_MAX = 160
+RECORDED = ".recorded"   # beside an episode file once its calls are in the calls file
 MASK = "<redacted>"
 STEP_MAX = 500
 
@@ -149,6 +157,29 @@ def session_lines(path, role, alias, episode_seq=None, decision_key=None, start=
             for i, line in enumerate(msgs, 1) if i > start]
 
 
+def episode_lines(doc, role, alias, episode_id="", episode_seq=None, decision_key=None, now=None):
+    """The calls-file lines of one normalized episode (bugfix/harness.py's episode file, read as JSON): one per turn, in
+    pi's line format plus `harness`. The episode is the harness's session id, else the file's stem. Cost is not set here."""
+    now = now or _now()
+    out = []
+    for t in doc.get("turns") or []:
+        u = t.get("usage") if isinstance(t.get("usage"), dict) else {}
+        tools = []
+        for x in t.get("tools") or []:
+            if isinstance(x, dict) and isinstance(x.get("name"), str):
+                c = {"name": x["name"], "arg": clean_arg(x.get("arg") or "")}
+                if isinstance(x.get("ok"), bool):
+                    c["ok"] = x["ok"]
+                tools.append(c)
+        out.append({"at": now, "alias": alias, "endpoint": None, "model": t.get("model"), "deployment": None,
+                    "tokens_in": u.get("input"), "tokens_out": u.get("output"), "cost_usd": None, "cost_source": "",
+                    "latency_s": None, "status": None, "error": str(t["error"])[:200] if t.get("error") else None,
+                    "finish_reason": t.get("stop") or "", "step": t.get("n"), "decision_key": decision_key, "role": role,
+                    "episode": doc.get("session_id") or episode_id, "episode_seq": episode_seq, "tools": tools,
+                    "harness": doc.get("harness") or ""})
+    return out
+
+
 def apportion(lines, cost):
     """Put `cost` (an episode's gateway bill in USD, None when it could not be measured) on the episode's lines by
     each one's share of the episode's tokens (input + output), so the shares sum to it: the last line with tokens
@@ -189,9 +220,10 @@ class Recorder:
     record() also measures the episode's gateway bill and puts its share on every line; `measures` says that
     every episode is measured, so the meter's mark is the run's settled spend."""
 
-    def __init__(self, agent_dir, environ, decision_key=None, meter=None):
+    def __init__(self, agent_dir, environ, decision_key=None, meter=None, episodes_dir=None):
         self.dir, self.path, self.key = agent_dir, (environ or {}).get("FLOTILLA_CALLS_FILE", ""), decision_key
         self.meter = meter
+        self.episodes = episodes_dir or os.path.join(os.path.dirname(agent_dir), "episodes")
         self.done, self.seq, self.steps = {}, {}, 0
 
     @property
@@ -206,6 +238,21 @@ class Recorder:
             self.seq[f] = len(self.seq) + 1
             if f not in keep:
                 self.done[f] = len(session_lines(f, "", "", None, self.key, 0))
+        for f in sorted(glob.glob(os.path.join(self.episodes, "*.json")), key=_mtime):
+            self.seq[f] = len(self.seq) + 1
+
+    def record_pending_episodes(self):
+        """The episode files with no `.recorded` marker: a run killed between saving an episode and recording it. Written now,
+        with no bill (the meter's mark is this run's start, which would put the earlier run's spend on them)."""
+        for f in sorted(glob.glob(os.path.join(self.episodes, "*.json")), key=_mtime):
+            if os.path.exists(f + RECORDED):
+                continue
+            try:
+                with open(f) as fh:
+                    doc = json.load(fh)
+                self.record_episode(doc.get("calls_role") or doc.get("role") or "", doc.get("alias") or "", doc, f, measure=False)
+            except (OSError, ValueError, AttributeError) as e:
+                print(f"bugfix calls: the episode {f}: {e}", file=sys.stderr)
 
     def record(self, role, alias):
         if not self.path:
@@ -224,11 +271,31 @@ class Recorder:
                 lines += new
         except Exception as e:  # noqa: BLE001 — the calls are a record, never a reason to fail the run
             print(f"bugfix calls: the sessions {self.dir}: {e}", file=sys.stderr)
+        self._bill_and_write(lines)
+
+    def record_episode(self, role, alias, doc, path=None, measure=True):
+        """The calls of one non-pi episode (`doc`, its episode file's JSON; `path` that file): one line per turn, with the
+        episode's bill from the meter as record() does. The file gets its `.recorded` marker."""
+        if not self.path:
+            return
+        key = path or doc.get("session_id") or ""
+        if key not in self.seq:
+            self.seq[key] = len(self.seq) + 1
+        stem = os.path.splitext(os.path.basename(path))[0] if path else ""
+        lines = episode_lines(doc, role, alias, stem, self.seq[key], self.key)
+        self._bill_and_write(lines, measure)
+        if path:
+            try:
+                open(path + RECORDED, "w").close()
+            except OSError:
+                pass
+
+    def _bill_and_write(self, lines, measure=True):
         cost = None
         try:
             # settles the key's spend: seconds of waiting. The lines are written even when the wait is cut short by
             # the worker's SIGTERM (a BaseException), without their cost.
-            cost = self.meter.episode() if self.meter else None
+            cost = self.meter.episode() if self.meter and measure else None
         except Exception as e:  # noqa: BLE001
             print(f"bugfix calls: the episode's gateway bill: {e}", file=sys.stderr)
         except BaseException:

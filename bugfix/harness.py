@@ -488,6 +488,16 @@ def write_episode(run_dir, stem, doc):
     return os.path.join(EPISODES, stem + ".json")
 
 
+def last_episode(run_dir):
+    """The highest order number among the run's episode files (0 when there are none): a resumed run goes on from it."""
+    n = 0
+    for f in os.listdir(os.path.join(run_dir, EPISODES)) if os.path.isdir(os.path.join(run_dir, EPISODES)) else []:
+        m = re.match(r"(\d+)-.*\.json$", f)
+        if m:
+            n = max(n, int(m.group(1)))
+    return n
+
+
 def read_episode(path):
     with open(path) as f:
         doc = json.load(f)

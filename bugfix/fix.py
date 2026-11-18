@@ -488,6 +488,15 @@ CHECKPOINT_VERSION = 1
 CHECKPOINT_MAX_AGE = 24 * 3600   # seconds: an older checkpoint is not resumed, and an older run directory is deleted
 CHECKPOINT_PHASES = ("checkout", "attempt", "fixed", "gated", "reviewed")
 INTERRUPTED = "The run was interrupted. The worktree is as you left it; continue."
+# The harness each role ran under is part of a checkpoint (ADR-0020): a session of one harness cannot be continued by
+# another, so a run whose flags name different harnesses than the checkpoint's starts fresh. A checkpoint without the
+# keys is from before harnesses were chosen: pi's.
+HARNESS_KEYS = ("harness", "repro_harness", "review_harness")
+
+
+def harness_names(a):
+    """{checkpoint key: harness name} for the run's flags (pi where a role has no flag of its own yet)."""
+    return {k: getattr(a, k, None) or "pi" for k in HARNESS_KEYS}
 
 
 def case_run_dir(scratch, case):
@@ -651,11 +660,13 @@ def inside(run_dir, rel):
     return os.path.join(run_dir, rel)
 
 
-def load_checkpoint(run_dir, case, repo, ref, now=None):
+def load_checkpoint(run_dir, case, repo, ref, now=None, harnesses=None):
     """(checkpoint, "") when run_dir holds one this case's next run may continue; (None, why) else. The case and the
-    repo and ref match, the worktree is at the base the checkpoint names, it is younger than CHECKPOINT_MAX_AGE, and
-    every path in it is inside the run directory."""
+    repo and ref match, it was made with the harnesses this run names (`harnesses`, harness_names; pi for each when not
+    given), the worktree is at the base the checkpoint names, it is younger than CHECKPOINT_MAX_AGE, and every path in
+    it is inside the run directory."""
     now = time.time() if now is None else now
+    harnesses = harnesses or dict.fromkeys(HARNESS_KEYS, "pi")
     try:
         with open(os.path.join(run_dir, CHECKPOINT)) as f:
             ck = json.load(f)
@@ -663,6 +674,9 @@ def load_checkpoint(run_dir, case, repo, ref, now=None):
             raise ValueError("not a version-%d checkpoint" % CHECKPOINT_VERSION)
         if ck.get("case") != case.get("id") or ck.get("repo") != repo or ck.get("ref") != ref:
             raise ValueError("it is another case's, repo's or ref's")
+        for k in HARNESS_KEYS:
+            if ck.get(k, "pi") != harnesses.get(k, "pi"):
+                raise ValueError(f"it was made with {k} {ck.get(k, 'pi')!r}, this run's flags say {harnesses.get(k, 'pi')!r}")
         saved = ck.get("saved")
         if not isinstance(saved, (int, float)) or isinstance(saved, bool) or saved > now + 60 or now - saved > CHECKPOINT_MAX_AGE:
             raise ValueError("older than %d h" % (CHECKPOINT_MAX_AGE // 3600))
@@ -742,6 +756,10 @@ def trim_session(path):
         pass
 
 
+# the role names of the run's calls file (callrec_pi): pi's sessions are recorded as these, and so are the other harnesses'
+CALLS_ROLE = {"fix": "coder", "review": "reviewer", "repro": "reproducer", "verdict": "verdict", "advisor": "advisor"}
+
+
 class Chain:
     def __init__(self, a, case, run_dir, environ, meter=None, restored=None):
         self.a, self.case, self.run_dir = a, case, run_dir
@@ -750,6 +768,7 @@ class Chain:
         # each pi episode's turns go to the run's calls file once it ends (role: verdict, coder, reviewer, advisor),
         # with the episode's share of the gateway's bill when there is a meter; the chain's notes go there as steps
         self.calls = callrec_pi.Recorder(os.path.join(run_dir, "pi"), environ, case.get("id"), meter)
+        self.episode_n = 0   # the episodes of the harnesses other than pi, in order (run_harness)
         self.issue = ((case.get("data") or {}).get("issue")) or {}
         if not self.issue.get("number"):
             raise Stop("the case carries no issue (its detection's data has none)")
@@ -817,6 +836,8 @@ class Chain:
             grown = [f for f, n in now.items() if before.get(os.path.relpath(f, self.run_dir)) != n]
             self.in_flight = max(grown, key=os.path.getmtime) if grown else None
         self.calls.skip_existing(keep=set(grown))
+        self.calls.record_pending_episodes()
+        self.episode_n = harness.last_episode(self.run_dir)
         self.resumed_from = f"phase {ck['phase']}, round {ck['state']['round']}, saved {ck.get('saved_at', '?')}"
 
     def save(self, phase, state, **extra):
@@ -843,7 +864,7 @@ class Chain:
                 st["resume"] = {"session": rel(session), "patch": "checkpoint.resume.patch", "feedback": feedback}
             now = time.time()
             doc = {"version": CHECKPOINT_VERSION, "case": self.case.get("id"), "repo": self.repo, "ref": self.a.base or "main",
-                   "base": self.base, "saved": now, "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                   **harness_names(self.a), "base": self.base, "saved": now, "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
                    "phase": phase, "log": self.log, "checked": getattr(self, "checked", "") or "",
                    "unloaded": list(getattr(self, "unloaded_on_base", []) or []), "kb_round": getattr(self, "kb_round", 0),
                    "state": st}
@@ -970,6 +991,29 @@ class Chain:
         with open(pf, "w") as f:
             f.write(self.repro_patch)
         sh(["git", "-C", self.wt, "apply", "--index", "--binary", pf], self.run_dir, self.env, 60, check=True)
+
+    def run_harness(self, role, name, alias, prompt, tools, readonly, timeout, resume=None, max_turns=0):
+        """One episode of a role through a harness other than pi (harness.execute), kept as <run>/episodes/<n>-<role>.json
+        with its native stream beside it, and its turns put in the calls file with the episode's gateway bill. `resume` is
+        the resume_ref of an earlier episode. Returns (Episode, exit code, native stream, the episode file relative to the
+        run directory); what the harness did to the worktree is the caller's to read. The chain's own text only: the prompt
+        is passed as it is, and a delta the harness had to make is on the episode's notes and the calls file."""
+        if name == "pi":
+            raise harness.HarnessError("pi's episodes are its session files: they are recorded by calls.record")
+        h = harness.get(name)
+        self.episode_n += 1
+        stem = f"{self.episode_n:03d}-{role}"
+        req = harness.RoleRequest(role=role, prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None,
+                                  model=harness.route(self.cfg, alias), tools=tools, readonly=readonly, resume=resume,
+                                  max_turns=max_turns, workdir=self.wt, run_dir=self.run_dir, timeout=timeout, episode=stem)
+        ep, code, stream = harness.execute(h, req, self.env, run=sh)
+        doc = harness.episode_doc(ep, alias, self.episode_n, code, h.resume_ref(ep))
+        doc["calls_role"] = CALLS_ROLE.get(role, role)
+        rel = harness.write_episode(self.run_dir, stem, doc)
+        for note in ep.notes:
+            self.calls.step("harness", f"{name} {role}: {note}")
+        self.calls.record_episode(doc["calls_role"], alias, doc, os.path.join(self.run_dir, rel))
+        return ep, code, stream, rel
 
     # 1 · the verdict
     def verdict(self, evidence=None, prior=None, acceptance_gap=False):
@@ -1895,7 +1939,7 @@ def run_case(a, environ, case, run_dir):
     except ValueError:
         resumption = None
     if isinstance(resumption, dict) and os.path.isdir(run_dir):
-        restored, why = load_checkpoint(run_dir, case, a.repo, a.base or "main")
+        restored, why = load_checkpoint(run_dir, case, a.repo, a.base or "main", harnesses=harness_names(a))
         if restored is None:
             print(f"BUGFIX FIX case={case.get('id')} resume of run {resumption.get('run_id')}: no usable checkpoint ({why}): starting fresh",
                   flush=True)
@@ -1906,7 +1950,8 @@ def run_case(a, environ, case, run_dir):
     # run did not get reported (flotillad's restart reads no spend) is carried onto this run's: pi's figure for those
     # sessions less what flotillad recorded for the run (its spend_usd in FLOTILLA_RESUME), never below 0.
     baseline = spend.pi_cost(os.path.join(run_dir, "pi")) if restored else 0.0
-    carry = max(baseline - _number((resumption or {}).get("spend_usd")), 0.0) if restored else 0.0
+    ep_baseline = spend.episode_cost(run_dir) if restored else 0.0   # the other harnesses' estimates, likewise
+    carry = max(baseline + ep_baseline - _number((resumption or {}).get("spend_usd")), 0.0) if restored else 0.0
     chain = None
     meter = None
     terminated = []
@@ -1955,10 +2000,14 @@ def run_case(a, environ, case, run_dir):
             meter.hurry()
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
             # pi's figure first, so a SIGKILL during the gateway read still leaves a number; then the bill over it
-            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi"), baseline) + carry)
+            estimate = spend.episode_cost(run_dir, ep_baseline)
+            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file),
+                        spend.pi_cost(os.path.join(run_dir, "pi"), baseline) + estimate + carry)
             # every episode's settled spend is already known when the chain measured them all: nothing to wait for again
             quiet = chain is not None and chain.calls.measures and not terminated
-            usd, source, why = meter.cost(os.path.join(run_dir, "pi"), quiet=quiet, baseline=baseline)
+            # estimate only when another harness ran: a run of pi alone asks the meter exactly what it always asked
+            usd, source, why = meter.cost(os.path.join(run_dir, "pi"), quiet=quiet, baseline=baseline,
+                                          **({"estimate": estimate} if estimate else {}))
             usd += carry
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
             print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else "") +
