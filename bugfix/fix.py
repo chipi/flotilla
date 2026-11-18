@@ -54,15 +54,15 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callrec_pi  # noqa: E402
 import declared_prompts  # noqa: E402
+import harness  # noqa: E402
+import harness_pi  # noqa: E402
 import pi_config  # noqa: E402
 import spend  # noqa: E402
 import stepone  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BAKEOFF = os.environ.get("BUGFIX_BAKEOFF_DIR", os.path.join(os.path.dirname(HERE), "bugfix-fleet", "bakeoff"))
-# SR-0001 H8: the steps that only read (verdict, advisor, review) get pi's read tools, no shell and no
-# writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
-READ_ONLY_TOOLS = "read,grep,find,ls"
+READ_ONLY_TOOLS = harness_pi.READ_ONLY_TOOLS   # SR-0001 H8: what the steps that only read get (harness_pi)
 REVIEW_PROMPT_MAX = 100_000   # bytes; pi takes the prompt as one argument and Linux caps one at 128 KiB
 REQUEST_CHANGES = re.compile(r"VERDICT:\s*\**\s*request[- ]changes", re.I)
 VERDICT_LINE = re.compile(r"^[\s*_>#-]*VERDICT:", re.I)
@@ -302,85 +302,20 @@ def tail(s, n):
     return s if len(s) <= n else "…" + s[-(n - 1):]
 
 
-TURN_CAPPED = 125
+TURN_CAPPED = harness.TURN_CAPPED
 
 
-def sh(cmd, cwd, env=None, timeout=None, check=False, max_turns=None):
+def sh(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, turn_ended=None, tee_path=None, stdin=None):
     """Run a command in its own process group; (exit code, combined output). A timeout kills the whole
-    group and is exit 124: subprocess.run's timeout kills only the direct child, and a timed-out pi or
-    vitest under `bash pi.sh` or `sh -c npx` kept running (holding the CPUs, editing the worktree the next
-    round resets) until the worker's own run limit (the advisor's review, 2026-11-15). With max_turns the output
-    is read as it comes, and the group is killed once that many assistant turns (pi's JSON stream, as usage()
-    counts them) have ended: exit TURN_CAPPED."""
-    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                         shell=isinstance(cmd, str), start_new_session=True)
-    if max_turns:
-        return _sh_capped(p, timeout, max_turns)
+    group and is exit 124 (harness.run_process, which holds the runner every harness shares). With max_turns the output
+    is read as it comes, and the group is killed once that many turns have ended: exit TURN_CAPPED. A turn is a line
+    turn_ended(line) accepts; the default is pi's, an assistant message_end of its JSON stream, as usage() counts them.
+    tee_path: every line is also written there as it arrives. stdin: written to the command, None leaves it inherited."""
     try:
-        out, _ = p.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        out, _ = p.communicate()
-        if check:
-            raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: no result in {timeout}s")
-        return 124, out or ""
-    except BaseException:
-        # the child has its own session, out of reach of the worker's kill of the run's group: a run stopped
-        # at its timeout must not leave a coding agent calling the model
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        raise
-    out = out or ""
-    if check and p.returncode != 0:
-        raise Stop(f"{cmd if isinstance(cmd, str) else ' '.join(cmd)}: exit {p.returncode}: {tail(out, 300)}")
-    return p.returncode, out
-
-
-def _sh_capped(p, timeout, max_turns):
-    """sh()'s max_turns: a reader thread keeps the lines and counts the turns; the caller waits for the exit or the
-    timeout. Either limit kills the whole group, as sh() does."""
-    lines, capped = [], threading.Event()
-
-    def kill():
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-
-    def read():
-        turns = 0
-        for line in p.stdout:
-            lines.append(line)
-            if '"message_end"' in line and turns < max_turns:
-                try:
-                    e = json.loads(line)
-                except ValueError:
-                    continue
-                if (e.get("message") or {}).get("role") == "assistant":
-                    turns += 1
-                    if turns >= max_turns:
-                        capped.set()
-                        kill()
-
-    reader = threading.Thread(target=read, daemon=True)
-    reader.start()
-    try:
-        p.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        kill()
-        p.wait()
-        reader.join(10)
-        return 124, "".join(lines)
-    except BaseException:
-        kill()
-        raise
-    reader.join(10)
-    return (TURN_CAPPED if capped.is_set() else p.returncode), "".join(lines)
+        return harness.run_process(cmd, cwd, env, timeout, check=check, max_turns=max_turns,
+                                   turn_ended=turn_ended or harness_pi.turn_ended, tee_path=tee_path, stdin=stdin)
+    except harness.ProcessFailed as e:
+        raise Stop(str(e)) from None
 
 
 # A fetch GitHub refused or that broke off: worth trying again. Anonymous fetches were refused in bursts
@@ -481,50 +416,17 @@ def parse_pytest(rep, files):
 
 def assistant_text(stream):
     """The assistant's final text from a pi --mode json stream: the last message_end of the assistant."""
-    text = ""
-    for line in (stream or "").splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        m = e.get("message") or {}
-        if e.get("type") == "message_end" and m.get("role") == "assistant":
-            t = "".join(p.get("text") or "" for p in m.get("content") or [] if isinstance(p, dict) and p.get("type") == "text")
-            if t.strip():
-                text = t
-    return text.strip()
+    return harness_pi.assistant_text(stream)
 
 
 def stream_error(stream):
     """The error of a pi stream's last assistant message, "" when it did not end in one."""
-    err = ""
-    for line in (stream or "").splitlines():
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        m = e.get("message") or {}
-        if e.get("type") == "message_end" and m.get("role") == "assistant":
-            err = (m.get("errorMessage") or "error") if m.get("stopReason") == "error" else ""
-    return err
+    return harness_pi.stream_error(stream)
 
 
 def usage(stream):
     """turns and output tokens of a pi stream (chain.go's parseUsageFull), for the record."""
-    turns = out = 0
-    for line in (stream or "").splitlines():
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        m = e.get("message") or {}
-        if e.get("type") == "message_end" and m.get("role") == "assistant":
-            turns += 1
-            out += (m.get("usage") or {}).get("output") or 0
-    return turns, out
+    return harness_pi.usage(stream)
 
 
 def issue_for_case(issue, repo, environ):
@@ -869,6 +771,7 @@ class Chain:
         upstream = dict(x.split("=", 1) for x in a.upstream)
         cfg = pi_config.write(os.path.join(run_dir, "pi"), sorted({a.worker_model, a.advisor_model, a.reviewer_model}), environ, upstream,
                               min_output=a.min_output or None)
+        self.cfg = cfg
         self.provider, self.worker = pi_config.pick(cfg, a.worker_model)
         _, self.advisor = pi_config.pick(cfg, a.advisor_model)
         _, self.reviewer = pi_config.pick(cfg, a.reviewer_model)
@@ -1589,19 +1492,16 @@ class Chain:
 
     def review(self, diff, task="", summary=""):
         prompt = self.review_prompt(diff, task, summary)
-        rules = ["--no-context-files", "--append-system-prompt", self.env["BUGFIX_PI_RULES"]] if self.env.get("BUGFIX_PI_RULES") else []
-        if self.a.review_tools == "none" and rules:   # the rules are about using tools; a review without them has none
-            rules = ["--no-context-files"]
-        tools = ["--no-tools"] if self.a.review_tools == "none" else ["--tools", READ_ONLY_TOOLS]
-        code, stream = sh(["pi", "-p", "--mode", "json", "--provider", self.provider, "--model", self.reviewer,
-                           *tools, *rules, prompt],
-                          self.wt, self.env, self.a.review_timeout)
+        # the review has always been sent with the worker's provider (self.provider), not the reviewer alias's own
+        route = harness.route(self.cfg, self.a.reviewer_model, {"pi_provider": self.provider})
+        req = harness.RoleRequest(role="review", prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None, model=route,
+                                  tools="none" if self.a.review_tools == "none" else "read", readonly=True, resume=None,
+                                  max_turns=0, workdir=self.wt, run_dir=self.run_dir, timeout=self.a.review_timeout)
+        ep, code, _ = harness.execute(harness.get("pi"), req, self.env, run=sh)
         self.calls.record("reviewer", self.a.reviewer_model)
-        text = assistant_text(stream)
-        if text:
-            return text
-        err = stream_error(stream)
-        return f"(no review: {tail(err, 300)})" if err else f"(no review: the reviewer episode ended {code} with no text)"
+        if ep.answer:
+            return ep.answer
+        return f"(no review: {tail(ep.error, 300)})" if ep.error else f"(no review: the reviewer episode ended {code} with no text)"
 
     def run(self):
         self.kept = None   # the last gate-clean round the review sent back: (rnd, diff, review, checked, unloaded)
