@@ -22,8 +22,10 @@ chain.go's order, calling the bake-off's leaves through LiteLLM, and decides:
      or {"outcome": "escalate", "detail": why}
 
 Nothing leaves the worker: the plan goes to flotillad's policy (shadow records it; at propose a person
-approves it and bugfix/open-pr opens the PR). The run's directory on the scratch volume is deleted at the
-end, whatever happened; the npm cache stays for the next run.
+approves it and bugfix/open-pr opens the PR). The case's directory on the scratch volume (runs/<case id>/) is
+deleted when the run ends with a plan or an escalation; a run cut short (killed, restarted, an error) leaves it,
+with a checkpoint written at each boundary of the chain, for the case's next run to continue when flotillad
+says so (FLOTILLA_RESUME, ADR-0019). The npm cache stays for the next run.
 
 Whether the fixes are any good is phase B (RFC-0010 §8). This routine is the form: the same steps, gates
 and limits as the chain the bake-off measured.
@@ -35,6 +37,7 @@ scratch volume); GIT_REMOTE_BASE (default https://github.com, a test's local pat
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -359,9 +362,168 @@ def step_row(step, detail):
     return "harness", line
 
 
+# Durable runs (ADR-0019). A case's work lives in one directory on the scratch volume, runs/<case id>/, with a
+# checkpoint.json written after each boundary of the chain. A run that is cut short (flotillad restarted, the
+# worker restarted, an error) leaves it; flotillad may start the case's next run with FLOTILLA_RESUME, and only
+# then is the checkpoint used. Any other start deletes it, and so does a normal end (a plan or an escalation).
+CHECKPOINT = "checkpoint.json"
+CHECKPOINT_VERSION = 1
+CHECKPOINT_MAX_AGE = 24 * 3600   # seconds: an older checkpoint is not resumed, and an older run directory is deleted
+CHECKPOINT_PHASES = ("checkout", "attempt", "fixed", "gated", "reviewed")
+INTERRUPTED = "The run was interrupted. The worktree is as you left it; continue."
+
+
+def case_run_dir(scratch, case):
+    cid = str(case.get("id") or "case")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", cid):
+        cid = "case-" + hashlib.sha256(cid.encode()).hexdigest()[:12]
+    return os.path.join(scratch, "runs", cid)
+
+
+def remove_run_dir(scratch, run_dir):
+    shutil.rmtree(run_dir, ignore_errors=True)
+    shutil.rmtree(os.path.join(scratch, "venvs", os.path.basename(run_dir)), ignore_errors=True)
+
+
+def sweep_stale(scratch, now=None):
+    """Delete the run directories (and their venvs) nobody has touched for CHECKPOINT_MAX_AGE: runs that were
+    cut short and never resumed, and the per-run directories of before ADR-0019. The newest file of a directory is
+    its checkpoint, or its pi sessions, while a run is alive."""
+    now = time.time() if now is None else now
+    for d in glob.glob(os.path.join(scratch, "runs", "*")):
+        try:
+            newest = max([os.path.getmtime(d)] + [os.path.getmtime(p) for p in
+                                                   (os.path.join(d, CHECKPOINT),) if os.path.exists(p)])
+        except OSError:
+            continue
+        if now - newest > CHECKPOINT_MAX_AGE:
+            remove_run_dir(scratch, d)
+
+
+def write_checkpoint(run_dir, doc):
+    """Atomically: written beside, flushed to disk, renamed over; a kill leaves the old checkpoint or the new one."""
+    path = os.path.join(run_dir, CHECKPOINT)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(doc, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    fd = os.open(run_dir, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def inside(run_dir, rel):
+    """The absolute path of rel (a path relative to run_dir) when it exists and, symlinks resolved, stays inside
+    run_dir; else ValueError."""
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel):
+        raise ValueError(f"path {rel!r}")
+    root = os.path.realpath(run_dir)
+    p = os.path.realpath(os.path.join(run_dir, rel))
+    if not p.startswith(root + os.sep) or not os.path.exists(p):
+        raise ValueError(f"path {rel!r} is not a file of the run directory")
+    return os.path.join(run_dir, rel)
+
+
+def load_checkpoint(run_dir, case, repo, ref, now=None):
+    """(checkpoint, "") when run_dir holds one this case's next run may continue; (None, why) else. The case and the
+    repo and ref match, the worktree is at the base the checkpoint names, it is younger than CHECKPOINT_MAX_AGE, and
+    every path in it is inside the run directory."""
+    now = time.time() if now is None else now
+    try:
+        with open(os.path.join(run_dir, CHECKPOINT)) as f:
+            ck = json.load(f)
+        if not isinstance(ck, dict) or ck.get("version") != CHECKPOINT_VERSION:
+            raise ValueError("not a version-%d checkpoint" % CHECKPOINT_VERSION)
+        if ck.get("case") != case.get("id") or ck.get("repo") != repo or ck.get("ref") != ref:
+            raise ValueError("it is another case's, repo's or ref's")
+        saved = ck.get("saved")
+        if not isinstance(saved, (int, float)) or isinstance(saved, bool) or saved > now + 60 or now - saved > CHECKPOINT_MAX_AGE:
+            raise ValueError("older than %d h" % (CHECKPOINT_MAX_AGE // 3600))
+        if ck.get("phase") not in CHECKPOINT_PHASES:
+            raise ValueError(f"phase {ck.get('phase')!r}")
+        base = ck.get("base")
+        if not isinstance(base, str) or not re.fullmatch(r"[0-9a-f]{40}", base):
+            raise ValueError("no base commit")
+        code, head = sh(["git", "-C", os.path.join(run_dir, "wt"), "rev-parse", "HEAD"], run_dir, None, 30)
+        if code != 0 or head.strip() != base:
+            raise ValueError("the worktree is not at its base")
+        st = ck.get("state")
+        if not isinstance(st, dict):
+            raise ValueError("no state")
+        rnd, back = st.get("round"), st.get("reviewed_back")
+        if not all(isinstance(x, int) and not isinstance(x, bool) and x >= 0 for x in (rnd, back)):
+            raise ValueError("round counts")
+        if not (isinstance(st.get("pins"), list) and all(isinstance(p, str) for p in st["pins"])):
+            raise ValueError("pins")
+        if ck["phase"] != "checkout":
+            for k in ("prior", "manifest"):
+                inside(run_dir, st.get(k))
+        if st.get("resume") is not None:
+            r = st["resume"]
+            inside(run_dir, r.get("session"))
+            inside(run_dir, r.get("patch"))
+            if not isinstance(r.get("feedback"), str):
+                raise ValueError("resume feedback")
+        k = st.get("kept")
+        if k is not None and not (isinstance(k, dict) and isinstance(k.get("round"), int) and all(
+                isinstance(k.get(x), str) for x in ("diff", "review", "checked")) and isinstance(k.get("unloaded"), list)):
+            raise ValueError("kept")
+        if not (isinstance(ck.get("log"), list) and all(isinstance(x, str) for x in ck["log"])):
+            raise ValueError("log")
+        if not isinstance(ck.get("checked"), str) or not isinstance(ck.get("unloaded"), list) or not isinstance(ck.get("kb_round"), int):
+            raise ValueError("gate notes")
+        if ck["phase"] == "attempt":
+            before = (ck.get("attempt") or {}).get("before")
+            if not isinstance(before, dict):
+                raise ValueError("no session list")
+            for rel in before:
+                if not isinstance(rel, str) or os.path.isabs(rel) or ".." in rel.split("/"):
+                    raise ValueError("session list")
+        if ck["phase"] == "fixed":
+            x = ck.get("fixed") or {}
+            inside(run_dir, x.get("patch"))
+            inside(run_dir, x.get("stream"))
+            if x.get("session") is not None:
+                inside(run_dir, x["session"])
+        if ck["phase"] in ("gated", "reviewed"):
+            g = ck.get("gated") or {}
+            if not (isinstance(g.get("reason"), str) and isinstance(g.get("files"), list) and all(isinstance(x, str) for x in g["files"])
+                    and all(isinstance(g.get(x), int) for x in ("turns", "out_tok"))):
+                raise ValueError("gated state")
+            inside(run_dir, g.get("stream"))
+            inside(run_dir, g.get("patch"))
+            if g.get("session") is not None:
+                inside(run_dir, g["session"])
+        if ck["phase"] == "reviewed" and not isinstance(ck.get("review"), str):
+            raise ValueError("no review")
+    except (OSError, ValueError, TypeError, AttributeError) as e:
+        return None, f"{type(e).__name__}: {e}"
+    return ck, ""
+
+
+def trim_session(path):
+    """Drop a last line a kill cut short, so pi finds a session of whole JSON lines."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        if not data or data.endswith(b"\n"):
+            return
+        cut = data.rfind(b"\n") + 1
+        with open(path, "wb") as f:
+            f.write(data[:cut])
+    except OSError:
+        pass
+
+
 class Chain:
-    def __init__(self, a, case, run_dir, environ, meter=None):
+    def __init__(self, a, case, run_dir, environ, meter=None, restored=None):
         self.a, self.case, self.run_dir = a, case, run_dir
+        self.restored, self.pi_baseline, self.snap, self.in_flight, self.fixed_ok = restored, 0.0, None, None, False
+        self.resumed_from = ""   # the plan's detail says so when the run continued an earlier one
         # each pi episode's turns go to the run's calls file once it ends (role: verdict, coder, reviewer, advisor),
         # with the episode's share of the gateway's bill when there is a meter; the chain's notes go there as steps
         self.calls = callrec_pi.Recorder(os.path.join(run_dir, "pi"), environ, case.get("id"), meter)
@@ -409,6 +571,57 @@ class Chain:
                          # docs/security-reviews)
                          "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"})
         self.env.pop("FLOTILLA_PLAN_FILE", None)  # the leaves write nothing of the run's own
+        if restored:
+            self.adopt(restored)
+
+    def adopt(self, ck):
+        """Take over the chain a checkpoint holds: the worktree is already at its base (load_checkpoint checked), the
+        notes so far are this run's too, and the sessions the earlier run recorded are not recorded again."""
+        self.base = ck["base"]
+        self.env["TRIAGE_BASE"] = self.base
+        self.log = list(ck["log"])
+        self.checked, self.unloaded_on_base, self.kb_round = ck["checked"], list(ck["unloaded"]), ck["kb_round"]
+        self.cache = os.path.join(self.a.scratch, "repos", self.repo.replace("/", "__") + ".git")
+        self.pin_cache_config()
+        pi = os.path.join(self.run_dir, "pi")
+        self.pi_baseline = spend.pi_cost(pi)
+        before = (ck.get("attempt") or {}).get("before") or {}
+        self.in_flight, grown = None, []
+        if ck["phase"] == "attempt":
+            now = self.sessions()
+            grown = [f for f, n in now.items() if before.get(os.path.relpath(f, self.run_dir)) != n]
+            self.in_flight = max(grown, key=os.path.getmtime) if grown else None
+        self.calls.skip_existing(keep=set(grown))
+        self.resumed_from = f"phase {ck['phase']}, round {ck['state']['round']}, saved {ck.get('saved_at', '?')}"
+
+    def save(self, phase, state, **extra):
+        """The checkpoint of a boundary of the chain. `state` is the loop's: its round, pins, the paths of the verdict and
+        manifest it goes on from, the review kick-backs spent, the last clean fix the review sent back, and the resume
+        tuple (session, patch, feedback) the next attempt takes. Paths are relative to the run directory. A write that
+        fails is noted and the run goes on: the checkpoint is for the next run, and the run in hand does not need it."""
+        rel = lambda p: os.path.relpath(p, self.run_dir)  # noqa: E731
+        try:
+            state = state or {"round": 0, "pins": [], "prior": None, "manifest": None, "reviewed_back": 0, "resume": None}
+            st = dict(state, prior=rel(state["prior"]) if state["prior"] else None,
+                      manifest=rel(state["manifest"]) if state["manifest"] else None)
+            kept = getattr(self, "kept", None)
+            st["kept"] = {"round": kept[0], "diff": kept[1], "review": kept[2], "checked": kept[3] or "",
+                          "unloaded": list(kept[4] or [])} if kept else None
+            if state.get("resume"):
+                session, patch, feedback = state["resume"]
+                with open(os.path.join(self.run_dir, "checkpoint.resume.patch"), "w") as f:
+                    f.write(patch)
+                st["resume"] = {"session": rel(session), "patch": "checkpoint.resume.patch", "feedback": feedback}
+            now = time.time()
+            doc = {"version": CHECKPOINT_VERSION, "case": self.case.get("id"), "repo": self.repo, "ref": self.a.base or "main",
+                   "base": self.base, "saved": now, "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                   "phase": phase, "log": self.log, "checked": getattr(self, "checked", "") or "",
+                   "unloaded": list(getattr(self, "unloaded_on_base", []) or []), "kb_round": getattr(self, "kb_round", 0),
+                   "state": st}
+            doc.update(extra)
+            write_checkpoint(self.run_dir, doc)
+        except (OSError, ValueError, TypeError) as e:
+            print(f"BUGFIX FIX #{self.n} no checkpoint at {phase}: {type(e).__name__}: {e}", flush=True)
 
     def note(self, step, detail=""):
         line = f"{step}: {detail}" if detail else step
@@ -442,10 +655,7 @@ class Chain:
         # what an earlier run's code could have left in the shared cache: hooks, another origin, a URL rewrite
         shutil.rmtree(os.path.join(cache, ".git", "hooks"), ignore_errors=True)
         sh(["git", "-C", cache, "remote", "set-url", "origin", remote], self.run_dir, self.env, 60, check=True)
-        _, cfg = sh(["git", "-C", cache, "config", "--local", "--list"], self.run_dir, self.env, 60)
-        bad = [ln for ln in cfg.splitlines() if re.match(r"(url\.|core\.(hookspath|fsmonitor|sshcommand)|protocol\.)", ln, re.I)]
-        if bad:
-            raise Stop(f"the repo cache's config was changed ({'; '.join(bad)[:200]}): remove {cache} by hand")
+        self.check_cache_config(cache)
         sh(["git", "-C", cache, "fetch", "-q", "--depth", "1", f"--filter=blob:limit={self.a.blob_limit}", "origin", ref],
            self.run_dir, self.env, 1200, check=True)
         sh(["git", "-C", cache, "worktree", "add", "-q", "--no-checkout", "--detach", self.wt, "FETCH_HEAD"],
@@ -471,6 +681,20 @@ class Chain:
             self.restore_config("setup")
             if code != 0:
                 raise Stop(f"the repo's setup failed on the base (exit {code}): {errors_of(out)}")
+
+    def check_cache_config(self, cache):
+        _, cfg = sh(["git", "-C", cache, "config", "--local", "--list"], self.run_dir, self.env, 60)
+        bad = [ln for ln in cfg.splitlines() if re.match(r"(url\.|core\.(hookspath|fsmonitor|sshcommand)|protocol\.)", ln, re.I)]
+        if bad:
+            raise Stop(f"the repo cache's config was changed ({'; '.join(bad)[:200]}): remove {cache} by hand")
+
+    def pin_cache_config(self):
+        """A resumed run does not check out again: the cache's config is checked as checkout() does, and what it is now
+        is what restore_config puts back at the end."""
+        self.check_cache_config(self.cache)
+        self.cfg_path = os.path.join(self.cache, ".git", "config")
+        with open(self.cfg_path) as f:
+            self.cfg_good = f.read()
 
     def restore_config(self, when):
         """The cache's config back to what checkout() checked; the lines that differed are noted."""
@@ -546,25 +770,62 @@ class Chain:
                 pass
         return out
 
-    def attempt(self, manifest, resume=None):
+    def apply(self, patch):
+        """(ok, output) of putting a diff on the worktree, staged."""
+        pf = os.path.join(self.run_dir, "resume.patch")
+        with open(pf, "w") as f:
+            f.write(patch)
+        code, out = sh(["git", "-C", self.wt, "apply", "--index", "--binary", pf], self.run_dir, self.env, 60)
+        return code == 0, out
+
+    def save_fixed(self, stream):
+        """pi's episode is over and the gates are not: the fix and the stream go in the checkpoint, so a kill in the gates
+        (minutes of tests) costs the gates again and not the episode."""
+        try:
+            for name, text in (("checkpoint.fix.patch", self.last_patch), ("checkpoint.stream", stream or "")):
+                with open(os.path.join(self.run_dir, name), "w") as f:
+                    f.write(text)
+            self.fixed_ok = True
+        except OSError as e:
+            print(f"BUGFIX FIX #{self.n} no checkpoint after the fix: {e}", flush=True)
+            return
+        sess = os.path.relpath(self.last_session, self.run_dir) if self.last_session else None
+        self.snap("fixed", fixed={"patch": "checkpoint.fix.patch", "stream": "checkpoint.stream", "session": sess})
+
+    def attempt(self, manifest, resume=None, cont=None):
         """One fix attempt. `resume` = (session file, the previous round's diff, the feedback): the worktree is put
         back as that round left it and its session goes on with the feedback as the next message, where a new session
         would explore the repo again from nothing (44-99 calls a session on 2026-11-15/16; the installation's research repo
-        projects/bugfix-cost, the advisor's review). If the diff does not apply, a new session from the manifest."""
+        projects/bugfix-cost, the advisor's review). If the diff does not apply, a new session from the manifest.
+        `cont` (ADR-0019) = what an earlier run left of this attempt: {"session": the session it was killed in the
+        middle of, "patch": None} goes on in that session with the worktree as it is, and a message that says so;
+        {"session", "patch", "stream"} is a fix pi had finished and the gates had not: the tree is put back from the
+        patch and the gates run, with no new pi episode."""
         with open(manifest) as f:
             desc = json.load(f)["description"]
         note = "\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
-        self.reset()
-        env, resumed_from = self.env, None
-        if resume:
+        env, resumed_from, finished, self.fixed_ok = self.env, None, False, False
+        if cont and cont.get("patch") is not None:
+            self.reset()
+            ok, out = self.apply(cont["patch"])
+            if ok:
+                finished, self.fixed_ok = True, True
+            else:
+                self.note("resume", f"the saved fix does not apply ({tail(out, 120)}): a new session")
+                self.reset()
+                cont, resume = None, None
+        elif not cont:
+            self.reset()
+        if cont and not finished:
+            trim_session(cont["session"])
+            desc, env = INTERRUPTED + note, dict(self.env, PI_RESUME_SESSION=cont["session"])
+        elif finished:
+            pass
+        elif resume:
             session, patch, feedback = resume
             ok = True
             if patch.strip():
-                pf = os.path.join(self.run_dir, "resume.patch")
-                with open(pf, "w") as f:
-                    f.write(patch)
-                code, out = sh(["git", "-C", self.wt, "apply", "--index", "--binary", pf], self.run_dir, self.env, 60)
-                ok = code == 0
+                ok, out = self.apply(patch)
                 if not ok:
                     self.note("resume", f"the previous round's diff does not apply ({tail(out, 120)}): a new session")
                     self.reset()
@@ -580,11 +841,14 @@ class Chain:
             raise Stop(f"no harness {self.a.harness!r} in {os.path.dirname(harness)}")
         desc = cap_bytes(desc, REVIEW_PROMPT_MAX)   # one argv string to pi: Linux caps it at 128 KiB
         before = self.sessions()
-        code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout)
-        self.calls.record("coder", self.a.worker_model)
-        after = self.sessions()
-        grown = [f for f, n in after.items() if before.get(f) != n]
-        self.last_session = max(grown, key=os.path.getmtime) if grown else None
+        if finished:
+            code, stream, self.last_session = 0, cont["stream"], cont.get("session")
+        else:
+            code, stream = sh([harness, self.wt, desc], BAKEOFF, env, self.a.episode_timeout)
+            self.calls.record("coder", self.a.worker_model)
+            after = self.sessions()
+            grown = [f for f, n in after.items() if before.get(f) != n]
+            self.last_session = max(grown, key=os.path.getmtime) if grown else (cont["session"] if cont else None)
         turns, out_tok = usage(stream)
         sh(["git", "-C", self.wt, "add", "-A"], self.run_dir, self.env, 60, check=True)
         # -z: names raw, never git's quoted form for a non-ASCII path; --no-renames: both sides of a rename
@@ -595,6 +859,8 @@ class Chain:
         _, self.last_patch = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", self.base, "--", ".",
                                  ":(exclude).flotilla-suite.json"], self.run_dir, self.env, 60, check=True)
         stats = (turns, out_tok)
+        if not finished and self.snap:
+            self.save_fixed(stream)
         if resumed_from is not None and self.last_patch == resumed_from:   # the tree still holds the last round's change
             return "the fix changed nothing since its last round", files, stream, stats
         if code == 124 and not files:
@@ -857,30 +1123,86 @@ class Chain:
             return self.plan(rnd, d, review, checked, unloaded,
                              unresolved="the later rounds did not resolve what the review asked for")
 
+    def read_saved(self, rel):
+        with open(os.path.join(self.run_dir, rel)) as f:
+            return f.read()
+
     def rounds(self):
-        self.checkout()
-        # 0 · step one (RFC-0013 §1), advisory: what the base has of what the error calls missing. It never closes a
-        # case (operator, 2026-11-17): its close rules closed real bugs, and dev-branch errors are left out upstream
-        if self.a.step_one:
-            try:
-                _, facts = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
-                                         self.wt, self.base)
-            except Exception as e:   # advisory: a fault in it must not end the case
-                facts = f"not checked ({type(e).__name__})"
-            self.note("step one", facts.removeprefix("step one (advisory): "))
-        # 1 · the verdict, on the base
-        v, vpath = self.verdict()
-        self.note("verdict", v.get("verdict", "none"))
-        if v.get("verdict") != "actionable":
-            raise Stop(self.not_actionable(v))
-        manifest = os.path.join(self.triaged, f"{self.tid}-triaged.json")
-        pins, prior, reviewed_back, resume = [], vpath, 0, None
+        ck = self.restored
+        if ck:
+            phase = ck["phase"]
+            self.note("resumed from checkpoint", self.resumed_from)
+        else:
+            self.checkout()
+            # 0 · step one (RFC-0013 §1), advisory: what the base has of what the error calls missing. It never closes a
+            # case (operator, 2026-11-17): its close rules closed real bugs, and dev-branch errors are left out upstream
+            if self.a.step_one:
+                try:
+                    _, facts = stepone.check((self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or ""),
+                                             self.wt, self.base)
+                except Exception as e:   # advisory: a fault in it must not end the case
+                    facts = f"not checked ({type(e).__name__})"
+                self.note("step one", facts.removeprefix("step one (advisory): "))
+            phase = "checkout"
+            self.save("checkout", None)
         self.last_session, self.last_patch = None, ""
-        for rnd in range(self.a.kickback_max + 1):
+        start, after, cont, saved_review, gated = 0, None, None, None, None
+        if phase == "checkout":
+            # 1 · the verdict, on the base
+            v, vpath = self.verdict()
+            self.note("verdict", v.get("verdict", "none"))
+            if v.get("verdict") != "actionable":
+                raise Stop(self.not_actionable(v))
+            manifest = os.path.join(self.triaged, f"{self.tid}-triaged.json")
+            pins, prior, reviewed_back, resume = [], vpath, 0, None
+        else:
+            st = ck["state"]
+            start, pins, reviewed_back = st["round"], list(st["pins"]), st["reviewed_back"]
+            prior, manifest = os.path.join(self.run_dir, st["prior"]), os.path.join(self.run_dir, st["manifest"])
+            r = st["resume"]
+            resume = (os.path.join(self.run_dir, r["session"]), self.read_saved(r["patch"]), r["feedback"]) if r else None
+            k = st["kept"]
+            self.kept = (k["round"], k["diff"], k["review"], k["checked"], k["unloaded"]) if k else None
+            if phase == "attempt" and self.in_flight:
+                cont = {"session": self.in_flight, "patch": None}
+            elif phase == "fixed":
+                x = ck["fixed"]
+                cont = {"session": os.path.join(self.run_dir, x["session"]) if x.get("session") else None,
+                        "patch": self.read_saved(x["patch"]), "stream": self.read_saved(x["stream"])}
+            elif phase in ("gated", "reviewed"):
+                gated = ck["gated"]
+                after = (gated["reason"], gated["files"], self.read_saved(gated["stream"]), gated["turns"], gated["out_tok"])
+                self.last_session = os.path.join(self.run_dir, gated["session"]) if gated.get("session") else None
+                self.last_patch = self.read_saved(gated["patch"])
+                if not gated["reason"]:   # the tree as the gates left it: put back, a verdict step may have reset it since
+                    self.reset()
+                    ok, out = self.apply(self.last_patch)
+                    if not ok:
+                        raise Stop(f"the checkpoint's clean fix does not apply to the base: {tail(out, 200)}")
+                if phase == "reviewed":
+                    saved_review = ck["review"]
+
+        def snap(phase, **extra):
+            self.save(phase, {"round": rnd, "pins": pins, "prior": prior, "manifest": manifest,
+                              "reviewed_back": reviewed_back, "resume": resume}, **extra)
+        self.snap = snap
+        for rnd in range(start, self.a.kickback_max + 1):
             if not os.path.exists(manifest):
                 raise Stop(f"stuck: the verdict step wrote no triaged manifest for round {rnd}")
-            reason, files, stream, (turns, out_tok) = self.attempt(manifest, resume)
-            resume = None
+            if after is None:
+                if cont is None:   # a continued attempt keeps the checkpoint it was continued from, until its own fix is saved
+                    snap("attempt", attempt={"before": {os.path.relpath(f, self.run_dir): n for f, n in self.sessions().items()}})
+                reason, files, stream, (turns, out_tok) = (self.attempt(manifest, resume, cont=cont) if cont
+                                                           else self.attempt(manifest, resume))
+                cont, resume = None, None
+                gated = {"reason": reason, "files": files, "turns": turns, "out_tok": out_tok, "stream": "checkpoint.stream",
+                         "patch": "checkpoint.fix.patch",
+                         "session": os.path.relpath(self.last_session, self.run_dir) if self.last_session else None}
+                if self.fixed_ok:
+                    snap("gated", gated=gated)
+            else:
+                reason, files, stream, turns, out_tok = after
+                after, resume = None, None
             from_review = False
             if not reason:
                 d = self.diff()
@@ -888,8 +1210,12 @@ class Chain:
                     raise Stop(f"the clean fix's diff is {len(d)} characters, more than the {DIFF_MAX} a plan may carry")
                 with open(manifest) as mf:
                     task = json.load(mf).get("description") or ""
-                review = self.review(d, task, assistant_text(stream or ""))
-                self.note("review", tail(review.splitlines()[-1] if review else "", 80))
+                if saved_review is not None:
+                    review, saved_review = saved_review, None   # its note is in the log the checkpoint kept
+                else:
+                    review = self.review(d, task, assistant_text(stream or ""))
+                    self.note("review", tail(review.splitlines()[-1] if review else "", 80))
+                    snap("reviewed", gated=gated, review=review)
                 if review.startswith("(no review"):   # a failed review is not an approval: the plan says so
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
                     return self.plan(rnd, d, review, unresolved="the review did not run: " + tail(review, 200))
@@ -1015,7 +1341,8 @@ class Chain:
             "", "Review (fleet reviewer, comment only):", tail(review, 3000),
             "", "The operator merges, always: the fleet never does."])
         return {"outcome": "plan", "action": "github.open_pr",
-                "detail": f"#{self.n}: " + (f"{flag}; " if unresolved else "") + f"a clean fix in round {rnd} at {self.base[:12]}",
+                "detail": f"#{self.n}: " + (f"{flag}; " if unresolved else "") + f"a clean fix in round {rnd} at {self.base[:12]}"
+                          + (f" (resumed from a checkpoint: {self.resumed_from})" if self.resumed_from else ""),
                 # the flag goes on after the cut: tail() keeps the end, and it must never cut the flag away
                 "params": {"repo": self.repo, "base": self.base, "title": title,
                            "body": head + tail(body, BODY_MAX - len(head)), "diff": d}}
@@ -1103,11 +1430,27 @@ def main(argv=None, environ=None):
             json.dump(out, f)
         print(f"BUGFIX FIX case={case.get('id')} outcome=escalate {out['detail']}")
         return out
-    run_dir = os.path.join(a.scratch, "runs", f"{case.get('id', 'case')}-{int(time.time())}")
-    os.makedirs(run_dir)
+    run_dir = case_run_dir(a.scratch, case)
+    sweep_stale(a.scratch)
+    # ADR-0019: flotillad says whether this run may continue the case's last one (FLOTILLA_RESUME); the checkpoint
+    # decides whether it can. Without the word, or without a checkpoint that holds, the case starts fresh.
+    restored = None
+    try:
+        resumption = json.loads(environ.get("FLOTILLA_RESUME") or "null")
+    except ValueError:
+        resumption = None
+    if isinstance(resumption, dict) and os.path.isdir(run_dir):
+        restored, why = load_checkpoint(run_dir, case, a.repo, a.base or "main")
+        if restored is None:
+            print(f"BUGFIX FIX case={case.get('id')} resume of run {resumption.get('run_id')}: no usable checkpoint ({why}): starting fresh",
+                  flush=True)
+    if restored is None:
+        remove_run_dir(a.scratch, run_dir)
+        os.makedirs(run_dir)
     chain = None
     meter = None
     terminated = []
+    finished = False
 
     def on_term(signum, frame):
         terminated.append(signum)
@@ -1126,15 +1469,19 @@ def main(argv=None, environ=None):
         except Terminated:
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), 0.0)
-            shutil.rmtree(run_dir, ignore_errors=True)
+            if restored is None:   # a run that was to continue one leaves what it was to continue
+                remove_run_dir(a.scratch, run_dir)
             raise
     try:
-        chain = Chain(a, case, run_dir, environ, meter)
+        chain = Chain(a, case, run_dir, environ, meter, restored)
         out = chain.run()
+        finished = True
     except Stop as e:
         out = {"outcome": "escalate", "detail": str(e)}
+        finished = True
     except pi_config.ConfigError as e:
         out = {"outcome": "escalate", "detail": f"config: {e}"}
+        finished = True
     finally:
         # from here a SIGTERM (the worker's, at the routine's timeout; it SIGKILLs 10 s later) must not cut the report
         # short: it only hurries the spend read, here or already under way
@@ -1148,16 +1495,17 @@ def main(argv=None, environ=None):
             meter.hurry()
         if meter is not None:   # before the run directory, which holds pi's sessions, is deleted
             # pi's figure first, so a SIGKILL during the gateway read still leaves a number; then the bill over it
-            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi")))
+            baseline = chain.pi_baseline if chain is not None else 0.0   # a resumed run reports its own spend, not its earlier run's
+            spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), spend.pi_cost(os.path.join(run_dir, "pi"), baseline))
             # every episode's settled spend is already known when the chain measured them all: nothing to wait for again
             quiet = chain is not None and chain.calls.measures and not terminated
-            usd, source, why = meter.cost(os.path.join(run_dir, "pi"), quiet=quiet)
+            usd, source, why = meter.cost(os.path.join(run_dir, "pi"), quiet=quiet, baseline=baseline)
             spend.write(os.path.join(environ.get("HOME", "/"), a.spend_file), usd)
             print(f"BUGFIX SPEND case={case.get('id')} usd={usd:.6f} source={source}" + (f" ({why})" if why else ""))
         if chain is not None:
             chain.restore_config("the run")
-        shutil.rmtree(run_dir, ignore_errors=True)
-        shutil.rmtree(os.path.join(a.scratch, "venvs", os.path.basename(run_dir)), ignore_errors=True)
+        if finished:   # a run cut short leaves its directory and its checkpoint for the case's next run (ADR-0019)
+            remove_run_dir(a.scratch, run_dir)
         if chain is not None and getattr(chain, "cache", None):
             sh(["git", "-C", chain.cache, "worktree", "prune"], a.scratch, environ, 60)
         if not terminated:

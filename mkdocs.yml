@@ -108,6 +108,7 @@ nav:
     - ADR-0016 — Post-incident review: adr/ADR-0016-post-incident-review.md
     - ADR-0017 — Routine actions: adr/ADR-0017-routine-actions.md
     - ADR-0018 — Harness parts: adr/ADR-0018-harness-parts.md
+    - ADR-0019 — Durable runs: adr/ADR-0019-durable-runs.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

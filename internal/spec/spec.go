@@ -73,6 +73,7 @@ type Routine struct {
 	// The system prompts the routine runs with (ADR-0018): a role (system, rules) to a file under the
 	// fleet's folder. `system` is optional: a harness routine without it loads its default as before.
 	Prompts map[string]string `yaml:"prompts"`
+	Resume      *Resume  `yaml:"resume"`  // ADR-0019: when flotillad lets a case's next run continue the last one
 	// The case kinds this routine may open (pipeline v1 step 6): a monitor reports detections in its
 	// plan file and flotillad opens the cases; a kind not listed here is refused.
 	Detects []string `yaml:"detects"`
@@ -198,6 +199,52 @@ var (
 	briefSectionRe = regexp.MustCompile(`^[A-Z][A-Za-z ]{0,31}$`)
 	promptPathRe   = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
 )
+
+// Resume (ADR-0019) says when a case's next run may continue the one that was cut short: the previous run
+// ended with one of the statuses in On (interrupted, error), at most Max times in a row. The run gets
+// FLOTILLA_RESUME and decides by its own checkpoint whether it can; flotillad only says it may.
+type Resume struct {
+	On  []string `yaml:"on"`
+	Max int      `yaml:"max"`
+}
+
+var resumeOn = map[string]bool{"interrupted": true, "error": true}
+
+// ResumesOn is whether a run that ended with status may be resumed.
+func (r *Resume) ResumesOn(status string) bool {
+	if r == nil {
+		return false
+	}
+	for _, s := range r.On {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
+
+func (j *Routine) validateResume(bad func(string, ...any)) {
+	r := j.Resume
+	if r == nil {
+		return
+	}
+	if j.OnCase() == "" {
+		bad("resume: only a routine that acts on a case (trigger.case) has runs to resume")
+	}
+	if len(r.On) == 0 {
+		bad("resume.on: at least one of interrupted, error")
+	}
+	seen := map[string]bool{}
+	for _, s := range r.On {
+		if !resumeOn[s] || seen[s] {
+			bad("resume.on: %q is not interrupted or error, or is listed twice", s)
+		}
+		seen[s] = true
+	}
+	if r.Max < 1 || r.Max > 3 {
+		bad("resume.max %d: 1 to 3", r.Max)
+	}
+}
 
 // Harness (RFC-0002 §4) configures the routine's model-driven step: its protocol, the tools offered, the
 // gates its decision passes, its limits, and the quirks that keep the first fleet's loop like for like
@@ -523,6 +570,7 @@ func (j *Routine) validate() error {
 			bad("prompts.%s: %q is not a .md or .txt path inside the fleet's folder (relative, no ..)", role, p)
 		}
 	}
+	j.validateResume(bad)
 	if h := j.Harness; h != nil {
 		if h.Protocol != "json" {
 			bad("harness.protocol %q: json (native tool calls come later)", h.Protocol)

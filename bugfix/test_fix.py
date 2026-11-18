@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
+import time
 import textwrap
 import unittest
 import unittest.mock
@@ -291,8 +293,10 @@ class Fixture:
         self.bakeoff, self.remotes = b, "file://" + os.path.join(self.d, "remotes")  # file://: --depth and --filter work
         self.scratch = os.path.join(self.d, "scratch")
 
-    def run(self, *extra):
+    def run(self, *extra, resume=None):
         plan = os.path.join(self.d, "plan.json")
+        if os.path.exists(plan):
+            os.remove(plan)
         env = dict(os.environ, FLOTILLA_PLAN_FILE=plan, FLOTILLA_MODELS=json.dumps(MODELS), FAKE_STATE=self.state, GIT_ALLOW_PROTOCOL="file",
                    GIT_REMOTE_BASE=self.remotes, PATH=os.path.join(self.d, "bin") + os.pathsep + os.environ["PATH"],
                    GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
@@ -301,6 +305,8 @@ class Fixture:
                                                                 "body": getattr(self, "body", "value() returns 1, want 2"),
                                                                 "url": "u"}}}))
         env.update(getattr(self, "extra_env", {}))
+        if resume:   # what flotillad hands a run it lets continue the case's last (ADR-0019)
+            env["FLOTILLA_RESUME"] = json.dumps(resume)
         old = fix.BAKEOFF
         fix.BAKEOFF = self.bakeoff
         try:
@@ -617,7 +623,7 @@ exec {real} "$@"
             def episode(m):
                 return m.bills.pop(0)
 
-            def cost(m, agent_dir, quiet=False):
+            def cost(m, agent_dir, quiet=False, baseline=0.0):
                 m.quiet = quiet
                 return 1.0, "gateway", ""
 
@@ -776,7 +782,7 @@ exec {real} "$@"
     def test_the_unresolved_flag_survives_a_long_plan_body(self):
         import types
         chain = types.SimpleNamespace(repo="example/shop", n=12, issue={"title": "t"}, base="a" * 40, checked="gates ok",
-                                      unloaded_on_base=[], log=["step " + "x" * 3000] * 5)
+                                      unloaded_on_base=[], resumed_from="", log=["step " + "x" * 3000] * 5)
         plan = fix.Chain.plan(chain, 1, "diff", "VERDICT: request-changes", unresolved="the review asked for changes")
         body = plan["params"]["body"]
         self.assertLessEqual(len(body), fix.BODY_MAX)
@@ -1433,8 +1439,279 @@ class PythonRepo(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(f.scratch, "pip-cache")))
 
 
-if __name__ == "__main__":
-    unittest.main()
+RESUME = {"run_id": "run-1", "status": "interrupted"}
+
+
+class Durable(unittest.TestCase):
+    """ADR-0019: a run cut short leaves runs/<case id>/ and its checkpoint; the case's next run, when flotillad lets it
+    (FLOTILLA_RESUME), goes on from the last boundary. A kill is a Terminated raised where the worker's SIGTERM or
+    SIGKILL would have ended the run: at the boundary named, before it or after the step in flight."""
+
+    CASE = "case-20261115-abc"
+
+    def fixture(self, verdicts, fixes):
+        f = Fixture(verdicts, fixes)
+        self.addCleanup(f.close)
+        return f
+
+    def run_dir(self, f):
+        return os.path.join(f.scratch, "runs", self.CASE)
+
+    def checkpoint(self, f):
+        with open(os.path.join(self.run_dir(f), fix.CHECKPOINT)) as fh:
+            return json.load(fh)
+
+    def kill(self, f, name, *extra, nth=1):
+        """Run f's chain with Chain.<name> raising Terminated on its nth call, before it does anything; "pi" is the fix
+        episode, killed after it ran (the session grown, the tree changed, nothing read of it)."""
+        real_sh, real, n = fix.sh, getattr(fix.Chain, name, None), [0]
+
+        def hit():
+            n[0] += 1
+            return n[0] == nth
+
+        def sh(cmd, *a, **kw):
+            out = real_sh(cmd, *a, **kw)
+            if isinstance(cmd, list) and cmd[0].endswith("pi.sh") and hit():
+                raise fix.Terminated()
+            return out
+
+        def method(chain, *a, **kw):
+            if hit():
+                raise fix.Terminated()
+            return real(chain, *a, **kw)
+        if name == "pi":
+            fix.sh = sh
+        else:
+            setattr(fix.Chain, name, method)
+        try:
+            with self.assertRaises(fix.Terminated):
+                f.run(*extra)
+        finally:
+            fix.sh = real_sh
+            if name != "pi":
+                setattr(fix.Chain, name, real)
+
+    def resumes(self, f):
+        path = os.path.join(f.state, "resumes")
+        if not os.path.exists(path):
+            return []
+        with open(path) as fh:
+            return fh.read().splitlines()
+
+    def test_a_kill_at_each_boundary_resumes_where_it_stopped(self):
+        for name, phase, fixes, calls in (
+                ("verdict", "checkout", ["good"], ["triage", "fix", "review"]),
+                ("attempt", "attempt", ["good"], ["triage", "fix", "review"]),
+                ("pi", "attempt", ["good", "nothing"], ["triage", "fix", "fix", "review"]),
+                ("gates", "fixed", ["good"], ["triage", "fix", "review"]),
+                ("review", "gated", ["good"], ["triage", "fix", "review"]),
+                ("plan", "reviewed", ["good"], ["triage", "fix", "review"])):
+            with self.subTest(killed=name):
+                f = self.fixture(["actionable"], fixes)
+                self.kill(f, name)
+                self.assertEqual(self.checkpoint(f)["phase"], phase)
+                plan, _ = f.run(resume=RESUME)
+                self.assertEqual(plan["outcome"], "plan", plan)
+                self.assertIn("+module.exports = () => 2;", plan["params"]["diff"])
+                self.assertIn(f"(resumed from a checkpoint: phase {phase}, round 0, saved ", plan["detail"])
+                self.assertIn("resumed from checkpoint: phase " + phase, plan["params"]["body"])
+                self.assertEqual(f.calls(), calls, "each leaf ran as often as an uninterrupted run needs, bar the continued episode")
+                self.assertFalse(os.path.exists(self.run_dir(f)), "the normal end removes the directory and the checkpoint")
+                if name == "pi":
+                    r = self.resumes(f)
+                    self.assertEqual(len(r), 1, r)
+                    self.assertRegex(r[0], r"^resume s-good-\d+\.jsonl changed=2 desc=The run was interrupted")
+
+    def test_a_kill_in_a_kick_back_redoes_the_kick_back_and_resumes_the_session(self):
+        f = self.fixture(["actionable", "actionable"], ["notest", "good"])
+        self.kill(f, "verdict", nth=2)
+        ck = self.checkpoint(f)
+        self.assertEqual((ck["phase"], ck["state"]["round"]), ("gated", 0))
+        self.assertIn("repro-first violated", ck["gated"]["reason"])
+        plan, _ = f.run(resume=RESUME)
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("resumed from a checkpoint: phase gated, round 0", plan["detail"])
+        self.assertEqual(f.calls(), ["triage", "fix", "advisor", "advisor", "triage", "fix", "review"])
+        r = self.resumes(f)
+        self.assertEqual(len(r), 1, r)
+        self.assertRegex(r[0], r"^resume s-notest-\d+\.jsonl changed=1 desc=YOUR FIX DID NOT PASS ITS GATES")
+
+    def test_a_review_kick_back_is_kept_across_a_kill(self):
+        f = self.fixture(["actionable"], ["good", "goodnewmod"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes\napprove\n")
+        self.kill(f, "attempt", nth=2)   # killed as round 1 begins, the review's request in the checkpoint
+        ck = self.checkpoint(f)
+        self.assertEqual((ck["phase"], ck["state"]["round"], ck["state"]["reviewed_back"]), ("attempt", 1, 1))
+        self.assertEqual(ck["state"]["kept"]["round"], 0)
+        plan, _ = f.run(resume=RESUME)
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(f.calls(), ["triage", "fix", "review", "fix", "review"], "the review of round 0 is not asked again")
+        r = self.resumes(f)
+        self.assertEqual(len(r), 1, r)
+        self.assertRegex(r[0], r"^resume s-good-\d+\.jsonl changed=2 desc=A REVIEW OF YOUR FIX ASKED FOR CHA")
+
+    def test_a_run_flotillad_did_not_resume_starts_fresh(self):
+        f = self.fixture(["actionable", "actionable"], ["good"])
+        self.kill(f, "attempt")
+        self.assertTrue(os.path.exists(os.path.join(self.run_dir(f), fix.CHECKPOINT)))
+        plan, _ = f.run()   # no FLOTILLA_RESUME: a reassign, an escalation, a first run
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertNotIn("resumed", plan["detail"])
+        self.assertEqual(f.calls(), ["triage", "triage", "fix", "review"])
+
+    def test_a_checkpoint_that_does_not_hold_is_ignored_and_the_case_starts_fresh(self):
+        def edit(**kw):
+            def go(f, ck):
+                ck.update(kw)
+            return go
+
+        def state(**kw):
+            def go(f, ck):
+                ck["state"].update(kw)
+            return go
+
+        def outside(f, ck):   # a path that leaves the run directory, to a file that exists
+            with open(os.path.join(f.scratch, "runs", "outside.json"), "w") as fh:
+                fh.write("{}")
+            ck["state"]["manifest"] = "../outside.json"
+
+        def symlink(f, ck):
+            target = os.path.join(f.scratch, "runs", "outside2.json")
+            with open(target, "w") as fh:
+                fh.write("{}")
+            link = os.path.join(self.run_dir(f), "link.json")
+            os.symlink(target, link)
+            ck["state"]["prior"] = "link.json"
+
+        def absolute(f, ck):
+            ck["state"]["manifest"] = os.path.join(f.d, "bakeoff", "triage_run.sh")
+
+        def old(f, ck):
+            ck["saved"] = time.time() - fix.CHECKPOINT_MAX_AGE - 60
+
+        for name, change in {"another case": edit(case="case-other"), "another repo": edit(repo="example/api"),
+                             "another ref": edit(ref="release"), "an unknown version": edit(version=2),
+                             "an unknown phase": edit(phase="done"), "a base that is not the worktree's": edit(base="0" * 40),
+                             "older than the limit": old, "a path outside the run directory": outside,
+                             "a symlink out of it": symlink, "an absolute path": absolute,
+                             "a round that is not a number": state(round="1"), "pins that are not names": state(pins=[1]),
+                             "a log that is not text": edit(log=[1])}.items():
+            with self.subTest(name):
+                f = self.fixture(["actionable", "actionable"], ["good"])
+                self.kill(f, "attempt")
+                ck = self.checkpoint(f)
+                change(f, ck)
+                with open(os.path.join(self.run_dir(f), fix.CHECKPOINT), "w") as fh:
+                    json.dump(ck, fh)
+                plan, _ = f.run(resume=RESUME)
+                self.assertEqual(plan["outcome"], "plan", plan)
+                self.assertNotIn("resumed", plan["detail"])
+                self.assertEqual(f.calls(), ["triage", "triage", "fix", "review"], "started fresh")
+        for name, damage in {"not JSON": lambda p: Path(p).write_text("{"), "gone": os.remove}.items():
+            with self.subTest(name):
+                f = self.fixture(["actionable", "actionable"], ["good"])
+                self.kill(f, "attempt")
+                damage(os.path.join(self.run_dir(f), fix.CHECKPOINT))
+                plan, _ = f.run(resume=RESUME)
+                self.assertEqual((plan["outcome"], f.calls()), ("plan", ["triage", "triage", "fix", "review"]))
+
+    def test_stale_run_directories_are_deleted_at_start_and_recent_ones_are_not(self):
+        f = self.fixture(["actionable"], ["good"])
+        for name, age in (("case-old", fix.CHECKPOINT_MAX_AGE + 3600), ("case-young", 3600)):
+            d = os.path.join(f.scratch, "runs", name)
+            os.makedirs(os.path.join(d, "wt"))
+            os.makedirs(os.path.join(f.scratch, "venvs", name))
+            with open(os.path.join(d, fix.CHECKPOINT), "w") as fh:
+                fh.write("{}")
+            for p in (os.path.join(d, fix.CHECKPOINT), d):
+                os.utime(p, (time.time() - age, time.time() - age))
+        f.run()
+        self.assertEqual(sorted(os.listdir(os.path.join(f.scratch, "runs"))), ["case-young"])
+        self.assertEqual(sorted(os.listdir(os.path.join(f.scratch, "venvs"))), ["case-young"])
+
+    def test_an_escalation_is_a_normal_end_and_an_error_is_not(self):
+        f = self.fixture(["needs-info"], [])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertFalse(os.path.exists(self.run_dir(f)), "an escalation leaves nothing to resume")
+        g = self.fixture(["actionable"], ["good"])
+        real = fix.Chain.attempt
+
+        def boom(chain, *a, **kw):
+            raise RuntimeError("a bug")
+        fix.Chain.attempt = boom
+        try:
+            with self.assertRaises(RuntimeError):
+                g.run()
+        finally:
+            fix.Chain.attempt = real
+        self.assertEqual(self.checkpoint(g)["phase"], "attempt", "an error keeps the directory: status error may be resumed")
+        plan, _ = g.run(resume={"run_id": "run-1", "status": "error"})
+        self.assertEqual(plan["outcome"], "plan", plan)
+
+    def test_a_resumed_run_records_only_its_own_calls_and_says_it_resumed(self):
+        f = self.fixture(["actionable"], ["good", "nothing"])
+        first, second = os.path.join(f.d, "calls1.jsonl"), os.path.join(f.d, "calls2.jsonl")
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "FLOTILLA_CALLS_FILE": first}):
+            self.kill(f, "pi")
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "FLOTILLA_CALLS_FILE": second}):
+            plan, _ = f.run(resume=RESUME)
+        self.assertEqual(plan["outcome"], "plan", plan)
+        with open(first) as fh:
+            before = [json.loads(x) for x in fh]
+        with open(second) as fh:
+            rows = [json.loads(x) for x in fh]
+        self.assertEqual([c["role"] for c in before if c.get("kind") != "step"], ["verdict"], "the killed run recorded its verdict only")
+        self.assertEqual([c["role"] for c in rows if c.get("kind") != "step"], ["coder", "coder", "reviewer"],
+                         "the verdict is not recorded again; the episode the kill cut is recorded whole, by the run that continued it")
+        steps = [c["detail"] for c in rows if c.get("kind") == "step"]
+        self.assertTrue(any(s.startswith("resumed from checkpoint: phase attempt, round 0, saved ") for s in steps), steps)
+
+    def test_a_resumed_run_does_not_report_its_earlier_run_s_spend(self):
+        # no gateway key here: the run reports pi's figure, each session 0.5. The killed run's verdict and fix episode
+        # (1.0) are its own, reported by it; the resumed run's fix episode and review (1.0) are its.
+        f = self.fixture(["actionable"], ["good", "nothing"])
+        home = os.path.join(f.d, "home")
+        os.makedirs(home)
+        with unittest.mock.patch.dict(os.environ, {"FAKE_SESS": "1", "HOME": home}):
+            self.kill(f, "pi")
+            self.assertEqual(fix.spend.pi_cost(os.path.join(self.run_dir(f), "pi")), 1.0)
+            f.run("--spend-file", ".spend", resume=RESUME)
+        with open(os.path.join(home, ".spend")) as fh:
+            self.assertEqual(float(fh.read()), 1.0)
+
+    def test_a_real_sigterm_leaves_a_checkpoint_the_next_run_continues(self):
+        import signal
+        f = self.fixture(["actionable"], ["hang", "good"])
+        env = dict(os.environ, FLOTILLA_PLAN_FILE=os.path.join(f.d, "plan.json"), FLOTILLA_MODELS=json.dumps(MODELS), FAKE_STATE=f.state,
+                   GIT_ALLOW_PROTOCOL="file", GIT_REMOTE_BASE=f.remotes, BUGFIX_BAKEOFF_DIR=f.bakeoff,
+                   PATH=os.path.join(f.d, "bin") + os.pathsep + os.environ["PATH"],
+                   GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+                   FLOTILLA_CASE=json.dumps({"id": self.CASE, "kind": "code_bug", "target": "repo:example/shop/issues/12",
+                                             "data": {"issue": {"repo": "example/shop", "number": 12, "title": "value is 1",
+                                                                "body": "value() returns 1, want 2", "url": "u"}}}))
+        p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
+                              "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
+                              "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
+                              "--scratch", f.scratch],
+                             env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
+        calls = os.path.join(f.state, "calls")
+        for _ in range(300):   # until the fix step hangs
+            if os.path.exists(calls) and "fix hang" in Path(calls).read_text():
+                break
+            time.sleep(0.1)
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(timeout=10)
+        self.assertEqual(self.checkpoint(f)["phase"], "attempt")
+        plan, _ = f.run(resume=RESUME)
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(f.calls(), ["triage", "fix", "fix", "review"])
+        r = self.resumes(f)
+        self.assertEqual(len(r), 1, r)
+        self.assertRegex(r[0], r"^resume s-hang-\d+\.jsonl changed=0 desc=The run was interrupted")
 
 
 class FullIssueBody(unittest.TestCase):
@@ -1493,3 +1770,7 @@ class FullIssueBody(unittest.TestCase):
         issue = {"number": 7, "body": "cut", "body_cut": True}
         got, note = fix.issue_for_case(issue, "example/api", {"GITHUB_API": api})
         self.assertEqual((got["body"], self.paths), ("whole", ["/repos/example/api/issues/7"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

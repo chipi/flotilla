@@ -52,8 +52,9 @@ def keys_of(cfg, aliases, environ):
     return out
 
 
-def pi_cost(agent_dir):
-    """pi's own figure for every session under agent_dir (usage.cost.total of each reply)."""
+def pi_cost(agent_dir, baseline=0.0):
+    """pi's own figure for every session under agent_dir (usage.cost.total of each reply), less `baseline`: what a run
+    resumed from a checkpoint found there from its earlier run (which reported it)."""
     total = 0.0
     for f in glob.glob(os.path.join(agent_dir, "sessions", "*", "*.jsonl")):
         try:
@@ -64,7 +65,7 @@ def pi_cost(agent_dir):
                         total += float(((m.get("usage") or {}).get("cost") or {}).get("total") or 0)
         except (OSError, ValueError, TypeError):
             continue
-    return total
+    return max(total - baseline, 0.0)
 
 
 class Meter:
@@ -133,13 +134,13 @@ class Meter:
                 total += after - before
         return total if known else None
 
-    def cost(self, agent_dir, quiet=False):
+    def cost(self, agent_dir, quiet=False, baseline=0.0):
         """(USD, source, note): the gateway's bill when every key could be read before and after, before the deadline
         (hurry), else pi's figure. `quiet` says nothing has spent since the last episode()'s mark (every episode of the
         run was measured and none is in flight): the mark is then the settled "after" and nothing is waited for again,
         so the run's total is exactly the sum of its episodes'. A key with no mark is settled as usual."""
         if not self.keys:
-            return pi_cost(agent_dir), "pi", "no endpoint key to read the gateway's spend with"
+            return pi_cost(agent_dir, baseline), "pi", "no endpoint key to read the gateway's spend with"
         total = 0.0
         for i, ((base, key), before) in enumerate(zip(self.keys, self.before)):
             if before is None:
@@ -150,7 +151,7 @@ class Meter:
                 after = self.settled(base, key)
             if before is None or after is None or after < before:
                 why = "unreadable in time" if before is None or after is None else "went down (a budget reset?)"
-                return pi_cost(agent_dir), "pi", f"the gateway's spend at {base} {why}"
+                return pi_cost(agent_dir, baseline), "pi", f"the gateway's spend at {base} {why}"
             total += after - before
         return total, "gateway", ""
 

@@ -17,6 +17,10 @@
 // (trigger.case.limit) shares it across all of its case's runs: a case past it escalates instead of
 // running again, and FLOTILLA_CASE says what is left of it.
 //
+// A routine that declares `resume` (ADR-0019) may continue the case's last run: when that run ended with a
+// status the spec lists, the next one is handed FLOTILLA_RESUME (the run and its status), and the case's
+// timeline says so (run.started per run, run.resumed with the prior run).
+//
 // A plan moves the case to planned (by the run's routine) and goes to policy. Anything else (a failed
 // run, no file, a bad file, an unknown outcome, another case's id) leaves the case handed over with a
 // run.no_decision event, and the case waits out the backoff before it is tried again; the stuck-state
@@ -746,7 +750,14 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	if cv.Left != nil {
 		within = time.Duration(cv.Left.Seconds) * time.Second
 	}
-	r, out, err := d.API.Sched.RunWithin(ctx, j.ID(), "case", "flotillad", map[string]string{"FLOTILLA_CASE": string(cj)}, within)
+	env := map[string]string{"FLOTILLA_CASE": string(cj)}
+	if rs, err := d.resumption(ctx, c.ID, j); err != nil {
+		return err
+	} else if rs != nil {
+		rj, _ := json.Marshal(rs)
+		env[sched.EnvResume] = string(rj)
+	}
+	r, out, err := d.API.Sched.RunWithin(ctx, j.ID(), "case", "flotillad", env, within)
 	if err != nil {
 		return d.noDecision(ctx, c.ID, j.ID(), "the run did not start: "+err.Error())
 	}
@@ -799,6 +810,42 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	default:
 		return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: outcome %q is not plan, resolved_itself, not_reproducible, escalate or hand_over", r.ID, dec.Outcome))
 	}
+}
+
+// resumption is what the case's next run may continue (ADR-0019), nil when it starts fresh. Only the runs
+// since the case's last state change count: an escalation, a reassign or a stage change ends the chain, so
+// a run after one is fresh. Within the chain, the case's latest run of this routine must have ended with a
+// status the routine's resume.on lists, and fewer than resume.max resumes may already have been handed out.
+// The case's limit is checked before this and still bounds the run (its time left caps the timeout).
+func (d *Dispatcher) resumption(ctx context.Context, caseID string, j *spec.Routine) (*sched.Resumption, error) {
+	if j.Resume == nil {
+		return nil, nil
+	}
+	evs, err := d.API.Store.CaseEvents(ctx, caseID)
+	if err != nil {
+		return nil, err
+	}
+	prev, resumes := "", 0
+	for i := len(evs) - 1; i >= 0; i-- {
+		e := evs[i]
+		if strings.HasPrefix(e.Kind, "case.") {
+			break
+		}
+		switch {
+		case e.Kind == sched.EventRunResumed && e.Actor == j.ID():
+			resumes++
+		case e.Kind == sched.EventRunStarted && e.Actor == j.ID() && prev == "":
+			prev = strings.TrimPrefix(e.Detail, "run ")
+		}
+	}
+	if prev == "" || resumes >= j.Resume.Max {
+		return nil, nil
+	}
+	r, err := d.API.Store.Run(ctx, prev)
+	if err != nil || r == nil || r.Routine != j.ID() || !j.Resume.ResumesOn(r.Status) {
+		return nil, err
+	}
+	return &sched.Resumption{RunID: r.ID, Status: r.Status}, nil
 }
 
 // handOver moves the case to the stage its run named (RFC-0013 §2). A stage no enabled routine acts on, or

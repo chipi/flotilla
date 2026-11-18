@@ -198,6 +198,15 @@ class Recorder:
     def measures(self):
         return bool(self.meter and self.path)
 
+    def skip_existing(self, keep=()):
+        """A run resumed from a checkpoint finds its earlier run's sessions in the pi directory, and that run's
+        calls file already has their calls: mark them recorded, so only what this run adds is written. `keep` are
+        the sessions the earlier run was killed in the middle of: it never recorded those, so they are not skipped."""
+        for f in sorted(glob.glob(os.path.join(self.dir, "sessions", "*", "*.jsonl")), key=_mtime):
+            self.seq[f] = len(self.seq) + 1
+            if f not in keep:
+                self.done[f] = len(session_lines(f, "", "", None, self.key, 0))
+
     def record(self, role, alias):
         if not self.path:
             return

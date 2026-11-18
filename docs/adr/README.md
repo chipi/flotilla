@@ -66,3 +66,5 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0017 — Routine actions](ADR-0017-routine-actions.md) (Accepted, 2026-11-17)
 - [ADR-0018 — Harness parts: the system prompt, unknown tools and hooks](ADR-0018-harness-parts.md)
   (Accepted, 2026-11-18)
+- [ADR-0019 — Durable runs: a checkpoint and a resume](ADR-0019-durable-runs.md) (Accepted,
+  2026-11-18)

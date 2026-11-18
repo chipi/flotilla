@@ -370,6 +370,9 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	for k, v := range caseEnv {
 		env[k] = v
 	}
+	if j.Resume != nil && caseEnv != nil {
+		s.recordCaseRun(ctx, id, runID, caseEnv)
+	}
 	reports := caseEnv != nil || len(j.Detects) > 0 // an acting routine or a monitor answers in a plan file
 	if reports {
 		planFile = ".flotilla-plan-" + runID + ".json" // under the run's HOME; the worker reads and removes it
@@ -480,6 +483,45 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		s.AfterRun(fctx, j, &out, outcome)
 	}
 	return &out, outcome, nil
+}
+
+// The case events of a routine that may resume (ADR-0019), and the env key its run reads. The store has no
+// run-to-case link, so these events are the record: run.started says which run was the case's, run.resumed
+// says that run was a resume of the one it names.
+const (
+	EventRunStarted = "run.started"
+	EventRunResumed = "run.resumed"
+	EnvResume       = "FLOTILLA_RESUME"
+)
+
+// Resumption is FLOTILLA_RESUME: the earlier run of the case the new one may continue.
+type Resumption struct {
+	RunID  string `json:"run_id"`
+	Status string `json:"status"`
+}
+
+// recordCaseRun puts the run on its case's timeline, and a resume's prior run beside it. A failure to write
+// is logged: the run goes on, and only a later resume of it is lost.
+func (s *Scheduler) recordCaseRun(ctx context.Context, routine, runID string, caseEnv map[string]string) {
+	var c struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal([]byte(caseEnv["FLOTILLA_CASE"]), &c) != nil || c.ID == "" {
+		return
+	}
+	if raw := caseEnv[EnvResume]; raw != "" {
+		var r Resumption
+		if json.Unmarshal([]byte(raw), &r) == nil && r.RunID != "" {
+			if err := s.Store.AddCaseEvent(ctx, c.ID, EventRunResumed, routine, fmt.Sprintf("run %s resumes run %s (%s)", runID, r.RunID, r.Status)); err != nil {
+				s.Log.Error("recording a resume", "case", c.ID, "run_id", runID, "err", err)
+				s.StoreError("case_event")
+			}
+		}
+	}
+	if err := s.Store.AddCaseEvent(ctx, c.ID, EventRunStarted, routine, "run "+runID); err != nil {
+		s.Log.Error("recording a case's run", "case", c.ID, "run_id", runID, "err", err)
+		s.StoreError("case_event")
+	}
 }
 
 // cancelNote is a cancelled run's detail: who asked and why, when flotillad was asked; else what the
