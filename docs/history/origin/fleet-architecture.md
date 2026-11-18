@@ -1,6 +1,6 @@
 # Agentic fleets — the architecture
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/fleet-architecture.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/fleet-architecture.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/fleet-architecture.md` at `dcc3e63`), kept as the record.
 > The fleets' architecture before flotilla; flotilla's is [its architecture](../../architecture/index.md).
 
 > **Retired 2026-11-16.** The fleets run in [flotilla](https://github.com/chipi/flotilla) (its `docs/operations/`); the code this page describes left this repo, and the host's `fleetd` and `bugfix-metrics` jobs are gone. Kept for the record; the commands below no longer apply.
@@ -212,7 +212,7 @@ agent frameworks (audit + revisit triggers for Temporal/LiteLLM in
 As of 2026-11-05. The original per-fleet plan (Track A = triage, Track B =
 bug-fix; lab → shadow → propose → per-class autonomy) lived in a wip note,
 closed this day; its finished parts are below, its open ones are in
-[`wip/NEXT_STEPS.md`](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/wip/NEXT_STEPS.md) under "Fleets".
+`wip/NEXT_STEPS.md` under "Fleets".
 
 - **Shared foundations, done:** LiteLLM gateway with Langfuse callbacks (one
   trace per triage/bug-fix call); the STOP-flag kill switch (fleetd,

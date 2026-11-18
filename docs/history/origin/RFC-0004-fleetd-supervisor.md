@@ -1,6 +1,6 @@
 # RFC-0004 — `fleetd`: the fleet supervisor daemon
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0004-fleetd-supervisor.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0004-fleetd-supervisor.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0004-fleetd-supervisor.md` at `dcc3e63`), kept as the record.
 > fleetd retired on 2026-11-16; flotillad replaced it ([ADR-0002](../../adr/ADR-0002-run-in-docker.md)).
 
 **Status:** Proposed (2026-07-25)

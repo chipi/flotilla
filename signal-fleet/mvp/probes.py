@@ -26,10 +26,10 @@ def _occurrence_history(signal, args):
     return hist if any(v is not None for v in hist.values()) else "<no occurrence history>"
 
 
-# A GlitchTip project slug is not the label its logs and metrics carry: the logs are labelled by app (podcast,
-# player, orrery, evals, websites) and by `service` per surface, the metrics by job. Read from the live stores on
-# 2026-11-16 (VictoriaLogs `stats by (app, service)`, VictoriaMetrics `count by (job) (up)`). Without this map
-# app:<slug> matched no logs for most projects, so their dismissals could not be corroborated and escalated.
+# A GlitchTip project slug is not the label its logs and metrics carry: the logs are labelled by app and by
+# `service` per surface, the metrics by job (VictoriaLogs `stats by (app, service)`, VictoriaMetrics
+# `count by (job) (up)`). Without this map app:<slug> matched no logs for most projects, so their dismissals
+# could not be corroborated and escalated.
 # A slug not here keeps the old query; the model's own `service` argument still wins.
 # Both maps are the installation's (installation.py): probe_log_selector and probe_metric_job.
 LOG_SELECTOR = dict(installation.get("probe_log_selector", {}))
@@ -81,10 +81,14 @@ def _trace(signal, args):
     return r if (isinstance(r, dict) and r.get("data")) else f"<trace {tid[:8]} not found>"
 
 
+_SOURCE_STATE = installation.get("source_state", {})
+
+
 def _source_state(signal, args):
-    """Orrery data-refresh state (last successful refresh) — the staleness case."""
-    return correlate.vl_query(
-        "job:orrery-data-refresh AND _time:24h | sort by (_time) desc | limit 10")
+    """The data-refresh state (last successful refresh) — the staleness case; the query is the installation's."""
+    if not _SOURCE_STATE.get("query"):
+        return "<not configured: no source_state query>"
+    return correlate.vl_query(_SOURCE_STATE["query"])
 
 
 # name -> (one-line description for the menu, fn)
@@ -94,7 +98,8 @@ PROBES = {
     "service_logs": ("recent logs for a service — args {service?, window?}", _service_logs),
     "metric": ("a metric for a service — args {service?, kind: 5xx|up}", _metric),
     "trace": ("a distributed trace by id — args {trace_id}", _trace),
-    "source_state": ("orrery data-refresh state (last successful refresh)", _source_state),
+    "source_state": (_SOURCE_STATE.get("description", "data-refresh state (last successful refresh)"),
+                     _source_state),
 }
 
 

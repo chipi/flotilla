@@ -1,14 +1,16 @@
 """Correlation reads — the query-time join across VM / VL / VT (SIGNALS §6).
 
-For the first slice (shop staleness), the correlated picture is:
-- VictoriaLogs: the shop data-refresh cron logs (did it run? fail? when last?)
+For the first slice (a data-staleness alert), the correlated picture is:
+- VictoriaLogs: the data-refresh job's logs (did it run? fail? when last?)
 - VictoriaMetrics: the staleness metric the alert fired on.
+Which queries run is the installation's (staleness_evidence in installation.json); none configured, none run.
 The evidence bundle is what the triager reasons over — never a single signal.
 """
 import urllib.error
 import urllib.parse
 
 import config
+import installation
 from http_util import get_json, post_form_text
 
 
@@ -25,27 +27,21 @@ def vm_query(promql, timeout=12):
     return get_json(url, timeout=timeout)
 
 
-def evidence_for_orrery_staleness(signal, window="24h"):
+def evidence_for_staleness(signal, window="24h"):
     """Build the correlated evidence bundle. Queries are best-effort — a source
-    that returns nothing is reported as empty, never fatal."""
+    that returns nothing is reported as empty, never fatal. The queries are the installation's
+    staleness_evidence: [{name, kind: logs|metric, query}], {window} in a query is the window."""
     ev = {"queries": {}}
-
-    def _try(name, fn):
+    run = {"logs": vl_query, "metric": vm_query}
+    names = []
+    for q in installation.get("staleness_evidence", []):
+        names.append(q["name"])
         try:
-            ev["queries"][name] = fn()
+            ev["queries"][q["name"]] = run[q["kind"]](q["query"].replace("{window}", window))
         except Exception as e:  # correlation is best-effort
-            ev["queries"][name] = f"<error: {e}>"
-
-    # shop data-refresh logs in the window (the direct cause surface)
-    _try("refresh_logs", lambda: vl_query(
-        f'app:orrery AND _time:{window} | sort by (_time) desc | limit 25'))
-    # narrower: the refresh job if it's labelled
-    _try("refresh_job_logs", lambda: vl_query(
-        f'job:orrery-data-refresh AND _time:{window} | sort by (_time) desc | limit 25'))
-    # the metric the alert watches (shop targets up?)
-    _try("orrery_up", lambda: vm_query('up{job=~".*orrery.*"}'))
+            ev["queries"][q["name"]] = f"<error: {e}>"
     # all of these are corroborating (none is the alert restated) — R5-1
-    ev["corroborating"] = ["refresh_logs", "refresh_job_logs", "orrery_up"]
+    ev["corroborating"] = names
     return ev
 
 

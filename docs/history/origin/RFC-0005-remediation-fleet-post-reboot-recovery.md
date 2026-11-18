@@ -1,6 +1,6 @@
 # RFC-0005 — Fleet 3 v1: `remediation-fleet`, unattended recovery of prod after a reboot
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md` at `dcc3e63`), kept as the record.
 > Fleet 3's proposal (2026-09-30). Whether flotilla's ops fleet replaces it is not decided in either repo.
 
 **Status:** Proposed (2026-09-30)
@@ -78,7 +78,7 @@ is expected to fully recover prod after a reboot. **What is missing is something
 call, and approves it, without a human.**
 
 **The fixed workflow has not run in production yet.** Its only run ever is
-[`36675886130`](https://github.com/example/api/actions/runs/36675886130) (05:58 UTC,
+`36675886130` (05:58 UTC,
 head `9949699df`) — the partially-successful run above, *before* the fix. `f68b4388f` landed at
 06:38. "Fully recovers" therefore rests on the unit tests, not on a real reboot. The class-A drill
 (deleting one secret dir) does not close that gap either; the class-B runs in the propose stage do —
@@ -799,7 +799,7 @@ own config (`RF_LIVE_CLASSES` in `.env`) — a class not listed there behaves as
 
 - **Prereqs in the api** — status from the prod-side session, 2026-09-30. The concurrency group
   and the stale run-id comment are tracked in
-  [example/api#2203](https://github.com/example/api/issues/2203):
+  `example/api#2203`:
   - [x] shared rules library `scripts/ops/prod_health_lib.sh`, sourced by both the check and
     `restage_prod_recreate.sh`, with the parity test (`b9c07ff8f`);
   - [x] `scripts/ops/prod_recovery_check.sh` plus `tests/unit/scripts/ops/test_prod_recovery_check.py`
@@ -1008,7 +1008,7 @@ implementation.
    - **the box is ephemeral.** `drill-exercise.yml` builds it on Wednesdays 02:00 UTC and always
      destroys it at the end of the run. No drill host was on the tailnet when checked.
 
-   Making D real is api work: drill-scoped secrets staged the ADR-115 way, the player and
+   Making D real is work in the api: drill-scoped secrets staged the ADR-115 way, the player and
    operator surfaces deployed, a drill-parameterised restage, the check script and a forced-command key
    on the drill host, and a reboot step in the exercise. What D can prove: the whole mechanism (secrets
    vanish, detect, restage, recreate on the right image, fix the keyless control plane, verify

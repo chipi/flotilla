@@ -72,7 +72,7 @@ framework.
 
 **Coupling that blocks a clean move:**
 
-- `signal-fleet/deploy/deploy.sh` is the host's deploy for the **whole** example checkout. It pulls,
+- `signal-fleet/deploy/deploy.sh` is the host's deploy for the **whole** ops-repo checkout. It pulls,
   runs fleet replays as a gate, and rolls everything back on failure.
 - The Hub reads the triage fleet's credentials file, ledgers and queue (`hub-sources.js`,
   `hub-status.js`, `gen.sh`).

@@ -173,7 +173,7 @@ was all pass or all fail, and every arm used the same generic 7-line prompt (`BA
 benchmark like that cannot tell arms apart. Not shown different is not the same as equal. So nothing
 the bake-off chose is assumed to work; each is an arm to measure.
 
-The evaluation runs in [eval-harness](https://github.com/example/eval-harness), as the triage fleet's
+The evaluation runs in eval-harness, as the triage fleet's
 does (`examples/triage-fleet`: a frozen dataset, arms, k runs, paired tests, cost per arm):
 
 - **The dataset: `shop-bugfix`.**

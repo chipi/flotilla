@@ -1,6 +1,6 @@
 # fleetd — build, deploy, operate (host)
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/recipes/fleetd-deploy.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/recipes/fleetd-deploy.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/recipes/fleetd-deploy.md` at `dcc3e63`), kept as the record.
 > fleetd retired on 2026-11-16; flotillad replaced it.
 
 > **Retired 2026-11-16.** The fleets run in [flotilla](https://github.com/chipi/flotilla) (its `docs/operations/`); the code this page describes left this repo, and the host's `fleetd` and `bugfix-metrics` jobs are gone. Kept for the record; the commands below no longer apply.

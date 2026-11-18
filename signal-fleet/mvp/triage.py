@@ -112,13 +112,13 @@ REPLY_MAX_TOKENS = int(config.env("SF_TRIAGE_MAX_TOKENS", "8192"))
 # — only a BENIGN-looking history (low count / low level / resolved) may corroborate.
 CORROB_PROBES = {"service_logs", "metric", "trace", "source_state", "occurrence_history"}
 INDEP_PROBES = {"service_logs", "metric", "trace", "source_state"}
-# \btest\b misses camelCase hooks (crashOrreryTest) — the known crash-test hook
-# is listed explicitly; do NOT loosen to bare `test` (matches "latest").
+# \btest\b misses camelCase hooks (a crashShopTest) — an installation lists its known crash-test
+# hooks in cleanup_markers; do NOT loosen to bare `test` (matches "latest").
 # staging/\bdev\b/\bverify\b: non-prod environments and verification runs are
-# noise-at-source in the prod tracker (PODCAST-7: env=dev from a laptop run).
-CLEANUP_MARKERS = re.compile(
-    r"delete me|safe to delete|\btest\b|validation|probe|smoke|e2e|ladder-verify|"
-    r"wiring|placeholder|dashless|crashorrerytest|staging|\bdev\b|\bverify\b", re.I)
+# noise-at-source in the prod tracker (env=dev from a laptop run).
+CLEANUP_MARKERS = re.compile("|".join(
+    [r"delete me|safe to delete|\btest\b|validation|probe|smoke|e2e|ladder-verify|"
+     r"wiring|placeholder|dashless|staging|\bdev\b|\bverify\b"] + installation.get("cleanup_markers", [])), re.I)
 
 # Operational states that are NOT code bugs: a guardrail firing (its own incident,
 # working as designed), a billing state, or a DOWNSTREAM effect of one. These are
@@ -140,7 +140,7 @@ OPERATIONAL_MARKERS = [
 
 # An upstream provider's SHARED pool refused (OpenRouter 429, limit_source=
 # upstream_provider_shared_pool): not our key, not our quota, not our code, and LiteLLM
-# already retried (num_retries). Operator call 2026-10-01 (homelab #17): not actionable,
+# already retried (num_retries). Operator call 2026-10-01: not actionable,
 # never ticketed. A 429 against OUR key/quota carries a different limit_source and still
 # reaches the triager. GlitchTip cuts the title before limit_source, so this marker also
 # reads the full exception value (raw.metadata.value) — only this marker does, so the
@@ -148,15 +148,16 @@ OPERATIONAL_MARKERS = [
 UPSTREAM_LIMIT_MARKER = re.compile(
     r"limit_source\W+upstream_provider_shared_pool|temporarily rate-limited upstream", re.I)
 
+# The installation's operational_reasons ({class: text}) replace these, to cite its own decisions and alerts.
 _OPERATIONAL_REASON = {
     "upstream-rate-limit": ("operational state (upstream-rate-limit) — the provider's shared "
-                            "pool refused upstream of us; nothing in our code or config to fix "
-                            "(homelab #17). Acknowledged, not ticketed."),
-    "assistant-failover": ("operational state (assistant-failover) — LiteLLM's call to the X3 "
-                           "assistant failed (stopped, hung or unreachable) and the `assistant` "
-                           "alias failed over to OpenRouter, so the caller got its answer "
-                           "(RFC-0008). An outage of the X3 is the x3-assistant-down alert's job. "
+                            "pool refused upstream of us; nothing in our code or config to fix. "
+                            "Acknowledged, not ticketed."),
+    "assistant-failover": ("operational state (assistant-failover) — LiteLLM's call to the "
+                           "assistant backend failed (stopped, hung or unreachable) and the `assistant` "
+                           "alias failed over to OpenRouter, so the caller got its answer. "
                            "Acknowledged, not ticketed."),
+    **installation.get("operational_reasons", {}),
 }
 
 
@@ -172,7 +173,7 @@ def operational_class(signal):
     meta = ((signal.get("raw") or {}).get("metadata") or {}).get("value", "")
     if UPSTREAM_LIMIT_MARKER.search(hay + " " + str(meta)):
         return "upstream-rate-limit"
-    # The latest event names the X3 assistant and nothing else (sources.attach_backend): a call
+    # The latest event names the assistant backend and nothing else (sources.attach_backend): a call
     # the `assistant` alias failed over. Any other backend, or none found, reaches the triager.
     if (signal.get("labels") or {}).get("project") == "litellm" and \
             (signal.get("raw") or {}).get("_backends") == [config.ASSISTANT_BACKEND]:
@@ -273,7 +274,7 @@ def _client():
     """The model client and the alias for this call, always built from triage's own settings
     (SF_OPENROUTER_URL, OPENROUTER_API_KEY, SF_TRIAGE_MODEL), so the request is the same bytes as before.
     FLOTILLA_MODELS (flotillad's models section) is not read here: its aliases are named differently
-    (the mini's triage-pro is model fleet-triage-pro), and choosing triage's model from it is a later
+    (a host's model aliases are its own), and choosing triage's model from it is a later
     behaviour change, not this move."""
     url = config.OPENROUTER_URL
     if not url.endswith(_ENDPOINT_PATH):

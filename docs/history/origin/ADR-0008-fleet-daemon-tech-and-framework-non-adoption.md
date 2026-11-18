@@ -1,6 +1,6 @@
 # ADR-0008 — Fleet daemon in Go; deliberate framework non-adoption (with revisit triggers)
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md` at `dcc3e63`), kept as the record.
 > fleetd's technology decision (2026-07-25); flotilla's are its own ADRs.
 
 **Status:** Accepted (2026-07-25)

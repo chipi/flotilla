@@ -148,7 +148,7 @@ the host's `com.example.fleetd` and `com.example.bugfix-metrics` jobs retired (a
 `~/flotilla/retired/`); their three alert rules deleted; the installation's research repo's scripts
 read flotilla's copy.
 
-- Check that nothing on the host or the model host runs the installation copies (launchd jobs,
+- Check that nothing on the host or the model host runs the installation's copies (launchd jobs,
   crontabs, deploy
   scripts reading them).
 - Delete `fleetd/`, `signal-fleet/`, `bugfix-fleet/` there, with a pointer to flotilla.

@@ -1,6 +1,6 @@
 # RFC-0002 — Autonomous bug-fix fleet on the installation (cheap workers, Claude PR-gate)
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md` at `dcc3e63`), kept as the record.
 > The bug-fix fleet's first design; the platform's is [RFC-0010](../../rfc/RFC-0010-bugfix-on-the-platform.md).
 
 **Status:** Proposed
@@ -196,7 +196,7 @@ reporter loops fail safe (needs-info/stuck, never a silent wrong fix). Gate
 checklist, stage exits, and the shared operational foundations (spend-capped
 keys, kill switches, incident→fixture runbook, weekly ritual) live in the
 master rollout plan:
-[`docs/fleet-architecture.md` → Rollout status](https://github.com/example/ops/blob/main/docs/fleet-architecture.md#rollout-status)
+`docs/fleet-architecture.md` → Rollout status
 (Track B). Fleet 1 rolls out independently of Fleet 2 — whichever passes its
 gate first goes first.
 

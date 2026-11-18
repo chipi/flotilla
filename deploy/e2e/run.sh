@@ -410,6 +410,15 @@ if [ "${DEMO:-}" = 1 ]; then
   UA="$(cli user add demo --role admin 2>&1)"
   DEMOTOK="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
   [ ${#DEMOTOK} = 68 ] || { echo "DEMO FAIL: the demo admin: $UA"; exit 1; }
+  # one plan waits for a person: the CRM field fix promoted to propose, and a new contact to fix
+  dcli() { $D exec -e FLOTILLA_TOKEN="$DEMOTOK" flotillad /usr/local/bin/flotilla "$@"; }
+  dcli autonomy crm/fix propose --reason "demo: a plan that waits for you" >/dev/null 2>&1
+  dcli action autonomy crm.update_field propose --reason "demo: a plan that waits for you" >/dev/null 2>&1
+  $D exec flotilla-worker-ops-read python3 -c 'import json; p="/tmp/flotilla-example/crm/contacts.json"; c=json.load(open(p)); c.append({"id": "c-110", "name": "Eva Novak", "email": "eva.novak@example.org", "country": "france", "created": "2025-09-02"}); json.dump(c, open(p, "w"), indent=1)' \
+    && dcli run crm/scan >/dev/null 2>&1
+  for _ in $(seq 1 45); do dcli case list --all 2>&1 | grep >/dev/null "crm:contact/c-110/country .*awaiting_approval" && break; sleep 2; done
+  dcli case list --all 2>&1 | grep >/dev/null "crm:contact/c-110/country .*awaiting_approval" \
+    && ok "demo: a CRM field fix waits for approval" || bad "demo: no plan awaits approval: $(dcli case list --all 2>&1 | grep c-110)"
   printf 'localhost {\n\ttls internal\n\treverse_proxy flotillad:8486\n}\n' > "$WORK/Caddyfile.demo"
   $D run -d --name flotilla-e2e-caddy --label $LABEL -p "127.0.0.1:$DEMO_PORT:443" --memory 256m \
     -v "$WORK/Caddyfile.demo:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" >/dev/null && $D network connect e2e-ui flotilla-e2e-caddy \
@@ -495,7 +504,7 @@ $D exec flotilla-worker-triage sh -c 'touch /home/worker/signal-fleet/w && rm /h
   && ok "the worker can write its state volume" || bad "the worker cannot write its state volume"
 SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OBSERV_DISABLED=1 flotilla-worker-triage \
   python3 -c 'import triage; print(triage.PROMPT_SHA, triage._signal_intro({"alertname": "x", "summary": "No space left on device"}).count("PRE-CLASSIFICATION HINT"))' 2>&1 | tail -1)"
-[ "$SK" = "d99c9ab6 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA d99c9ab6, the hint loads)" \
+[ "$SK" = "96a4218f 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 96a4218f with the example facts, the hint loads)" \
   || bad "triage in the worker image: '$SK'"
 
 echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's workers' listener"

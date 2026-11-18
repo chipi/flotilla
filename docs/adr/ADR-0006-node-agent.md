@@ -15,7 +15,7 @@ The host, the model host and the production VPS are three installations of that 
 
 What the standard needs from a host: an account with sudo for the operator, reached over SSH.
 
-Facts on the first host, the host (checked 2026-11-09): the operator account has passwordless sudo,
+Facts on the first host (checked 2026-11-09): the operator account has passwordless sudo,
 and root LaunchDaemons are installed by `infra/host-setup.sh`; a dedicated account with exactly
 listed sudo commands already exists (`_dockerdev`, checked with `visudo -c`); the production Docker
 engine is driven as `_dockerhost`. The backup job (`com.example.db-backup`) is a root LaunchDaemon,
@@ -172,7 +172,7 @@ capability with its own rules.
 
 ### 12. v1 scope
 
-v1 is one host (the host), one write (`backup.rerun_observability`), in shadow: flotillad records the
+v1 is one host, one write (`backup.rerun_observability`), in shadow: flotillad records the
 plan and sends nothing to the host. v1 builds §1 to §7, the log and chain head of §8, the operator
 build of §9, `node list` and the disconnected alert of §10. The connector is **outbound only**
 (notifications); relaying approvals comes with the first promotion to propose, since v1 approves by

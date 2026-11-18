@@ -181,4 +181,4 @@ locales a week is not.
   `flotilla-seo@flotilla-seo.iam.gserviceaccount.com` sees all 5 properties as a restricted user (a
   token signed with `openssl` on the host, then each property's top queries and sitemaps read). The
   other 5 Umami websites moved into `seo-read`; `flotilla-seo` reads each one's stats and is refused
-  the api player's.
+  the api's player.

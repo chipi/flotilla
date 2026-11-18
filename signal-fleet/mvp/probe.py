@@ -26,7 +26,7 @@ def main():
     except Exception as e:
         print("  grafana poll ERROR:", e)
 
-    sig = sources.orrery_staleness()
+    sig = sources.staleness_alert()
     if sig is None:
         print("== no live shop-staleness signal -> synthetic (correlation test) ==")
         sig = {
@@ -42,7 +42,7 @@ def main():
     print("signal:", sig["alertname"], "| fp:", sig["fingerprint"])
 
     print("== correlated evidence bundle ==")
-    ev = correlate.evidence_for_orrery_staleness(sig)
+    ev = correlate.evidence_for_staleness(sig)
     for name, val in ev["queries"].items():
         print(f"  [{name}] {_preview(val)}")
 

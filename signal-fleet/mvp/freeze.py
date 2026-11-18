@@ -19,7 +19,7 @@ functions of (signal, args), so the union is well-defined.
 Basic redaction: IPv4 -> <ip>. Fixtures land in REFERENCE_DIR (mini-local, NOT the
 repo) — they contain real logs; review before ever committing (data-hygiene rule).
 
-  SF_OBSERV_DISABLED=1 python3 freeze.py        # freeze orrery-staleness + GlitchTip
+  SF_OBSERV_DISABLED=1 python3 freeze.py        # freeze the staleness alert + GlitchTip
 """
 import datetime
 import json
@@ -27,6 +27,7 @@ import os
 import re
 
 import config
+import installation
 import probes
 import scrub as _scrub
 import sources
@@ -132,18 +133,22 @@ def freeze_glitchtip(limit=20):
         _write(fid, sig, table, "glitchtip", disps)
 
 
-def freeze_orrery_staleness():
+def freeze_staleness():
+    """The installation's staleness_fixture {id, fingerprint, alertname, labels, summary}; none, nothing frozen."""
+    fx = installation.get("staleness_fixture")
+    if not fx:
+        return
     sig = {
-        "fingerprint": "grafana:orrery-stale",
-        "occurrence_id": "grafana:orrery-stale@frozen",
+        "fingerprint": fx["fingerprint"],
+        "occurrence_id": fx["fingerprint"] + "@frozen",
         "source": "grafana",
-        "alertname": "Orrery launch data stale (no refresh in 7h)",
-        "labels": {"alertname": "Orrery launch data stale"},
-        "summary": "orrery data refresh alarm; verify against evidence",
+        "alertname": fx["alertname"],
+        "labels": fx["labels"],
+        "summary": fx["summary"],
         "startsAt": None,
     }
     table, disps = _record_probe_table(sig)
-    _write("grafana-orrery-stale", sig, table, "grafana", disps)
+    _write(fx["id"], sig, table, "grafana", disps)
 
 
 def refreeze_existing():
@@ -174,6 +179,6 @@ if __name__ == "__main__":
     if not config.OBSERV_DISABLED:
         print("note: SF_OBSERV_DISABLED not set — freeze passes will emit fleet "
               "traces/metrics. Set SF_OBSERV_DISABLED=1 to suppress.")
-    freeze_orrery_staleness()
+    freeze_staleness()
     freeze_glitchtip()
     print(f"\nfixtures in {config.REFERENCE_DIR} — fill ground_truth, then score.py")

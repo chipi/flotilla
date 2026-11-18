@@ -141,7 +141,7 @@ is shown and approved like an override (§6) and recorded with every run (§8).
 
 **`installation` and `environment`.** `environment` is today's required telemetry label, pushed to
 every run as `FLOTILLA_ENVIRONMENT`. `installation` names this flotilla: two installations may share
-an environment (a capped and an acting one on one installation), never an installation name. Every run
+an environment (a capped and an acting one side by side), never an installation name. Every run
 row, record, metric and span carries both.
 
 ### What travels and what stays

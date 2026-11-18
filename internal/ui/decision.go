@@ -92,6 +92,21 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	if d.After == "" {
 		d.After = "flotillad signs the plan and the host agent on " + hostOf(c.Target) + " runs it once."
 	}
+	if a, ok := registryAction(u, p.Action); ok && a.Executor == registry.ExecRoutine {
+		// ADR-0017: a routine carries it out against the system it reaches; no host is involved
+		by := u.executorOf(p.Action)
+		if by == "" {
+			by = "no routine is enabled to carry it out, so"
+			d.Command = "nothing runs: no enabled routine carries this action out"
+			d.After = "Approving records your yes; " + by + " nothing changes until one is."
+		} else {
+			d.Command = "once you approve, " + by + " carries it out, once"
+			d.After = "Approving starts " + by + " once: it re-checks what the plan assumed, then makes exactly this change."
+		}
+		if a.Check.Verify != "" {
+			d.After += fmt.Sprintf(" A check (%s) looks for the result within %s.", a.Check.Verify, words(time.Duration(a.Check.Within)))
+		}
+	}
 	if d.Change != "" && executor != "" {
 		d.After = "Approving starts " + executor + " once: it opens a draft PR with exactly this diff. Merged, the case is verified; closed without merging, it is escalated. You merge, always: the fleet never does."
 	} else if d.Change != "" {

@@ -32,8 +32,8 @@ with the token in `.e2e/demo-admin.token`. `DEMO_PORT` changes the port.
 What to look at:
 
 - **Now:** what the fleets handled in the last 24 hours, and what needs you;
-- **Approvals:** plans waiting for a person; empty in the demo, since every example runs in
-  `shadow` (it records what it would do) until a person promotes it on **Govern**;
+- **Approvals:** plans waiting for a person. The examples run in `shadow` (they record what they
+  would do); the demo promotes one, the CRM field fix, to `propose`, so one plan waits for you;
 - **Cases:** each case's timeline, the plan, why policy decided as it did, and what the agent read;
 - **Fleets:** every fleet's routines, runs, cost and logs; a STOP for each fleet and for all.
 

@@ -1,6 +1,6 @@
 # RFC-0003 — Signal-to-Action Fleet (o11y triage: dismiss / file / escalate)
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0003-signal-to-action-fleet.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0003-signal-to-action-fleet.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0003-signal-to-action-fleet.md` at `dcc3e63`), kept as the record.
 > The triage fleet's design, as it ran from 2026-07; on the platform, [RFC-0004](../../rfc/RFC-0004-agent-pipeline.md).
 
 **Status:** Proposed
@@ -182,7 +182,7 @@ dismiss-with-evidence, then File; escalate stays human forever).
 
 Remaining gate items before shadow (occurrence-churn fix, recurrence dedup,
 daemon, digest) and the full tick list live in the master rollout plan:
-[`docs/fleet-architecture.md` → Rollout status](https://github.com/example/ops/blob/main/docs/fleet-architecture.md#rollout-status)
+`docs/fleet-architecture.md` → Rollout status
 (Track A). Fleet 2 rolls out independently of Fleet 1.
 
 ## Open questions

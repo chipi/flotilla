@@ -262,11 +262,16 @@ REPO_MAP = dict(installation.get("repo_map", {}))
 OPS_REPO = os.environ.get("SF_OPS_REPO", "")
 
 # storm rules: alertname regex → group key. Curated, reviewed like config.
+# The installation's own classes (group_rules: [{pattern, ignore_case?, key}]) sit after the first rule, where its
+# first such class always stood, so a text matching two rules keeps the group it had.
+_INSTALLATION_GROUP_RULES = [
+    (re.compile(r["pattern"], re.I if r.get("ignore_case") else 0), r["key"])
+    for r in installation.get("group_rules", [])]
 GROUP_RULES = [
     (re.compile(r"gemini|circuit breaker tripped: provider=gemini|DEADLINE_EXCEEDED|"
                 r"high demand|provider_retries_exhausted|503 UNAVAILABLE", re.I),
      "gemini-provider-instability"),
-    (re.compile(r"dgx-whisper|resilience fuse", re.I), "dgx-whisper-fuse"),
+    *_INSTALLATION_GROUP_RULES,
     (re.compile(r"span batch|span export", re.I), "otel-span-export"),
     # 2026-08 flood classes — collapse distinct-fingerprint same-class signals onto
     # ONE group issue (the 2nd+ finds the group via ledger_lookup(fp, group_key) and

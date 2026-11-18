@@ -15,7 +15,7 @@ commit f6a18e7) and moved here when that note closed on 2026-11-17. The paths it
 (`infra/…`, `docs/adr/ADR-0008`, `rules.yaml`, `fleetd/README.md`) belong to the installation's ops
 repo. The use
 cases and decisions flotilla had not covered by 2026-11-17 are carried in the flotilla session's
-[backlog](https://github.com/example/ops/blob/main/docs/wip/flotilla-items.md) as input
+backlog (`docs/wip/flotilla-items.md`) as input
 for the next cycle.
 **Input:** the operator's
 *Local-First SEO Intelligence — Architecture Brief* (a proposal, treated here as one candidate
@@ -280,7 +280,7 @@ All three keep the same skeleton (§1.3). They differ in what runs the LLM step.
    - **Operator action:** create a Google Cloud project with the Search Console API enabled, and
      either a service account added as a restricted user on the shop property, or an OAuth
      client with the `webmasters.readonly` scope.
-   - **Then installation builds:**
+   - **Then the installation builds:**
      - a launchd GSC collector writing Parquet, with a stale alert;
      - a sitemap and hreflang checker;
      - two DuckDB detectors (A1 regressions, A3 opportunities);

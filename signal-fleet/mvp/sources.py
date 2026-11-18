@@ -1,7 +1,7 @@
 """Signal sources — the trigger side. MVP: poll Grafana Alerting.
 
-The first slice reacts to one signal: the *shop launch-data-stale* Grafana
-alert. `firing_alerts()` is the general poll; `orrery_staleness()` picks the one.
+The first slice reacts to one signal: the *launch-data-stale* Grafana
+alert. `firing_alerts()` is the general poll; `staleness_alert()` picks the one.
 """
 import hashlib
 import json
@@ -10,6 +10,7 @@ import time
 
 import config
 import guards
+import installation
 from http_util import get_json
 
 # Test / synthetic run markers — signals carrying these are noise-at-source and
@@ -123,11 +124,14 @@ def to_signals(alert, data=None, now=None):
     return out
 
 
-def orrery_staleness():
-    """The one signal the first slice acts on, or None if not firing."""
+def staleness_alert():
+    """The one signal the first slice acts on, or None if not firing or none configured. The installation's
+    staleness_alert_match is a list of alternatives, each a list of lowercase substrings that must all be in
+    the alert name."""
+    match = installation.get("staleness_alert_match", [])
     for a in firing_alerts():
         name = a.get("labels", {}).get("alertname", "").lower()
-        if "launch data stale" in name or ("orrery" in name and "stale" in name):
+        if any(all(part in name for part in alt) for alt in match):
             return to_signal(a)
     return None
 

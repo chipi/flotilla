@@ -1,6 +1,6 @@
 # 0005 — bake-off matrix arc (upping-levels measured, two-factor model)
 
-> **Moved from the installation's ops repo on 2026-11-17** (`docs/history/0005-bakeoff-matrix-arc.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/history/0005-bakeoff-matrix-arc.md)), kept as the record.
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/history/0005-bakeoff-matrix-arc.md` at `dcc3e63`), kept as the record.
 > The bug-fix bake-off of 2026-07; its code is flotilla's `bugfix-fleet/`.
 
 **Date:** 2026-07-23 (two sessions, same day)
@@ -11,7 +11,7 @@ hardened; the L0/L1/L2 upping-level matrix is measured on the base config,
 yielding the two-factor model — tickets carry *acceptance*, repo module docs
 carry *topology* — and the module-README convention shipped to the shop.
 
-> Sibling to [`0004-agent-config-and-skills.md`](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/history/0004-agent-config-and-skills.md).
+> Sibling to `0004-agent-config-and-skills.md`.
 > Cold-start reading order: `docs/wip/bakeoff-handover.md` (the operational
 > read-first, rewritten at this arc's close) → BAKEOFF §6.1–6.3 → this doc's
 > Open threads.

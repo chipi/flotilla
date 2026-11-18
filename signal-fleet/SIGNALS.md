@@ -449,10 +449,10 @@ the data path regardless. The Victoria\* backends stay pull-only correlation inp
 **Baseline staging (operator, 2026-07-24): shop → api.**
 - **Phase A — shop (prove the plumbing).** Thinnest surface, a *clean* slice:
   the **launch-data-stale Grafana alert** as trigger + fully-queryable
-  **VictoriaLogs / VictoriaMetrics** for correlation. (Shop's public browser
+  **VictoriaLogs / VictoriaMetrics** for correlation. (The shop's public browser
   errors can't reach the tailnet-only GlitchTip — its project holds only
   test/telemetry events — so the **GlitchTip trigger comes online at Phase B**,
-  where api's server-side errors actually land.) Proves trigger → query →
+  where the api's server-side errors actually land.) Proves trigger → query →
   disposition → File/Dismiss end-to-end cheaply. **Caveat (R2-5): the staleness
   alert's natural disposition is `config-enhancement`/Dismiss, not `bug` — so
   Phase A does NOT validate the `File → bug → Fleet 1` seam.** That arrives with
@@ -584,7 +584,7 @@ shop → api), **overturn mechanism** (§9, GH label/comment), **signal scope**
 
 **Status (2026-07-24): the first slice is BUILT and verified live** —
 [`mvp/`](mvp/README.md) runs poll → correlate → triage → act → ledger; on the
-shop staleness signal it dismissed from real refresh-log evidence and
+the shop's staleness signal it dismissed from real refresh-log evidence and
 recommended the alert fix. The plan below is the frame; §13.4 is the reuse map.
 
 **Goal:** the smallest end-to-end loop that proves the spine — one real shop
@@ -603,7 +603,7 @@ wherever possible (§13.4).
    triages reliably — do not re-run that study.
 3. **File target:** the GitHub repo the fleet opens issues in + the label set
    (`bug` → Fleet 1, `config-enhancement` → operator). **OPEN:** the target repo
-   (shop's own vs a dedicated fleet-issues repo).
+   (the shop's own vs a dedicated fleet-issues repo).
 4. **Host:** the orchestrator runs on the **host** (same box as Fleet 1 and every
    source → localhost reads, no ACL).
 
@@ -702,8 +702,8 @@ shared across fleets; our signal-specific addition is `slo`/error-budget.
   (job/instance/window/trace_id) — the pre-wired links mostly don't exist yet
   (only a conditional logs→traces derived field), so building them is future
   `config-enhancement` work. Baseline staged **shop → api** (Phase A proves
-  plumbing on shop's thin-but-clean staleness-alert slice; Phase B proves
-  correlation on api's rich surface). Scope reactive-only; UX/Umami
+  plumbing on the shop's thin-but-clean staleness-alert slice; Phase B proves
+  correlation on the api's rich surface). Scope reactive-only; UX/Umami
   designed-in but wired by another agent (issue #8), not a baseline blocker.
 - **2026-07-24 (correction — GlitchTip is also a trigger):** Not
   Grafana-Alerting-only. GlitchTip triggers on errors/regressions too; its trigger

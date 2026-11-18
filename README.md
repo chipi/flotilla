@@ -47,11 +47,11 @@ CRM, a mail service, the sites, a scripted model), so nothing reaches the intern
 <https://localhost:8443> and sign in with the token in `.e2e/demo-admin.token`. `make demo-down`
 removes it. The full setup: [Developing flotilla](docs/development.md).
 
-| A case: what was detected, planned and decided, and why | Autonomy: each action's level and the evidence for the next |
+| A plan that waits for you, and what approving starts | A case: what was detected, planned and decided, and why |
 | --- | --- |
-| ![A CRM case's timeline and policy decision](docs/images/readme/case.png) | ![The autonomy page](docs/images/readme/autonomy.png) |
-
-![Every fleet, its health and its cost](docs/images/readme/fleets.png)
+| ![The approvals page](docs/images/readme/approvals.png) | ![A CRM case's timeline and policy decision](docs/images/readme/case.png) |
+| **Autonomy: each action's level and the evidence for the next** | **Every fleet, its health and its cost** |
+| ![The autonomy page](docs/images/readme/autonomy.png) | ![The fleets page](docs/images/readme/fleets.png) |
 
 ## The example fleets
 

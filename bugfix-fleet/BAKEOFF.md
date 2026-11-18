@@ -1279,7 +1279,7 @@ hard physics/math bugs anchor the top; nothing needs a browser. Ladder: 1 easy-m
 
 ### `example/api` (Py back + UI + infra) — ⚠ TO REBUILD at its own base `C`
 > The 8 below were picked **scattered across history** (PRs #173…#1196) before the
-> coexistence-base model. They must be **re-selected around a api base `C`** in
+> coexistence-base model. They must be **re-selected around an api base `C`** in
 > the api's Phase 0, the same way shop was. Kept here as the candidate pool:
 | # | bug | fix ref | area | difficulty | test |
 |---|---|---|---|---|---|

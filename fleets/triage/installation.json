@@ -1,4 +1,5 @@
 {
+  "cleanup_markers": ["crashshoptest"],
   "repo_map": {
     "SHOP": "example/shop",
     "API": "example/api"
@@ -19,6 +20,27 @@
     "shop-web": "shop",
     "api-prod": "api"
   },
+  "staleness_alert_match": [["launch data stale"], ["shop", "stale"]],
+  "staleness_evidence": [
+    {"name": "refresh_logs", "kind": "logs", "query": "app:shop AND _time:{window} | sort by (_time) desc | limit 25"},
+    {"name": "refresh_job_logs", "kind": "logs", "query": "job:shop-data-refresh AND _time:{window} | sort by (_time) desc | limit 25"},
+    {"name": "shop_up", "kind": "metric", "query": "up{job=~\".*shop.*\"}"}
+  ],
+  "staleness_fixture": {
+    "id": "grafana-shop-stale",
+    "fingerprint": "grafana:shop-stale",
+    "alertname": "Shop launch data stale (no refresh in 7h)",
+    "labels": {"alertname": "Shop launch data stale"},
+    "summary": "shop data refresh alarm; verify against evidence"
+  },
+  "source_state": {
+    "description": "shop data-refresh state (last successful refresh)",
+    "query": "job:shop-data-refresh AND _time:24h | sort by (_time) desc | limit 10"
+  },
+  "operational_reasons": {},
+  "group_rules": [
+    {"pattern": "shop-worker|resilience fuse", "ignore_case": true, "key": "shop-worker-fuse"}
+  ],
   "scrub": [
     {"pattern": "\\b(?:www\\.)?shop\\.example\\b", "replace": "example-shop.test"},
     {"pattern": "\\bprod-api\\b", "replace": "prod-host"}

@@ -35,7 +35,7 @@ def _spent(disps):
 
 
 def run_once(use_synthetic=False, dry_run=True):
-    sig = SYNTHETIC if use_synthetic else sources.orrery_staleness()
+    sig = SYNTHETIC if use_synthetic else sources.staleness_alert()
     if sig is None:
         print("no shop-staleness alert firing — nothing to do.")
         return []

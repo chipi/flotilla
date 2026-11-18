@@ -20,10 +20,10 @@ SYNTHETIC = {
 
 
 def main():
-    sig = sources.orrery_staleness()
+    sig = sources.staleness_alert()
     print("LIVE signal" if sig else "no live signal -> synthetic")
     sig = sig or SYNTHETIC
-    ev = correlate.evidence_for_orrery_staleness(sig)
+    ev = correlate.evidence_for_staleness(sig)
     print("evidence queries:", {k: (len(v) if isinstance(v, str) else 1)
                                  for k, v in ev["queries"].items()})
     disp = triage.triage(sig, ev)
