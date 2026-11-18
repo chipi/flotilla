@@ -19,13 +19,14 @@ stateDiagram-v2
     handed_over --> planned: acting routine, after a code re-check
     handed_over --> closed: resolved itself (its acting routine, or for a kind no routine acts on, the monitor that no longer finds it)
     handed_over --> escalated: the re-check contradicts the diagnosis, or the recurrence rule is reached
-    planned --> closed: shadow, plan recorded
+    planned --> closed: record, plan recorded
     planned --> awaiting_approval: policy says propose
     planned --> executing: policy says auto
     planned --> handed_over: deferred (lock, hold, stand-down, limits)
     planned --> escalated: policy refuses (registry, autonomy)
     awaiting_approval --> executing: operator approves
     awaiting_approval --> escalated: operator rejects or it expires
+    awaiting_approval --> handed_over: its version was rolled back, the plan is withdrawn
     executing --> checking: done
     executing --> closed: precondition no longer true, resolved itself
     executing --> escalated: failed or unknown
@@ -55,7 +56,7 @@ From the reference installation (the v1 chain).
    its target is the case's; autonomy is the lowest of the routine's, the action's earned
    autonomy, the host's autonomy cap, taint and the freeze; the lock is free, limits and holds
    clear.
-   - In **shadow**: the plan is recorded and the case closes.
+   - In **record**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
      the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first
      action promoted to propose). The approval starts a new run.
@@ -79,6 +80,16 @@ bugfix fleet's intake.
 A **run** is one routine execution; a case may span several (a diagnose run, a planning run, a check
 run). No run waits: an approval makes flotillad sign and send the execution, and a due check is an
 event that starts the check run.
+
+## Routine versions and a case
+
+A routine acts at its **live version**; a run records the version it started with, and a promote
+leaves a run in flight to finish as that version. A **roll back** (operator only,
+`flotilla rollback`) retires the live version and makes the previous one live. Its run in flight is
+cancelled as a STOP cancels it. Its plans waiting in `awaiting_approval` are marked rolled back and
+can no longer be approved or rejected (409), and their cases move to `handed_over` (event
+`case.rolled_back`, the target lock released) so the live version plans them again. A plan the
+previous version made stays approvable. See [ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md).
 
 ## Stopping a run in flight
 

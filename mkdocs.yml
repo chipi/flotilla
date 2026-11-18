@@ -109,6 +109,7 @@ nav:
     - ADR-0017 — Routine actions: adr/ADR-0017-routine-actions.md
     - ADR-0018 — Harness parts: adr/ADR-0018-harness-parts.md
     - ADR-0019 — Durable runs: adr/ADR-0019-durable-runs.md
+    - ADR-0020 — Routine versions, stations and harnesses: adr/ADR-0020-routine-versions-stations-harnesses.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md

@@ -3,6 +3,11 @@
 **Status:** Accepted (operator, 2026-11-11)
 **Date:** 2026-11-11
 
+Amended by [ADR-0020](ADR-0020-routine-versions-stations-harnesses.md) (2026-11-18): a routine has
+versions (live, shadow, previous, retired), each worked by its stations; a routine is a folder with
+`routine.yaml` and `v<n>/`, and a flat spec is the same routine with one version. Its id and a run
+are unchanged.
+
 ## Context
 
 "Job" named flotilla's declared unit of work: a trigger, a worker, steps and a stage, inside a fleet

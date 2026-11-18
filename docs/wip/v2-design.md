@@ -9,9 +9,10 @@ A new version runs in shadow beside the live one without any effect on the syste
 and goes live on the operator's word; if it turns out wrong, the operator rolls back. Every routine
 moves to this format; a routine that calls no model has versions and no stations.
 
-**Status: the spec is done (2026-11-18).** Reviewed in five rounds by an advisor and by the
-installation's fleet session; both gave GO on this text, and on section 6 (evaluation), agreed
-with eval-harness. It becomes ADR-0020 once built and the first routine moves to it.
+**Status: the spec is done (2026-11-18); step 1 built.** Reviewed in five rounds by an advisor and by
+the installation's fleet session; both gave GO on this text, and on section 6 (evaluation), agreed
+with eval-harness. It is [ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md); step 1
+(section 7) is built, steps 2 to 7 are not, and this text stays the design they are built from.
 
 ## 1. A routine and its versions
 

@@ -15,17 +15,18 @@ git.
 
 One file, owned by flotillad. Workers and host agents never open it; they report through the API.
 
-Every table below is built (`internal/store`, schema step 25 on 2026-11-17).
+Every table below is built (`internal/store`, schema step 29 on 2026-11-18).
 
 | Table | Holds |
 | --- | --- |
-| `runs` | run id, routine, the spec's content hash (`spec_hash`: there is no separate specs table), trigger, start, end, status, cost, tokens, models, trace id |
+| `runs` | run id, routine, the version that ran it, the spec's content hash (`spec_hash`: there is no separate specs table), trigger, start, end, status, cost, tokens, models, trace id |
+| `routine_versions` | each version of each routine ([ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md)): number, state (`live`, `shadow`, `previous`, `retired`), the hash recorded when it went live and a manifest of its files (so a freeze failure names them), when it was deployed and went live, who moved it, when and why, whether it was rolled back, the autonomy chosen at its promote and what that promote recorded (the acceptance in force and the evidence given, JSON). At most one `live` and one `previous` per routine, by partial unique index |
 | `cases` | one row per problem: kind, typed target, project, status, holder, lease, urgency, opened and closed at |
 | `case_keys` | `(case, kind, value)`: as many keys as the kind's dedup needs; one canonical key per open case |
 | `case_events` | the timeline, append-only: detected, diagnosed, handed over, planned, approved, executed, checked, attached signals (`caused_by`, `recurrence_of`), feedback, outcomes; each with its actor, run and evidence references |
 | `host_executions` | execution id, case, host, action, parameters, plan hash, how approved, signed at, result (done, failed, unknown, precondition false), check result |
 | `target_locks` | the per-target lock: target, case, taken at |
-| `plans` | each plan a run proposed for a case: action, parameters, plan hash, the policy's outcome and reasons, the autonomy it ran at and what it would have done above it, when it was decided |
+| `plans` | each plan a run proposed for a case: action, parameters, plan hash, the policy's outcome and reasons, the autonomy it ran at and what it would have done above it, when it was decided, the version that made it, and when and by whom a rollback marked it (a marked plan cannot be approved) |
 | `holds` | a hold on a scope until a time: who set it and why, and when and by whom it was lifted (a deploy's stand-down is one) |
 | `case_feedback` | an operator's verdict on a case's diagnosis (right or wrong), the evidence toward autonomy |
 | `notes` | short lessons with a scope; active only once the operator activates them |
@@ -44,6 +45,13 @@ Every table below is built (`internal/store`, schema step 25 on 2026-11-17).
 
 Nothing is deleted or rewritten. A status change is an event; the case row carries the current
 status. The transition table decides which status changes are allowed.
+
+**Every record says which version made it.** `runs`, `run_calls`, `run_loaded`, `plans`,
+`ledger_entries` and `ledger_filings` carry a `version` column (1 for what came before versions; a plan
+or a ledger row takes its run's), and a `case_events` row carries the acting routine's live version
+(0 for an operator's or policy's event). A version's state changes are `events` rows
+(`version.deploy`, `version.update`, `version.promote`, `version.rollback`, `version.retire`, subject
+`<routine>@v<n>`).
 
 **History from the existing fleets:** the triage fleet's ledgers (`dispositions.tsv`, `filed.tsv`)
 are imported as cases with their keys, marked `imported`, keeping their timestamps; the mirror keeps

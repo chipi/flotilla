@@ -25,6 +25,27 @@ actions (ADR-0017). They run on the `ops-read` worker so the e2e runs them end t
 gives them their own worker with its CRM's, campaign tool's or mail service's credentials, and replaces
 `business/store.py` with an adapter to that system.
 
+## A routine: a file, or a folder with versions
+
+A routine is either one flat file, `fleets/<fleet>/<routine>.yaml` (the routine with one version, `v1`),
+or a folder ([ADR-0020](../docs/adr/ADR-0020-routine-versions-stations-harnesses.md)):
+
+```text
+fleets/<fleet>/<routine>/routine.yaml       identity: worker, trigger, detects, autonomy, budget, acceptance, ...
+fleets/<fleet>/<routine>/v<n>/spec.yaml     one version: run, steps, skills, prompts, models, ...
+fleets/<fleet>/<routine>/v<n>/<texts>       the files that version's spec names (paths stay inside v<n>/)
+```
+
+Never both for one routine. `platform/heartbeat` is a folder (one version, identical to its former flat
+file); every other example is a flat file. The first version of a routine goes live when it is deployed;
+a later `v<n>/` arrives as a shadow and goes live only when the operator promotes it (`flotilla versions`,
+`promote`, `rollback`, `retire`, or the routine page). The live and the previous version's folders are
+frozen: a changed one fails `flotillad -check` and its start, so change a live version by adding a new
+number. `acceptance:` (a list from `pairs`, `replay`, `scenario_eval`; `pairs` when absent) names the
+evidence a promote needs. The lowest autonomy level is `record`; a spec that still says
+`autonomy: shadow` (or `max_autonomy: shadow`) is read as `record`, and `-check` says so. The value
+a run reads in `FLEETD_STAGE` is `shadow` for `record`, as before.
+
 ## An installation's own fleets
 
 An installation keeps its fleets in a private repo of its own, in this same layout, and runs them

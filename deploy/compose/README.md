@@ -340,7 +340,10 @@ Each commit of `FLOTILLA_FLEETS_REPO` is exported once to `~/flotilla/fleets-<sh
 `~/flotilla/fleets` is a symlink to the deployed one. A deploy lists the files that differ from what
 the triage worker runs, runs the running tag's `flotillad -check` with the new folder, pauses the
 triage routines (resumed on any exit), points the symlink, recreates flotillad and the triage
-workers, and prints every routine whose spec hash changed. `fleets-deployed.tsv` records each one.
+workers, and prints every routine whose spec hash changed and every routine version whose state or hash
+changed (a deploy that adds a `v2/` prints one new shadow line). A live or previous version whose folder
+changed is frozen: `-check` refuses it before anything is paused, and the deploy ends
+`FLEETS DEPLOY FAIL: versions ...`. `fleets-deployed.tsv` records each one.
 An image deploy (`deploy.sh`) keeps the mounted fleets. A fleets commit that needs a newer flotilla
 is refused by `-check`: deploy the tag first.
 

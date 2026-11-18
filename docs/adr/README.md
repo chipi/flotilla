@@ -68,3 +68,5 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
   (Accepted, 2026-11-18)
 - [ADR-0019 — Durable runs: a checkpoint and a resume](ADR-0019-durable-runs.md) (Accepted,
   2026-11-18)
+- [ADR-0020 — Routine versions, stations and harnesses](ADR-0020-routine-versions-stations-harnesses.md)
+  (Accepted, 2026-11-18; step 1 built)

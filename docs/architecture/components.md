@@ -16,13 +16,14 @@ signs host writes and sends them to the host agent; the acting worker plans and 
 
 | Component | Responsibility |
 | --- | --- |
-| **Registry** | loads `fleets/<fleet>/*.yaml` and the registry of tools and actions; refuses a spec that does not validate, or that offers an action as a tool inside an agent's loop |
+| **Registry** | loads `fleets/<fleet>/*.yaml` (a flat spec, one routine with one version) and `fleets/<fleet>/<routine>/` (`routine.yaml` and `v<n>/`), and the registry of tools and actions; refuses a spec that does not validate, or that offers an action as a tool inside an agent's loop |
 | **Triggers** | starts routines on **time** (every, cron) or on an **event** on a case (handed over to a kind, a check due); checks STOP, pause and budget first |
 | **Runner** | asks a worker to start a run with its spec, run id, trace id, deadline and environment (`FLOTILLA_MODELS`, the trace parent); enforces the timeout; records cost |
 | **Cases** | one record per problem with its keys, status, holder, lease and timeline ([Data](data.md)); a **transition table** enforced on every status change; timers for stuck states; the per-target lock |
 | **Policy** | decides each planned write. It checks, in order: the registry; autonomy (the lowest of the routine's autonomy, the action's autonomy, the host's autonomy cap, taint, the freeze); locks and limits; holds. Then it runs the write, asks the operator, or refuses. It executes only flotilla's own controls itself |
 | **Guardrails** | per-host and platform caps on executions, the circuit breaker, the host incident rule, the autonomy freeze, the recurrence rule |
 | **Workers' listener** | `worker_listen` in flotillad's config: a second listener for the workers' routines, worker tokens only. It serves the fleets' ledger ([RFC-0002](../rfc/RFC-0002-job-runtime.md) §9 step 5), the cases a routine may read (`GET /v1/cases`, `/v1/cases/{id}`), proposing a note on a case, and `/healthz`. With fleet packs it also serves approved pack snapshots by hash ([ADR-0013](../adr/ADR-0013-fleet-packs.md), not built) |
+| **Versions** | `internal/versions` compares the versions loaded with the ones the store recorded at every start and in `-check`: the first version of a routine goes live, later ones arrive as shadows, a live or previous version whose folder changed refuses the start. `internal/store` holds the four states and the operator's promote, roll back and retire, each one transaction with its event ([ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md)); the scheduler runs each routine bound to its live version |
 | **Fleets** | the specs flotillad loads and the playbooks, skills and facts the workers read come from `/opt/flotilla/fleets`: the image's example fleets, or the installation's own mounted over them from its private repo (`deploy/compose/fleets.yml`, `deploy/server/deploy_fleets.sh`; [fleets/README.md](https://github.com/chipi/flotilla/blob/main/fleets/README.md)) |
 | **Packs** (ADR-0013, not built: parked) | hashes the built-in and installation fleet packs, keeps pending and approved snapshots, shows a change, records approvals, rollbacks and prunes, and sets changed routines to shadow |
 | **Approvals** | proposals waiting on the `approvals` channel; an approval (UI, CLI, or the operator's pinned Slack user within limits) is bound to the plan's hash and starts the execution |
@@ -30,7 +31,7 @@ signs host writes and sends them to the host agent; the acting worker plans and 
 | **Signer** | signs every execution with flotillad's Ed25519 key: execution id, case, host id, action, parameters, plan hash, approval, signed and expiry times; the signature covers the exact bytes sent |
 | **Channels** | routes `alerts`, `approvals` and `notifications` to the provider's connector |
 | **Budgets and autonomy** | per routine and fleet: spend and tokens per day; autonomy controls, with who changed them |
-| **API, CLI, UI, MCP** | one API behind all of them. The UI's main screen is the case timeline. MCP has no approve tool |
+| **API, CLI, UI, MCP** | one API behind all of them. The UI's main screen is the case timeline. MCP has no approve tool, and none to promote, roll back or retire a version |
 | **Telemetry** | metrics (retried pushes), structured logs, OpenTelemetry traces, errors |
 
 ## Workers and the runtime (Python)
