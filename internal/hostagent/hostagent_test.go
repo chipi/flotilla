@@ -459,3 +459,20 @@ func TestAgentLogLinesReachFlotillad(t *testing.T) {
 		t.Error("a debug line was forwarded")
 	}
 }
+
+// An agent not yet upgraded past the rename reports its ceiling as "shadow" in hello: the link's state and the
+// store keep "record", so the host page and the migration's work do not drift back.
+func TestHelloCeilingShadowIsStoredAsRecord(t *testing.T) {
+	w := newWorld(t)
+	a := w.agent(t, "host-01", &fakeExec{})
+	a.Ceiling = "shadow"
+	run(t, a)
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
+	if st := w.link.Hosts()[0]; st.Ceiling != "record" {
+		t.Fatalf("the link's state: %+v", st)
+	}
+	waitFor(t, "the store to have it", func() bool {
+		hs, _ := w.api.Store.Hosts(context.Background())
+		return len(hs) == 1 && hs[0].Ceiling == "record"
+	})
+}

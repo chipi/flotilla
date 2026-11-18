@@ -44,3 +44,12 @@ func TestHostLog(t *testing.T) {
 		t.Fatalf("the dropped count and the next minute's line: %s", buf.String()[len(buf.String())-400:])
 	}
 }
+
+// An agent that predates the rename reports its lowest ceiling as "shadow": intake stores "record".
+func TestReportedCeilingIsNormalised(t *testing.T) {
+	for in, want := range map[string]string{"shadow": "record", "record": "record", "propose": "propose", "auto": "auto", "": ""} {
+		if got := reportedCeiling(in); got != want {
+			t.Errorf("reportedCeiling(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

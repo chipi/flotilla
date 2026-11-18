@@ -22,6 +22,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostexec"
 	"github.com/chipi/flotilla/internal/hostwire"
+	"github.com/chipi/flotilla/internal/spec"
 )
 
 // DefaultHeartbeat is the agents' interval unless configured.
@@ -189,7 +190,7 @@ func (s *Server) handle(tc *tls.Conn) {
 	}
 	s.conns[host] = c
 	s.state[host] = &HostState{Host: host, Connected: true, Version: hello.Version, ConnectedAt: at, LastContact: at,
-		ClockOffset: hello.Clock.Sub(at), ChainHead: hello.ChainHead, Ceiling: hello.Ceiling, Allowlist: hello.Allowlist}
+		ClockOffset: hello.Clock.Sub(at), ChainHead: hello.ChainHead, Ceiling: reportedCeiling(hello.Ceiling), Allowlist: hello.Allowlist}
 	s.mu.Unlock()
 	s.Log.Info("host connected", "host", host, "version", hello.Version, "clock_offset", hello.Clock.Sub(at))
 	s.report(host)
@@ -457,4 +458,11 @@ func (s *Server) Notify(host string, n hostwire.NotifyBody) error {
 		return ErrNotConnected
 	}
 	return c.write(hostwire.Notify, n)
+}
+
+// reportedCeiling reads the ceiling a host agent reports. An agent not yet upgraded past the rename still says
+// "shadow" for its lowest level; stored verbatim it would undo what schema step 28 moved to "record".
+func reportedCeiling(c string) string {
+	c, _ = spec.CanonicalLevel(c)
+	return c
 }
