@@ -65,8 +65,8 @@ func writeFiling(ctx context.Context, tx *sql.Tx, ns string, row map[string]stri
 	if err != nil {
 		return 0, err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO ledger_filings (namespace, fingerprint, row, imported, run_id, written_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, ns, fp, raw, imported, runID, at)
+	res, err := tx.ExecContext(ctx, `INSERT INTO ledger_filings (namespace, fingerprint, row, imported, run_id, written_at, version)
+		VALUES (?, ?, ?, ?, ?, ?, `+runVersion+`)`, ns, fp, raw, imported, runID, at, runID)
 	if err != nil {
 		return 0, err
 	}
@@ -153,8 +153,8 @@ func appendEntry(ctx context.Context, tx *sql.Tx, ns, kind string, row map[strin
 	if err != nil {
 		return 0, err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries (namespace, kind, occurrence_id, fingerprint, row, imported, run_id, written_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, ns, kind, row["occurrence_id"], row["fingerprint"], raw, imported, runID, at)
+	res, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries (namespace, kind, occurrence_id, fingerprint, row, imported, run_id, written_at, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, `+runVersion+`)`, ns, kind, row["occurrence_id"], row["fingerprint"], raw, imported, runID, at, runID)
 	if err != nil {
 		return 0, err
 	}

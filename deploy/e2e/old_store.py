@@ -4,6 +4,11 @@
                                     internal/store/store.go: shipped steps never change), with
                                     <runs> runs, half at stage "live", and a "stage" control
   old_store.py check <path>         one JSON line: schema step, runs kept, stages left, controls
+  old_store.py make25 <path>        a store at schema step 25 (the last before routine versions), with the
+                                    word shadow in every place step 28 renames it and in places it must not
+                                    touch; make25 also writes <path>.counts.json (every table's row count)
+  old_store.py check28 <path>        one JSON line: every post-condition of steps 26 to 28 on a migrated
+                                    make25 store, "problems" empty when all hold; needs <path>.counts.json
 
 On 2026-11-11 schema step 3 passed every test on small stores and failed on a production store's 835 runs
 inside flotillad's read-only container ("disk I/O error (6410)"). The e2e stack starts flotillad on
@@ -60,11 +65,137 @@ def _check(path):
         "live_left": q("SELECT COUNT(*) FROM runs WHERE autonomy = 'live'"),
         "stage_controls": q("SELECT COUNT(*) FROM controls WHERE key = 'stage'"),
         "heartbeat_autonomy": q("SELECT COALESCE(MAX(value), '') FROM controls WHERE subject = 'platform/heartbeat' AND key = 'autonomy'"),
+        "old_record": q("SELECT COUNT(*) FROM runs WHERE id LIKE 'old-%' AND autonomy = 'record'"),
+        "shadow_left": q("SELECT (SELECT COUNT(*) FROM runs WHERE autonomy = 'shadow') + (SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'shadow')"),
     })
 
 
+T = "2026-11-17T00:00:00Z"
+
+# Rows holding shadow where step 28 renames it (controls, runs, plans, cases, hosts) and where it must not
+# (a control that is not an autonomy, the events log, the case timeline's text). The same rows as
+# internal/store/versions_test.go makeSchema25, so the Go test and the real migration are checked alike.
+ROWS_25 = [
+    f"""INSERT INTO controls (subject, key, value, actor, at) VALUES
+      ('triage/cycle', 'autonomy', 'shadow', 'operator', '{T}'),
+      ('action:backup.rerun', 'autonomy', 'shadow', 'operator', '{T}'),
+      ('ops/backup-monitor', 'autonomy', 'propose', 'operator', '{T}'),
+      ('platform/heartbeat', 'autonomy', 'auto', 'operator', '{T}'),
+      ('triage', 'note', 'shadow', 'operator', '{T}')""",
+    f"""INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, status, detail) VALUES
+      ('r1', 'triage/cycle', 'h', 'schedule', 'flotillad', 'shadow', '{T}', 'ok', 'ran at shadow'),
+      ('r2', 'triage/cycle', 'h', 'schedule', 'flotillad', 'shadow', '{T}', 'ok', ''),
+      ('r3', 'ops/backup-monitor', 'h', 'schedule', 'flotillad', 'shadow', '{T}', 'ok', ''),
+      ('r4', 'ops/rerun-backup', 'h', 'case', 'flotillad', 'propose', '{T}', 'ok', ''),
+      ('r5', 'ops/rerun-backup', 'h', 'case', 'flotillad', 'propose', '{T}', 'ok', ''),
+      ('r6', 'platform/heartbeat', 'h', 'schedule', 'flotillad', 'auto', '{T}', 'ok', '')""",
+    f"""INSERT INTO cases (id, kind, target, canonical_key, status, resolution, opened_at, status_at) VALUES
+      ('c1', 'failed_backup', 'host:a', 'k1', 'closed', 'shadow_plan_recorded', '{T}', '{T}'),
+      ('c2', 'failed_backup', 'host:b', 'k2', 'closed', 'shadow_plan_recorded', '{T}', '{T}'),
+      ('c3', 'failed_backup', 'host:c', 'k3', 'closed', 'verified', '{T}', '{T}')""",
+    f"""INSERT INTO plans (case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at) VALUES
+      ('c1', 'r4', 'backup.rerun', '{{}}', 'h', 'shadow', 'shadow', 'propose', '[]', '{T}'),
+      ('c2', 'r4', 'backup.rerun', '{{}}', 'h', 'shadow', 'shadow', 'propose', '[]', '{T}'),
+      ('c3', 'r5', 'backup.rerun', '{{}}', 'h', 'propose', 'propose', '', '[]', '{T}')""",
+    f"""INSERT INTO case_events (case_id, at, kind, actor, detail) VALUES
+      ('c1', '{T}', 'case.detected', 'ops/backup-monitor', 'found'),
+      ('c1', '{T}', 'case.planned', 'ops/rerun-backup', 'planned'),
+      ('c1', '{T}', 'case.closed', 'flotillad', 'plan 1 backup.rerun: shadow at shadow, would propose'),
+      ('c2', '{T}', 'case.closed', 'flotillad', 'plan 2 backup.rerun: shadow at shadow, would propose'),
+      ('c3', '{T}', 'case.verified', 'ada', 'looks right')""",
+    f"""INSERT INTO events (at, actor, via, kind, subject, detail) VALUES
+      ('{T}', 'operator', 'cli', 'control.autonomy', 'triage/cycle', 'shadow'),
+      ('{T}', 'operator', 'cli', 'control.autonomy', 'action:backup.rerun', 'shadow: the new action starts at shadow'),
+      ('{T}', 'operator', 'cli', 'control.stop', 'triage', '1')""",
+    f"INSERT INTO hosts (name, created_at, ceiling) VALUES ('host-a', '{T}', 'shadow'), ('host-b', '{T}', 'propose')",
+    f"INSERT INTO run_calls (run_id, routine, at, alias) VALUES ('r1', 'triage/cycle', '{T}', 'a'), ('r2', 'triage/cycle', '{T}', 'a')",
+    f"INSERT INTO run_loaded (run_id, routine, at, kind, trust, title, source) VALUES ('r1', 'triage/cycle', '{T}', 'playbook', 'source', 't', 's')",
+    f"INSERT INTO ledger_filings (namespace, fingerprint, row, run_id, written_at) VALUES ('triage/cycle', 'fp', '{{}}', 'r1', '{T}')",
+    f"INSERT INTO ledger_entries (namespace, kind, row, run_id, written_at) VALUES ('triage/cycle', 'decision', '{{}}', 'r1', '{T}'), ('triage/cycle', 'decision', '{{}}', 'r2', '{T}')",
+]
+
+
+def _counts(db):
+    names = [r[0] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        " AND name NOT IN ('routine_versions', 'schema_version')")]
+    return {n: db.execute(f"SELECT COUNT(*) FROM {n}").fetchone()[0] for n in names}
+
+
+def make25(path):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    for f in (path, path + ".counts.json"):
+        if os.path.exists(f):
+            os.remove(f)
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE schema_version (n INTEGER NOT NULL)")
+    for i, step in enumerate(steps()[:25]):
+        db.executescript(step)
+        db.execute("INSERT INTO schema_version (n) VALUES (?)", (i + 1,))
+    for q in ROWS_25:
+        db.execute(q)
+    db.commit()
+    json.dump(_counts(db), open(path + ".counts.json", "w"))
+    db.close()
+
+
+def check28(path):
+    """Every post-condition of steps 26 to 28 on a migrated make25 store; one JSON line."""
+    db = sqlite3.connect(path)
+    q = lambda sql: db.execute(sql).fetchone()[0]
+    problems = []
+
+    def want(sql, n):
+        got = q(sql)
+        if got != n:
+            problems.append(f"{sql} = {got}, want {n}")
+
+    before = json.load(open(path + ".counts.json"))
+    after = _counts(db)
+    for table, n in before.items():
+        if after.get(table) != n:
+            problems.append(f"{table}: {n} rows before, {after.get(table)} after")
+    want("SELECT MAX(n) FROM schema_version", len(steps()))
+    want("SELECT COUNT(*) FROM routine_versions", 0)
+    want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'shadow'", 0)
+    want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'record'", 2)
+    want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'propose'", 1)
+    want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'auto'", 1)
+    want("SELECT COUNT(*) FROM controls WHERE key = 'note' AND value = 'shadow'", 1)
+    want("SELECT COUNT(*) FROM runs WHERE autonomy = 'shadow'", 0)
+    want("SELECT COUNT(*) FROM runs WHERE autonomy = 'record'", 3)
+    want("SELECT COUNT(*) FROM runs WHERE autonomy = 'propose'", 2)
+    want("SELECT COUNT(*) FROM runs WHERE autonomy = 'auto'", 1)
+    want("SELECT COUNT(*) FROM plans WHERE autonomy = 'shadow' OR outcome = 'shadow'", 0)
+    want("SELECT COUNT(*) FROM plans WHERE autonomy = 'record' AND outcome = 'record' AND would = 'propose'", 2)
+    want("SELECT COUNT(*) FROM plans WHERE autonomy = 'propose' AND outcome = 'propose'", 1)
+    want("SELECT COUNT(*) FROM cases WHERE resolution = 'shadow_plan_recorded'", 0)
+    want("SELECT COUNT(*) FROM cases WHERE resolution = 'plan_recorded'", 2)
+    want("SELECT COUNT(*) FROM cases WHERE resolution = 'verified'", 1)
+    want("SELECT COUNT(*) FROM hosts WHERE ceiling = 'shadow'", 0)
+    want("SELECT COUNT(*) FROM hosts WHERE ceiling = 'record'", 1)
+    want("SELECT COUNT(*) FROM hosts WHERE ceiling = 'propose'", 1)
+    want("SELECT COUNT(*) FROM events WHERE detail LIKE '%shadow%'", 2)
+    want("SELECT COUNT(*) FROM case_events WHERE detail LIKE '%shadow%'", 2)
+    for table in ("runs", "run_calls", "run_loaded", "plans", "ledger_filings", "ledger_entries"):
+        want(f"SELECT COUNT(*) FROM {table} WHERE version = 1", before[table])
+    want("SELECT COUNT(*) FROM case_events WHERE actor LIKE '%/%' AND version = 1", 2)
+    want("SELECT COUNT(*) FROM case_events WHERE actor NOT LIKE '%/%' AND version = 0", 3)
+    want("SELECT COUNT(*) FROM plans WHERE rolled_back_at IS NOT NULL OR rolled_back_by IS NOT NULL", 0)
+    want("SELECT COUNT(*) FROM pragma_index_list('routine_versions') WHERE \"unique\" = 1 AND partial = 1", 2)
+    integrity = q("PRAGMA integrity_check")
+    if integrity != "ok":
+        problems.append(f"integrity_check: {integrity}")
+    print(json.dumps({"schema": q("SELECT MAX(n) FROM schema_version"), "tables": len(after), "problems": problems}))
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "make":
+    cmd = sys.argv[1]
+    if cmd == "make":
         make(sys.argv[2], int(sys.argv[3]))
+    elif cmd == "make25":
+        make25(sys.argv[2])
+    elif cmd == "check28":
+        check28(sys.argv[2])
     else:
         check(sys.argv[2])

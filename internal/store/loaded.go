@@ -16,6 +16,7 @@ type Loaded struct {
 	Title   string `json:"title"`
 	Source  string `json:"source"`
 	SHA256  string `json:"sha256"`
+	Version int    `json:"version,omitempty"` // the routine's version of the run that read it; set when read
 }
 
 // Trust levels.
@@ -44,8 +45,8 @@ func (s *Store) RecordLoaded(ctx context.Context, items []Loaded) error {
 		if at == "" {
 			at = s.now().Format(ts)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO run_loaded (run_id, routine, at, kind, trust, title, source, sha256)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, l.RunID, l.Routine, at, l.Kind, l.Trust, l.Title, l.Source, l.SHA256); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO run_loaded (run_id, routine, at, kind, trust, title, source, sha256, version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, `+runVersion+`)`, l.RunID, l.Routine, at, l.Kind, l.Trust, l.Title, l.Source, l.SHA256, l.RunID); err != nil {
 			return err
 		}
 	}
@@ -56,14 +57,14 @@ func (s *Store) RecordLoaded(ctx context.Context, items []Loaded) error {
 func (s *Store) RunLoaded(ctx context.Context, runIDs []string) (map[string][]Loaded, error) {
 	out := map[string][]Loaded{}
 	for _, id := range runIDs {
-		rows, err := s.db.QueryContext(ctx, `SELECT run_id, routine, at, kind, trust, title, source, sha256 FROM run_loaded
+		rows, err := s.db.QueryContext(ctx, `SELECT run_id, routine, at, kind, trust, title, source, sha256, version FROM run_loaded
 			WHERE run_id = ? ORDER BY id`, id)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var l Loaded
-			if err := rows.Scan(&l.RunID, &l.Routine, &l.At, &l.Kind, &l.Trust, &l.Title, &l.Source, &l.SHA256); err != nil {
+			if err := rows.Scan(&l.RunID, &l.Routine, &l.At, &l.Kind, &l.Trust, &l.Title, &l.Source, &l.SHA256, &l.Version); err != nil {
 				rows.Close()
 				return nil, err
 			}

@@ -62,7 +62,7 @@ func TestMigratesStepOneDatabase(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0].Routine != "triage/cycle" || runs[0].Autonomy != "auto" {
 		t.Fatalf("the old run must survive under routine, with autonomy auto, got %+v %v", runs, err)
 	}
-	for subject, want := range map[string]string{"platform/heartbeat": "auto", "triage/cycle": "shadow"} {
+	for subject, want := range map[string]string{"platform/heartbeat": "auto", "triage/cycle": "record"} {
 		if v, err := s.Control(context.Background(), subject, "autonomy"); err != nil || v != want {
 			t.Fatalf("%s: the stage control must become autonomy %q, got %q %v", subject, want, v, err)
 		}
@@ -380,7 +380,7 @@ func TestMigrationAddsRoleEpisodeAndTools(t *testing.T) {
 
 // Schema 25 adds run_calls.kind: a database at 24 keeps its calls, as kind 'call', with the old array-of-names tools.
 func TestMigrationAddsCallKind(t *testing.T) {
-	if len(schema) != 25 {
+	if len(schema) < 25 {
 		t.Fatalf("this test is for schema 25, the schema has %d steps", len(schema))
 	}
 	p := filepath.Join(t.TempDir(), "old.db")

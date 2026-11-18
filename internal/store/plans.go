@@ -20,17 +20,20 @@ var (
 
 // PlanRecord is a plan with policy's decision on it (RFC-0004 §5.1).
 type PlanRecord struct {
-	ID        int64             `json:"id"`
-	CaseID    string            `json:"case_id"`
-	RunID     string            `json:"run_id"`
-	Action    string            `json:"action"`
-	Params    map[string]string `json:"params"`
-	PlanHash  string            `json:"plan_hash"`
-	Outcome   string            `json:"outcome"`
-	Autonomy  string            `json:"autonomy"`
-	Would     string            `json:"would,omitempty"`
-	Reasons   []string          `json:"reasons"`
-	DecidedAt string            `json:"decided_at"`
+	ID           int64             `json:"id"`
+	CaseID       string            `json:"case_id"`
+	RunID        string            `json:"run_id"`
+	Action       string            `json:"action"`
+	Params       map[string]string `json:"params"`
+	PlanHash     string            `json:"plan_hash"`
+	Outcome      string            `json:"outcome"`
+	Autonomy     string            `json:"autonomy"`
+	Would        string            `json:"would,omitempty"`
+	Reasons      []string          `json:"reasons"`
+	DecidedAt    string            `json:"decided_at"`
+	Version      int               `json:"version,omitempty"`        // the routine's version of the run that planned it; set when read
+	RolledBackAt string            `json:"rolled_back_at,omitempty"` // set when the version that planned it was rolled back: it cannot be approved
+	RolledBackBy string            `json:"rolled_back_by,omitempty"`
 }
 
 // ApplyPlan records a decision and moves the planned case with it, in one transaction: to (with
@@ -68,8 +71,8 @@ func (s *Store) ApplyPlan(ctx context.Context, p PlanRecord, to, resolution, tar
 	}
 	params, _ := json.Marshal(p.Params)
 	reasons, _ := json.Marshal(p.Reasons)
-	res, err := tx.ExecContext(ctx, `INSERT INTO plans (case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, p.CaseID, p.RunID, p.Action, string(params), p.PlanHash, p.Outcome, p.Autonomy, p.Would, string(reasons), at)
+	res, err := tx.ExecContext(ctx, `INSERT INTO plans (case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+runVersion+`)`, p.CaseID, p.RunID, p.Action, string(params), p.PlanHash, p.Outcome, p.Autonomy, p.Would, string(reasons), at, p.RunID)
 	if err != nil {
 		return 0, err
 	}
@@ -86,8 +89,8 @@ func (s *Store) ApplyPlan(ctx context.Context, p PlanRecord, to, resolution, tar
 
 // Plans is a case's plans, oldest first.
 func (s *Store) Plans(ctx context.Context, caseID string) ([]PlanRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at
-		FROM plans WHERE case_id = ? ORDER BY id`, caseID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at, version,
+		COALESCE(rolled_back_at, ''), COALESCE(rolled_back_by, '') FROM plans WHERE case_id = ? ORDER BY id`, caseID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +99,7 @@ func (s *Store) Plans(ctx context.Context, caseID string) ([]PlanRecord, error) 
 	for rows.Next() {
 		var p PlanRecord
 		var params, reasons string
-		if err := rows.Scan(&p.ID, &p.CaseID, &p.RunID, &p.Action, &params, &p.PlanHash, &p.Outcome, &p.Autonomy, &p.Would, &reasons, &p.DecidedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.CaseID, &p.RunID, &p.Action, &params, &p.PlanHash, &p.Outcome, &p.Autonomy, &p.Would, &reasons, &p.DecidedAt, &p.Version, &p.RolledBackAt, &p.RolledBackBy); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(params), &p.Params)

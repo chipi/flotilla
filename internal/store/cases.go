@@ -75,6 +75,9 @@ type CaseEvent struct {
 	To     string `json:"to,omitempty"`
 	Detail string `json:"detail,omitempty"`
 	Data   string `json:"data,omitempty"` // JSON, when the event carries structured data (ADR-0016)
+	// The routine's version that made the event: its live version at the time for a routine's event (an actor with a
+	// slash), 0 for an operator's or policy's. Set by the store on write.
+	Version int `json:"version"`
 }
 
 func newCaseID(day string) (string, error) {
@@ -302,8 +305,17 @@ func addSignal(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
 }
 
 func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO case_events (case_id, at, kind, actor, by_role, from_status, to_status, detail, data)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, e.CaseID, e.At, e.Kind, e.Actor, e.By, e.From, e.To, e.Detail, e.Data)
+	var version int
+	if strings.Contains(e.Actor, "/") { // a routine's id; people and flotillad have none
+		err := tx.QueryRowContext(ctx, `SELECT version FROM routine_versions WHERE routine = ? AND state = 'live'`, e.Actor).Scan(&version)
+		if errors.Is(err, sql.ErrNoRows) {
+			version = 1 // a routine with no recorded versions: its one, implicit one
+		} else if err != nil {
+			return err
+		}
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO case_events (case_id, at, kind, actor, by_role, from_status, to_status, detail, data, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, e.CaseID, e.At, e.Kind, e.Actor, e.By, e.From, e.To, e.Detail, e.Data, version)
 	return err
 }
 
@@ -391,7 +403,7 @@ func (s *Store) Cases(ctx context.Context, f CaseFilter) ([]Case, error) {
 
 // CaseEvents is a case's timeline, oldest first.
 func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data, version
 		FROM case_events WHERE case_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return nil, err
@@ -400,7 +412,7 @@ func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) 
 	var out []CaseEvent
 	for rows.Next() {
 		var e CaseEvent
-		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail, &e.Data); err != nil {
+		if err := rows.Scan(&e.Seq, &e.CaseID, &e.At, &e.Kind, &e.Actor, &e.By, &e.From, &e.To, &e.Detail, &e.Data, &e.Version); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

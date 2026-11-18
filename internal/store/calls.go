@@ -101,6 +101,7 @@ type ModelCall struct {
 	EpisodeSeq   *int64   `json:"episode_seq"`            // the episode's order within the run, 1-based; nil when not given
 	Tools        string   `json:"tools,omitempty"`        // JSON array of the tools the model called in this turn, [{"name","arg","ok"}] (old rows: ["name", ...]; ParseTools reads both); "" when none
 	Kind         string   `json:"kind"`                   // KindCall or KindStep; rows from before schema 25 are calls
+	Version      int      `json:"version,omitempty"`      // the routine's version of the run that made the call; set when read
 }
 
 // RecordCalls keeps a run's model calls, in one transaction.
@@ -123,11 +124,11 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 			kind = KindCall
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_calls (run_id, routine, at, alias, endpoint, model, deployment,
-			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind, version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+runVersion+`)`,
 			c.RunID, c.Routine, at, c.Alias, c.Endpoint, c.Model, c.Deployment, c.TokensIn, c.TokensOut, c.CostUSD,
 			c.CostSource, c.LatencyS, c.Error, c.Check, c.CheckOK, c.Detail, c.FinishReason, c.Step, nullIfEmpty(c.DecisionKey),
-			c.Role, c.Episode, c.EpisodeSeq, c.Tools, kind); err != nil {
+			c.Role, c.Episode, c.EpisodeSeq, c.Tools, kind, c.RunID); err != nil {
 			return err
 		}
 	}
@@ -135,7 +136,7 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 }
 
 const callCols = `run_id, routine, at, alias, endpoint, model, deployment, tokens_in, tokens_out, cost_usd, cost_source, latency_s, error,
-	check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind`
+	check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind, version`
 
 func nullIfEmpty(s string) any {
 	if s == "" {
@@ -156,7 +157,7 @@ func scanCalls(rows *sql.Rows) ([]ModelCall, error) {
 		var key sql.NullString
 		var eseq sql.NullInt64
 		if err := rows.Scan(&c.RunID, &c.Routine, &c.At, &c.Alias, &c.Endpoint, &c.Model, &c.Deployment, &tin, &tout,
-			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail, &c.FinishReason, &step, &key, &c.Role, &c.Episode, &eseq, &c.Tools, &c.Kind); err != nil {
+			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail, &c.FinishReason, &step, &key, &c.Role, &c.Episode, &eseq, &c.Tools, &c.Kind, &c.Version); err != nil {
 			return nil, err
 		}
 		if ok.Valid {

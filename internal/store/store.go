@@ -370,6 +370,50 @@ var schema = []string{
 	// What a run_calls row is: a model call ('call') or a step the harness took between calls ('step': a verdict, a gate's outcome, a pin;
 	// no model, tokens or cost), so a run's flow can show both. Aggregates over calls skip 'step' rows.
 	`ALTER TABLE run_calls ADD COLUMN kind TEXT NOT NULL DEFAULT 'call';`,
+	// Routine versions (v2 step 1, versions.go): which version of a routine is live, shadow, previous or retired, with
+	// the hash it was recorded with and who moved it, when and why. A version file is the routine's folder v<n>/; the
+	// manifest maps each file to its sha256 so a freeze failure can name what changed. One live and one previous per
+	// routine are the partial unique indexes.
+	`CREATE TABLE routine_versions (
+		routine TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		hash TEXT NOT NULL,
+		manifest TEXT NOT NULL DEFAULT '{}',
+		state TEXT NOT NULL CHECK (state IN ('live', 'shadow', 'previous', 'retired')),
+		deployed_at TEXT NOT NULL,
+		live_at TEXT NOT NULL DEFAULT '',
+		state_by TEXT NOT NULL DEFAULT '',
+		state_at TEXT NOT NULL DEFAULT '',
+		state_why TEXT NOT NULL DEFAULT '',
+		retired_kind TEXT NOT NULL DEFAULT '',
+		autonomy_at_promote TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (routine, version)
+	);
+	CREATE UNIQUE INDEX routine_versions_one_live ON routine_versions(routine) WHERE state = 'live';
+	CREATE UNIQUE INDEX routine_versions_one_previous ON routine_versions(routine) WHERE state = 'previous';`,
+	// Every record says which version made it: runs, calls, what a run loaded, plans, ledger rows (the version of the run
+	// that wrote them; 1 for what came before versions) and case events (0 for an operator's or policy's, the acting
+	// routine's live version for a routine's). A plan from a version that was rolled back is marked, so it cannot be approved.
+	`ALTER TABLE runs ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE run_calls ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE run_loaded ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE plans ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE plans ADD COLUMN rolled_back_at TEXT;
+	ALTER TABLE plans ADD COLUMN rolled_back_by TEXT;
+	ALTER TABLE ledger_filings ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE ledger_entries ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE case_events ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+	UPDATE case_events SET version = 1 WHERE actor LIKE '%/%';
+	CREATE INDEX runs_routine_version ON runs(routine, version);`,
+	// The lowest autonomy level, shadow, is renamed record (the word shadow belongs to versions). The stored values move
+	// once: autonomy controls (routines and actions), runs and plans, a plan's policy outcome, a case's resolution, and a
+	// host's reported ceiling. The events log and the case timeline's text are history and stay as written.
+	`UPDATE controls SET value = 'record' WHERE key = 'autonomy' AND value = 'shadow';
+	UPDATE runs SET autonomy = 'record' WHERE autonomy = 'shadow';
+	UPDATE plans SET autonomy = 'record' WHERE autonomy = 'shadow';
+	UPDATE plans SET outcome = 'record' WHERE outcome = 'shadow';
+	UPDATE cases SET resolution = 'plan_recorded' WHERE resolution = 'shadow_plan_recorded';
+	UPDATE hosts SET ceiling = 'record' WHERE ceiling = 'shadow';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run
@@ -404,6 +448,7 @@ type Run struct {
 	DurationS *float64 `json:"duration_s"`
 	TraceID   string   `json:"trace_id"`
 	Detail    string   `json:"detail"`
+	Version   int      `json:"version"` // the routine's version that made the run (1 when not set)
 }
 
 type Event struct {
@@ -620,9 +665,9 @@ func (s *Store) Controls(ctx context.Context) ([]Control, error) {
 }
 
 func (s *Store) StartRun(ctx context.Context, r Run) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, status, trace_id, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.StartedAt, r.Status, r.TraceID, r.Detail)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, status, trace_id, detail, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.StartedAt, r.Status, r.TraceID, r.Detail, versionOrOne(r.Version))
 	return err
 }
 
@@ -644,9 +689,9 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, exitCode *int,
 func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 	now := s.now().Format(ts)
 	r.StartedAt, r.Status = now, StatusSkipped
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, trace_id, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, now, now, r.Status, r.TraceID, r.Detail)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, trace_id, detail, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, now, now, r.Status, r.TraceID, r.Detail, versionOrOne(r.Version))
 	return err
 }
 
@@ -683,7 +728,7 @@ func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, error) {
-	q := `SELECT id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail
+	q := `SELECT id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version
 		FROM runs`
 	var args []any
 	if routine != "" {
@@ -701,7 +746,7 @@ func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, err
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
-			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail); err != nil {
+			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
