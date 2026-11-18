@@ -156,10 +156,10 @@ def check28(path, started=False):
 
     before = json.load(open(path + ".counts.json"))
     after = _counts(db)
-    grew = {"runs", "run_calls", "run_loaded", "events", "case_events", "ledger_entries", "ledger_filings", "controls", "cases", "plans"} if started else set()
     for table, n in before.items():
         got = after.get(table)
-        if (got is None or got < n) if table in grew else got != n:
+        # a started flotillad adds rows (a run, an event, a brief); it never removes one
+        if (got is None or got < n) if started else got != n:
             problems.append(f"{table}: {n} rows before, {got} after")
     want("SELECT MAX(n) FROM schema_version", len(steps()))
     live = None

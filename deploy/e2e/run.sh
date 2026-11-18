@@ -899,7 +899,8 @@ cli case reject "$VC2" --reason "e2e: versions check, plan not needed" >/dev/nul
   && ok "that case was rejected and closed by the operator" || bad "closing the second versions case: $(cli case show "$VC2" 2>&1 | tail -2)"
 
 # a rollback with a run in flight (the hold file again): v3 is live, v1 previous. The run of v3 is cancelled as a STOP cancels
-# it and the worker is asked to stop it; the case it was working goes back to the acting routine, v1, live again, which plans it.
+# it and the worker is asked to stop it; the case it was working stays with the acting routine (v1 is live again and plans it
+# once the dispatcher's backoff after a run with no decision is over).
 cli action autonomy host.vtrue propose --reason "e2e: back to propose after the rejection's demotion" >/dev/null 2>&1
 $D exec flotilla-worker-ops-act-host touch /tmp/e2e-versioned-hold >/dev/null 2>&1 || bad "cannot create the hold file in the ops-act-host worker"
 cli run e2e/versioned-monitor >/dev/null
@@ -910,18 +911,19 @@ OUT="$(cli rollback e2e/versioned --autonomy propose --reason "e2e: rolled back 
 $D exec flotilla-worker-ops-act-host rm -f /tmp/e2e-versioned-hold >/dev/null 2>&1
 echo "$OUT" | grep >/dev/null '"rolled_back":3' && echo "$OUT" | grep >/dev/null '"live":1' && echo "$OUT" | grep >/dev/null "\"cancelled\":\[\"$RUN3\"\]" \
   && ok "rolled back with the run in flight: v1 live again, the answer names the run it cancelled ($RUN3)" || bad "rollback with a run in flight: $OUT"
-for i in $(seq 1 30); do cli runs e2e/versioned -n 5 | grep "$RUN3" | grep >/dev/null " running " || break; sleep 1; done
-[ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runs"] if x["id"] == sys.argv[1]][0]; print(r["version"], r["status"], "v3 rolled back" in r["detail"])' "$RUN3")" = "3 cancelled True" ] \
-  && ok "the run ended cancelled as v3, with who and why in its detail (v3 rolled back)" || bad "the cancelled run: $(runs_json e2e/versioned | head -c 400)"
+for i in $(seq 1 30); do  # wait on the run's own status in the JSON, not on a word in the table
+  [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; print([x["status"] for x in json.load(sys.stdin)["runs"] if x["id"] == sys.argv[1]][0])' "$RUN3" 2>/dev/null)" != running ] && break; sleep 1
+done
+CR="$(runs_json e2e/versioned | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runs"] if x["id"] == sys.argv[1]][0]; print(r.get("version"), r["status"], r.get("detail", ""))' "$RUN3" 2>&1)"
+case "$CR" in "3 cancelled "*"v3 rolled back"*) ok "the run ended cancelled as v3, with who and why in its detail ($CR)" ;; *) bad "the cancelled run: $CR" ;; esac
 cli events -n 60 | grep "run.cancel .*e2e/versioned .*run $RUN3: v3 rolled back" | grep -v "not delivered" >/dev/null \
   && ok "the worker was asked to stop it (a run.cancel event, delivered)" || bad "run.cancel event: $(cli events -n 60 | grep run.cancel | head -2)"
-VC3="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"
-for i in $(seq 1 40); do [ -n "$VC3" ] && break; sleep 2; VC3="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"; done
-[ -n "$VC3" ] && cli case show "$VC3" 2>&1 | grep >/dev/null "run.no_decision .*e2e/versioned" \
-  && [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(r[0]["version"], r[0]["status"])')" = "1 ok" ] \
-  && ok "the case went back to the acting routine: the cancelled run made no decision, v1 (live again) planned it ($VC3 awaits approval)" || bad "the case after the rollback with a run in flight: $(cli case list --all 2>&1 | grep e2e_versioned)"
-cli case reject "$VC3" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC3" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC3" closed \
-  && ok "that case was rejected and closed by the operator" || bad "closing the third versions case: $(cli case show "$VC3" 2>&1 | tail -2)"
+# The cancelled run made no decision, so the case waits out the dispatcher's backoff (10 minutes) before the live version
+# (v1 again) plans it: the e2e shows the case is still with the acting routine, handed over, with no plan from v3.
+VC3="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /handed_over/ {print $1; exit}')"
+SHOW="$(cli case show "$VC3" 2>&1)"
+[ -n "$VC3" ] && echo "$SHOW" | grep >/dev/null "run.no_decision .*e2e/versioned" && ! echo "$SHOW" | grep >/dev/null "case.planned" \
+  && ok "the case stayed with the acting routine: the cancelled run made no decision and filed no plan ($VC3 handed over, waiting its backoff)" || bad "the case after the rollback with a run in flight: $(cli case list --all 2>&1 | grep e2e_versioned) $(echo "$SHOW" | tail -4)"
 
 HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
