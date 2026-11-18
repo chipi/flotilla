@@ -671,3 +671,15 @@ const VersionsSchema = 26
 
 // EvidenceSchema is the schema step that added routine_versions.promote_evidence.
 const EvidenceSchema = 29
+
+// RunVersionRolledBack says whether the version a run was made by has since been rolled back, and when and by whom:
+// a plan the run files after the rollback marked the plans that existed is still that version's (the run can end
+// ok before its cancel lands).
+func (s *Store) RunVersionRolledBack(ctx context.Context, runID string) (at, by string, rolledBack bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT rv.state_at, rv.state_by FROM routine_versions rv JOIN runs r ON r.routine = rv.routine AND r.version = rv.version
+		WHERE r.id = ? AND rv.state = 'retired' AND rv.retired_kind = ?`, runID, RetiredRolledBack).Scan(&at, &by)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+	return at, by, err == nil, err
+}

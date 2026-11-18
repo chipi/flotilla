@@ -131,8 +131,8 @@ func (s *Server) ApprovePlan(ctx context.Context, c Caller, via, id, planHash, n
 		return "", problem(409, "case %s has no plan to approve", id)
 	}
 	p := plans[len(plans)-1]
-	if p.RolledBackAt != "" {
-		return "", problem(409, "plan from a rolled-back version: v%d was rolled back at %s by %s", p.Version, p.RolledBackAt, p.RolledBackBy)
+	if err := s.planWithdrawn(ctx, p); err != nil {
+		return "", err
 	}
 	if hp := strings.TrimPrefix(planHash, "sha256:"); planHash != "" && (len(hp) < 8 || !strings.HasPrefix(p.PlanHash, hp)) {
 		return "", problem(409, "the plan changed: %s is not the plan on case %s now (%s); open the new plan", shortHash(planHash), id, shortHash(p.PlanHash))
@@ -162,8 +162,10 @@ func (s *Server) RejectCase(ctx context.Context, c Caller, via, id, why string) 
 	}
 	if plans, err := s.Store.Plans(ctx, id); err != nil {
 		return err
-	} else if n := len(plans); n > 0 && plans[n-1].RolledBackAt != "" {
-		return problem(409, "plan from a rolled-back version: v%d was rolled back at %s by %s", plans[n-1].Version, plans[n-1].RolledBackAt, plans[n-1].RolledBackBy)
+	} else if n := len(plans); n > 0 {
+		if err := s.planWithdrawn(ctx, plans[n-1]); err != nil {
+			return err
+		}
 	}
 	if err := s.Store.MoveCase(ctx, id, cases.Escalated, cases.ByOperator, "", c.Name, "rejected: "+why); err != nil {
 		return err
@@ -261,4 +263,20 @@ func (s *Server) caseNote(w http.ResponseWriter, r *http.Request, c Caller) {
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body)
 	id, err := s.ProposeNote(r.Context(), c, "api", r.PathValue("id"), body.Text)
 	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "note": strconv.FormatInt(id, 10)})
+}
+
+// planWithdrawn refuses a plan made by a version that was rolled back: one the rollback marked, and one its run
+// filed after the rollback (a run that ended ok before the cancel landed).
+func (s *Server) planWithdrawn(ctx context.Context, p store.PlanRecord) error {
+	at, by, v := p.RolledBackAt, p.RolledBackBy, p.RolledBackAt != ""
+	if !v {
+		var err error
+		if at, by, v, err = s.Store.RunVersionRolledBack(ctx, p.RunID); err != nil {
+			return err
+		}
+	}
+	if v {
+		return problem(409, "plan from a rolled-back version: v%d was rolled back at %s by %s", p.Version, at, by)
+	}
+	return nil
 }

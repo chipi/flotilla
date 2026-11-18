@@ -364,3 +364,50 @@ func TestPromoteBindsTheNextRun(t *testing.T) {
 		t.Fatalf("the next run after the rollback records version %d, want 1", r.Version)
 	}
 }
+
+// A run of the rolled-back version that ends ok before the cancel lands can still file a plan after the
+// rollback marked the plans that existed: that plan is the rolled-back version's too and cannot be approved or
+// rejected, though nothing marked it.
+func TestPlanFiledAfterTheRollbackCannotBeApproved(t *testing.T) {
+	ctx := context.Background()
+	s := versioned(t, "")
+	br := newBlockRunner()
+	s.Sched.Workers["triage"] = br
+	if err := s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, PromoteRequest{Autonomy: "propose", Reason: "no pairs yet; the diff was read"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := s.Sched.RunWith(ctx, "triage/cycle", "manual", "operator", nil)
+		done <- err
+	}()
+	var runID string
+	select {
+	case runID = <-br.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run never reached the worker")
+	}
+	if _, err := s.RollbackVersion(ctx, opCaller, "test", "triage/cycle", RollbackRequest{Autonomy: "record", Reason: "v2 files too much"}); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	// the run's plan arrives after the rollback, so no rolled_back_at was set on it
+	id := plannedCase(t, s, "late", "")
+	if _, err := s.Store.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: runID, Action: rerun, Params: map[string]string{"host": "backup-01"},
+		PlanHash: "hash-late-0123456789", Outcome: policy.Propose, Autonomy: policy.Propose}, cases.AwaitingApproval, "", "host:backup-01", true); err != nil {
+		t.Fatal(err)
+	}
+	plans, _ := s.Store.Plans(ctx, id)
+	if len(plans) != 1 || plans[0].RolledBackAt != "" || plans[0].Version != 2 {
+		t.Fatalf("the late plan: %+v", plans)
+	}
+	if _, err := s.ApprovePlan(ctx, opCaller, "test", id, "", ""); AsProblem(err) == nil || AsProblem(err).Code != 409 || !strings.Contains(err.Error(), "plan from a rolled-back version") {
+		t.Fatalf("approving a late plan of a rolled-back version: %v", err)
+	}
+	if err := s.RejectCase(ctx, opCaller, "test", id, "no"); AsProblem(err) == nil || AsProblem(err).Code != 409 || !strings.Contains(err.Error(), "plan from a rolled-back version") {
+		t.Fatalf("rejecting it: %v", err)
+	}
+	if c := caseStatus(t, s, id); c.Status != cases.AwaitingApproval {
+		t.Fatalf("a refused approve or reject moved the case: %s", c.Status)
+	}
+}
