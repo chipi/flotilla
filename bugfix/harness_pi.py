@@ -123,7 +123,14 @@ class Pi(harness.Harness):
     name = "pi"
     roles = frozenset(harness.ROLES)
     can_resume = True
-    enforces_readonly = True
+    resume_after_kill = True      # trim_session drops the line a kill cut short (ADR-0019)
+    enforces_readonly = True      # --tools read,grep,find,ls and --no-tools: the harness does not offer the rest
+    supports_hooks = False        # pi has extensions, but the platform defines no before/after-tool hook delivery for it
+    reports_cost = True           # usage.cost.total of each message: its catalog's list price, an estimate
+    reports_usage = True
+    supports_turn_cap = True      # a message_end line per assistant message
+    native_system_prompt = True   # --append-system-prompt <file>
+    prompt_via_stdin = False      # the prompt is one argv string (REVIEW_PROMPT_MAX keeps it under Linux's 128 KiB)
     tees = False   # pi keeps its own session files; its stream is not written beside them
 
     def build(self, req):

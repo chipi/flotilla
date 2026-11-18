@@ -212,6 +212,56 @@ class Registry(unittest.TestCase):
         self.assertIs(harness.get("fakeh").name, "fakeh")
 
 
+class Capabilities(unittest.TestCase):
+    DOC = os.path.join(HERE, "HARNESS_SEAMS.md")
+
+    def table(self):
+        with open(self.DOC) as f:
+            text = f.read()
+        body = text.split("<!-- capabilities:begin -->")[1].split("<!-- capabilities:end -->")[0]
+        return [ln for ln in body.strip().splitlines() if ln.startswith("|")]
+
+    def test_pi_declares_each_capability_and_a_new_one_defaults_to_no(self):
+        got = harness.capabilities(harness_pi.PI)
+        self.assertEqual(sorted(got), sorted(harness.CAPABILITIES))
+        self.assertEqual(got, {"can_resume": True, "resume_after_kill": True, "enforces_readonly": True, "supports_hooks": False,
+                               "reports_cost": True, "reports_usage": True, "supports_turn_cap": True, "native_system_prompt": True,
+                               "prompt_via_stdin": False})
+        self.assertFalse(any(harness.capabilities(harness.Harness()).values()), "nothing is claimed by default")
+
+    def test_a_step_that_asks_for_what_the_harness_lacks_is_refused_with_the_reason(self):
+        pi = harness_pi.PI
+        self.assertEqual(harness.missing(pi, {"can_resume": True, "enforces_readonly": True, "roles": ["fix", "review"]}), [])
+        self.assertEqual(harness.missing(pi, {"supports_hooks": True}),
+                         [f"harness pi does not declare supports_hooks: {harness.CAPABILITIES['supports_hooks']}"])
+        self.assertEqual(harness.missing(pi, {"supports_hooks": False}), [], "not asking is not a need")
+        self.assertEqual(len(harness.missing(pi, {"prompt_via_stdin": True, "supports_hooks": True})), 2)
+        self.assertIn("is not a capability", harness.missing(pi, {"telepathy": True})[0])
+
+        class Mini(harness.Harness):
+            name, roles = "mini", frozenset({"fix", "repro"})
+        self.assertEqual(harness.missing(Mini(), {"roles": ["fix", "review", "advisor"]}),
+                         ["harness mini does not serve the review role", "harness mini does not serve the advisor role"])
+
+    def test_the_seams_doc_table_is_the_adapters(self):
+        rows = self.table()
+        self.assertEqual([c.strip() for c in rows[0].strip("|").split("|")], ["harness", "roles"] + list(harness.CAPABILITIES))
+        self.assertEqual(set(rows[1].strip("|").split("|")), {" --- "}, "a markdown separator row")
+        documented = {r.strip("|").split("|")[0].strip(): r for r in rows[2:]}
+        for name in harness.names():
+            if name in ("pi",):
+                self.assertEqual(documented[name], harness.capability_row(harness.get(name)), name)
+        self.assertEqual(set(documented) - set(harness.names()), set(), "a row for a harness that is not there")
+
+    def test_the_seams_doc_names_every_seam_and_every_capability(self):
+        with open(self.DOC) as f:
+            text = f.read()
+        for n in range(1, 12):
+            self.assertRegex(text, rf"(?m)^### S{n} ")
+        for k in harness.CAPABILITIES:
+            self.assertIn(k, text)
+
+
 class Runner(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()

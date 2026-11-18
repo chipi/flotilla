@@ -6,6 +6,9 @@ the same for all of them: the request a role makes, the command a harness turns 
 run leaves, the registry, and the shared runner (process group, stream tee, turn cap, timeout). The chain reads
 only the Episode; a harness's own stream is kept beside it as the raw record.
 
+The seams where the chain meets a harness (S1 to S11), who owns each, how pi satisfies it, the capability table and the
+seam end-to-end every harness must pass are in bugfix/HARNESS_SEAMS.md: the source of truth, changed first when a seam changes.
+
 HOW TO ADD A HARNESS
 
   1. One file, bugfix/harness_<name>.py (lower case letters and digits, at most 16; stdlib only: the worker image has
@@ -16,7 +19,10 @@ HOW TO ADD A HARNESS
      `can_resume`, whether a later call can continue a session (False: the chain starts a fresh episode, the
      --no-resume path); `enforces_readonly`, whether the harness itself stops a read role writing (not just being
      asked: a harness that cannot says False, and the chain checks the worktree after a read role instead);
-     `tees`, True unless the stream must not be written beside the run (pi, which keeps its own session files).
+     `tees`, True unless the stream must not be written beside the run (pi, which keeps its own session files). The
+     other capabilities (CAPABILITIES) are declared too, each True or False and never left to a default that flatters:
+     a spec that asks for a capability the harness does not declare is rejected (missing(), and flotillad's -check
+     against bugfix/HARNESS_SEAMS.md's table), and a test keeps the table in that file equal to the adapters.
   3. build(req) -> Invocation. The command, the environment it adds, and what the run must find first.
        - req.prompt is the chain's complete prompt: add no task text. A delta the harness cannot avoid (rules
          delivered as a prompt prefix because it has no system-prompt flag, a submit protocol) goes in
@@ -62,6 +68,8 @@ HOW TO ADD A HARNESS
        - argv/env tests per role: the key is in no argv and no file but Invocation.files; the prompt is on stdin;
          read roles carry the read-only switches; the rules reach the harness; phone_home_env is applied; the
          session store is under run_dir; a resume builds the resume invocation.
+       - the seam end-to-end: bugfix/test_seam_<name>.py, a subclass of seam_e2e.SeamSuite (test_seam_pi.py is the shape):
+         the real CLI, run by the chain against a scripted model endpoint, every seam of HARNESS_SEAMS.md asserted.
        - the chain over the harness: bugfix/test_fix_harnesses.py runs the chain's scripted cases with a fake
          executable named like the real CLI first on PATH. The fake is a script that parses its own flags, records
          its argv and environment into $FAKE_STATE, writes the scripted file changes into the worktree, appends to
@@ -202,12 +210,34 @@ def sum_cost(turns):
     return sum(got) if got else None
 
 
+# What a harness declares it can do, per seam (bugfix/HARNESS_SEAMS.md, the capability table). A spec that needs one is
+# checked against the declaration before any model call: missing().
+CAPABILITIES = {
+    "can_resume": "S7: a later call can continue a session (a kick-back and a resumed run keep the conversation)",
+    "resume_after_kill": "S7: a session whose run was killed can be continued (ADR-0019)",
+    "enforces_readonly": "S6: the harness itself stops a read role writing or running a shell, not only the prompt",
+    "supports_hooks": "S6: the platform can run a hook before or after each tool call (a spec's `hooks:`)",
+    "reports_cost": "S9: the stream carries the harness's own cost estimate (never the bill; labelled)",
+    "reports_usage": "S4: the stream carries tokens per model call",
+    "supports_turn_cap": "S5: the stream has a line per model call, so the chain can cap the turns live",
+    "native_system_prompt": "S2: the declared rules reach the model as system text, not as a prefix to the prompt",
+    "prompt_via_stdin": "S1: the prompt is delivered on stdin (False: in argv, which Linux caps at 128 KiB)",
+}
+
+
 class Harness:
-    """What an adapter is. See the top of this file."""
+    """What an adapter is. See the top of this file. The capabilities default to False: an adapter says what it can."""
     name = ""
     roles = frozenset()
     can_resume = False
+    resume_after_kill = False
     enforces_readonly = False
+    supports_hooks = False
+    reports_cost = False
+    reports_usage = False
+    supports_turn_cap = False
+    native_system_prompt = False
+    prompt_via_stdin = False
     tees = True
 
     def build(self, req):
@@ -224,6 +254,31 @@ class Harness:
 
     def phone_home_env(self):
         return {}
+
+
+def capabilities(h):
+    """{capability: bool} as the harness declares them."""
+    return {k: bool(getattr(h, k, False)) for k in CAPABILITIES}
+
+
+def missing(h, wants):
+    """The reasons harness `h` cannot do what a step asks (`wants`: {capability: True} for each it needs, and "roles": the
+    roles it is to serve); [] when it can. For a spec's check, before any model call."""
+    out = []
+    for k, v in (wants or {}).items():
+        if k == "roles":
+            out += [f"harness {h.name} does not serve the {r} role" for r in v if r not in h.roles]
+        elif k not in CAPABILITIES:
+            out.append(f"{k!r} is not a capability a harness declares (known: {', '.join(sorted(CAPABILITIES))})")
+        elif v and not getattr(h, k, False):
+            out.append(f"harness {h.name} does not declare {k}: {CAPABILITIES[k]}")
+    return out
+
+
+def capability_row(h):
+    """The harness's row of HARNESS_SEAMS.md's capability table, as markdown."""
+    return "| " + h.name + " | " + ", ".join(sorted(h.roles)) + " | " + " | ".join(
+        "yes" if getattr(h, k, False) else "no" for k in CAPABILITIES) + " |"
 
 
 # the registry
