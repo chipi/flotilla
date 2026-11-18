@@ -772,6 +772,10 @@ exec {real} "$@"
         self.assertIn(fix.norm_phrase("only ~1-2 events visible - first venus flyby"), fix.norm_phrase(issue))
         self.assertIn(fix.norm_phrase('the "label" is wrong'), fix.norm_phrase("The “label” is wrong"))
         self.assertNotIn(fix.norm_phrase("labelled 'flyby' with empty notes"), fix.norm_phrase(issue))
+        # #335 on 2026-11-18: the issue escapes its backticks, the reproducer copied the plain words
+        escaped = r"**Expected:** all 6 \`mission.flight.events\` rows surface (Launch through Saturn)"
+        self.assertIn(fix.norm_phrase("Expected: all 6 mission.flight.events rows surface"), fix.norm_phrase(escaped))
+        self.assertIn(fix.norm_phrase(r"all 6 \`mission.flight.events\` rows"), fix.norm_phrase(escaped))
 
     def test_the_issues_symptom_lines_are_offered_verbatim(self):
         issue = ("value is 1\n\n**Signal:** `TypeError: x of null` in addEL_hook\n\n## Repro\n\n- **Expected:** value() "

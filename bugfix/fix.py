@@ -208,8 +208,10 @@ DASHES = str.maketrans({c: "-" for c in "‐‑‒–—―−"} |
 def norm_phrase(s):
     """A phrase as the reproducer's check compares it: lower case, runs of whitespace as one space, every dash or minus
     as "-" and curly quotes as straight ones (#335 on 2026-11-18: the issue's "~1–2", en dash, typed as "~1-2"), and
-    markdown's bold and code marks dropped (an offered "Actual: ..." comes from the issue's "**Actual:** ...")."""
-    return " ".join(str(s).translate(DASHES).replace("**", "").replace("`", "").lower().split())
+    markdown's bold and code marks dropped (an offered "Actual: ..." comes from the issue's "**Actual:** ..."), and its
+    escapes too (#335's "\\`mission.flight.events\\`" was copied as "mission.flight.events", 2026-11-18)."""
+    s = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|~<>])", r"\1", str(s).translate(DASHES))
+    return " ".join(s.replace("**", "").replace("`", "").lower().split())
 
 
 SYMPTOM_LINE = re.compile(r"^\W*(?:actual|expected|observed|symptom|signal|error|steps?|repro\w*)\b", re.I)
