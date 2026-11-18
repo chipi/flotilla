@@ -60,8 +60,8 @@ this repo. It is synthetic, deterministic and harmless:
 | **Replay corpus** | does a change alter decisions on known cases? | recorded inputs with the expected decisions (the triage fleet has 18 such gates, in the installation's private fleets repo, `triage/gates/run.sh`). Every change to a playbook, gate, monitor or spec replays them; any changed decision fails unless accepted with a reason. |
 | **Evaluation modes** | which proof does a change need? | four modes: code replay, exact replay, model replay and shadow comparison, with a table of which change needs which ([ADR-0004](adr/ADR-0004-job-runtime.md), RFC-0002 §8). Code and exact replay are development tests here; scoring a model replay and judging a shadow comparison are evaluation, done by the evaluation harness on flotilla's records (RFC-0002 §8 amendment) |
 | **Shadow comparison** | does the new platform decide like the old one? | during migration, the fleet runs in `shadow` on flotilla beside the existing implementation for N days; decisions are compared per subject; differences are explained before switching |
-| **Routine autonomy** | is a routine ready to act? | `shadow` → `propose` → `auto`, each step on evidence: shadow agreement, then the operator's approval rate in `propose` |
-| **Autonomy ladder** | may an action run without asking? | per action, on every host: a gate of shadow plans the operator judged right, then approved executions that verified; promoted only by the operator, a failed or unknown result drops an `auto` action to propose ([ADR-0005](adr/ADR-0005-agent-pipeline.md)) |
+| **Routine autonomy** | is a routine ready to act? | `record` → `propose` → `auto`, each step on evidence: agreement of the recorded plans, then the operator's approval rate in `propose` |
+| **Autonomy ladder** | may an action run without asking? | per action, on every host: a gate of recorded plans the operator judged right, then approved executions that verified; promoted only by the operator, a failed or unknown result drops an `auto` action to propose ([ADR-0005](adr/ADR-0005-agent-pipeline.md)) |
 | **Decision quality, live** | is it still making good decisions? | from cases: approval and rejection rate, the reasons for rejections, duplicates caught by the triage fleet's code checks before filing, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |
 | **Drift** | did something change underneath? | the mix of decisions per week against the last weeks; model, playbook and spec versions are in every row, so a shift can be traced to a change |
 | **Model and prompt evaluation** | is a different model or playbook better? | evaluated offline on the replay corpus (with eval-harness), never by switching production and watching |
@@ -74,7 +74,7 @@ Each fleet's spec states its **validation contract**:
 - its freshness;
 - what evidence moves it up a step of autonomy.
 
-A fleet without one cannot move past `shadow`.
+A fleet without one cannot move past `record`.
 
 ## CI tiers
 

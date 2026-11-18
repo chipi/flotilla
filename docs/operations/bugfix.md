@@ -15,8 +15,8 @@ its fixes are good is RFC-0010 §8, not this page.
 | `bugfix/open-pr` | `bugfix-act` | a person approved a `github.open_pr` plan | applies the diff to its base and opens a draft PR from `flotilla/<case>` |
 | `bugfix/pr-check` | `bugfix` | the case is in checking | merged: verified; closed without merging: escalated; open: looks again |
 
-`github.open_pr` starts at shadow in a new installation: plans are recorded on the case and closed
-(`shadow_plan_recorded`), nothing reaches GitHub. Promoted to propose on Autonomy (after the coding
+`github.open_pr` starts at record in a new installation: plans are recorded on the case and closed
+(`plan_recorded`), nothing reaches GitHub. Promoted to propose on Autonomy (after the coding
 harness's security review, RFC-0010 §5), plans wait in Approvals. A repo action never goes above
 propose. The repos it may act on are the installation's: `action_enums` in `flotillad.yaml`
 (`{github.open_pr: {repo: [owner/repo, ...]}}`); the registry declares example repos.

@@ -81,7 +81,7 @@ GitHub issues themselves.
 A candidate routine, `triage/cycle-shadow`
 ([`cycle-shadow.yaml`](https://github.com/chipi/flotilla/blob/main/fleets/triage/cycle-shadow.yaml)),
 runs beside the live one on `worker-triage-candidate` with a state volume of its own. Its autonomy
-is capped at shadow: it never files, whatever a control says. It exists to compare another model
+is capped at record: it never files, whatever a control says. It exists to compare another model
 or image against the live fleet (ADR-0004).
 
 ## One signal's path
@@ -196,10 +196,10 @@ Test and synthetic signals are suppressed at this stage.
 
 `actions.act` writes the disposition row; `filing.file_or_update` decides what happens on GitHub
 (the decision tree under "The filed ledger"). The routine's autonomy gates the writes. The worker
-hands it to the code as `FLEETD_STAGE` (`auto` becomes `live`), and the ledger rows record it as
-`stage`:
+hands it to the code as `FLEETD_STAGE` (`record` becomes `shadow`, `auto` becomes `live`), and the
+ledger rows record it as `stage`:
 
-- **`shadow`:** nothing external. The orchestrator forces a dry run.
+- **`record` (stage `shadow`, v1's word for it):** nothing external. The orchestrator forces a dry run.
 - **`propose`:** issues, comments and reopens on GitHub. Cleanup stays queued.
 - **`auto` (`live`):** everything, including resolving a cleaned-up error in GlitchTip.
 
@@ -223,7 +223,7 @@ GlitchTip issue, triage runs before the sync in the same cycle, and filing reope
 files a regression.
 
 - **Switch:** `SF_GLITCHTIP_SYNC=1` in the worker's secrets file, token `GLITCHTIP_WRITE_TOKEN`
-  (`event:write`). Writes only when the cycle writes (not in `shadow`). The candidate worker sets
+  (`event:write`). Writes only when the cycle writes (not at `record`). The candidate worker sets
   it to `0`, so it mirrors nothing.
 - **o11y:** metric `signal_fleet_glitchtip_sync{kind=mapped|merged|resolved|commented|errors}` every
   run; alert `glitchtip-sync-failing` (errors in every run for 25 min); one VictoriaLogs line per
@@ -317,7 +317,8 @@ cycle_id  stage
 - **`signal_count`:** the source's event count at decision time. Recurrence rows compare against it.
 - **`gates`:** which gates passed, e.g. `operational:upstream-rate-limit`.
 - **`cycle_id`:** the flotillad run id of the cycle (`FLEETD_CYCLE_ID`), so a row joins to its run.
-- **`stage`:** the autonomy the run had (`shadow`, `propose`, `live`).
+- **`stage`:** the autonomy the run had, as the code names it (`shadow` for record, `propose`, `live`
+  for auto).
 - The store row also carries the decision's model `turns`, `quirks` and `cap_hits`; the TSV header
   stays as above, because a changed header archives the file.
 
@@ -409,7 +410,7 @@ All under the state volume, `/home/worker/signal-fleet/` in the worker.
 | `export/inbox.json` | **the fleet's published inbox**, the one file other readers may use. Schema `fleet_inbox/v1`: `schema`, `fleet`, `generated_at`, `needs_you` (bug proposals + open escalations of the last 7 days, the same rows as `signal_fleet_escalations_7d`), `escalations_7d` (`ts`, `alertname`, `reason`, `fingerprint`, `issue`: `repo`, `number`, `url`, `state`, `title`, and `error` when GitHub could not be read, or null when never filed), `bug_queue` (`title`, `fingerprint`, `queued_at`), `queue_depth` (per kind). Rewritten atomically each cycle; a change to the fields is a new schema version |
 | `results/.last_cycle_spend` | cycle cost in USD, read by the worker after the run and counted in the routine's daily budget |
 | `results/probes/` | per-decision capture (`capture.py`), on when `SF_CAPTURE_PROBES=1` (the code default is off): one JSON per decision (mode 600) with the signal, every probe answer the model got (raw and the trimmed text it read) and, with `SF_CAPTURE_EAGER=1` (default), the rest of the probe menu at default args, so `triage.investigate(signal, probe_table=item["probes"])` replays the decision exactly; also `model_decision`, the model's own decision before the gates. About 12 KB each. Real production data: keep it in the volume, `scrub.py` before sharing |
-| `queue/` | proposals the fleet may not act on alone (`cleanup`, `config-enhancement`; everything in `shadow`) as `*.json`; handled ones renamed `.filed` / `.resolved`; `queue/archive/` holds batches set aside |
+| `queue/` | proposals the fleet may not act on alone (`cleanup`, `config-enhancement`; everything at `record`) as `*.json`; handled ones renamed `.filed` / `.resolved`; `queue/archive/` holds batches set aside |
 
 ## The operator's interface: GitHub labels
 

@@ -1,7 +1,7 @@
 # SR-0001 — The bugfix fleet's coding harness
 
 **Date:** 2026-11-15. **Scope:** `bugfix/fix` and `bugfix/open-pr` as deployed on a second machine (RFC-0010,
-RFC-0011), before `github.open_pr` leaves shadow. **Due by:** [security.md](../security.md), "the
+RFC-0011), before `github.open_pr` leaves record. **Due by:** [security.md](../security.md), "the
 coding harness … its security review is due before that fleet acts". **Reviewed by:** the build
 session. A separate model (Fable 5.1) reviewed the code the same day (its six findings fixed in
 `02c4803`); it did not review this page.
@@ -25,7 +25,7 @@ in one container:
 
 | # | Threat | Control | Residual |
 | --- | --- | --- | --- |
-| H1 | An injected issue makes the model write a harmful fix | The fix is a plan: shadow records it; at propose a person approves its exact diff (hash-bound) and merges the PR. The fleet cannot merge | a person approving a bad diff |
+| H1 | An injected issue makes the model write a harmful fix | The fix is a plan: record keeps it; at propose a person approves its exact diff (hash-bound) and merges the PR. The fleet cannot merge | a person approving a bad diff |
 | H2 | Repo code or the model exfiltrates the model key | Egress: no general web; GitHub without a token cannot receive data an attacker can read back; LiteLLM's budget | the key's spend up to its cap |
 | H3 | A run plants something in the shared repo cache for the next run (a hook, a URL rewrite, another origin) | Every git in a run has `core.hooksPath=/dev/null` (git's environment); before each fetch the cache's hooks are removed, `origin` is reset, and a URL rewrite, hooks path, fsmonitor, ssh command or protocol setting in its config stops the run | an edit to tracked objects is content-addressed: it cannot pass as another commit |
 | H4 | A run changes another case's diff | Runs are one at a time; each run's worktree is new from the fetched commit; open-pr fetches the base from GitHub by its id and applies only the approved diff | — |
@@ -47,7 +47,7 @@ in one container:
 
 ## Verdict
 
-The fleet may leave shadow for **propose** once the operator has made the GitHub App (contents and
+The fleet may leave record for **propose** once the operator has made the GitHub App (contents and
 pull requests write, metadata read, on example/shop and chipi/flotilla only). Nothing found allows a
 write without a person's approval of the exact diff. **Auto stays out of reach:** repo actions are
 capped at propose by the registry and policy.

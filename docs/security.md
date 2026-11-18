@@ -93,7 +93,7 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 
 ## Not covered yet
 
-- **ADR-0005's pipeline is built and runs in shadow** (pipeline v1, 2026-11-14): cases, policy with
+- **ADR-0005's pipeline is built and runs at record** (pipeline v1, 2026-11-14): cases, policy with
   taint, the circuit breaker, the host incident and recurrence rules, the freeze, and approvals in
   the UI and the CLI. The only channel is Slack, built and not wired (no app yet). The triage fleet
   is not a case producer: it files through its own ledger, guarded by its code gates.
@@ -111,7 +111,7 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
 - **The coding harness** used by the bugfix fleet runs code from the repos it fixes: reviewed in
   [SR-0001](security-reviews/SR-0001-bugfix-coding-harness.md) (2026-11-15). The fleet may go to
   `github.open_pr` is at propose since 2026-11-16 (a person approves every PR plan); the fix routines
-  stay in shadow, and the fleet is STOPped while its evaluation runs. The advisor's "read only" is
+  stay at record, and the fleet is STOPped while its evaluation runs. The advisor's "read only" is
   not by construction.
 - **Model-written commands** (an investigation sandbox) are not part of the design; they get their
   own threat model if they are added.

@@ -163,7 +163,7 @@ refuses to start, before anything changes:
 - **Not yet:** list `ops/backup-monitor` and `ops/rerun-backup` in `disabled_routines`.
 
 They reach VictoriaMetrics through the proxy, already on its allowlist for flotillad's metrics.
-`rerun-backup` is capped at shadow: its plans are recorded and nothing is sent to the host.
+`rerun-backup` is capped at record: its plans are recorded and nothing is sent to the host.
 `flotilla case list` and `flotilla case show <id>` show what they did.
 
 ## The deploy stand-down (RFC-0004 §5.1)
@@ -215,7 +215,7 @@ target still held. A host not connected is retried for 10 minutes, then the case
 
 ADR-0004's live proof for a change to the triage fleet after the switch: the image under test runs
 as a second worker beside the live one, with its own state, and the routine `triage/cycle-shadow`,
-capped at `shadow` by its spec (`max_autonomy`), runs the same command on it. flotillad refuses any
+capped at `record` by its spec (`max_autonomy`), runs the same command on it. flotillad refuses any
 autonomy above the cap, even the operator's, and the scheduler never runs it above the cap whatever
 a control says.
 
@@ -231,7 +231,7 @@ a control says.
 5. To end it: put `triage/cycle-shadow` back in `disabled_routines`, drop `COMPOSE_PROFILES`,
    deploy. The candidate's volume stays until removed by hand.
 
-The candidate shares the triage worker's secrets volume and the proxy's allowlist: in shadow the fleet
+The candidate shares the triage worker's secrets volume and the proxy's allowlist: at record the fleet
 makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there. It reads the
 live worker's `worker-triage.env`, but the compose file sets `ROUTINE_SF_SERVICE=triage-fleet-candidate`
 and `ROUTINE_SF_GLITCHTIP_SYNC=0` over it, so its metrics, inbox and traces never count as the live

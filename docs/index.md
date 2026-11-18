@@ -8,7 +8,7 @@ It runs one installation's operations today: a **triage** fleet that files real 
 errors, a **jobs** fleet that watches backups, a **review** fleet that reviews closed cases, a **sites**
 fleet that checks sites' search reach, and a **bugfix** fleet that drafts fixes as PRs. Every
 problem is a case, every
-action starts in shadow and earns its autonomy, and what leaves the platform is decided by code after
+action starts at record and earns its autonomy, and what leaves the platform is decided by code after
 the model.
 
 ## Where to start

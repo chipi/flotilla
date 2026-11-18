@@ -158,8 +158,8 @@ commit to this page, with the reason.
 | What | Where |
 | --- | --- |
 | Control plane | the installation's host, in its production container engine beside its other services, deployed by the operator account with `deploy/server/deploy.sh` |
-| Running today | `flotillad`; `worker-triage` (triage at propose) and `worker-triage-candidate` (shadow); `worker-ops-read`, `worker-ops-act-host`; `worker-marketing`; the egress proxies `egress` and `egress-seo`. The bugfix workers run on a second machine as remote workers |
+| Running today | `flotillad`; `worker-triage` (triage at propose) and `worker-triage-candidate` (at record); `worker-ops-read`, `worker-ops-act-host`; `worker-marketing`; the egress proxies `egress` and `egress-seo`. The bugfix workers run on a second machine as remote workers |
 | Model endpoint | the installation's LiteLLM gateway, reached through the egress proxy |
 | Network | a private network; the UI, API and MCP behind a reverse proxy node of their own |
-| Host agents | the host, live since 2026-11-14 (v1: `backup.rerun_observability`, in shadow; the Slack connector once Slack is wired), then the model host and the production VPS |
+| Host agents | the host, live since 2026-11-14 (v1: `backup.rerun_observability`, at record; the Slack connector once Slack is wired), then the model host and the production VPS |
 | Credentials | each one has a row in the installation's credentials table |
