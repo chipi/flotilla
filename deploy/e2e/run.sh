@@ -15,7 +15,11 @@
 # from flotillad.yaml, the key from the fleet's secrets file and the proxy, and its span is exported. The UI
 # in Chromium behind a Caddy TLS front (ui_browser.py): sign-in, the session cookie, a pause and a resume
 # from the fleet page, phone width, the fonts, no CSP violations, sign-out. The host agent (ADR-0006): a CA
-# made with `flotilla ca`, enrolment, connect and heartbeat, a flotillad restart, revocation.
+# made with `flotilla ca`, enrolment, connect and heartbeat, a flotillad restart, revocation. Routine versions
+# (docs/wip/v2-design.md): e2e/versioned, a routine folder with versions v1 to v6, promoted, rolled back and
+# retired through the CLI (an agent refused, evidence and reasons required), a v2 plan withdrawn by a rollback,
+# a promote with a run in flight, a changed live folder refusing flotillad's start and -check, a changed shadow
+# starting fine; the autonomy rename (a routine at record reads FLEETD_STAGE=shadow); the same forms in Chromium.
 # Never on the production engine (the installation's ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -266,7 +270,7 @@ echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 
 fi
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
-  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 11 actions$" \
+  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 12 actions$" \
   && echo "$OUT" | grep >/dev/null "^action crm.merge$" && echo "$OUT" | grep >/dev/null "^action email.send$" \
   && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
@@ -539,6 +543,102 @@ echo "$OUT" | grep >/dev/null 'worker triage-candidate: {"ok":true' && ok "floti
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
 [ "$NW" = "${P}_flotilla " ] && ok "the candidate is on the internal network only" || bad "candidate networks: '$NW'"
 
+echo "== routine versions (docs/wip/v2-design.md section 1): the folder layout, the states, the operator's controls, the freeze, the rename"
+# e2e/versioned is a routine folder with v1 to v6; v1 went live at the first start and the rest arrived as shadows.
+vq() {  # vq ROUTINE 'python expression over v, the routine's versions answer': print it
+  cli versions "$1" -json | python3 -c "import json,sys; v=json.load(sys.stdin); print($2)"
+}
+vstates() { vq "$1" "' '.join('%d:%s' % (x['version'], x['state']) for x in v['versions'])"; }
+vrow() { cli versions "$1" -json | python3 -c "import json,sys; v=json.load(sys.stdin); x=next(y for y in v['versions'] if y['version'] == $2); print(x$3)"; }
+runs_json() { cli runs "$1" -json -n 100; }
+[ "$(vstates e2e/versioned)" = "1:live 2:shadow 3:shadow 4:shadow 5:shadow 6:shadow" ] \
+  && ok "e2e/versioned (a routine folder): v1 live from the first start, v2 to v6 arrived as shadows" || bad "versions at start: $(vstates e2e/versioned)"
+[ "$(runs_json e2e/versioned | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["runs"] or []))')" = 0 ] \
+  && ok "no shadow ran: e2e/versioned has no run at all" || bad "e2e/versioned has runs before any case: $(runs_json e2e/versioned | head -c 300)"
+cli status -json | python3 -c '
+import json, sys
+r = {x["id"]: x for x in json.load(sys.stdin)["routines"]}
+h, v = r["platform/heartbeat"], r["e2e/versioned"]
+sys.exit(0 if h["version"] == 1 and len(h["version_hash"]) == 64 and v["version"] == 1 and v["version_hash"] != h["version_hash"] else 1)' \
+  && ok "status carries each routine's bound version and its frozen hash (the heartbeat is a folder routine at v1)" || bad "status version fields"
+# every flat spec keeps the hash the unit test pins (internal/spec/testdata/golden_hashes.txt): runs.spec_hash and a deploy's before/after proof are unchanged
+if cli status -json | python3 -c '
+import json, sys
+want = dict(l.split() for l in open(sys.argv[1]).read().split("\n") if l.strip())
+got = {x["id"]: x["spec_hash"] for x in json.load(sys.stdin)["routines"]}
+miss = sorted(i for i in want if got.get(i) != want[i])
+print(len(want) - len(miss), "of", len(want), "flat routines have the pinned hash", miss[:5])
+sys.exit(1 if miss else 0)' "$ROOT/internal/spec/testdata/golden_hashes.txt" > "$WORK/golden.out" 2>&1; then
+  ok "flat routines load with unchanged hashes in the real image ($(cat "$WORK/golden.out"))"
+else
+  bad "flat spec hashes moved: $(cat "$WORK/golden.out")"
+fi
+OUT="$(agent promote e2e/versioned v2 --autonomy propose --reason "e2e: an agent tries" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot promote a version ($OUT)" || bad "agent promote: $OUT"
+OUT="$(agent rollback e2e/versioned --autonomy propose --reason "e2e: an agent tries" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot roll back" || bad "agent rollback: $OUT"
+OUT="$(agent retire e2e/versioned v4 --reason "e2e: an agent tries" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot retire" || bad "agent retire: $OUT"
+OUT="$(cli promote e2e/versioned v2 --reason "e2e: no autonomy chosen" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*needs the routine's autonomy" && ok "a promote without the routine's autonomy is refused (never inherited in silence)" || bad "promote without autonomy: $OUT"
+OUT="$(cli promote e2e/versioned v2 --autonomy propose 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*lacks the evidence its acceptance names (pairs)" \
+  && ok "a promote without a reason is refused: shadows record no pairs yet, so the default acceptance (pairs) is missing" || bad "promote without a reason: $OUT"
+OUT="$(cli promote e2e/versioned v2 --autonomy propose --gate lint=fail 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*failed result (gate lint)" && ok "a failed gate is refused without a reason" || bad "failed gate: $OUT"
+OUT="$(cli promote e2e/versioned v2 --autonomy auto --reason "e2e: above the cap" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*capped at propose" && ok "a promote above the routine's max_autonomy is refused" || bad "promote above the cap: $OUT"
+OUT="$(cli promote e2e/versioned v9 --autonomy propose --reason "e2e" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 404" && ok "a promote of a version that is not there is refused (404)" || bad "promote v9: $OUT"
+OUT="$(cli promote e2e/versioned v1 --autonomy propose --reason "e2e" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409.*is live, not a shadow" && ok "the live version cannot be promoted again" || bad "promote the live one: $OUT"
+[ "$(vstates e2e/versioned)" = "1:live 2:shadow 3:shadow 4:shadow 5:shadow 6:shadow" ] && ok "every refused call left the states alone" || bad "refusals changed the states: $(vstates e2e/versioned)"
+OUT="$(cli promote e2e/versioned v2 --autonomy propose --reason "e2e: no pairs yet; the diff was read" --no-pairs --gate replay=pass@e2e/run.sh --eval run-1=pass 2>&1)"
+echo "$OUT" | grep >/dev/null '"state":"live"' && [ "$(vstates e2e/versioned)" = "1:previous 2:live 3:shadow 4:shadow 5:shadow 6:shadow" ] \
+  && ok "promote with the autonomy, a reason and evidence: v2 live, v1 previous" || bad "promote: $OUT / $(vstates e2e/versioned)"
+[ "$(vrow e2e/versioned 2 "['state_by'] + '|' + x['autonomy_at_promote'] + '|' + x['promotion']['gates'][0]['ref'] + '|' + ','.join(x['promotion']['missing']) + '|' + ','.join(x['promotion']['acceptance'])")" = "operator|propose|e2e/run.sh|pairs|pairs" ] \
+  && ok "the promote recorded who, the autonomy, the acceptance in force, the evidence given and what it went ahead without" || bad "promote record: $(vrow e2e/versioned 2 '')"
+EV="$(cli events -n 40)"
+echo "$EV" | grep >/dev/null "operator .*version.promote .*e2e/versioned@v2 .*gate replay=pass.*eval run-1=pass.*no pairs yet" \
+  && echo "$EV" | grep >/dev/null "control.autonomy .*e2e/versioned .*propose" && ok "the event log records the promote and the autonomy chosen, who and why" || bad "promote events: $(echo "$EV" | grep -E 'version|e2e/versioned' | head -4)"
+OUT="$(cli retire e2e/versioned v2 --reason "e2e" 2>&1)"; OUT2="$(cli retire e2e/versioned v1 --reason "e2e" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409.*roll back or promote instead" && echo "$OUT2" | grep >/dev/null "HTTP 409.*roll back or promote instead" \
+  && ok "the live and the previous version cannot be retired" || bad "retire live/previous: $OUT / $OUT2"
+cli retire e2e/versioned v4 --reason "e2e: not needed" >/dev/null 2>&1 && [ "$(vrow e2e/versioned 4 "['state'] + '|' + x['retired_kind']")" = "retired|retired" ] \
+  && ok "a shadow is retired with a reason" || bad "retire a shadow: $(vstates e2e/versioned)"
+cli status | grep -E "^e2e/versioned " | grep >/dev/null " propose  *propose " && ok "status shows the autonomy the promote set" || bad "status after the promote: $(cli status | grep '^e2e/versioned')"
+# The rename (autonomy shadow became record; routines still read FLEETD_STAGE=shadow): e2e/stage-probe, at record, exits 0 only if it does
+cli status | grep -E "^e2e/stage-probe " | grep >/dev/null " record  *record " && ok "a routine at the lowest level reads record in status" || bad "stage-probe status: $(cli status | grep '^e2e/stage-probe')"
+cli run e2e/stage-probe >/dev/null
+for i in $(seq 1 30); do cli runs e2e/stage-probe -n 1 | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 1; done
+[ "$(runs_json e2e/stage-probe | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"][0]; print(r["status"], r["autonomy"])')" = "ok record" ] \
+  && ok "at autonomy record a run records autonomy record and reads FLEETD_STAGE=shadow (the probe exits 0 only then)" || bad "stage-probe run: $(cli runs e2e/stage-probe -n 1)"
+cli autonomy e2e/stage-probe propose --reason "e2e: up and back down" >/dev/null && cli autonomy e2e/stage-probe record >/dev/null \
+  && cli events -n 10 | grep >/dev/null "control.autonomy .*e2e/stage-probe .*record" && ok "the autonomy control lists the new word: set back to record, the event says record" || bad "stage-probe autonomy events: $(cli events -n 6)"
+# The freeze: a live version never changes. One byte of v2's folder (live) and flotillad refuses to start; -check refuses it first.
+SPEC2="$WORK/config/specs/e2e/versioned/v2/spec.yaml"; SPEC3="$WORK/config/specs/e2e/versioned/v3/spec.yaml"
+V3H="$(vrow e2e/versioned 3 "['hash']")"
+cp "$SPEC2" "$WORK/v2.spec.orig"; cp "$SPEC3" "$WORK/v3.spec.orig"
+echo "# one byte" >> "$SPEC2"
+OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
+[ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/versioned v2 is live and its folder changed (recorded [0-9a-f]*, found [0-9a-f]*): spec.yaml (changed)" \
+  && ok "-check refuses a changed live version, naming the file (exit $RC)" || bad "-check on a changed live folder: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -2)"
+$D restart flotillad >/dev/null 2>&1
+seen flotillad "versions: e2e/versioned v2 is live and its folder changed" && ok "flotillad refuses to start on it (exit 2), and says why" || bad "flotillad started over a changed live version: $($D logs flotillad 2>&1 | tail -3)"
+cli health >/dev/null 2>&1 && bad "flotillad answers while its live version is changed" || ok "flotillad does not serve while a live version is changed"
+cp "$WORK/v2.spec.orig" "$SPEC2"
+$D start flotillad >/dev/null 2>&1
+for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
+cli health >/dev/null 2>&1 && [ "$(vstates e2e/versioned | cut -d' ' -f1-2)" = "1:previous 2:live" ] \
+  && $D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check >/dev/null 2>&1 \
+  && ok "restored, -check passes and flotillad starts: v2 still live, v1 previous (nothing was re-recorded)" || bad "after restoring v2: $(vstates e2e/versioned) $($D logs flotillad 2>&1 | tail -2)"
+# a shadow may change: it starts fine and its hash follows its folder
+echo "# an edited shadow" >> "$SPEC3"
+$D restart flotillad >/dev/null 2>&1
+for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
+[ "$(vrow e2e/versioned 3 "['state']")" = shadow ] && [ "$(vrow e2e/versioned 3 "['hash']")" != "$V3H" ] && cli events -n 20 | grep >/dev/null "version.update .*e2e/versioned@v3 .*shadow changed" \
+  && ok "a changed shadow starts fine and its hash follows (a version.update event says so)" || bad "changed shadow: $(vrow e2e/versioned 3 "['state'] + ' ' + x['hash'][:12]") (was ${V3H:0:12})"
+
 echo "== a changed config recreates its service (deploy.sh's FLOTILLA_CONFIG_HASH_*)"
 started() { $D inspect "$1" --format '{{.State.StartedAt}}' 2>&1; }
 F0="$(started flotillad)"; E0="$(started flotilla-egress)"; W0="$(started flotilla-worker-triage)"
@@ -645,6 +745,59 @@ status_is() {  # status_is CASE STATUS: wait for it
 }
 cli action autonomy host.true propose --reason "e2e: the security e2e's harmless action" >/dev/null 2>&1
 cli action list 2>&1 | grep >/dev/null "^host.true  *propose " && ok "host.true promoted to propose (operator, with a reason)" || bad "promote: $(cli action list 2>&1)"
+echo "== routine versions on a case: a v2 plan waits for approval, a rollback withdraws it, a promote leaves a run in flight alone"
+# v2 is live (promoted above, autonomy propose). The monitor's case goes to v2, whose plan waits at propose.
+cli action autonomy host.vtrue propose --reason "e2e: the versions check's harmless action" >/dev/null 2>&1
+VC="$(proposed e2e_versioned versioned-monitor)"
+[ -n "$VC" ] && ok "the case went to the live version (v2); its plan waits for approval at propose ($VC awaiting approval)" \
+  || bad "no e2e_versioned case awaiting approval: $(cli case list --all 2>&1 | grep e2e_versioned)"
+[ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(len(r), r[0]["version"], r[0]["status"])')" = "1 2 ok" ] \
+  && ok "the run after the promote recorded version 2" || bad "the run's version: $(runs_json e2e/versioned | head -c 300)"
+OUT="$(cli rollback e2e/versioned --autonomy propose 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*needs a reason" && ok "a rollback without a reason is refused" || bad "rollback without a reason: $OUT"
+OUT="$(cli rollback e2e/versioned --reason "e2e: no autonomy" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 400.*needs the routine's autonomy" && ok "a rollback without the autonomy is refused: the operator confirms it" || bad "rollback without autonomy: $OUT"
+OUT="$(cli rollback e2e/versioned --autonomy propose --reason "e2e: v2's plan is wrong")"
+echo "$OUT" | grep >/dev/null "\"rolled_back\":2" && echo "$OUT" | grep >/dev/null "\"live\":1" && echo "$OUT" | grep >/dev/null "\"cases\":\[\"$VC\"\]" \
+  && ok "rolled back: v1 live again; the answer names the case whose plan was withdrawn ($OUT)" || bad "rollback: $OUT"
+OUT="$(cli case approve "$VC" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409" && ok "the withdrawn plan cannot be approved (409: $(echo "$OUT" | sed 's/^HTTP 409: //' | head -c 80))" || bad "approve after the rollback: $OUT"
+[ "$(vstates e2e/versioned | cut -d' ' -f1-2)" = "1:live 2:retired" ] \
+  && [ "$(vrow e2e/versioned 2 "['retired_kind'] + '|' + x['state_by'] + '|' + x['state_why']")" = "rolled_back|operator|e2e: v2's plan is wrong" ] \
+  && ok "v2 is retired as rolled back, who and why recorded; v1 is live and there is no previous" || bad "after the rollback: $(vstates e2e/versioned) $(vrow e2e/versioned 2 '')"
+SHOW="$(cli case show "$VC" 2>&1)"
+echo "$SHOW" | grep >/dev/null "case.rolled_back .*operator .*by operator .*awaiting_approval->handed_over" \
+  && ok "the case went back to the acting routine: case.rolled_back, awaiting_approval to handed_over, by the operator" || bad "case after the rollback: $(echo "$SHOW" | tail -4)"
+cli events -n 40 | grep >/dev/null "operator .*version.rollback .*e2e/versioned@v2 .*v1 is live again.*1 plan(s) awaiting approval marked rolled back.*e2e: v2's plan is wrong" \
+  && ok "the event log records the rollback, who and why" || bad "rollback event: $(cli events -n 40 | grep version | head -3)"
+OUT="$(cli rollback e2e/versioned --autonomy propose --reason "e2e: again" 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409.*no previous" && ok "with no previous version a rollback is refused" || bad "second rollback: $OUT"
+# v1 plans again (the previous version, on this image): the same case waits again, a v1 plan
+status_is "$VC" awaiting_approval && [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(r[0]["version"], r[0]["status"])')" = "1 ok" ] \
+  && ok "the live version (v1, the previous one on this image) planned the case again: its run recorded version 1" || bad "re-plan by v1: $(cli case list --all 2>&1 | grep e2e_versioned) $(runs_json e2e/versioned | head -c 200)"
+cli case reject "$VC" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC" closed \
+  && ok "the case was rejected and closed by the operator (the target is released)" || bad "closing the versions case: $(cli case show "$VC" 2>&1 | tail -2)"
+cli action autonomy host.vtrue propose --reason "e2e: back to propose after the rejection's demotion" >/dev/null 2>&1
+# a run in flight at promote finishes with the version it started with (e2e/hang's pattern: a hold file in the worker makes the run last)
+$D exec flotilla-worker-ops-act-host touch /tmp/e2e-versioned-hold >/dev/null 2>&1 || bad "cannot create the hold file in the ops-act-host worker"
+cli run e2e/versioned-monitor >/dev/null
+for i in $(seq 1 60); do cli status | grep -E "^e2e/versioned " | grep >/dev/null "running " && break; sleep 1; done
+RUNID="$(cli status | awk '/^e2e\/versioned / {for (i = 1; i <= NF; i++) if ($i == "running") print $(i + 1)}')"
+[ -n "$RUNID" ] && ok "a run of the live version (v1) is in flight ($RUNID)" || bad "no run in flight: $(cli status | grep '^e2e/versioned')"
+OUT="$(cli promote e2e/versioned v3 --autonomy propose --reason "e2e: promoted with a run in flight" --no-pairs 2>&1)"
+$D exec flotilla-worker-ops-act-host rm -f /tmp/e2e-versioned-hold >/dev/null 2>&1
+echo "$OUT" | grep >/dev/null '"state":"live"' && [ "$(vstates e2e/versioned | cut -d' ' -f1-3)" = "1:previous 2:retired 3:live" ] \
+  && ok "v3 promoted while that run was in flight: v3 live, v1 previous, the old previous (none) and v2 stay retired" || bad "promote with a run in flight: $OUT / $(vstates e2e/versioned)"
+for i in $(seq 1 90); do cli status | grep -E "^e2e/versioned " | grep >/dev/null "running " || break; sleep 1; done
+[ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runs"] if x["id"] == sys.argv[1]][0]; print(r["version"], r["status"])' "$RUNID")" = "1 ok" ] \
+  && ok "the run in flight finished as v1 (the version it started with) and counted" || bad "the run in flight: $(runs_json e2e/versioned | head -c 300)"
+VC2="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"
+for i in $(seq 1 30); do [ -n "$VC2" ] && break; sleep 2; VC2="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"; done
+[ -n "$VC2" ] && ! cli case show "$VC2" 2>&1 | grep >/dev/null "rolled_back" \
+  && ok "the plan v1 made stays approvable (it was live when it made it): $VC2 awaits approval, not marked rolled back" || bad "the in-flight plan: $(cli case list --all 2>&1 | grep e2e_versioned)"
+cli case reject "$VC2" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC2" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC2" closed \
+  && ok "that case was rejected and closed by the operator" || bad "closing the second versions case: $(cli case show "$VC2" 2>&1 | tail -2)"
+
 HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
   || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"

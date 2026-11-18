@@ -1,0 +1,18 @@
+fleet: e2e
+routine: stage-probe
+description: >-
+  The e2e's check of the autonomy rename, never shipped: a routine at autonomy record must still read
+  FLEETD_STAGE=shadow (internal/spec FleetdStage; triage's dry-run guarantee tests that string). It fails
+  unless it does. Disabled, so it never runs on a timer; the e2e runs it by hand.
+enabled: false
+worker: triage
+trigger:
+  every: 60m
+run:
+  command: test "$FLEETD_STAGE" = shadow
+  workdir: .
+  timeout: 1m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

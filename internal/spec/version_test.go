@@ -37,7 +37,11 @@ func writeFolder(t *testing.T, d string) {
 
 // Every flat spec shipped here keeps the hash it had before routine versions existed: that hash is
 // runs.spec_hash and the deploy's before/after proof. The values in testdata were generated from the
-// code at main@a9dc277; a legitimate edit of a spec or of a prompt it declares changes its line.
+// code at main@a9dc277; a legitimate edit of a spec or of a prompt it declares changes its line. A routine
+// that moved to the folder layout (platform/heartbeat, e2e/versioned) has a new recipe, so it leaves this file
+// for golden_folder_hashes.txt: its Routine.Hash (what runs.spec_hash records) and its v1's frozen hash. Both
+// are recorded when the routine goes live, and a store that recorded the flat recipe refuses the folder one
+// (internal/versions: the freeze); moving a routine that is already live needs step 6's controlled re-record.
 func TestFlatSpecHashesAreGolden(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "golden_hashes.txt"))
 	if err != nil {
@@ -48,13 +52,17 @@ func TestFlatSpecHashesAreGolden(t *testing.T) {
 		f := strings.Fields(l)
 		want[f[0]] = f[1]
 	}
-	got := map[string]string{}
+	got, folder := map[string]string{}, map[string]string{}
 	for _, d := range []string{filepath.Join("..", "..", "fleets"), filepath.Join("..", "..", "deploy", "e2e", "fleets")} {
 		routines, err := Load(d)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, j := range routines {
+			if !j.Versions[0].Legacy {
+				folder[j.ID()] = j.Hash + " " + j.VersionHash
+				continue
+			}
 			got[j.ID()] = j.Hash
 			if len(j.Versions) != 1 || !j.Versions[0].Legacy || j.Version != 1 || j.VersionHash == "" {
 				t.Errorf("%s: a flat spec is v1 (legacy), got %d versions, bound v%d", j.ID(), len(j.Versions), j.Version)
@@ -73,6 +81,23 @@ func TestFlatSpecHashesAreGolden(t *testing.T) {
 	}
 	if len(got) != len(want) {
 		t.Errorf("%d flat specs loaded, %d in the golden file: add a line for a new routine", len(got), len(want))
+	}
+	raw, err = os.ReadFile(filepath.Join("testdata", "golden_folder_hashes.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFolder := map[string]string{}
+	for _, l := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		f := strings.SplitN(l, " ", 2)
+		wantFolder[f[0]] = f[1]
+	}
+	for id, h := range folder {
+		if wantFolder[id] != h {
+			t.Errorf("%s (folder layout): Hash and v1 VersionHash %q, golden %q", id, h, wantFolder[id])
+		}
+	}
+	if len(folder) != len(wantFolder) {
+		t.Errorf("%d folder routines loaded, %d in golden_folder_hashes.txt", len(folder), len(wantFolder))
 	}
 }
 

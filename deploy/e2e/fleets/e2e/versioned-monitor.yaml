@@ -1,0 +1,20 @@
+fleet: e2e
+routine: versioned-monitor
+description: >-
+  The e2e's versions check (see versioned), never shipped: run by hand, it reports one e2e_versioned
+  detection on host:e2e-host, the e2e's stand-in host, so a case reaches the routine's live version.
+enabled: false
+worker: ops-read
+trigger:
+  every: 60m
+detects: [e2e_versioned]
+run:
+  command: >-
+    printf '{"outcome": "detections", "detections": [{"kind": "e2e_versioned", "target": "host:e2e-host", "detail": "e2e"}]}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

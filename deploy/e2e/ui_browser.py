@@ -6,7 +6,8 @@ runs it) to flotillad's UI listener. run.sh starts both:
 
 What only a browser shows: the Secure, SameSite=Strict session cookie is kept and sent back, forms post
 with their CSRF field and follow the redirect, the CSP blocks nothing the pages use, the self-hosted
-fonts load, and a phone-width page does not scroll sideways. Prints one PASS or FAIL line per check;
+fonts load, a phone-width page does not scroll sideways, and the routine page's version forms (promote, roll
+back, retire) work. Prints one PASS or FAIL line per check;
 exits 1 on any FAIL.
 """
 import re
@@ -46,6 +47,65 @@ with sync_playwright() as pw:
     cookie = next((c for c in ctx.cookies() if c["name"] == "__Host-flotilla"), None)
     check(cookie is not None and cookie["httpOnly"] and cookie["secure"] and cookie["sameSite"] == "Strict",
           "the browser keeps the session cookie (HttpOnly, Secure, SameSite=Strict)")
+
+    # Routine versions (docs/wip/v2-design.md section 1) on e2e/versioned's page, which run.sh's versions sections
+    # leave with v3 live, v1 previous, v5 and v6 shadows: the table and every form at phone widths (360 to 430 px:
+    # no sideways scroll), then the operator's forms in a real browser: promote, roll back, retire.
+    VER = BASE + "/fleets/e2e/versioned"
+    for w in (360, 390, 430):
+        page.set_viewport_size({"width": w, "height": 844})
+        for path in ("/fleets/e2e/versioned", "/fleets/platform/heartbeat"):
+            page.goto(BASE + path)
+            page.evaluate("document.fonts.ready.then(() => 1)")
+            wide = page.evaluate("document.documentElement.scrollWidth")
+            check(wide <= w, f"{path} at {w}px: no sideways scroll ({wide})")
+        page.goto(VER)
+        forms = page.locator("#versions details > summary")
+        for i in range(forms.count()):
+            forms.nth(i).click()
+        wide = page.evaluate("document.documentElement.scrollWidth")
+        cells = page.evaluate("[...document.querySelectorAll('#versions td')].filter(td => td.getBoundingClientRect().right > window.innerWidth + 1).length")
+        check(forms.count() >= 3 and wide <= w and cells == 0,
+              f"the versions table with {forms.count()} forms open at {w}px: no sideways scroll, no cell out of the page ({wide}, {cells} cells)")
+    page.set_viewport_size({"width": 390, "height": 844})
+
+    def vrow(n):
+        return page.locator("#versions tbody tr").filter(has=page.locator("td[data-label=Version]", has_text=f"v{n}"))
+
+    page.goto(VER)
+    check("shadow: not run yet" in vrow(5).inner_text() and vrow(3).locator(".chip", has_text="live").count() == 1,
+          "the page shows v3 live and v5 a shadow that has not run")
+    vrow(5).locator("summary", has_text="Promote").click()
+    pbtn = vrow(5).locator("form[action$='/versions/5/promote'] button[type=submit]")
+    check(pbtn.is_disabled(), "Promote waits for a reason (flotilla.js runs under the CSP)")
+    pform = vrow(5).locator("form[action$='/versions/5/promote']")
+    pform.locator("textarea[name=reason]").fill("e2e: promoted in a browser")
+    pform.locator("select[name=autonomy]").select_option("propose")
+    pform.locator("textarea[name=gates]").fill("replay-corpus=pass@e2e")
+    pform.locator("input[name=without_pairs]").check()
+    pbtn.click()
+    page.wait_for_load_state()
+    check(page.locator(".flash--ok").count() == 1 and vrow(5).locator(".chip", has_text="live").count() == 1
+          and vrow(3).locator(".chip", has_text="previous").count() == 1 and "gate replay-corpus pass" in vrow(5).inner_text(),
+          "promote v5 from its form: live, v3 previous, the gate result and who and why kept on the row")
+    vrow(5).locator("summary", has_text="Roll back").click()
+    rbtn = vrow(5).locator("form[action$='/rollback'] button[type=submit]")
+    check(rbtn.is_disabled(), "Roll back waits for a reason")
+    vrow(5).locator("form[action$='/rollback'] textarea[name=reason]").fill("e2e: rolled back in a browser")
+    rbtn.click()
+    page.wait_for_load_state()
+    check(page.locator(".flash--ok").count() == 1 and vrow(3).locator(".chip", has_text="live").count() == 1
+          and "rolled back at" in vrow(5).inner_text() and "e2e: rolled back in a browser" in vrow(5).inner_text(),
+          "roll back from its form: v3 live again, v5 retired as rolled back with who and why")
+    vrow(6).locator("summary", has_text="Retire").click()
+    xbtn = vrow(6).locator("form[action$='/versions/6/retire'] button[type=submit]")
+    check(xbtn.is_disabled(), "Retire waits for a reason")
+    vrow(6).locator("form[action$='/versions/6/retire'] textarea[name=reason]").fill("e2e: retired in a browser")
+    xbtn.click()
+    page.wait_for_load_state()
+    check(page.locator(".flash--ok").count() == 1 and vrow(6).locator(".chip", has_text="retired").count() == 1,
+          "retire a shadow from its form")
+    check(page.locator("#versions summary").count() == 0, "with no shadow and no previous version left, no form is offered")
 
     # the routine's block on its fleet's workflow: pause, then resume with a reason (the Resume… details;
     # flotilla.js keeps its button disabled until the reason has text)

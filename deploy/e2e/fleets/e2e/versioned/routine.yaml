@@ -1,0 +1,15 @@
+fleet: e2e
+routine: versioned
+description: >-
+  The e2e's versions check, never shipped: an acting routine for the case kind e2e_versioned, in the folder
+  layout with several versions. v1 is live from the first deploy; the others arrive as shadows and the e2e
+  promotes, rolls back and retires them. Capped at propose, so a plan waits for an operator, as a real
+  write does. A version's plan says which version made it.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: e2e_versioned}
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0

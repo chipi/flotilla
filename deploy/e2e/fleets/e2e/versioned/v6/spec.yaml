@@ -1,0 +1,7 @@
+run:
+  command: >-
+    if [ -e /tmp/e2e-versioned-hold ]; then sleep 30; fi;
+    printf '{"outcome": "plan", "action": "host.vtrue", "params": {"host": "e2e-host"}, "detail": "e2e: plan from v6"}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 2m

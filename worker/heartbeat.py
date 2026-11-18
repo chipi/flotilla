@@ -1,4 +1,4 @@
-"""The platform heartbeat (fleets/platform/heartbeat.yaml): proves a worker can run a routine and that
+"""The platform heartbeat (fleets/platform/heartbeat/): proves a worker can run a routine and that
 egress is enforced, both ways. Exit 0 only when an allowed host answers through the proxy AND a host
 off the list is refused by it.
 
