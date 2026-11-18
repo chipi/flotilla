@@ -1,6 +1,6 @@
 # End to end: the compose stack with stand-in services (deploy/e2e/run.sh), on the runner's own Docker
 # engine. `make test-integration` is this same script (the Makefile's "Integration = the e2e stack"), so
-# one run covers both. About 10 minutes on the X3 with warm layers; it builds six images and pulls a
+# one run covers both. About 10 minutes on a self-hosted runner with warm layers; it builds six images and pulls a
 # browser image, so it does not run on every push to every PR branch: it runs on pushes to main and
 # on PRs that touch more than docs (the paths-ignore list). The replays are not here: they need the
 # private corpora (signal-fleet/replays.sh), which a hosted runner cannot read.
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # run.sh talks to `docker --context ${DOCKER_CONTEXT_DEV:-dev}`; a hosted runner has only the
-      # default context, and its engine is the runner's own, so the dev-engine rule (homelab ADR-0009)
+      # default context, and its engine is the runner's own, so the dev-engine rule (the installation's ADR-0009)
       # is met by the runner being a throwaway VM.
       - name: Run the e2e stack
         env:

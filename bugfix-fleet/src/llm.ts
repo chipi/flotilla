@@ -20,8 +20,8 @@ export interface LlmMeta {
   harness?: string;
 }
 
-// Chat endpoint: OpenRouter direct by default, but override to the homelab LiteLLM
-// gateway (LLM_BASE_URL=http://homelab:4001/v1) to route every call through the
+// Chat endpoint: OpenRouter direct by default, but override to the installation's LiteLLM
+// gateway (LLM_BASE_URL=http://example:4001/v1) to route every call through the
 // gateway — per-consumer virtual-key budget, spend metering, and gateway-side
 // Langfuse. When LLM_API_KEY is set (the litellm virtual key) it overrides the
 // per-call apiKey; the model names then become litellm aliases (fleet-bugfix-*).

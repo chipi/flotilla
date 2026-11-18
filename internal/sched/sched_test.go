@@ -109,7 +109,7 @@ func TestFreeze(t *testing.T) {
 		started = len(fr.got) == 1
 		fr.mu.Unlock()
 	}
-	_ = s.Store.SetControl(ctx, FreezeSubject, KeyFrozen, "1", "claude-homelab", "api")
+	_ = s.Store.SetControl(ctx, FreezeSubject, KeyFrozen, "1", "claude-example", "api")
 	close(fr.block)
 	if r := <-done; r.Autonomy != "auto" || fr.got[0].Env["FLEETD_STAGE"] != spec.FleetdStage("auto") {
 		t.Fatalf("a run in flight when the freeze came: %s / %s", r.Autonomy, fr.got[0].Env["FLEETD_STAGE"])
@@ -149,8 +149,8 @@ func TestRunGetsTheModelsSection(t *testing.T) {
 		t.Fatal("FLOTILLA_MODELS set without a models section")
 	}
 	// security T4: a run gets only the aliases its spec names, with their endpoints; none named, none
-	s.Models = &models.Config{Endpoints: map[string]models.Endpoint{"gw": {BaseURL: "http://gw/v1"}, "dgx": {BaseURL: "http://dgx/v1"}},
-		Aliases: map[string]models.Alias{"flash": {Endpoint: "gw", Model: "f"}, "local": {Endpoint: "dgx", Model: "l"}}}
+	s.Models = &models.Config{Endpoints: map[string]models.Endpoint{"gw": {BaseURL: "http://gw/v1"}, "model-host": {BaseURL: "http://model-host/v1"}},
+		Aliases: map[string]models.Alias{"flash": {Endpoint: "gw", Model: "f"}, "local": {Endpoint: "model-host", Model: "l"}}}
 	s.OTLPTracesURL, s.Environment = "http://victoriatraces:10428/insert/opentelemetry/v1/traces", "operations"
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	e := fr.got[1].Env

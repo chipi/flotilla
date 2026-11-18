@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# signal-fleet MVP runner (on the homelab mini). Sources the creds the fleet
+# signal-fleet MVP runner (on the control-plane host). Sources the creds the fleet
 # reuses, then runs the orchestrator. No secrets in the repo — they come from the
 # already-deployed stack .envs.
 #   OPENROUTER_API_KEY   <- bugfix-fleet/.env  (shared with Fleet 1)

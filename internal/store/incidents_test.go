@@ -28,8 +28,8 @@ func shadowIncident(t *testing.T, s *Store, kind, target, monitor string) string
 func TestClearIncidentsIsTheMonitorsOwn(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
-	backup := shadowIncident(t, s, "failed_backup", "host:mini", "ops/backup-monitor")
-	disk := shadowIncident(t, s, "disk_full", "host:mini", "ops/disk-monitor")
+	backup := shadowIncident(t, s, "failed_backup", "host:backup-01", "ops/backup-monitor")
+	disk := shadowIncident(t, s, "disk_full", "host:backup-01", "ops/disk-monitor")
 	if c, _ := s.ClearIncidents(ctx, "ops/other-monitor", map[string]bool{}); len(c) != 0 {
 		t.Fatalf("another monitor cleared %v", c)
 	}
@@ -40,7 +40,7 @@ func TestClearIncidentsIsTheMonitorsOwn(t *testing.T) {
 	if c, _ := s.ClearIncidents(ctx, "ops/backup-monitor", map[string]bool{}); len(c) != 0 {
 		t.Fatalf("cleared twice: %v", c)
 	}
-	if c, _ := s.ClearIncidents(ctx, "ops/disk-monitor", map[string]bool{"target=disk_full/host:mini": true}); len(c) != 0 {
+	if c, _ := s.ClearIncidents(ctx, "ops/disk-monitor", map[string]bool{"target=disk_full/host:backup-01": true}); len(c) != 0 {
 		t.Fatalf("a key still reported was cleared: %v", c)
 	}
 	_ = disk

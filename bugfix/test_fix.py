@@ -75,52 +75,52 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
                 echo 'module.exports = () => 3;' > src/c.js; printf 'import src/c.js\nexpect src/c.js 3\n' > src/c.test.js ;;
       lockfile) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; echo '{}' > package-lock.json ;;
       workflow) echo 'expect src/a.js 2' > src/a.test.js; mkdir -p .github/workflows; echo on: push > .github/workflows/x.yml ;;
-      pygood)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pybreaks) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'def value(): return 2' > src/podcast_scraper/pkg/other.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pylone)   echo 'def value(): return 2' > src/podcast_scraper/lone/z.py
-                echo 'expect src/podcast_scraper/lone/z.py 2' > tests/unit/podcast_scraper/test_z.py ;;
-      pynested) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'def value(): return 1  # x' > src/podcast_scraper/pkg/sub/s.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pypartial) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'def value(): return 1  # x' > src/podcast_scraper/lone/z.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyinit)   echo 'def value(): return 2' > src/podcast_scraper/__init__.py
-                echo 'expect src/podcast_scraper/__init__.py 2' > tests/unit/podcast_scraper/test_i.py ;;
-      pyconftest) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py; echo 'import os' > tests/unit/podcast_scraper/pkg/conftest.py ;;
-      pyconftestonly) echo 'import os' > tests/unit/podcast_scraper/pkg/conftest.py ;;
-      pyjson)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; mkdir -p tests/unit/podcast_scraper/pkg/data; echo '{}' > tests/unit/podcast_scraper/pkg/data/x.json
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyfixture) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'F = 1' > src/podcast_scraper/pkg/newf.py
-                printf 'fixture src/podcast_scraper/pkg/newf.py\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyshadow) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'x = 1' > json.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyinitfile) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'import os' > tests/unit/podcast_scraper/pkg/__init__.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyhelper) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'import os' > tests/unit/podcast_scraper/pkg/helpers.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pysuffix) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/mod_test.py ;;
-      pyrename) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; git mv conftest.py src/podcast_scraper/pkg/moved.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyunicode) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; mkdir -p tests/unit/podcast_scraper/é; echo 'import os' > tests/unit/podcast_scraper/é/conftest.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyunicodesrc) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'x' > 'src/podcast_scraper/pkg/é.txt'
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyconfigs) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo '[pytest]' > .pytest.ini; echo '[pytest]' > pytest.toml; echo '[pytest]' > .pytest.toml
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pydata)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo '{}' > src/podcast_scraper/pkg/data.json; echo 'hi' > README.md
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyquote)  echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; echo 'x = 1' > '"q".py'
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyrenamesrc) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; git mv src/podcast_scraper/lone/z.py src/podcast_scraper/pkg/z.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pydeltest) echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; rm tests/unit/podcast_scraper/pkg/test_keep.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyskip)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py; printf 'SKIP\\nexpect src/podcast_scraper/pkg/mod.py 2\\n' > tests/unit/podcast_scraper/pkg/test_mod.py ;;
-      pyconf)   echo 'def value(): return 2' > src/podcast_scraper/pkg/mod.py
-                echo 'expect src/podcast_scraper/pkg/mod.py 2' > tests/unit/podcast_scraper/pkg/test_mod.py; echo '[project]' > pyproject.toml ;;
+      pygood)   echo 'def value(): return 2' > src/api/pkg/mod.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pybreaks) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'def value(): return 2' > src/api/pkg/other.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pylone)   echo 'def value(): return 2' > src/api/lone/z.py
+                echo 'expect src/api/lone/z.py 2' > tests/unit/api/test_z.py ;;
+      pynested) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'def value(): return 1  # x' > src/api/pkg/sub/s.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pypartial) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'def value(): return 1  # x' > src/api/lone/z.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyinit)   echo 'def value(): return 2' > src/api/__init__.py
+                echo 'expect src/api/__init__.py 2' > tests/unit/api/test_i.py ;;
+      pyconftest) echo 'def value(): return 2' > src/api/pkg/mod.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py; echo 'import os' > tests/unit/api/pkg/conftest.py ;;
+      pyconftestonly) echo 'import os' > tests/unit/api/pkg/conftest.py ;;
+      pyjson)   echo 'def value(): return 2' > src/api/pkg/mod.py; mkdir -p tests/unit/api/pkg/data; echo '{}' > tests/unit/api/pkg/data/x.json
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyfixture) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'F = 1' > src/api/pkg/newf.py
+                printf 'fixture src/api/pkg/newf.py\\nexpect src/api/pkg/mod.py 2\\n' > tests/unit/api/pkg/test_mod.py ;;
+      pyshadow) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'x = 1' > json.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyinitfile) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'import os' > tests/unit/api/pkg/__init__.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyhelper) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'import os' > tests/unit/api/pkg/helpers.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pysuffix) echo 'def value(): return 2' > src/api/pkg/mod.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/mod_test.py ;;
+      pyrename) echo 'def value(): return 2' > src/api/pkg/mod.py; git mv conftest.py src/api/pkg/moved.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyunicode) echo 'def value(): return 2' > src/api/pkg/mod.py; mkdir -p tests/unit/api/é; echo 'import os' > tests/unit/api/é/conftest.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyunicodesrc) echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'x' > 'src/api/pkg/é.txt'
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyconfigs) echo 'def value(): return 2' > src/api/pkg/mod.py; echo '[pytest]' > .pytest.ini; echo '[pytest]' > pytest.toml; echo '[pytest]' > .pytest.toml
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pydata)   echo 'def value(): return 2' > src/api/pkg/mod.py; echo '{}' > src/api/pkg/data.json; echo 'hi' > README.md
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyquote)  echo 'def value(): return 2' > src/api/pkg/mod.py; echo 'x = 1' > '"q".py'
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyrenamesrc) echo 'def value(): return 2' > src/api/pkg/mod.py; git mv src/api/lone/z.py src/api/pkg/z.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pydeltest) echo 'def value(): return 2' > src/api/pkg/mod.py; rm tests/unit/api/pkg/test_keep.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py ;;
+      pyskip)   echo 'def value(): return 2' > src/api/pkg/mod.py; printf 'SKIP\\nexpect src/api/pkg/mod.py 2\\n' > tests/unit/api/pkg/test_mod.py ;;
+      pyconf)   echo 'def value(): return 2' > src/api/pkg/mod.py
+                echo 'expect src/api/pkg/mod.py 2' > tests/unit/api/pkg/test_mod.py; echo '[project]' > pyproject.toml ;;
       jsrename) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; git mv package.json src/moved.json ;;
       jsdeltest) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; rm keep.test.js ;;
       jsmovetest) echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js; mkdir -p docs; git mv keep.test.js docs/keep.md ;;
@@ -268,8 +268,8 @@ class Fixture:
                  ("keep.test.js", "expect src/b.js 1\n"), ("red.test.js", "expect src/a.js 9\n"),
                  ("static/images/x.png", "a big image\n"), ("package.json", '{"name": "x"}\n'))
         if py:
-            # podcast_scraper's shape: src/<pkg>/<a>/<b>.py, tests mirrored under tests/unit/<pkg>/<a>/
-            pkg, tests = "src/podcast_scraper", "tests/unit/podcast_scraper"
+            # api's shape: src/<pkg>/<a>/<b>.py, tests mirrored under tests/unit/<pkg>/<a>/
+            pkg, tests = "src/api", "tests/unit/api"
             files = ((f"{pkg}/pkg/mod.py", "def value(): return 1\n"), (f"{pkg}/pkg/other.py", "def value(): return 1\n"),
                      (f"{pkg}/__init__.py", "\n"), (f"{pkg}/lone/z.py", "def value(): return 1\n"), (f"{pkg}/pkg/sub/s.py", "def value(): return 1\n"),
                      (f"{tests}/pkg/sub/test_s.py", f"expect {pkg}/pkg/sub/s.py 1\n"),
@@ -304,7 +304,7 @@ class Fixture:
         fix.BAKEOFF = self.bakeoff
         try:
             cmds = (["--test-cmd", f"python3 {self.suite} %s", "--test-format", "pytest", "--related", "pytest-dirs",
-                     "--source-root", "src/podcast_scraper", "--test-root", "tests/unit/podcast_scraper"] if self.py else
+                     "--source-root", "src/api", "--test-root", "tests/unit/api"] if self.py else
                     ["--test-cmd", f"python3 {self.suite} run %s", "--related-cmd", f"python3 {self.suite} related %s"])
             out = fix.main(["--repo", self.repo, "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
                             "--reviewer-model", "bugfix-reviewer", "--setup", "true", *cmds,
@@ -446,7 +446,7 @@ class Chain(unittest.TestCase):
         self.assertTrue(os.path.isdir(cache))
 
     def test_excluded_paths_are_not_checked_out_and_not_in_the_diff(self):
-        """orrery's images are left out of the checkout (--exclude-path); their absence is not a deletion."""
+        """shop's images are left out of the checkout (--exclude-path); their absence is not a deletion."""
         f = self.fixture(["actionable"], ["good"])
         plan, _ = f.run("--exclude-path", "static/images")
         self.assertEqual(plan["outcome"], "plan", plan)
@@ -485,8 +485,8 @@ class Chain(unittest.TestCase):
         self.assertFalse(os.path.exists(marker), "a hook in the shared cache ran")
 
     def test_the_repo_s_setup_writing_the_cache_config_is_put_back(self):
-        """orrery's `prepare` writes core.hooksPath into the shared cache's config on every npm ci: the run puts
-        the config back, so the next run is not refused (8 escalations on the X3, 2026-11-15). The fix's own
+        """shop's `prepare` writes core.hooksPath into the shared cache's config on every npm ci: the run puts
+        the config back, so the next run is not refused (8 escalations on a worker host, 2026-11-15). The fix's own
         change made after the setup is put back too, when the run ends."""
         f = self.fixture(["needs-info", "needs-info"], [])
         plan, _ = f.run("--setup", "git config core.hooksPath .husky")
@@ -707,7 +707,7 @@ exec {real} "$@"
         self.assertRegex(r[0], r"^resume s-notest-\d+\.jsonl changed=1 desc=YOUR FIX DID NOT PASS ITS GATES: r")
 
     def test_a_diff_that_does_not_apply_falls_back_to_a_new_session(self):
-        # homelab's review: the fall-back had no test. The resumed round is handed a diff git cannot apply
+        # the ops repo's review: the fall-back had no test. The resumed round is handed a diff git cannot apply
         f = self.fixture(["actionable"], ["good", "good"])
         with open(os.path.join(f.state, "reviews"), "w") as fh:
             fh.write("request-changes\napprove\n")
@@ -736,7 +736,7 @@ exec {real} "$@"
         self.assertEqual(self.resumes(f), [])
 
     def test_a_review_without_a_verdict_is_not_an_approval(self):
-        # homelab's review (2026-11-16): any text read as approval, e.g. the partial output of a timed-out call
+        # the ops repo's review (2026-11-16): any text read as approval, e.g. the partial output of a timed-out call
         f = self.fixture(["actionable"], ["good"])
         with open(os.path.join(f.state, "reviews"), "w") as fh:
             fh.write("noverdict\n")
@@ -801,7 +801,7 @@ exec {real} "$@"
         plan, _ = g.run("--no-step-one")
         self.assertEqual(g.calls(), ["triage"])
         self.assertNotIn("appears nowhere", json.dumps(plan))
-        # a fault inside step one never ends the case (homelab's review of 62b2523)
+        # a fault inside step one never ends the case (the ops repo's review of 62b2523)
         h = self.fixture(["actionable"], ["good"])
         h.body = f.body
         real = fix.stepone.check
@@ -1072,8 +1072,8 @@ exec {real} "$@"
             return fh.read().splitlines()
 
     def test_every_pi_step_gets_the_fleet_rules_not_the_repos_agents_md(self):
-        # C2 (fleet-eval-data projects/bugfix-cost): pi loads the repo's AGENTS.md into every call by default,
-        # ~30k tokens on orrery; the verdict, the fix and the review each get the fleet's rule file instead
+        # C2 (the research repo's projects/bugfix-cost): pi loads the repo's AGENTS.md into every call by default,
+        # ~30k tokens on shop; the verdict, the fix and the review each get the fleet's rule file instead
         f = self.fixture(["actionable"], ["good"])
         plan, _ = f.run()
         self.assertEqual(plan["outcome"], "plan", plan)
@@ -1233,33 +1233,33 @@ class PythonRepo(unittest.TestCase):
         self.assertEqual(p["repo"], "example/api")
         self.assertIn("1 test files fail on the base and pass with the fix", p["body"])
         self.assertIn("4 related files, none newly failing", p["body"], "test_keep, test_red, sub/test_s and the fix's test_mod under pkg/")
-        self.assertIn("related: tests/unit/podcast_scraper/pkg", p["body"])
+        self.assertIn("related: tests/unit/api/pkg", p["body"])
         self.assertNotIn("flotilla-suite", p["diff"])
 
     def test_a_new_failure_in_the_mirrored_directory_stops_the_fix(self):
         f = self.fixture(["actionable"], ["pybreaks"])
         plan, _ = f.run("--kickback-max", "0")
         self.assertEqual(plan["outcome"], "escalate")
-        self.assertIn("new failures in the related tests: tests/unit/podcast_scraper/pkg/test_keep.py", plan["detail"])
+        self.assertIn("new failures in the related tests: tests/unit/api/pkg/test_keep.py", plan["detail"])
 
     def test_no_changed_source_file_maps_to_a_test_directory_fails_the_gate(self):
         """Nothing related would run: the gate fails closed (a kick-back), never widens to the whole suite."""
-        for fix_, what in (("pylone", "src/podcast_scraper/lone/z.py"), ("pyinit", None)):
+        for fix_, what in (("pylone", "src/api/lone/z.py"), ("pyinit", None)):
             f = self.fixture(["actionable"], [fix_])
             plan, _ = f.run("--kickback-max", "0")
             self.assertEqual(plan["outcome"], "escalate", fix_)
-            self.assertIn("related: no changed source file under src/podcast_scraper maps to a test directory", plan["detail"], fix_)
+            self.assertIn("related: no changed source file under src/api maps to a test directory", plan["detail"], fix_)
             if what:
                 self.assertIn(what, plan["detail"])
-                self.assertIn("its tests belong in tests/unit/podcast_scraper/lone/", plan["detail"])
+                self.assertIn("its tests belong in tests/unit/api/lone/", plan["detail"])
             else:
-                self.assertIn("its tests belong in tests/unit/podcast_scraper/test___init__.py", plan["detail"])
+                self.assertIn("its tests belong in tests/unit/api/test___init__.py", plan["detail"])
 
     def test_a_source_file_with_no_mirror_is_in_the_checked_line(self):
         f = self.fixture(["actionable"], ["pypartial"])
         plan, _ = f.run()
         self.assertEqual(plan["outcome"], "plan", plan)
-        self.assertIn("no mirrored test directory for src/podcast_scraper/lone/z.py", plan["params"]["body"].split("The chain:")[0])
+        self.assertIn("no mirrored test directory for src/api/lone/z.py", plan["params"]["body"].split("The chain:")[0])
 
     def test_a_fixture_that_exists_only_with_the_fix_does_not_reproduce(self):
         f = self.fixture(["actionable"], ["pyfixture"])
@@ -1272,7 +1272,7 @@ class PythonRepo(unittest.TestCase):
         plan, _ = f.run()
         self.assertEqual(plan["outcome"], "plan", plan)
         body = plan["params"]["body"]
-        self.assertIn("- related: tests/unit/podcast_scraper/pkg\n", body)
+        self.assertIn("- related: tests/unit/api/pkg\n", body)
         self.assertIn("4 related files", body)
 
     def test_a_fix_whose_only_test_is_skipped_does_not_reproduce(self):
@@ -1282,32 +1282,32 @@ class PythonRepo(unittest.TestCase):
         self.assertIn("repro: no test loads and fails on the base", plan["detail"])
 
     def test_the_pytest_config_and_collection_files_are_out_of_scope_without_a_flag(self):
-        for fix_, want in (("pyconf", "pyproject.toml"), ("pyconftest", "tests/unit/podcast_scraper/pkg/conftest.py")):
+        for fix_, want in (("pyconf", "pyproject.toml"), ("pyconftest", "tests/unit/api/pkg/conftest.py")):
             f = self.fixture(["actionable"], [fix_])
             plan, _ = f.run("--kickback-max", "0")
             self.assertIn(f"out of scope: the diff touches {want}", plan["detail"], fix_)
 
     def test_the_patterns(self):
         for p in ("pyproject.toml", "Makefile", "setup.py", "setup.cfg", "requirements.txt", "requirements-dev.txt", "requirements/dev.txt",
-                  "conftest.py", "tests/conftest.py", "tests/unit/podcast_scraper/conftest.py", "pytest.ini", "a/tox.ini", ".coveragerc",
+                  "conftest.py", "tests/conftest.py", "tests/unit/api/conftest.py", "pytest.ini", "a/tox.ini", ".coveragerc",
                   "uv.lock", "poetry.lock", "constraints.txt", "constraints-ci.txt", ".pre-commit-config.yaml",
                   "sitecustomize.py", "x/usercustomize.py", "a.pth"):
             self.assertTrue(fix.PYTEST_OUT_OF_SCOPE.search(p), p)
-        for p in ("src/podcast_scraper/a.py", "tests/unit/podcast_scraper/test_a.py", "docs/guide.md", "src/podcast_scraper/requirements_check.py"):
+        for p in ("src/api/a.py", "tests/unit/api/test_a.py", "docs/guide.md", "src/api/requirements_check.py"):
             self.assertFalse(fix.PYTEST_OUT_OF_SCOPE.search(p), p)
 
     def test_a_conftest_alone_is_out_of_scope_and_named(self):
         f = self.fixture(["actionable"], ["pyconftestonly"])
         plan, _ = f.run("--kickback-max", "0")
-        self.assertIn("out of scope: the diff touches tests/unit/podcast_scraper/pkg/conftest.py (pytest config, collection or install file)",
+        self.assertIn("out of scope: the diff touches tests/unit/api/pkg/conftest.py (pytest config, collection or install file)",
                       plan["detail"])
 
     def test_python_that_pytest_imports_outside_a_test_file_is_out_of_scope(self):
         """cwd and PYTHONPATH put the repo root first on sys.path: a top-level json.py shadows the installed
         module; a tests/ __init__.py runs at package collection and a helper module when it is imported."""
-        cases = {"pyshadow": ("json.py", "a .py outside src/podcast_scraper and tests/unit/podcast_scraper"),
-                 "pyinitfile": ("tests/unit/podcast_scraper/pkg/__init__.py", "only test files (test_*.py, *_test.py) may change"),
-                 "pyhelper": ("tests/unit/podcast_scraper/pkg/helpers.py", "only test files (test_*.py, *_test.py) may change")}
+        cases = {"pyshadow": ("json.py", "a .py outside src/api and tests/unit/api"),
+                 "pyinitfile": ("tests/unit/api/pkg/__init__.py", "only test files (test_*.py, *_test.py) may change"),
+                 "pyhelper": ("tests/unit/api/pkg/helpers.py", "only test files (test_*.py, *_test.py) may change")}
         for fix_, (path, rule) in cases.items():
             f = self.fixture(["actionable"], [fix_])
             plan, _ = f.run("--kickback-max", "0")
@@ -1327,8 +1327,8 @@ class PythonRepo(unittest.TestCase):
     def test_the_allowlist_names_every_other_changed_file(self):
         """Under pytest a changed path is allowed only if it is a .py under the source root or a test_*.py /
         *_test.py under the test root: config, data, docs and non-.py files anywhere are rejected."""
-        for fix_, files in (("pyjson", ["tests/unit/podcast_scraper/pkg/data/x.json"]),
-                            ("pydata", ["src/podcast_scraper/pkg/data.json", "README.md"]),
+        for fix_, files in (("pyjson", ["tests/unit/api/pkg/data/x.json"]),
+                            ("pydata", ["src/api/pkg/data.json", "README.md"]),
                             ("pyconfigs", [".pytest.ini", "pytest.toml", ".pytest.toml"])):
             f = self.fixture(["actionable"], [fix_])
             plan, _ = f.run("--kickback-max", "0")
@@ -1354,13 +1354,13 @@ class PythonRepo(unittest.TestCase):
         d = plan["params"]["diff"]
         self.assertNotIn("rename from", d)
         self.assertIn("deleted file mode", d)
-        self.assertIn("+++ b/src/podcast_scraper/pkg/z.py", d)
+        self.assertIn("+++ b/src/api/pkg/z.py", d)
 
     def test_a_fix_may_not_delete_a_test(self):
         f = self.fixture(["actionable"], ["pydeltest"])
         plan, _ = f.run("--kickback-max", "0")
         self.assertEqual(plan["outcome"], "escalate")
-        self.assertIn("a fix may not delete a test: tests/unit/podcast_scraper/pkg/test_keep.py", plan["detail"])
+        self.assertIn("a fix may not delete a test: tests/unit/api/pkg/test_keep.py", plan["detail"])
 
     def test_a_rename_out_of_a_forbidden_path_is_seen(self):
         f = self.fixture(["actionable"], ["pyrename"])
@@ -1372,10 +1372,10 @@ class PythonRepo(unittest.TestCase):
         f = self.fixture(["actionable"], ["pyunicode"])
         plan, _ = f.run("--kickback-max", "0")
         self.assertEqual(plan["outcome"], "escalate")
-        self.assertIn("tests/unit/podcast_scraper/é/conftest.py (pytest config", plan["detail"])
+        self.assertIn("tests/unit/api/é/conftest.py (pytest config", plan["detail"])
         g = self.fixture(["actionable"], ["pyunicodesrc"])
         plan, _ = g.run("--kickback-max", "0")
-        self.assertIn("src/podcast_scraper/pkg/é.txt (", plan["detail"])
+        self.assertIn("src/api/pkg/é.txt (", plan["detail"])
         self.assertNotIn('"', plan["detail"].split("touches")[1][:5], "the name is not git's quoted form")
 
     def test_the_pip_cache_is_the_run_s_own(self):

@@ -34,7 +34,13 @@ import config
 import filing
 
 MARKER = "Tracked in GitHub:"
-ORG = "homelab"
+
+
+def _org():
+    """The installation's GlitchTip organization (glitchtip_org, as the cycle reads it)."""
+    if not config.GLITCHTIP_ORG:
+        raise RuntimeError("glitchtip: no organization (glitchtip_org in installation.json, or SF_GLITCHTIP_ORG)")
+    return config.GLITCHTIP_ORG
 
 
 def _gt(method, path, body=None, token=None):
@@ -53,7 +59,7 @@ def glitchtip_issues():
     out, cursor = {}, ""
     while True:
         q = urllib.parse.urlencode({"query": "", "limit": 100})
-        page, headers = _gt("GET", f"/organizations/{ORG}/issues/?{q}{cursor}")
+        page, headers = _gt("GET", f"/organizations/{_org()}/issues/?{q}{cursor}")
         for i in page or []:
             out[i.get("shortId")] = i
         nxt = [p for p in (headers.get("Link") or "").split(",") if 'rel="next"' in p and 'results="true"' in p]
@@ -118,7 +124,7 @@ def plan(rows, issues, gh):
             # The canonical GitHub issue is the bug's real record: follow ITS state. Merge in
             # GlitchTip only when both are the same error (the fleet's own skeleton): an
             # umbrella issue can hold several different errors, and merging those would
-            # destroy them (2026-10-15 dry run: orrery #557 held a SyntaxError, a TypeError
+            # destroy them (2026-10-15 dry run: shop #557 held a SyntaxError, a TypeError
             # and a CSS-preload error).
             canon = st["dup"]
             canon_st = gh.get((canon[0], int(canon[1])))
@@ -227,7 +233,7 @@ def apply(actions, events=None):
         ids = [int(target)] + [int(m["id"]) for m in members]
         try:
             q = urllib.parse.urlencode([("id", i) for i in ids])
-            _gt("PUT", f"/organizations/{ORG}/issues/?{q}", {"merge": 1})
+            _gt("PUT", f"/organizations/{_org()}/issues/?{q}", {"merge": 1})
             done["merged"] += len(members)
             for m in members:
                 _audit(events, "merged", m, f" into {m.get('target_sid')} (GitHub duplicate of {m.get('canon')})")

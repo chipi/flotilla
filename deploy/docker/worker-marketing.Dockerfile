@@ -1,4 +1,4 @@
-# The marketing worker (RFC-0012): the seo fleet's routines, on the mini. Python stdlib only; it holds its
+# The marketing worker (RFC-0012): the seo fleet's routines, on the host. Python stdlib only; it holds its
 # worker token and, from the Search Console routine on, the fleet's read credentials, nothing else.
 FROM python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker

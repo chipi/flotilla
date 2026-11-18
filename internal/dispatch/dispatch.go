@@ -5,7 +5,7 @@
 //
 // What a run writes to its plan file (FLOTILLA_PLAN_FILE), one JSON object:
 //
-//	{"outcome": "plan", "action": "backup.rerun", "params": {"host": "mini"}}
+//	{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}}
 //	{"outcome": "resolved_itself", "detail": "backup 2h old after a fresh look"}
 //	{"outcome": "escalate", "detail": "the re-check contradicts the diagnosis"}
 //	{"outcome": "not_reproducible", "detail": "the failing call is not on main"}
@@ -838,7 +838,7 @@ type Detection struct {
 	Kind   string `json:"kind"`
 	Target string `json:"target"`
 	Detail string `json:"detail"`
-	// Title is the problem in one sentence, for people (G3): "The newest offsite backup on mini is 27
+	// Title is the problem in one sentence, for people (G3): "The newest offsite backup on host-01 is 27
 	// hours old". Optional; cut to one line of maxTitle runes.
 	Title string `json:"title,omitempty"`
 	// Data is structured: a measure ({name, value, threshold, cycle}) or a proposal (ADR-0016). A JSON

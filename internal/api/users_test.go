@@ -25,11 +25,11 @@ func TestBootstrapBreakGlassAndRetiredOperatorToken(t *testing.T) {
 	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/resume", opTok, `{"reason":"before users"}`); c != 200 {
 		t.Fatalf("operator token before any admin: %d", c)
 	}
-	c, out := call(t, ts, "POST", "/v1/users", opTok, `{"name":"marko","role":"admin"}`)
+	c, out := call(t, ts, "POST", "/v1/users", opTok, `{"name":"ada","role":"admin"}`)
 	if c != 201 || !strings.HasPrefix(fmt.Sprint(out["token"]), "flt_") || len(fmt.Sprint(out["token"])) != 68 {
 		t.Fatalf("bootstrap: %d %v", c, out)
 	}
-	if ev, _ := st.Events(ctx, 1); ev[0].Kind != "user.bootstrap" || ev[0].Subject != "user:marko" {
+	if ev, _ := st.Events(ctx, 1); ev[0].Kind != "user.bootstrap" || ev[0].Subject != "user:ada" {
 		t.Fatalf("the bootstrap is recorded: %+v", ev[0])
 	}
 	admin := out["token"].(string)
@@ -40,7 +40,7 @@ func TestBootstrapBreakGlassAndRetiredOperatorToken(t *testing.T) {
 	if c, _ := call(t, ts, "GET", "/v1/status", opTok, ""); c != 403 {
 		t.Fatalf("retired operator token reading: %d, want 403", c)
 	}
-	for _, p := range []string{"/v1/users/marko/role", "/v1/users/marko/revoke", "/v1/users/marko/rotate"} {
+	for _, p := range []string{"/v1/users/ada/role", "/v1/users/ada/revoke", "/v1/users/ada/rotate"} {
 		if c, _ := call(t, ts, "POST", p, opTok, `{"role":"viewer"}`); c != 403 {
 			t.Fatalf("retired operator token on %s: %d, want 403", p, c)
 		}
@@ -52,17 +52,17 @@ func TestBootstrapBreakGlassAndRetiredOperatorToken(t *testing.T) {
 		t.Fatalf("the operator token adding a non-admin: %d, want 400", c)
 	}
 	// Break-glass: the host-held token may add an admin when the admins' tokens are lost; recorded as such.
-	if c, _ := call(t, ts, "POST", "/v1/users", opTok, `{"name":"marko2","role":"admin"}`); c != 201 {
+	if c, _ := call(t, ts, "POST", "/v1/users", opTok, `{"name":"ada2","role":"admin"}`); c != 201 {
 		t.Fatalf("break-glass: %d", c)
 	}
 	if ev, _ := st.Events(ctx, 1); ev[0].Kind != "user.break-glass" || ev[0].Actor != "operator" {
 		t.Fatalf("break-glass is marked: %+v", ev[0])
 	}
-	// The admin acts as user:marko.
+	// The admin acts as user:ada.
 	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/pause", admin, ""); c != 200 {
 		t.Fatalf("admin pause: %d", c)
 	}
-	if ev, _ := st.Events(ctx, 1); ev[0].Actor != "user:marko" {
+	if ev, _ := st.Events(ctx, 1); ev[0].Actor != "user:ada" {
 		t.Fatalf("the event names the person: %+v", ev[0])
 	}
 }
@@ -95,7 +95,7 @@ func TestPermissionTable(t *testing.T) {
 		{ActFreeze, "POST", "/v1/freeze", ""},
 		{ActUnfreeze, "POST", "/v1/unfreeze", `{"reason":"t"}`},
 		{ActRead, "GET", "/v1/holds", ""},
-		{ActHold, "POST", "/v1/holds", `{"scope":"host:mini","for":"1h","reason":"t"}`},
+		{ActHold, "POST", "/v1/holds", `{"scope":"host:backup-01","for":"1h","reason":"t"}`},
 		{ActUnhold, "POST", "/v1/holds/1/lift", `{"reason":"t"}`},
 		{ActRead, "GET", "/v1/actions", ""},
 		{ActAutonomy, "POST", "/v1/actions/backup.rerun/autonomy", `{"autonomy":"shadow"}`},
@@ -187,7 +187,7 @@ func TestUserNamesAndTokens(t *testing.T) {
 	ts, _ := server(t)
 	_, out := call(t, ts, "POST", "/v1/users", opTok, `{"name":"ada","role":"admin"}`)
 	admin := out["token"].(string)
-	for _, name := range []string{"operator", "claude-homelab", "flotillad", "worker-x", "A", "x", "1abc", "has space"} {
+	for _, name := range []string{"operator", "claude-example", "flotillad", "worker-x", "A", "x", "1abc", "has space"} {
 		if c, _ := call(t, ts, "POST", "/v1/users", admin, fmt.Sprintf(`{"name":%q,"role":"viewer"}`, name)); c != 409 && c != 400 {
 			t.Errorf("name %q accepted: %d", name, c)
 		}

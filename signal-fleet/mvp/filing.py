@@ -244,8 +244,8 @@ CHAIN_REPOS = set(installation.get("chain_repos", []))
 
 
 def is_dev_signal(signal):
-    """A GlitchTip error from a dev project: its short id's project part ends in -DEV (ORRERY-DEV-13) or its
-    project slug in -dev (orrery-dev)."""
+    """A GlitchTip error from a dev project: its short id's project part ends in -DEV (SHOP-DEV-13) or its
+    project slug in -dev (shop-dev)."""
     fp = signal.get("fingerprint", "")
     if not fp.startswith("glitchtip:"):
         return False
@@ -255,7 +255,7 @@ def is_dev_signal(signal):
 
 # glitchtip project prefix → GitHub repo (the installation's repo_map, first since 2026-07-29).
 # Unmapped projects fall back to SF_OPS_REPO, else the ops repo, as unmapped grafana signals do.
-# Until 2026-11-12 they fell back to SF_OPS_REPO alone, unset on the mini, and a refusal was only
+# Until 2026-11-12 they fell back to SF_OPS_REPO alone, unset on the host, and a refusal was only
 # printed: 15 file and escalate decisions before 2026-11-07 (6 fingerprints, 4 projects) went nowhere.
 # The map itself is the installation's repo_map (installation.py), matched in its order.
 REPO_MAP = dict(installation.get("repo_map", {}))
@@ -300,7 +300,7 @@ def low_signal(signal):
     SOURCE-GUARDED (Fable pre-deploy review F1): only GlitchTip issue-shaped signals
     carry occurrence evidence (count/userCount/culprit). A Grafana alert has none —
     so "evidence absent" must NOT read as "low", else EVERY Grafana alert (incl.
-    orrery-staleness and the fail-closed substrate issue) would be buried in the
+    shop-staleness and the fail-closed substrate issue) would be buried in the
     rollup with promotion permanently unreachable (count is always 0)."""
     raw = signal.get("raw") or {}
     labels = signal.get("labels") or {}
@@ -343,7 +343,7 @@ def _today():
 
 # Storm rules scoped to ONE GlitchTip project: the key is `<key>:<project>`. A provider
 # auth failure hard-stops a run and is logged by every layer it passes through, each a
-# different GlitchTip issue (2026-10-16 nightly: PODCAST-PIPELINE-DA/DB/DC/DD, 47 events
+# different GlitchTip issue (2026-10-16 nightly: API-PIPELINE-DA/DB/DC/DD, 47 events
 # each, filed as #2371-#2374; 10-14 dev: DEV-2..5 -> #2354-#2357). Per project, so a
 # dev-key failure never absorbs a prod one.
 PROJECT_GROUP_RULES = [
@@ -375,7 +375,7 @@ OPS_REPO_DEFAULT = installation.get("ops_repo", "")
 
 
 def repo_for(signal):
-    fp = signal.get("fingerprint", "")           # glitchtip:PODCAST-8 | grafana:<hash>
+    fp = signal.get("fingerprint", "")           # glitchtip:API-8 | grafana:<hash>
     if fp.startswith("grafana:"):
         inst = (signal.get("labels") or {}).get("instance", "")
         return INSTANCE_REPO_MAP.get(inst, OPS_REPO or OPS_REPO_DEFAULT)
@@ -470,7 +470,7 @@ def ledger_lookup(fingerprint, group_key="", norm_key="", alert_key="", is_open=
             return r
     # Fuzzy dimensions: an OPEN issue for the same bug or alert beats reopening a
     # closed one. Newest-row alone picked a closed sibling: on 2026-10-02 the
-    # per-disk mini alert (new fingerprint) matched #47 (closed) on norm_key while
+    # per-disk host alert (new fingerprint) matched #47 (closed) on norm_key while
     # #43, the open issue for the same disk, sat one row earlier.
     #   1. newest norm_key row whose issue is open (not a low-signal rollup)
     #   2. newest norm_key row, open or not (reopen / regression path)
@@ -559,9 +559,9 @@ def reused_short_id(row, first_seen):
     first seen: a recreated project restarted the counter, so the row is another,
     older issue's. A real row is always filed after its issue's first event. Replaces
     the manual retire_glitchtip_project step, which was missed for four projects
-    (2026-10-17: ORRERY-DEV-1 inherited orrery#429, closed in August)."""
+    (2026-10-17: SHOP-DEV-1 inherited shop#429, closed in August)."""
     def ts(v):
-        # Python 3.9 (the mini) parses only 3- or 6-digit fractions: pad/cut to 6
+        # Python 3.9 (the host) parses only 3- or 6-digit fractions: pad/cut to 6
         m = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)?$", str(v).strip())
         if not m:
             return None

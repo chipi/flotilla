@@ -1,8 +1,8 @@
 """bugfix/spend.py: what one bugfix run cost, for flotillad (the routine's spend_file: one number, USD).
 
 The bill is the gateway's: LiteLLM's spend of each key the run's aliases use, read before the run and after it
-(/key/info). pi's own figure is its catalog's list price, not what the gateway charged: on the six orrery sessions of
-2026-11-15 it was 5 to 7 times the bill, on #335's run of 2026-11-16 1.8 times (fleet-eval-data
+(/key/info). pi's own figure is its catalog's list price, not what the gateway charged: on the six shop sessions of
+2026-11-15 it was 5 to 7 times the bill, on #335's run of 2026-11-16 1.8 times (the installation's research repo
 projects/bugfix-cost/PLAN.md). Not established for every day and provider: the 11-16 K0 run's harness total
 ($1.49, pi's figures, a timed-out item counted as 0) was under the gateway's $3.12. The spend after a run lags its
 last calls, so it is read until two reads in a row agree.

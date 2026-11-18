@@ -3,7 +3,7 @@
 # Installation paths come from the environment (FLOTILLA_HOME/.env on the host, never in git) and the
 # files in FLOTILLA_CONFIG (README.md). Nothing here writes to the host: the store, the triage
 # fleet's state and the secrets live in Docker volumes inside the VM. Host folders are mounted
-# read-only, for config only, like every other stack on the mini; writing through the VM's sshfs
+# read-only, for config only, like every other stack on the host; writing through the VM's sshfs
 # mount would ride the lima SSH connection whose failures took production down before.
 #
 # Secrets reach the containers through their own volumes, filled by deploy/server/secrets.sh from the
@@ -12,7 +12,7 @@
 #
 # Networks:
 #   flotilla       internal: no route out. flotillad, the worker and the proxy talk here.
-#   ui             internal: flotillad's UI listener and the homelab's caddy-tailscale proxy (ADR-0014).
+#   ui             internal: flotillad's UI listener and the installation's caddy-tailscale proxy (ADR-0014).
 #   out            the proxy's way to the internet (api.github.com).
 #   the services'  the proxy joins the networks of the services routines read (VictoriaMetrics, LiteLLM,
 #                  GlitchTip, Langfuse) and reaches them by container name, never through the
@@ -368,7 +368,7 @@ volumes:
 networks:
   flotilla:
     internal: true
-  # ADR-0014: the UI's network. Only flotillad (its ui_listen) and the homelab's caddy-tailscale proxy are
+  # ADR-0014: the UI's network. Only flotillad (its ui_listen) and the installation's caddy-tailscale proxy are
   # on it; internal, so it gives flotillad no route out. The proxy joins it as an external network.
   ui:
     name: ${NET_UI:-flotilla_ui}

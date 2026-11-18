@@ -16,7 +16,7 @@
 # in Chromium behind a Caddy TLS front (ui_browser.py): sign-in, the session cookie, a pause and a resume
 # from the fleet page, phone width, the fonts, no CSP violations, sign-out. The host agent (ADR-0006): a CA
 # made with `flotilla ca`, enrolment, connect and heartbeat, a flotillad restart, revocation.
-# Never on the production engine (homelab ADR-0009): it uses the `dev` context only.
+# Never on the production engine (the installation's ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 D="docker --context ${DOCKER_CONTEXT_DEV:-dev}"
@@ -27,7 +27,7 @@ NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse"
 PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
 if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
-# The browser check's TLS front, standing in for the homelab's caddy-tailscale (Caddy 2.11.9).
+# The browser check's TLS front, standing in for the installation's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 WORK="${E2E_WORK:-$ROOT/.e2e}"
 fails=0
@@ -108,7 +108,7 @@ workers:
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
-  # the fix routines' own workers on the mini are remote (the X3); the e2e runs neither routine, so they
+  # the fix routines' own workers on the host are remote (a second machine); the e2e runs neither routine, so they
   # name the local bugfix worker
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
@@ -127,7 +127,7 @@ models:
     triage-pro: {endpoint: gateway, model: fleet-triage-pro}
     bugfix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     bugfix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
-    # one key per fix routine on the mini (2026-11-16); here every alias reads the same stand-in key
+    # one key per fix routine on the host (2026-11-16); here every alias reads the same stand-in key
     fix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
@@ -225,7 +225,7 @@ printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\nOPENROUTER_API_KEY=%s\nG
   "$(tok)" "$(tok)" "$(tok)" "$(tok)" "$(tok)" > "$WORK/config/fleet.env"   # random stand-in keys, made per run
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env"; touch "$WORK/seed/STOP"
-# the mini's folder also holds backups of the secrets file: they must stay out too
+# the host's folder also holds backups of the secrets file: they must stay out too
 cp "$WORK/config/fleet.env" "$WORK/seed/fleet-gateway.env.bak-20261027"
 cp "$WORK/config/fleet.env" "$WORK/seed/results/fleet.env.bak-presync"
 if FLOTILLA_HOME="$WORK" bash "$ROOT/deploy/server/secrets.sh" $TAG >"$WORK/secrets.log" 2>&1 \
@@ -466,7 +466,7 @@ OUT="$(cli hold lift "$HID" 2>&1)"
 echo "$OUT" | grep >/dev/null "needs a reason" && ok "lifting a hold needs a reason" || bad "lift without a reason: $OUT"
 cli hold lift "$HID" --reason "e2e: disk done" >/dev/null
 [ -z "$(cli hold list | sed 1d)" ] && ok "lifted, no hold is active" || bad "after lift: $(cli hold list 2>&1)"
-# The deploy stand-down (deploy/server/standdown.sh, as deploy.sh and the homelab's pre-pull hook run it):
+# The deploy stand-down (deploy/server/standdown.sh, as deploy.sh and the installation's pre-pull hook run it):
 # a hold by the deploy caller, its token read from flotillad's secrets volume; it never fails its caller.
 OUT="$(DOCKER="$D" bash "$ROOT/deploy/server/standdown.sh" backup-01 5m "e2e deploy" 2>&1)"; RC=$?
 [ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^STANDDOWN host:backup-01 for 5m" && cli hold list | grep >/dev/null "host:backup-01 .*deploy .*deploy stand-down: e2e deploy" \

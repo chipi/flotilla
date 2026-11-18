@@ -1,6 +1,6 @@
 {
-  "id": "orrery-mission-arc-L0",
-  "repo": "orrery",
+  "id": "shop-mission-arc-L0",
+  "repo": "shop",
   "fix_commit": "19fb2f17",
   "oracle_test_file": "src/lib/mission-arc.test.ts",
   "code_files": [

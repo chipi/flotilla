@@ -13,7 +13,7 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 BUG_JSON="$1"; WOUT="$2"
 # flotilla's bugfix worker (RFC-0010 A5) sets these; unset, the bake-off's own layout
 ROOT="${BAKEOFF_ROOT:-$HOME/.bugfix-fleet/bakeoff}"
-WT="${BAKEOFF_WT:-$ROOT/orrery}"
+WT="${BAKEOFF_WT:-$ROOT/shop}"
 PROVIDER="${PI_PROVIDER:-openrouter}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MODEL="${ADVISOR_MODEL:-z-ai/glm-5.2}"   # ladder rung 2 (reasoner); swappable

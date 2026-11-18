@@ -45,7 +45,7 @@ func status(t *testing.T, st *store.Store, id string) string {
 func TestDetectedTooLongAlertsOnce(t *testing.T) {
 	ctx := context.Background()
 	st, logs, log := setup(t)
-	id := open(t, st, "host:mini")
+	id := open(t, st, "host:host-01")
 	now := time.Now()
 	_ = Run(ctx, st, now.Add(29*time.Minute), Config{}, log, nil)
 	if strings.Contains(logs.String(), "stuck in detected") {
@@ -68,7 +68,7 @@ func TestDetectedTooLongAlertsOnce(t *testing.T) {
 func TestHandedOverTooLongEscalates(t *testing.T) {
 	ctx := context.Background()
 	st, _, log := setup(t)
-	id := open(t, st, "host:mini")
+	id := open(t, st, "host:host-01")
 	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	now := time.Now()
 	_ = Run(ctx, st, now.Add(23*time.Hour), Config{}, log, nil)
@@ -110,7 +110,7 @@ func TestHandOverClock(t *testing.T) {
 func TestConfiguredLimits(t *testing.T) {
 	ctx := context.Background()
 	st, _, log := setup(t)
-	id := open(t, st, "host:mini")
+	id := open(t, st, "host:host-01")
 	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = Run(ctx, st, time.Now().Add(2*time.Hour), Config{HandedOverEscalate: time.Hour}, log, nil)
 	if status(t, st, id) != cases.Escalated {
@@ -123,7 +123,7 @@ func TestConfiguredLimits(t *testing.T) {
 func TestHeldCaseIsNotEscalated(t *testing.T) {
 	ctx := context.Background()
 	st, _, log := setup(t)
-	id := open(t, st, "host:mini")
+	id := open(t, st, "host:host-01")
 	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	now := time.Now()
 	held := func(context.Context, string, string) (bool, string, error) { return true, "", nil }

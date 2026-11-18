@@ -10,8 +10,8 @@ import (
 )
 
 func backupCase() NewCase {
-	k := Key{Kind: "target", Value: "failed_backup/host:mini"}
-	return NewCase{Kind: "failed_backup", Target: "host:mini", Project: "homelab", Keys: []Key{k}, Canonical: k}
+	k := Key{Kind: "target", Value: "failed_backup/host:backup-01"}
+	return NewCase{Kind: "failed_backup", Target: "host:backup-01", Project: "example", Keys: []Key{k}, Canonical: k}
 }
 
 // v1's path (RFC-0004 §10): detected, handed over by the monitor, planned by the acting job, closed by
@@ -136,7 +136,7 @@ func TestOneOpenCaseIsTheDatabasesRule(t *testing.T) {
 	s := openTest(t)
 	_, _, _ = s.OpenCase(ctx, backupCase(), "m", "")
 	_, err := s.db.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, status, opened_at, status_at)
-		VALUES ('case-x', 'failed_backup', 'host:mini', 'target=failed_backup/host:mini', 'handed_over', 'x', 'x')`)
+		VALUES ('case-x', 'failed_backup', 'host:backup-01', 'target=failed_backup/host:backup-01', 'handed_over', 'x', 'x')`)
 	if err == nil {
 		t.Fatal("a second open case for one key was stored")
 	}

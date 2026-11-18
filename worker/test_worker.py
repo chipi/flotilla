@@ -22,7 +22,7 @@ class TestEnv(unittest.TestCase):
         d = tempfile.mkdtemp()
         f = os.path.join(d, "fleet.env")
         with open(f, "w") as fh:
-            fh.write("# comment\nGITHUB_TOKEN=gh-secret\nexport SF_HOST=homelab\nQUOTED=\"q\"\n")
+            fh.write("# comment\nGITHUB_TOKEN=gh-secret\nexport SF_HOST=host-01\nQUOTED=\"q\"\n")
         environ = {"PATH": "/usr/bin", "HOME": "/home/w", "FLOTILLA_WORKER_TOKEN": "worker-secret",
                    "FLOTILLA_ENV_FILES": f, "ROUTINE_SF_HOST": "victoriametrics", "OTHER": "x"}
         env = fw.build_env({"FLEETD_STAGE": "shadow"}, environ)

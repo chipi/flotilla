@@ -1,4 +1,4 @@
-// Package telemetry is flotillad's observability on the homelab's conventions (RFC-0001 §6.2): JSON
+// Package telemetry is flotillad's observability on the installation's conventions (RFC-0001 §6.2): JSON
 // logs on stdout (Alloy ships container logs to VictoriaLogs), metrics pushed to VictoriaMetrics'
 // Prometheus import, traces over OTLP/HTTP to VictoriaTraces. service="flotillad" and the configured
 // environment label everything.
@@ -51,7 +51,7 @@ func Tracing(ctx context.Context, endpoint, env, version string) (func(context.C
 
 // Pusher pushes samples to VictoriaMetrics' /api/v1/import/prometheus. A failed push (a connection
 // error, a 5xx, a 429) is retried after 2 s and 5 s, then logged and dropped: telemetry never stops a
-// run. Seen on the mini (2026-11-08/09): the proxy's name does not resolve while a deploy recreates it,
+// run. Seen on the host (2026-11-08/09): the proxy's name does not resolve while a deploy recreates it,
 // and the proxy or VictoriaMetrics answers 500/502 now and then; without a retry those samples were
 // lost (a run's flotilla_run among them).
 type Pusher struct {

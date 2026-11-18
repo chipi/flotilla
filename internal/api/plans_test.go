@@ -16,13 +16,13 @@ import (
 
 const rerun = "backup.rerun"
 
-// plannedCase opens a failed_backup case on host:mini (key suffix keeps two cases on one target apart),
+// plannedCase opens a failed_backup case on host:backup-01 (key suffix keeps two cases on one target apart),
 // hands it over, and has triage/cycle plan it in run runID, as an acting job would.
 func plannedCase(t *testing.T, s *Server, key, runID string) string {
 	t.Helper()
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini" + key}
-	id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01" + key}
+	id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestShadowPlanIsRecordedAndClosed(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	id := plannedCase(t, s, "", "run-1")
-	d, pid, err := s.DecidePlan(ctx, planFor(id, "run-1", "mini"))
+	d, pid, err := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestShadowPlanIsRecordedAndClosed(t *testing.T) {
 	if len(plans) != 1 || plans[0].ID != pid || plans[0].PlanHash != d.PlanHash || plans[0].Would != policy.Propose || len(plans[0].Reasons) == 0 {
 		t.Fatalf("plan record %+v", plans)
 	}
-	if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != "" {
+	if h, _ := s.Store.LockHolder(ctx, "host:backup-01"); h != "" {
 		t.Fatalf("a shadow plan holds the target: %s", h)
 	}
 }
@@ -86,17 +86,17 @@ func TestProposeLocksAndASecondCaseDefers(t *testing.T) {
 	_ = s.Store.SetControl(ctx, "triage/cycle", sched.KeyAutonomy, "propose", "user:ada", "api")
 	_ = s.Store.SetControl(ctx, actionSubject(rerun), "autonomy", "propose", "user:ada", "api")
 	a := plannedCase(t, s, "#a", "run-a")
-	if d, _, err := s.DecidePlan(ctx, planFor(a, "run-a", "mini")); err != nil || d.Outcome != policy.Propose {
+	if d, _, err := s.DecidePlan(ctx, planFor(a, "run-a", "backup-01")); err != nil || d.Outcome != policy.Propose {
 		t.Fatalf("first: %+v %v", d, err)
 	}
 	if c := caseStatus(t, s, a); c.Status != cases.AwaitingApproval {
 		t.Fatalf("first case %s", c.Status)
 	}
-	if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != a {
+	if h, _ := s.Store.LockHolder(ctx, "host:backup-01"); h != a {
 		t.Fatalf("lock held by %q, want %s", h, a)
 	}
 	b := plannedCase(t, s, "#b", "run-b")
-	d, _, err := s.DecidePlan(ctx, planFor(b, "run-b", "mini"))
+	d, _, err := s.DecidePlan(ctx, planFor(b, "run-b", "backup-01"))
 	if err != nil || d.Outcome != policy.Defer || !strings.Contains(strings.Join(d.Reasons, ";"), "locked by "+a) {
 		t.Fatalf("second: %+v %v", d, err)
 	}
@@ -104,7 +104,7 @@ func TestProposeLocksAndASecondCaseDefers(t *testing.T) {
 		t.Fatalf("a deferred case is %s", c.Status)
 	}
 	_ = s.Store.MoveCase(ctx, a, cases.Escalated, cases.ByOperator, "", "user:ada", "rejected")
-	if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != "" {
+	if h, _ := s.Store.LockHolder(ctx, "host:backup-01"); h != "" {
 		t.Fatalf("a rejected proposal still holds the target: %s", h)
 	}
 }
@@ -113,24 +113,24 @@ func TestRefusedPlansEscalate(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	id := plannedCase(t, s, "", "run-1")
-	d, _, err := s.DecidePlan(ctx, planFor(id, "run-1", "dgx"))
+	d, _, err := s.DecidePlan(ctx, planFor(id, "run-1", "model-host"))
 	if err != nil || d.Outcome != policy.Refuse || caseStatus(t, s, id).Status != cases.Escalated {
 		t.Fatalf("retargeted: %+v %v", d, err)
 	}
 	// A run that is not the one that planned the case (or no run at all) is not on its record.
 	id2 := plannedCase(t, s, "#2", "run-2")
-	d, _, _ = s.DecidePlan(ctx, planFor(id2, "run-nope", "mini"))
+	d, _, _ = s.DecidePlan(ctx, planFor(id2, "run-nope", "backup-01"))
 	if d.Outcome != policy.Refuse || !strings.Contains(strings.Join(d.Reasons, ";"), "not on the case's record") {
 		t.Fatalf("an unknown run: %+v", d)
 	}
 	// A real run, but of a routine other than the one that planned the case.
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini#3"}
-	id3, _, _ := s.Store.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "m", "")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01#3"}
+	id3, _, _ := s.Store.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "m", "")
 	_ = s.Store.MoveCase(ctx, id3, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = s.Store.MoveCase(ctx, id3, cases.Planned, cases.ByAct, "", "ops/act-host", "")
 	_ = s.Store.StartRun(ctx, store.Run{ID: "run-3", Routine: "triage/cycle", SpecHash: "x", Trigger: "event", Actor: "flotillad",
 		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning})
-	d, _, _ = s.DecidePlan(ctx, planFor(id3, "run-3", "mini"))
+	d, _, _ = s.DecidePlan(ctx, planFor(id3, "run-3", "backup-01"))
 	if d.Outcome != policy.Refuse || !strings.Contains(strings.Join(d.Reasons, ";"), "not on the case's record") {
 		t.Fatalf("another routine's run: %+v", d)
 	}
@@ -141,13 +141,13 @@ func TestHoldsDefer(t *testing.T) {
 	s := newServer(t, func(*spec.Routine) {})
 	_ = s.Store.SetControl(ctx, "triage/cycle", sched.KeyAutonomy, "propose", "user:ada", "api")
 	_ = s.Store.SetControl(ctx, actionSubject(rerun), "autonomy", "propose", "user:ada", "api")
-	agent := Caller{Name: "claude-homelab", Role: RoleAgent}
-	hid, err := s.AddHold(ctx, agent, "api", "host:mini", time.Hour, "migrating the backup disk")
+	agent := Caller{Name: "claude-example", Role: RoleAgent}
+	hid, err := s.AddHold(ctx, agent, "api", "host:backup-01", time.Hour, "migrating the backup disk")
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := plannedCase(t, s, "", "run-1")
-	d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "mini"))
+	d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01"))
 	if d.Outcome != policy.Defer || !strings.Contains(strings.Join(d.Reasons, ";"), "migrating the backup disk") {
 		t.Fatalf("held: %+v", d)
 	}
@@ -162,7 +162,7 @@ func TestHoldsDefer(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Store.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "triage/cycle", "")
-	if d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "mini")); d.Outcome != policy.Propose {
+	if d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")); d.Outcome != policy.Propose {
 		t.Fatalf("after the hold: %+v", d)
 	}
 }
@@ -175,7 +175,7 @@ func TestFrozenPlansAreShadow(t *testing.T) {
 	_ = s.Store.SetControl(ctx, actionSubject(rerun), "autonomy", "auto", "user:ada", "api")
 	_ = s.Store.SetControl(ctx, sched.FreezeSubject, sched.KeyFrozen, "1", "user:ada", "api")
 	id := plannedCase(t, s, "", "run-1")
-	d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "mini"))
+	d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01"))
 	if d.Outcome != policy.Shadow || !strings.Contains(strings.Join(d.Reasons, ";"), "frozen") {
 		t.Fatalf("frozen, and the record says so: %+v", d)
 	}
@@ -185,8 +185,8 @@ func TestOnlyAPlannedCaseIsDecided(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	id := plannedCase(t, s, "", "run-1")
-	_, _, _ = s.DecidePlan(ctx, planFor(id, "run-1", "mini")) // closes it (shadow)
-	if _, _, err := s.DecidePlan(ctx, planFor(id, "run-1", "mini")); !errors.Is(err, store.ErrNotPlanned) {
+	_, _, _ = s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")) // closes it (shadow)
+	if _, _, err := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")); !errors.Is(err, store.ErrNotPlanned) {
 		t.Fatalf("a closed case decided again: %v", err)
 	}
 }

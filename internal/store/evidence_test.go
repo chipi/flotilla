@@ -20,7 +20,7 @@ func TestPromotionStreak(t *testing.T) {
 		id := plannedOn(t, s, fmt.Sprintf("#s%d", n))
 		r := rec(id)
 		r.Outcome, r.Autonomy, r.Would = "shadow", "shadow", "auto"
-		if _, err := s.ApplyPlan(ctx, r, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
+		if _, err := s.ApplyPlan(ctx, r, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
 			t.Fatal(err)
 		}
 		if verdict != "" {
@@ -71,7 +71,7 @@ func TestPromotionStreak(t *testing.T) {
 	id := plannedOn(t, s, "#rej")
 	r := rec(id)
 	r.Outcome, r.Autonomy = "propose", "propose"
-	if _, err := s.ApplyPlan(ctx, r, cases.AwaitingApproval, "", "host:mini", false); err != nil {
+	if _, err := s.ApplyPlan(ctx, r, cases.AwaitingApproval, "", "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.MoveCase(ctx, id, cases.Escalated, cases.ByOperator, "", "ada", "rejected: no"); err != nil {
@@ -79,7 +79,7 @@ func TestPromotionStreak(t *testing.T) {
 	}
 	got(Streak{Held: true, BadWhat: "rejected"})
 	id = plannedOn(t, s, "#fail")
-	if _, err := s.ApplyPlan(ctx, rec(id), cases.Executing, "", "host:mini", false); err != nil {
+	if _, err := s.ApplyPlan(ctx, rec(id), cases.Executing, "", "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.MoveCase(ctx, id, cases.Escalated, cases.ByAct, "", "ops-act-host", "failed"); err != nil {
@@ -90,7 +90,7 @@ func TestPromotionStreak(t *testing.T) {
 	id = plannedOn(t, s, "#ok")
 	r = rec(id)
 	r.Outcome, r.Autonomy = "propose", "propose"
-	if _, err := s.ApplyPlan(ctx, r, cases.AwaitingApproval, "", "host:mini", false); err != nil {
+	if _, err := s.ApplyPlan(ctx, r, cases.AwaitingApproval, "", "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range []struct{ to, by, res string }{{cases.Executing, cases.ByOperator, ""}, {cases.Checking, cases.ByAct, ""},

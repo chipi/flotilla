@@ -20,8 +20,8 @@ func keypair(t testing.TB, seed byte) (ed25519.PublicKey, ed25519.PrivateKey) {
 }
 
 func exe() Execution {
-	return Execution{ID: "exec-1", CaseID: "case-1", Host: "mini", Action: "backup.rerun",
-		Params: map[string]string{"host": "mini"}, PlanHash: "abc", Approved: "user:ada", SignedAt: t0, ExpiresAt: t0.Add(10 * time.Minute)}
+	return Execution{ID: "exec-1", CaseID: "case-1", Host: "host-01", Action: "backup.rerun",
+		Params: map[string]string{"host": "host-01"}, PlanHash: "abc", Approved: "user:ada", SignedAt: t0, ExpiresAt: t0.Add(10 * time.Minute)}
 }
 
 func signed(t testing.TB, priv ed25519.PrivateKey, e Execution) []byte {
@@ -39,12 +39,12 @@ func TestVerify(t *testing.T) {
 	keys := map[string]ed25519.PublicKey{"k1": pub}
 	good := signed(t, priv, exe())
 
-	e, payload, err := Verify(good, keys, "mini", t0.Add(time.Minute))
-	if err != nil || e.ID != "exec-1" || e.Params["host"] != "mini" || len(payload) == 0 {
+	e, payload, err := Verify(good, keys, "host-01", t0.Add(time.Minute))
+	if err != nil || e.ID != "exec-1" || e.Params["host"] != "host-01" || len(payload) == 0 {
 		t.Fatalf("a good envelope: %+v %v", e, err)
 	}
 	// Two keys during a rotation (ADR-0006 §11): either verifies.
-	if _, _, err := Verify(signed(t, otherPriv, exe()), map[string]ed25519.PublicKey{"k1": other, "k0": pub}, "mini", t0); err != nil {
+	if _, _, err := Verify(signed(t, otherPriv, exe()), map[string]ed25519.PublicKey{"k1": other, "k0": pub}, "host-01", t0); err != nil {
 		t.Fatalf("the new key during a rotation: %v", err)
 	}
 
@@ -70,19 +70,19 @@ func TestVerify(t *testing.T) {
 		now  time.Time
 		want error
 	}{
-		"a changed payload byte": {reencode(func(x *wire) { x.Payload = base64.StdEncoding.EncodeToString(flipped) }), keys, "mini", t0, ErrSignature},
-		"a changed signature":    {reencode(func(x *wire) { x.Sig = base64.StdEncoding.EncodeToString(badSig) }), keys, "mini", t0, ErrSignature},
-		"another key":            {signed(t, otherPriv, exe()), keys, "mini", t0, ErrSignature},
-		"an unknown key id":      {reencode(func(x *wire) { x.Key = "k9" }), keys, "mini", t0, ErrKey},
-		"no keys at all":         {good, map[string]ed25519.PublicKey{}, "mini", t0, ErrKey},
-		"another host":           {good, keys, "dgx", t0, ErrHost},
-		"expired":                {good, keys, "mini", t0.Add(10 * time.Minute), ErrExpired},
-		"signed in the future":   {good, keys, "mini", t0.Add(-11 * time.Minute), ErrFuture},
-		"not an envelope":        {[]byte(`{"payload": 1}`), keys, "mini", t0, ErrMalformed},
-		"an unknown outer field": {[]byte(strings.Replace(string(good), `"key"`, `"run":"now","key"`, 1)), keys, "mini", t0, ErrMalformed},
-		"trailing data":          {append(append([]byte{}, good...), []byte(` {}`)...), keys, "mini", t0, ErrMalformed},
-		"too big":                {append(bytes.Repeat([]byte(" "), MaxBytes), good...), keys, "mini", t0, ErrMalformed},
-		"a short signature":      {reencode(func(x *wire) { x.Sig = base64.StdEncoding.EncodeToString(sig[:10]) }), keys, "mini", t0, ErrMalformed},
+		"a changed payload byte": {reencode(func(x *wire) { x.Payload = base64.StdEncoding.EncodeToString(flipped) }), keys, "host-01", t0, ErrSignature},
+		"a changed signature":    {reencode(func(x *wire) { x.Sig = base64.StdEncoding.EncodeToString(badSig) }), keys, "host-01", t0, ErrSignature},
+		"another key":            {signed(t, otherPriv, exe()), keys, "host-01", t0, ErrSignature},
+		"an unknown key id":      {reencode(func(x *wire) { x.Key = "k9" }), keys, "host-01", t0, ErrKey},
+		"no keys at all":         {good, map[string]ed25519.PublicKey{}, "host-01", t0, ErrKey},
+		"another host":           {good, keys, "model-host", t0, ErrHost},
+		"expired":                {good, keys, "host-01", t0.Add(10 * time.Minute), ErrExpired},
+		"signed in the future":   {good, keys, "host-01", t0.Add(-11 * time.Minute), ErrFuture},
+		"not an envelope":        {[]byte(`{"payload": 1}`), keys, "host-01", t0, ErrMalformed},
+		"an unknown outer field": {[]byte(strings.Replace(string(good), `"key"`, `"run":"now","key"`, 1)), keys, "host-01", t0, ErrMalformed},
+		"trailing data":          {append(append([]byte{}, good...), []byte(` {}`)...), keys, "host-01", t0, ErrMalformed},
+		"too big":                {append(bytes.Repeat([]byte(" "), MaxBytes), good...), keys, "host-01", t0, ErrMalformed},
+		"a short signature":      {reencode(func(x *wire) { x.Sig = base64.StdEncoding.EncodeToString(sig[:10]) }), keys, "host-01", t0, ErrMalformed},
 	} {
 		if _, _, err := Verify(c.raw, c.keys, c.host, c.now); !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
@@ -116,7 +116,7 @@ func TestSignedButBadPayload(t *testing.T) {
 		"no id":                       {string(noIDB), ErrMalformed},
 		"two objects":                 {string(good) + string(good), ErrMalformed},
 	} {
-		if _, _, err := Verify(raw(c.payload), keys, "mini", t0); !errors.Is(err, c.want) {
+		if _, _, err := Verify(raw(c.payload), keys, "host-01", t0); !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
 		}
 	}
@@ -134,11 +134,11 @@ func TestPayloadIsTheSignedBytes(t *testing.T) {
 	pub, priv := keypair(t, 1)
 	keys := map[string]ed25519.PublicKey{"k1": pub}
 	a := signed(t, priv, exe())
-	_, pa, _ := Verify(a, keys, "mini", t0)
-	_, pa2, _ := Verify(a, keys, "mini", t0)
+	_, pa, _ := Verify(a, keys, "host-01", t0)
+	_, pa2, _ := Verify(a, keys, "host-01", t0)
 	v := exe()
-	v.Params = map[string]string{"host": "mini", "force": "yes"}
-	_, pv, _ := Verify(signed(t, priv, v), keys, "mini", t0)
+	v.Params = map[string]string{"host": "host-01", "force": "yes"}
+	_, pv, _ := Verify(signed(t, priv, v), keys, "host-01", t0)
 	if !bytes.Equal(pa, pa2) || bytes.Equal(pa, pv) {
 		t.Fatal("the recorded payload does not tell a resend from a variant")
 	}
@@ -152,8 +152,8 @@ func FuzzVerify(f *testing.F) {
 	f.Add([]byte(`{"key":"k1","sig":"","payload":""}`))
 	f.Add([]byte(`{}`))
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		e, _, err := Verify(raw, keys, "mini", t0)
-		if err == nil && (e.Host != "mini" || e.ID == "") {
+		e, _, err := Verify(raw, keys, "host-01", t0)
+		if err == nil && (e.Host != "host-01" || e.ID == "") {
 			t.Fatalf("accepted %+v", e)
 		}
 	})
@@ -170,7 +170,7 @@ func TestPeekID(t *testing.T) {
 	for name, raw := range map[string][]byte{
 		"not JSON":       []byte("garbage"),
 		"a bad payload":  []byte(`{"key":"k1","sig":"","payload":"!!"}`),
-		"no id":          []byte(`{"key":"k1","sig":"","payload":"` + base64.StdEncoding.EncodeToString([]byte(`{"host":"mini"}`)) + `"}`),
+		"no id":          []byte(`{"key":"k1","sig":"","payload":"` + base64.StdEncoding.EncodeToString([]byte(`{"host":"host-01"}`)) + `"}`),
 		"an id too long": signed(t, priv, long),
 		"too big": []byte(`{"key":"k1","sig":"","payload":"` + base64.StdEncoding.EncodeToString(
 			[]byte(`{"id":"exec-1","pad":"`+strings.Repeat("x", MaxBytes)+`"}`)) + `"}`),

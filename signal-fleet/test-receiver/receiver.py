@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""signal-fleet test webhook receiver — the homelab entry point for Phase-0
+"""signal-fleet test webhook receiver — the installation's entry point for Phase-0
 trigger tests.
 
 Captures inbound alert webhooks (Grafana contact point, GlitchTip project alert)
@@ -7,9 +7,9 @@ so we can verify the *push* path end-to-end before the real fleet ingress exists
 It is a test harness, not production: it logs each request (method, path, a few
 headers, and the JSON body) to stdout and to captures.log, and returns 200.
 
-Stdlib only — no pip install needed on the mini. Run:  python3 receiver.py [port]
-Default port 8099. Containers on the mini reach it at host.docker.internal:<port>;
-tailnet peers reach it at homelab:<port> (subject to the Tailscale ACL).
+Stdlib only — no pip install needed on the host. Run:  python3 receiver.py [port]
+Default port 8099. Containers on the host reach it at host.docker.internal:<port>;
+tailnet peers reach it at host-01:<port> (subject to the Tailscale ACL).
 """
 import json
 import sys

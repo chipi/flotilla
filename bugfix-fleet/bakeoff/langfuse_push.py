@@ -13,7 +13,7 @@ Env: LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 import sys, os, json, uuid, base64, urllib.request, datetime
 
 bug, harness, model, verdict, cost, turns, latency, hjson = sys.argv[1:9]
-HOST = os.environ.get("LANGFUSE_HOST", "http://homelab:4000").rstrip("/")
+HOST = os.environ.get("LANGFUSE_HOST", "http://localhost:4000").rstrip("/")
 PK, SK = os.environ.get("LANGFUSE_PUBLIC_KEY"), os.environ.get("LANGFUSE_SECRET_KEY")
 if not (PK and SK):
     print("langfuse: no creds (LANGFUSE_PUBLIC_KEY/SECRET_KEY) — skipping"); sys.exit(0)

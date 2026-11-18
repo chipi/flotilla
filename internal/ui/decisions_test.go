@@ -9,20 +9,20 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-// The counting rules of the fleet session's decision_mix.py (fleet-eval-data projects/triage-ops), one
+// The counting rules of the fleet session's decision_mix.py (the installation's research repo), one
 // case each, so the Decisions tab and that script agree for a day.
 func TestBuildMixCountsLikeDecisionMix(t *testing.T) {
 	dec := func(ts, disp, stage, gates, fp string) store.LedgerDecision {
 		return store.LedgerDecision{TS: ts, Kind: "decision", Disposition: disp, Stage: stage, Gates: gates, Fingerprint: fp, PromptSHA: "p1", Model: "m"}
 	}
 	ds := []store.LedgerDecision{
-		dec("2026-11-14T10:00:00Z", "file", "propose", "i:passed/c:n/a/d:downgraded (no corroboration)/e:n/a", "glitchtip:ORRERY-PROD-25"),
+		dec("2026-11-14T10:00:00Z", "file", "propose", "i:passed/c:n/a/d:downgraded (no corroboration)/e:n/a", "glitchtip:SHOP-PROD-25"),
 		dec("2026-11-14T11:00:00Z", "escalate", "live", "i:passed/c:n/a/d:n/a/e:fired", "grafana:abc"),
-		dec("2026-11-14T12:00:00Z", "dismiss", "shadow", "", "glitchtip:ORRERY-PROD-25"),     // shadow: not counted
-		dec("2026-11-14T13:00:00Z", "file", "", "", "glitchtip:ORRERY-PROD-25"),              // no stage: not counted
+		dec("2026-11-14T12:00:00Z", "dismiss", "shadow", "", "glitchtip:SHOP-PROD-25"),       // shadow: not counted
+		dec("2026-11-14T13:00:00Z", "file", "", "", "glitchtip:SHOP-PROD-25"),                // no stage: not counted
 		dec("2026-11-14T14:00:00Z", "weird", "propose", "operational:x", "glitchtip:NODASH"), // other; operational is no gate
 		dec("2026-11-15T09:00:00Z", "file", "propose", "", "sentry:x"),
-		{TS: "2026-11-15T09:30:00Z", Kind: "recurrence", Disposition: "recurrence", Stage: "propose", Fingerprint: "glitchtip:ORRERY-PROD-25"},
+		{TS: "2026-11-15T09:30:00Z", Kind: "recurrence", Disposition: "recurrence", Stage: "propose", Fingerprint: "glitchtip:SHOP-PROD-25"},
 	}
 	m := buildMix(ds, []string{"2026-11-14", "2026-11-15"})
 	if len(m.Days) != 2 || m.Days[0].Day != "2026-11-15" || m.Days[1].Day != "2026-11-14" {
@@ -46,7 +46,7 @@ func TestBuildMixCountsLikeDecisionMix(t *testing.T) {
 	for _, p := range m.Projects {
 		proj[p.Name] = p.Line
 	}
-	if proj["ORRERY-PROD"] != "file 1" || proj["grafana"] != "escalate 1" || proj["unknown"] != "other 1" || proj["other"] != "file 1" {
+	if proj["SHOP-PROD"] != "file 1" || proj["grafana"] != "escalate 1" || proj["unknown"] != "other 1" || proj["other"] != "file 1" {
 		t.Fatalf("projects: %v", proj)
 	}
 	// the busiest day's bar is full width, the others to scale, each segment after the one before
@@ -92,12 +92,12 @@ func TestDecisionsTab(t *testing.T) {
 	for i, disp := range []string{"file", "file", "escalate"} {
 		ts := now.Add(-time.Duration(i+1) * time.Minute).Format(time.RFC3339)
 		if _, err := f.st.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"ts": ts, "disposition": disp, "stage": "propose",
-			"occurrence_id": "o" + string(rune('a'+i)), "fingerprint": "glitchtip:ORRERY-PROD-25", "gates": "i:passed/d:fired"}, "r1"); err != nil {
+			"occurrence_id": "o" + string(rune('a'+i)), "fingerprint": "glitchtip:SHOP-PROD-25", "gates": "i:passed/d:fired"}, "r1"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	_, page := f.do("GET", "/fleets/triage?tab=decisions", ck, nil, nil)
-	for _, want := range []string{"?tab=decisions", "<strong>3</strong> decisions", "file 2 · escalate 1 · gates fired: d 3", "ORRERY-PROD"} {
+	for _, want := range []string{"?tab=decisions", "<strong>3</strong> decisions", "file 2 · escalate 1 · gates fired: d 3", "SHOP-PROD"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("decisions page lacks %q", want)
 		}

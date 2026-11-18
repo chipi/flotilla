@@ -8,7 +8,7 @@
 #      so the standard worker leg (run.sh) can measure the outcome end-to-end
 # The triager must not touch code: any worktree diff is recorded as a violation.
 #
-# Usage:  ./triage_run.sh bugs/orrery-mission-arc-L0.json [pi]
+# Usage:  ./triage_run.sh bugs/shop-mission-arc-L0.json [pi]
 # Kick-back second pass (a worker attempt FAILed; §6.2 2×2 routing):
 #   ./triage_run.sh <original-L0.json> pi <worker-result-dir> <prior-triage.json>
 set -euo pipefail
@@ -18,7 +18,7 @@ BUG_JSON="$1"; HARNESS="${2:-pi}"
 KB_EVIDENCE="${3:-}"; KB_PRIOR="${4:-}"       # both set → kick-back re-entry
 # flotilla's bugfix worker (RFC-0010 A5) sets these; unset, the bake-off's own layout
 ROOT="${BAKEOFF_ROOT:-$HOME/.bugfix-fleet/bakeoff}"
-WT="${BAKEOFF_WT:-$ROOT/orrery}"
+WT="${BAKEOFF_WT:-$ROOT/shop}"
 PROVIDER="${PI_PROVIDER:-openrouter}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 

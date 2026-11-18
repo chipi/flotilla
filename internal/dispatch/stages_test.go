@@ -44,7 +44,7 @@ func TestHandOverThroughStages(t *testing.T) {
 	}
 
 	f.now = f.now.Add(time.Hour) // past the backoff
-	f.decide(`{"outcome": "hand_over", "stage": "", "detail": "answered: mini"}`)
+	f.decide(`{"outcome": "hand_over", "stage": "", "detail": "answered: host-01"}`)
 	f.pass(t)
 	got := f.w.got[len(f.w.got)-1]
 	var cj caseJSON

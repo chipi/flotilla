@@ -1,7 +1,7 @@
 # The bugfix fleet's worker (RFC-0010 §4): the worker service, the bugfix routines (bugfix/), the
 # bake-off's leaves they call (bugfix-fleet/bakeoff, with its agent definitions) and the coding harness,
-# pi. The base is orrery's own Node image, at the digest orrery's Dockerfile pins, so a fix builds and
-# tests on the toolchain orrery ships with. Debian's python3 runs the worker (stdlib only); git and jq
+# pi. The base is the target repo's own Node image, at the digest its Dockerfile pins, so a fix builds and
+# tests on the toolchain the repo ships with. Debian's python3 runs the worker (stdlib only); git and jq
 # are what the leaves need, procps their wall-clock cut (pkill -P on their own children).
 #   docker build -f deploy/docker/worker-bugfix.Dockerfile --build-arg VERSION=sha-<7> -t flotilla-worker-bugfix:sha-<7> .
 # The worker link (RFC-0011), for when this worker runs on another machine: flotilla-host, static, at this
@@ -21,7 +21,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker \
  && install -d -o 10001 -g 10001 /scratch   # an empty scratch volume takes this owner
-# pi, the harness the bake-off measured (BAKEOFF.md §8), at the version installed on the mini; its
+# pi, the harness the bake-off measured (BAKEOFF.md §8), at the version installed on the host; its
 # npm-shrinkwrap.json pins what it pulls. No install scripts run.
 RUN npm install -g --ignore-scripts --no-fund --no-audit @earendil-works/pi-coding-agent@0.80.10 \
  && npm cache clean --force && pi --version

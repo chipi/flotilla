@@ -63,12 +63,12 @@ func startCancellable(t *testing.T, notYet int) (*Scheduler, *cancelRunner, *fak
 // A cancelled run is recorded with its own status, who and why, and its spend; it is neither ok nor a failure.
 func TestCancelRecordsACancelledRun(t *testing.T) {
 	s, cr, fm, done := startCancellable(t, 0)
-	runID, err := s.Cancel(context.Background(), "triage/cycle", "claude-homelab", "fleet triage STOPped")
+	runID, err := s.Cancel(context.Background(), "triage/cycle", "claude-example", "fleet triage STOPped")
 	if err != nil || runID == "" {
 		t.Fatalf("cancel: %q %v", runID, err)
 	}
 	r := <-done
-	if r.ID != runID || r.Status != store.StatusCancelled || r.Detail != "cancelled: claude-homelab, fleet triage STOPped" || r.SpendUSD != 0.2 {
+	if r.ID != runID || r.Status != store.StatusCancelled || r.Detail != "cancelled: claude-example, fleet triage STOPped" || r.SpendUSD != 0.2 {
 		t.Fatalf("the run: %+v", r)
 	}
 	runs, _ := s.Store.Runs(context.Background(), "triage/cycle", 5)

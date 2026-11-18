@@ -280,12 +280,12 @@ class TestCodeVersion(unittest.TestCase):
 
     def test_build_issue_states_the_glitchtip_facts(self):
         # T0.7 Q3 (rubric R2, R3, R5): where, how often and since when, and a link, from the issue triage polled
-        sig = {"alertname": "TypeError: x", "source": "glitchtip", "fingerprint": "glitchtip:ORRERY-PROD-25",
-               "raw": {"permalink": "https://glitchtip.example/orrery-prod/issues/945", "shortId": "ORRERY-PROD-25",
+        sig = {"alertname": "TypeError: x", "source": "glitchtip", "fingerprint": "glitchtip:SHOP-PROD-25",
+               "raw": {"permalink": "https://glitchtip.example/shop-prod/issues/945", "shortId": "SHOP-PROD-25",
                        "culprit": "src/lib/panel.svelte in render", "count": "12", "userCount": 3,
                        "firstSeen": "2026-11-14T08:01:02.5Z", "lastSeen": "2026-11-16T09:30:00Z"}}
         body = actions.build_issue(sig, {"symptom": "s", "acceptance": [], "evidence": []})["body"]
-        self.assertIn("**Source:** [ORRERY-PROD-25](https://glitchtip.example/orrery-prod/issues/945)", body)
+        self.assertIn("**Source:** [SHOP-PROD-25](https://glitchtip.example/shop-prod/issues/945)", body)
         self.assertIn("**Where:** `src/lib/panel.svelte in render`", body)
         self.assertIn("**Seen:** 12 events, 3 users; first 2026-11-14 08:01 UTC, last 2026-11-16 09:30 UTC", body)
 
@@ -414,28 +414,28 @@ class TestCodeVersion(unittest.TestCase):
 import filing  # noqa: E402
 
 
-def _psig(fp, title, culprit="podcast.pipeline.audio in _evict", mtype="ValueError",
+def _psig(fp, title, culprit="api.pipeline.audio in _evict", mtype="ValueError",
           src="glitchtip", count="3"):
     """A GlitchTip-shaped signal (as sources.to_error_signal builds)."""
     return {"fingerprint": fp, "source": src, "alertname": title,
-            "labels": {"project": "podcast", "level": "error", "culprit": culprit,
+            "labels": {"project": "api", "level": "error", "culprit": culprit,
                        "count": count},
             "raw": {"metadata": {"type": mtype}, "culprit": culprit}}
 
 
 # the handover's real clusters (scrubbed), one signal per occurrence
 _AUDIO = [
-    _psig("glitchtip:PODCAST-PIPELINE-3F",
+    _psig("glitchtip:API-PIPELINE-3F",
           "Audio eviction size mismatch: cold (69782850) != local (65937149) for /app/output/feeds/rss_feeds.npr.org_7abc"),
-    _psig("glitchtip:PODCAST-PIPELINE-3E",
+    _psig("glitchtip:API-PIPELINE-3E",
           "Audio eviction size mismatch: cold (72110022) != local (65937149) for /app/output/feeds/rss_feeds.bbc.co.uk_3def"),
-    _psig("glitchtip:PODCAST-PIPELINE-36",
+    _psig("glitchtip:API-PIPELINE-36",
           "Audio eviction size mismatch: cold (551488) != local (12345) for /app/output/feeds/rss_feeds.npr.org_9zzz"),
 ]
 _ADR = [
-    _psig("glitchtip:PODCAST-BS", "Failed to generate and validate summary for episode 6a319f2260728bbcda06b463",
+    _psig("glitchtip:API-BS", "Failed to generate and validate summary for episode 6a319f2260728bbcda06b463",
           culprit="metadata_generation in _generate_and_validate_summary", mtype="RecoverableSummarizationError"),
-    _psig("glitchtip:PODCAST-PIPELINE-8", "Failed to generate and validate summary for episode 6eb845ef30754858",
+    _psig("glitchtip:API-PIPELINE-8", "Failed to generate and validate summary for episode 6eb845ef30754858",
           culprit="metadata_generation in _generate_and_validate_summary", mtype="RecoverableSummarizationError"),
 ]
 
@@ -449,7 +449,7 @@ class TestNormalizedKey(unittest.TestCase):
 
     def test_audio_golden_hash(self):
         # golden — a change to the regex list or extractor must break this LOUDLY
-        self.assertEqual(filing.normalized_key(_AUDIO[0]), "v1:71c67e6fb210")
+        self.assertEqual(filing.normalized_key(_AUDIO[0]), "v1:f0503f654a2c")
 
     def test_decimal_vs_hex_bytecount_same_placeholder(self):
         # regression guard for the bug golden-testing caught: an 8-digit DECIMAL
@@ -549,9 +549,9 @@ class TestLedgerDedup(unittest.TestCase):
     def test_norm_key_hit_never_inherits_mute(self):
         # review R3: a norm_key (fuzzy) hit on a MUTED issue must file FRESH, not
         # inherit the mute — else a different bug is silently buried forever
-        sig = _psig("glitchtip:PODCAST-NEW", "Audio eviction size mismatch: cold (999999) != local (1) for /a/b/c")
+        sig = _psig("glitchtip:API-NEW", "Audio eviction size mismatch: cold (999999) != local (1) for /a/b/c")
         nk = filing.normalized_key(sig)
-        self._seed([{"fingerprint": "glitchtip:PODCAST-OLD", "repo": "example/podcast",
+        self._seed([{"fingerprint": "glitchtip:API-OLD", "repo": "example/api",
                      "issue": "5", "group_key": "", "norm_key": nk}])
         filing.issue_state = lambda repo, num: {"state": "open", "labels": [filing.MUTE_LABEL],
                                                 "closed_at": None, "url": ""}
@@ -562,8 +562,8 @@ class TestLedgerDedup(unittest.TestCase):
 
     def test_exact_fp_hit_DOES_honor_mute(self):
         # control: an EXACT fingerprint hit on a muted issue is honored (no new file)
-        sig = _psig("glitchtip:PODCAST-OLD", "whatever")
-        self._seed([{"fingerprint": "glitchtip:PODCAST-OLD", "repo": "example/podcast",
+        sig = _psig("glitchtip:API-OLD", "whatever")
+        self._seed([{"fingerprint": "glitchtip:API-OLD", "repo": "example/api",
                      "issue": "5", "group_key": "", "norm_key": ""}])
         filing.issue_state = lambda repo, num: {"state": "open", "labels": [filing.MUTE_LABEL],
                                                 "closed_at": None, "url": ""}
@@ -575,7 +575,7 @@ class TestFilingLink(unittest.TestCase):
     """A fingerprint matched on another key gets a linked row naming the issue; ledger_lookup
     never returns linked rows, so no decision changes and no mute spreads through a link."""
 
-    REPO = "example/podcast"
+    REPO = "example/api"
     TITLE = "Audio eviction size mismatch: cold (999999) != local (1) for /a/b/c"
 
     def setUp(self):
@@ -598,12 +598,12 @@ class TestFilingLink(unittest.TestCase):
         os.unlink(self._tmp.name)
 
     def _seed_old(self, **extra):
-        sig = _psig("glitchtip:PODCAST-OLD", self.TITLE)
-        row = {"fingerprint": "glitchtip:PODCAST-OLD", "repo": self.REPO, "issue": "5",
+        sig = _psig("glitchtip:API-OLD", self.TITLE)
+        row = {"fingerprint": "glitchtip:API-OLD", "repo": self.REPO, "issue": "5",
                "group_key": "", "norm_key": filing.normalized_key(sig)}
         filing._ledger_write([dict(row, **extra)])
 
-    def _file_new(self, fp="glitchtip:PODCAST-NEW"):
+    def _file_new(self, fp="glitchtip:API-NEW"):
         return filing.file_or_update(_psig(fp, self.TITLE), {"title": "t", "body": "b"}, "bug")
 
     def _row(self, fp):
@@ -612,19 +612,19 @@ class TestFilingLink(unittest.TestCase):
     def test_comment_via_norm_key_links_the_new_fingerprint(self):
         self._seed_old()
         self.assertTrue(self._file_new().startswith("COMMENTED"))
-        r = self._row("glitchtip:PODCAST-NEW")
+        r = self._row("glitchtip:API-NEW")
         self.assertEqual((r["repo"], r["issue"], r["linked_via"]), (self.REPO, "5", "norm_key"))
-        self.assertEqual(self._row("glitchtip:PODCAST-OLD")["linked_via"], "")
+        self.assertEqual(self._row("glitchtip:API-OLD")["linked_via"], "")
 
     def test_dedup_links_too(self):
         self._seed_old(last_comment_day=filing._today())
         self.assertTrue(self._file_new().startswith("DEDUP"))
-        self.assertEqual(self._row("glitchtip:PODCAST-NEW")["linked_via"], "norm_key")
+        self.assertEqual(self._row("glitchtip:API-NEW")["linked_via"], "norm_key")
 
     def test_lookup_never_returns_a_linked_row(self):
         self._seed_old()
         self._file_new()
-        self.assertIsNone(filing.ledger_lookup("glitchtip:PODCAST-NEW"))
+        self.assertIsNone(filing.ledger_lookup("glitchtip:API-NEW"))
 
     def test_a_mute_never_spreads_through_a_link(self):
         # linked while the issue was open; muted later: the new fingerprint still files fresh,
@@ -634,7 +634,7 @@ class TestFilingLink(unittest.TestCase):
         self.muted = True
         out = self._file_new()
         self.assertTrue(out.startswith("FILED"), f"expected a fresh file, got: {out}")
-        self.assertEqual(self._row("glitchtip:PODCAST-NEW")["linked_via"], "")   # its own row now
+        self.assertEqual(self._row("glitchtip:API-NEW")["linked_via"], "")   # its own row now
 
     def test_group_key_mute_links(self):
         filing._ledger_write([{"fingerprint": "grafana:old", "repo": "r", "issue": "7",
@@ -652,14 +652,14 @@ class TestFilingLink(unittest.TestCase):
 
     def test_exact_fingerprint_hit_writes_no_link(self):
         self._seed_old()
-        self.assertTrue(self._file_new("glitchtip:PODCAST-OLD").startswith("COMMENTED"))
+        self.assertTrue(self._file_new("glitchtip:API-OLD").startswith("COMMENTED"))
         self.assertEqual([r["linked_via"] for r in filing._tsv_rows()], [""])
 
     def test_switch_off_writes_no_link(self):
         os.environ["SF_FILING_LINK"] = "0"
         self._seed_old()
         self.assertTrue(self._file_new().startswith("COMMENTED"))
-        self.assertIsNone(self._row("glitchtip:PODCAST-NEW"))
+        self.assertIsNone(self._row("glitchtip:API-NEW"))
 
     def test_a_row_of_its_own_is_never_replaced(self):
         filing._ledger_write([{"fingerprint": "fp", "repo": "r", "issue": "1", "group_key": ""}])
@@ -668,7 +668,7 @@ class TestFilingLink(unittest.TestCase):
         self.assertEqual(self._row("fp")["issue"], "1")
 
     def test_a_linked_row_is_never_a_rollup_bucket(self):
-        gk = filing.ROLLUP_PREFIX + "podcast"
+        gk = filing.ROLLUP_PREFIX + "api"
         filing._ledger_write([{"fingerprint": "own", "repo": "r", "issue": "1", "group_key": gk},
                               {"fingerprint": "lnk", "repo": "r", "issue": "2", "group_key": gk,
                                "linked_via": "group_key"}])
@@ -677,15 +677,15 @@ class TestFilingLink(unittest.TestCase):
     def test_an_unchanged_link_is_not_rewritten(self):
         self._seed_old()
         self._file_new()
-        first = self._row("glitchtip:PODCAST-NEW")["filed_at"]
-        filing._link("glitchtip:PODCAST-NEW", "", "", "",
-                     dict(self._row("glitchtip:PODCAST-OLD"), _dim="norm_key"))
-        self.assertEqual(self._row("glitchtip:PODCAST-NEW")["filed_at"], first)
+        first = self._row("glitchtip:API-NEW")["filed_at"]
+        filing._link("glitchtip:API-NEW", "", "", "",
+                     dict(self._row("glitchtip:API-OLD"), _dim="norm_key"))
+        self.assertEqual(self._row("glitchtip:API-NEW")["filed_at"], first)
 
 
 def _lowsig(fp, title, count="1", users=0, culprit=""):
     return {"fingerprint": fp, "source": "glitchtip", "alertname": title,
-            "labels": {"project": "podcast", "count": count},
+            "labels": {"project": "api", "count": count},
             "raw": {"count": count, "userCount": users, "culprit": culprit}}
 
 
@@ -729,16 +729,16 @@ class TestLowSignal(unittest.TestCase):
 
     # routing
     def test_first_low_signal_opens_rollup(self):
-        out = filing.file_or_update(_lowsig("glitchtip:PODCAST-A", "one-off crash A"),
+        out = filing.file_or_update(_lowsig("glitchtip:API-A", "one-off crash A"),
                                     {"title": "one-off A", "body": "b"}, "bug")
         self.assertTrue(out.startswith("ROLLUP-OPENED"), out)
         opened = [p for m, p, _ in self.gh if m == "POST" and p.endswith("/issues")]
         self.assertEqual(len(opened), 1)
 
     def test_second_low_signal_same_bucket_folds(self):
-        filing.file_or_update(_lowsig("glitchtip:PODCAST-A", "one-off A"),
+        filing.file_or_update(_lowsig("glitchtip:API-A", "one-off A"),
                               {"title": "A", "body": "b"}, "bug")
-        out = filing.file_or_update(_lowsig("glitchtip:PODCAST-B", "one-off B"),
+        out = filing.file_or_update(_lowsig("glitchtip:API-B", "one-off B"),
                                     {"title": "B", "body": "b"}, "bug")
         self.assertTrue(out.startswith("ROLLED-UP"), out)
         # exactly ONE issue created total; the 2nd folded as a comment
@@ -746,18 +746,18 @@ class TestLowSignal(unittest.TestCase):
         self.assertEqual(len(created), 1)
 
     def test_not_low_signal_files_normally(self):
-        out = filing.file_or_update(_lowsig("glitchtip:PODCAST-C", "recurring bug", count="42"),
+        out = filing.file_or_update(_lowsig("glitchtip:API-C", "recurring bug", count="42"),
                                     {"title": "C", "body": "b"}, "bug")
         self.assertTrue(out.startswith("FILED"), out)
 
     def test_promotion_out_of_rollup(self):
-        # seed: this fp is already folded into the podcast rollup (issue 50)
-        nk = filing.normalized_key(_lowsig("glitchtip:PODCAST-Z", "flaky thing"))
-        filing._ledger_write([{"fingerprint": "glitchtip:PODCAST-Z", "repo": "example/podcast",
-                               "issue": "50", "group_key": "low-signal:podcast",
+        # seed: this fp is already folded into the api rollup (issue 50)
+        nk = filing.normalized_key(_lowsig("glitchtip:API-Z", "flaky thing"))
+        filing._ledger_write([{"fingerprint": "glitchtip:API-Z", "repo": "example/api",
+                               "issue": "50", "group_key": "low-signal:api",
                                "last_comment_day": "", "norm_key": nk}])
         # it recurs at count=12 → no longer low-signal → must break OUT to its own issue
-        out = filing.file_or_update(_lowsig("glitchtip:PODCAST-Z", "flaky thing", count="12"),
+        out = filing.file_or_update(_lowsig("glitchtip:API-Z", "flaky thing", count="12"),
                                     {"title": "flaky thing", "body": "b"}, "bug")
         self.assertTrue(out.startswith("FILED"), out)
         created = [payload for m, p, payload in self.gh if m == "POST" and p.endswith("/issues")]
@@ -797,7 +797,7 @@ class TestCrossLinkAndLabels(unittest.TestCase):
 
     def _bug(self):
         # not low-signal (count 42), symbolicated → goes through the create path
-        return _psig("glitchtip:PODCAST-XL", "Summary schema validation failed",
+        return _psig("glitchtip:API-XL", "Summary schema validation failed",
                      culprit="metadata_generation in _generate_and_validate_summary", count="42")
 
     def test_build_issue_adds_area_label(self):
@@ -870,11 +870,11 @@ class TestSourceGuards(unittest.TestCase):
 
     # F1 — Grafana / evidence-absent must NOT be low-signal
     def test_grafana_signal_is_never_low_signal(self):
-        self.assertFalse(filing.low_signal(_grafana("Orrery launch data stale")))
+        self.assertFalse(filing.low_signal(_grafana("Shop launch data stale")))
 
     def test_grafana_file_gets_its_own_issue_not_rollup(self):
-        out = filing.file_or_update(_grafana("Orrery launch data stale"),
-                                    {"title": "orrery stale", "body": "b"}, "config-enhancement")
+        out = filing.file_or_update(_grafana("Shop launch data stale"),
+                                    {"title": "shop stale", "body": "b"}, "config-enhancement")
         self.assertFalse(out.startswith(("ROLLUP", "ROLLED")), out)
 
     def test_glitchtip_without_count_not_low_signal(self):
@@ -892,7 +892,7 @@ class TestSourceGuards(unittest.TestCase):
 
     # F2 — escalation / substrate never rolled up even when low-signal-shaped
     def test_escalation_not_rolled_up(self):
-        low = _lowsig("glitchtip:PODCAST-ESC", "one-off, needs a human")
+        low = _lowsig("glitchtip:API-ESC", "one-off, needs a human")
         out = filing.file_or_update(low, {"title": "escalation X", "body": "Q for operator"}, "escalation")
         self.assertFalse(out.startswith(("ROLLUP", "ROLLED")), out)
 
@@ -908,14 +908,14 @@ class TestSourceGuards(unittest.TestCase):
 
     def test_glitchtip_golden_hash_unchanged_by_f3(self):
         # F3 appends instance for grafana ONLY — GlitchTip keys must stay byte-identical
-        self.assertEqual(filing.normalized_key(_AUDIO[0]), "v1:71c67e6fb210")
+        self.assertEqual(filing.normalized_key(_AUDIO[0]), "v1:f0503f654a2c")
 
     # promotion-before-mute: a muted rollup must not bury a threshold-crossing bug
     def test_promotion_beats_mute(self):
-        sig = _lowsig("glitchtip:PODCAST-PROMO", "flaky", count="20")   # crossed threshold
+        sig = _lowsig("glitchtip:API-PROMO", "flaky", count="20")   # crossed threshold
         nk = filing.normalized_key(sig)
-        filing._ledger_write([{"fingerprint": "glitchtip:PODCAST-PROMO", "repo": "example/podcast",
-                               "issue": "5", "group_key": "low-signal:podcast",
+        filing._ledger_write([{"fingerprint": "glitchtip:API-PROMO", "repo": "example/api",
+                               "issue": "5", "group_key": "low-signal:api",
                                "last_comment_day": "", "norm_key": nk}])
         filing.issue_state = lambda r, n: {"state": "open", "labels": [filing.MUTE_LABEL],
                                            "closed_at": None, "url": ""}
@@ -956,7 +956,7 @@ class TestAlertKeyDedup(unittest.TestCase):
 
     def _signal(self, fp="grafana:57cf073a75e944ec"):
         return {"fingerprint": fp, "source": "grafana", "alertname": "Enrichment/job drain paused",
-                "labels": {"instance": "homelab"}}
+                "labels": {"instance": "host-01"}}
 
     def _seed_48(self, issue="48"):
         filing._ledger_write([{"fingerprint": "grafana:ab6d6d8f8b808627", "repo": self.repo,
@@ -981,7 +981,7 @@ class TestAlertKeyDedup(unittest.TestCase):
         self.assertTrue(out.startswith("COMMENTED") and "#48" in out and "alert_key" in out, out)
         self.assertFalse([p for m, p, _ in self.gh if m == "POST" and p.endswith("/issues")])
         body = [pl for m, p, pl in self.gh if p.endswith("/comments")][0]["body"]
-        self.assertIn("instance `homelab`", body)
+        self.assertIn("instance `host-01`", body)
 
     def test_closed_issue_is_not_matched_on_alert_key(self):
         self._seed_48()
@@ -1224,7 +1224,7 @@ class TestRetireGlitchtipProject(unittest.TestCase):
             {"fingerprint": "glitchtip:LITELLM-5", "repo": "r", "issue": "14", "filed_at": "2026-08-04"},
             {"fingerprint": "glitchtip:LITELLM-VPS-3", "repo": "r", "issue": "10", "filed_at": "2026-08-02"},
             {"fingerprint": "glitchtip:LITELLM-K", "repo": "r", "issue": "50", "filed_at": "2026-10-02"},
-            {"fingerprint": "glitchtip:PODCAST-5", "repo": "p", "issue": "7", "filed_at": "2026-08-01"},
+            {"fingerprint": "glitchtip:API-5", "repo": "p", "issue": "7", "filed_at": "2026-08-01"},
         ])
 
     def tearDown(self):
@@ -1235,7 +1235,7 @@ class TestRetireGlitchtipProject(unittest.TestCase):
         res = filing.retire_glitchtip_project("litellm", "2026-09-30")
         self.assertEqual(res["retired"], 1)
         self.assertIsNone(filing.ledger_lookup("glitchtip:LITELLM-5"))
-        for fp in ("glitchtip:LITELLM-VPS-3", "glitchtip:LITELLM-K", "glitchtip:PODCAST-5"):
+        for fp in ("glitchtip:LITELLM-VPS-3", "glitchtip:LITELLM-K", "glitchtip:API-5"):
             self.assertIsNotNone(filing.ledger_lookup(fp), fp)
         row = [r for r in filing._ledger_rows() if r["issue"] == "14"][0]
         self.assertEqual(row["fingerprint"], "glitchtip-retired:LITELLM-5")
@@ -1402,7 +1402,7 @@ class TestPollWide(unittest.TestCase):
         self.assertEqual(self.triaged, [f"glitchtip:X-{n}" for n in range(3, 13)])
 
     def test_never_decided_go_first_oldest_first_then_re_triages(self):
-        # homelab review of T0.2: newest-first starved an older backlog, and due re-triages took slots first
+        # ops review of T0.2: newest-first starved an older backlog, and due re-triages took slots first
         for n, sig in enumerate(self.issues):
             sig["startsAt"] = f"2026-11-{16 - n:02d}T00:00:00Z"   # later in the list = first seen earlier
         self.issues[0]["labels"]["count"] = 9            # decided at count 1, recurred: re-triage due
@@ -1922,7 +1922,7 @@ class TestGlitchtipSync(unittest.TestCase):
         import glitchtip_sync as gs
         rows = [{"fingerprint": "glitchtip:PIPE-1", "repo": "o/r", "issue": "10"}] + list(extra_rows)
         issues = {"PIPE-1": {"id": 1, "shortId": "PIPE-1", "status": issue_status,
-                             "project": {"slug": "podcast-pipeline"}}}
+                             "project": {"slug": "api-pipeline"}}}
         issues.update(extra_issues or {})
         gh = {("o/r", 10): {"url": "https://github.com/o/r/issues/10", "dup": None, **gh_state}}
         return [a for a in gs.plan(rows, issues, gh) if a["sid"] == "PIPE-1"][0]
@@ -1941,12 +1941,12 @@ class TestGlitchtipSync(unittest.TestCase):
     def test_already_resolved_is_not_resolved_again(self):
         self.assertEqual(self._plan({"state": "CLOSED", "reason": "COMPLETED"}, issue_status="resolved")["action"], "note")
 
-    def _dup(self, canon_state, target_title, target_project="podcast-pipeline"):
+    def _dup(self, canon_state, target_title, target_project="api-pipeline"):
         import glitchtip_sync as gs
         rows = [{"fingerprint": "glitchtip:PIPE-1", "repo": "o/r", "issue": "10"},
                 {"fingerprint": "glitchtip:PIPE-0", "repo": "o/r", "issue": "7"}]
         issues = {"PIPE-1": {"id": 11, "shortId": "PIPE-1", "status": "unresolved",
-                             "title": "deadline exceeded for episode 9", "project": {"slug": "podcast-pipeline"}},
+                             "title": "deadline exceeded for episode 9", "project": {"slug": "api-pipeline"}},
                   "PIPE-0": {"id": 9, "shortId": "PIPE-0", "status": "unresolved",
                              "title": target_title, "project": {"slug": target_project}}}
         gh = {("o/r", 10): {"state": "CLOSED", "reason": "DUPLICATE", "dup": ("o/r", 7),
@@ -1963,7 +1963,7 @@ class TestGlitchtipSync(unittest.TestCase):
         self.assertEqual((a["action"], a["then_resolve"]), ("merge", False))
 
     def test_duplicate_of_a_different_error_is_never_merged(self):
-        # 2026-10-15: orrery #557 (umbrella) held a SyntaxError, a TypeError and a CSS error.
+        # 2026-10-15: shop #557 (umbrella) held a SyntaxError, a TypeError and a CSS error.
         a = self._dup({"state": "OPEN", "reason": ""}, "Error: Unable to preload CSS for http://x")
         self.assertEqual((a["action"], a["canon"]), ("note", "https://github.com/o/r/issues/7"))
         b = self._dup({"state": "CLOSED", "reason": "COMPLETED"}, "Error: Unable to preload CSS")
@@ -1971,16 +1971,16 @@ class TestGlitchtipSync(unittest.TestCase):
 
     def test_duplicate_target_in_another_project_is_never_merged(self):
         a = self._dup({"state": "CLOSED", "reason": "NOT_PLANNED"}, "deadline exceeded for episode 6",
-                      target_project="podcast-api")
+                      target_project="api-api")
         self.assertEqual((a["action"], a["release"]), ("resolve", False))
 
     def test_reused_short_id_is_skipped(self):
-        # 2026-10-17: ORRERY-DEV-1 was a recreated project's new issue; its row (orrery#429,
-        # closed in August) belonged to the dead project's ORRERY-DEV-1.
+        # 2026-10-17: SHOP-DEV-1 was a recreated project's new issue; its row (shop#429,
+        # closed in August) belonged to the dead project's SHOP-DEV-1.
         import glitchtip_sync as gs
         rows = [{"fingerprint": "glitchtip:PIPE-1", "repo": "o/r", "issue": "10", "filed_at": "2026-07-29T15:03:45+00:00"}]
         issues = {"PIPE-1": {"id": 1, "shortId": "PIPE-1", "status": "unresolved", "firstSeen": "2026-10-17T07:51:32Z",
-                             "project": {"slug": "podcast-pipeline"}}}
+                             "project": {"slug": "api-pipeline"}}}
         gh = {("o/r", 10): {"state": "CLOSED", "reason": "COMPLETED", "dup": None, "url": "u"}}
         a = gs.plan(rows, issues, gh)[0]
         self.assertEqual((a["action"], a["why"]), ("skip", "short id reused by a newer issue"))
@@ -1992,9 +1992,9 @@ class TestGlitchtipSync(unittest.TestCase):
         rows = [{"fingerprint": "glitchtip:PIPE-1", "repo": "o/r", "issue": "10"},
                 {"fingerprint": "glitchtip:PIPE-0", "repo": "o/r", "issue": "7", "filed_at": "2026-07-01T00:00:00+00:00"}]
         issues = {"PIPE-1": {"id": 11, "shortId": "PIPE-1", "status": "unresolved",
-                             "title": "deadline exceeded for episode 9", "project": {"slug": "podcast-pipeline"}},
+                             "title": "deadline exceeded for episode 9", "project": {"slug": "api-pipeline"}},
                   "PIPE-0": {"id": 9, "shortId": "PIPE-0", "status": "unresolved", "firstSeen": "2026-10-01T00:00:00Z",
-                             "title": "deadline exceeded for episode 6", "project": {"slug": "podcast-pipeline"}}}
+                             "title": "deadline exceeded for episode 6", "project": {"slug": "api-pipeline"}}}
         gh = {("o/r", 10): {"state": "CLOSED", "reason": "DUPLICATE", "dup": ("o/r", 7), "url": "u10"},
               ("o/r", 7): {"state": "CLOSED", "reason": "COMPLETED", "dup": None, "url": "u7"}}
         a = [x for x in gs.plan(rows, issues, gh) if x["sid"] == "PIPE-1"][0]
@@ -2073,9 +2073,9 @@ class TestIdentityAndFoldFixes(unittest.TestCase):
 
     def test_provider_auth_groups_per_project(self):
         t = "ProviderAuthError: OpenAI authentication failed: unknown: the key is invalid or lacks access"
-        self.assertEqual(filing.group_key_for(t, "", "podcast-pipeline"), "provider-auth:podcast-pipeline")
-        self.assertEqual(filing.group_key_for("AuthenticationError: Error code: 401", "", "podcast-pipeline-dev"),
-                         "provider-auth:podcast-pipeline-dev")
+        self.assertEqual(filing.group_key_for(t, "", "api-pipeline"), "provider-auth:api-pipeline")
+        self.assertEqual(filing.group_key_for("AuthenticationError: Error code: 401", "", "api-pipeline-dev"),
+                         "provider-auth:api-pipeline-dev")
         self.assertEqual(filing.group_key_for(t, ""), "")          # no project, no cross-host group
 
     def test_reused_short_id_row_is_not_a_fingerprint_match(self):
@@ -2085,12 +2085,12 @@ class TestIdentityAndFoldFixes(unittest.TestCase):
         orig = filing.FILED
         filing.FILED = tmp.name
         try:
-            filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-DEV-1", "repo": "example/orrery", "issue": "429",
+            filing._ledger_write([{"fingerprint": "glitchtip:SHOP-DEV-1", "repo": "example/shop", "issue": "429",
                                    "filed_at": "2026-07-29T15:03:45+00:00"}])
-            self.assertIsNone(filing.ledger_lookup("glitchtip:ORRERY-DEV-1", first_seen="2026-10-17T07:51:32Z"))
-            hit = filing.ledger_lookup("glitchtip:ORRERY-DEV-1", first_seen="2026-07-29T15:00:00Z")
+            self.assertIsNone(filing.ledger_lookup("glitchtip:SHOP-DEV-1", first_seen="2026-10-17T07:51:32Z"))
+            hit = filing.ledger_lookup("glitchtip:SHOP-DEV-1", first_seen="2026-07-29T15:00:00Z")
             self.assertEqual((hit["issue"], hit["_dim"]), ("429", "fingerprint"))
-            self.assertIsNotNone(filing.ledger_lookup("glitchtip:ORRERY-DEV-1"))   # no first_seen: as before
+            self.assertIsNotNone(filing.ledger_lookup("glitchtip:SHOP-DEV-1"))   # no first_seen: as before
         finally:
             filing.FILED = orig
             os.unlink(tmp.name)
@@ -2105,7 +2105,7 @@ class TestPromoteRolledUpOnRecurrence(unittest.TestCase):
         self._tmp.close()
         self._orig = filing.FILED
         filing.FILED = self._tmp.name
-        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "example/podcast", "issue": "2000",
+        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "example/api", "issue": "2000",
                                "group_key": "low-signal:player", "filed_at": "2026-10-17T06:33:04+00:00"}])
 
     def tearDown(self):
@@ -2130,7 +2130,7 @@ class TestPromoteRolledUpOnRecurrence(unittest.TestCase):
 
     def test_own_issue_does_not_retriage_early(self):
         import orchestrator
-        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "example/podcast", "issue": "2400",
+        filing._ledger_write([{"fingerprint": "glitchtip:PLAYER-1I", "repo": "example/api", "issue": "2400",
                                "group_key": "", "filed_at": "2026-10-17T06:33:04+00:00"}])
         self.assertFalse(orchestrator._promote_now(self._sig(), {"disposition": "file"}))
 
@@ -2201,17 +2201,17 @@ class TestRepoFor(unittest.TestCase):
     def test_new_projects_route_to_their_repos(self):
         self.assertEqual(self._r("glitchtip:EVALS-INSPECTOR-1"), "example/evals")
         self.assertEqual(self._r("glitchtip:EVALS-WEB-3"), "example/evals")
-        self.assertEqual(self._r("glitchtip:HUMANCOPILOT-WEB-2"), "example/site")
-        self.assertEqual(self._r("glitchtip:DEVWHATEVEROPS-WEB-1"), "example/site")
+        self.assertEqual(self._r("glitchtip:SITE-A-WEB-2"), "example/site")
+        self.assertEqual(self._r("glitchtip:SITE-B-WEB-1"), "example/site")
 
-    def test_the_kg_viewer_routes_to_podcast_scraper(self):
-        # ROADMAP T0.3: podcast_scraper's web/gi-kg-viewer reports to GlitchTip project gi-kg-viewer (GI-KG-VIEWER-1)
-        self.assertEqual(self._r("glitchtip:GI-KG-VIEWER-1"), "example/podcast")
+    def test_the_kg_viewer_routes_to_api(self):
+        # ROADMAP T0.3: api's web/gi-kg-viewer reports to GlitchTip project gi-kg-viewer (GI-KG-VIEWER-1)
+        self.assertEqual(self._r("glitchtip:GI-KG-VIEWER-1"), "example/api")
 
     def test_existing_routes_unchanged(self):
-        self.assertEqual(self._r("glitchtip:PODCAST-PIPELINE-5E"), "example/podcast")
-        self.assertEqual(self._r("glitchtip:PLAYER-1I"), "example/podcast")
-        self.assertEqual(self._r("glitchtip:ORRERY-PROD-1P"), "example/orrery")
+        self.assertEqual(self._r("glitchtip:API-PIPELINE-5E"), "example/api")
+        self.assertEqual(self._r("glitchtip:PLAYER-1I"), "example/api")
+        self.assertEqual(self._r("glitchtip:SHOP-PROD-1P"), "example/shop")
         self.assertEqual(self._r("glitchtip:LITELLM-PROD-4"), "example/ops")
 
 
@@ -2243,7 +2243,7 @@ class TestEdgeGate(unittest.TestCase):
 
 
 class TestAssistantFailover(unittest.TestCase):
-    """RFC-0008: a LiteLLM error whose event names only the X3 assistant is a failed-over call."""
+    """RFC-0008: a LiteLLM error whose event names only the second machine's assistant is a failed-over call."""
 
     def _ev(self, text):
         return {"entries": [{"type": "exception", "data": {"values": [{"type": "X", "value": text}]}}]}
@@ -2260,11 +2260,11 @@ class TestAssistantFailover(unittest.TestCase):
 
     def test_gate(self):
         import triage
-        x3 = triage.config.ASSISTANT_BACKEND
-        self.assertEqual(triage.operational_class(self._sig("litellm", [x3])), "assistant-failover")
-        self.assertIsNone(triage.operational_class(self._sig("litellm", [x3, "192.0.2.20:8003"])))
+        backend = triage.config.ASSISTANT_BACKEND
+        self.assertEqual(triage.operational_class(self._sig("litellm", [backend])), "assistant-failover")
+        self.assertIsNone(triage.operational_class(self._sig("litellm", [backend, "192.0.2.20:8003"])))
         self.assertIsNone(triage.operational_class(self._sig("litellm", [])))
-        self.assertIsNone(triage.operational_class(self._sig("podcast", [x3])))
+        self.assertIsNone(triage.operational_class(self._sig("api", [backend])))
 
     def test_attach_backend_reads_litellm_only(self):
         import sources
@@ -2274,7 +2274,7 @@ class TestAssistantFailover(unittest.TestCase):
         try:
             s = sources.attach_backend({"labels": {"project": "litellm"}, "issue_id": 7, "raw": {}})
             self.assertEqual(s["raw"]["_backends"], ["192.0.2.10:11435"])
-            sources.attach_backend({"labels": {"project": "podcast"}, "issue_id": 8, "raw": {}})
+            sources.attach_backend({"labels": {"project": "api"}, "issue_id": 8, "raw": {}})
             self.assertEqual(seen, ["/issues/7/events/latest/"])
         finally:
             sources._gt = old
@@ -2292,7 +2292,7 @@ class TestSubstrateGlitchTipProjects(unittest.TestCase):
             seen.append(path)
             if path.startswith("/organizations/example/projects/"):
                 return projects
-            return [{"status": "unresolved", "shortId": "ORRERY-1", "title": "Error", "metadata": {}}]
+            return [{"status": "unresolved", "shortId": "SHOP-1", "title": "Error", "metadata": {}}]
 
         sources._gt = gt
         try:
@@ -2301,18 +2301,18 @@ class TestSubstrateGlitchTipProjects(unittest.TestCase):
             sources._gt = old
 
     def test_query_unchanged_without_a_substrate_project(self):
-        _, seen = self._run([{"id": 6, "slug": "orrery"}, {"id": 9, "slug": "podcast-pipeline"}])
+        _, seen = self._run([{"id": 6, "slug": "shop"}, {"id": 9, "slug": "api-pipeline"}])
         self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen")
 
     def test_flotilla_left_out_of_the_query(self):
-        _, seen = self._run([{"id": 6, "slug": "orrery"}, {"id": 40, "slug": "flotilla"},
-                             {"id": 9, "slug": "podcast-pipeline"}])
+        _, seen = self._run([{"id": 6, "slug": "shop"}, {"id": 40, "slug": "flotilla"},
+                             {"id": 9, "slug": "api-pipeline"}])
         self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6&project=9")
 
     def test_dev_projects_left_out_of_the_query(self):
-        _, seen = self._run([{"id": 6, "slug": "orrery"}, {"id": 30, "slug": "orrery-dev"},
-                             {"id": 9, "slug": "podcast-pipeline"}, {"id": 12, "slug": "Podcast-Pipeline-Dev"},
-                             {"id": 14, "slug": "devwhateverops-web"}])
+        _, seen = self._run([{"id": 6, "slug": "shop"}, {"id": 30, "slug": "shop-dev"},
+                             {"id": 9, "slug": "api-pipeline"}, {"id": 12, "slug": "Api-Pipeline-Dev"},
+                             {"id": 14, "slug": "site-b-web"}])
         self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6&project=9&project=14")
 
     def test_project_list_error_is_loud(self):

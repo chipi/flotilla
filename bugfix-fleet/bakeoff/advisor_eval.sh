@@ -28,8 +28,8 @@ score_one() { # fixture model runidx
   EXPECT_FILE="$(jq -r '.code_files[0]' "$TICKET")"
   EXPECT_FN="$(jq -r '.expect_function // ""' "$TICKET")"
   # worktree at the bug's base — the advisor reads real code
-  git -C "$ROOT/orrery" reset --hard "$BASE" >/dev/null
-  git -C "$ROOT/orrery" clean -fdq
+  git -C "$ROOT/shop" reset --hard "$BASE" >/dev/null
+  git -C "$ROOT/shop" clean -fdq
   local TMPEV; TMPEV=$(mktemp -d)
   cp "$EV"/* "$TMPEV/"
   local T0=$SECONDS

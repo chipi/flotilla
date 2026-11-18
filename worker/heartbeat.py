@@ -69,7 +69,7 @@ def model_step(alias):
     import telemetry
     session = telemetry.setup()
     try:
-        # room for a model that reasons before it answers: since 2026-11-14 the mini's flash does,
+        # room for a model that reasons before it answers: since 2026-11-14 the host's flash does,
         # and 16 tokens were all reasoning (finish_reason length, no content)
         r = model_client.from_env().chat(alias, [{"role": "user", "content": "Reply with the JSON {\"ok\": true}."}],
                                          max_tokens=256, timeout=30)

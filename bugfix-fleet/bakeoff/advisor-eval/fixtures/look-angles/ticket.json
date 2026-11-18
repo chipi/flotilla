@@ -1,6 +1,6 @@
 {
-  "id": "orrery-look-angles-L0",
-  "repo": "orrery",
+  "id": "shop-look-angles-L0",
+  "repo": "shop",
   "fix_commit": "a5cf0981",
   "oracle_test_file": "src/lib/satellite/satellite.test.ts",
   "code_files": [

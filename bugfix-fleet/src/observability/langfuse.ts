@@ -1,11 +1,11 @@
 // Langfuse tracing wrapper — every LLM leaf runs inside trace() so the bake-off
 // gets model/tokens/cost/latency per role, per harness (RFC-0002). Points at the
-// self-hosted Langfuse on the homelab (http://homelab:4000).
+// self-hosted Langfuse on the installation (http://example:4000).
 //
 // STATUS: minimal. Swap the console span for the langfuse SDK client when wiring.
 
 export interface LangfuseCfg {
-  host: string; // http://homelab:4000
+  host: string; // http://example:4000
   publicKey: string;
   secretKey: string;
 }

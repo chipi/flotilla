@@ -106,7 +106,7 @@ export async function commitAndPush(
   const dir = checkoutDir();
   try {
     await git(dir, "add", "-A");
-    await git(dir, "-c", "user.email=bot@homelab.local", "-c", "user.name=bugfix-fleet",
+    await git(dir, "-c", "user.email=bot@example.com", "-c", "user.name=bugfix-fleet",
       "commit", "-m", message);
     const sha = await git(dir, "rev-parse", "--short", "HEAD");
     await git(dir, "remote", "set-url", "origin", authUrl(owner, repo, token));

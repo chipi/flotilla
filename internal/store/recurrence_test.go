@@ -30,14 +30,14 @@ func TestRecurrenceRule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first := open("failed_backup", "host:mini", "#1")
+	first := open("failed_backup", "host:backup-01", "#1")
 	if c, _ := s.Case(ctx, first); c.RecurrenceOf != "" {
 		t.Fatalf("a first case recurs nothing: %q", c.RecurrenceOf)
 	}
 	closeIt(first)
-	other := open("failed_backup", "host:dgx", "#2")
-	kind := open("disk_pressure", "host:mini", "#3")
-	again := open("failed_backup", "host:mini", "#4")
+	other := open("failed_backup", "host:model-host", "#2")
+	kind := open("disk_pressure", "host:backup-01", "#3")
+	again := open("failed_backup", "host:backup-01", "#4")
 	for id, want := range map[string]string{other: "", kind: "", again: first} {
 		if c, _ := s.Case(ctx, id); c.RecurrenceOf != want {
 			t.Errorf("%s (%s %s) recurs %q, want %q", id, c.Kind, c.Target, c.RecurrenceOf, want)
@@ -66,7 +66,7 @@ func TestRecurrenceRule(t *testing.T) {
 	// eight days after the close it is a new case, not a recurrence
 	closeIt(again)
 	s.now = func() time.Time { return time.Now().UTC().Add(8 * 24 * time.Hour) }
-	late := open("failed_backup", "host:mini", "#5")
+	late := open("failed_backup", "host:backup-01", "#5")
 	if c, _ := s.Case(ctx, late); c.RecurrenceOf != "" {
 		t.Errorf("a case 8 days after the close recurs %q", c.RecurrenceOf)
 	}

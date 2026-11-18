@@ -90,13 +90,13 @@ func connector(f *fakeSlack) *Connector {
 }
 
 func TestPostClickAnswer(t *testing.T) {
-	click := `{"envelope_id":"env-1","type":"interactive","payload":{"type":"block_actions","team":{"id":"T0001"},"user":{"id":"U0MARKO"},
+	click := `{"envelope_id":"env-1","type":"interactive","payload":{"type":"block_actions","team":{"id":"T0001"},"user":{"id":"U0OPER"},
 		"actions":[{"action_id":"approve","block_id":"flotilla","value":"nonce-1"},{"action_id":"approve","block_id":"someone-else","value":"x"}]}}`
 	f := newFake(t, click)
 	c := connector(f)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	n := hostwire.NotifyBody{Nonce: "nonce-1", Case: "case-1", Title: "Backup <!channel> late", Plan: "backup.rerun on host:mini",
+	n := hostwire.NotifyBody{Nonce: "nonce-1", Case: "case-1", Title: "Backup <!channel> late", Plan: "backup.rerun on host:host-01",
 		PlanHash: "abc123", URL: "https://flotilla.example/cases/case-1", Approvable: true}
 	if err := c.Post(ctx, n); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestPostClickAnswer(t *testing.T) {
 	go c.Run(ctx)
 	select {
 	case got := <-c.Clicks:
-		if got != (hostwire.ApprovalBody{Nonce: "nonce-1", Team: "T0001", User: "U0MARKO", Action: "approve"}) {
+		if got != (hostwire.ApprovalBody{Nonce: "nonce-1", Team: "T0001", User: "U0OPER", Action: "approve"}) {
 			t.Fatalf("the click: %+v", got)
 		}
 	case <-time.After(5 * time.Second):
@@ -131,12 +131,12 @@ func TestPostClickAnswer(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "nonce-1", OK: true, Text: "approved by marko in Slack; it runs now"}); err != nil {
+	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "nonce-1", OK: true, Text: "approved by ada in Slack; it runs now"}); err != nil {
 		t.Fatal(err)
 	}
 	upd := f.get("chat.update")
 	ub := plain(upd["blocks"])
-	if upd["ts"] != "1700000000.000100" || strings.Contains(ub, `"type":"actions"`) || !strings.Contains(ub, "approved by marko") {
+	if upd["ts"] != "1700000000.000100" || strings.Contains(ub, `"type":"actions"`) || !strings.Contains(ub, "approved by ada") {
 		t.Fatalf("the update: %v %s", upd["ts"], ub)
 	}
 	f.mu.Lock()

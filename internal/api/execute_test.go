@@ -45,7 +45,7 @@ func (f *fakeLink) Execute(ctx context.Context, host, id string, env []byte, tim
 
 func (f *fakeLink) count() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.sent) }
 
-// executingCase is a case on host:mini whose auto plan put it in executing (or, with approver, a
+// executingCase is a case on host:backup-01 whose auto plan put it in executing (or, with approver, a
 // proposed plan an operator approved).
 func executingCase(t *testing.T, s *Server, key, approver string) string {
 	t.Helper()
@@ -55,8 +55,8 @@ func executingCase(t *testing.T, s *Server, key, approver string) string {
 	if approver != "" {
 		outcome, to = policy.Propose, cases.AwaitingApproval
 	}
-	if _, err := s.Store.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: rerun, Params: map[string]string{"host": "mini"},
-		PlanHash: "hash-" + key, Outcome: outcome, Autonomy: outcome}, to, "", "host:mini", true); err != nil {
+	if _, err := s.Store.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: rerun, Params: map[string]string{"host": "backup-01"},
+		PlanHash: "hash-" + key, Outcome: outcome, Autonomy: outcome}, to, "", "host:backup-01", true); err != nil {
 		t.Fatal(err)
 	}
 	if approver != "" {
@@ -98,11 +98,11 @@ func TestExecutionDone(t *testing.T) {
 		t.Fatalf("send: %d %v", n, err)
 	}
 	waitStatus(t, s, id, cases.Checking)
-	e, _, err := envelope.Verify(link.sent[0], map[string]ed25519.PublicKey{"k1": pub}, "mini", time.Now())
+	e, _, err := envelope.Verify(link.sent[0], map[string]ed25519.PublicKey{"k1": pub}, "backup-01", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.CaseID != id || e.Action != rerun || e.Params["host"] != "mini" || e.PlanHash != "hash-a" || e.Approved != "auto" ||
+	if e.CaseID != id || e.Action != rerun || e.Params["host"] != "backup-01" || e.PlanHash != "hash-a" || e.Approved != "auto" ||
 		e.ExpiresAt.Sub(e.SignedAt) != ExecutionValidity {
 		t.Fatalf("the envelope: %+v", e)
 	}
@@ -138,7 +138,7 @@ func TestExecutionOutcomes(t *testing.T) {
 			t.Errorf("%s: closed as %q", name, got.Resolution)
 		}
 		if c.status == cases.Escalated {
-			if h, _ := s.Store.LockHolder(ctx, "host:mini"); h != id {
+			if h, _ := s.Store.LockHolder(ctx, "host:backup-01"); h != id {
 				t.Errorf("%s: the target is not held after a failed or unknown execution (holder %q)", name, h)
 			}
 		}
@@ -188,7 +188,7 @@ func TestApprovedByAndInFlight(t *testing.T) {
 	}
 	close(link.block)
 	waitStatus(t, s, id, cases.Checking)
-	e, _, err := envelope.Verify(link.sent[0], map[string]ed25519.PublicKey{"k1": pub}, "mini", time.Now())
+	e, _, err := envelope.Verify(link.sent[0], map[string]ed25519.PublicKey{"k1": pub}, "backup-01", time.Now())
 	if err != nil || e.Approved != "user:ada" {
 		t.Fatalf("approved by: %q %v", e.Approved, err)
 	}
@@ -199,7 +199,7 @@ func TestRecoverExecutions(t *testing.T) {
 	ctx := context.Background()
 	s, _ := execServer(t, &fakeLink{})
 	id := executingCase(t, s, "e", "")
-	if err := s.Store.StartHostExecution(ctx, store.HostExecution{ID: id + "-p1", CaseID: id, PlanID: 1, Host: "mini", Action: rerun,
+	if err := s.Store.StartHostExecution(ctx, store.HostExecution{ID: id + "-p1", CaseID: id, PlanID: 1, Host: "backup-01", Action: rerun,
 		Approved: "auto", Envelope: []byte("x")}); err != nil {
 		t.Fatal(err)
 	}

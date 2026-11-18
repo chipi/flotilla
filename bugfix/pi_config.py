@@ -8,7 +8,7 @@ for its key_file. pi is then called with --provider and --model from `pick`.
 
 Each model also gets what pi's own catalog knows about the model LiteLLM routes it to (`upstream`, e.g.
 fleet-bugfix-flash -> deepseek/deepseek-v4-flash): its context window, output limit, prices and compat.
-Without them pi assumes a 128k window and 16k output and reports no cost; a fix session on orrery #646
+Without them pi assumes a 128k window and 16k output and reports no cost; a fix session on shop #646
 stopped at 124k of context with one output token (2026-11-15), where the bake-off's openrouter provider
 had the model's 1M window.
 """

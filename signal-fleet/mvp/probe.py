@@ -1,7 +1,7 @@
 """Live probe for the trigger + correlation halves of the first slice.
 
 Proves: (1) the fleet can poll Grafana for firing alerts, (2) the correlation
-queries return real orrery evidence. If the orrery-staleness alert isn't firing,
+queries return real shop evidence. If the shop-staleness alert isn't firing,
 a synthetic signal drives the correlation test so the query surface is still
 exercised.
 """
@@ -28,17 +28,17 @@ def main():
 
     sig = sources.orrery_staleness()
     if sig is None:
-        print("== no live orrery-staleness signal -> synthetic (correlation test) ==")
+        print("== no live shop-staleness signal -> synthetic (correlation test) ==")
         sig = {
-            "fingerprint": "grafana:synthetic-orrery-stale",
+            "fingerprint": "grafana:synthetic-shop-stale",
             "source": "grafana",
-            "alertname": "Orrery launch data stale (no refresh in 7h)",
-            "labels": {"alertname": "Orrery launch data stale"},
-            "summary": "synthetic — orrery data refresh has not run in 7h",
+            "alertname": "Shop launch data stale (no refresh in 7h)",
+            "labels": {"alertname": "Shop launch data stale"},
+            "summary": "synthetic — shop data refresh has not run in 7h",
             "startsAt": None, "raw": {},
         }
     else:
-        print("== LIVE orrery-staleness signal ==")
+        print("== LIVE shop-staleness signal ==")
     print("signal:", sig["alertname"], "| fp:", sig["fingerprint"])
 
     print("== correlated evidence bundle ==")

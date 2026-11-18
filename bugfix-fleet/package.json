@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Autonomous bug-fix fleet MVP (RFC-0002) — cheap-harness workers + Claude PR-gate, runs on the homelab mini.",
+  "description": "Autonomous bug-fix fleet MVP (RFC-0002) — cheap-harness workers + Claude PR-gate, runs on the control-plane host.",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

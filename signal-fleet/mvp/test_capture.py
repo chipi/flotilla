@@ -19,9 +19,9 @@ import config
 import probes
 import triage
 
-SIGNAL = {"fingerprint": "glitchtip:ORRERY-PROD-9", "occurrence_id": "glitchtip:ORRERY-PROD-9@2026-10-20T10:00:00Z",
+SIGNAL = {"fingerprint": "glitchtip:SHOP-PROD-9", "occurrence_id": "glitchtip:SHOP-PROD-9@2026-10-20T10:00:00Z",
           "source": "glitchtip", "alertname": "TypeError: x is undefined",
-          "labels": {"project": "orrery-prod"}, "summary": "TypeError (count=3)", "issue_id": 42,
+          "labels": {"project": "shop-prod"}, "summary": "TypeError (count=3)", "issue_id": 42,
           "raw": {"count": 3, "status": "unresolved"}}
 LONG = "x" * 2500   # longer than triage._trim's 1800, so "shown" differs from the raw answer
 
@@ -218,7 +218,7 @@ class FilingAndSweepRecords(unittest.TestCase):
 
     def test_a_match_records_its_dimension(self):
         nk = self.filing.normalized_key(SIGNAL)
-        self.filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-PROD-1", "repo": "example/orrery", "issue": "5",
+        self.filing._ledger_write([{"fingerprint": "glitchtip:SHOP-PROD-1", "repo": "example/shop", "issue": "5",
                                     "group_key": "", "norm_key": nk, "alert_key": "", "last_comment_day": ""}])
         with mock.patch.object(config, "CAPTURE_PROBES", True):
             out = self._file()
@@ -241,7 +241,7 @@ class FilingAndSweepRecords(unittest.TestCase):
     def test_a_record_of_another_decision_is_not_written(self):
         with mock.patch.object(config, "CAPTURE_PROBES", True):
             self._file()
-            other = dict(SIGNAL, fingerprint="glitchtip:ORRERY-PROD-2")
+            other = dict(SIGNAL, fingerprint="glitchtip:SHOP-PROD-2")
             path = capture.record(other, _disp())
         self.assertFalse(os.path.exists(os.path.join(self.root, "filing", os.path.basename(path))))
         self.assertIsNone(self.callrec.LAST_FILING)
@@ -259,8 +259,8 @@ class FilingAndSweepRecords(unittest.TestCase):
         import sources
         import stale
         now = datetime.datetime(2026, 11, 9, 0, 4, 12, tzinfo=datetime.timezone.utc)
-        self.filing._ledger_write([{"fingerprint": "glitchtip:ORRERY-PROD-9", "repo": "example/orrery", "issue": "5"}])
-        occ = [("2026-10-01T00:00:00+00:00", "glitchtip:ORRERY-PROD-9", "glitchtip", "TypeError: x is undefined")]
+        self.filing._ledger_write([{"fingerprint": "glitchtip:SHOP-PROD-9", "repo": "example/shop", "issue": "5"}])
+        occ = [("2026-10-01T00:00:00+00:00", "glitchtip:SHOP-PROD-9", "glitchtip", "TypeError: x is undefined")]
 
         def gh(method, path, payload=None):
             self.gh_calls.append((method, path))
@@ -276,11 +276,11 @@ class FilingAndSweepRecords(unittest.TestCase):
         self.assertEqual((rec["now"], rec["dry_run"], rec["firing"]), (now.isoformat(), True, ["A"]))
         self.assertEqual(rec["occurrences"]["count"], 1)
         self.assertEqual([c["path"].split("?")[0] for c in rec["github"]],
-                         ["/search/issues", "/repos/example/orrery/issues/5/comments"])
+                         ["/search/issues", "/repos/example/shop/issues/5/comments"])
 
 
 class ExactRecord(unittest.TestCase):
-    """The triage call path's record for an exact replay (RFC-0002 §9 step 1, the homelab session's part):
+    """The triage call path's record for an exact replay (RFC-0002 §9 step 1, the ops session's part):
     every model call as sent and answered, the gateway's deployment id, gate lookups, the run's time."""
 
     REPLIES = ['{"action":"probe","probe":"event_detail","probe_args":{}}',

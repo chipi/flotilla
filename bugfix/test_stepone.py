@@ -1,7 +1,7 @@
 """python3 bugfix/test_stepone.py: RFC-0013 §1's step one (bugfix/stepone.py), advisory (operator, 2026-11-17): it only
-ever notes facts, never closes. The four orrery issues phase A's plans were judged on, as filed
-(testdata/orrery-*.txt), against a repo with the parts of orrery's main of 2026-11-16 (28548a3) they touch, and the
-cases homelab's reviews of the two close-rule versions found closing real bugs."""
+ever notes facts, never closes. The four shop issues phase A's plans were judged on, as filed
+(testdata/shop-*.txt), against a repo with the parts of shop's main of 2026-11-16 (28548a3) they touch, and the
+cases the ops repo's reviews of the two close-rule versions found closing real bugs."""
 import os
 import shutil
 import subprocess
@@ -14,7 +14,7 @@ import stepone  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# what orrery's main had on 2026-11-16 (28548a3), only the parts the four issues touch, plus homelab's shapes
+# what shop's main had on 2026-11-16 (28548a3), only the parts the four issues touch, plus the ops repo's shapes
 FILES = {
     "src/lib/components/StarPanel.svelte": "<script>\n  import * as m from '$lib/paraglide/messages';\n  const tab = m.panel_tab_info();\n</script>\n",
     "messages/en-US.json": '{\n  "surface_true_scale_short": "True-scale ground view · orbital imagery",\n  "panel_tab_info": "Info"\n}\n',
@@ -29,7 +29,7 @@ FILES = {
 
 
 def issue(n):
-    with open(os.path.join(HERE, "testdata", f"orrery-{n}.txt")) as f:
+    with open(os.path.join(HERE, "testdata", f"shop-{n}.txt")) as f:
         return f.read()
 
 
@@ -41,7 +41,7 @@ class StepOne(unittest.TestCase):
             os.makedirs(os.path.join(cls.d, os.path.dirname(path)), exist_ok=True)
             with open(os.path.join(cls.d, path), "w") as f:
                 f.write(text)
-        with open(os.path.join(cls.d, "src", "latin1.py"), "wb") as f:   # homelab's review of 62b2523: not UTF-8
+        with open(os.path.join(cls.d, "src", "latin1.py"), "wb") as f:   # the ops repo's review of 62b2523: not UTF-8
             f.write(b"# caf\xe9\nlatin_name_x = 2\ncaf\xe9_label = latin_name_x\n")
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]):
             subprocess.run(["git", "-C", cls.d, *args], check=True, capture_output=True)
@@ -72,7 +72,7 @@ class StepOne(unittest.TestCase):
             self.assertEqual(self.note(issue(n)),
                              "step one (advisory): not checked (no project-specific name the error calls missing)", n)
 
-    def test_homelabs_cases_never_close_and_note_the_truth(self):
+    def test_ops_repo_cases_never_close_and_note_the_truth(self):
         # each of these closed a real bug under 444a153 or 0731108
         for text in ("AttributeError: 'NoneType' object has no attribute 'get' in src/a.py",
                      "TypeError: undefined is not a function at src/a.py:2",
@@ -119,7 +119,7 @@ class StepOne(unittest.TestCase):
         self.assertEqual(stepone.names_of("AttributeError: 'Feed' object has no attribute 'episodes_v2'"), [])
 
     def test_bundled_paths_are_never_named(self):
-        files, absent = stepone.files_of("at /orrery/_app/immutable/nodes/33.FFOEfYOl.js:275 and chunks/BRzXeRZN2.js",
+        files, absent = stepone.files_of("at /shop/_app/immutable/nodes/33.FFOEfYOl.js:275 and chunks/BRzXeRZN2.js",
                                          self.d, self.base)
         self.assertEqual((files, absent), ([], []))
         files, absent = stepone.files_of("from src/build/app.DkT9x2Qa.js via src/node_modules/three/build/three.module.js",

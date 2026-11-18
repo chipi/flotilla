@@ -66,9 +66,9 @@ func TestSnapshots(t *testing.T) {
 
 	// The installation's models and the triage runs' model calls (G1), for Runs, Now and Models.
 	f.sch.ModelsJSON = `{"endpoints":{"gateway":{"base_url":"http://litellm:4000/v1","kind":"litellm","key_env":"K","defaults":{"tools":"native","json":"object","cost":"reported"}},` +
-		`"dgx":{"base_url":"http://dgx:8003/v1","kind":"openai","defaults":{"tools":"none","json":"object","cost":"zero"}}},` +
+		`"model-host":{"base_url":"http://model-host:8003/v1","kind":"openai","defaults":{"tools":"none","json":"object","cost":"zero"}}},` +
 		`"aliases":{"triage-flash":{"endpoint":"gateway","model":"fleet-triage-flash"},"triage-pro":{"endpoint":"gateway","model":"fleet-triage-pro"},` +
-		`"local-dgx":{"endpoint":"dgx","model":"NVFP4/Qwen3-30B-A3B"}}}`
+		`"local-model-host":{"endpoint":"model-host","model":"NVFP4/Qwen3-30B-A3B"}}}`
 	recent, _, _ := st.RunsPage(ctx, store.RunQuery{Limit: 100000, Desc: true})
 	var calls []store.ModelCall
 	for i, r := range recent {
@@ -79,7 +79,7 @@ func TestSnapshots(t *testing.T) {
 		if r.Routine == "platform/heartbeat" {
 			alias, model, cost = "triage-flash", "deepseek/deepseek-v4-flash", 0.0001
 		} else if i%3 == 0 {
-			alias, model, cost = "local-dgx", "NVFP4/Qwen3-30B-A3B", 0
+			alias, model, cost = "local-model-host", "NVFP4/Qwen3-30B-A3B", 0
 		}
 		in, out, lat := int64(900+i*13%700), int64(80+i*7%300), 2.0+float64(i%9)
 		c := store.ModelCall{RunID: r.ID, Routine: r.Routine, At: r.StartedAt, Alias: alias, Model: model, TokensIn: &in, TokensOut: &out,
@@ -96,7 +96,7 @@ func TestSnapshots(t *testing.T) {
 	// The triage ledger, for History's ledger type.
 	for i := 0; i < 6; i++ {
 		_, _ = st.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{
-			"fingerprint": "glitchtip:PODCAST-PIPELINE-DEV-" + string(rune('A'+i)), "occurrence_id": "o" + string(rune('A'+i)),
+			"fingerprint": "glitchtip:API-PIPELINE-DEV-" + string(rune('A'+i)), "occurrence_id": "o" + string(rune('A'+i)),
 			"disposition": []string{"file", "dismiss", "escalate"}[i%3], "ts": at(time.Duration(i+1) * time.Hour),
 			"alertname": "TypeError in the timeline scrubber (a long alert name that goes on)",
 			"reason":    "The diagnosis is unsure between two causes; " + strings.Repeat("the evidence says more ", 6)}, "")
@@ -127,9 +127,9 @@ func TestSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitID := open("failed_backup", "host:mini", "run ops-backup-monitor-0001: the newest offsite backup is 27 hours old (limit 26h)")
-	plan(waitID, "host:mini", "ops-rerun-backup-0001", "propose", "propose", "", cases.AwaitingApproval, "", true)
-	escID := open("failed_backup", "host:dgx", "run ops-backup-monitor-0002: the newest offsite backup is 31 hours old (limit 26h)")
+	waitID := open("failed_backup", "host:backup-01", "run ops-backup-monitor-0001: the newest offsite backup is 27 hours old (limit 26h)")
+	plan(waitID, "host:backup-01", "ops-rerun-backup-0001", "propose", "propose", "", cases.AwaitingApproval, "", true)
+	escID := open("failed_backup", "host:model-host", "run ops-backup-monitor-0002: the newest offsite backup is 31 hours old (limit 26h)")
 	_ = st.MoveCase(ctx, escID, cases.Escalated, cases.ByTimer, "", "flotillad", "handed over for longer than 24h0m0s: no routine planned it")
 	okID := open("failed_backup", "host:vps", "run ops-backup-monitor-0003: the newest offsite backup is 26.4 hours old (limit 26h)")
 	plan(okID, "host:vps", "ops-rerun-backup-0002", "propose", "propose", "", cases.AwaitingApproval, "", true)
@@ -139,8 +139,8 @@ func TestSnapshots(t *testing.T) {
 	shadowID := open("failed_backup", "host:nas", "run ops-backup-monitor-0004: the newest offsite backup is 26.1 hours old (limit 26h)")
 	plan(shadowID, "host:nas", "ops-rerun-backup-0003", "shadow", "shadow", "propose", cases.Closed, cases.ShadowPlan, false)
 
-	// Hosts: mini and dgx connected, vps down for 12 minutes; executions on vps.
-	for _, h := range []string{"mini", "dgx", "vps"} {
+	// Hosts: backup-01 and model-host connected, vps down for 12 minutes; executions on vps.
+	for _, h := range []string{"backup-01", "model-host", "vps"} {
 		if _, err := st.AddEnrolment(ctx, h, "tok-"+h, "user:ada", "test"); err != nil {
 			t.Fatal(err)
 		}
@@ -171,13 +171,13 @@ func TestSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	pages := map[string]string{
-		"now": "/", "approvals": "/approvals", "cases": "/cases", "cases-pivot": "/cases?p=kind%3Afailed_backup&p=target%3Ahost%3Adgx",
+		"now": "/", "approvals": "/approvals", "cases": "/cases", "cases-pivot": "/cases?p=kind%3Afailed_backup&p=target%3Ahost%3Amodel-host",
 		"case": "/cases/" + waitID, "case-escalated": "/cases/" + escID, "case-verified": "/cases/" + okID,
 		"runs": "/runs", "runs-problems": "/runs?f=problems", "run": "/runs/ops-rerun-backup-0001",
 		"fleets": "/fleets", "fleet": "/fleets/ops", "fleet-triage": "/fleets/triage", "fleet-routines": "/fleets/ops?tab=routines",
 		"fleet-stats": "/fleets/ops?tab=stats", "fleet-logs": "/fleets/triage?tab=logs",
 		"routine": "/fleets/triage/cycle", "routine-block": "/fleets/triage/cycle?b=gate.edge", "routine-bugfix": "/fleets/bugfix/fix",
-		"hosts": "/hosts", "host": "/hosts/vps", "host-agent": "/hosts/mini?tab=agent", "host-exec": "/hosts/vps?tab=exec",
+		"hosts": "/hosts", "host": "/hosts/vps", "host-agent": "/hosts/backup-01?tab=agent", "host-exec": "/hosts/vps?tab=exec",
 		"autonomy": "/autonomy", "history": "/history?period=all", "history-ledger": "/history?type=ledger&period=all",
 		"account": "/account", "users": "/users", "models": "/models", "models-spend": "/models?tab=spend&period=30d",
 		"run-triage": "/runs/" + firstTriage(st, t), "signin": "/signin"}

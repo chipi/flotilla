@@ -3,7 +3,7 @@
 poll -> (idempotency check) -> correlate -> triage -> act -> ledger.
 No LLM in the control flow; the model lives only behind triage.triage().
 
-  python3 orchestrator.py               # act on the live orrery-staleness alert
+  python3 orchestrator.py               # act on the live shop-staleness alert
   python3 orchestrator.py --synthetic   # drive the pipeline with a synthetic one
   python3 orchestrator.py --synthetic --no-dry-run   # (blocked: needs target repo)
 """
@@ -20,12 +20,12 @@ import sources
 import triage
 
 SYNTHETIC = {
-    "fingerprint": "grafana:synthetic-orrery-stale",
-    "occurrence_id": "grafana:synthetic-orrery-stale@2026-07-24T00:00:00Z",
+    "fingerprint": "grafana:synthetic-shop-stale",
+    "occurrence_id": "grafana:synthetic-shop-stale@2026-07-24T00:00:00Z",
     "source": "grafana",
-    "alertname": "Orrery launch data stale (no refresh in 7h)",
-    "labels": {"alertname": "Orrery launch data stale"},
-    "summary": "synthetic — orrery data refresh alarm; verify against evidence",
+    "alertname": "Shop launch data stale (no refresh in 7h)",
+    "labels": {"alertname": "Shop launch data stale"},
+    "summary": "synthetic — shop data refresh alarm; verify against evidence",
     "startsAt": "2026-07-24T00:00:00Z", "raw": {},
 }
 
@@ -37,7 +37,7 @@ def _spent(disps):
 def run_once(use_synthetic=False, dry_run=True):
     sig = SYNTHETIC if use_synthetic else sources.orrery_staleness()
     if sig is None:
-        print("no orrery-staleness alert firing — nothing to do.")
+        print("no shop-staleness alert firing — nothing to do.")
         return []
 
     prior = actions.already_done(sig["occurrence_id"])
@@ -163,7 +163,7 @@ def _promote_now(sig, base):
 def _overturn_now(sig, base):
     """A dismissed error that recurred is re-triaged at once, not after RETRIAGE_HOURS: before
     2026-11-07, 49 of 64 dismissals that came back were overturned at their re-triage (none of the
-    issues they filed closed as not planned), a median of 85 hours later (fleet-eval-data
+    issues they filed closed as not planned), a median of 85 hours later (the installation's research repo
     projects/signal-fleet-retriage). Once per dismissal: a dismissal that was itself an early
     re-triage of a dismissal waits out the window, so an error the model keeps dismissing costs
     one extra triage, not one per count change."""

@@ -5,8 +5,8 @@ import "testing"
 // security T4: a routine's subset holds its aliases, their endpoints and prices, and nothing else.
 func TestSubset(t *testing.T) {
 	in, out := 1.0, 2.0
-	c := &Config{Endpoints: map[string]Endpoint{"gw": {BaseURL: "http://gw"}, "dgx": {BaseURL: "http://dgx"}},
-		Aliases: map[string]Alias{"a": {Endpoint: "gw", Model: "m1"}, "b": {Endpoint: "dgx", Model: "m2"}},
+	c := &Config{Endpoints: map[string]Endpoint{"gw": {BaseURL: "http://gw"}, "model-host": {BaseURL: "http://model-host"}},
+		Aliases: map[string]Alias{"a": {Endpoint: "gw", Model: "m1"}, "b": {Endpoint: "model-host", Model: "m2"}},
 		Prices:  map[string]Price{"a": {InputPerMTok: &in, OutputPerMTok: &out}, "b": {InputPerMTok: &in, OutputPerMTok: &out}}}
 	s, err := c.Subset([]string{"a"})
 	if err != nil {

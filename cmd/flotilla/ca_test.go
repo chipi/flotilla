@@ -54,12 +54,12 @@ func TestCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
-	csr, _ := hostca.HostRequest(key, "mini")
-	host, err := inter.IssueHost(csr, "mini", now)
+	csr, _ := hostca.HostRequest(key, "host-01")
+	host, err := inter.IssueHost(csr, "host-01", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name, _, err := hostca.VerifyHost([]*x509.Certificate{host, inter.Cert}, root, now); err != nil || name != "mini" {
+	if name, _, err := hostca.VerifyHost([]*x509.Certificate{host, inter.Cert}, root, now); err != nil || name != "host-01" {
 		t.Fatalf("verify: %q %v", name, err)
 	}
 	if err := caCmd([]string{"intermediate", filepath.Join(dir, "nowhere"), filepath.Join(dir, "x")}, now); err == nil {

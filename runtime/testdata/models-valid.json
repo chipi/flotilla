@@ -6,7 +6,7 @@
   },
   "aliases": {
     "triage-default": {"endpoint": "gateway", "model": "fleet-triage-pro"},
-    "local-dgx": {"endpoint": "gateway", "model": "NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4", "tools": "none", "cost": "zero"},
+    "local-model": {"endpoint": "gateway", "model": "NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4", "tools": "none", "cost": "zero"},
     "plain-model": {"endpoint": "plain", "model": "qwen"}
   },
   "prices": {"plain-model": {"input_per_mtok": 0.14, "output_per_mtok": 0.28}}

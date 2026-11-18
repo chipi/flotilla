@@ -72,36 +72,36 @@ func TestHostEnrolAuthenticateRevoke(t *testing.T) {
 	ctx := context.Background()
 	srv, ts, _ := hostServer(t)
 	// only an operator mints and revokes
-	if c, _ := call(t, ts, "POST", "/v1/hosts/mini/enrolment", agentTok, ""); c != 403 {
+	if c, _ := call(t, ts, "POST", "/v1/hosts/backup-01/enrolment", agentTok, ""); c != 403 {
 		t.Fatalf("an agent minting: %d", c)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/hosts/Mini;x/enrolment", opTok, ""); c != 400 {
+	if c, _ := call(t, ts, "POST", "/v1/hosts/Backup-01;x/enrolment", opTok, ""); c != 400 {
 		t.Fatalf("a bad host name: %d", c)
 	}
 	// the functions check the role themselves (the UI calls them without the route's check)
-	agent := Caller{Name: "claude-homelab", Role: RoleAgent}
-	if _, _, err := srv.MintEnrolment(ctx, agent, "ui", "mini"); err == nil {
+	agent := Caller{Name: "claude-example", Role: RoleAgent}
+	if _, _, err := srv.MintEnrolment(ctx, agent, "ui", "backup-01"); err == nil {
 		t.Fatal("an agent minted through the function")
 	}
-	tok := mint(t, ts, "mini")
+	tok := mint(t, ts, "backup-01")
 	// a request naming another host is refused, and does not spend the token
-	if _, err := enrol(t, srv, "mini", tok, "dgx"); err == nil {
+	if _, err := enrol(t, srv, "backup-01", tok, "model-host"); err == nil {
 		t.Fatal("a request naming another host enrolled")
 	}
-	if _, err := enrol(t, srv, "dgx", tok, "dgx"); err == nil {
+	if _, err := enrol(t, srv, "model-host", tok, "model-host"); err == nil {
 		t.Fatal("a token used for another host")
 	}
-	chain, err := enrol(t, srv, "mini", tok, "mini")
-	if err != nil || len(chain) != 2 || chain[0].Subject.CommonName != "mini" || !chain[1].Equal(srv.HostCA.Cert) {
+	chain, err := enrol(t, srv, "backup-01", tok, "backup-01")
+	if err != nil || len(chain) != 2 || chain[0].Subject.CommonName != "backup-01" || !chain[1].Equal(srv.HostCA.Cert) {
 		t.Fatalf("enrol: %d certificates, %v", len(chain), err)
 	}
-	if _, err := enrol(t, srv, "mini", tok, "mini"); err == nil {
+	if _, err := enrol(t, srv, "backup-01", tok, "backup-01"); err == nil {
 		t.Fatal("a token used twice")
 	}
-	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "mini" {
+	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "backup-01" {
 		t.Fatalf("authenticate: %q %v", host, err)
 	}
-	if err := srv.RevokeHost(ctx, agent, "ui", "mini"); err == nil {
+	if err := srv.RevokeHost(ctx, agent, "ui", "backup-01"); err == nil {
 		t.Fatal("an agent revoked through the function")
 	}
 	if _, err := srv.AuthenticateHost(ctx, chain); err != nil {
@@ -112,11 +112,11 @@ func TestHostEnrolAuthenticateRevoke(t *testing.T) {
 	}
 	// another CA's certificate for the same name
 	other, _, _ := hostServer(t)
-	otherTok, _, err := other.MintEnrolment(ctx, Caller{Name: "operator", Role: RoleOperator}, "test", "mini")
+	otherTok, _, err := other.MintEnrolment(ctx, Caller{Name: "operator", Role: RoleOperator}, "test", "backup-01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherChain, err := enrol(t, other, "mini", otherTok, "mini")
+	otherChain, err := enrol(t, other, "backup-01", otherTok, "backup-01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestHostEnrolAuthenticateRevoke(t *testing.T) {
 		t.Fatal("another CA's agent authenticated")
 	}
 	// a second enrolment replaces the certificate: the first stops working
-	chain2, err := enrol(t, srv, "mini", mint(t, ts, "mini"), "mini")
+	chain2, err := enrol(t, srv, "backup-01", mint(t, ts, "backup-01"), "backup-01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,13 +132,13 @@ func TestHostEnrolAuthenticateRevoke(t *testing.T) {
 		t.Fatalf("a replaced certificate: %v", err)
 	}
 	// revoke: refused at connect, with no access to the host
-	if c, _ := call(t, ts, "POST", "/v1/hosts/mini/revoke", agentTok, ""); c != 403 {
+	if c, _ := call(t, ts, "POST", "/v1/hosts/backup-01/revoke", agentTok, ""); c != 403 {
 		t.Fatalf("an agent revoking: %d", c)
 	}
 	if c, _ := call(t, ts, "POST", "/v1/hosts/nohost/revoke", opTok, ""); c != 404 {
 		t.Fatalf("revoking an unknown host: %d", c)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/hosts/mini/revoke", opTok, ""); c != 200 {
+	if c, _ := call(t, ts, "POST", "/v1/hosts/backup-01/revoke", opTok, ""); c != 200 {
 		t.Fatalf("revoke: %d", c)
 	}
 	if _, err := srv.AuthenticateHost(ctx, chain2); !errors.Is(err, store.ErrNotCurrent) {
@@ -150,10 +150,10 @@ func TestNoHostCA(t *testing.T) {
 	srv := newServer(t, func(*spec.Routine) {})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
-	if c, _ := call(t, ts, "POST", "/v1/hosts/mini/enrolment", opTok, ""); c != 503 {
+	if c, _ := call(t, ts, "POST", "/v1/hosts/backup-01/enrolment", opTok, ""); c != 503 {
 		t.Fatalf("minting without a CA: %d", c)
 	}
-	if _, err := srv.EnrolHost(context.Background(), "mini", "fle_x", nil); err == nil {
+	if _, err := srv.EnrolHost(context.Background(), "backup-01", "fle_x", nil); err == nil {
 		t.Fatal("enrolling without a CA")
 	}
 	if _, err := srv.AuthenticateHost(context.Background(), nil); err == nil {
@@ -166,7 +166,7 @@ func TestNoHostCA(t *testing.T) {
 func TestIntermediateRotation(t *testing.T) {
 	ctx := context.Background()
 	srv, ts, root := hostServer(t)
-	chain, err := enrol(t, srv, "mini", mint(t, ts, "mini"), "mini")
+	chain, err := enrol(t, srv, "backup-01", mint(t, ts, "backup-01"), "backup-01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestIntermediateRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv.HostCA = next
-	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "mini" {
+	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "backup-01" {
 		t.Fatalf("after rotating the intermediate: %q %v", host, err)
 	}
 }
@@ -187,7 +187,7 @@ func TestIntermediateRotation(t *testing.T) {
 func TestHostCertificateWithTheCurrentSerialRefused(t *testing.T) {
 	ctx := context.Background()
 	srv, ts, root := hostServer(t)
-	chain, err := enrol(t, srv, "mini", mint(t, ts, "mini"), "mini")
+	chain, err := enrol(t, srv, "backup-01", mint(t, ts, "backup-01"), "backup-01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,10 +210,10 @@ func TestHostCertificateWithTheCurrentSerialRefused(t *testing.T) {
 			t.Fatal(err)
 		}
 		if host, err := srv.AuthenticateHost(ctx, []*x509.Certificate{leaf, ca.Cert}); !errors.Is(err, store.ErrNotCurrent) {
-			t.Fatalf("%s: a certificate with mini's serial and another key: %q %v", name, host, err)
+			t.Fatalf("%s: a certificate with backup-01's serial and another key: %q %v", name, host, err)
 		}
 	}
-	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "mini" {
+	if host, err := srv.AuthenticateHost(ctx, chain); err != nil || host != "backup-01" {
 		t.Fatalf("the issued certificate: %q %v", host, err)
 	}
 }
@@ -222,21 +222,21 @@ func TestHostCertificateWithTheCurrentSerialRefused(t *testing.T) {
 func TestHostExecutionsRoute(t *testing.T) {
 	ctx := context.Background()
 	srv, ts, _ := hostServer(t)
-	if _, err := enrol(t, srv, "mini", mint(t, ts, "mini"), "mini"); err != nil {
+	if _, err := enrol(t, srv, "backup-01", mint(t, ts, "backup-01"), "backup-01"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.Store.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, ChainHead: "head-abc",
+	if err := srv.Store.RecordHostContact(ctx, store.HostContact{Host: "backup-01", Connected: true, ChainHead: "head-abc",
 		ConnectedAt: time.Now(), LastContact: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.Store.StartHostExecution(ctx, store.HostExecution{ID: "case-1-p1", CaseID: "case-1", PlanID: 1, Host: "mini",
+	if err := srv.Store.StartHostExecution(ctx, store.HostExecution{ID: "case-1-p1", CaseID: "case-1", PlanID: 1, Host: "backup-01",
 		Action: "host.true", Approved: "user:ada", Envelope: []byte("x")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := srv.Store.EndHostExecution(ctx, "case-1-p1", "done", 0, "sha", "", "head-abc"); err != nil {
 		t.Fatal(err)
 	}
-	c, out := call(t, ts, "GET", "/v1/hosts/mini/executions", agentTok, "")
+	c, out := call(t, ts, "GET", "/v1/hosts/backup-01/executions", agentTok, "")
 	xs, _ := out["executions"].([]any)
 	if c != 200 || out["chain_head"] != "head-abc" || len(xs) != 1 || xs[0].(map[string]any)["status"] != "done" {
 		t.Fatalf("executions: %d %v", c, out)

@@ -60,17 +60,17 @@ func TestCheck(t *testing.T) {
 
 func TestWatcher(t *testing.T) {
 	var w Watcher
-	a, b := Alert{"mini", NotConnected, "x"}, Alert{"mini", ClockSkew, "y"}
-	if s, c := w.Update([]Alert{a}); kinds(s) != "mini:not_connected" || len(c) != 0 {
+	a, b := Alert{"host-01", NotConnected, "x"}, Alert{"host-01", ClockSkew, "y"}
+	if s, c := w.Update([]Alert{a}); kinds(s) != "host-01:not_connected" || len(c) != 0 {
 		t.Fatalf("first: %v %v", s, c)
 	}
-	if s, c := w.Update([]Alert{a, b}); kinds(s) != "mini:clock_skew" || len(c) != 0 {
+	if s, c := w.Update([]Alert{a, b}); kinds(s) != "host-01:clock_skew" || len(c) != 0 {
 		t.Fatalf("still on is not started again: %v %v", s, c)
 	}
-	if s, c := w.Update([]Alert{b}); len(s) != 0 || kinds(c) != "mini:not_connected" {
+	if s, c := w.Update([]Alert{b}); len(s) != 0 || kinds(c) != "host-01:not_connected" {
 		t.Fatalf("cleared: %v %v", s, c)
 	}
-	if s, c := w.Update(nil); len(s) != 0 || kinds(c) != "mini:clock_skew" {
+	if s, c := w.Update(nil); len(s) != 0 || kinds(c) != "host-01:clock_skew" {
 		t.Fatalf("all cleared: %v %v", s, c)
 	}
 }

@@ -15,8 +15,8 @@ func TestCasesPages(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	evil := `<script>alert(1)</script>`
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini"}
-	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", evil)
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", evil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,11 +24,11 @@ func TestCasesPages(t *testing.T) {
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "run r: backup_age_above(20h): holds")
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun",
 		Params: map[string]string{"host": evil}, PlanHash: "abc123", Outcome: "shadow", Autonomy: "shadow", Would: "propose",
-		Reasons: []string{"registry: ok", evil}}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
+		Reasons: []string{"registry: ok", evil}}, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
-	k2 := store.Key{Kind: "target", Value: "failed_backup/host:dgx"}
-	esc, _, _ := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:dgx", Keys: []store.Key{k2}, Canonical: k2}, "m", "")
+	k2 := store.Key{Kind: "target", Value: "failed_backup/host:model-host"}
+	esc, _, _ := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:model-host", Keys: []store.Key{k2}, Canonical: k2}, "m", "")
 	_ = f.st.MoveCase(ctx, esc, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = f.st.MoveCase(ctx, esc, cases.Escalated, cases.ByTimer, "", "flotillad", "handed over too long")
 
@@ -58,7 +58,7 @@ func TestCasesPages(t *testing.T) {
 	if !strings.Contains(closed, `href="/cases/`+id) || strings.Contains(closed, `href="/cases/`+esc) {
 		t.Fatal("/cases?status=closed is not only the closed case")
 	}
-	_, pivot := f.do("GET", "/cases?p=target%3Ahost%3Adgx", ck, nil, nil)
+	_, pivot := f.do("GET", "/cases?p=target%3Ahost%3Amodel-host", ck, nil, nil)
 	if strings.Contains(pivot, `href="/cases/`+id) || !strings.Contains(pivot, `href="/cases/`+esc) || !strings.Contains(pivot, "Clear all") {
 		t.Fatal("a target pivot does not keep only that target's cases")
 	}

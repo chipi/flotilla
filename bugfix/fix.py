@@ -167,7 +167,7 @@ def sh(cmd, cwd, env=None, timeout=None, check=False):
 
 
 # A fetch GitHub refused or that broke off: worth trying again. Anonymous fetches were refused in bursts
-# on the X3 ("could not read Username": a 401 to an anonymous request), 5 of 8 runs in 3 minutes on
+# on a worker host ("could not read Username": a 401 to an anonymous request), 5 of 8 runs in 3 minutes on
 # 2026-11-15 while the same checkout a minute later and the next day succeeded.
 FETCH_REFUSED = re.compile(r"could not read Username|unable to access|RPC failed|early EOF|unexpected disconnect|"
                            r"The requested URL returned error: (429|5\d\d)", re.I)
@@ -179,7 +179,7 @@ ERR_LINE = re.compile(r"(npm (error|ERR!)|gyp ERR!|^error|Error:|ERR_)", re.I)
 
 def errors_of(out, n=400):
     """The error lines of a tool's output, not its last lines: npm ends a failed install with an upgrade
-    notice, which is all a tail showed (orrery #490 on the mini, 2026-11-15)."""
+    notice, which is all a tail showed (shop #490 on the host, 2026-11-15)."""
     lines = [ln.strip() for ln in (out or "").splitlines() if ERR_LINE.search(ln)]
     return tail(" | ".join(lines), n) if lines else tail(out, n)
 
@@ -232,7 +232,7 @@ def parse_vitest(rep, wt):
 
 def parse_pytest(rep, files):
     """pytest-json-report's {"tests": [{nodeid, outcome}], "collectors": [{nodeid, outcome}]}. A skipped
-    test is not a pass: podcast_scraper's integration files guard themselves with pytest.importorskip, so a
+    test is not a pass: api's integration files guard themselves with pytest.importorskip, so a
     broken install skips them and a run that only skipped must not look green. A file with no test that
     passed or failed, a collector that did not pass, and a requested file with no result at all are all
     unloaded (not run)."""
@@ -314,7 +314,7 @@ def issue_for_case(issue, repo, environ):
     API for `repo` (GITHUB_API, default https://api.github.com; the bugfix proxy allows api.github.com, no credential).
     Intake gives every detection the same small share (869 bytes), so most bodies are cut and this read is the fix's
     only full view of the issue: after one retry (BUGFIX_BODY_RETRY_S, 5 s) a failure stops the case, visibly, rather
-    than fixing from the first few hundred bytes (homelab's review, 2026-11-16; the unauthenticated API allows 60 reads
+    than fixing from the first few hundred bytes (the ops repo's review, 2026-11-16; the unauthenticated API allows 60 reads
     an hour per address). Returns the issue and a note for the chain's log ("" when nothing was done)."""
     if not issue.get("body_cut"):
         return issue, ""
@@ -388,7 +388,7 @@ class Chain:
         _, self.advisor = pi_config.pick(cfg, a.advisor_model)
         _, self.reviewer = pi_config.pick(cfg, a.reviewer_model)
         self.env = dict(environ)
-        # every pi step reads the fleet's rule file, not the repo's AGENTS.md: on orrery that file is ~30k tokens
+        # every pi step reads the fleet's rule file, not the repo's AGENTS.md: on shop that file is ~30k tokens
         # in every call (pi loads it by default), 44% of the input tokens of 2026-11-15/16's sessions
         if a.pi_rules:
             self.env["BUGFIX_PI_RULES"] = a.pi_rules
@@ -417,18 +417,18 @@ class Chain:
 
     # 2 · the base
     def checkout(self):
-        """main, one commit deep, its large blobs fetched only for the paths checked out: orrery's history is
+        """main, one commit deep, its large blobs fetched only for the paths checked out: shop's history is
         14 GB and its tree 6.8 GB, most of it images the suite does not read. --exclude-path leaves such trees out;
         a test that needs them fails on the base too, so it is in the base's red set, not a new failure."""
         remote = self.env.get("GIT_REMOTE_BASE", "https://github.com").rstrip("/") + "/" + self.repo
         ref = self.a.base or "main"
         # One partial clone per repo on the scratch volume, kept between runs; each run fetches only what is
         # new and checks out a worktree of its own from it, and the large blobs a checkout fetched stay for
-        # the next run. Before, each run cloned 850 MB of orrery anonymously, and GitHub refused some of the
-        # checkout's fetches that followed one another (#643 and #648 on the X3, 2026-11-15, "could not read
+        # the next run. Before, each run cloned 850 MB of shop anonymously, and GitHub refused some of the
+        # checkout's fetches that followed one another (#643 and #648 on a worker host, 2026-11-15, "could not read
         # Username": a 6 KB request answered 4.5 KB, where #646's same request had been answered 140 MB).
         # blob:limit, not blob:none: with no blobs at all a checkout asks for every file in one batch, and
-        # GitHub answered such a request with HTTP 400 (#643 on the mini, 2026-11-15).
+        # GitHub answered such a request with HTTP 400 (#643 on the host, 2026-11-15).
         cache = os.path.join(self.a.scratch, "repos", self.repo.replace("/", "__") + ".git")
         self.cache = cache
         if not os.path.isdir(cache):
@@ -457,9 +457,9 @@ class Chain:
         self.base = base.strip()
         self.env["TRIAGE_BASE"] = self.base  # the leaves reset to it
         self.note("base", self.base[:12])
-        # The worktrees share the cache's config, and a repo's own scripts write to it: orrery's `prepare`
+        # The worktrees share the cache's config, and a repo's own scripts write to it: shop's `prepare`
         # runs `git config core.hooksPath .husky` on every npm ci (8 runs escalated by the check above on
-        # the X3, 2026-11-15). Nothing runs from it (GIT_CONFIG_* pins hooksPath for every git the run
+        # a worker host, 2026-11-15). Nothing runs from it (GIT_CONFIG_* pins hooksPath for every git the run
         # starts); what must not happen is that it stays for the next run. So the config checked above is
         # put back after the setup and when the run ends, and the check above stays for what got past.
         self.cfg_path = os.path.join(cache, ".git", "config")
@@ -548,7 +548,7 @@ class Chain:
     def attempt(self, manifest, resume=None):
         """One fix attempt. `resume` = (session file, the previous round's diff, the feedback): the worktree is put
         back as that round left it and its session goes on with the feedback as the next message, where a new session
-        would explore the repo again from nothing (44-99 calls a session on 2026-11-15/16; fleet-eval-data
+        would explore the repo again from nothing (44-99 calls a session on 2026-11-15/16; the installation's research repo
         projects/bugfix-cost, the advisor's review). If the diff does not apply, a new session from the manifest."""
         with open(manifest) as f:
             desc = json.load(f)["description"]
@@ -759,7 +759,7 @@ class Chain:
     def review_prompt(self, diff, task="", summary=""):
         """The review's whole input: the issue as filed, the diff, and the files the fix touched as they are after it.
         With --review-tools none the reviewer judges from this alone, in one call: on 2026-11-15/16 a review explored
-        the repo for 5 to 38 calls on glm-5.2, the fleet's dearest model (fleet-eval-data projects/bugfix-cost, C4).
+        the repo for 5 to 38 calls on glm-5.2, the fleet's dearest model (the research repo's projects/bugfix-cost, C4).
         pi takes the prompt as one argument, which Linux caps at 128 KiB (MAX_ARG_STRLEN): the parts are cut to fit
         REVIEW_PROMPT_MAX, the diff first, then the issue, then the files, each cut said where it is."""
         head = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}).\n\n")
@@ -804,7 +804,7 @@ class Chain:
             path = os.path.join(self.wt, x)
             # only a regular file, read no further than the room left: a fix that adds a symlink to the routine's key
             # file (/run/flotilla/model-*.key) must not put the key in a prompt the provider sees, and a FIFO or
-            # /dev/zero must not block or fill the run (homelab's review of the series, 2026-11-16)
+            # /dev/zero must not block or fill the run (the ops repo's review of the series, 2026-11-16)
             inside = os.path.realpath(path).startswith(os.path.realpath(self.wt) + os.sep)
             if os.path.islink(path) or not inside or not os.path.isfile(path):
                 files.append(f"=== {x} === [not included: not a regular file]")
@@ -971,7 +971,7 @@ class Chain:
         """The next fix's instructions after a review's request-changes: the same task, the whole review and the
         diff it judged (the next attempt starts from the base again). No new verdict: it re-ran ~30 calls of
         exploration to re-judge actionability, which the review did not dispute, and the review reached the fix
-        step only as 400 characters of result.tsv through it (fleet-eval-data projects/bugfix-cost, the advisor's
+        step only as 400 characters of result.tsv through it (the research repo's projects/bugfix-cost, the advisor's
         review: a likely reason #553's later rounds changed nothing)."""
         with open(manifest) as f:
             m = json.load(f)

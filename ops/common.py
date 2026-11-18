@@ -69,14 +69,14 @@ def _instance():
 
 
 def backup_age_hours():
-    """Hours since the mini's off-box backup last succeeded, or None when it has not in 30 days. The
-    same expression as the homelab's homelab-backup-offsite-stale alert."""
+    """Hours since the host's off-box backup last succeeded, or None when it has not in 30 days. The
+    same expression as the installation's backup-offsite-stale alert."""
     v = query(f'time() - max(last_over_time({_metric()}{{instance="{_instance()}"}}[30d]))')
     return None if v is None else v / 3600
 
 
 def backup_last_success():
-    """When the mini's off-box backup last succeeded (Unix seconds), or None when it has not in 30 days."""
+    """When the host's off-box backup last succeeded (Unix seconds), or None when it has not in 30 days."""
     return query(f'max(last_over_time({_metric()}{{instance="{_instance()}"}}[30d]))')
 
 

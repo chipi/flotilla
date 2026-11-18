@@ -29,7 +29,7 @@ func TestHandedOverWithoutARoutineNeedsYou(t *testing.T) {
 		return id
 	}
 	seo := open("seo_live_regression", "site:robots/www.example.org/robots.txt", "robots.txt keeps Baiduspider out")
-	open("failed_backup", "host:mini", "The backup is late")
+	open("failed_backup", "host:backup-01", "The backup is late")
 	b, err := f.ui.composeBrief(ctx, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestHandedOverWithoutARoutineNeedsYou(t *testing.T) {
 func TestWorkerLinkIsNotAHostAgent(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	for _, h := range []string{"w-bugfix-omarchy", "dgx"} {
+	for _, h := range []string{"w-bugfix-omarchy", "model-host"} {
 		if _, err := f.st.AddEnrolment(ctx, h, "t-"+h, "user:ada", "test"); err != nil {
 			t.Fatal(err)
 		}
@@ -62,14 +62,14 @@ func TestWorkerLinkIsNotAHostAgent(t *testing.T) {
 			down = append(down, x.What)
 		}
 	}
-	if len(down) != 1 || !strings.HasPrefix(down[0], "dgx ") {
+	if len(down) != 1 || !strings.HasPrefix(down[0], "model-host ") {
 		t.Fatalf("down: %v", down)
 	}
 	ck, _ := f.csrfOf(f.addOperator())
 	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "worker link") {
 		t.Fatal("the Hosts page does not call the link a worker link")
 	}
-	// the fleet page's host agents card counts dgx alone (it said "2 down" with the X3's links, 2026-11-16)
+	// the fleet page's host agents card counts model-host alone (it said "2 down" with a second machine's links, 2026-11-16)
 	if _, page := f.do("GET", "/fleets/triage", ck, nil, nil); !strings.Contains(page, "1 down") || strings.Contains(page, "2 down") {
 		t.Fatal("the fleet page counts a worker link as a host agent that is down")
 	}
@@ -124,8 +124,8 @@ func TestMorningBrief(t *testing.T) {
 	f.sch.Now = func() time.Time { return clock }
 	// one case waiting for a person (escalated), one closed in the last day
 	open := func(key, title string) string {
-		k := store.Key{Kind: "target", Value: "failed_backup/host:mini" + key}
-		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini" + key, Keys: []store.Key{k}, Canonical: k, Title: title}, "m", "")
+		k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01" + key}
+		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01" + key, Keys: []store.Key{k}, Canonical: k, Title: title}, "m", "")
 		if err != nil {
 			t.Fatal(err)
 		}

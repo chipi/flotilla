@@ -21,7 +21,7 @@ func written(t *testing.T) (string, []string) {
 	}
 	var heads []string
 	for i, e := range []Entry{
-		{Event: Started, ExecutionID: "x1", Action: "backup.rerun", Approved: "user:marko", Argv: []string{"/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.homelab.db-backup"}},
+		{Event: Started, ExecutionID: "x1", Action: "backup.rerun", Approved: "user:ada", Argv: []string{"/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.example.db-backup"}},
 		{Event: Ended, ExecutionID: "x1", Status: "done", OutputSHA: strings.Repeat("a", 64)},
 		{Event: Refused, ExecutionID: "x2", Detail: "past its expiry"},
 	} {

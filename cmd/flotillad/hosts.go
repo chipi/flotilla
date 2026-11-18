@@ -23,7 +23,7 @@ import (
 )
 
 // HostsConfig is the host agents' endpoint (ADR-0006 §2, decided 1): its own port with mutual TLS,
-// reached however the installation chooses (this homelab: its tailnet, a TCP passthrough).
+// reached however the installation chooses (this installation: its tailnet, a TCP passthrough).
 type HostsConfig struct {
 	Listen string `yaml:"listen"`
 	// intermediate.crt, intermediate.key and root.crt, from `flotilla ca intermediate` (the root's key

@@ -124,7 +124,7 @@ func (d Decision) String() string {
 	return string(b)
 }
 
-// HostOf is the host a target lives on: "host:mini" is on mini. Only host targets exist in v1.
+// HostOf is the host a target lives on: "host:host-01" is on host-01. Only host targets exist in v1.
 func HostOf(target string) string {
 	if h, ok := strings.CutPrefix(target, "host:"); ok {
 		return h

@@ -1,6 +1,6 @@
 {
-  "id": "orrery-fly-physics-L0",
-  "repo": "orrery",
+  "id": "shop-fly-physics-L0",
+  "repo": "shop",
   "fix_commit": "0d6644f9",
   "oracle_test_file": "src/lib/orbital/fly-physics.test.ts",
   "code_files": [

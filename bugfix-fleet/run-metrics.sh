@@ -1,5 +1,5 @@
 #!/bin/bash
-# Periodic fleet-metrics push — run by launchd (com.homelab.bugfix-metrics) every
+# Periodic fleet-metrics push — run by launchd (com.example.bugfix-metrics) every
 # 2 min so the Grafana "Bug-fix Fleet" funnel stays live. Queries GitHub for the
 # flow: label counts and pushes them to VictoriaMetrics.
 export PATH=/usr/local/bin:$PATH

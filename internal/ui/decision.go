@@ -122,7 +122,7 @@ func (u *Server) decisionFor(ctx context.Context, c caseRow, selfPage bool) (dec
 	return d, true, nil
 }
 
-// hostOf is the host part of a target ("host:mini" -> "mini", "dgx/pyannote" -> "dgx").
+// hostOf is the host part of a target ("host:backup-01" -> "backup-01", "model-host/pyannote" -> "model-host").
 func hostOf(target string) string {
 	t := strings.TrimPrefix(target, "host:")
 	if h, _, ok := strings.Cut(t, "/"); ok {

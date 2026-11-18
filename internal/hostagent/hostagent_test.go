@@ -150,13 +150,13 @@ func connected(w world, host string) func() bool {
 func TestConnectExecuteHeartbeat(t *testing.T) {
 	w := newWorld(t)
 	x := &fakeExec{}
-	a := w.agent(t, "mini", x)
+	a := w.agent(t, "host-01", x)
 	// The agent's clock runs 60 s ahead. The offset flotillad measures includes the frame's way there:
 	// under a loaded machine a heartbeat took ~2 s (ci-fast, 2026-11-13), so a small skew vanished.
 	a.Now = func() time.Time { return time.Now().Add(60 * time.Second) }
 	run(t, a)
-	waitFor(t, "the agent to connect", connected(w, "mini"))
-	r, err := w.link.Execute(context.Background(), "mini", "x1", []byte("x1"), 2*time.Second)
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
+	r, err := w.link.Execute(context.Background(), "host-01", "x1", []byte("x1"), 2*time.Second)
 	if err != nil || r.ExecutionID != "x1" || r.Status != hostexec.Done {
 		t.Fatalf("execute: %+v %v", r, err)
 	}
@@ -177,7 +177,7 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 	if st := w.link.Hosts()[0]; !st.Connected || !st.LastContact.After(before) {
 		t.Fatalf("after three heartbeats: %+v", st)
 	}
-	if _, err := w.link.Execute(context.Background(), "dgx", "x2", []byte("x2"), time.Second); !errors.Is(err, hostlink.ErrNotConnected) {
+	if _, err := w.link.Execute(context.Background(), "model-host", "x2", []byte("x2"), time.Second); !errors.Is(err, hostlink.ErrNotConnected) {
 		t.Fatalf("a host never connected: %v", err)
 	}
 	// the store has what the endpoint heard: `host list` and the alerts read it
@@ -191,12 +191,12 @@ func TestConnectExecuteHeartbeat(t *testing.T) {
 // people to read; an agent that reports none (older) leaves what was stored.
 func TestHelloReportsTheConfig(t *testing.T) {
 	w := newWorld(t)
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	a.Ceiling = "propose"
 	a.Allowlist = []hostwire.AllowedAction{{Name: "backup.rerun", Argv: []string{"/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "x"},
 		PerHour: 1, Timeout: "30m0s"}}
 	cancel := run(t, a)
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	if st := w.link.Hosts()[0]; st.Ceiling != "propose" || len(st.Allowlist) != 1 || st.Allowlist[0].Argv[3] != "kickstart" {
 		t.Fatalf("the link's state: %+v", st)
 	}
@@ -205,15 +205,15 @@ func TestHelloReportsTheConfig(t *testing.T) {
 		return len(hs) == 1 && hs[0].Ceiling == "propose" && strings.Contains(hs[0].Allowlist, "kickstart")
 	})
 	cancel()
-	b := w.agent(t, "dgx", &fakeExec{})
+	b := w.agent(t, "model-host", &fakeExec{})
 	run(t, b)
-	waitFor(t, "an agent without a report to connect", connected(w, "dgx"))
-	if err := w.api.Store.RecordHostContact(context.Background(), store.HostContact{Host: "mini", Connected: true}); err != nil {
+	waitFor(t, "an agent without a report to connect", connected(w, "model-host"))
+	if err := w.api.Store.RecordHostContact(context.Background(), store.HostContact{Host: "host-01", Connected: true}); err != nil {
 		t.Fatal(err)
 	}
 	hs, _ := w.api.Store.Hosts(context.Background())
 	for _, h := range hs {
-		if h.Name == "mini" && (h.Ceiling != "propose" || !strings.Contains(h.Allowlist, "kickstart")) {
+		if h.Name == "host-01" && (h.Ceiling != "propose" || !strings.Contains(h.Allowlist, "kickstart")) {
 			t.Fatalf("a contact without a report erased the stored one: %+v", h)
 		}
 	}
@@ -225,15 +225,15 @@ func TestRevokeCutsOffAndInFlightIsUnknown(t *testing.T) {
 	w := newWorld(t)
 	x := &fakeExec{block: make(chan struct{})}
 	defer close(x.block)
-	run(t, w.agent(t, "mini", x))
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	run(t, w.agent(t, "host-01", x))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	done := make(chan error, 1)
 	go func() {
-		_, err := w.link.Execute(context.Background(), "mini", "slow", []byte("slow"), 10*time.Second)
+		_, err := w.link.Execute(context.Background(), "host-01", "slow", []byte("slow"), 10*time.Second)
 		done <- err
 	}()
 	waitFor(t, "the execution to reach the agent", func() bool { x.mu.Lock(); defer x.mu.Unlock(); return len(x.ran) == 1 })
-	if err := w.api.RevokeHost(context.Background(), operator, "test", "mini"); err != nil {
+	if err := w.api.RevokeHost(context.Background(), operator, "test", "host-01"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -244,13 +244,13 @@ func TestRevokeCutsOffAndInFlightIsUnknown(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the execution in flight never ended")
 	}
-	waitFor(t, "the host to show disconnected", func() bool { return !connected(w, "mini")() })
+	waitFor(t, "the host to show disconnected", func() bool { return !connected(w, "host-01")() })
 	waitFor(t, "the store to show it disconnected", func() bool {
 		hs, _ := w.api.Store.Hosts(context.Background())
 		return len(hs) == 1 && !hs[0].Connected
 	})
 	time.Sleep(1500 * time.Millisecond) // the agent retries (backoff 1 s): each is refused
-	if connected(w, "mini")() {
+	if connected(w, "host-01")() {
 		t.Fatal("a revoked host reconnected")
 	}
 }
@@ -258,8 +258,8 @@ func TestRevokeCutsOffAndInFlightIsUnknown(t *testing.T) {
 // The connection drops (flotillad restarts its side): the agent reconnects by itself.
 func TestReconnects(t *testing.T) {
 	w := newWorld(t)
-	run(t, w.agent(t, "mini", &fakeExec{}))
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	run(t, w.agent(t, "host-01", &fakeExec{}))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	first := w.link.Hosts()[0].ConnectedAt
 	w.link.CloseAll()
 	waitFor(t, "the agent to reconnect", func() bool { st := w.link.Hosts()[0]; return st.Connected && st.ConnectedAt.After(first) })
@@ -269,7 +269,7 @@ func TestReconnects(t *testing.T) {
 // old certificate stops working.
 func TestRenewal(t *testing.T) {
 	w := newWorld(t)
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	old, _ := a.LoadChain()
 	var shift atomic.Int64
 	shift.Store(int64(25 * 24 * time.Hour)) // 5 days left
@@ -282,7 +282,7 @@ func TestRenewal(t *testing.T) {
 		hs, _ := w.api.Store.Hosts(context.Background())
 		next, _ := a.LoadChain()
 		chain, _ := parseChain(next)
-		return connected(w, "mini")() && hs[0].CertSHA256 == hostca.Fingerprint(chain[0])
+		return connected(w, "host-01")() && hs[0].CertSHA256 == hostca.Fingerprint(chain[0])
 	})
 	// it reconnects at once after a renewal, not after a backoff (at least 0.5 s)
 	if d := time.Since(renewed); d > 400*time.Millisecond {
@@ -298,45 +298,45 @@ func TestEnrolRefusals(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
-	tok, _, _ := w.api.MintEnrolment(ctx, operator, "test", "mini")
-	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "dgx", tok, key); err == nil || !strings.Contains(err.Error(), "refused") {
+	tok, _, _ := w.api.MintEnrolment(ctx, operator, "test", "host-01")
+	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "model-host", tok, key); err == nil || !strings.Contains(err.Error(), "refused") {
 		t.Fatalf("another host's token: %v", err)
 	}
-	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "mini", tok, key); err != nil {
+	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "host-01", tok, key); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "mini", tok, key); err == nil {
+	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "host-01", tok, key); err == nil {
 		t.Fatal("a token used twice")
 	}
 	// the agent refuses a flotillad under another name, or under another root
-	tok2, _, _ := w.api.MintEnrolment(ctx, operator, "test", "mini")
-	if _, err := Enrol(ctx, w.addr, "evil", w.root.Cert, "mini", tok2, key); err == nil {
+	tok2, _, _ := w.api.MintEnrolment(ctx, operator, "test", "host-01")
+	if _, err := Enrol(ctx, w.addr, "evil", w.root.Cert, "host-01", tok2, key); err == nil {
 		t.Fatal("enrolled with a server under another name")
 	}
 	other := newWorld(t)
-	if _, err := Enrol(ctx, w.addr, "flotilla", other.root.Cert, "mini", tok2, key); err == nil {
+	if _, err := Enrol(ctx, w.addr, "flotilla", other.root.Cert, "host-01", tok2, key); err == nil {
 		t.Fatal("enrolled with a server under another root")
 	}
 	// another CA's agent cannot connect: a raw client, past the agent's own checks
-	stranger := other.agent(t, "mini", &fakeExec{})
+	stranger := other.agent(t, "host-01", &fakeExec{})
 	strangerChain, _ := stranger.LoadChain()
 	c := rawDial(t, w, strangerChain, stranger.Key)
 	hostwire.Write(c, hostwire.Hello, hostwire.HelloBody{Version: "x", Clock: time.Now()})
 	if f, err := hostwire.Read(c); err == nil && f.Type != hostwire.Refusal {
 		t.Fatalf("another CA's agent got %q", f.Type)
 	}
-	if connected(w, "mini")() {
+	if connected(w, "host-01")() {
 		t.Fatal("another CA's agent connected")
 	}
 	// without a certificate, only an enrol frame: a good token under another type is refused, unspent
-	tok3, _, _ := w.api.MintEnrolment(ctx, operator, "test", "mini")
-	csr, _ := hostca.HostRequest(key, "mini")
+	tok3, _, _ := w.api.MintEnrolment(ctx, operator, "test", "host-01")
+	csr, _ := hostca.HostRequest(key, "host-01")
 	c = rawDial(t, w, nil, nil)
-	hostwire.Write(c, hostwire.Hello, hostwire.EnrolBody{Host: "mini", Token: tok3, CSR: csr})
+	hostwire.Write(c, hostwire.Hello, hostwire.EnrolBody{Host: "host-01", Token: tok3, CSR: csr})
 	if f, err := hostwire.Read(c); err != nil || f.Type != hostwire.Refusal {
 		t.Fatalf("an enrolment under another frame type: %q %v", f.Type, err)
 	}
-	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "mini", tok3, key); err != nil {
+	if _, err := Enrol(ctx, w.addr, "flotilla", w.root.Cert, "host-01", tok3, key); err != nil {
 		t.Fatalf("the token after the refused frame: %v", err)
 	}
 }
@@ -369,14 +369,14 @@ func rawDial(t *testing.T, w world, chainPEM []byte, key ed25519.PrivateKey) *tl
 // connected with is no longer current.
 func TestRenewalClosesTheConnection(t *testing.T) {
 	w := newWorld(t)
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	chainPEM, _ := a.LoadChain()
 	c := rawDial(t, w, chainPEM, a.Key)
 	hostwire.Write(c, hostwire.Hello, hostwire.HelloBody{Version: "raw", Clock: time.Now()})
 	if f, err := hostwire.Read(c); err != nil || f.Type != hostwire.Welcome {
 		t.Fatalf("hello: %q %v", f.Type, err)
 	}
-	csr, _ := hostca.HostRequest(a.Key, "mini")
+	csr, _ := hostca.HostRequest(a.Key, "host-01")
 	hostwire.Write(c, hostwire.Renew, hostwire.RenewBody{CSR: csr})
 	if f, err := hostwire.Read(c); err != nil || f.Type != hostwire.Renewed {
 		t.Fatalf("renew: %q %v", f.Type, err)
@@ -391,19 +391,19 @@ func TestRenewalClosesTheConnection(t *testing.T) {
 // The agent's own check of a certificate flotillad hands it: this host, this key, the pinned root.
 func TestCheckChain(t *testing.T) {
 	w := newWorld(t)
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	good, _ := a.LoadChain()
-	if _, err := checkChain(good, w.root.Cert, "mini", a.Key, time.Now()); err != nil {
+	if _, err := checkChain(good, w.root.Cert, "host-01", a.Key, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	_, otherKey, _ := ed25519.GenerateKey(rand.Reader)
 	other := newWorld(t)
 	for name, err := range map[string]error{
-		"another host":   must(checkChain(good, w.root.Cert, "dgx", a.Key, time.Now())),
-		"another key":    must(checkChain(good, w.root.Cert, "mini", otherKey, time.Now())),
-		"another root":   must(checkChain(good, other.root.Cert, "mini", a.Key, time.Now())),
-		"expired":        must(checkChain(good, w.root.Cert, "mini", a.Key, time.Now().Add(31*24*time.Hour))),
-		"no certificate": must(checkChain([]byte("x"), w.root.Cert, "mini", a.Key, time.Now())),
+		"another host":   must(checkChain(good, w.root.Cert, "model-host", a.Key, time.Now())),
+		"another key":    must(checkChain(good, w.root.Cert, "host-01", otherKey, time.Now())),
+		"another root":   must(checkChain(good, other.root.Cert, "host-01", a.Key, time.Now())),
+		"expired":        must(checkChain(good, w.root.Cert, "host-01", a.Key, time.Now().Add(31*24*time.Hour))),
+		"no certificate": must(checkChain([]byte("x"), w.root.Cert, "host-01", a.Key, time.Now())),
 	} {
 		if err == nil {
 			t.Errorf("%s: accepted", name)
@@ -416,11 +416,11 @@ func must(_ any, err error) error { return err }
 // An agent that stops sending heartbeats is dropped after three of flotillad's intervals.
 func TestSilentAgentDropped(t *testing.T) {
 	w := newWorld(t)
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	a.Heartbeat = time.Hour
 	run(t, a)
-	waitFor(t, "the agent to connect", connected(w, "mini"))
-	waitFor(t, "the silent agent to be dropped", func() bool { return !connected(w, "mini")() })
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
+	waitFor(t, "the silent agent to be dropped", func() bool { return !connected(w, "host-01")() })
 }
 
 // lockedBuf is a log sink two goroutines can share.
@@ -441,18 +441,18 @@ func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l
 func TestAgentLogLinesReachFlotillad(t *testing.T) {
 	var sink lockedBuf
 	w := newWorld(t, func(l *hostlink.Server) { l.Log = slog.New(slog.NewJSONHandler(&sink, nil)) })
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	a.Forward = NewForwarder(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	a.Log = slog.New(a.Forward)
 	a.Log.Info("logged before it connected", "job", "backup")
 	a.Log.Debug("a debug line stays on the host")
 	run(t, a)
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	a.Log.Warn("the backup job is slow", "minutes", 42)
 	waitFor(t, "the lines in flotillad's log", func() bool {
 		s := sink.String()
-		return strings.Contains(s, `"msg":"host log","host":"mini","line":"logged before it connected"`) &&
-			strings.Contains(s, `"a_job":"backup"`) && strings.Contains(s, `"level":"WARN","msg":"host log","host":"mini","line":"the backup job is slow"`) &&
+		return strings.Contains(s, `"msg":"host log","host":"host-01","line":"logged before it connected"`) &&
+			strings.Contains(s, `"a_job":"backup"`) && strings.Contains(s, `"level":"WARN","msg":"host log","host":"host-01","line":"the backup job is slow"`) &&
 			strings.Contains(s, `"a_minutes":"42"`)
 	})
 	if strings.Contains(sink.String(), "a debug line") {

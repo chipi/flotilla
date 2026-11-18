@@ -14,12 +14,12 @@ func rerun() registry.Action {
 }
 
 func plan() Plan {
-	return Plan{CaseID: "case-1", RunID: "run-1", Action: "backup.rerun", Params: map[string]string{"host": "mini"}}
+	return Plan{CaseID: "case-1", RunID: "run-1", Action: "backup.rerun", Params: map[string]string{"host": "host-01"}}
 }
 
 // all clear, everything at auto: the plan runs.
 func clear() State {
-	return State{CaseKind: "failed_backup", CaseTarget: "host:mini", Action: rerun(), ActionFound: true, RunOnRecord: true,
+	return State{CaseKind: "failed_backup", CaseTarget: "host:host-01", Action: rerun(), ActionFound: true, RunOnRecord: true,
 		RoutineAutonomy: "auto", ActionAutonomy: "auto", HostCeiling: "auto"}
 }
 
@@ -38,14 +38,14 @@ func TestDecide(t *testing.T) {
 		// 1. The registry: refused, whatever the autonomy.
 		{"no such action", func(p *Plan) { p.Action = "rm.everything" }, func(s *State) { s.ActionFound = false }, Refuse, "", "", "not in the registry"},
 		{"another kind's action", nil, func(s *State) { s.CaseKind = "memory_growth" }, Refuse, "", "", "not for memory_growth"},
-		{"retargeted", func(p *Plan) { p.Params["host"] = "dgx" }, nil, Refuse, "", "", "no retargeting"},
+		{"retargeted", func(p *Plan) { p.Params["host"] = "model-host" }, nil, Refuse, "", "", "no retargeting"},
 		{"a parameter missing", func(p *Plan) { delete(p.Params, "host") }, nil, Refuse, "", "", "missing"},
 		{"a parameter added", func(p *Plan) { p.Params["force"] = "1" }, nil, Refuse, "", "", "not declared"},
 		{"an enum value outside", nil, func(s *State) {
 			s.Action.Params["mode"] = registry.Param{Kind: "enum", Enum: []string{"quick"}}
 		}, Refuse, "", "", "parameter mode is missing"},
 		{"no re-check on record", nil, func(s *State) { s.RunOnRecord = false }, Refuse, "", "", "not on the case's record"},
-		{"refused even when frozen", func(p *Plan) { p.Params["host"] = "dgx" }, func(s *State) { s.Frozen = true }, Refuse, "", "", "no retargeting"},
+		{"refused even when frozen", func(p *Plan) { p.Params["host"] = "model-host" }, func(s *State) { s.Frozen = true }, Refuse, "", "", "no retargeting"},
 		// 2. Autonomy, lowest wins.
 		{"the routine in propose", nil, func(s *State) { s.RoutineAutonomy = "propose" }, Propose, "propose", "", ""},
 		{"a new action (shadow)", nil, func(s *State) { s.ActionAutonomy = "shadow" }, Shadow, "shadow", Auto, ""},
@@ -65,7 +65,7 @@ func TestDecide(t *testing.T) {
 		{"the host's hourly limit", nil, func(s *State) { s.HostHour = 3 }, Defer, "auto", "", "on this host"},
 		{"the platform's hourly cap", nil, func(s *State) { s.PlatformHour = 10 }, Defer, "auto", "", "platform-wide"},
 		{"the fleet STOPped", nil, func(s *State) { s.FleetStopped = true }, Defer, "auto", "", "STOPped"},
-		{"an operator's hold", nil, func(s *State) { s.Holds = []string{"host:mini until 12:00 by user:ada"} }, Defer, "auto", "", "hold: host:mini"},
+		{"an operator's hold", nil, func(s *State) { s.Holds = []string{"host:host-01 until 12:00 by user:ada"} }, Defer, "auto", "", "hold: host:host-01"},
 		{"a defer at propose", nil, func(s *State) { s.RoutineAutonomy = "propose"; s.LockHeldBy = "case-0" }, Defer, "propose", "", "locked"},
 		// Shadow records what it would have done.
 		{"shadow that would defer", nil, func(s *State) { s.ActionAutonomy = "shadow"; s.LockHeldBy = "case-0" }, Shadow, "shadow", Defer, "locked"},
@@ -99,7 +99,7 @@ func TestPlanHashBindsTheExactPlan(t *testing.T) {
 	for name, edit := range map[string]func(*Plan){
 		"case":      func(p *Plan) { p.CaseID = "case-2" },
 		"action":    func(p *Plan) { p.Action = "backup.rerun_other" },
-		"parameter": func(p *Plan) { p.Params["host"] = "dgx" },
+		"parameter": func(p *Plan) { p.Params["host"] = "model-host" },
 		"added":     func(p *Plan) { p.Params["x"] = "" },
 	} {
 		c := plan()
@@ -117,7 +117,7 @@ func TestPlanHashBindsTheExactPlan(t *testing.T) {
 }
 
 func TestHostOf(t *testing.T) {
-	if HostOf("host:mini") != "mini" || HostOf("container:mini/x") != "" {
+	if HostOf("host:host-01") != "host-01" || HostOf("container:host-01/x") != "" {
 		t.Fatal("HostOf")
 	}
 }

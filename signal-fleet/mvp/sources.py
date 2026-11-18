@@ -1,6 +1,6 @@
 """Signal sources — the trigger side. MVP: poll Grafana Alerting.
 
-The first slice reacts to one signal: the *orrery launch-data-stale* Grafana
+The first slice reacts to one signal: the *shop launch-data-stale* Grafana
 alert. `firing_alerts()` is the general poll; `orrery_staleness()` picks the one.
 """
 import hashlib
@@ -152,7 +152,7 @@ def event_backends(event):
 
 def attach_backend(sig):
     """For a LiteLLM issue, record the backends its latest event names (raw._backends), so the
-    operational gate can tell a failed-over call to the X3 assistant from a gateway error. The
+    operational gate can tell a failed-over call to the second machine's assistant from a gateway error. The
     issue list carries only the generic message ("Connection error.", "Request timed out.")."""
     if (sig.get("labels") or {}).get("project") != "litellm" or not sig.get("issue_id"):
         return sig
@@ -173,7 +173,7 @@ SUBSTRATE_GLITCHTIP_PROJECTS = {"flotilla"}
 def _left_out(slug):
     """Substrate, or a dev project (<name>-dev). A dev build runs a branch's unmerged code: its errors belong to
     whoever works on that branch, never to triage, and never become a GitHub issue (operator 2026-11-16). Both
-    wrong plans of bugfix phase A (#651, #659) came from triage filing orrery-dev errors as bugs on main."""
+    wrong plans of bugfix phase A (#651, #659) came from triage filing shop-dev errors as bugs on main."""
     slug = str(slug or "")
     return slug in SUBSTRATE_GLITCHTIP_PROJECTS or slug.lower().endswith("-dev")
 

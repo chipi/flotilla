@@ -17,7 +17,7 @@ func TestActionAutonomy(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	op := Caller{Name: "operator", Role: RoleOperator}
-	agent := Caller{Name: "claude-homelab", Role: RoleAgent}
+	agent := Caller{Name: "claude-example", Role: RoleAgent}
 	code := func(err error) int {
 		if p := AsProblem(err); p != nil {
 			return p.Code
@@ -52,7 +52,7 @@ func TestActionAutonomy(t *testing.T) {
 	_ = s.SetActionAutonomy(ctx, op, "api", rerun, "propose", "again")
 	_ = s.Store.SetControl(ctx, "triage/cycle", "autonomy", "propose", "user:ada", "api")
 	id := plannedCase(t, s, "", "run-1")
-	if d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "mini")); d.Outcome != policy.Propose {
+	if d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")); d.Outcome != policy.Propose {
 		t.Fatalf("policy at the action's propose: %+v", d)
 	}
 	as, _ := s.Actions(ctx)

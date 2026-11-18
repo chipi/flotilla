@@ -1,6 +1,6 @@
 """#10 "looks resolved" nudge — an open fleet issue whose signal went quiet.
 
-On 2026-09-30, 49 of 63 open issues in agentic-ai-homelab turned out to be stale:
+On 2026-09-30, 49 of 63 open issues in the installation's ops repo turned out to be stale:
 the condition had resolved (30) or the issue was a duplicate (19), and nothing said
 so. The fleet already knows when a signal last occurred: every occurrence lands in
 dispositions.tsv, and an alert that is still firing is still firing. This module

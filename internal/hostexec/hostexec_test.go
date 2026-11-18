@@ -24,13 +24,13 @@ var priv = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, ed25519.SeedSize))
 func config(t *testing.T, ceiling string) *hostcfg.Config {
 	t.Helper()
 	pub := base64.StdEncoding.EncodeToString(priv.Public().(ed25519.PublicKey))
-	c, err := hostcfg.Parse([]byte(`{"host": "mini", "user": "_flotilla", "ceiling": "` + ceiling + `",
+	c, err := hostcfg.Parse([]byte(`{"host": "host-01", "user": "_flotilla", "ceiling": "` + ceiling + `",
 	  "signing_keys": {"k1": "` + pub + `"},
 	  "actions": {
 	    "backup.rerun": {
-	      "argv": ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.homelab.db-backup"],
+	      "argv": ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "system/com.example.db-backup"],
 	      "params": {"host": {"kind": "this_host"}}, "per_hour": 2, "timeout": "1s",
-	      "pre": [{"kind": "launchd_not_running", "args": {"label": "system/com.homelab.db-backup"}}]}}}`))
+	      "pre": [{"kind": "launchd_not_running", "args": {"label": "system/com.example.db-backup"}}]}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,8 +61,8 @@ func (f fakeCheck) Check(ctx context.Context, p hostcfg.Pre) (bool, string, erro
 var now = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
 func exe(id string) envelope.Execution {
-	return envelope.Execution{ID: id, CaseID: "case-1", Host: "mini", Action: "backup.rerun",
-		Params: map[string]string{"host": "mini"}, PlanHash: "h", Approved: "user:ada", SignedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
+	return envelope.Execution{ID: id, CaseID: "case-1", Host: "host-01", Action: "backup.rerun",
+		Params: map[string]string{"host": "host-01"}, PlanHash: "h", Approved: "user:ada", SignedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
 }
 
 func sign(t *testing.T, e envelope.Execution) []byte {
@@ -98,7 +98,7 @@ func TestRunsOnceAndAResendGetsTheResult(t *testing.T) {
 	x, run, _ := setup(t, "propose")
 	raw := sign(t, exe("exec-1"))
 	r := x.Handle(ctx, raw)
-	if r.Status != Done || len(run.calls) != 1 || strings.Join(run.calls[0], " ") != "/usr/bin/sudo -n /bin/launchctl kickstart system/com.homelab.db-backup" {
+	if r.Status != Done || len(run.calls) != 1 || strings.Join(run.calls[0], " ") != "/usr/bin/sudo -n /bin/launchctl kickstart system/com.example.db-backup" {
 		t.Fatalf("first: %+v %v", r, run.calls)
 	}
 	again := x.Handle(ctx, raw)
@@ -141,7 +141,7 @@ func TestAuditLog(t *testing.T) {
 		got = append(got, e.Event+" "+e.ExecutionID+" "+e.Status+" "+e.Approved+" "+strings.Join(e.Argv, " "))
 	}
 	want := []string{
-		"started exec-1  user:ada /usr/bin/sudo -n /bin/launchctl kickstart system/com.homelab.db-backup",
+		"started exec-1  user:ada /usr/bin/sudo -n /bin/launchctl kickstart system/com.example.db-backup",
 		"result exec-1 done user:ada ",
 		"resent exec-1 done user:ada ",
 		"refused exec-2 refused auto ",
@@ -166,8 +166,8 @@ func TestRefusals(t *testing.T) {
 	auto.Approved = "auto"
 	notAllowed := exe("exec-rm")
 	notAllowed.Action = "rm.everything"
-	otherHost := exe("exec-dgx")
-	otherHost.Host, otherHost.Params = "dgx", map[string]string{"host": "dgx"}
+	otherHost := exe("exec-model-host")
+	otherHost.Host, otherHost.Params = "model-host", map[string]string{"host": "model-host"}
 	forgedKey, _ := envelope.Sign(other, "k1", exe("exec-forged"))
 	for name, c := range map[string]struct {
 		ceiling string
@@ -180,7 +180,7 @@ func TestRefusals(t *testing.T) {
 		"auto above a propose host":    {"propose", sign(t, auto), "above this host's ceiling"},
 		"anything on a shadow host":    {"shadow", sign(t, exe("exec-s")), "accepts nothing"},
 		"an extra parameter":           {"propose", sign(t, func() envelope.Execution { e := exe("exec-x"); e.Params["force"] = "1"; return e }()), "not declared"},
-		"a parameter for another host": {"propose", sign(t, func() envelope.Execution { e := exe("exec-y"); e.Params["host"] = "dgx"; return e }()), "this is mini"},
+		"a parameter for another host": {"propose", sign(t, func() envelope.Execution { e := exe("exec-y"); e.Params["host"] = "model-host"; return e }()), "this is host-01"},
 	} {
 		x, run, _ := setup(t, c.ceiling)
 		r := x.Handle(ctx, c.raw)
@@ -273,7 +273,7 @@ func TestStartedIsUnknownAfterARestart(t *testing.T) {
 	ctx := context.Background()
 	x, run, path := setup(t, "propose")
 	raw := sign(t, exe("crash"))
-	_, payload, _ := envelope.Verify(raw, x.Cfg.Keys(), "mini", now.Add(time.Minute))
+	_, payload, _ := envelope.Verify(raw, x.Cfg.Keys(), "host-01", now.Add(time.Minute))
 	if _, err := x.db.Exec(`INSERT INTO executions (id, payload, action, argv, status, started_at) VALUES ('crash', ?, 'backup.rerun', '[]', 'started', ?)`,
 		payload, now.Format(timeFormat)); err != nil {
 		t.Fatal(err)
@@ -331,13 +331,13 @@ func (c cannedRun) Run(ctx context.Context, argv []string, timeout time.Duration
 	return c.exit, []byte(c.out), false, nil
 }
 
-// The mini's `launchctl print system/com.homelab.db-backup` (2026-11-13), cut to the lines around state.
-const launchdIdle = "system/com.homelab.db-backup = {\n\tactive count = 0\n\tpath = /Library/LaunchDaemons/com.homelab.db-backup.plist\n\ttype = LaunchDaemon\n\tstate = not running\n\n\tprogram = /bin/bash\n}\n"
+// The host's `launchctl print system/com.example.db-backup` (2026-11-13), cut to the lines around state.
+const launchdIdle = "system/com.example.db-backup = {\n\tactive count = 0\n\tpath = /Library/LaunchDaemons/com.example.db-backup.plist\n\ttype = LaunchDaemon\n\tstate = not running\n\n\tprogram = /bin/bash\n}\n"
 
 func TestLaunchdNotRunning(t *testing.T) {
 	ctx := context.Background()
-	pre := hostcfg.Pre{Kind: "launchd_not_running", Args: map[string]string{"label": "system/com.homelab.db-backup"}}
-	if holds, detail, err := (LocalChecker{Run: cannedRun{out: launchdIdle}}).Check(ctx, pre); err != nil || !holds || detail != "system/com.homelab.db-backup is not running" {
+	pre := hostcfg.Pre{Kind: "launchd_not_running", Args: map[string]string{"label": "system/com.example.db-backup"}}
+	if holds, detail, err := (LocalChecker{Run: cannedRun{out: launchdIdle}}).Check(ctx, pre); err != nil || !holds || detail != "system/com.example.db-backup is not running" {
 		t.Fatalf("idle: %v %q %v", holds, detail, err)
 	}
 	running := strings.Replace(launchdIdle, "state = not running", "state = running", 1)

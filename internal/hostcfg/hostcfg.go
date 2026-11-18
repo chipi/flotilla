@@ -131,7 +131,7 @@ func (c *Config) validate() error {
 	var errs []error
 	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
 	if !nameRe.MatchString(c.Host) {
-		bad("host %q: a lowercase name such as mini", c.Host)
+		bad("host %q: a lowercase name such as host-01", c.Host)
 	}
 	if !userRe.MatchString(c.User) || c.User == "root" {
 		bad("user %q: the agent's own user, not root", c.User)

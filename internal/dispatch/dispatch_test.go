@@ -89,8 +89,8 @@ func setup(t *testing.T) *fixture {
 func (f *fixture) handOver(t *testing.T, key string) string {
 	t.Helper()
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini" + key}
-	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:host-01" + key}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:host-01", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func lastEvent(t *testing.T, f *fixture, id string) store.CaseEvent {
 // v1's chain from hand-over to the recorded shadow plan, with the case in the run's environment.
 func TestAPlanGoesToPolicy(t *testing.T) {
 	f := setup(t)
-	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "mini"}}`
+	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}}`
 	id := f.handOver(t, "")
 	f.pass(t)
 	c := f.cs(t, id)
@@ -137,7 +137,7 @@ func TestAPlanGoesToPolicy(t *testing.T) {
 		t.Fatalf("plans %+v", plans)
 	}
 	var seen caseJSON
-	if err := json.Unmarshal([]byte(f.w.got[0].Env["FLOTILLA_CASE"]), &seen); err != nil || seen.ID != id || seen.Target != "host:mini" || len(seen.Keys) != 1 {
+	if err := json.Unmarshal([]byte(f.w.got[0].Env["FLOTILLA_CASE"]), &seen); err != nil || seen.ID != id || seen.Target != "host:host-01" || len(seen.Keys) != 1 {
 		t.Fatalf("FLOTILLA_CASE %q", f.w.got[0].Env["FLOTILLA_CASE"])
 	}
 	if f.w.got[0].PlanFile == "" {
@@ -255,7 +255,7 @@ func TestPausedRoutineCaseWaits(t *testing.T) {
 	f := setup(t)
 	f.w.plan = `{"outcome": "resolved_itself"}`
 	id := f.handOver(t, "#p")
-	if err := f.st.SetControl(ctx, "ops/rerun", sched.KeyPaused, "1", "user:marko", "test"); err != nil {
+	if err := f.st.SetControl(ctx, "ops/rerun", sched.KeyPaused, "1", "user:ada", "test"); err != nil {
 		t.Fatal(err)
 	}
 	f.pass(t)
@@ -265,7 +265,7 @@ func TestPausedRoutineCaseWaits(t *testing.T) {
 	if runs, _ := f.st.Runs(ctx, "ops/rerun", 10); len(runs) != 0 {
 		t.Fatalf("a paused routine's case recorded %d runs", len(runs))
 	}
-	if err := f.st.SetControl(ctx, "ops/rerun", sched.KeyPaused, "0", "user:marko", "test"); err != nil {
+	if err := f.st.SetControl(ctx, "ops/rerun", sched.KeyPaused, "0", "user:ada", "test"); err != nil {
 		t.Fatal(err)
 	}
 	f.pass(t)
@@ -292,7 +292,7 @@ func TestExpiredLeases(t *testing.T) {
 	_, _ = f.st.LeaseCase(ctx, b, "ops/rerun", f.now.Add(-time.Minute))
 	_ = f.st.MoveCase(ctx, b, cases.Planned, cases.ByAct, "", "ops/rerun", "")
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: b, RunID: "r", Action: "backup.rerun",
-		Params: map[string]string{"host": "mini"}, Outcome: "auto", Autonomy: "auto"}, cases.Executing, "", "host:mini#b", true); err != nil {
+		Params: map[string]string{"host": "host-01"}, Outcome: "auto", Autonomy: "auto"}, cases.Executing, "", "host:host-01#b", true); err != nil {
 		t.Fatal(err)
 	}
 	// c: in checking, its check run's lease run out (flotillad restarted mid-check)
@@ -347,14 +347,14 @@ func (f *fixture) open(t *testing.T) []store.Case {
 // detection again is one case.
 func TestDetectionOpensAndHandsOver(t *testing.T) {
 	f := setup(t)
-	rep := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h",
-		"title": "The newest offsite backup\non mini is 20 hours old"}]}`
+	rep := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01", "detail": "age 20.4h",
+		"title": "The newest offsite backup\non host-01 is 20 hours old"}]}`
 	f.monitor(t, "ok", rep)
 	cs := f.open(t)
-	if len(cs) != 1 || cs[0].Status != cases.HandedOver || cs[0].Project != "ops" || cs[0].CanonicalKey != "target=failed_backup/host:mini" {
+	if len(cs) != 1 || cs[0].Status != cases.HandedOver || cs[0].Project != "ops" || cs[0].CanonicalKey != "target=failed_backup/host:host-01" {
 		t.Fatalf("cases %+v", cs)
 	}
-	if cs[0].Title != "The newest offsite backup on mini is 20 hours old" {
+	if cs[0].Title != "The newest offsite backup on host-01 is 20 hours old" {
 		t.Fatalf("the detection's title, on one line (G3): %q", cs[0].Title)
 	}
 	ev, _ := f.st.CaseEvents(context.Background(), cs[0].ID)
@@ -376,7 +376,7 @@ func TestVanishedCaseResolvesItself(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	f.d.API.Sched.Routines[1].Detects = []string{"failed_backup", "seo_live_regression"}
-	both := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini"},
+	both := `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01"},
 		{"kind": "seo_live_regression", "target": "site:robots/www.example.org/robots.txt"}]}`
 	f.monitor(t, "ok", both)
 	if cs := f.open(t); len(cs) != 2 {
@@ -433,14 +433,14 @@ func TestSummaryKept(t *testing.T) {
 }
 
 func TestReportsRefused(t *testing.T) {
-	many := `{"outcome": "detections", "detections": [` + strings.TrimSuffix(strings.Repeat(`{"kind": "failed_backup", "target": "host:mini"},`, 51), ",") + `]}`
+	many := `{"outcome": "detections", "detections": [` + strings.TrimSuffix(strings.Repeat(`{"kind": "failed_backup", "target": "host:host-01"},`, 51), ",") + `]}`
 	for name, c := range map[string]struct{ status, report, log string }{
-		"an undeclared kind": {"ok", `{"outcome": "detections", "detections": [{"kind": "disk_full", "target": "host:mini"}]}`, "detection refused"},
-		"a malformed target": {"ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "mini; rm -rf"}]}`, "detection refused"},
+		"an undeclared kind": {"ok", `{"outcome": "detections", "detections": [{"kind": "disk_full", "target": "host:host-01"}]}`, "detection refused"},
+		"a malformed target": {"ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host-01; rm -rf"}]}`, "detection refused"},
 		"too many":           {"ok", many, "more than 50"},
 		"another outcome":    {"ok", `{"outcome": "plan"}`, "monitor report refused"},
 		"no report":          {"ok", "", "no plan file"},
-		"a failed run":       {"error", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini"}]}`, ""},
+		"a failed run":       {"error", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01"}]}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := setup(t)
@@ -455,7 +455,7 @@ func TestReportsRefused(t *testing.T) {
 	}
 }
 
-// A monitor whose report the worker could not read (bugfix/intake-podcast's 35 issues were over the
+// A monitor whose report the worker could not read (bugfix/intake-api's 35 issues were over the
 // envelope's 64 KiB, 2026-11-16) is a failed run with the reason, not an "ok" run that found nothing.
 func TestUnreadableReportFailsTheRun(t *testing.T) {
 	f := setup(t)
@@ -479,10 +479,10 @@ func TestUnreadableReportFailsTheRun(t *testing.T) {
 // routine, its plan goes to policy, and the case closes with the shadow plan recorded.
 func TestDetectionToShadowPlan(t *testing.T) {
 	f := setup(t)
-	f.monitor(t, "ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h"}]}`)
+	f.monitor(t, "ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01", "detail": "age 20.4h"}]}`)
 	id := f.open(t)[0].ID
 	f.w.mu.Lock()
-	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "mini"}}`
+	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}}`
 	f.w.mu.Unlock()
 	f.pass(t)
 	if c := f.cs(t, id); c.Status != cases.Closed || c.Resolution != cases.ShadowPlan {
@@ -490,7 +490,7 @@ func TestDetectionToShadowPlan(t *testing.T) {
 	}
 }
 
-const old = `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:mini", "detail": "age 20.4h"}]}`
+const old = `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01", "detail": "age 20.4h"}]}`
 const fine = `{"outcome": "detections", "detections": []}`
 
 func (f *fixture) all(t *testing.T) []store.Case {
@@ -509,7 +509,7 @@ func TestOneCasePerIncident(t *testing.T) {
 	f.monitor(t, "ok", old)
 	first := f.all(t)[0].ID
 	f.w.mu.Lock()
-	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "mini"}}`
+	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}}`
 	f.w.mu.Unlock()
 	f.pass(t)
 	for i := 0; i < 3; i++ {
@@ -568,11 +568,11 @@ func (f *fixture) checkingAction(t *testing.T, key, action string) string {
 		t.Fatal(err)
 	}
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: action,
-		Params: map[string]string{"host": "mini"}, PlanHash: "h-" + key, Outcome: "auto", Autonomy: "auto"},
-		cases.Executing, "", "host:mini", true); err != nil {
+		Params: map[string]string{"host": "host-01"}, PlanHash: "h-" + key, Outcome: "auto", Autonomy: "auto"},
+		cases.Executing, "", "host:host-01", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.st.MoveCase(ctx, id, cases.Checking, cases.ByAct, "", "flotillad", "on mini: done"); err != nil {
+	if err := f.st.MoveCase(ctx, id, cases.Checking, cases.ByAct, "", "flotillad", "on host-01: done"); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -586,7 +586,7 @@ func (f *fixture) result(plan string) {
 
 func (f *fixture) holder(t *testing.T) string {
 	t.Helper()
-	h, err := f.st.LockHolder(context.Background(), "host:mini")
+	h, err := f.st.LockHolder(context.Background(), "host:host-01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +615,7 @@ func TestCheckVerifiedCloses(t *testing.T) {
 	}
 	var kj checkJSON
 	if err := json.Unmarshal([]byte(f.w.got[0].Env["FLOTILLA_CHECK"]), &kj); err != nil || kj.Verify != "backup_newer_than_execution" ||
-		kj.Action != "backup.rerun" || kj.Params["host"] != "mini" || kj.Since != c.StatusAt && kj.Since == "" {
+		kj.Action != "backup.rerun" || kj.Params["host"] != "host-01" || kj.Since != c.StatusAt && kj.Since == "" {
 		t.Fatalf("FLOTILLA_CHECK %q", f.w.got[0].Env["FLOTILLA_CHECK"])
 	}
 	since, _ := time.Parse(time.RFC3339Nano, kj.Since)
@@ -738,8 +738,8 @@ func (f *fixture) executing(t *testing.T, key string) (string, int64) {
 		t.Fatal(err)
 	}
 	pid, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun",
-		Params: map[string]string{"host": "mini"}, PlanHash: "h-" + key, Outcome: "auto", Autonomy: "auto"},
-		cases.Executing, "", "host:mini"+key, true)
+		Params: map[string]string{"host": "host-01"}, PlanHash: "h-" + key, Outcome: "auto", Autonomy: "auto"},
+		cases.Executing, "", "host:host-01"+key, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -785,7 +785,7 @@ func TestExecutingDeadline(t *testing.T) {
 	f := setup(t)
 	a, _ := f.executing(t, "#a")
 	b, pb := f.executing(t, "#b")
-	if err := f.st.StartHostExecution(ctx, store.HostExecution{ID: api.ExecutionID(b, pb), CaseID: b, PlanID: pb, Host: "mini",
+	if err := f.st.StartHostExecution(ctx, store.HostExecution{ID: api.ExecutionID(b, pb), CaseID: b, PlanID: pb, Host: "host-01",
 		Action: "backup.rerun", Approved: "auto", Envelope: []byte("{}")}); err != nil {
 		t.Fatal(err)
 	}
@@ -803,7 +803,7 @@ func TestExecutingDeadline(t *testing.T) {
 	if e := lastEvent(t, f, a); e.By != cases.ByTimer || !strings.Contains(e.Detail, "unknown: no result for backup.rerun within 45m0s") {
 		t.Fatalf("event %+v", e)
 	}
-	if h, _ := f.st.LockHolder(ctx, "host:mini#a"); h != a {
+	if h, _ := f.st.LockHolder(ctx, "host:host-01#a"); h != a {
 		t.Fatalf("an unknown case's target: held by %q, want %s", h, a)
 	}
 	if c := f.cs(t, b); c.Status != cases.Executing {
@@ -823,7 +823,7 @@ func TestReassignedCasePlansAgain(t *testing.T) {
 	if err := f.d.API.SetActionAutonomy(ctx, op, "test", "backup.rerun", "propose", "test"); err != nil {
 		t.Fatal(err)
 	}
-	f.result(`{"outcome": "plan", "action": "backup.rerun", "params": {"host": "mini"}, "detail": "age 30h"}`)
+	f.result(`{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}, "detail": "age 30h"}`)
 	id := f.handOver(t, "#r")
 	f.pass(t)
 	if c := f.cs(t, id); c.Status != cases.AwaitingApproval {
@@ -832,7 +832,7 @@ func TestReassignedCasePlansAgain(t *testing.T) {
 	if _, err := f.d.API.ApproveCase(ctx, op, "test", id); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.st.MoveCase(ctx, id, cases.Escalated, cases.ByAct, "", "flotillad", "on mini: refused"); err != nil {
+	if err := f.st.MoveCase(ctx, id, cases.Escalated, cases.ByAct, "", "flotillad", "on host-01: refused"); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.d.API.ReassignCase(ctx, op, "test", id, "try again"); err != nil {

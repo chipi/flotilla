@@ -47,7 +47,7 @@ func world(t *testing.T) (*api.Server, *httptest.Server) {
 	}
 	a := &api.Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Registry: reg,
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Callers: []api.Caller{{Name: "claude-x3", Role: api.RoleAgent, TokenSHA256: api.HashToken(agentTok)}}}
+		Callers: []api.Caller{{Name: "claude-worker-host", Role: api.RoleAgent, TokenSHA256: api.HashToken(agentTok)}}}
 	if err := st.AddUser(context.Background(), "vic", store.UserViewer, api.HashToken(viewerTok), "operator", "test", false); err != nil {
 		t.Fatal(err)
 	}
@@ -176,13 +176,13 @@ func TestAgentCalls(t *testing.T) {
 	evs, _ := a.Store.Events(context.Background(), 100)
 	seen := map[string]bool{}
 	for _, e := range evs {
-		if e.Via == "mcp" && e.Actor == "claude-x3" {
+		if e.Via == "mcp" && e.Actor == "claude-worker-host" {
 			seen[e.Kind] = true
 		}
 	}
 	for _, k := range []string{"mcp.status", "mcp.routine_dry_run", "run.dry_run", "run.requested", "mcp.routine_pause"} {
 		if !seen[k] {
-			t.Errorf("no %s event by claude-x3 via mcp (%v)", k, seen)
+			t.Errorf("no %s event by claude-worker-host via mcp (%v)", k, seen)
 		}
 	}
 }

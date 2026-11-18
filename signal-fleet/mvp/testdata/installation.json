@@ -1,40 +1,40 @@
 {
   "repo_map": {
-    "ORRERY": "example/orrery",
+    "SHOP": "example/shop",
     "LITELLM": "example/ops",
-    "PODCAST": "example/podcast",
-    "PLAYER": "example/podcast",
-    "GI-KG-VIEWER": "example/podcast",
+    "API": "example/api",
+    "PLAYER": "example/api",
+    "GI-KG-VIEWER": "example/api",
     "EVALS": "example/evals",
-    "HUMANCOPILOT": "example/site",
-    "DEVWHATEVEROPS": "example/site"
+    "SITE-A": "example/site",
+    "SITE-B": "example/site"
   },
   "instance_repo_map": {
-    "prod-edge": "example/podcast"
+    "prod-edge": "example/api"
   },
   "ops_repo": "example/ops",
   "glitchtip_org": "example",
-  "chain_repos": ["example/orrery"],
+  "chain_repos": ["example/shop"],
   "assistant_backend": "192.0.2.10:11435",
   "edge_instance": "prod-edge",
   "probe_log_selector": {
-    "podcast-pipeline": "service:podcast-pipeline", "podcast-api": "service:podcast-api",
+    "api-pipeline": "service:api-pipeline", "api-api": "service:api-api",
     "player-api": "service:player-api", "player-mcp": "service:player-mcp",
     "player-obs": "service:player-obs",
-    "orrery-prod": "service:orrery-web", "orrery-lab-api": "service:orrery-lab-api", "orrery-mcp": "service:orrery-mcp",
+    "shop-prod": "service:shop-web", "shop-lab-api": "service:shop-lab-api", "shop-mcp": "service:shop-mcp",
     "evals-inspector": "service:evals-inspector", "evals-web": "service:evals-web",
     "litellm-prod": "service:litellm-gateway",
-    "humancopilot-web": "app:websites", "devwhateverops-web": "app:websites"
+    "site-a-web": "app:websites", "site-b-web": "app:websites"
   },
   "probe_metric_job": {
     "player-mcp": "player_mcp", "player-obs": "player_obs",
-    "orrery-prod": "orrery", "orrery-lab-api": "orrery", "orrery-mcp": "orrery",
+    "shop-prod": "shop", "shop-lab-api": "shop", "shop-mcp": "shop",
     "evals-inspector": "evals-inspector", "evals-mcp": "evals-mcp",
-    "moss-dgx-transcription": "moss-app", "pyannote-dgx-diarization": "pyannote-app", "delivery": "delivery"
+    "moss-model-host-transcription": "moss-app", "pyannote-model-host-diarization": "pyannote-app", "delivery": "delivery"
   },
   "scrub": [
     {"pattern": "\\b(?:www\\.)?shop\\.example\\b", "replace": "example-shop.test"},
-    {"pattern": "\\bhomelab\\.local\\b", "replace": "<host>.local"},
+    {"pattern": "\\bhost-01\\.local\\b", "replace": "<host>.local"},
     {"pattern": "\\bprod-edge\\b", "replace": "prod-host"}
   ]
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Deploy flotilla on the homelab mini: one image tag, checked before and after, rolled back on red.
+# Deploy flotilla on the control-plane host: one image tag, checked before and after, rolled back on red.
 #
 #   deploy.sh sha-<7>          deploy that tag (the images CI pushed for that commit)
 #   deploy.sh --rollback       go back to the tag deployed before the current one
 #
-# Runs as the operator account (the production Docker engine is that account's; homelab ADR-0009).
-# Agents run it over SSH, like the homelab's other stacks (ADR-0002).
+# Runs as the operator account (the production Docker engine is that account's; the installation's ADR-0009).
+# Agents run it over SSH, like the installation's other stacks (ADR-0002).
 #
 # Layout under FLOTILLA_HOME (default ~/flotilla), none of it in git:
 #   repo/            a checkout of github.com/chipi/flotilla (the compose file comes from the commit

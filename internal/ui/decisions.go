@@ -11,7 +11,7 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-// The decision mix (fleet-eval-data ROADMAP T0.4): what a fleet decided per UTC day, counted the way
+// The decision mix (the installation's research roadmap): what a fleet decided per UTC day, counted the way
 // the fleet session's projects/triage-ops/decision_mix.py counts a dispositions.tsv, so the two agree
 // for a day: live stages only (propose, live; shadow left out), the four main dispositions and
 // "other", recurrences apart, a gate fired when its outcome is neither "passed" nor "n/a" (the

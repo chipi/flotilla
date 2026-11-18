@@ -9,7 +9,7 @@ maps each alias to an endpoint and a model, with the alias's capabilities:
               defaults: {tools: native, json: object, cost: reported}}
   aliases:
     triage-default: {endpoint: gateway, model: fleet-triage-pro}
-    local-dgx: {endpoint: gateway, model: NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4, tools: none, cost: zero}
+    local-model: {endpoint: gateway, model: NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4, tools: none, cost: zero}
   prices:          # for aliases with cost: table, per million tokens
     some-alias: {input_per_mtok: 0.14, output_per_mtok: 0.28}
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # standdown.sh HOST DURATION WHY: a deploy stand-down on a host (RFC-0004 §5.1 step 4). It is a hold
 # (flotilla hold host:HOST), so while it lasts policy defers every plan on that host; it ends on its own.
-# Taken by flotilla's own deploy.sh and by the homelab's mini-deploy.sh (a pre-pull hook), before they
+# Taken by flotilla's own deploy.sh and by an installation's own deploy script (a pre-pull hook), before they
 # change anything on the host.
 #
 # It never fails its caller: a deploy must not wait for flotilla (flotillad may be down, or be what is

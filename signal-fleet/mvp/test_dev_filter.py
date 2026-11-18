@@ -1,8 +1,8 @@
-"""python3 test_dev_filter.py: an error from a dev environment never becomes a GitHub issue (fleet-eval-data
+"""python3 test_dev_filter.py: an error from a dev environment never becomes a GitHub issue (the installation's research repo
 ROADMAP T0.1; operator 2026-11-16).
 
-A dev build runs a branch's unmerged code (orrery's GlitchTip project orrery-dev: environment=dev, a `worktree`
-tag holding the branch, no release). Its errors were filed in example/orrery as `bug` + actionable and routed to
+A dev build runs a branch's unmerged code (shop's GlitchTip project shop-dev: environment=dev, a `worktree`
+tag holding the branch, no release). Its errors were filed in example/shop as `bug` + actionable and routed to
 bugfix, which fixed main, where the code does not exist: both wrong fixes of phase A (#651, #659) came from there.
 The poll leaves dev projects out (test_units TestSubstrateGlitchTipProjects); filing refuses one that gets through.
 """
@@ -53,14 +53,14 @@ class DevEnvironment(unittest.TestCase):
         return filing.file_or_update(_sig(fp, project), {"title": "t", "body": "b", "labels": ["bug", "area:x"]}, "bug")
 
     def test_a_dev_error_is_refused_and_nothing_is_written(self):
-        out = self.file("glitchtip:ORRERY-DEV-T", "orrery-dev")
+        out = self.file("glitchtip:SHOP-DEV-T", "shop-dev")
         self.assertTrue(out.startswith("REFUSED"), out)
         self.assertEqual(self.posts, [])
         with open(self.path) as f:
             self.assertEqual(f.read(), "")
 
     def test_a_production_error_is_unchanged(self):
-        out = self.file("glitchtip:ORRERY-PROD-25", "orrery-prod")
+        out = self.file("glitchtip:SHOP-PROD-25", "shop-prod")
         self.assertTrue(out.startswith("CREATED") or out.startswith("FILED"), out)
         p = self.posts[-1]
         self.assertIn("bug", p["labels"])
@@ -68,10 +68,10 @@ class DevEnvironment(unittest.TestCase):
         self.assertIn("routable", p["body"])
 
     def test_which_signals_are_dev(self):
-        yes = [("glitchtip:ORRERY-DEV-13", "orrery-dev"), ("glitchtip:PODCAST-PIPELINE-DEV-1I", "podcast-pipeline-dev"),
+        yes = [("glitchtip:SHOP-DEV-13", "shop-dev"), ("glitchtip:API-PIPELINE-DEV-1I", "api-pipeline-dev"),
                ("glitchtip:PLAYER-DEV-4", "player-dev")]
-        no = [("glitchtip:ORRERY-PROD-25", "orrery-prod"), ("glitchtip:ORRERY-1O", "orrery"),
-              ("glitchtip:DEVWHATEVEROPS-WEB-3", "devwhateverops-web"), ("grafana:abc", "")]
+        no = [("glitchtip:SHOP-PROD-25", "shop-prod"), ("glitchtip:SHOP-1O", "shop"),
+              ("glitchtip:SITE-B-WEB-3", "site-b-web"), ("grafana:abc", "")]
         for fp, project in yes:
             self.assertTrue(filing.is_dev_signal(_sig(fp, project)), fp)
         for fp, project in no:
@@ -79,9 +79,9 @@ class DevEnvironment(unittest.TestCase):
 
 
     def test_a_grafana_alert_is_never_dev(self):
-        # a decision, not a side effect: dev environments run no Grafana alerting (homelab review of T0.1),
+        # a decision, not a side effect: dev environments run no Grafana alerting (ops review of T0.1),
         # so only GlitchTip signals are classed dev, even when an alert's project label ends in -dev
-        sig = _sig("grafana:abc123", "orrery-dev")
+        sig = _sig("grafana:abc123", "shop-dev")
         sig["source"] = "grafana"
         self.assertFalse(filing.is_dev_signal(sig))
 

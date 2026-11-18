@@ -1,7 +1,7 @@
 """bugfix/stepone.py: RFC-0013 §1, step one, advisory: what the base has of what the error says is missing.
 
 Before any model, on the worktree the fix already has, at the base commit, it records facts on the chain; it never
-closes a case (operator, 2026-11-17). Two rounds of close rules closed real bugs (homelab's reviews of 444a153 and
+closes a case (operator, 2026-11-17). Two rounds of close rules closed real bugs (the ops repo's reviews of 444a153 and
 0731108: an AttributeError on `get`, `undefined is not a function`, `items.map`, a NameError whose name is defined in
 another file, i.e. a missing import, a computed name, a name only in a test, a doc or a generated file), while the cases
 it was built for, dev-branch errors such as #651 and #659, are already left out by intake (`is_dev`) and by triage.

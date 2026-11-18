@@ -23,7 +23,7 @@ import rerun_backup  # noqa: E402
 import verify_backup  # noqa: E402
 
 common.REGISTRY = os.environ["FLOTILLA_REGISTRY"]
-CASE = {"id": "case-1", "kind": "failed_backup", "target": "host:mini"}
+CASE = {"id": "case-1", "kind": "failed_backup", "target": "host:backup-01"}
 # the rerun reported done at 2026-11-14T10:31:00Z (1794652260), as flotillad writes the time
 SINCE = "2026-11-14T10:31:00.123456789Z"
 SINCE_S = 1794652260.123456789
@@ -79,14 +79,14 @@ class TestVerify(unittest.TestCase):
 
 class TestMonitor(unittest.TestCase):
     def test_detect(self):
-        self.assertEqual(backup_monitor.detect(11.5, 20, "host:mini"), [])
-        self.assertEqual(backup_monitor.detect(20.0, 20, "host:mini"), [], "at the threshold, not above it")
-        d = backup_monitor.detect(20.4, 20, "host:mini")
-        self.assertEqual([(x["kind"], x["target"]) for x in d], [("failed_backup", "host:mini")])
+        self.assertEqual(backup_monitor.detect(11.5, 20, "host:backup-01"), [])
+        self.assertEqual(backup_monitor.detect(20.0, 20, "host:backup-01"), [], "at the threshold, not above it")
+        d = backup_monitor.detect(20.4, 20, "host:backup-01")
+        self.assertEqual([(x["kind"], x["target"]) for x in d], [("failed_backup", "host:backup-01")])
         self.assertIn("20.4h", d[0]["detail"])
-        self.assertEqual(d[0]["title"], "The newest offsite backup on mini is 20 hours old", "the case's title (G3)")
-        self.assertIn("30 days", backup_monitor.detect(None, 20, "host:mini")[0]["detail"])
-        self.assertEqual(backup_monitor.detect(None, 20, "host:mini")[0]["title"], "No successful off-box backup on mini in 30 days")
+        self.assertEqual(d[0]["title"], "The newest offsite backup on backup-01 is 20 hours old", "the case's title (G3)")
+        self.assertIn("30 days", backup_monitor.detect(None, 20, "host:backup-01")[0]["detail"])
+        self.assertEqual(backup_monitor.detect(None, 20, "host:backup-01")[0]["title"], "No successful off-box backup on backup-01 in 30 days")
 
 
 class TestMeasure(unittest.TestCase):
@@ -94,7 +94,7 @@ class TestMeasure(unittest.TestCase):
 
     def test_cycle_is_the_median_gap(self):
         day = 86400
-        # the mini's 14 days of 2026-11-15, near enough: daily, one 23.8 h and one 24.2 h
+        # the host's 14 days of 2026-11-15, near enough: daily, one 23.8 h and one 24.2 h
         times = [i * day for i in range(12)] + [12 * day - 720, 13 * day]
         self.assertAlmostEqual(common.cycle_hours(times + times), 24.0, places=1)
         self.assertIsNone(common.cycle_hours([0, day]), "two successes are not a cycle")
@@ -104,7 +104,7 @@ class TestMeasure(unittest.TestCase):
         m = backup_monitor.measure(25.4, 25, 24.02, "shadow", a)["measure"]
         self.assertEqual((m["value"], m["threshold"], m["cycle_hours"], m["source"]["key"]), (25.4, 25, 24.02, "pre_shadow"))
         self.assertEqual(backup_monitor.measure(27.0, 26, None, "propose", a)["measure"]["source"]["key"], "pre")
-        d = backup_monitor.detect(25.4, 25, "host:mini", {"measure": m})
+        d = backup_monitor.detect(25.4, 25, "host:backup-01", {"measure": m})
         self.assertEqual(d[0]["data"]["measure"]["value"], 25.4)
 
 
@@ -114,7 +114,7 @@ class TestDecide(unittest.TestCase):
 
     def test_plan_in_shadow_above_25h(self):
         out = rerun_backup.decide(CASE, self.a, "shadow", 25.4)
-        self.assertEqual((out["outcome"], out["action"], out["params"]), ("plan", ACTION, {"host": "mini"}))
+        self.assertEqual((out["outcome"], out["action"], out["params"]), ("plan", ACTION, {"host": "backup-01"}))
         self.assertIn("backup_age_above(25h): holds", out["detail"])
         self.assertIn("not_running: the host's to check", out["detail"])
 
@@ -130,7 +130,7 @@ class TestDecide(unittest.TestCase):
         self.assertEqual(rerun_backup.decide(CASE, self.a, "shadow", None)["outcome"], "plan")
 
     def test_escalates_what_it_cannot_act_on(self):
-        self.assertEqual(rerun_backup.decide({"kind": "memory_growth", "target": "host:mini"}, self.a, "shadow", 30)["outcome"], "escalate")
+        self.assertEqual(rerun_backup.decide({"kind": "memory_growth", "target": "host:backup-01"}, self.a, "shadow", 30)["outcome"], "escalate")
         self.assertEqual(rerun_backup.decide({"kind": "failed_backup", "target": "container:x"}, self.a, "shadow", 30)["outcome"], "escalate")
         odd = dict(self.a, pre_shadow=["backup_age_above(20h)", "disk_free_above(10)"])
         self.assertEqual(rerun_backup.decide(CASE, odd, "shadow", 30)["outcome"], "escalate")
@@ -186,7 +186,7 @@ class TestRuns(unittest.TestCase):
         plan = os.path.join(tempfile.mkdtemp(), "plan.json")
         env = {"PATH": os.environ["PATH"], "VM_URL": f"http://127.0.0.1:{self.srv.server_port}", "BACKUP_INSTANCE": "backup-01",
                "BACKUP_ACTION": ACTION, "BACKUP_METRIC": METRIC,
-               "BACKUP_TARGET": "host:mini", "FLOTILLA_PLAN_FILE": plan, "FLEETD_STAGE": "shadow",
+               "BACKUP_TARGET": "host:backup-01", "FLOTILLA_PLAN_FILE": plan, "FLEETD_STAGE": "shadow",
                "FLOTILLA_REGISTRY": common.REGISTRY, **(extra or {})}
         p = subprocess.run([sys.executable, os.path.join(HERE, name)], env=env, capture_output=True, text=True, timeout=30)
         out = None

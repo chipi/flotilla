@@ -9,7 +9,7 @@
 The hand-kept part (the summary, notes, sections, and the maps by area and by service) is llms.config.json
 at the repo root; every listed doc's name and one-line purpose come from the doc itself (its first heading
 and the first sentence of its first paragraph, with its **Status:** when it has one). The same script
-serves agentic-ai-homelab and flotilla; only the config differs. Stdlib only.
+serves an ops repo and flotilla; only the config differs. Stdlib only.
 
 Config: {"title", "summary", "notes": [str], "max_bytes", "purposes": {path: note}, "sections": [section]};
 "purposes" replaces a globbed doc's generated purpose where its first sentence says too little. A section is
@@ -200,7 +200,7 @@ def section_lines(path, notes=True):
                 continue
             body.append(nxt.strip())
         note = sentence(" ".join(body)) if body and notes else ""
-        name = plain(m.group(2)).split(" (", 1)[0]   # "9. LiteLLM (mini `:4001` · …)" -> "9. LiteLLM"
+        name = plain(m.group(2)).split(" (", 1)[0]   # "9. LiteLLM (host `:4001` · …)" -> "9. LiteLLM"
         out.append(f"- [{name}]({path}#{a})" + (f": {note}" if note else ""))
     return out
 

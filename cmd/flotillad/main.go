@@ -64,7 +64,7 @@ type Config struct {
 	OTLPTracesURL string `yaml:"otlp_traces_url"`
 	// VictoriaLogs, which the UI reads for a run's and a fleet's log lines; empty = the UI shows none
 	VLogsURL string `yaml:"vlogs_url"`
-	// each host's metrics instance in VictoriaMetrics (node exporter), for its load on the UI: {mini: homelab}
+	// each host's metrics instance in VictoriaMetrics (node exporter), for its load on the UI: {host-01: example}
 	HostMetrics map[string]string `yaml:"host_metrics"`
 	// when the UI's morning brief is written each day, HH:MM in timezone (default 07:00)
 	BriefAt string `yaml:"brief_at"`
@@ -148,7 +148,7 @@ func loadConfig(path string) (*Config, error) {
 		errs = append(errs, errors.New("specs_dir, state_dir and callers_file are required"))
 	}
 	if c.Environment == "" {
-		errs = append(errs, errors.New("environment is required (the homelab label: operations)"))
+		errs = append(errs, errors.New("environment is required (the installation label: operations)"))
 	}
 	if c.UIListen != "" && c.UIHost == "" {
 		errs = append(errs, errors.New("ui_listen needs ui_host: the one Host the UI answers (flotilla.<tailnet>)"))

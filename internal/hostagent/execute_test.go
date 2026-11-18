@@ -25,7 +25,7 @@ import (
 func realHost(t *testing.T, pub ed25519.PublicKey, ceiling string) (*hostexec.Executor, string) {
 	t.Helper()
 	dir := t.TempDir()
-	cfg, err := hostcfg.Parse([]byte(fmt.Sprintf(`{"host": "mini", "user": "_flotilla", "ceiling": %q,
+	cfg, err := hostcfg.Parse([]byte(fmt.Sprintf(`{"host": "host-01", "user": "_flotilla", "ceiling": %q,
 	  "signing_keys": {"k1": %q},
 	  "actions": {"host.true": {"argv": ["/bin/true"], "params": {"host": {"kind": "this_host"}}, "per_hour": 5, "timeout": "10s"}}}`,
 		ceiling, base64.StdEncoding.EncodeToString(pub))))
@@ -45,13 +45,13 @@ func realHost(t *testing.T, pub ed25519.PublicKey, ceiling string) (*hostexec.Ex
 	return hostexec.New(db, audit, cfg, hostexec.ExecRunner{}, hostexec.LocalChecker{Run: hostexec.ExecRunner{}}), filepath.Join(dir, "audit.jsonl")
 }
 
-// decidedCase puts a case on host:mini through planned to executing, as policy (auto) or an operator
+// decidedCase puts a case on host:host-01 through planned to executing, as policy (auto) or an operator
 // (approver) would.
 func decidedCase(t *testing.T, st *store.Store, approver string) string {
 	t.Helper()
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "x/host:mini/" + approver}
-	id, _, err := st.OpenCase(ctx, store.NewCase{Kind: "test_kind", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "test", "")
+	k := store.Key{Kind: "target", Value: "x/host:host-01/" + approver}
+	id, _, err := st.OpenCase(ctx, store.NewCase{Kind: "test_kind", Target: "host:host-01", Keys: []store.Key{k}, Canonical: k}, "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,8 +61,8 @@ func decidedCase(t *testing.T, st *store.Store, approver string) string {
 	if approver != "" {
 		outcome, to = policy.Propose, cases.AwaitingApproval
 	}
-	if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "host.true", Params: map[string]string{"host": "mini"},
-		PlanHash: "h", Outcome: outcome, Autonomy: outcome}, to, "", "host:mini", true); err != nil {
+	if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "host.true", Params: map[string]string{"host": "host-01"},
+		PlanHash: "h", Outcome: outcome, Autonomy: outcome}, to, "", "host:host-01", true); err != nil {
 		t.Fatal(err)
 	}
 	if approver != "" {
@@ -86,8 +86,8 @@ func TestRealExecution(t *testing.T) {
 	pub, key, _ := ed25519.GenerateKey(rand.Reader)
 	w.api.Exec = &api.Executions{Link: w.link, Key: key, KeyID: "k1"}
 	x, auditPath := realHost(t, pub, "propose")
-	run(t, w.agent(t, "mini", x))
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	run(t, w.agent(t, "host-01", x))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 
 	// approved by an operator, within the host's ceiling (propose): runs; the case goes to checking
 	id := decidedCase(t, w.api.Store, "user:ada")
@@ -111,7 +111,7 @@ func TestRealExecution(t *testing.T) {
 		t.Fatalf("flotillad's chain head %s, the host's %s", rec.ChainHead, x.ChainHead())
 	}
 	// the audit (`flotilla host audit`): the host's real log against flotillad's real record
-	xs, _ := w.api.Store.HostExecutions(ctx, "mini")
+	xs, _ := w.api.Store.HostExecutions(ctx, "host-01")
 	var recs []hostaudit.Record
 	for _, e := range xs {
 		recs = append(recs, hostaudit.Record{ID: e.ID, Status: e.Status})
@@ -130,8 +130,8 @@ func TestHostCeilingWins(t *testing.T) {
 	pub, key, _ := ed25519.GenerateKey(rand.Reader)
 	w.api.Exec = &api.Executions{Link: w.link, Key: key, KeyID: "k1"}
 	x, _ := realHost(t, pub, "propose")
-	run(t, w.agent(t, "mini", x))
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	run(t, w.agent(t, "host-01", x))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	id := decidedCase(t, w.api.Store, "")
 	w.api.SendExecutions(ctx)
 	w.api.Exec.Wait()
@@ -152,8 +152,8 @@ func TestUnacceptedKey(t *testing.T) {
 	otherPub, _, _ := ed25519.GenerateKey(rand.Reader)
 	w.api.Exec = &api.Executions{Link: w.link, Key: key, KeyID: "k1"}
 	x, _ := realHost(t, otherPub, "propose")
-	run(t, w.agent(t, "mini", x))
-	waitFor(t, "the agent to connect", connected(w, "mini"))
+	run(t, w.agent(t, "host-01", x))
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	id := decidedCase(t, w.api.Store, "user:ada")
 	w.api.SendExecutions(ctx)
 	w.api.Exec.Wait()

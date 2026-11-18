@@ -116,7 +116,7 @@ func (s *Store) LockHolder(ctx context.Context, target string) (string, error) {
 	return id, err
 }
 
-// Hold stops automatic and proposed actions on a host ("host:mini") or a target until a time
+// Hold stops automatic and proposed actions on a host ("host:backup-01") or a target until a time
 // (RFC-0004 §5.1 step 4, `flotilla hold`).
 type Hold struct {
 	ID        int64   `json:"id"`

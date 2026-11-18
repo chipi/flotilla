@@ -30,7 +30,7 @@ def new_trace_id():
 def trace_triage(signal, disp, usage=None, latency_s=0.0, trace_id=None):
     pk = os.environ.get("LANGFUSE_PUBLIC_KEY")
     sk = os.environ.get("LANGFUSE_SECRET_KEY")
-    host = os.environ.get("LANGFUSE_HOST", "http://homelab:4000").rstrip("/")
+    host = os.environ.get("LANGFUSE_HOST", "http://localhost:4000").rstrip("/")
     if not (pk and sk):
         print("  langfuse: no creds — skipping")
         return

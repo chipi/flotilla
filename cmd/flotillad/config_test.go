@@ -43,21 +43,21 @@ func TestCaseTimersConfig(t *testing.T) {
 // G9 and G11: the slack section needs the host endpoint, the pins and the UI's address; brief_at is HH:MM.
 func TestSlackAndBriefConfig(t *testing.T) {
 	hosts := "hosts: {listen: ':8487', ca_dir: /ca, server_names: [f]}\n"
-	good := "slack: {connector_host: mini, team_id: T0001, ui_url: 'https://f', users: {U0MARKO1: marko}, daily_cap: 5}\n"
+	good := "slack: {connector_host: host-01, team_id: T0001, ui_url: 'https://f', users: {U0OPER1: ada}, daily_cap: 5}\n"
 	c, err := load(t, hosts+good+"brief_at: '06:30'\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Slack.Users["U0MARKO1"] != "marko" || c.Slack.Cap() != 5 || c.BriefAt != "06:30" {
+	if c.Slack.Users["U0OPER1"] != "ada" || c.Slack.Cap() != 5 || c.BriefAt != "06:30" {
 		t.Fatalf("parsed: %+v %q", c.Slack, c.BriefAt)
 	}
 	for what, extra := range map[string]string{
 		"slack without hosts":   good,
-		"no pinned user":        hosts + "slack: {connector_host: mini, team_id: T0001, ui_url: 'https://f'}\n",
-		"a user id that is not": hosts + "slack: {connector_host: mini, team_id: T0001, ui_url: 'https://f', users: {marko: marko}}\n",
-		"a cap over 100":        hosts + "slack: {connector_host: mini, team_id: T0001, ui_url: 'https://f', users: {U0MARKO1: marko}, daily_cap: 500}\n",
+		"no pinned user":        hosts + "slack: {connector_host: host-01, team_id: T0001, ui_url: 'https://f'}\n",
+		"a user id that is not": hosts + "slack: {connector_host: host-01, team_id: T0001, ui_url: 'https://f', users: {ada: ada}}\n",
+		"a cap over 100":        hosts + "slack: {connector_host: host-01, team_id: T0001, ui_url: 'https://f', users: {U0OPER1: ada}, daily_cap: 500}\n",
 		"brief_at not HH:MM":    "brief_at: 7am\n",
-		"no connector host":     hosts + "slack: {team_id: T0001, ui_url: 'https://f', users: {U0MARKO1: marko}}\n",
+		"no connector host":     hosts + "slack: {team_id: T0001, ui_url: 'https://f', users: {U0OPER1: ada}}\n",
 	} {
 		if _, err := load(t, extra); err == nil {
 			t.Errorf("%s: accepted", what)
@@ -72,18 +72,18 @@ func TestSlackAndBriefConfig(t *testing.T) {
 // url and remote; one identity per worker.
 func TestRemoteWorkersConfig(t *testing.T) {
 	hosts := "hosts: {listen: ':8487', ca_dir: /ca, server_names: [f]}\n"
-	c, err := load(t, hosts+"workers:\n  bugfix: {remote: w-bugfix-x3}\n  ops: {url: 'http://o:8081', token_file: /t}\n")
+	c, err := load(t, hosts+"workers:\n  bugfix: {remote: w-bugfix-worker-host}\n  ops: {url: 'http://o:8081', token_file: /t}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Workers["bugfix"].Remote != "w-bugfix-x3" || c.Workers["ops"].URL == "" {
+	if c.Workers["bugfix"].Remote != "w-bugfix-worker-host" || c.Workers["ops"].URL == "" {
 		t.Fatalf("parsed: %+v", c.Workers)
 	}
 	for what, extra := range map[string]string{
-		"remote without hosts": "workers:\n  bugfix: {remote: w-bugfix-x3}\n",
-		"not a w- identity":    hosts + "workers:\n  bugfix: {remote: x3}\n",
-		"remote and a url":     hosts + "workers:\n  bugfix: {remote: w-bugfix-x3, url: 'http://b:8081'}\n",
-		"one identity twice":   hosts + "workers:\n  a: {remote: w-a-x3}\n  b: {remote: w-a-x3}\n",
+		"remote without hosts": "workers:\n  bugfix: {remote: w-bugfix-worker-host}\n",
+		"not a w- identity":    hosts + "workers:\n  bugfix: {remote: worker-host}\n",
+		"remote and a url":     hosts + "workers:\n  bugfix: {remote: w-bugfix-worker-host, url: 'http://b:8081'}\n",
+		"one identity twice":   hosts + "workers:\n  a: {remote: w-a-worker-host}\n  b: {remote: w-a-worker-host}\n",
 		"neither":              "workers:\n  bugfix: {}\n",
 	} {
 		if _, err := load(t, extra); err == nil {

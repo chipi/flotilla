@@ -19,13 +19,13 @@ func TestHostLog(t *testing.T) {
 	clock := time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)
 	s := &Server{Log: slog.New(slog.NewJSONHandler(&buf, nil)), Now: func() time.Time { return clock }}
 	b := budget{}
-	s.hostLog(context.Background(), "mini", &b, hostwire.LogBody{At: clock, Level: "WARN", Msg: strings.Repeat("x", 3000),
-		Attrs: map[string]string{"execution": "e1", "host": "dgx"}})
+	s.hostLog(context.Background(), "host-01", &b, hostwire.LogBody{At: clock, Level: "WARN", Msg: strings.Repeat("x", 3000),
+		Attrs: map[string]string{"execution": "e1", "host": "model-host"}})
 	var first map[string]any
 	if err := json.Unmarshal([]byte(strings.SplitN(buf.String(), "\n", 2)[0]), &first); err != nil {
 		t.Fatal(err)
 	}
-	if first["msg"] != "host log" || first["host"] != "mini" || first["level"] != "WARN" || len(first["line"].(string)) != hostLogText ||
+	if first["msg"] != "host log" || first["host"] != "host-01" || first["level"] != "WARN" || len(first["line"].(string)) != hostLogText ||
 		first["a_execution"] != "e1" {
 		t.Fatalf("the line as logged: %v", first)
 	}
@@ -33,14 +33,14 @@ func TestHostLog(t *testing.T) {
 		t.Error("an agent's attribute may not stand in for the host's name")
 	}
 	for i := 0; i < hostLogPerMinute+5; i++ {
-		s.hostLog(context.Background(), "mini", &b, hostwire.LogBody{Level: "INFO", Msg: "line"})
+		s.hostLog(context.Background(), "host-01", &b, hostwire.LogBody{Level: "INFO", Msg: "line"})
 	}
 	if n := strings.Count(buf.String(), `"msg":"host log"`); n != hostLogPerMinute {
 		t.Fatalf("%d lines logged in a minute, want %d", n, hostLogPerMinute)
 	}
 	clock = clock.Add(time.Minute)
-	s.hostLog(context.Background(), "mini", &b, hostwire.LogBody{Level: "INFO", Msg: "next minute"})
-	if !strings.Contains(buf.String(), `"msg":"host log lines dropped","host":"mini","dropped":6`) || !strings.Contains(buf.String(), `"line":"next minute"`) {
+	s.hostLog(context.Background(), "host-01", &b, hostwire.LogBody{Level: "INFO", Msg: "next minute"})
+	if !strings.Contains(buf.String(), `"msg":"host log lines dropped","host":"host-01","dropped":6`) || !strings.Contains(buf.String(), `"line":"next minute"`) {
 		t.Fatalf("the dropped count and the next minute's line: %s", buf.String()[len(buf.String())-400:])
 	}
 }

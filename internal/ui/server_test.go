@@ -61,7 +61,7 @@ func setupWith(t *testing.T, routines []*spec.Routine) *fixture {
 	}
 	a := &api.Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Log: log, Registry: reg,
 		Callers: append([]api.Caller{{Name: "operator", Role: api.RoleOperator, TokenSHA256: api.HashToken(opTok)},
-			{Name: "claude-homelab", Role: api.RoleAgent, TokenSHA256: api.HashToken(agentTok)}},
+			{Name: "claude-example", Role: api.RoleAgent, TokenSHA256: api.HashToken(agentTok)}},
 			api.WorkerCallers(map[string]string{"triage": workerTok})...)}
 	u := &Server{API: a, Host: host, Log: log}
 	ts := httptest.NewServer(u.Handler())

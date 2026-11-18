@@ -24,7 +24,7 @@ func signals(t *testing.T, s *Store, id string) int {
 
 // A detection that repeats the case's last signal exactly is counted on the case, not written as an event,
 // both while the case is open (attached) and after it closed as a shadow plan (absorbed). New data, or a
-// detection without data, is still an event. (orrery #656's case gained an event every hour, 2026-11-16.)
+// detection without data, is still an event. (shop #656's case gained an event every hour, 2026-11-16.)
 func TestRepeatedDetectionsAreCounted(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
@@ -77,8 +77,8 @@ func TestRepeatedDetectionsAreCounted(t *testing.T) {
 func TestOpenCaseRepeats(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
-	k := Key{Kind: "target", Value: "failed_backup/host:mini"}
-	nc := NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []Key{k}, Canonical: k, Data: `{"age_h":27}`}
+	k := Key{Kind: "target", Value: "failed_backup/host:backup-01"}
+	nc := NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []Key{k}, Canonical: k, Data: `{"age_h":27}`}
 	id, _, _ := s.OpenCase(ctx, nc, "ops/backup-monitor", "")
 	_, _, _ = s.OpenCase(ctx, nc, "ops/backup-monitor", "")
 	nc.Data = `{"age_h":28}`

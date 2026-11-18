@@ -95,7 +95,7 @@ func TestStopCancelsTheFleetsRunInFlight(t *testing.T) {
 		t.Fatalf("stop: %d", c)
 	}
 	r := waitRun(t, st, runID)
-	if r.Status != store.StatusCancelled || r.Detail != "cancelled: claude-homelab, fleet triage STOPped" || r.SpendUSD != 0.3 {
+	if r.Status != store.StatusCancelled || r.Detail != "cancelled: claude-example, fleet triage STOPped" || r.SpendUSD != 0.3 {
 		t.Fatalf("the run: status %q detail %q spend %v", r.Status, r.Detail, r.SpendUSD)
 	}
 	if got := br.cancelled(); len(got) != 1 || got[0] != runID {
@@ -111,7 +111,7 @@ func TestStopCancelsTheFleetsRunInFlight(t *testing.T) {
 	ev, _ := st.Events(context.Background(), 10)
 	found := false
 	for _, e := range ev {
-		if e.Kind == "run.cancel" && e.Actor == "claude-homelab" && e.Subject == "triage/cycle" && e.Via == "api" {
+		if e.Kind == "run.cancel" && e.Actor == "claude-example" && e.Subject == "triage/cycle" && e.Via == "api" {
 			found = true
 		}
 	}

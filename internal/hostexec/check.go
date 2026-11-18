@@ -22,8 +22,8 @@ var launchdStateRe = regexp.MustCompile(`(?m)^\s*state = (.+)$`)
 func (c LocalChecker) Check(ctx context.Context, p hostcfg.Pre) (bool, string, error) {
 	switch p.Kind {
 	case "launchd_not_running":
-		// launchctl print reads a job's state without root (checked on the mini, macOS 15.7.7: the
-		// operator's account read system/com.homelab.db-backup, "state = not running").
+		// launchctl print reads a job's state without root (checked on the host, macOS 15.7.7: the
+		// operator's account read system/com.example.db-backup, "state = not running").
 		label := p.Args["label"]
 		if !launchdLabelRe.MatchString(label) {
 			return false, "", fmt.Errorf("launchd label %q", label)

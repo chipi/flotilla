@@ -3,9 +3,9 @@
 The replay is the first shadow case, case-20261114-6983646f65 (2026-11-14 23:45Z to 2026-11-15 03:54Z).
 The public repo holds no production cases, so the test builds its timeline from its numbers: opened at
 20.1 h, a detection absorbed every 10 minutes up to 24.1 h, cleared at 03:54Z. With FLOTILLA_EVAL_DATA set
-(the private fleet-eval-data's projects/flotilla-case-review) it also replays the case itself, frozen from
-the mini. Either way each detection gets the measure the new monitor would have sent: the age and
-threshold from its own words ("backup 20.1h old, above 20h") and the cycle measured on the mini on
+(the installation's research repo's projects/flotilla-case-review) it also replays the case itself, frozen from
+the host. Either way each detection gets the measure the new monitor would have sent: the age and
+threshold from its own words ("backup 20.1h old, above 20h") and the cycle measured on the host on
 2026-11-15 (14 successes, median 24.02 h).
 """
 import copy
@@ -34,7 +34,7 @@ CASE_ID = "case-20261114-6983646f65"
 
 
 def built_case():
-    """The case's timeline as the mini recorded it, from its numbers."""
+    """The case's timeline as the host recorded it, from its numbers."""
     events = [{"kind": "case.detected", "actor": "ops/backup-monitor", "detail": "run r0: backup 20.1h old, above 20h"},
               {"kind": "case.handed_over", "actor": "ops/backup-monitor", "by": "detector", "from": "detected", "to": "handed_over"},
               {"kind": "case.planned", "actor": "ops/rerun-backup", "by": "act", "from": "handed_over", "to": "planned"},
@@ -45,7 +45,7 @@ def built_case():
         events.append({"kind": "signal.absorbed", "actor": "ops/backup-monitor", "detail": f"run r: backup {age:.1f}h old, above 20h"})
         age += 10 / 60
     events.append({"kind": "incident.cleared", "actor": "ops/backup-monitor", "detail": "the monitor no longer reports it"})
-    return {"case": {"id": CASE_ID, "kind": "failed_backup", "target": "host:mini", "status": "closed",
+    return {"case": {"id": CASE_ID, "kind": "failed_backup", "target": "host:backup-01", "status": "closed",
                      "resolution": "shadow_plan_recorded", "opened_at": "2026-11-14T23:45:03Z",
                      "closed_at": "2026-11-14T23:45:19Z"}, "events": events, "plans": []}
 
@@ -81,7 +81,7 @@ class FakeAPI:
         self.notes.append((case_id, text))
 
 
-def synth(case_id, kind="failed_backup", target="host:mini", resolution="resolved_itself", closed="2026-11-14T10:00:00Z",
+def synth(case_id, kind="failed_backup", target="host:backup-01", resolution="resolved_itself", closed="2026-11-14T10:00:00Z",
           events=None, **extra):
     c = {"id": case_id, "kind": kind, "target": target, "status": "closed", "resolution": resolution,
          "opened_at": "2026-11-14T08:00:00Z", "closed_at": closed}

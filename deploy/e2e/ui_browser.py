@@ -1,4 +1,4 @@
-"""The UI in a real browser (ADR-0014): Chromium on the UI network, through a TLS front (Caddy, as the homelab
+"""The UI in a real browser (ADR-0014): Chromium on the UI network, through a TLS front (Caddy, as the installation
 runs it) to flotillad's UI listener. run.sh starts both:
 
   docker run --rm --network e2e-ui -v deploy/e2e:/e2e:ro local/flotilla-e2e-browser:<tag> \

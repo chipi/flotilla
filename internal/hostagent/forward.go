@@ -9,7 +9,7 @@ import (
 )
 
 // Forwarder sends the agent's own log lines to flotillad over its connection, so they reach the
-// homelab's logs with flotillad's (G5, G4: on the mini the agent's log file is outside the containers
+// the installation's logs with flotillad's (G5, G4: on the host the agent's log file is outside the containers
 // that are collected). It wraps the agent's handler: every record still goes to the file; records at
 // Info and above are also queued, and a connected session drains the queue. A full queue drops the
 // newest line and counts it, so logging never blocks the agent.

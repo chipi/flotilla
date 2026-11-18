@@ -7,13 +7,13 @@
 #   4. re-apply the oracle FRESH (harness edits to it are discarded), run → grade
 # Grade PASS iff every FAIL_TO_PASS now passes AND every PASS_TO_PASS still passes.
 #
-# Usage:  ./run.sh bugs/orrery-335-mission-event-merge.json claude
+# Usage:  ./run.sh bugs/shop-335-mission-event-merge.json claude
 set -euo pipefail
 export NODE_OPTIONS="--max-old-space-size=4096"   # drop harness's broken --require preload
 
 BUG_JSON="$1"; HARNESS="$2"
 ROOT="$HOME/.bugfix-fleet/bakeoff"
-SRC="$ROOT/orrery-src"; WT="$ROOT/orrery"
+SRC="$ROOT/shop-src"; WT="$ROOT/shop"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 jqr(){ jq -r "$1" "$BUG_JSON"; }
@@ -170,7 +170,7 @@ python3 "$HERE/langfuse_push.py" "$ID" "$HARNESS" "$MODEL" "$VERDICT" "${COST:-0
 # workforce metrics → VictoriaMetrics (dashboard fuel; BAKEOFF_VM_URL="" disables).
 # cost is an UPPER-BOUND estimate (cache-blind: max-input × in-rate + out × out-rate);
 # Langfuse holds the precise per-episode picture.
-VMU="${BAKEOFF_VM_URL:-http://homelab:8428}"
+VMU="${BAKEOFF_VM_URL:-http://localhost:8428}"
 if [ -n "$VMU" ]; then
   VSHORT=$(echo "$VERDICT" | grep -qi "^PASS" && echo pass || echo fail)
   ECOST=$(awk -v i="${INTOK:-0}" -v o="${OUTTOK:-0}" 'BEGIN{printf "%.6f", i*4.35e-7 + o*8.7e-7}')

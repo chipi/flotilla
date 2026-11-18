@@ -66,7 +66,7 @@ func newServer(t *testing.T, mod func(*spec.Routine)) *Server {
 	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"triage": okRunner{}}}
 	return &Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "test", Registry: reg,
 		Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
-		Callers: append([]Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-homelab", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}},
+		Callers: append([]Caller{{Name: "operator", Role: RoleOperator, TokenSHA256: HashToken(opTok)}, {Name: "claude-example", Role: RoleAgent, TokenSHA256: HashToken(agentTok)}},
 			WorkerCallers(map[string]string{"triage": workerTok})...)}
 }
 
@@ -128,7 +128,7 @@ func TestAgentCanMakeThingsSafer(t *testing.T) {
 		t.Fatalf("pause: %d", c)
 	}
 	ev, _ := st.Events(context.Background(), 10)
-	if len(ev) < 2 || ev[0].Actor != "claude-homelab" {
+	if len(ev) < 2 || ev[0].Actor != "claude-example" {
 		t.Fatalf("the event log names the agent: %+v", ev)
 	}
 }
@@ -187,7 +187,7 @@ func TestManualRun(t *testing.T) {
 	}
 	for i := 0; i < 200; i++ {
 		if runs, _ := st.Runs(context.Background(), "triage/cycle", 1); len(runs) == 1 && runs[0].Status == "ok" {
-			if runs[0].Actor != "claude-homelab" || runs[0].Trigger != "manual" {
+			if runs[0].Actor != "claude-example" || runs[0].Trigger != "manual" {
 				t.Fatalf("recorded %+v", runs[0])
 			}
 			return

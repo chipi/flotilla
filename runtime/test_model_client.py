@@ -26,7 +26,7 @@ CONFIG = {
     },
     "aliases": {
         "triage-default": {"endpoint": "gateway", "model": "fleet-triage-pro"},
-        "local-dgx": {"endpoint": "gateway", "model": "NVFP4/Qwen3", "tools": "none", "cost": "zero"},
+        "local-model": {"endpoint": "gateway", "model": "NVFP4/Qwen3", "tools": "none", "cost": "zero"},
         "plain-model": {"endpoint": "plain", "model": "qwen"},
         "no-cost": {"endpoint": "gateway", "model": "m", "cost": "unknown"},
     },
@@ -68,7 +68,7 @@ class Load(unittest.TestCase):
         a = mc.load(CONFIG)
         self.assertEqual((a["triage-default"].tools, a["triage-default"].json_mode, a["triage-default"].cost),
                          ("native", "object", "reported"))
-        self.assertEqual((a["local-dgx"].tools, a["local-dgx"].cost), ("none", "zero"))
+        self.assertEqual((a["local-model"].tools, a["local-model"].cost), ("none", "zero"))
         self.assertEqual(a["triage-default"].base_url, "http://litellm:4000/v1")
 
     def test_refuses_bad_config(self):
@@ -88,7 +88,7 @@ class SharedFixtures(unittest.TestCase):
     def test_valid(self):
         with open(os.path.join(HERE, "testdata", "models-valid.json")) as f:
             a = mc.load(json.load(f))
-        self.assertEqual(sorted(a), ["local-dgx", "plain-model", "triage-default"])
+        self.assertEqual(sorted(a), ["local-model", "plain-model", "triage-default"])
 
     def test_invalid(self):
         with open(os.path.join(HERE, "testdata", "models-invalid.json")) as f:
@@ -249,7 +249,7 @@ class Chat(unittest.TestCase):
 
     def test_zero_table_unknown(self):
         c, _ = client(ok(), ok(), ok())
-        self.assertEqual(c.chat("local-dgx", [])["cost_usd"], 0.0)
+        self.assertEqual(c.chat("local-model", [])["cost_usd"], 0.0)
         r = c.chat("plain-model", [])
         self.assertAlmostEqual(r["cost_usd"], (10 * 0.14 + 5 * 0.28) / 1e6)
         self.assertEqual(c.chat("no-cost", [])["cost_source"], "unknown")
@@ -276,7 +276,7 @@ class Chat(unittest.TestCase):
         c.chat("plain-model", [], tools=tools)
         self.assertNotIn("tools", json.loads(tr.sent[1]["data"]), "json protocol: tools are the caller's prompt")
         with self.assertRaises(mc.ConfigError):
-            c.chat("local-dgx", [], tools=tools)
+            c.chat("local-model", [], tools=tools)
 
     def test_json_modes(self):
         c, tr = client(ok(), ok())
@@ -355,7 +355,7 @@ class Production(unittest.TestCase):
         c, _ = client()
         with self.assertRaises(mc.ConfigError) as cm:
             c.chat("nope", [])
-        self.assertIn("configured: local-dgx, no-cost, plain-model, triage-default", str(cm.exception))
+        self.assertIn("configured: local-model, no-cost, plain-model, triage-default", str(cm.exception))
 
     def test_generation_params_only_when_set(self):
         c, tr = client(ok(), ok())

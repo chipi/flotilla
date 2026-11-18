@@ -1,7 +1,7 @@
 """Correlation reads — the query-time join across VM / VL / VT (SIGNALS §6).
 
-For the first slice (orrery staleness), the correlated picture is:
-- VictoriaLogs: the orrery data-refresh cron logs (did it run? fail? when last?)
+For the first slice (shop staleness), the correlated picture is:
+- VictoriaLogs: the shop data-refresh cron logs (did it run? fail? when last?)
 - VictoriaMetrics: the staleness metric the alert fired on.
 The evidence bundle is what the triager reasons over — never a single signal.
 """
@@ -36,13 +36,13 @@ def evidence_for_orrery_staleness(signal, window="24h"):
         except Exception as e:  # correlation is best-effort
             ev["queries"][name] = f"<error: {e}>"
 
-    # orrery data-refresh logs in the window (the direct cause surface)
+    # shop data-refresh logs in the window (the direct cause surface)
     _try("refresh_logs", lambda: vl_query(
         f'app:orrery AND _time:{window} | sort by (_time) desc | limit 25'))
     # narrower: the refresh job if it's labelled
     _try("refresh_job_logs", lambda: vl_query(
         f'job:orrery-data-refresh AND _time:{window} | sort by (_time) desc | limit 25'))
-    # the metric the alert watches (orrery targets up?)
+    # the metric the alert watches (shop targets up?)
     _try("orrery_up", lambda: vm_query('up{job=~".*orrery.*"}'))
     # all of these are corroborating (none is the alert restated) — R5-1
     ev["corroborating"] = ["refresh_logs", "refresh_job_logs", "orrery_up"]

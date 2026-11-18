@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe("orChat → Langfuse", () => {
   it("through the gateway: the call carries the trace, and the fleet writes no duplicate", async () => {
-    const { orChat } = await load("http://homelab:4001/v1");
+    const { orChat } = await load("http://example:4001/v1");
     await orChat("k", "fleet-bugfix-pro", "s", "u", meta);
     expect(bodies[0].metadata).toEqual({ existing_trace_id: "trace-123", generation_name: "fix" });
     expect(generations).toHaveLength(0);

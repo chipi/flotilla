@@ -5,7 +5,7 @@
                                     <runs> runs, half at stage "live", and a "stage" control
   old_store.py check <path>         one JSON line: schema step, runs kept, stages left, controls
 
-On 2026-11-11 schema step 3 passed every test on small stores and failed on the mini's 835 runs
+On 2026-11-11 schema step 3 passed every test on small stores and failed on a production store's 835 runs
 inside flotillad's read-only container ("disk I/O error (6410)"). The e2e stack starts flotillad on
 this store, so a step that cannot run there fails the e2e, not the deploy.
 """

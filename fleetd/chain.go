@@ -45,7 +45,7 @@ type ChainConfig struct {
 	// suite command with one %s = JSON report path. Grading is DELTA-based
 	// (the bake-off protocol, production edition): real repos may carry
 	// pre-existing red — the gate is "no NEW failures + the new test passes",
-	// never naive "suite green". (Learned live: orrery main has 39 red.)
+	// never naive "suite green". (Learned live: the target repo's main has 39 red.)
 	SuiteCmd       string  `json:"suite_cmd"`
 	KickbackMax    int     `json:"kickback_max"`     // default 3 (measured)
 	ChainBudgetUSD float64 `json:"chain_budget_usd"` // est-$ cap per chain, default 3
@@ -191,15 +191,15 @@ func processIssue(cc ChainConfig, is ghIssue) {
 
 	// ── 1 · triage episode (leaf: the measured lab triager, base = main) ──
 	ticket := map[string]any{
-		"id":               fmt.Sprintf("real-orrery-%d", is.Number),
-		"repo":             "orrery",
+		"id":               fmt.Sprintf("real-shop-%d", is.Number),
+		"repo":             "shop",
 		"level":            "L0-real",
 		"source_url":       is.URL,
 		"description":      is.Title + "\n\n" + is.Body,
 		"oracle_test_file": "", "code_files": []string{},
 	}
 	tj, _ := json.Marshal(ticket)
-	tpath := filepath.Join(cc.BakeoffDir, "bugs", "real", fmt.Sprintf("real-orrery-%d.json", is.Number))
+	tpath := filepath.Join(cc.BakeoffDir, "bugs", "real", fmt.Sprintf("real-shop-%d.json", is.Number))
 	_ = os.MkdirAll(filepath.Dir(tpath), 0o755)
 	_ = os.WriteFile(tpath, tj, 0o644)
 
@@ -212,7 +212,7 @@ func processIssue(cc ChainConfig, is ghIssue) {
 		return
 	}
 	tjPath := filepath.Join(os.Getenv("HOME"), ".bugfix-fleet", "bakeoff", "results",
-		fmt.Sprintf("real-orrery-%d-triage", is.Number), "pi", "triage.json")
+		fmt.Sprintf("real-shop-%d-triage", is.Number), "pi", "triage.json")
 	traw, err := os.ReadFile(tjPath)
 	if err != nil {
 		led.add(is.Number, "stuck", "no triage verdict")
@@ -264,7 +264,7 @@ func processIssue(cc ChainConfig, is ghIssue) {
 		return
 	}
 
-	tid := fmt.Sprintf("real-orrery-%d", is.Number)
+	tid := fmt.Sprintf("real-shop-%d", is.Number)
 	manifest := filepath.Join(cc.BakeoffDir, "bugs", "triaged", tid+"-triaged.json")
 	priorTriage := tjPath
 	kbMax := cc.KickbackMax
@@ -434,7 +434,7 @@ func processIssue(cc ChainConfig, is ghIssue) {
 // deliver: commit; propose/live → push + PR (draft at propose) + reviewer gate.
 func deliver(cc ChainConfig, is ghIssue, branch string, led chainLedger) {
 	run(cc.Worktree, "git", "add", "-A")
-	run(cc.Worktree, "git", "-c", "user.email=fleet@homelab", "-c", "user.name=bugfix-fleet",
+	run(cc.Worktree, "git", "-c", "user.email=fleet@example", "-c", "user.name=bugfix-fleet",
 		"commit", "-q", "-m", fmt.Sprintf("fix #%d: %s\n\nAutomated fix by the bug-fix fleet (repro-first + delta-clean suite).", is.Number, is.Title))
 	if cc.Stage == "shadow" {
 		led.add(is.Number, "shipped-local", "branch="+branch+" (shadow: not pushed)")

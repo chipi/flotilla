@@ -2,9 +2,9 @@
 # flotillad's host endpoint over the tailnet under the worker's own identity), and this machine's egress
 # proxy. Nothing is published: the links dial out, the workers are reached by their links only.
 #
-# Today: the bugfix fleet's fix and push workers on the X3. Installation paths come from the environment
+# Today: the bugfix fleet's fix and push workers on a second machine. Installation paths come from the environment
 # (FLOTILLA_REMOTE/.env, never in git); README.md says what goes where. Run from a checkout of main
-# (the X3's rule: ~/deploy/flotilla), as a user unit.
+# (the second machine's rule: ~/deploy/flotilla), as a user unit.
 #
 # Networks:
 #   inner  internal: no route out. The workers, their links and the proxy.
@@ -60,7 +60,7 @@ services:
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker-bugfix.token
     volumes:
       - ${FLOTILLA_REMOTE:?set FLOTILLA_REMOTE}/secrets/worker-bugfix.token:/run/flotilla/worker-bugfix.token:ro
-      # no model key: its routines (intake, intake-podcast, pr-check) call no model; each fix routine has
+      # no model key: its routines (the intakes, pr-check) call no model; each fix routine has
       # its own worker below, holding only its own key
       - ${FLOTILLA_REMOTE}/scratch:/scratch
     networks: [inner]
@@ -78,18 +78,6 @@ services:
       - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix.token:/run/flotilla/worker.token:ro
       - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix.key:/run/flotilla/model-fix.key:ro
       - ${FLOTILLA_REMOTE}/scratch-fix:/scratch
-
-  worker-bugfix-fix-podcast:
-    <<: *bugfix-worker
-    container_name: flotilla-remote-worker-bugfix-fix-podcast
-    environment:
-      <<: *bugfix-env
-      FLOTILLA_WORKER: bugfix-fix-podcast
-      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
-    volumes:
-      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix-podcast.token:/run/flotilla/worker.token:ro
-      - ${FLOTILLA_REMOTE}/secrets/bugfix-model-fix-podcast.key:/run/flotilla/model-fix-podcast.key:ro
-      - ${FLOTILLA_REMOTE}/scratch-fix-podcast:/scratch
 
   worker-bugfix-act:
     <<: *hardening
@@ -149,18 +137,6 @@ services:
     volumes:
       - ${FLOTILLA_REMOTE}/state/w-bugfix-fix:/state
       - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix.token:/run/flotilla/worker.token:ro
-      - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
-
-  link-bugfix-fix-podcast:
-    <<: *link
-    container_name: flotilla-remote-link-bugfix-fix-podcast
-    command: ["link", "-identity", "w-bugfix-fix-podcast-${FLOTILLA_NODE}", "-worker", "bugfix-fix-podcast",
-              "-worker-url", "http://worker-bugfix-fix-podcast:8081", "-worker-token-file", "/run/flotilla/worker.token",
-              "-state", "/state", "-root", "/run/flotilla/root.crt",
-              "-addr", "${FLOTILLA_HOSTS_ADDR}", "-server-name", "${FLOTILLA_HOSTS_NAME}"]
-    volumes:
-      - ${FLOTILLA_REMOTE}/state/w-bugfix-fix-podcast:/state
-      - ${FLOTILLA_REMOTE}/secrets/worker-bugfix-fix-podcast.token:/run/flotilla/worker.token:ro
       - ${FLOTILLA_REMOTE}/root.crt:/run/flotilla/root.crt:ro
 
   egress:

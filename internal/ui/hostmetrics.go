@@ -13,7 +13,7 @@ import (
 )
 
 // A host's load from VictoriaMetrics (G4): node exporter's series for the host's metrics instance
-// (flotillad.yaml host_metrics: {mini: homelab}). macOS and Linux exporters name memory and the data
+// (flotillad.yaml host_metrics: {backup-01: example}). macOS and Linux exporters name memory and the data
 // volume differently; each query covers both. Containers come from cAdvisor where a host runs it.
 
 type vmResult struct {

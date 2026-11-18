@@ -26,7 +26,7 @@ func level(t *testing.T, s *Store) string {
 func decided(t *testing.T, s *Store, key, to string) string {
 	t.Helper()
 	id := plannedOn(t, s, key)
-	if _, err := s.ApplyPlan(context.Background(), rec(id), to, "", "host:mini"+key, true); err != nil {
+	if _, err := s.ApplyPlan(context.Background(), rec(id), to, "", "host:backup-01"+key, true); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -75,7 +75,7 @@ func TestAutomaticDemotion(t *testing.T) {
 	// nothing ran and nothing was proposed.
 	actionAt(t, s, "auto")
 	id = plannedOn(t, s, "#refused")
-	if _, err := s.ApplyPlan(ctx, rec(id), cases.Escalated, "", "host:mini#refused", false); err != nil {
+	if _, err := s.ApplyPlan(ctx, rec(id), cases.Escalated, "", "host:backup-01#refused", false); err != nil {
 		t.Fatal(err)
 	}
 	if l := level(t, s); l != "auto" {

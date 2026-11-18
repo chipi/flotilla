@@ -1,6 +1,6 @@
 """End-to-end probe of signal -> correlate -> triage (no action).
 
-Uses the live orrery-staleness signal if firing, else a synthetic one, pulls the
+Uses the live shop-staleness signal if firing, else a synthetic one, pulls the
 real correlated evidence, and runs the triager. Prints the structured disposition.
 """
 import json
@@ -10,11 +10,11 @@ import sources
 import triage
 
 SYNTHETIC = {
-    "fingerprint": "grafana:synthetic-orrery-stale",
+    "fingerprint": "grafana:synthetic-shop-stale",
     "source": "grafana",
-    "alertname": "Orrery launch data stale (no refresh in 7h)",
-    "labels": {"alertname": "Orrery launch data stale"},
-    "summary": "synthetic — orrery data refresh alarm; verify against evidence",
+    "alertname": "Shop launch data stale (no refresh in 7h)",
+    "labels": {"alertname": "Shop launch data stale"},
+    "summary": "synthetic — shop data refresh alarm; verify against evidence",
     "startsAt": None, "raw": {},
 }
 

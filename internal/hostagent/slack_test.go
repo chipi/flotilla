@@ -34,7 +34,7 @@ func TestSlackConnectorOverTheLink(t *testing.T) {
 			defer ws.CloseNow()
 			<-sendClick
 			_ = ws.Write(r.Context(), websocket.MessageText, []byte(`{"envelope_id":"e1","type":"interactive","payload":{"type":"block_actions",
-				"team":{"id":"T0001"},"user":{"id":"U0MARKO"},"actions":[{"action_id":"approve","block_id":"flotilla","value":"n1"}]}}`))
+				"team":{"id":"T0001"},"user":{"id":"U0OPER"},"actions":[{"action_id":"approve","block_id":"flotilla","value":"n1"}]}}`))
 			_, _, _ = ws.Read(r.Context())
 			<-r.Context().Done()
 			return
@@ -61,19 +61,19 @@ func TestSlackConnectorOverTheLink(t *testing.T) {
 	relayed := make(chan hostwire.ApprovalBody, 1)
 	w := newWorld(t, func(l *hostlink.Server) {
 		l.OnApproval = func(_ context.Context, host string, b hostwire.ApprovalBody) hostwire.AnsweredBody {
-			if host != "mini" {
+			if host != "host-01" {
 				t.Errorf("relayed by %s", host)
 			}
 			relayed <- b
-			return hostwire.AnsweredBody{Nonce: b.Nonce, OK: true, Text: "approved by marko in Slack; it runs now"}
+			return hostwire.AnsweredBody{Nonce: b.Nonce, OK: true, Text: "approved by ada in Slack; it runs now"}
 		}
 	})
-	a := w.agent(t, "mini", &fakeExec{})
+	a := w.agent(t, "host-01", &fakeExec{})
 	a.Slack = slackconn.New("xoxb-bot", "xapp-app", "C0FLOTILLA", quiet)
 	a.Slack.API = slack.URL + "/api"
 	run(t, a)
-	waitFor(t, "the agent to connect", connected(w, "mini"))
-	if err := w.link.Notify("mini", hostwire.NotifyBody{Nonce: "n1", Case: "case-1", Title: "Backup late", Plan: "rerun on host:mini",
+	waitFor(t, "the agent to connect", connected(w, "host-01"))
+	if err := w.link.Notify("host-01", hostwire.NotifyBody{Nonce: "n1", Case: "case-1", Title: "Backup late", Plan: "rerun on host:host-01",
 		PlanHash: "abc", URL: "https://f/cases/case-1", Approvable: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestSlackConnectorOverTheLink(t *testing.T) {
 	})
 	close(sendClick)
 	b := <-relayed
-	if b != (hostwire.ApprovalBody{Nonce: "n1", Team: "T0001", User: "U0MARKO", Action: "approve"}) {
+	if b != (hostwire.ApprovalBody{Nonce: "n1", Team: "T0001", User: "U0OPER", Action: "approve"}) {
 		t.Fatalf("relayed: %+v", b)
 	}
 	waitFor(t, "the answer on the message", func() bool {
@@ -92,9 +92,9 @@ func TestSlackConnectorOverTheLink(t *testing.T) {
 		defer mu.Unlock()
 		var u map[string]any
 		_ = json.Unmarshal([]byte(update), &u)
-		return u["ts"] == "1.1" && strings.Contains(update, "approved by marko")
+		return u["ts"] == "1.1" && strings.Contains(update, "approved by ada")
 	})
-	if err := w.link.Notify("dgx", hostwire.NotifyBody{Nonce: "n2"}); err == nil {
+	if err := w.link.Notify("model-host", hostwire.NotifyBody{Nonce: "n2"}); err == nil {
 		t.Error("a notice to a host that is not connected was accepted")
 	}
 }

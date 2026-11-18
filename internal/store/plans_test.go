@@ -12,8 +12,8 @@ import (
 func plannedOn(t *testing.T, s *Store, key string) string {
 	t.Helper()
 	ctx := context.Background()
-	k := Key{Kind: "target", Value: "failed_backup/host:mini" + key}
-	id, _, err := s.OpenCase(ctx, NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []Key{k}, Canonical: k}, "m", "")
+	k := Key{Kind: "target", Value: "failed_backup/host:backup-01" + key}
+	id, _, err := s.OpenCase(ctx, NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []Key{k}, Canonical: k}, "m", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func plannedOn(t *testing.T, s *Store, key string) string {
 }
 
 func rec(id string) PlanRecord {
-	return PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun", Params: map[string]string{"host": "mini"},
+	return PlanRecord{CaseID: id, RunID: "r", Action: "backup.rerun", Params: map[string]string{"host": "backup-01"},
 		PlanHash: "h", Outcome: "auto", Autonomy: "auto", Reasons: []string{"ok"}}
 }
 
@@ -33,15 +33,15 @@ func TestLockLifecycle(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	a := plannedOn(t, s, "#a")
-	if _, err := s.ApplyPlan(ctx, rec(a), cases.Executing, "", "host:mini", true); err != nil {
+	if _, err := s.ApplyPlan(ctx, rec(a), cases.Executing, "", "host:backup-01", true); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.MoveCase(ctx, a, cases.Escalated, cases.ByTimer, "", "flotillad", "unknown")
-	if h, _ := s.LockHolder(ctx, "host:mini"); h != a {
+	if h, _ := s.LockHolder(ctx, "host:backup-01"); h != a {
 		t.Fatalf("after an unknown execution the lock is %q, want it held by %s", h, a)
 	}
 	_ = s.MoveCase(ctx, a, cases.Closed, cases.ByOperator, cases.OperatorResolved, "user:ada", "checked by hand")
-	if h, _ := s.LockHolder(ctx, "host:mini"); h != "" {
+	if h, _ := s.LockHolder(ctx, "host:backup-01"); h != "" {
 		t.Fatalf("a closed case holds the target: %s", h)
 	}
 }
@@ -51,10 +51,10 @@ func TestApplyPlanWithTheTargetLocked(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	a, b := plannedOn(t, s, "#a"), plannedOn(t, s, "#b")
-	if _, err := s.ApplyPlan(ctx, rec(a), cases.AwaitingApproval, "", "host:mini", true); err != nil {
+	if _, err := s.ApplyPlan(ctx, rec(a), cases.AwaitingApproval, "", "host:backup-01", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyPlan(ctx, rec(b), cases.Executing, "", "host:mini", true); !errors.Is(err, ErrLocked) {
+	if _, err := s.ApplyPlan(ctx, rec(b), cases.Executing, "", "host:backup-01", true); !errors.Is(err, ErrLocked) {
 		t.Fatalf("a second lock: %v", err)
 	}
 	if c, _ := s.Case(ctx, b); c.Status != cases.Planned {
@@ -64,7 +64,7 @@ func TestApplyPlanWithTheTargetLocked(t *testing.T) {
 		t.Fatalf("a refused plan was recorded: %+v", p)
 	}
 	// A move the table refuses rolls the plan back too.
-	if _, err := s.ApplyPlan(ctx, rec(b), cases.Checking, "", "host:mini", false); !errors.Is(err, ErrBadTransition) {
+	if _, err := s.ApplyPlan(ctx, rec(b), cases.Checking, "", "host:backup-01", false); !errors.Is(err, ErrBadTransition) {
 		t.Fatalf("planned -> checking: %v", err)
 	}
 	if p, _ := s.Plans(ctx, b); len(p) != 0 {
@@ -76,23 +76,23 @@ func TestCountsAndHolds(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	a := plannedOn(t, s, "#a")
-	_, _ = s.ApplyPlan(ctx, rec(a), cases.Executing, "", "host:mini", true)
+	_, _ = s.ApplyPlan(ctx, rec(a), cases.Executing, "", "host:backup-01", true)
 	_ = s.MoveCase(ctx, a, cases.Escalated, cases.ByAct, "", "ops-act-host", "failed")
 	now := time.Now()
-	n, err := s.Counts(ctx, "backup.rerun", "host:mini", "mini", now.Add(-time.Hour), now, 15*time.Minute)
+	n, err := s.Counts(ctx, "backup.rerun", "host:backup-01", "backup-01", now.Add(-time.Hour), now, 15*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n.TargetToday != 1 || n.HostHour != 1 || n.PlatformHour != 1 || n.FailedHour != 1 || n.HostNewCases != 1 {
 		t.Fatalf("counts %+v", n)
 	}
-	if n, _ := s.Counts(ctx, "other.action", "host:mini", "mini", now.Add(-time.Hour), now, 15*time.Minute); n.TargetToday != 0 {
+	if n, _ := s.Counts(ctx, "other.action", "host:backup-01", "backup-01", now.Add(-time.Hour), now, 15*time.Minute); n.TargetToday != 0 {
 		t.Fatalf("another action's executions counted: %+v", n)
 	}
-	if n, _ := s.Counts(ctx, "backup.rerun", "host:mini", "mini", now.Add(time.Minute), now.Add(2*time.Hour), time.Minute); n.TargetToday != 0 || n.HostHour != 0 || n.HostNewCases != 0 {
+	if n, _ := s.Counts(ctx, "backup.rerun", "host:backup-01", "backup-01", now.Add(time.Minute), now.Add(2*time.Hour), time.Minute); n.TargetToday != 0 || n.HostHour != 0 || n.HostNewCases != 0 {
 		t.Fatalf("old executions counted: %+v", n)
 	}
-	id, _ := s.AddHold(ctx, "host:mini", now.Add(time.Hour), "user:ada", "api", "disk")
+	id, _ := s.AddHold(ctx, "host:backup-01", now.Add(time.Hour), "user:ada", "api", "disk")
 	if hs, _ := s.Holds(ctx, now, false); len(hs) != 1 || hs[0].ID != id {
 		t.Fatalf("active holds %+v", hs)
 	}

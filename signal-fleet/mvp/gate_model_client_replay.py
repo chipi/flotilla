@@ -36,7 +36,7 @@ import urllib.error
 
 os.environ.setdefault("OPENROUTER_API_KEY", "replay-dummy")
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
-# every run on flotilla gets the installation's models section; the mini's names its aliases triage-pro
+# every run on flotilla gets the installation's models section; the host's names its aliases triage-pro
 # and triage-flash (models fleet-triage-pro, -flash). It must change nothing about triage's call.
 os.environ["FLOTILLA_MODELS"] = json.dumps({
     "endpoints": {"gateway": {"base_url": "http://litellm:4000/v1", "kind": "litellm", "key_env": "OPENROUTER_API_KEY",

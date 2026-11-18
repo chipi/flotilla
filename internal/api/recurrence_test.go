@@ -16,8 +16,8 @@ func TestPlanStateKnowsAVerifiedFixCameBack(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	open := func(key string) string {
-		k := store.Key{Kind: "target", Value: "failed_backup/host:mini" + key}
-		id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "m", "")
+		k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01" + key}
+		id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "m", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -27,8 +27,8 @@ func TestPlanStateKnowsAVerifiedFixCameBack(t *testing.T) {
 	for _, m := range []struct{ to, by, res string }{{cases.HandedOver, cases.ByDetector, ""}, {cases.Planned, cases.ByAct, ""}} {
 		_ = s.Store.MoveCase(ctx, fixed, m.to, m.by, m.res, "x", "")
 	}
-	if _, err := s.Store.ApplyPlan(ctx, store.PlanRecord{CaseID: fixed, Action: rerun, Params: map[string]string{"host": "mini"},
-		PlanHash: "h1", Outcome: policy.Auto, Autonomy: policy.Auto}, cases.Executing, "", "host:mini", true); err != nil {
+	if _, err := s.Store.ApplyPlan(ctx, store.PlanRecord{CaseID: fixed, Action: rerun, Params: map[string]string{"host": "backup-01"},
+		PlanHash: "h1", Outcome: policy.Auto, Autonomy: policy.Auto}, cases.Executing, "", "host:backup-01", true); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range []struct{ to, by, res string }{{cases.Checking, cases.ByAct, ""}, {cases.Closed, cases.ByCheck, cases.Verified}} {
@@ -38,7 +38,7 @@ func TestPlanStateKnowsAVerifiedFixCameBack(t *testing.T) {
 	}
 	again := open("#2")
 	c, _ := s.Store.Case(ctx, again)
-	st, err := s.planState(ctx, c, policy.Plan{CaseID: again, Action: rerun, Params: map[string]string{"host": "mini"}})
+	st, err := s.planState(ctx, c, policy.Plan{CaseID: again, Action: rerun, Params: map[string]string{"host": "backup-01"}})
 	if err != nil {
 		t.Fatal(err)
 	}

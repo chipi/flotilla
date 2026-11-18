@@ -43,11 +43,11 @@ func bads(fs []Finding) string {
 
 func TestCompareAgrees(t *testing.T) {
 	entries := append(ran("x1", "done"), ran("x2", "failed")...)
-	entries = append(entries, Entry{Event: Refused, ExecutionID: "x3", Status: "refused", Detail: "its limit"})
+	entries = append(entries, Entry{Event: Refused, ExecutionID: "x6", Status: "refused", Detail: "its limit"})
 	entries = append(entries, Entry{Event: Refused, ExecutionID: "forged-1", Status: "refused", Detail: "signature"})
 	entries = append(entries, ran("x4", "done")...) // flotillad lost the connection: it holds x4 as unknown
 	log, head := hostLog(t, entries...)
-	fs := Compare(log, []Record{{"x1", "done"}, {"x2", "failed"}, {"x3", "refused"}, {"x4", "unknown"}, {"x5", "not_sent"}}, head)
+	fs := Compare(log, []Record{{"x1", "done"}, {"x2", "failed"}, {"x6", "refused"}, {"x4", "unknown"}, {"x5", "not_sent"}}, head)
 	if Failed(fs) {
 		t.Fatalf("an agreeing log failed: %s", bads(fs))
 	}

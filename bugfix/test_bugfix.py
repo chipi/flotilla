@@ -137,8 +137,8 @@ class Intake(unittest.TestCase):
             return json.load(f)
 
     def test_the_case_kind_is_per_routine(self):
-        # ROADMAP B8: podcast_scraper's issues go to the pytest profile (fleets/bugfix/fix-podcast.yaml), whose
-        # routine takes a case kind of its own; orrery keeps code_bug, the default
+        # ROADMAP B8: api's issues go to the pytest profile (fleets/bugfix/fix-podcast.yaml), whose
+        # routine takes a case kind of its own; shop keeps code_bug, the default
         gh = FakeGitHub([issue(31, "ffprobe chokes on non-UTF-8", ["bug"])])
         self.addCleanup(gh.close)
         out = self.run_intake(gh, "--repo", "example/api", "--label", "bug", "--kind", "code_bug_python")
@@ -163,16 +163,16 @@ class Intake(unittest.TestCase):
 
     def test_an_issue_filed_from_a_dev_signal_is_not_a_case(self):
         """Issues triage filed from dev signals carry `bug`; their body names the signal
-        (actions.py: `fp: `glitchtip:ORRERY-DEV-13``), as #651 and #659 do. A production fingerprint stays a case."""
-        dev = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-DEV-13`)"
-        prod = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:ORRERY-PROD-25`)"
+        (actions.py: `fp: `glitchtip:SHOP-DEV-13``), as #651 and #659 do. A production fingerprint stays a case."""
+        dev = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:SHOP-DEV-13`)"
+        prod = "**Signal:** `TypeError: m.x is not a function` (source: glitchtip, fp: `glitchtip:SHOP-PROD-25`)"
         gh = FakeGitHub([issue(14, "prod", ["bug"], body=prod), issue(15, "dev", ["bug"], body=dev)])
         self.addCleanup(gh.close)
         out = self.run_intake(gh, "--repo", "example/shop", "--label", "bug")
         self.assertEqual([d["target"] for d in out["detections"]], ["repo:example/shop/issues/14"])
 
     def test_the_whole_report_stays_under_flotillads_limit(self):
-        # B8 (2026-11-16): podcast_scraper's 35 open bug issues at up to 7,500 bytes each made a report over the
+        # B8 (2026-11-16): api's 35 open bug issues at up to 7,500 bytes each made a report over the
         # 64 KiB flotillad accepts (internal/envelope MaxBytes): refused, no case opened, the run still "ok"
         big = [issue(n, f"bug {n}", ["bug"], body="x" * 9000) for n in range(1, 51)]
         gh = FakeGitHub(big)
@@ -211,7 +211,7 @@ class Intake(unittest.TestCase):
             intake.MAX_REPORT = old
 
     def test_fifty_long_non_ascii_titles_still_fit(self):
-        # homelab's review (2026-11-16): JSON's \\uXXXX escapes and the title in two places could fill the report even
+        # the ops repo's review (2026-11-16): JSON's \\uXXXX escapes and the title in two places could fill the report even
         # with the bodies cut away, and the whole intake failed
         gh = FakeGitHub([issue(n, "é" * 256, ["bug"], body="ü" * 9000) for n in range(1, 51)])
         self.addCleanup(gh.close)

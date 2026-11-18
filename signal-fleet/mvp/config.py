@@ -20,7 +20,7 @@ def env(key, default=None, required=False):
 HOST = env("SF_HOST", "localhost")
 
 # the fleet's OWN identity as a telemetry PRODUCER — kept separate from the
-# monitored projects (dgx / orrery / podcast use dev|staging|prod). The fleet is
+# monitored projects (some projects use dev|staging|prod). The fleet is
 # its own application in its own environment so its traces/errors/metrics never
 # mix with the systems it watches.
 SF_ENV = env("SF_ENV", "operations")           # not dev/staging/prod

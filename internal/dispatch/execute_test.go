@@ -41,7 +41,7 @@ func (f *fixture) approvedRepo(t *testing.T, key string) (string, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.st.MoveCase(ctx, id, cases.Executing, cases.ByOperator, "", "user:marko", "approved"); err != nil {
+	if err := f.st.MoveCase(ctx, id, cases.Executing, cases.ByOperator, "", "user:ada", "approved"); err != nil {
 		t.Fatal(err)
 	}
 	return id, pid
@@ -246,14 +246,14 @@ func TestExecuteWaitsWhenBusyOrPaused(t *testing.T) {
 	g.withExecutor("repo.process_change")
 	g.result(`{"outcome": "executed"}`)
 	x, _ := g.approvedRepo(t, "#p")
-	if err := g.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:marko", "test"); err != nil {
+	if err := g.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:ada", "test"); err != nil {
 		t.Fatal(err)
 	}
 	g.pass(t)
 	if c := g.cs(t, x); c.Status != cases.Executing || g.w.runs() != 0 || lastEvent(t, g, x).Kind == executeStartedEvent {
 		t.Fatalf("paused: %+v, %d runs, %+v", c, g.w.runs(), lastEvent(t, g, x))
 	}
-	if err := g.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "0", "user:marko", "test"); err != nil {
+	if err := g.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "0", "user:ada", "test"); err != nil {
 		t.Fatal(err)
 	}
 	g.pass(t)
@@ -270,7 +270,7 @@ func TestExecuteSkippedRunGivesTheAttemptBack(t *testing.T) {
 	j := f.withExecutor("repo.process_change")
 	f.result(`{"outcome": "executed"}`)
 	id, pid := f.approvedRepo(t, "#s")
-	if err := f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:marko", "test"); err != nil {
+	if err := f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:ada", "test"); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.st.AddCaseEvent(ctx, id, executeStartedEvent, j.ID(), "plan "+itoa(pid)+" abcdef012345"); err != nil {
@@ -286,7 +286,7 @@ func TestExecuteSkippedRunGivesTheAttemptBack(t *testing.T) {
 	if started, _, _ := f.d.executeStarted(ctx, id, pid); started {
 		t.Fatal("a skipped run still counts as started")
 	}
-	_ = f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "0", "user:marko", "test")
+	_ = f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "0", "user:ada", "test")
 	f.pass(t)
 	if c := f.cs(t, id); c.Status != cases.Checking || f.w.runs() != 1 {
 		t.Fatalf("after: %+v, %d runs", c, f.w.runs())
@@ -300,7 +300,7 @@ func TestRepoActionDeadlineCountsFromTheStart(t *testing.T) {
 	f := setup(t)
 	j := f.withExecutor("repo.process_change")
 	id, pid := f.approvedRepo(t, "#d")
-	_ = f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:marko", "test")
+	_ = f.st.SetControl(ctx, "bugfix/open-pr", sched.KeyPaused, "1", "user:ada", "test")
 	f.now = f.now.Add(400 * time.Hour) // repo.process_change's timeout is 168h; + 15m grace
 	f.pass(t)
 	if c := f.cs(t, id); c.Status != cases.Executing {

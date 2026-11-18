@@ -108,7 +108,7 @@ async function main(): Promise<void> {
       `bugfix_fleet_issues_total ${bugs.length}`,
       ...Object.entries(areas).map(([a, c]) => `bugfix_fleet_issues_by_area{area="${a}"} ${c}`),
     ];
-    const url = process.env.METRICS_URL ?? "http://homelab:8428/api/v1/import/prometheus";
+    const url = process.env.METRICS_URL ?? "http://localhost:8428/api/v1/import/prometheus";
     await fetch(url, { method: "POST", body: lines.join("\n") + "\n" });
     console.error(`[metrics] pushed ${lines.length} series (${bugs.length} bugs) → VM`);
   } else if (cmd === "ship") {

@@ -23,7 +23,7 @@ func TestHostLoad(t *testing.T) {
 		_ = r.ParseForm()
 		q := r.PostFormValue("query")
 		queries = append(queries, q)
-		if !strings.Contains(q, `instance="homelab"`) || strings.Contains(q, "container_") {
+		if !strings.Contains(q, `instance="example"`) || strings.Contains(q, "container_") {
 			fmt.Fprint(w, `{"status":"success","data":{"result":[]}}`)
 			return
 		}
@@ -36,7 +36,7 @@ func TestHostLoad(t *testing.T) {
 	defer vmsrv.Close()
 	f := setup(t)
 	ctx := context.Background()
-	for _, h := range []string{"mini", "dgx"} {
+	for _, h := range []string{"backup-01", "model-host"} {
 		if _, err := f.st.AddEnrolment(ctx, h, "t-"+h, "user:ada", "test"); err != nil {
 			t.Fatal(err)
 		}
@@ -44,33 +44,33 @@ func TestHostLoad(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	f.ui.MetricsURL, f.ui.HostMetrics = vmsrv.URL, map[string]string{"mini": "homelab"}
-	// G10: mini's agent reported its config; dgx's (older) did not
-	if err := f.st.RecordHostContact(ctx, store.HostContact{Host: "mini", Connected: true, Version: "v", Ceiling: "propose", LastContact: time.Now(),
-		Allowlist: `[{"name":"backup.rerun","argv":["/usr/bin/sudo","-n","/bin/launchctl","kickstart","system/com.homelab.db-backup"],"per_hour":1,"timeout":"30m0s"}]`}); err != nil {
+	f.ui.MetricsURL, f.ui.HostMetrics = vmsrv.URL, map[string]string{"backup-01": "example"}
+	// G10: backup-01's agent reported its config; model-host's (older) did not
+	if err := f.st.RecordHostContact(ctx, store.HostContact{Host: "backup-01", Connected: true, Version: "v", Ceiling: "propose", LastContact: time.Now(),
+		Allowlist: `[{"name":"backup.rerun","argv":["/usr/bin/sudo","-n","/bin/launchctl","kickstart","system/com.example.db-backup"],"per_hour":1,"timeout":"30m0s"}]`}); err != nil {
 		t.Fatal(err)
 	}
 	ck := f.signin(f.vic)
-	if _, agent := f.do("GET", "/hosts/mini?tab=agent", ck, nil, nil); !strings.Contains(agent, "/bin/launchctl kickstart system/com.homelab.db-backup") || !strings.Contains(agent, "1 an hour") {
+	if _, agent := f.do("GET", "/hosts/backup-01?tab=agent", ck, nil, nil); !strings.Contains(agent, "/bin/launchctl kickstart system/com.example.db-backup") || !strings.Contains(agent, "1 an hour") {
 		t.Error("the Host page does not show the reported allowlist")
 	}
-	if _, agent := f.do("GET", "/hosts/dgx?tab=agent", ck, nil, nil); !strings.Contains(agent, "No allowlist reported.") {
+	if _, agent := f.do("GET", "/hosts/model-host?tab=agent", ck, nil, nil); !strings.Contains(agent, "No allowlist reported.") {
 		t.Error("an agent that reported no allowlist is not named")
 	}
 	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "42% · 42% · 42%") || !strings.Contains(page, "– · – · –") {
-		t.Error("the Hosts column: mini's load, dgx's dashes")
+		t.Error("the Hosts column: backup-01's load, model-host's dashes")
 	}
-	// mini was heard from just now
-	if _, page := f.do("GET", "/hosts/mini", ck, nil, nil); !strings.Contains(page, "last heard just now ·") {
+	// backup-01 was heard from just now
+	if _, page := f.do("GET", "/hosts/backup-01", ck, nil, nil); !strings.Contains(page, "last heard just now ·") {
 		t.Error(`a contact under a minute old reads "just now", not "just now ago"`)
 	}
-	_, page := f.do("GET", "/hosts/mini", ck, nil, nil)
+	_, page := f.do("GET", "/hosts/backup-01", ck, nil, nil)
 	for _, want := range []string{"CPU", "Memory", "Disk IO", "peak 61% at", "runs no cAdvisor"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the Host page has no %q", want)
 		}
 	}
-	if _, dgx := f.do("GET", "/hosts/dgx", ck, nil, nil); !strings.Contains(dgx, "host_metrics names no metrics instance for dgx") {
+	if _, mh := f.do("GET", "/hosts/model-host", ck, nil, nil); !strings.Contains(mh, "host_metrics names no metrics instance for model-host") {
 		t.Error("a host without a metrics instance does not say so")
 	}
 	found := false
@@ -85,12 +85,12 @@ func TestHostLoad(t *testing.T) {
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		lq = r.PostFormValue("query")
-		fmt.Fprintln(w, `{"_time":"2026-11-15T07:00:00Z","level":"WARN","msg":"host log","host":"mini","line":"the backup job is slow","service":"flotillad"}`)
+		fmt.Fprintln(w, `{"_time":"2026-11-15T07:00:00Z","level":"WARN","msg":"host log","host":"backup-01","line":"the backup job is slow","service":"flotillad"}`)
 	}))
 	defer vl.Close()
 	f.ui.LogsURL = vl.URL
-	_, logs := f.do("GET", "/hosts/mini?tab=logs&level=warn", ck, nil, nil)
-	if !strings.Contains(lq, `"host log" host:"mini"`) || !strings.Contains(lq, "warn") || !strings.Contains(logs, "the backup job is slow") {
+	_, logs := f.do("GET", "/hosts/backup-01?tab=logs&level=warn", ck, nil, nil)
+	if !strings.Contains(lq, `"host log" host:"backup-01"`) || !strings.Contains(lq, "warn") || !strings.Contains(logs, "the backup job is slow") {
 		t.Errorf("the Logs tab: query %q", lq)
 	}
 }
@@ -176,15 +176,15 @@ func TestRunTrace(t *testing.T) {
 func TestFeedbackAndNotes(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini"}
-	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "old")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "old")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
-	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun", Params: map[string]string{"host": "mini"},
-		PlanHash: "abcdef0123", Outcome: "shadow", Autonomy: "shadow", Reasons: []string{"r"}}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun", Params: map[string]string{"host": "backup-01"},
+		PlanHash: "abcdef0123", Outcome: "shadow", Autonomy: "shadow", Reasons: []string{"r"}}, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	op := f.addOperator()
@@ -232,16 +232,16 @@ func TestFeedbackAndNotes(t *testing.T) {
 func TestApproveBindsToThePlanShown(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini"}
-	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "old backup")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "old backup")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun",
-		Params: map[string]string{"host": "mini"}, PlanHash: "4f1c9a20b7d3e8c1", Outcome: "propose", Autonomy: "propose",
-		Reasons: []string{"autonomy: routine propose, action propose, host ceiling propose"}}, cases.AwaitingApproval, "", "host:mini", true); err != nil {
+		Params: map[string]string{"host": "backup-01"}, PlanHash: "4f1c9a20b7d3e8c1", Outcome: "propose", Autonomy: "propose",
+		Reasons: []string{"autonomy: routine propose, action propose, host ceiling propose"}}, cases.AwaitingApproval, "", "host:backup-01", true); err != nil {
 		t.Fatal(err)
 	}
 	op := f.addOperator()
@@ -330,8 +330,8 @@ func TestCaseRecurs(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	open := func(key string) string {
-		k := store.Key{Kind: "target", Value: "failed_backup/host:mini" + key}
-		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k, Title: "t"}, "m", "")
+		k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01" + key}
+		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k, Title: "t"}, "m", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -427,15 +427,15 @@ func TestWhatTheAgentRead(t *testing.T) {
 func TestShadowVerdictMeaning(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini#s"}
-	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k, Title: "t"}, "m", "")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01#s"}
+	id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k, Title: "t"}, "m", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "a", "")
-	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "backup.rerun", Params: map[string]string{"host": "mini"},
-		PlanHash: "h", Outcome: "shadow", Autonomy: "shadow", Would: "propose"}, cases.Closed, cases.ShadowPlan, "host:mini", false); err != nil {
+	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "backup.rerun", Params: map[string]string{"host": "backup-01"},
+		PlanHash: "h", Outcome: "shadow", Autonomy: "shadow", Would: "propose"}, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	ck, _ := f.csrfOf(f.addOperator())

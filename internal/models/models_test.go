@@ -59,7 +59,7 @@ func TestYAMLToRunJSON(t *testing.T) {
 endpoints:
   gateway: {base_url: "http://litellm:4000/v1", kind: litellm, key_env: OPENROUTER_API_KEY, defaults: {tools: native, json: object, cost: reported}}
 aliases:
-  local-dgx: {endpoint: gateway, model: qwen, tools: none, cost: zero}
+  local-model-host: {endpoint: gateway, model: qwen, tools: none, cost: zero}
 `
 	d := yaml.NewDecoder(strings.NewReader(src))
 	d.KnownFields(true)
@@ -78,7 +78,7 @@ aliases:
 	if err := json.Unmarshal([]byte(j), &back); err != nil {
 		t.Fatal(err)
 	}
-	a := back["aliases"]["local-dgx"]
+	a := back["aliases"]["local-model-host"]
 	if a["tools"] != "none" || a["cost"] != "zero" || a["model"] != "qwen" || a["json"] != nil {
 		t.Fatalf("alias in the run's JSON: %v (from %s)", a, j)
 	}

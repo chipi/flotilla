@@ -105,8 +105,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", action="append", required=True)
     ap.add_argument("--label", action="append", required=True)
-    # the case kind routes the case to its fix routine: code_bug for orrery's vitest profile (fix.yaml),
-    # code_bug_python for podcast_scraper's pytest profile (fix-podcast.yaml)
+    # the case kind routes the case to its fix routine: code_bug for shop's vitest profile (fix.yaml),
+    # code_bug_python for api's pytest profile (fix-podcast.yaml)
     ap.add_argument("--kind", default="code_bug")
     a = ap.parse_args(argv)
     api = os.environ.get("GITHUB_API", "https://api.github.com").rstrip("/")

@@ -180,7 +180,7 @@ type ledgerIn struct {
 }
 
 type holdIn struct {
-	Scope   string `json:"scope" jsonschema:"what to hold: host:<name> or a case target such as host:mini"`
+	Scope   string `json:"scope" jsonschema:"what to hold: host:<name> or a case target such as host:host-01"`
 	Minutes int    `json:"minutes" jsonschema:"how long, in minutes"`
 	Reason  string `json:"reason" jsonschema:"why"`
 }

@@ -15,7 +15,7 @@ import (
 // is the routine's business (the stale alert and the run record carry it), so only records flotillad
 // logs at ERROR are sent: its store, its listener, its config. dsnFile empty = off.
 //
-// One issue per message: the fingerprint is the log message alone, never its values (homelab
+// One issue per message: the fingerprint is the log message alone, never its values (the installation
 // GlitchTip rule "one error = one issue").
 func Errors(dsnFile, env, release string) (func(), error) {
 	if dsnFile == "" {

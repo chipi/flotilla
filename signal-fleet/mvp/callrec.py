@@ -5,7 +5,7 @@
       the issue it was given, the four keys, the ledger row it matched with the dimension it matched on, every GitHub
       call in order (method, path, payload, response or error), every clock reading in order, the ledger rows it
       wrote, and the result string. capture.record writes it under the decision's capture name, so one decision is one
-      name in both folders. fleet-eval-data's exact_filing_replay.py replays it.
+      name in both folders. the installation's research repo's exact_filing_replay.py replays it.
   results/sweeps/<UTC>Z.json                          one per stale sweep that ran: now, dry_run, the occurrences it
       read (count, last row, sha256 of the list: the rows themselves are dispositions.tsv's, append-only), the firing
       alert names, every GitHub call, and the summary.

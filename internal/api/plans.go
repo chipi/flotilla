@@ -156,7 +156,7 @@ func (s *Server) AddHold(ctx context.Context, c Caller, via, scope string, d tim
 	}
 	scope, reason = strings.TrimSpace(scope), strings.TrimSpace(reason)
 	if !strings.Contains(scope, ":") || strings.ContainsAny(scope, " \t\n") {
-		return 0, problem(400, "scope is host:<name> or a case target such as host:mini")
+		return 0, problem(400, "scope is host:<name> or a case target such as host:backup-01")
 	}
 	if d <= 0 || d > 30*24*time.Hour {
 		return 0, problem(400, "a hold lasts more than 0 and at most 30 days")
@@ -202,7 +202,7 @@ func (s *Server) holdAdd(w http.ResponseWriter, r *http.Request, c Caller) {
 		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]string{"error": `body: {"scope": "host:mini", "for": "2h", "reason": "..."}`})
+		writeJSON(w, 400, map[string]string{"error": `body: {"scope": "host:backup-01", "for": "2h", "reason": "..."}`})
 		return
 	}
 	d, err := time.ParseDuration(body.For)

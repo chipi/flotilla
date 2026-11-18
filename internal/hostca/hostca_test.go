@@ -41,11 +41,11 @@ func newPKI(t *testing.T, at ...time.Time) pki {
 		t.Fatal(err)
 	}
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
-	csr, err := HostRequest(key, "mini")
+	csr, err := HostRequest(key, "host-01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	host, err := inter.IssueHost(csr, "mini", when)
+	host, err := inter.IssueHost(csr, "host-01", when)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestChain(t *testing.T) {
 	p := newPKI(t)
 	name, fp, err := VerifyHost([]*x509.Certificate{p.host, p.inter.Cert}, p.root.Cert, now)
 	sum := sha256.Sum256(p.host.Raw)
-	if err != nil || name != "mini" || fp != hex.EncodeToString(sum[:]) {
+	if err != nil || name != "host-01" || fp != hex.EncodeToString(sum[:]) {
 		t.Fatalf("verify: %q %q %v", name, fp, err)
 	}
 	if !p.host.NotAfter.Equal(now.Add(HostValidity)) || p.inter.Cert.MaxPathLen != 0 || !p.inter.Cert.MaxPathLenZero {
@@ -74,20 +74,20 @@ func TestChain(t *testing.T) {
 func TestRefusals(t *testing.T) {
 	p := newPKI(t)
 	other := newPKI(t)
-	csr, _ := HostRequest(p.hostKey, "mini")
+	csr, _ := HostRequest(p.hostKey, "host-01")
 	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	ecCSR, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "mini"}}, ec)
+	ecCSR, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "host-01"}}, ec)
 	tampered := append([]byte(nil), csr...)
 	tampered[len(tampered)-1] ^= 1 // the signature's last byte
 	for name, c := range map[string]struct {
 		csr  []byte
 		host string
 	}{
-		"another host's request":   {csr, "dgx"},
-		"a bad host name":          {csr, "Mini;rm"},
-		"a request not Ed25519":    {ecCSR, "mini"},
-		"a tampered request":       {tampered, "mini"},
-		"not a request at all":     {[]byte("garbage"), "mini"},
+		"another host's request":   {csr, "model-host"},
+		"a bad host name":          {csr, "Host;rm"},
+		"a request not Ed25519":    {ecCSR, "host-01"},
+		"a tampered request":       {tampered, "host-01"},
+		"not a request at all":     {[]byte("garbage"), "host-01"},
 		"a request for a bad name": {must(HostRequest(p.hostKey, "a b")), "a b"},
 	} {
 		if _, err := p.inter.IssueHost(c.csr, c.host, now); err == nil {
@@ -135,7 +135,7 @@ func must(b []byte, err error) []byte {
 func mustIssue(t *testing.T, p pki, fake *CA) *x509.Certificate {
 	t.Helper()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
-	c, err := fake.IssueHost(must(HostRequest(key, "dgx")), "dgx", now)
+	c, err := fake.IssueHost(must(HostRequest(key, "model-host")), "model-host", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestTLS(t *testing.T) {
 	}
 	// certificates for the real clock (TLS checks time.Now)
 	_, hk, _ := ed25519.GenerateKey(rand.Reader)
-	hostCert, err := p.inter.IssueHost(must(HostRequest(hk, "mini")), "mini", time.Now())
+	hostCert, err := p.inter.IssueHost(must(HostRequest(hk, "host-01")), "host-01", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,12 +225,12 @@ func TestTLS(t *testing.T) {
 		return err
 	}
 	good := tls.Certificate{Certificate: [][]byte{hostCert.Raw, p.inter.Cert.Raw}, PrivateKey: hk}
-	if err := dial(good, "flotilla"); err != nil || <-got != "mini" {
+	if err := dial(good, "flotilla"); err != nil || <-got != "host-01" {
 		t.Fatalf("the agent's connection: %v", err)
 	}
 	other := newPKI(t, time.Now())
 	_, ok, _ := ed25519.GenerateKey(rand.Reader)
-	otherCert, _ := other.inter.IssueHost(must(HostRequest(ok, "mini")), "mini", time.Now())
+	otherCert, _ := other.inter.IssueHost(must(HostRequest(ok, "host-01")), "host-01", time.Now())
 	if err := dial(tls.Certificate{Certificate: [][]byte{otherCert.Raw, other.inter.Cert.Raw}, PrivateKey: ok}, "flotilla"); err == nil {
 		t.Error("another CA's agent connected")
 	} else {

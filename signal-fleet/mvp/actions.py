@@ -171,7 +171,7 @@ def signal_code_version(signal):
 
 def parse_utc(ts):
     """An ISO timestamp as an aware UTC datetime; None when absent or unparsable. No offset reads as UTC."""
-    # fractions dropped first: python 3.9's fromisoformat (the mini's) refuses GlitchTip's 1-5 digit ones
+    # fractions dropped first: python 3.9's fromisoformat (the host's) refuses GlitchTip's 1-5 digit ones
     if not isinstance(ts, str):
         return None
     v = ts.replace("Z", "+00:00")
@@ -207,7 +207,7 @@ def _md_text(value):
     return re.sub(r"([\[\]()<>!#\\*_|])", r"\\\1", _span_safe(value))
 
 
-# Any host: the permalinks real issues carry are http://<the mini's address>:8090/<project>/issues/<n>, which is not
+# Any host: the permalinks real issues carry are http://<the host's address>:8090/<project>/issues/<n>, which is not
 # config.GLITCHTIP_URL's host name, so pinning to that would drop them all
 _URL_UNSAFE = re.compile(r"[\x00-\x20\x7f\"<>()\[\]\\]|[^\x00-\x7f]")
 

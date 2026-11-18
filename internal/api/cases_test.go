@@ -11,8 +11,8 @@ import (
 func TestCasesAPI(t *testing.T) {
 	ts, st := server(t)
 	ctx := context.Background()
-	k := store.Key{Kind: "target", Value: "failed_backup/host:mini"}
-	id, _, _ := st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:mini", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "age 20.4h")
+	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01"}
+	id, _, _ := st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:backup-01", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", "age 20.4h")
 	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	c, out := call(t, ts, "GET", "/v1/cases", agentTok, "")
 	if c != 200 || len(out["cases"].([]any)) != 1 {

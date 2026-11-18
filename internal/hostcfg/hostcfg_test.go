@@ -8,7 +8,7 @@ import (
 
 func load(t *testing.T) *Config {
 	t.Helper()
-	c, err := Load("testdata/mini.json")
+	c, err := Load("testdata/host-01.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,16 +17,16 @@ func load(t *testing.T) *Config {
 
 func TestGoodConfig(t *testing.T) {
 	c := load(t)
-	if c.Host != "mini" || len(c.Keys()) != 1 || len(c.Actions) != 4 {
+	if c.Host != "host-01" || len(c.Keys()) != 1 || len(c.Actions) != 4 {
 		t.Fatalf("config %+v", c)
 	}
 }
 
 // The Slack connector section (G9): two absolute token files and a channel id, or it is refused.
 func TestSlackSection(t *testing.T) {
-	good, _ := os.ReadFile("testdata/mini.json")
+	good, _ := os.ReadFile("testdata/host-01.json")
 	with := func(slack string) string {
-		return strings.Replace(string(good), `"host": "mini",`, `"host": "mini", "slack": `+slack+`,`, 1)
+		return strings.Replace(string(good), `"host": "host-01",`, `"host": "host-01", "slack": `+slack+`,`, 1)
 	}
 	c, err := Parse([]byte(with(`{"bot_token_file": "/etc/flotilla-host/slack-bot.token", "app_token_file": "/etc/flotilla-host/slack-app.token", "channel": "C0123456789"}`)))
 	if err != nil || c.Slack == nil || c.Slack.Channel != "C0123456789" {
@@ -52,7 +52,7 @@ func TestSudoers(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"_flotilla ALL=(root) NOPASSWD: /bin/launchctl kickstart system/com.homelab.db-backup  # backup.rerun",
+		"_flotilla ALL=(root) NOPASSWD: /bin/launchctl kickstart system/com.example.db-backup  # backup.rerun",
 		"_flotilla ALL=(_dockerhost) NOPASSWD: /usr/local/bin/docker restart grafana  # container.restart",
 		"_flotilla ALL=(_dockerhost) NOPASSWD: /usr/local/bin/docker restart victoriametrics  # container.restart",
 		`_flotilla ALL=(root) NOPASSWD: /usr/bin/uptime ""  # host.uptime`,
@@ -75,26 +75,26 @@ func TestSudoers(t *testing.T) {
 
 func TestArgv(t *testing.T) {
 	c := load(t)
-	got, err := c.Argv("container.restart", map[string]string{"host": "mini", "name": "grafana"})
+	got, err := c.Argv("container.restart", map[string]string{"host": "host-01", "name": "grafana"})
 	if err != nil || strings.Join(got, " ") != "/usr/bin/sudo -n -u _dockerhost /usr/local/bin/docker restart grafana" {
 		t.Fatalf("argv %v %v", got, err)
 	}
-	got, err = c.Argv("logs.tail", map[string]string{"host": "mini", "file": "/tmp/com.homelab.db-backup.log"})
-	if err != nil || got[3] != "/tmp/com.homelab.db-backup.log" {
+	got, err = c.Argv("logs.tail", map[string]string{"host": "host-01", "file": "/tmp/com.example.db-backup.log"})
+	if err != nil || got[3] != "/tmp/com.example.db-backup.log" {
 		t.Fatalf("pattern argv %v %v", got, err)
 	}
 	for name, c2 := range map[string]struct {
 		action string
 		params map[string]string
 	}{
-		"not allowed here":         {"rm.everything", map[string]string{"host": "mini"}},
-		"another host":             {"backup.rerun", map[string]string{"host": "dgx"}},
-		"a missing parameter":      {"container.restart", map[string]string{"host": "mini"}},
-		"an extra parameter":       {"backup.rerun", map[string]string{"host": "mini", "force": "1"}},
-		"an enum value not listed": {"container.restart", map[string]string{"host": "mini", "name": "postgres"}},
-		"an enum value smuggled":   {"container.restart", map[string]string{"host": "mini", "name": "grafana victoriametrics"}},
-		"a pattern not matched":    {"logs.tail", map[string]string{"host": "mini", "file": "/etc/sudoers"}},
-		"a pattern partly matched": {"logs.tail", map[string]string{"host": "mini", "file": "/tmp/com.homelab.x.log/../../etc/passwd"}},
+		"not allowed here":         {"rm.everything", map[string]string{"host": "host-01"}},
+		"another host":             {"backup.rerun", map[string]string{"host": "model-host"}},
+		"a missing parameter":      {"container.restart", map[string]string{"host": "host-01"}},
+		"an extra parameter":       {"backup.rerun", map[string]string{"host": "host-01", "force": "1"}},
+		"an enum value not listed": {"container.restart", map[string]string{"host": "host-01", "name": "postgres"}},
+		"an enum value smuggled":   {"container.restart", map[string]string{"host": "host-01", "name": "grafana victoriametrics"}},
+		"a pattern not matched":    {"logs.tail", map[string]string{"host": "host-01", "file": "/etc/sudoers"}},
+		"a pattern partly matched": {"logs.tail", map[string]string{"host": "host-01", "file": "/tmp/com.example.x.log/../../etc/passwd"}},
 	} {
 		if _, err := c.Argv(c2.action, c2.params); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -104,7 +104,7 @@ func TestArgv(t *testing.T) {
 
 // Every rule of ADR-0006 §5 the config enforces, one bad config each.
 func TestBadConfigs(t *testing.T) {
-	good, _ := os.ReadFile("testdata/mini.json")
+	good, _ := os.ReadFile("testdata/host-01.json")
 	for name, c := range map[string]struct{ from, to string }{
 		"root as the user":            {`"user": "_flotilla"`, `"user": "root"`},
 		"no ceiling":                  {`"ceiling": "propose"`, `"ceiling": "max"`},
@@ -115,7 +115,7 @@ func TestBadConfigs(t *testing.T) {
 		"sudo with another option":    {`"/usr/bin/sudo", "-n", "/bin/launchctl"`, `"/usr/bin/sudo", "-n", "-E", "/bin/launchctl"`},
 		"sudo with -E, not -n":        {`"/usr/bin/sudo", "-n", "/bin/launchctl"`, `"/usr/bin/sudo", "-E", "/bin/launchctl"`},
 		"a relative command via sudo": {`"-n", "/bin/launchctl"`, `"-n", "launchctl"`},
-		"a wildcard, privileged":      {`"system/com.homelab.db-backup"`, `"system/com.homelab.*"`},
+		"a wildcard, privileged":      {`"system/com.example.db-backup"`, `"system/com.example.*"`},
 		"a space, privileged":         {`"kickstart"`, `"kickstart -k"`},
 		"a separator, privileged":     {`"kickstart"`, `"kickstart,print"`},
 		"a pattern, privileged":       {`"name": {"kind": "enum", "values": ["grafana", "victoriametrics"]}`, `"name": {"kind": "pattern", "pattern": "[a-z]+"}`},
@@ -124,13 +124,13 @@ func TestBadConfigs(t *testing.T) {
 		"an undeclared placeholder":   {`"{file}"`, `"{path}"`},
 		"a declared, unused param":    {`"{file}"`, `"/tmp/x"`},
 		"this_host substituted":       {`"restart", "{name}"`, `"restart", "{host}"`},
-		"a bad pattern":               {`"/tmp/com\\.homelab\\.[a-z-]+\\.log"`, `"(["`},
+		"a bad pattern":               {`"/tmp/com\\.example\\.[a-z-]+\\.log"`, `"(["`},
 		"no rate limit":               {`"per_hour": 1,`, `"per_hour": 0,`},
 		"no timeout":                  {`"timeout": "30m"`, `"timeout": "0s"`},
 		"an unknown field":            {`"per_hour": 1,`, `"per_hour": 1, "shell": true,`},
-		"an unknown precondition":     {`{"kind": "launchd_not_running", "args": {"label": "system/com.homelab.db-backup"}}`, `{"kind": "file_absent"}`},
-		"a precondition missing args": {`"args": {"label": "system/com.homelab.db-backup"}`, `"args": {"name": "system/com.homelab.db-backup"}`},
-		"a precondition, extra args":  {`"args": {"label": "system/com.homelab.db-backup"}`, `"args": {"label": "system/com.homelab.db-backup", "x": "y"}`},
+		"an unknown precondition":     {`{"kind": "launchd_not_running", "args": {"label": "system/com.example.db-backup"}}`, `{"kind": "file_absent"}`},
+		"a precondition missing args": {`"args": {"label": "system/com.example.db-backup"}`, `"args": {"name": "system/com.example.db-backup"}`},
+		"a precondition, extra args":  {`"args": {"label": "system/com.example.db-backup"}`, `"args": {"label": "system/com.example.db-backup", "x": "y"}`},
 	} {
 		body := strings.Replace(string(good), c.from, c.to, 1)
 		if body == string(good) {

@@ -85,7 +85,7 @@ func runLink(t *testing.T, l *Link) context.CancelFunc {
 
 func remoteWorld(t *testing.T) world {
 	return newWorld(t, func(s *hostlink.Server) {
-		s.Workers = map[string]string{"w-bugfix-x3": "bugfix"}
+		s.Workers = map[string]string{"w-bugfix-worker-host": "bugfix"}
 		s.Version = "v1"
 	})
 }
@@ -101,7 +101,7 @@ func TestRemoteRun(t *testing.T) {
 		t.Fatalf("not connected: %v", err)
 	}
 	local := &fakeLocal{}
-	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local))
+	runLink(t, w.workerLink(t, "w-bugfix-worker-host", "bugfix", "v1", local))
 	waitFor(t, "the link", r.Available)
 	res, err := r.Run(context.Background(), worker.Request{RunID: "r1", Routine: "bugfix/fix", TimeoutS: 5, Env: map[string]string{"A": "b"}})
 	if err != nil || res.Status != "ok" || res.OutputTail != "ran r1" {
@@ -111,7 +111,7 @@ func TestRemoteRun(t *testing.T) {
 		t.Fatalf("the local request: %+v", local.got[0])
 	}
 	st := w.link.WorkerStates()
-	if len(st) != 1 || !st[0].Connected || st[0].Version != "v1" || st[0].Identity != "w-bugfix-x3" {
+	if len(st) != 1 || !st[0].Connected || st[0].Version != "v1" || st[0].Identity != "w-bugfix-worker-host" {
 		t.Fatalf("states: %+v", st)
 	}
 }
@@ -120,7 +120,7 @@ func TestRemoteRun(t *testing.T) {
 // take runs, and a worker identity cannot speak as a host.
 func TestRemoteIdentityAndVersion(t *testing.T) {
 	w := remoteWorld(t)
-	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v0", &fakeLocal{}))
+	runLink(t, w.workerLink(t, "w-bugfix-worker-host", "bugfix", "v0", &fakeLocal{}))
 	waitFor(t, "the refusal", func() bool {
 		st := w.link.WorkerStates()
 		return len(st) == 1 && strings.Contains(st[0].Refused, "version v0")
@@ -131,9 +131,9 @@ func TestRemoteIdentityAndVersion(t *testing.T) {
 
 	// a host agent's identity sending worker_hello: its first frame must be hello
 	g := remoteWorld(t)
-	a := g.agent(t, "mini", &fakeExec{})
-	runLink(t, g.workerLink(t, "w-other-x3", "bugfix", "v1", &fakeLocal{})) // not a configured identity: a host path
-	runLink(t, &Link{Addr: g.addr, ServerName: "flotilla", Root: g.root.Cert, Identity: "mini", Worker: "bugfix", Version: "v1",
+	a := g.agent(t, "host-01", &fakeExec{})
+	runLink(t, g.workerLink(t, "w-other-worker-host", "bugfix", "v1", &fakeLocal{})) // not a configured identity: a host path
+	runLink(t, &Link{Addr: g.addr, ServerName: "flotilla", Root: g.root.Cert, Identity: "host-01", Worker: "bugfix", Version: "v1",
 		Key: a.Key, LoadChain: a.LoadChain, SaveChain: a.SaveChain, Local: &fakeLocal{}, Heartbeat: 200 * time.Millisecond, Log: quiet})
 	time.Sleep(500 * time.Millisecond)
 	if g.link.WorkerConnected("bugfix") {
@@ -146,7 +146,7 @@ func TestRemoteIdentityAndVersion(t *testing.T) {
 func TestRemoteLateResult(t *testing.T) {
 	w := remoteWorld(t)
 	local := &fakeLocal{block: make(chan struct{})}
-	l := w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local)
+	l := w.workerLink(t, "w-bugfix-worker-host", "bugfix", "v1", local)
 	runLink(t, l)
 	r := hostlink.RemoteRunner{S: w.link, Worker: "bugfix"}
 	waitFor(t, "the link", r.Available)
@@ -177,7 +177,7 @@ func TestRemoteLateResult(t *testing.T) {
 func TestRemoteTimeoutCancels(t *testing.T) {
 	w := remoteWorld(t)
 	local := &fakeLocal{block: make(chan struct{})}
-	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local))
+	runLink(t, w.workerLink(t, "w-bugfix-worker-host", "bugfix", "v1", local))
 	r := hostlink.RemoteRunner{S: w.link, Worker: "bugfix"}
 	waitFor(t, "the link", r.Available)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -194,7 +194,7 @@ func TestRemoteTimeoutCancels(t *testing.T) {
 func TestRemoteCancelStopsTheRunAtTheWorker(t *testing.T) {
 	w := remoteWorld(t)
 	local := &fakeLocal{block: make(chan struct{}), stop: make(chan struct{})}
-	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local))
+	runLink(t, w.workerLink(t, "w-bugfix-worker-host", "bugfix", "v1", local))
 	r := hostlink.RemoteRunner{S: w.link, Worker: "bugfix"}
 	waitFor(t, "the link", r.Available)
 	type out struct {
@@ -233,7 +233,7 @@ func TestRemoteCancelRefusals(t *testing.T) {
 		t.Fatalf("no such run: %v", err)
 	}
 	local := &fakeLocal{}
-	runLink(t, w.workerLink(t, "w-bugfix-x3", "bugfix", "v1", local))
+	runLink(t, w.workerLink(t, "w-bugfix-worker-host", "bugfix", "v1", local))
 	waitFor(t, "the link", r.Available)
 	if err := r.Cancel(context.Background(), "r-x"); !errors.Is(err, worker.ErrNoSuchRun) {
 		t.Fatalf("connected, but no such run: %v", err)

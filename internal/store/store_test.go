@@ -73,9 +73,9 @@ func TestMigratesStepOneDatabase(t *testing.T) {
 }
 
 // flotillad's container has a read-only root and no writable temp directory. On 2026-11-11 schema
-// step 3, an UPDATE over the mini's 835 runs, failed there with "disk I/O error (6410)", while every
+// step 3, an UPDATE over the host's 835 runs, failed there with "disk I/O error (6410)", while every
 // test passed: outside the container SQLite falls back to /var/tmp, so no unit test can take the temp
-// directory away. Reproduced with the deployed image, read-only, on a copy of the mini's store; the
+// directory away. Reproduced with the deployed image, read-only, on a copy of the host's store; the
 // guard here is the setting that removes the need: temporary data in memory.
 func TestTempStoreInMemory(t *testing.T) {
 	s, _ := open(t)
@@ -102,7 +102,7 @@ func TestControlRecordsWho(t *testing.T) {
 	if v, _ := s.Control(ctx, "triage", "stop"); v != "" {
 		t.Fatalf("unset control = %q", v)
 	}
-	if err := s.SetControl(ctx, "triage", "stop", "1", "claude-homelab", "api"); err != nil {
+	if err := s.SetControl(ctx, "triage", "stop", "1", "claude-example", "api"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetControl(ctx, "triage", "stop", "0", "operator", "cli"); err != nil {
@@ -112,7 +112,7 @@ func TestControlRecordsWho(t *testing.T) {
 		t.Fatalf("control = %q", v)
 	}
 	ev, _ := s.Events(ctx, 10)
-	if len(ev) != 2 || ev[0].Actor != "operator" || ev[1].Actor != "claude-homelab" || ev[0].Kind != "control.stop" {
+	if len(ev) != 2 || ev[0].Actor != "operator" || ev[1].Actor != "claude-example" || ev[0].Kind != "control.stop" {
 		t.Fatalf("every change is an event with its actor: %+v", ev)
 	}
 }

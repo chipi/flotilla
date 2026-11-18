@@ -139,7 +139,7 @@ def execute(case, plan, env):
         cfg = ["-c", f"credential.helper=!{helper}", "-c", "core.hooksPath=/dev/null"]
         git(["init", "-q", wt], work, genv)
         git(cfg + ["remote", "add", "origin", remote], wt, genv)
-        # the base's commit and trees only: blobs come on demand for the files the diff touches (orrery's
+        # the base's commit and trees only: blobs come on demand for the files the diff touches (the repo's
         # tree is 6.8 GB); nothing is checked out, the diff is applied to the index
         if git(cfg + ["fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", base], wt, genv, check=False).returncode != 0:
             raise Escalate(f"the base commit {base[:12]} is gone from {repo}")

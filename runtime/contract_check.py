@@ -4,12 +4,12 @@ before an alias is marked native or object). Four small calls; prints what each 
 
   python3 runtime/contract_check.py --base-url http://127.0.0.1:4001/v1 --model fleet-triage-flash \\
       --kind litellm --key-env OPENROUTER_API_KEY --cost reported
-  python3 runtime/contract_check.py --base-url http://<x3>:11435/v1 --model qwen3:30b-a3b-instruct-2507-q4_K_M --cost zero
+  python3 runtime/contract_check.py --base-url http://<worker-host>:11435/v1 --model qwen3:30b-a3b-instruct-2507-q4_K_M --cost zero
 
 Checks: json_object gives parseable JSON, with usage, and cost as the alias's cost says (reported: a
 number from the endpoint; zero: 0); native tools give a tool call (skipped with --tools none); max_tokens
 is honoured; an unknown model is a typed error, not a transient one. Ends CONTRACT PASS / FAIL.
-Verified 2026-11-09: the mini's LiteLLM (fleet-triage-flash) and the X3's Ollama (qwen3 30b) both PASS.
+Verified 2026-11-09: the host's LiteLLM (fleet-triage-flash) and the second machine's Ollama (qwen3 30b) both PASS.
 The same checks run daily on every configured alias as platform/model-contract (contract_routine.py).
 """
 import argparse
@@ -34,7 +34,7 @@ def run_checks(c, tools="native", cost="unknown", timeout=120, main="m", plain="
         out.append({"check": check, "ok": not fails, "detail": "; ".join(fails) or note, "rec": rec})
 
     try:
-        # room for a reasoning model to think first (the mini's flash and pro: 20 tokens were all reasoning)
+        # room for a reasoning model to think first (the host's flash and pro: 20 tokens were all reasoning)
         r = c.chat(main, [{"role": "user", "content": 'Answer with JSON only: {"ok": true}'}], max_tokens=256, timeout=timeout)
         fails = []
         if json_mode == "object":

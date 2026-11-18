@@ -20,7 +20,7 @@
 # golden intent (bakeoff/reporter/*.md). Growth path unchanged: GitHub-issue
 # adapter in, labels/branch/PR out, always-on service around this file.
 #
-# Usage:  ./orchestrate.sh bugs/orrery-mission-arc-L0.json [pi]
+# Usage:  ./orchestrate.sh bugs/shop-mission-arc-L0.json [pi]
 set -euo pipefail
 
 TICKET="$1"; HARNESS="${2:-pi}"
@@ -39,7 +39,7 @@ flow(){
   echo "FLOW: $1${2:+  ($2)}"
   printf '%s\t%s\t%s\t%s\n' "$ID" "$1" "${2:-}" "${ORC_TAG:-}" >> "$FLOW"
   # chain-state metric (dashboard fuel; terminal states drive the ship-rate panel)
-  local VMU="${BAKEOFF_VM_URL:-http://homelab:8428}"
+  local VMU="${BAKEOFF_VM_URL:-http://localhost:8428}"
   [ -n "$VMU" ] && curl -s -m 5 -X POST "$VMU/api/v1/import/prometheus" --data-binary \
     "bugfix_fleet_flow{ticket=\"$ID\",state=\"$1\",tag=\"${ORC_TAG:-}\",service=\"bugfix-fleet\",environment=\"operations\"} 1" \
     >/dev/null 2>&1 || true

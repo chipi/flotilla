@@ -14,7 +14,7 @@ func TestStoredTimesSortWithinASecond(t *testing.T) {
 	s, _ := open(t)
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
-	if _, err := s.AddHold(ctx, "host:mini", now.Add(500*time.Millisecond), "user:ada", "api", "deploy"); err != nil {
+	if _, err := s.AddHold(ctx, "host:backup-01", now.Add(500*time.Millisecond), "user:ada", "api", "deploy"); err != nil {
 		t.Fatal(err)
 	}
 	hs, err := s.Holds(ctx, now, false)
