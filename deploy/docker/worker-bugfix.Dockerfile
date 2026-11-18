@@ -31,7 +31,7 @@ COPY bugfix /opt/flotilla/bugfix
 COPY deps /opt/flotilla/deps
 COPY fleets /opt/flotilla/fleets
 COPY bugfix-fleet/bakeoff/triage_run.sh bugfix-fleet/bakeoff/advisor_run.sh bugfix-fleet/bakeoff/langfuse_push.py /opt/flotilla/bugfix-fleet/bakeoff/
-COPY bugfix-fleet/bakeoff/harnesses/pi.sh /opt/flotilla/bugfix-fleet/bakeoff/harnesses/pi.sh
+COPY bugfix-fleet/bakeoff/harnesses/pi.sh bugfix-fleet/bakeoff/harnesses/repro.sh /opt/flotilla/bugfix-fleet/bakeoff/harnesses/
 COPY bugfix-fleet/agents /opt/flotilla/bugfix-fleet/agents
 COPY host/registry.json /opt/flotilla/host/registry.json
 ARG VERSION=dev
