@@ -60,3 +60,17 @@ func TestVersionCommandsPostWhatTheAPITakes(t *testing.T) {
 		t.Fatalf("a bad gate: exit %d, %q", code, errs)
 	}
 }
+
+// -json gives the API's answer as it is, for deploy_fleets.sh's before and after proof.
+func TestVersionsJSON(t *testing.T) {
+	var path string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		w.Write([]byte(`{"routine":"triage/cycle","versions":[]}`))
+	}))
+	defer ts.Close()
+	out, errs, code := cli(t, ts.URL, "versions", "triage/cycle", "-json")
+	if code != 0 || path != "/v1/routines/triage/cycle/versions" || out != `{"routine":"triage/cycle","versions":[]}` {
+		t.Fatalf("exit %d (%s), %s, %q", code, errs, path, out)
+	}
+}

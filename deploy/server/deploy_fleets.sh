@@ -15,7 +15,10 @@
 #
 # Each commit is exported once to FLOTILLA_HOME/fleets-<sha7>/ (read-only), so the live folder is never
 # a working tree. Before the switch it lists every file that differs from what the triage worker runs
-# now; after it, every routine whose spec hash changed. Ends with FLEETS DEPLOY PASS or FLEETS DEPLOY FAIL.
+# now; after it, every routine whose spec hash changed and every routine version whose state or hash changed
+# (a new version of a routine arrives as one new shadow line). A live or previous version whose folder changed
+# is frozen (docs/wip/v2-design.md section 1): flotillad -check refuses it before anything is paused or switched,
+# and the deploy ends "FLEETS DEPLOY FAIL: versions ...". Ends with FLEETS DEPLOY PASS or FLEETS DEPLOY FAIL.
 set -uo pipefail
 export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
 H="${FLOTILLA_HOME:-$HOME/flotilla}"
@@ -77,10 +80,27 @@ if [ -z "$CHANGED" ]; then say "== against the running fleets: identical"; else 
 
 say "== flotillad -check at $TAG with these fleets"
 OUT="$(FLEETS="$DIR" compose run --rm --no-deps flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)" \
-  || { say "$OUT" | tail -15 | sed 's/^/   /'; die "flotillad -check refused fleets ${SHA:0:7}"; }
+  || {
+    # a frozen version is a refusal of its own: name it, whatever else -check printed
+    if printf '%s\n' "$OUT" | grep -q '^versions: '; then
+      printf '%s\n' "$OUT" | grep '^versions: ' | sed 's/^/   /'
+      die "versions: flotillad -check refused fleets ${SHA:0:7} (a live or previous version changed or does not load, or a new version does not load; nothing was paused or switched)"
+    fi
+    say "$OUT" | tail -15 | sed 's/^/   /'; die "flotillad -check refused fleets ${SHA:0:7}"
+  }
 
 hashes() { cli status -json | /usr/bin/python3 -c 'import json,sys; [print(r["id"], r.get("spec_hash","-")) for r in json.load(sys.stdin)["routines"]]'; }
 BEFORE="$(hashes)" || die "cannot read the routines' spec hashes"
+# Every recorded version of every routine: id, version, state, hash. A flotillad that predates versions has none.
+vstates() {
+  local ids r
+  ids="$(cli status -json | /usr/bin/python3 -c 'import json,sys; [print(r["id"]) for r in json.load(sys.stdin)["routines"]]')" || return 1
+  for r in $ids; do
+    cli versions "$r" -json | /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); [print(v["routine"], "v%d" % x["version"], x["state"], x["hash"][:12]) for x in v["versions"]]' || return 1
+  done
+}
+NOVERS="(none: the running flotillad has no versions)"
+BEFOREV="$(vstates 2>/dev/null)" || BEFOREV="$NOVERS"
 
 # The triage routines are paused while their workers restart; they are resumed on any exit from here on.
 paused=()
@@ -126,6 +146,10 @@ AFTER="$(hashes)" || ok=0
 say "== spec hashes:"
 CH="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep '^[<>]' || true)"
 if [ -z "$CH" ]; then say "   unchanged ($(printf '%s\n' "$AFTER" | wc -l | tr -d ' ') routines)"; else say "$CH" | sed 's/^/   /'; fi
+say "== versions:"
+AFTERV="$(vstates 2>/dev/null)" || { AFTERV="$NOVERS"; [ "$BEFOREV" = "$NOVERS" ] || ok=0; }
+CHV="$(diff <(printf '%s\n' "$BEFOREV") <(printf '%s\n' "$AFTERV") | grep '^[<>]' || true)"
+if [ -z "$CHV" ]; then say "   unchanged ($(printf '%s\n' "$AFTERV" | grep -c . | tr -d ' ') versions)"; else say "$CHV" | sed 's/^/   /'; fi
 printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SHA" "$([ $ok = 1 ] && echo pass || echo fail)" "$TAG" >> "$LOG"
 [ "$ok" = 1 ] || die "flotillad or the triage worker is not healthy after the restart (mounted: ${mounted:-none})"
 say "FLEETS DEPLOY PASS: ${SHA:0:7} at $TAG ($MODE; mounted $mounted)"

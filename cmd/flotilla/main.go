@@ -91,6 +91,9 @@ func main() {
 			switch cmd {
 			case "status":
 				os.Stdout.Write(do("GET", "/v1/status", nil))
+			case "versions":
+				need(args, 1, "versions ROUTINE -json")
+				os.Stdout.Write(do("GET", "/v1/routines/"+args[0]+"/versions", nil))
 			case "runs":
 				q := "/v1/runs?limit=" + n
 				if len(args) > 0 {
@@ -98,7 +101,7 @@ func main() {
 				}
 				os.Stdout.Write(do("GET", q, nil))
 			default:
-				fmt.Fprintln(os.Stderr, "-json works with status and runs")
+				fmt.Fprintln(os.Stderr, "-json works with status, runs and versions")
 				os.Exit(2)
 			}
 			return

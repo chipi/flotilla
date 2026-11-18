@@ -302,5 +302,157 @@ class DeployWiringTest(DeployBase):
         self.assertEqual(self.rows()[-1], ["rollback", self.commits[1][:7], self.commits[0][:7]])
 
 
+FLEETS_DOCKER = textwrap.dedent("""\
+    #!/usr/bin/env bash
+    # A stub engine for deploy_fleets.sh: the running worker's fleets (a tar of STUB_RUNNING/fleets), flotillad's
+    # -check (STUB_CHECK_FAIL: a frozen version), the flotilla CLI inside flotillad (status, versions, pause,
+    # resume), and compose up (which flips the recorded versions from versions.before to versions.after).
+    echo "docker $*" >> "$DOCKER_CALLS"
+    case "$1" in
+      exec)
+        case "$*" in
+          *"flotilla-worker-triage tar"*) tar -C "$STUB_RUNNING" -cf - fleets; exit 0;;
+          *"flotilla status -json"*) cat "$STUB_CFG/status.json"; exit 0;;
+          *"flotilla status"*) echo "triage/cycle  record  record  10m"; echo 'worker triage: {"ok":true}'; exit 0;;
+          *"flotilla versions"*)
+            if [ -f "$STUB_CFG/up" ]; then cat "$STUB_CFG/versions.after"
+            elif [ -n "${STUB_NO_VERSIONS:-}" ]; then echo "usage: flotilla ..." >&2; exit 2
+            else cat "$STUB_CFG/versions.before"; fi; exit 0;;
+          *"flotilla health"*) exit 0;;
+        esac; exit 0;;
+      compose)
+        case "$*" in
+          *" run "*)
+            if [ -n "${STUB_CHECK_FAIL:-}" ]; then
+              echo "specs: none" >&2
+              echo "versions: triage/cycle v1 is live and its folder changed (recorded aaaaaaaaaaaa, found bbbbbbbbbbbb): v1/spec.yaml (changed)"
+              exit 1
+            fi
+            echo "CHECK PASS"; exit 0;;
+          *" up "*) : > "$STUB_CFG/up"; exit 0;;
+        esac; exit 0;;
+      ps) printf 'flotillad\nflotilla-worker-triage\n'; exit 0;;
+      inspect) echo /srv/flotilla/fleets-mounted; exit 0;;
+    esac
+    exit 0
+""")
+
+ROUTINE = "fleet: triage\nroutine: cycle\ndescription: one pass\nenabled: true\nworker: triage\ntrigger: {every: 10m}\nautonomy: record\n"
+VERSION = 'run: {command: "echo %s", timeout: 20m}\n'
+
+
+def versions_json(*rows):
+    import json
+    return json.dumps({"routine": "triage/cycle", "versions": [
+        {"version": n, "state": st, "hash": h * 12} for n, st, h in rows]})
+
+
+class DeployFleetsTest(unittest.TestCase):
+    """deploy_fleets.sh with a stub engine: the proof prints the versions that changed (a new version of a
+    routine is one new shadow line), and a changed live version is refused before anything is paused or switched."""
+
+    SCRIPT = os.path.join(HERE, "deploy_fleets.sh")
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.home = os.path.join(self.tmp, "home")
+        repo = os.path.join(self.home, "repo", "deploy", "compose")
+        os.makedirs(repo)
+        open(os.path.join(repo, "fleets.yml"), "w").close()
+        self.fr = os.path.join(self.tmp, "fleets-repo")
+        os.makedirs(os.path.join(self.fr, "fleets", "triage", "cycle", "v1"))
+        git(self.fr, "init", "-q")
+        git(self.fr, "config", "user.email", "t@t"); git(self.fr, "config", "user.name", "t")
+        self.write("fleets/triage/cycle/routine.yaml", ROUTINE)
+        self.write("fleets/triage/cycle/v1/spec.yaml", VERSION % "v1")
+        git(self.fr, "add", "-A"); git(self.fr, "commit", "-qm", "one version")
+        self.c0 = git(self.fr, "rev-parse", "HEAD")
+        self.write("fleets/triage/cycle/v2/spec.yaml", VERSION % "v2")
+        git(self.fr, "add", "-A"); git(self.fr, "commit", "-qm", "a second version")
+        self.c1 = git(self.fr, "rev-parse", "HEAD")
+        git(self.fr, "remote", "add", "origin", self.fr)
+        admin = os.path.join(self.tmp, "admin.token")
+        self.put(admin, "t" * 40)
+        with open(os.path.join(self.home, ".env"), "w") as f:
+            f.write(f"FLOTILLA_FLEETS_REPO={self.fr}\nFLOTILLA_FLEETS_DIR={self.home}/fleets\nFLOTILLA_ADMIN_TOKEN_FILE={admin}\n")
+        with open(os.path.join(self.home, "deployed.tsv"), "w") as f:
+            f.write("2026-11-18T10:00:00Z\tsha-1234567\tabc\tpass\n")
+        # what the triage worker runs now: the first commit's fleets
+        self.running = os.path.join(self.tmp, "running"); os.makedirs(self.running)
+        subprocess.run(f"git -C {self.fr} archive {self.c0} fleets | tar -x -C {self.running}", shell=True, check=True)
+        self.stub = os.path.join(self.tmp, "stub"); os.makedirs(self.stub)
+        self.put(os.path.join(self.stub, "status.json"), '{"routines":[{"id":"triage/cycle","spec_hash":"h0"}]}')
+        bindir = os.path.join(self.tmp, "bin"); os.makedirs(bindir)
+        with open(os.path.join(bindir, "docker"), "w") as f:
+            f.write(FLEETS_DOCKER)
+        os.chmod(os.path.join(bindir, "docker"), 0o755)
+        self.calls = os.path.join(self.tmp, "docker_calls")
+        self.env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HOME=self.tmp, FLOTILLA_HOME=self.home,
+                        STUB_CFG=self.stub, STUB_RUNNING=self.running, DOCKER_CALLS=self.calls)
+
+    def tearDown(self):
+        subprocess.run(["chmod", "-R", "u+w", self.tmp])
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def put(path, text):
+        with open(path, "w") as f:
+            f.write(text)
+
+    def write(self, rel, text):
+        p = os.path.join(self.fr, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(text)
+
+    def versions(self, before, after):
+        self.put(os.path.join(self.stub, "versions.before"), before)
+        self.put(os.path.join(self.stub, "versions.after"), after)
+
+    def deploy(self, commit, env=None):
+        return sh(["bash", self.SCRIPT, commit], env=env or self.env, check=False)
+
+    def docker_calls(self):
+        if not os.path.exists(self.calls):
+            return ""
+        with open(self.calls) as f:
+            return f.read()
+
+    def test_a_new_version_is_one_new_shadow_line(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a"), (2, "shadow", "b")))
+        r = self.deploy(self.c1)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("FLEETS DEPLOY PASS", r.stdout)
+        block = r.stdout.split("== versions:")[1].split("\n")
+        changed = [l.strip() for l in block if l.strip().startswith(("<", ">"))]
+        self.assertEqual(changed, ["> triage/cycle v2 shadow " + "b" * 12], r.stdout)
+
+    def test_no_change_in_versions_says_unchanged(self):
+        same = versions_json((1, "live", "a"), (2, "shadow", "b"))
+        self.versions(same, same)
+        r = self.deploy(self.c1)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("== versions:\n   unchanged (2 versions)", r.stdout)
+
+    def test_a_flotillad_without_versions_is_said_and_does_not_fail_the_deploy(self):
+        self.versions("", versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_NO_VERSIONS="1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("< (none: the running flotillad has no versions)", r.stdout)
+        self.assertIn("> triage/cycle v1 live " + "a" * 12, r.stdout)
+
+    def test_a_frozen_version_refuses_the_deploy_before_anything_moves(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_CHECK_FAIL="1"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("versions: triage/cycle v1 is live and its folder changed", r.stdout)
+        self.assertIn("FLEETS DEPLOY FAIL: versions: flotillad -check refused fleets", r.stdout)
+        self.assertFalse(os.path.lexists(os.path.join(self.home, "fleets")), "the live folder was switched")
+        calls = self.docker_calls()
+        self.assertNotIn(" up ", calls)
+        self.assertNotIn("pause", calls, "a routine was paused before the check passed")
+        self.assertFalse(os.path.exists(os.path.join(self.home, "fleets-deployed.tsv")), "a refused deploy is not logged")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
