@@ -1,9 +1,10 @@
 """Replay for RFC-0002 §9 step 4: triage's probe loop on the shared harness (runtime/harness.py).
 
-  python3 gate_harness_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--baseline FILE]
+  python3 gate_harness_replay.py CAPTURE_DIR [CAPTURE_DIR ...] [--base-rev REV | --baseline FILE]
 
-The old code is triage.py at BASE_REV (or --baseline FILE, a copy beside triage.py, where there is no
-git); the new is the working tree. post_json, the probes and the edge gate's lookup are served from the
+The old code is triage.py at --base-rev (default HEAD: the last commit, so a change in the working tree
+is compared with what it changes) or --baseline FILE (a copy beside triage.py, where there is no git);
+the new is the working tree. post_json, the probes and the edge gate's lookup are served from the
 records; nothing is sent anywhere.
 
 1. Exact replay: for every capture with `exact` turns, the recorded replies are fed back turn by turn,
@@ -44,7 +45,6 @@ for k in ("SF_NO_CLASS_HINT", "FLOTILLA_SKILLS", "FLOTILLA_HARNESS", "FLOTILLA_M
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-BASE_REV = "ed7c0a0"   # flotilla main before step 4
 GATEWAY = "http://litellm:4000/v1/chat/completions"
 
 import config  # noqa: E402
@@ -62,10 +62,10 @@ def _load(path, name):
     return mod
 
 
-def baseline(path=None):
+def baseline(path=None, rev="HEAD"):
     if path:
         return _load(path, "triage_baseline")
-    src = subprocess.run(["git", "-C", HERE, "show", f"{BASE_REV}:signal-fleet/mvp/triage.py"],
+    src = subprocess.run(["git", "-C", HERE, "show", f"{rev}:signal-fleet/mvp/triage.py"],
                          capture_output=True, text=True, check=True).stdout
     tmp = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, dir=HERE, prefix="_triage_base_")
     tmp.write(src)
@@ -255,8 +255,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dirs", nargs="+")
     ap.add_argument("--baseline")
+    ap.add_argument("--base-rev", default="HEAD")
     a = ap.parse_args()
-    old = baseline(a.baseline)
+    old = baseline(a.baseline, a.base_rev)
     new = _load(os.path.join(HERE, "triage.py"), "triage_new")
     n, bad = exact(old, new, a.dirs)
     print(f"exact replay: {n} captures, {len(bad)} differences")
