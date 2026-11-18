@@ -1,7 +1,8 @@
 # Triage fleet runbook — run, deploy, review, improve
 
-This page was brought up to date on 2026-11-17. Its fleetd-era text, from agentic-ai-homelab, is in
-git history. The index of every fleet note: [Fleets](../fleets/README.md).
+This page was brought up to date on 2026-11-17. Its fleetd-era text, from the installation's ops
+repo, is in git history. The example fleets:
+[fleets/README.md](https://github.com/chipi/flotilla/blob/main/fleets/README.md).
 
 How to operate the triage fleet (`signal-fleet`, Fleet 2) on flotilla, written so a different agent
 can pick it up each week. For what the parts are and why they work the way they do, read the
@@ -53,7 +54,7 @@ never print them or commit them. To change one, edit the host's `TRIAGE_ENV_FILE
 | `OPENROUTER_API_KEY` | `triage.py` | the key for the model endpoint (the LiteLLM virtual key; the name is historical) |
 | `SF_OPENROUTER_URL` | `config.py` | the endpoint's `.../chat/completions` URL; it must end in that path |
 | `SF_TRIAGE_MODEL` | `config.py` | the model alias (unset, the code falls back to `deepseek/deepseek-v4-flash`) |
-| `SF_HOST` | `config.py` | host of Grafana/VM/VL/VT/GlitchTip (the code's default is a tailnet name) |
+| `SF_HOST` | `config.py` | host of Grafana/VM/VL/VT/GlitchTip (the code's default is `localhost`) |
 | `GITHUB_TOKEN` | `filing.py`, `stale.py` | GitHub token (issues and labels, read/write) |
 | `GLITCHTIP_TOKEN` | `sources.py` | GlitchTip API token, read access |
 | `GLITCHTIP_WRITE_TOKEN` | `glitchtip_sync.py`, `filing.py` | GlitchTip token with `event:write`: the sync's resolves, merges and "Tracked in GitHub" comments |
@@ -133,7 +134,8 @@ file) and is in [Deployment](../architecture/deployment.md); the triage-specific
    section 4 checks).
 5. **Promote to `propose`:** `docker exec flotillad flotilla autonomy triage/cycle propose --reason
    "..."`. The change is recorded with its actor.
-6. **Surfaces:** Grafana alert rules and dashboards are provisioned from the homelab repo, not
+6. **Surfaces:** Grafana alert rules and dashboards are provisioned from the installation's ops
+   repo, not
    from this one. After any rule change, its drift check must report no drift.
 7. **Retire the old host's daemon for good,** so two fleets never file at once.
 
@@ -231,7 +233,8 @@ does:
 ## 4. The weekly review — "how is the fleet doing?"
 
 The `triage-fleet-review` skill
-(`workstation/claude/skills/triage-fleet-review/` in agentic-ai-homelab) automates much of this. It
+(`workstation/claude/skills/triage-fleet-review/` in the installation's ops repo) automates much of
+this. It
 was written for the fleetd era and has not been checked against flotilla, so use the checks below.
 For what never reaches the fleet (warnings, logs), use the `o11y-prod` skill for the same window.
 
@@ -303,7 +306,7 @@ Turn each finding into one of three things:
 | flotillad alive | `flotilla_up` |
 | a store write that failed | `flotilla_store_error{op}` |
 | the fleet's own | `signal_fleet_disposition{disposition}`, `signal_fleet_cost_usd`, `signal_fleet_tokens`, `signal_fleet_probes`, `signal_fleet_queue_depth{kind}`, `signal_fleet_queue_oldest_age_seconds`, `signal_fleet_escalations_7d`, `signal_fleet_glitchtip_sync{kind}` |
-| alerts | `flotilla-routine-stale` (ADR-0007) and `glitchtip-sync-failing`; the rules are provisioned in the homelab's Grafana, not in this repo |
+| alerts | `flotilla-routine-stale` (ADR-0007) and `glitchtip-sync-failing`; the rules are provisioned in the installation's Grafana, not in this repo |
 
 The fleetd-era alerts `fleetd-cycle-failing` and `fleetd-silent`, and the metric
 `fleetd_spend_day`, no longer exist.
@@ -378,14 +381,15 @@ the problem, and the output after the fix.* AGENTS.md rule 3 says the same for f
 | the filing gate | `deploy.sh`, before every deploy | what filing does on the newest frozen week, old code against new, with the installation's facts |
 | the installation's replays (18 until 2026-11-16) | `make replay` with `SF_REPLAYS` | the fleet's rules against real history: the August flood's operational classes, normalized dedup, duplicate following, stale nudges, routing, triager failures, recurrence rows, open-issue preference, identity (reused short ids, fatal events), promotion, the OOM and edge cases, assistant failover, inbox counts |
 
-Until 2026-11-16 the eighteen replays ran in `signal-fleet/deploy/gates.sh` from the homelab repo.
+Until 2026-11-16 the eighteen replays ran in `signal-fleet/deploy/gates.sh` from the installation's
+ops repo.
 They moved to the installation's private fleets repo with their corpora, so `ci-fast` does not run
 them: run `make replay` before shipping a change to a rule.
 
 ### Measuring a change to the brief, the gates or the model
 
 A change to what the LLM sees or what the gates do is measured on real decisions in eval-harness
-([chipi/eval-harness](https://github.com/chipi/eval-harness), pin a release),
+(`example/eval-harness`, pin a release),
 `examples/triage-fleet`, before it ships. The worked example is round r4 (2026-11-04):
 [`EVAL-LESSONS-0.6.0.md`](https://github.com/chipi/flotilla/blob/main/signal-fleet/EVAL-LESSONS-0.6.0.md)
 section 7.
@@ -426,8 +430,9 @@ The operator's side, folded in from the 2026-07-29 operator playbook. The fleets
 the operator glances, routes, answers and merges.
 
 **Glance.** The UI's brief and the fleet page for `triage` (Decisions tab); in Grafana, the
-homelab's triage dashboards ("Fleet Workforce — Triage", "Triage — Operator Inbox", provisioned in
-the homelab repo): top row needs attention, escalations 7d (open ones only), oldest queued item,
+installation's triage dashboards ("Fleet Workforce — Triage", "Triage — Operator Inbox", provisioned
+in
+the ops repo): top row needs attention, escalations 7d (open ones only), oldest queued item,
 queue by kind; the inbox dashboard shows the items themselves. Its bottom panel shows `meta=true`
 substrate alerts, which only the operator answers: a broken fleet can't triage its own substrate.
 

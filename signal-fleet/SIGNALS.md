@@ -194,7 +194,7 @@ it in sync** as we build. Direct mapping:
 | Worker seam (`src/worker/types.ts`), harness-swappable | same `Triager` seam — harness-agnostic (Pi/opencode, whichever the bake-off picks) |
 | State = GitHub `flow:` labels | **local append-only ledger** pre-File (signal-fingerprint → disposition → prompt+model version → ts); GitHub `flow:` labels take over post-File (§9) |
 | Langfuse (leaf traces) · GlitchTip (errors) · Grafana panel | same — plus a **model bake-off axis** on the triager, like RFC-0002 |
-| Runs on the homelab **Mac mini** (always-on, tailnet) | same host |
+| Runs on the installation's **host** (always-on, tailnet) | same host |
 | Secrets via **sops/age** | same |
 | Bounded loops, per-item budgets, kill switch | same |
 
@@ -228,13 +228,13 @@ Trigger fires  (Grafana alert OR GlitchTip error/regression — §8)
 
 **How correlation actually works here — a query-time join, not pre-wired links.**
 The three backends are directly queryable on the tailnet (no auth), host
-**`homelab`**: VictoriaMetrics (PromQL, `homelab:8428`), VictoriaLogs (LogsQL,
-`homelab:9428`), VictoriaTraces (Jaeger/Tempo, `homelab:10428`). The triager
+**`host-01`**: VictoriaMetrics (PromQL, `host-01:8428`), VictoriaLogs (LogsQL,
+`host-01:9428`), VictoriaTraces (Jaeger/Tempo, `host-01:10428`). The triager
 **joins them on shared keys** — `job`, `instance`, time-window, and `trace_id`
 when present. That join *is* the correlation; done at query time by the triager,
 not by following pre-built pivots. **Host (R2-4, resolved 2026-07-24):** the o11y
-stack runs on **`homelab`** (the Mac mini) — Phase-0 confirmed `homelab:*` live and
-`dgx-llm-1:*` dead, so the DGX→mini migration is done. Bind to `homelab:<port>`.
+stack runs on **`host-01`** (the host) — Phase-0 confirmed `host-01:*` live and
+`model-host-1:*` dead, so the model-host→host migration is done. Bind to `host-01:<port>`.
 
 **Correlation substrate — what exists vs what's missing (a prerequisites list,
 recon 2026-07-24).** The pre-wired links are mostly *not built yet*:
@@ -423,8 +423,8 @@ trim + an unchanged intent gate + existing §7.1 composition.
 
 > **Phase 0 complete (2026-07-24):** every surface below is **proven consumable**
 > with live data via each platform's prescribed API — see
-> [`PHASE-0-infra.md`](PHASE-0-infra.md). The stack is on `homelab` (mini). The
-> `homelab:8090` host caveat (R2-4) is resolved: the migration is done.
+> [`PHASE-0-infra.md`](PHASE-0-infra.md). The stack is on `host-01` (host). The
+> `host-01:8090` host caveat (R2-4) is resolved: the migration is done.
 
 **Two triggers: Grafana Alerting *and* GlitchTip** (operator, 2026-07-24). Grafana
 Alerting is trigger-ready today (outbound webhook contact points; or poll the
@@ -439,30 +439,30 @@ the data path regardless. The Victoria\* backends stay pull-only correlation inp
 
 | Source | Role | Interface | Verdict |
 |---|---|---|---|
-| **Grafana Alerting** | **trigger** (metric/log alerts) | outbound webhook contact point, or poll Alerting API | ready — fires on `up==0`, disk, FastAPI 5xx, **orrery launch-data stale** (`rules.yaml`) |
-| **GlitchTip** | **trigger** (errors/regressions) **+ correlation input + Dismiss write-back** | Sentry-compat REST API (`homelab:8090/api/0/…`, token; reads+writes) — **poll** (webhook is Slack-shaped) | **verified live, Phase 0** (R2-1 closed); token minted |
+| **Grafana Alerting** | **trigger** (metric/log alerts) | outbound webhook contact point, or poll Alerting API | ready — fires on `up==0`, disk, FastAPI 5xx, **shop launch-data stale** (`rules.yaml`) |
+| **GlitchTip** | **trigger** (errors/regressions) **+ correlation input + Dismiss write-back** | Sentry-compat REST API (`host-01:8090/api/0/…`, token; reads+writes) — **poll** (webhook is Slack-shaped) | **verified live, Phase 0** (R2-1 closed); token minted |
 | **VictoriaMetrics** | correlation input | PromQL `GET :8428/api/v1/query` (tailnet, no auth) | **queryable** |
 | **VictoriaLogs** | correlation input | LogsQL `GET :9428/select/logsql/query` | **queryable** |
 | **VictoriaTraces** | correlation input | Jaeger/Tempo `:10428/select/…` | **queryable** |
 | **UX / Umami** | correlation input (later) | not receiving data yet — ingress pending (issue #8); **being wired by another agent** | **not-yet-wired** — designed-in, not a baseline blocker |
 
-**Baseline staging (operator, 2026-07-24): orrery → podcast.**
-- **Phase A — orrery (prove the plumbing).** Thinnest surface, a *clean* slice:
+**Baseline staging (operator, 2026-07-24): shop → api.**
+- **Phase A — shop (prove the plumbing).** Thinnest surface, a *clean* slice:
   the **launch-data-stale Grafana alert** as trigger + fully-queryable
-  **VictoriaLogs / VictoriaMetrics** for correlation. (Orrery's public browser
+  **VictoriaLogs / VictoriaMetrics** for correlation. (Shop's public browser
   errors can't reach the tailnet-only GlitchTip — its project holds only
   test/telemetry events — so the **GlitchTip trigger comes online at Phase B**,
-  where podcast's server-side errors actually land.) Proves trigger → query →
+  where api's server-side errors actually land.) Proves trigger → query →
   disposition → File/Dismiss end-to-end cheaply. **Caveat (R2-5): the staleness
   alert's natural disposition is `config-enhancement`/Dismiss, not `bug` — so
   Phase A does NOT validate the `File → bug → Fleet 1` seam.** That arrives with
   Phase B errors (or a synthetic error injected earlier if the seam needs proving
   sooner).
-- **Phase B — podcast (prove correlation + the GlitchTip trigger).** The richest
+- **Phase B — api (prove correlation + the GlitchTip trigger).** The richest
   surface — errors (GlitchTip **trigger**), traces (VictoriaTraces), metrics —
   exercises the full error→trace→metric chain the design rests on.
 
-**Monitored surfaces:** orrery (baseline), then podcast player + operator surfaces.
+**Monitored surfaces:** shop (baseline), then api player + operator surfaces.
 
 ---
 
@@ -514,7 +514,7 @@ overturn metric (§11) is unattributable.
 > **Go-live (2026-07-25):** the quality bar is passed and the staged rollout
 > (shadow → propose-first digest → per-class autonomy promotion) is specified
 > in RFC-0003 "Go-live" + the master tick list at
-> [`docs/fleet-architecture.md` → Rollout status](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/fleet-architecture.md#rollout-status)
+> [`docs/fleet-architecture.md` → Rollout status](../docs/history/origin/fleet-architecture.md#rollout-status)
 > (Track A). The stance below is the philosophy; the plan is the execution.
 
 Carried from RFC-0002: **the fleet proposes; the operator gates.** Mapped to
@@ -575,7 +575,7 @@ dispositions by blast radius:
 local ledger), autonomous Dismiss (§10, propose-first), naming (`SIGNALS.md` /
 `signal-fleet/` / RFC-0003), **primary trigger** (§8, Grafana Alerting),
 **correlation interfaces** (§6, VM/VL/VT query APIs), **first surface** (§8, staged
-orrery → podcast), **overturn mechanism** (§9, GH label/comment), **signal scope**
+shop → api), **overturn mechanism** (§9, GH label/comment), **signal scope**
 (reactive-only), **UX** (designed-in, wired by another agent).
 
 ---
@@ -584,12 +584,12 @@ orrery → podcast), **overturn mechanism** (§9, GH label/comment), **signal sc
 
 **Status (2026-07-24): the first slice is BUILT and verified live** —
 [`mvp/`](mvp/README.md) runs poll → correlate → triage → act → ledger; on the
-orrery staleness signal it dismissed from real refresh-log evidence and
+shop staleness signal it dismissed from real refresh-log evidence and
 recommended the alert fix. The plan below is the frame; §13.4 is the reuse map.
 
-**Goal:** the smallest end-to-end loop that proves the spine — one real orrery
+**Goal:** the smallest end-to-end loop that proves the spine — one real shop
 signal → correlate → disposition → act (File / Dismiss / Escalate) — running on
-the homelab. Phase-0 ([`PHASE-0-infra.md`](PHASE-0-infra.md)) already proved every
+the installation. Phase-0 ([`PHASE-0-infra.md`](PHASE-0-infra.md)) already proved every
 surface is consumable, so the MVP is the orchestrator + triager on top. This fleet
 is "another version" of Fleet 1 (RFC-0002), so we **reuse its scaffolding**
 wherever possible (§13.4).
@@ -603,12 +603,12 @@ wherever possible (§13.4).
    triages reliably — do not re-run that study.
 3. **File target:** the GitHub repo the fleet opens issues in + the label set
    (`bug` → Fleet 1, `config-enhancement` → operator). **OPEN:** the target repo
-   (orrery's own vs a dedicated fleet-issues repo).
-4. **Host:** the orchestrator runs on the **mini** (same box as Fleet 1 and every
+   (shop's own vs a dedicated fleet-issues repo).
+4. **Host:** the orchestrator runs on the **host** (same box as Fleet 1 and every
    source → localhost reads, no ACL).
 
 ### 13.2 Build order (each step small)
-1. **Orchestrator skeleton** — deterministic poll loop on the mini; reuse Fleet-1's
+1. **Orchestrator skeleton** — deterministic poll loop on the host; reuse Fleet-1's
    worker seam + Langfuse + GitHub App (§13.4).
 2. **Ledger** — append-only `signal_fingerprint → disposition → prompt+model
    version → timestamp` (idempotency + the overturn dataset, §9). Fleet-1's
@@ -623,7 +623,7 @@ wherever possible (§13.4).
    (disposition counts + overturn rate = the trust metric, §11).
 
 ### 13.3 First vertical slice (the "Flow A" of RFC-0002)
-The **orrery launch-data-stale** Grafana alert → correlate the refresh logs in
+The **shop launch-data-stale** Grafana alert → correlate the refresh logs in
 VictoriaLogs → triager → **File a `config-enhancement`** issue *or* **Dismiss**.
 One path, fully end-to-end. Deliberately *not* the `bug` seam (Phase A doesn't
 exercise it, §8) — that arrives with Phase B (GlitchTip errors + trace
@@ -701,34 +701,34 @@ shared across fleets; our signal-specific addition is `slo`/error-budget.
   VictoriaTraces Jaeger/Tempo `:10428`, tailnet no-auth) on shared keys
   (job/instance/window/trace_id) — the pre-wired links mostly don't exist yet
   (only a conditional logs→traces derived field), so building them is future
-  `config-enhancement` work. Baseline staged **orrery → podcast** (Phase A proves
-  plumbing on orrery's thin-but-clean staleness-alert slice; Phase B proves
-  correlation on podcast's rich surface). Scope reactive-only; UX/Umami
+  `config-enhancement` work. Baseline staged **shop → api** (Phase A proves
+  plumbing on shop's thin-but-clean staleness-alert slice; Phase B proves
+  correlation on api's rich surface). Scope reactive-only; UX/Umami
   designed-in but wired by another agent (issue #8), not a baseline blocker.
 - **2026-07-24 (correction — GlitchTip is also a trigger):** Not
   Grafana-Alerting-only. GlitchTip triggers on errors/regressions too; its trigger
   path needs wiring (notification webhook → fleet endpoint, or poll the
   Sentry-compat REST API — undocumented in-repo). Goes live at **Phase B**
-  (podcast), where errors actually flow to GlitchTip; orrery (Phase A) has none.
+  (api), where errors actually flow to GlitchTip; shop (Phase A) has none.
   §8/§6/§12 updated.
 - **2026-07-24 (Fleet-1 round-2 review folded — `REVIEW-…-fleet1-architectural.md`):**
   Five findings, all adopted. **(R2-1)** GlitchTip contradiction fixed: it *does*
   ship the Sentry-compat REST API (reads+writes) → trigger **and** Dismiss
-  write-back — flagged unverified on-prem; one curl to `homelab:8090/api/0/`
+  write-back — flagged unverified on-prem; one curl to `host-01:8090/api/0/`
   confirms (§8/§6/§12). **(R2-2)** Dismiss-overturn surface specified — implicit
   overturn via signal-recurrence / human-reopen against the ledger fingerprint,
   since a Dismiss has no GitHub object (§9/§10). **(R2-3)** self-evident invariant
   is an acceptance *floor*, not the acceptance — Fleet 1 still owes positive
   acceptance or fires needs-info, blocking symptom-suppression (§4.1). **(R2-4)**
-  correlation host pinned `homelab` + DGX→mini migration caveat (§6). **(R2-5)**
+  correlation host pinned `host-01` + model-host→host migration caveat (§6). **(R2-5)**
   Phase A does not validate the `bug`→Fleet-1 seam (staleness → config/Dismiss);
   that's Phase B (§8).
 - **2026-07-24 (Phase 0 proven + MVP plan):** Every surface confirmed consumable
   with live data via its prescribed API (`PHASE-0-infra.md`); stack confirmed on
-  `homelab` (R2-4 resolved, migration done). Added **§13 MVP** — smallest
-  end-to-end slice (orrery staleness alert → correlate VictoriaLogs → File
+  `host-01` (R2-4 resolved, migration done). Added **§13 MVP** — smallest
+  end-to-end slice (shop staleness alert → correlate VictoriaLogs → File
   `config-enhancement` / Dismiss), the 4 decisions to lock (poll-first trigger,
-  reuse the bake-off model, file-target repo, mini host), and the build order.
+  reuse the bake-off model, file-target repo, host), and the build order.
   §13.4 (reuse from Fleet 1's orchestrator) to be detailed from the recon.
 - **2026-07-24 (Fleet-1 round-3 review folded — R3-1…R3-8):** MVP + Phase-0
   review, all findings adopted. Code (`mvp/`): idempotency re-keyed to
@@ -742,7 +742,7 @@ shared across fleets; our signal-specific addition is `slo`/error-budget.
   GlitchTip API is verified live (§6/§8/§12 reconciled) and **poll chosen over
   webhook**; Grafana's "prescribed" softened to note the SA-token path + a
   least-privilege debt list (R3-6); §13.4 overclaim fixed (R3-8). All re-verified
-  live on the mini.
+  live on the host.
 - **2026-07-24 (Fleet-1 round-4 verification fold — R4-1…R4-4):** Round 4 verified
   the R3 fold from the diff (all genuine). Folded: **R4-1** ledger schema
   migrate-once on header mismatch (no mixed-schema TSV rot); **R4-2** the Tune
@@ -761,13 +761,13 @@ shared across fleets; our signal-specific addition is `slo`/error-budget.
   different dispositions (dismiss vs escalate) — triager non-determinism, exactly
   what propose-first + the overturn metric exist to catch. Order reprioritized
   (operator): build Phase B → observability → least-privilege before going live
-  (File stays dry-run; daemon last). GlitchTip token lives in a mini-local
+  (File stays dry-run; daemon last). GlitchTip token lives in a host-local
   `fleet.env` (least-privilege/sops = task).
 - **2026-07-24 (Observability + producer-identity separation):** The fleet is now a
   separated telemetry **producer** — `environment=operations`, `service=triage-fleet`
   (`config.SF_ENV`/`SF_SERVICE`), so its own signal never mixes with the monitored
-  dev/staging/prod projects (dgx/orrery/podcast). Created a **GlitchTip
-  `triage-fleet` project** (id 10) for the fleet's own errors (DSN in the mini
+  dev/staging/prod projects (model-host/shop/api). Created a **GlitchTip
+  `triage-fleet` project** (id 10) for the fleet's own errors (DSN in the host
   `fleet.env`). Observability wired into the triager (`observ.finalize`): (a) a **VM
   metric** `signal_fleet_disposition{service,environment,disposition,source,work_type,
   followup}` — live/queryable; (b) a **Langfuse** trace+generation per triage call —

@@ -1,7 +1,7 @@
 # fleetd — fleet supervisor daemon
 
 The RFC-0004 supervisor: one static Go binary running both fleets' cycles
-on the mini. Deliberately dumb — scheduling, kill-switch, budget guard,
+on the host. Deliberately dumb — scheduling, kill-switch, budget guard,
 metrics, digest transport; all intelligence stays in the fleets' Python
 cores. Tech rationale + framework audit: ADR-0008.
 
@@ -19,11 +19,11 @@ make deploy                            # vet + test, amd64 build, swap binary, r
 make rollback | status | stop | start | logs
 ```
 
-On the mini fleetd runs as the **system LaunchDaemon**
-`system/com.homelab.fleetd` (`/Library/LaunchDaemons/com.homelab.fleetd.plist`,
-installed by `infra/mini-setup.sh`), so it runs with nobody logged in. Never
+On the host fleetd runs as the **system LaunchDaemon**
+`system/com.example.fleetd` (`/Library/LaunchDaemons/com.example.fleetd.plist`,
+installed by `infra/host-setup.sh`), so it runs with nobody logged in. Never
 install it as a LaunchAgent as well: that would start a second supervisor. The
-mini is an **Intel** Mac (x86_64); `make deploy` cross-compiles
+host is an **Intel** Mac (x86_64); `make deploy` cross-compiles
 `GOOS=darwin GOARCH=amd64`. It keeps the previous binary as `fleetd.prev` for
 `make rollback`, and never overwrites the live `fleetd.json`; a difference from
 `deploy/fleetd.json` is printed instead.

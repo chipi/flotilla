@@ -56,7 +56,7 @@ the design, with what triage does today read from the code.
      are development tests in flotilla; model replay's scoring and the judging part of the shadow
      comparison live in the evaluation harness, on flotilla's records.
 3. **The order of phase 3:**
-   - step 1, the recording exact replay needs, now in agentic-ai-homelab;
+   - step 1, the recording exact replay needs, now in the installation's ops repo;
    - steps 2 to 6 after the phase 2 switch, each proven in its mode and live by a second shadow job
      on a candidate image.
 4. **Non-goals:**

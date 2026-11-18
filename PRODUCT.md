@@ -19,7 +19,7 @@ none away.
 The primary user is the operator of one flotilla installation: the person who runs the fleets,
 sets their limits and approves what agents may do. They use the UI on a phone (often away from a
 desk, answering an approval or checking that all is well) and on a laptop (reading a case in
-depth, reviewing runs). Today that is one person on one homelab.
+depth, reviewing runs). Today that is one person on one installation.
 
 flotilla is written for any installation, so operators of other installations (people running
 their own flotilla, sharing fleet packs) are a later, secondary audience. The UI must not assume
@@ -60,7 +60,7 @@ timeline, and every approval is bound to the exact plan the operator saw.
   by its set hash and starts at `shadow`.
 - The operator reaches the UI over a private network only (tailnet), from a phone or a laptop.
 - Neighbouring tools the operator also uses: the CLI (`flotilla …`), Slack for approvals within
-  limits, the homelab's dashboards for metrics and logs.
+  limits, the installation's dashboards for metrics and logs.
 
 ## Capabilities and Constraints
 

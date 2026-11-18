@@ -170,7 +170,7 @@ new token), so that it enrols with a new key.
 
 ## Not covered
 
-- None of this has been run end to end, on the mini or anywhere else. The first rotation of each
+- None of this has been run end to end, on the host or anywhere else. The first rotation of each
   kind is also its test.
 - There is no expiry warning for the intermediate or the root. Check them with `openssl` at least
   once a year.

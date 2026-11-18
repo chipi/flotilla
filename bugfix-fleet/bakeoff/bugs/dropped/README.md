@@ -3,7 +3,7 @@
 Bugs removed from the active bake-off set, with the reason. Kept (not deleted)
 so the decision is auditable.
 
-## orrery-image-bytes (fix 78a79e8) — dropped: no solution-agnostic oracle
+## shop-image-bytes (fix 78a79e8) — dropped: no solution-agnostic oracle
 
 The oracle-coupling audit (2026-07-23) flagged this as the only structure-coupled
 oracle in the set. Root problem: this "bug" is really a **feature-add** — the fix

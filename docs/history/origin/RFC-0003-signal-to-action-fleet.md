@@ -1,11 +1,11 @@
 # RFC-0003 — Signal-to-Action Fleet (o11y triage: dismiss / file / escalate)
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/rfc/RFC-0003-signal-to-action-fleet.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0003-signal-to-action-fleet.md)), kept as the record.
-> The triage fleet's design, as it ran from 2026-07; on the platform, [RFC-0004](../../rfc/RFC-0004-agent-pipeline.md). The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0003-signal-to-action-fleet.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0003-signal-to-action-fleet.md)), kept as the record.
+> The triage fleet's design, as it ran from 2026-07; on the platform, [RFC-0004](../../rfc/RFC-0004-agent-pipeline.md).
 
 **Status:** Proposed
 **Date:** 2026-07-24
-**Runs on:** the `homelab` Mac mini (always-on, tailnet) — same host as RFC-0002.
+**Runs on:** the control-plane host (always-on, tailnet) — same host as RFC-0002.
 **Relates to:** **RFC-0002** (this fleet is its **Phase 3 — "o11y-reactive agents
 (alerts → diagnose/propose)"**, promoted to its own project); **ADR-0005**
 (Langfuse/GlitchTip self-host); **ADR-0007** (Umami analytics). North-star / living
@@ -102,15 +102,15 @@ contact points, or poll the Alerting API) and **GlitchTip** (errors/regressions)
 As a Sentry fork, GlitchTip ships the **Sentry-compatible REST API** (`/api/0/…`,
 token auth — reads *and* writes), so it supports a poll-trigger **and** the
 **Dismiss write-back** (close/ack) — **unverified on-prem and not wired in-repo;
-one `curl` to `homelab:8090/api/0/projects/` confirms** (open question).
+one `curl` to `host-01:8090/api/0/projects/` confirms** (open question).
 
 **Correlation is a query-time join, not pre-wired links.** The triager joins the
-three queryable backends on host **`homelab`** — **VictoriaMetrics** (PromQL,
-`homelab:8428`), **VictoriaLogs** (LogsQL, `homelab:9428`), **VictoriaTraces**
-(Jaeger/Tempo, `homelab:10428`), all tailnet / no-auth — on shared keys (`job`,
+three queryable backends on host **`host-01`** — **VictoriaMetrics** (PromQL,
+`host-01:8428`), **VictoriaLogs** (LogsQL, `host-01:9428`), **VictoriaTraces**
+(Jaeger/Tempo, `host-01:10428`), all tailnet / no-auth — on shared keys (`job`,
 `instance`, time-window, `trace_id`). *Host (resolved 2026-07-24):* the o11y stack
-runs on **`homelab`** (Mac mini); Phase-0 confirmed it live (`dgx-llm-1:*` dead),
-so the DGX→mini migration is done. Bind to `homelab:<port>`. The pre-wired pivots mostly **do not exist yet** (only a
+runs on **`host-01`** (the host); Phase-0 confirmed it live (`model-host-llm-1:*` dead),
+so the model host→host migration is done. Bind to `host-01:<port>`. The pre-wired pivots mostly **do not exist yet** (only a
 conditional logs→traces derived field); **building them** (metrics→traces
 exemplars, confirmed `trace_id`-in-logs) are themselves `config-enhancement`
 filings — the design is self-improving.
@@ -143,22 +143,22 @@ bake-off axis, like RFC-0002); the fleet's own errors go to GlitchTip; a Grafana
 panel shows dispositions over time and the **overturn rate = the trust metric**.
 Secrets via **sops/age**.
 
-## Phased rollout (baseline: orrery → podcast)
-- **Phase A — orrery (prove the plumbing).** Thinnest but cleanest slice: the
+## Phased rollout (baseline: the shop → api)
+- **Phase A — the shop (prove the plumbing).** Thinnest but cleanest slice: the
   **launch-data-stale** Grafana alert as trigger + queryable VictoriaLogs/Metrics
   for correlation. No traces/errors/UX. Proves trigger → query → disposition →
-  File/Dismiss end-to-end cheaply. (Orrery's public browser errors can't reach the
+  File/Dismiss end-to-end cheaply. (The shop's public browser errors can't reach the
   tailnet-only GlitchTip, so the GlitchTip trigger arrives in Phase B.) Does **not** validate
   the `bug`→Fleet-1 seam — the staleness alert's natural disposition is
   `config-enhancement`/Dismiss, not `bug`; that seam is proven in Phase B.
-- **Phase B — podcast (prove correlation + the GlitchTip trigger).** Richest
+- **Phase B — api (prove correlation + the GlitchTip trigger).** Richest
   surface — errors (GlitchTip trigger) + traces (VictoriaTraces) + metrics —
   exercises the full error→trace→metric chain.
 - **Later.** UX/Umami correlation (ingress wired by another agent, issue #8);
   building the missing correlation links; then Fleet 3 (remediation) as its own
   project, subscribing to `config-enhancement`.
 
-The concrete MVP build order + first vertical slice (orrery staleness alert →
+The concrete MVP build order + first vertical slice (the shop staleness alert →
 correlate → File/Dismiss) live in [`signal-fleet/SIGNALS.md`](https://github.com/chipi/flotilla/blob/main/signal-fleet/SIGNALS.md)
 §13, along with the reuse map from Fleet 1's orchestrator.
 
@@ -182,13 +182,13 @@ dismiss-with-evidence, then File; escalate stays human forever).
 
 Remaining gate items before shadow (occurrence-churn fix, recurrence dedup,
 daemon, digest) and the full tick list live in the master rollout plan:
-[`docs/fleet-architecture.md` → Rollout status](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/fleet-architecture.md#rollout-status)
+[`docs/fleet-architecture.md` → Rollout status](https://github.com/example/ops/blob/main/docs/fleet-architecture.md#rollout-status)
 (Track A). Fleet 2 rolls out independently of Fleet 1.
 
 ## Open questions
 1. **Filed-work taxonomy** — final label names + full starter set.
 2. **Trigger wiring** — **first verify the GlitchTip API on-prem** (one `curl` to
-   `homelab:8090/api/0/projects/` — settles both the trigger and the Dismiss
+   `host-01:8090/api/0/projects/` — settles both the trigger and the Dismiss
    write-back). Then: Grafana (webhook receiver via Funnel like RFC-0002's App, vs
    poll the Alerting API); GlitchTip (notification webhook → fleet endpoint vs poll
    the REST API). RFC-0002's webhook infra is a reuse candidate.
@@ -225,7 +225,7 @@ daemon, digest) and the full tick list live in the master rollout plan:
   Locked: three-fleet separation, triage-only-forever, two triggers (Grafana +
   GlitchTip), correlation as a query-time join over VM/VL/VT, the intent gate,
   the L1-candidate seam, local-ledger state, propose-first Dismiss, staged
-  orrery → podcast. Deferred to build/measurement: trigger-wiring choice,
+  the shop → api. Deferred to build/measurement: trigger-wiring choice,
   correlation-link prerequisites, triager harness/model, feedback-training
   mechanism, intent-source registry.
 - **2026-07-24 (round-2 review):** Five further findings from the Fleet-1 agent,
@@ -234,5 +234,5 @@ daemon, digest) and the full tick list live in the master rollout plan:
   Dismiss-overturn surface specified (implicit, via signal-recurrence / human
   reopen against the ledger fingerprint); self-evident invariant marked an
   acceptance **floor** (Fleet 1 still owes positive acceptance or fires
-  `needs-info`); correlation host pinned `homelab` + DGX→mini migration caveat;
+  `needs-info`); correlation host pinned `host-01` + model host→host migration caveat;
   Phase A flagged as not validating the `bug`→Fleet-1 seam.

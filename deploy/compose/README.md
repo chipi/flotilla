@@ -81,7 +81,7 @@ models:                                 # optional (ADR-0004): the aliases routi
       defaults: {tools: native, json: object, cost: reported}
   aliases:
     triage-default: {endpoint: gateway, model: fleet-triage-pro}
-    local-dgx: {endpoint: gateway, model: <model name>, tools: none, cost: zero}
+    local-model-host: {endpoint: gateway, model: <model name>, tools: none, cost: zero}
   prices: {}                             # per alias, for cost: table (input_per_mtok, output_per_mtok)
 ```
 
@@ -92,7 +92,7 @@ model client, traced: the platform's live check of the models section, the key, 
 the proxy and the routine's spans. Unset, the heartbeat makes no model call. The alias must be one of
 the heartbeat spec's `models:` (`fleets/platform/heartbeat.yaml`): a run gets only the aliases its
 spec names. Name the alias the
-fleets actually decide with (the mini: `triage-pro`, the model of `SF_TRIAGE_MODEL`), so the canary
+fleets actually decide with (the example: `triage-pro`, the model of `SF_TRIAGE_MODEL`), so the canary
 watches the model production uses; the call allows 256 tokens, room for a model that reasons first.
 
 `config/callers.yaml` (`flotilla hash-token < token-file` prints the hash):
@@ -157,7 +157,7 @@ refuses to start, before anything changes:
 - **Run them:** add `ops` to `COMPOSE_PROFILES` in `.env`; create `config/worker-ops-read.token` and
   `config/worker-ops-act-host.token` (32+ random characters each) and `config/worker-ops.env`
   (`ROUTINE_VM_URL`, `ROUTINE_BACKUP_INSTANCE`, the backup metric's `instance` label, and
-  `ROUTINE_BACKUP_TARGET`, e.g. `host:mini`); add both workers under `workers` in `flotillad.yaml`
+  `ROUTINE_BACKUP_TARGET`, e.g. `host:backup-01`); add both workers under `workers` in `flotillad.yaml`
   (`url: http://worker-ops-read:8081`, `token_file: /run/flotilla/worker-ops-read.token`, and the
   same for `ops-act-host`). `secrets.sh` fills their token volumes when the tokens exist.
 - **Not yet:** list `ops/backup-monitor` and `ops/rerun-backup` in `disabled_routines`.
@@ -169,17 +169,17 @@ They reach VictoriaMetrics through the proxy, already on its allowlist for floti
 ## The deploy stand-down (RFC-0004 §5.1)
 
 While a deploy changes a host, policy defers every plan on it. `deploy/server/standdown.sh HOST DURATION
-WHY` takes that stand-down: a hold on `host:HOST` by the installation's `deploy` caller, ending on its
-own. It never fails its caller. `deploy.sh` takes one for 30m before `up` when `.env` names
-`FLOTILLA_STANDDOWN_HOST` (e.g. `mini`); the homelab's `mini-deploy.sh` takes one from its pre-pull
-hook. To set it up:
+WHY` takes that stand-down: a hold on `host:HOST` by the installation's `deploy` caller, ending on
+its own. It never fails its caller. `deploy.sh` takes one for 30m before `up` when `.env` names
+`FLOTILLA_STANDDOWN_HOST` (e.g. `host-01`); the installation's own deploy script takes one from its
+pre-pull hook. To set it up:
 
 1. Add a caller with role `agent` (it may hold, never lift) to `callers.yaml`:
    `- {name: deploy, role: agent, token_sha256: <sha256 of the token>}`
    (`flotilla hash-token < config/deploy.token`).
 2. Put the token in `config/deploy.token`; `secrets.sh` copies it into flotillad's secrets volume,
    where the script reads it by path.
-3. Set `FLOTILLA_STANDDOWN_HOST=mini` in `.env`.
+3. Set `FLOTILLA_STANDDOWN_HOST=host-01` in `.env`.
 
 ## The host agents' endpoint (ADR-0006)
 
@@ -290,13 +290,13 @@ and SET what is set. STOP on a fleet is stronger: no runs at all.
 
 A hold keeps flotilla's actions off one host or target for a while; while it lasts, policy defers
 every plan there (RFC-0004 §5.1). An agent, an operator or an admin holds:
-`flotilla hold host:mini 2h --reason "disk work"`; `flotilla hold list` shows the active ones;
+`flotilla hold host:host-01 2h --reason "disk work"`; `flotilla hold list` shows the active ones;
 only an operator or an admin lifts one early, with a reason: `flotilla hold lift <id> --reason "…"`.
 
 The UI listens on `ui_listen` (for example `0.0.0.0:8486`) and answers only `ui_host` (the
 `flotilla.<tailnet>` name). Put both in `flotillad.yaml`. flotillad joins the `ui` network
-(`NET_UI`, default `flotilla_ui`), which is internal. The homelab's caddy-tailscale proxy joins that
-network as an external one and serves the node with `bind tailscale/flotilla` and
+(`NET_UI`, default `flotilla_ui`), which is internal. The installation's caddy-tailscale proxy joins
+that network as an external one and serves the node with `bind tailscale/flotilla` and
 `reverse_proxy flotillad:8486`. The proxy terminates TLS and plays no part in identity; Funnel is never
 on.
 

@@ -39,14 +39,14 @@ network the installation chooses; the host agents' endpoint requires mutual TLS 
 
 ## Reference installation
 
-The homelab flotilla was built for:
+The installation flotilla was built for:
 
 | What | Where |
 | --- | --- |
-| Control plane (flotillad, workers, egress proxy) | Docker on the Mac mini |
-| Hosts with agents | the Mac mini (first), the DGX, the production VPS (later) |
-| Model endpoint | a LiteLLM gateway; local models on the X3 (Ollama) and the DGX (vLLM), cloud models through it |
+| Control plane (flotillad, workers, egress proxy) | Docker on the host |
+| Hosts with agents | the host (first), the model host, the production VPS (later) |
+| Model endpoint | a LiteLLM gateway; local models on a second machine (Ollama) and the model host (vLLM), cloud models through it |
 | Signal sources | VictoriaMetrics, VictoriaLogs, VictoriaTraces, Grafana, GlitchTip |
 | Observability | the same stack, plus Langfuse for LLM traces |
-| Network | a tailnet; nothing public |
+| Network | a private network; nothing public |
 | Provider | Slack |

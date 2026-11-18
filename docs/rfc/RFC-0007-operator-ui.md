@@ -281,7 +281,7 @@ user id.
 - An impeccable critique of the real pages.
 - **Schema and rollback:** slice 1 adds a store schema step, and an older flotillad refuses a newer
   store. So:
-  - before the deploy, the new image runs read-only against a copy of the mini's real store;
+  - before the deploy, the new image runs read-only against a copy of the host's real store;
   - the deploy takes a store copy first;
   - rolling back restores that copy, then deploys the previous tag;
   - slice 1 is not deployed inside the promotion's rollback window.

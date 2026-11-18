@@ -1,19 +1,19 @@
 # RFC-0001 — one fleet platform from the fleets we have
 
 **Status:** Accepted → [ADR-0001](../adr/ADR-0001-platform-foundations.md). The operator decided
-§10 on 2026-11-08. Drafted in agentic-ai-homelab and moved here as flotilla's first RFC.
+§10 on 2026-11-08. Drafted in the installation's ops repo and moved here as flotilla's first RFC.
 **Date:** 2026-11-08
 **Inputs:**
 
 - [the evaluation](../history/0000-origin-evaluation.md)
-  (agentic-ai-homelab);
+  (the installation's ops repo);
 - a read-only inventory of fleetd, the triage fleet, the bugfix fleet and the daily brief
   (2026-11-08; file and line citations kept in the session notes, summarised in §2);
 - the operator's decisions of 2026-11-08 (§1).
 
 ## 1. Context and goals
 
-The homelab already runs agents in four places, built at different times in different ways:
+The installation already runs agents in four places, built at different times in different ways:
 
 - the **triage fleet** (Fleet 2, live, every 10 minutes);
 - the **bugfix fleet** (Fleet 1, a hand-run chain plus a dormant TypeScript MVP);
@@ -35,7 +35,7 @@ sixth. The operator decided, 2026-11-08:
 - **Order:**
   1. rebuild what exists as the platform;
   2. add the SEO fleet;
-  3. remove all fleet code from agentic-ai-homelab.
+  3. remove all fleet code from the installation's ops repo.
 
 **Non-goals for this RFC:** the SEO fleet itself (RFC-0003; first numbered RFC-0002, renumbered
 2026-11-08), multi-user or multi-tenant use, any cloud-hosted part, and adopting a third-party agent
@@ -48,7 +48,7 @@ framework.
 | Language | Go, stdlib only, ~1,000 LOC + tests | Python, stdlib only, ~8,200 LOC | Go chain (in fleetd) + bash/Python leaves; TS MVP (~1,700 LOC) mostly unused | Node, no deps, ~190 LOC + Hub libs |
 | Trigger | LaunchDaemon, KeepAlive; a ticker per fleet | fleetd, every 10 min | by hand (`make chain`); fleetd entry disabled | launchd 07:00 (not fleetd) |
 | Prompt lives in | — | code (`triage.py`), hashed as `PROMPT_SHA` | `agents/*.md` and inline in Go | inline in code |
-| Model | — | `fleet-triage-pro` (OpenRouter via LiteLLM) | OpenRouter **directly**, bypassing LiteLLM; Claude for review | `assistant` (X3, falls back to OpenRouter) |
+| Model | — | `fleet-triage-pro` (OpenRouter via LiteLLM) | OpenRouter **directly**, bypassing LiteLLM; Claude for review | `assistant` (the second machine, falls back to OpenRouter) |
 | Tools for the LLM | — | a probe menu, up to 3 probes | a coding harness (pi) | none |
 | Gates | — | before the LLM (classifier) and after it (intent, cleanup, dismiss, edge); rich dedup | repro-first test, delta suite | none (facts computed in code) |
 | Output | — | GitHub issues and comments, GlitchTip and Grafana annotations, queue | branch, draft PR, review comment | Hub page, iPhone push |
@@ -72,16 +72,16 @@ framework.
 
 **Coupling that blocks a clean move:**
 
-- `signal-fleet/deploy/deploy.sh` is the mini's deploy for the **whole** homelab checkout. It pulls,
+- `signal-fleet/deploy/deploy.sh` is the host's deploy for the **whole** example checkout. It pulls,
   runs fleet replays as a gate, and rolls everything back on failure.
 - The Hub reads the triage fleet's credentials file, ledgers and queue (`hub-sources.js`,
   `hub-status.js`, `gen.sh`).
 - Real production payloads are committed:
   - `signal-fleet/reference*` (~4 MB, with tailnet names and IPs);
   - `bugfix-fleet/bakeoff/results-snapshots`.
-- Hard-coded environment specifics in about 40 places: user paths, `homelab`, tailnet IPs and names,
-  the GlitchTip org, `chipi/*` repos, `mobile_app_iphone`.
-- fleetd runs as the operator's account, while ADR-0009 says agents on the mini run as `claude`.
+- Hard-coded environment specifics in about 40 places: user paths, `example`, tailnet IPs and names,
+  the GlitchTip org, the installation's repos, a mobile app's project.
+- fleetd runs as the operator's account, while ADR-0009 says agents on the host run as `claude`.
 
 ## 3. Principles
 
@@ -98,14 +98,14 @@ framework.
 6. **Behaviour changes are reviewed and replayed.** A playbook, gate or spec change is a commit,
    tested against recorded past cases before it goes live. Nothing rewrites itself.
 7. **An agent is never the operator.** Approvals of outward actions are operator-only, whoever
-   (Claude, the X3 assistant, a future runtime) calls through the API or MCP. The ledger records who
-   did what.
+   (Claude, the second machine's assistant, a future runtime) calls through the API or MCP. The
+   ledger records who did what.
 8. **Public repo, private state.** Specs, playbooks, schemas and code go in git. Environment config,
    secrets, the ledger, findings and fleet data live on the host.
 9. **Local models first.** Each fleet declares its model policy (local-only, or cloud allowed with a
    budget). Every call goes through LiteLLM, and none bypasses it.
 10. **Observable like everything else** (§6.2): metrics, logs, traces, LLM traces, errors, ops
-    events, dashboards and alerts in the homelab's existing stack, with the same conventions as
+    events, dashboards and alerts in the installation's existing stack, with the same conventions as
     every other service, and a freshness metric plus stale alert per job.
 
 ## 4. Concepts
@@ -246,7 +246,7 @@ One table of decisions, the same shape for every fleet:
 
 ### 6.2 Observability: one of our services, like the others
 
-flotilla reports into the homelab's existing stack exactly like every other platform here. It
+flotilla reports into the installation's existing stack exactly like every other platform here. It
 brings no stack of its own; it uses the same conventions so the existing dashboards, alerts and
 skills see it without special cases.
 
@@ -295,7 +295,7 @@ Go, means rewriting the triage fleet. Neither buys enough to justify the rewrite
 
 ## 8. Security
 
-- **Identities:** the operator (UI, CLI on the mini, signed in); jobs (one identity per fleet); agents
+- **Identities:** the operator (UI, CLI on the host, signed in); jobs (one identity per fleet); agents
   through MCP (one per caller). The ledger records the identity on every change.
 - **Approvals:**
   - Approving an outward action is operator-only: in the UI or the CLI, never through MCP; and, per
@@ -310,20 +310,20 @@ Go, means rewriting the triage fleet. Neither buys enough to justify the rewrite
   - Each fleet gets its own LiteLLM key and budget.
 - **Untrusted input** (alert text, issue bodies, web pages) reaches the model as data, never as
   instructions to the runner. Gates check outputs against evidence.
-- **Runs as `claude`** on the mini (ADR-0009). Today fleetd runs as the operator; the move fixes that.
+- **Runs as `claude`** on the host (ADR-0009). Today fleetd runs as the operator; the move fixes that.
   *Superseded by ADR-0002: non-root containers in the production engine, deployed by the operator
   account.*
 - **Network:** API, UI and MCP listen on the tailnet only (ACL implicit deny).
 - **Public repo hygiene:**
   - No production payloads.
-  - The reference corpora that hold real data move to the private `fleet-eval-data` repo.
+  - The reference corpora that hold real data move to the installation's private research repo.
   - Specs and examples use placeholder hosts.
 
 ## 9. Migration plan (step 1)
 
 Each phase leaves everything working. The triage fleet never stops.
 
-0. **Untangle the deploy.** Give agentic-ai-homelab its own mini deploy script, out of
+0. **Untangle the deploy.** Give the installation's ops repo its own host deploy script, out of
    `signal-fleet/deploy/`, and keep the fleet replays as a separate gate. Move the Hub's reads of
    fleet state behind something stable (a metrics query, or later the flotilla API).
 1. **Create `flotilla`** (public, operator's go).
@@ -334,7 +334,7 @@ Each phase leaves everything working. The triage fleet never stops.
 
    *Done 2026-11-08, with two changes:*
    - The config pass moved to phase 3, where the job runtime's config loader is built. Doing it
-     now would mean doing it twice, and the values were already public in agentic-ai-homelab.
+     now would mean doing it twice, and the values were already public in the installation's ops repo.
      The repo maps and host defaults stay in the code until then (AGENTS.md, "Known deviation").
    - CI has no spec schema yet (there are no specs before phase 2) and no secrets scan job (it
      would add a dependency); the scan runs before every push, as in the other repos.
@@ -359,7 +359,7 @@ Each phase leaves everything working. The triage fleet never stops.
    action tools.
 6. **The bugfix fleet** onto the runtime: its chain becomes a job with the repro-first and delta
    gates as building blocks. Its leaves call LiteLLM, not OpenRouter directly.
-7. **Remove the fleet code from agentic-ai-homelab:**
+7. **Remove the fleet code from the installation's ops repo:**
    - fleetd, signal-fleet, bugfix-fleet, the briefing job;
    - the fleet docs (RFC-0002 to RFC-0005, ADR-0008, the guides), moved;
    - redirects left in the docs.
@@ -369,12 +369,12 @@ Each phase leaves everything working. The triage fleet never stops.
 ## 10. Decisions (operator, 2026-11-08)
 
 1. **Language split:** Go control plane plus a Python job runtime (§7). **Accepted.**
-2. **Where flotillad runs:** the mini (64 GB once fitted), as the `claude` account. **Accepted.**
+2. **Where flotillad runs:** the host (64 GB once fitted), as the `claude` account. **Accepted.**
 3. **The UI:** served by the Go binary, with no separate frontend build. **Accepted.**
 4. **The daily brief:** **local models only**; the cloud fallback is dropped.
-5. **The reference corpora with production payloads:** **moved to the private `fleet-eval-data`
-   repo**, not into flotilla. agentic-ai-homelab's public history is **not scrubbed** (operator,
-   2026-11-08: "These are not super sensitive information").
+5. **The reference corpora with production payloads:** **moved to the installation's private
+   research repo**, not into flotilla. The installation's ops repo's public history is **not
+   scrubbed** (operator, 2026-11-08: "These are not super sensitive information").
 6. **License:** **MIT.**
 7. **Docs site:** like every other project here, MkDocs Material built strict and published to
    GitHub Pages.
@@ -387,8 +387,8 @@ Recorded as [ADR-0001](../adr/ADR-0001-platform-foundations.md).
 - The approval UX in detail.
 - Event triggers beyond the existing ones: which events, delivered how (Grafana webhook, polling).
 - Concurrency: two jobs touching the same subject.
-- How the X3 assistant or Claude sessions will use MCP day to day.
-- Backups of the state store (it should join the mini's offsite backup).
+- How the second machine's assistant or Claude sessions will use MCP day to day.
+- Backups of the state store (it should join the host's offsite backup).
 - Cost of the move in hours.
 - Whether the bugfix TypeScript MVP holds anything worth keeping (the inventory says the chain does
   not use it).

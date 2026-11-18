@@ -2,11 +2,11 @@
 
 **Dates:** 2026-11-08 to 2026-11-17 (about 370 commits)
 **Operator:** Marko Dragoljevic
-**Agent:** Claude Code (Opus 5.5), the homelab session and then the flotilla session
-**Outcome:** flotilla runs the homelab's fleets. The triage fleet files real issues on flotilla
+**Agent:** Claude Code (Opus 5.5), the installation session and then the flotilla session
+**Outcome:** flotilla runs the installation's fleets. The triage fleet files real issues on flotilla
 since
 2026-11-11, the ops, SEO and bugfix fleets run in shadow, the fleet code has left
-agentic-ai-homelab, and flotilla's own fleets are now examples: the operator's run from a private
+the installation's ops repo, and flotilla's own fleets are now examples: the operator's run from a private
 repo. The initial vision has a plan to close it, the MVP ([vision plan](../wip/vision-plan.md)).
 
 The genesis entry ([0001](0001-genesis.md)) ends with flotilla as a design. This entry is the record
@@ -16,8 +16,8 @@ detail.
 
 ## Phases 1 and 2: the code moves in, and triage switches (11-08 to 11-11)
 
-- **Phase 1** (11-08): fleetd, signal-fleet and bugfix-fleet imported from agentic-ai-homelab with
-  their history; the replays read private corpora; CI ran the imported code.
+- **Phase 1** (11-08): fleetd, signal-fleet and bugfix-fleet imported from the installation's ops
+  repo with their history; the replays read private corpora; CI ran the imported code.
 - **Phase 2** (11-08 to 11-11): flotillad, the worker, the images, compose and an e2e stack
   ([ADR-0002](../adr/ADR-0002-run-in-docker.md)); state and secrets in volumes; a state mirror for
   the
@@ -63,7 +63,7 @@ detail.
 - **The host agent** ([ADR-0006](../adr/ADR-0006-node-agent.md), plan H1 to H10): signed execution
   envelopes, a host's own allowlist and sudoers, a hash-chained audit log, an offline CA, enrolment
   and
-  revocation, the connection to flotillad. Live on the mini 2026-11-14 16:13Z, a week early.
+  revocation, the connection to flotillad. Live on the host 2026-11-14 16:13Z, a week early.
 
 ## The operator's surfaces (11-12 to 11-17)
 
@@ -71,7 +71,7 @@ detail.
   [ADR-0014](../adr/ADR-0014-operator-ui.md)):
   users and roles with one `authorize()`, sessions, the freeze; rebuilt to mockup v3 as the visual
   contract; the gap batch G1 to G15 (each model call of a run, traces, logs, host load, knowledge,
-  evidence toward the next autonomy level, the morning brief, Slack approvals through the mini
+  evidence toward the next autonomy level, the morning brief, Slack approvals through the host
   agent's
   connector, daily model contract checks); then the routine page drawn from its spec, the run page
   as
@@ -89,7 +89,7 @@ detail.
   and
   pr-check as routines; a fix checks only what it touches; `github.open_pr` with a token narrowed to
   the
-  plan's repo. Its workers run on the X3 as **remote workers**
+  plan's repo. Its workers run on a second machine as **remote workers**
   ([RFC-0011](../rfc/RFC-0011-remote-workers.md)),
   each holding only its own model key. A Python profile for a second repo (B8); the cost of a run is
   the
@@ -117,12 +117,12 @@ detail.
 - The operator named the rest of the vision **the MVP** and added two steps: example fleets in
   flotilla
   with the operator's own in a private repo (step 7), and docs, a README and a public site (step 8).
-- **Three repos, one direction:** `fleet-eval-data` is research; what a fleet needs is crafted from
-  it
+- **Three repos, one direction:** the installation's research repo is research; what a fleet needs
+  is crafted from it
   into the private fleets repo; flotilla runs only that ([history 0000](0000-origin-evaluation.md)
   is the
   evaluation that started it all, kept here).
-- **Step 7, route B, done the same day:** the mini runs the private repo's fleets mounted over the
+- **Step 7, route B, done the same day:** the host runs the private repo's fleets mounted over the
   image's (`deploy/compose/fleets.yml`, `deploy/server/deploy_fleets.sh`), with every spec hash
   unchanged;
   the triage facts, the SEO sites and the repos `github.open_pr` may act on are the installation's

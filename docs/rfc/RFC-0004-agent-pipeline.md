@@ -150,8 +150,8 @@ One layer an agent consults, with two origins:
   with the run for model replay; MCP sources call only the tools the config lists, with the server's
   own read-only credential.
 - **Semantic search:** embeddings through the model client's `/embeddings` call from a locally
-  served model (not checked yet: that the DGX or Ollama serves one today); the index records the
-  model and its version; one index per trust tier, trusted chunks first; a query is a recorded
+  served model (not checked yet: that the model host or Ollama serves one today); the index records
+  the model and its version; one index per trust tier, trusted chunks first; a query is a recorded
   capability call returning chunk ids and the index version.
 - **Measurements are fleet data, not recall:** disk use, Search Console rows, the marketing fleet's
   post register. Read through capabilities.
@@ -161,13 +161,13 @@ One layer an agent consults, with two origins:
 One registry. Every entry is named, typed and scoped, and recorded when used:
 
 ```yaml
-capability: backup.rerun_observability   # sudoers: exactly `launchctl kickstart system/com.homelab.db-backup`, never `-k`
+capability: backup.rerun_observability   # sudoers: exactly `launchctl kickstart system/com.example.db-backup`, never `-k`
 kind: write                               # read | write
 for_kinds: [failed_backup]
-params: {host: enum(mini)}
+params: {host: enum(host-01)}
 risk: low
 reversible: regenerable                   # yes | regenerable | no: the offsite release is one per day, uploaded with --clobber
-pre: [backup_age_above(26h), not_running] # age: homelab_backup_offsite_last_success_timestamp; running: launchctl print (the script has no lock)
+pre: [backup_age_above(26h), not_running] # age: example_backup_offsite_last_success_timestamp; running: launchctl print (the script has no lock)
 pre_shadow: [backup_age_above(20h), not_running]   # the shadow threshold, so v1's shadow cases are planned (§10)
 check: {verify: {backup_newer_than_execution: true, within: 60m}}
 limits: {per_target_per_day: 2}
@@ -256,7 +256,7 @@ stateDiagram-v2
   re-runs).
 - **The per-target lock:** taken by policy, atomically, when it admits a plan (auto or propose), and
   held until the case is checked; a deferred plan never takes it. One case at a time touches a
-  container, a mount, a file, across kinds and fleets. It covers flotilla only: the homelab's own
+  container, a mount, a file, across kinds and fleets. It covers flotilla only: the installation's own
   scheduled jobs (the nightly backup, the weekly prune) are kept out by each capability's
   preconditions.
 - **Caps:** at most N open cases per kind and per host; an alert on case age.
@@ -296,7 +296,7 @@ Fleets send to a **channel**; the installation's config routes each channel to a
 
 - **Slack first** (operator, 2026-11-09). Notifications are outbound posts.
 - **Approvals in Slack** from the first time an action type reaches propose. flotillad keeps an
-  outbound Socket Mode connection, so nothing in the homelab is exposed. Guardrails:
+  outbound Socket Mode connection, so nothing in the installation is exposed. Guardrails:
   - a click carries the case id, the **plan's hash** and a nonce, and is accepted only while that case
     is `awaiting_approval` with that hash; a second click does nothing;
   - accepted only from the pinned workspace and the operator's user id;
@@ -308,7 +308,7 @@ Fleets send to a **channel**; the installation's config routes each channel to a
 
 ## 4. Actions on hosts: the actuator
 
-The most privileged component: on the mini, host actions need root above the Docker VM, as the
+The most privileged component: on the host, host actions need root above the Docker VM, as the
 existing cleanup script already does. It gets its own ADR before it is built. The constraints:
 
 - a service on the host, as a dedicated user, with a sudoers allowlist of exact command lines;
@@ -371,7 +371,7 @@ stateDiagram-v2
 | **Cascades across hosts** | a **platform-wide cap** on executions per hour; a **circuit breaker**: N failed or unknown executions in an hour drop every auto capability to propose |
 | **Storms** | one open case per key; caps on open cases per kind and host; a **host incident rule**: more than N new cases on one host in M minutes pauses auto on that host and escalates |
 | **Cost** | per-fleet daily budgets (`day_usd`, `day_tokens`); LiteLLM per-key budgets; per-case and per-run limits; fail closed with one aggregate issue on 401/402/403; `cost_spike` pauses a fleet |
-| **Jobs fighting** | the per-target lock across kinds and fleets; one policy point; holds and the deploy stand-down; preconditions against the homelab's own scheduled jobs |
+| **Jobs fighting** | the per-target lock across kinds and fleets; one policy point; holds and the deploy stand-down; preconditions against the installation's own scheduled jobs |
 | **A bad model or prompt** | schema-validated output; the registry, `for_kinds`, no retargeting; policy and the actuator re-check without a model; shadow first and the stage cap; playbook changes ship only after model replay (AGENTS.md rule 3); a **gateway re-route alert** (a changed `x-litellm-model-id` on a known alias: to build, RFC-0002 §8) |
 | **Unsure, but silence is too much** | **`flotilla autonomy freeze`**: every capability drops to propose, diagnosis keeps running; STOP remains for silence |
 
@@ -393,14 +393,14 @@ sequenceDiagram
     participant X as Actuator (host)
     F->>A: event: case handed over, start a planning run, with the lease
     A->>A: re-check with fresh numbers (code)
-    A->>F: plan: backup.rerun_observability(mini)
+    A->>F: plan: backup.rerun_observability(host-01)
     F->>F: policy: registry, autonomy, locks, limits, holds
     alt propose
         F->>Op: approvals channel: Approve / Reject (the planning run ends here)
         Op->>F: approve (plan hash), maybe hours later
     end
     F->>A: event: start an execute run, execution id E
-    A->>X: E, backup.rerun_observability(mini)
+    A->>X: E, backup.rerun_observability(host-01)
     X->>X: re-check scope and preconditions, run, log
     X->>A: done / failed / unknown / precondition no longer true
     A->>F: E's result
@@ -466,7 +466,7 @@ sequenceDiagram
     participant F as flotillad (cases, policy)
     participant Rm as Ops remediation (ops-act-host)
     participant X as Actuator
-    M->>F: new case failed_backup(mini)
+    M->>F: new case failed_backup(host-01)
     F->>Rm: event: handed over
     Rm->>Rm: still older than 26 h, not running? (code)
     Rm->>F: plan
@@ -492,7 +492,7 @@ The pipeline mapping only; each use case's own design is its RFC (RFC-0003 for S
 | Use case | Detect | Diagnose / act | Writes | Check |
 | --- | --- | --- | --- | --- |
 | **SEO content** | Search Console: rank 8-15 with rising impressions and low clicks; drops | analyst diagnoses; a writer job makes a structured edit within the change type's scope | PR on the site's repo | the site builds; outcome at 14 and 28 days against unchanged pages; a "hurt" opens a revert PR |
-| **Traffic attribution** | Umami referrers and campaign tags, matched to the post register; conversions where the site sends them (humancopilot.eu: `cta-book-call`, `cta-email`, `outbound`) | analyst compares posts by platform, topic, timing | a report in the brief | — |
+| **Traffic attribution** | Umami referrers and campaign tags, matched to the post register; conversions where the site sends them (example.com: `cta-book-call`, `cta-email`, `outbound`) | analyst compares posts by platform, topic, timing | a report in the brief | — |
 
 ### 8.4 Bugfix
 
@@ -532,7 +532,7 @@ and a Grafana annotation; the `notifications` channel posts it to Slack.
 - **Platform pieces:** cases with the transition table, leases, dedup, the per-target lock and
   stuck-state timers; event and time triggers; execution ids and checks; policy in flotillad with
   holds, the deploy stand-down, the platform cap, the circuit breaker, the host incident rule and the
-  autonomy freeze; the actuator on the mini with that one write; `flotilla case show`; the
+  autonomy freeze; the actuator on the host with that one write; `flotilla case show`; the
   `notifications` channel. Approvals by CLI; Slack approvals come with the first promotion to propose.
 - **It depends on** the case tables, which take the place of phase 3 step 5's ledger tables in the
   store (today: runs, events, controls and spend only).
@@ -550,7 +550,7 @@ and a Grafana annotation; the `notifications` channel posts it to Slack.
   no alerts; the first restart-class write, `memory_growth`, brings that proof with it).
 - **Not in v1:** triage as producer (phase 3 steps 2 to 6); the brief on flotilla (RFC-0001 phase 4);
   recall (no model in v1 reads any); the reviewer agent; config-change PRs; `cost_spike`; the marketing
-  fleet; actuators on the DGX and the production VPS.
+  fleet; actuators on the model host and the production VPS.
 
 ## 11. Not in this RFC
 

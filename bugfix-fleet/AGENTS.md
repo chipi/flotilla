@@ -12,7 +12,7 @@ MVP prototype for RFC-0002. Rules for agents working in this subproject.
 - **Structured output is the point.** The triager must return valid `TRIAGE_SCHEMA`
   JSON; the orchestrator parses, never scrapes prose. Measuring how hard this is on
   cheap models (esp. on Pi, which has no native structured output) is the spike.
-- **Secrets via sops on the mini** — never commit `.env`, the App `.pem`, or keys.
+- **Secrets via sops on the host** — never commit `.env`, the App `.pem`, or keys.
 - **Target = the sandbox repo only** until the loop is trusted. Never point the
   MVP at a real repo without operator approval.
 - **Operator gates go/no-go, merge, deploy.** The fleet proposes; it never merges

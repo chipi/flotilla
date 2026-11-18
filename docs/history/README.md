@@ -6,7 +6,7 @@ parallel decision log.
 ## Files
 
 - `0000-origin-evaluation.md` — the 2026-11-08 evaluation (problem, constraints, options) that
-  led to flotilla, written in agentic-ai-homelab and kept here.
+  led to flotilla, written in the installation's ops repo and kept here.
 - `0001-genesis.md` — the founding session that produced v0.1. The most
   important doc here; future sessions should read it first.
 - `0002-design-to-running-platform.md` — 2026-11-08 to 11-17: the ten days that built flotilla, by

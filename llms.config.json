@@ -31,10 +31,11 @@
         {"path": "docs/operations/slack.md", "name": "internal/slackconn/", "note": "the Slack connector"},
         {"path": "signal-fleet/mvp/README.md", "name": "signal-fleet/mvp/ (the triage fleet's code)", "note": "the cycle code; the fleet's design is [signal-fleet/README.md](signal-fleet/README.md) and its north star [SIGNALS.md](signal-fleet/SIGNALS.md); the model's playbook is [fleets/triage/playbooks/triage.md](fleets/triage/playbooks/triage.md)"},
         {"path": "docs/operations/bugfix.md", "name": "bugfix/ (the bugfix fleet)", "note": "running it; the design is [RFC-0010](docs/rfc/RFC-0010-bugfix-on-the-platform.md), the threat model [SR-0001](docs/security-reviews/SR-0001-bugfix-coding-harness.md)"},
-        {"path": "docs/operations/seo.md", "name": "seo/ (the SEO fleet)", "note": "its routines, sites and credentials; the design is [RFC-0012](docs/rfc/RFC-0012-seo-fleet.md)"},
+        {"path": "docs/rfc/RFC-0012-seo-fleet.md", "name": "seo/ (the sites example's code)", "note": "the site checks; the example fleet is [fleets/sites](fleets/sites)"},
         {"path": "docs/rfc/RFC-0002-job-runtime.md", "name": "runtime/ (model client, harness, skills, ledger)", "note": "the job runtime the routines run on; the decision is [ADR-0004](docs/adr/ADR-0004-job-runtime.md)"},
         {"path": "docs/rfc/RFC-0009-post-incident-review.md", "name": "ops/ (the ops fleet)", "note": "case review; host actions are [ADR-0006](docs/adr/ADR-0006-node-agent.md)"},
         {"path": "deploy/compose/README.md", "name": "deploy/ (installing on a host)", "note": "the compose stack, config and secrets on the host; remote workers are [deploy/remote/README.md](deploy/remote/README.md), the whole picture [deployment](docs/architecture/deployment.md)"},
+        {"path": "docs/development.md", "name": "getting started", "note": "from a clone to `make demo`, the gates, where things are"},
         {"path": "docs/testing.md", "name": "tests (every area)", "note": "the test tiers and what each make target runs"},
         {"path": "Makefile", "name": "Makefile", "note": "every gate: `make ci-fast` (lint, unit tests) on every push, `make replay` (the triage replays, needs the private corpora), `make test-e2e`, `make docs-lint`"}
       ]

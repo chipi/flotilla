@@ -1,18 +1,18 @@
-# RFC-0002 — Autonomous bug-fix fleet on the homelab (cheap workers, Claude PR-gate)
+# RFC-0002 — Autonomous bug-fix fleet on the installation (cheap workers, Claude PR-gate)
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md)), kept as the record.
-> The bug-fix fleet's first design; the platform's is [RFC-0010](../../rfc/RFC-0010-bugfix-on-the-platform.md). The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0002-autonomous-bug-fix-fleet.md)), kept as the record.
+> The bug-fix fleet's first design; the platform's is [RFC-0010](../../rfc/RFC-0010-bugfix-on-the-platform.md).
 
 **Status:** Proposed
 **Date:** 2026-07-21
-**Runs on:** the `homelab` Mac mini (always-on, tailnet, observability already there).
+**Runs on:** the control-plane host (always-on, tailnet, observability already there).
 **Relates to:** the observability platform (ADR-0005) — Langfuse/GlitchTip/Grafana
 watch the fleet. Subagent-tiering intuition from ADR-0003.
 
 ## Motivation
 
 Separate **core dev** (operator, laptop) from **bug maintenance** (autonomous, on
-the mini). Cheap-token harnesses grind through `bug`-labeled GitHub issues and
+the host). Cheap-token harnesses grind through `bug`-labeled GitHub issues and
 produce fixes; **Claude reviews the PR** as the quality gate. Goal: a self-hosted,
 modular, operator-in-control pipeline that also doubles as a **hands-on harness
 experiment** (Pi vs opencode) and a cost study (DeepSeek/Kimi/GLM on real bugs).
@@ -25,7 +25,7 @@ This is a bug-processing pipeline, nothing else.
 
 ### Roles
 - **Orchestrator** — *deterministic code* (no LLM). An always-on service on the
-  mini that moves issues through states, routes work, enforces gates/loops/budgets,
+  host that moves issues through states, routes work, enforces gates/loops/budgets,
   runs tests, opens PRs, parses reviews. LLMs are only **leaf calls**.
 - **Active triager** (cheap LLM) — more than a classifier. First *establishes
   context* (reads `AGENTS.md` + relevant docs + code), then **normalizes** the raw
@@ -122,7 +122,7 @@ for control/learning. **Decide with evidence, not vibes → the MVP bake-off.**
 
 Unpolished prototype that *connects everything*; it's the bake-off:
 
-- **Minimal GitHub App** — webhook receiver on the mini (Funnel), issue/PR read,
+- **Minimal GitHub App** — webhook receiver on the host (Funnel), issue/PR read,
   label write, PR/branch write. Auth scaffolded (installation token).
 - **Flow A — Triage:** `bug` labeled → triager → **structured JSON verdict** →
   orchestrator applies `area:*`/`sev:*` + `flow:` labels + posts a recommendation.
@@ -143,7 +143,7 @@ Unpolished prototype that *connects everything*; it's the bake-off:
 ## Open questions
 1. **Harness** — the MVP bake-off decides.
 2. **Target repos** — which repos does the fleet run against first? (this repo /
-   podcast / orrery?) — names the App's install scope.
+   api / the shop?) — names the App's install scope.
 3. **Batch-PR trigger** — operator command vs threshold-notify ("10 fixes waiting").
 4. **`fixes` hygiene / conflicts** — serial merges; a conflicting fix → `flow:stuck`
    (cheap models won't resolve integration conflicts reliably).
@@ -169,7 +169,7 @@ Unpolished prototype that *connects everything*; it's the bake-off:
 - **Phase 2 — ergonomics + safety:** inline suggestions / thread-resolve / auto-re-review
   on push; Grafana pipeline-state panel; cost caps + kill switch.
 - **Phase 3 — expand:** o11y-reactive agents (alerts → diagnose/propose), more repos,
-  marketing/email automation (n8n as the glue) when Orrery/podcast need it.
+  marketing/email automation (n8n as the glue) when the shop/api need it.
 
 ## Go-live (added 2026-07-25 — the lab→wild transition)
 
@@ -183,12 +183,12 @@ provisionally. The bake-off stays alive as the *hiring pipeline*: models and
 harnesses earn production seats by passing bars on frozen replay (cheap,
 repeatable) before ever touching a real issue.
 
-MVP scope: **orrery only**, real `bug`-labeled issues in, branch + PR out via
+MVP scope: **the shop only**, real `bug`-labeled issues in, branch + PR out via
 the existing App. Stages: **shadow** (triage-only over the real backlog —
 does L1-or-needs-info come out sane?) → **PR-mode** (full chains, PR +
 chain-ledger as the deliverable, every operator rejection becomes a fixture)
-→ scale decisions (podcast repo, model/harness columns, batch `fixes` flow)
-only after orrery proves the loop.
+→ scale decisions (api repo, model/harness columns, batch `fixes` flow)
+only after the shop proves the loop.
 
 Measured facts the gate rests on: every shipped chain in every sweep is
 oracle-passed with zero regressions; chain cost ≈ $0.50–1; kick-back +
@@ -196,7 +196,7 @@ reporter loops fail safe (needs-info/stuck, never a silent wrong fix). Gate
 checklist, stage exits, and the shared operational foundations (spend-capped
 keys, kill switches, incident→fixture runbook, weekly ritual) live in the
 master rollout plan:
-[`docs/fleet-architecture.md` → Rollout status](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/fleet-architecture.md#rollout-status)
+[`docs/fleet-architecture.md` → Rollout status](https://github.com/example/ops/blob/main/docs/fleet-architecture.md#rollout-status)
 (Track B). Fleet 1 rolls out independently of Fleet 2 — whichever passes its
 gate first goes first.
 

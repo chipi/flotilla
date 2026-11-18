@@ -99,7 +99,7 @@ The defaults behind T2, T6, T9, T11 and the credential rules are in
   is not a case producer: it files through its own ledger, guarded by its code gates.
 - **Redaction** of flotillad's logs and routine traces is not built.
 
-- **Host agents are built and run on the mini since 2026-11-14.** T13 to T15 are built, and the
+- **Host agents are built and run on the host since 2026-11-14.** T13 to T15 are built, and the
   security e2e passes (`make test-e2e`): on an installed stand-in host, an execution approved by the
   operator, signed, run and verified; a second one refused by the host's rate limit; an action off
   the host's allowlist refused; then the host's log audited against flotillad's record. Forged,

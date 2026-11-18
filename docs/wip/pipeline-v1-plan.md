@@ -13,8 +13,8 @@ only orders the work and says how each step is proven.
 ## What v1 is
 
 One chain, one host, one write, in shadow. A code-only Ops monitor reads the observability backup's
-age on the mini and opens a `failed_backup` case; an `ops-act-host` job re-checks it and plans
-`backup.rerun_observability(mini)`; policy records the plan; in shadow the case closes as "shadow,
+age on the host and opens a `failed_backup` case; an `ops-act-host` job re-checks it and plans
+`backup.rerun_observability(backup-01)`; policy records the plan; in shadow the case closes as "shadow,
 plan recorded". Nothing is sent to a host in v1 (ADR-0006 §12).
 
 ## Corrections the design needs on the way
@@ -44,14 +44,14 @@ RFC-0007 §7.
 | 4 | **Policy** in flotillad, RFC-0004 §5.1 in order: registry (scope, `for_kinds`, no retargeting, cited numbers), autonomy lowest wins (job stage, the action's autonomy, host ceiling, taint, the freeze), the per-target lock and limits, holds (STOP, `flotilla hold`, deploy stand-down), the platform cap and circuit breaker; every refusal recorded with its reason | a table of plans and states, each with its expected decision and reason; mutants for each rule |
 | 5 | **Event triggers and the job contract**: a case handed over to a kind starts that kind's job with the case and its lease; a job returns a plan (`plan` output, writes only); checks are timer events | e2e: a case handed over starts a run on the worker, which gets the case |
 | 6 | **The Ops monitor** (code only, `ops-read`): the backup's age from VictoriaMetrics; opens `failed_backup` at the shadow threshold (20 h) | against recorded metric values; dedup holds across cycles |
-| 7 | **The `ops-act-host` planning job, in shadow**: the code re-check, the plan, the case closed as "shadow, plan recorded" | e2e end to end with a stand-in metric; then live on the mini in shadow (operator's go) |
+| 7 | **The `ops-act-host` planning job, in shadow**: the code re-check, the plan, the case closed as "shadow, plan recorded" | e2e end to end with a stand-in metric; then live on the host in shadow (operator's go) |
 | 8 | **Slice 2 of the UI** (ADR-0014): Cases and Case, with approvals by CLI first | the UI checks of RFC-0007 §7 |
-| 9 | **Before any write at propose:** the node agent of ADR-0006 §1-§7 on the mini, the audit of §8, the `notifications` channel | its own plan, when v1's shadow gate is met |
+| 9 | **Before any write at propose:** the node agent of ADR-0006 §1-§7 on the host, the audit of §8, the `notifications` channel | its own plan, when v1's shadow gate is met |
 
 ## Not in v1
 
 RFC-0004 §10's list: triage as producer, the brief, recall, the reviewer agent, config-change PRs,
-`cost_spike`, marketing, actuators on the DGX and the VPS. Also Slack approvals (with the first
+`cost_spike`, marketing, actuators on the model host and the VPS. Also Slack approvals (with the first
 promotion to propose).
 
 ## Progress
@@ -106,7 +106,7 @@ promotion to propose).
 - **Steps 6 and 7, the monitor and the acting routine:** built 2026-11-13. 6a (c818394): a routine
   on time declares `detects: [kind]` and reports detections in its plan file; flotillad computes the
   keys, opens or attaches, and hands a new case over. 6b/7: `ops/` (stdlib Python): `backup_monitor.py`
-  reads `homelab_backup_offsite_last_success_timestamp` (the homelab alert's expression) and detects
+  reads `example_backup_offsite_last_success_timestamp` (the installation alert's expression) and detects
   above the threshold of `backup.rerun_observability`'s `backup_age_above` for its stage, read from
   `host/registry.json` (20h in shadow); `rerun_backup.py` re-checks and plans, or closes as resolved,
   evaluating the registry's preconditions itself (`not_running` recorded as the host's to check);
@@ -119,7 +119,7 @@ promotion to propose).
   as a shadow plan that would have been a proposal. Found on the way: flotillad's `NO_PROXY` did not
   list the new workers, so it reached them through the egress proxy and was refused (407).
   **Deploy:** a host must run the ops workers or disable their routines before it takes this tag
-  (`deploy/compose/README.md`). Live in shadow on the mini only on the operator's go; then step 8 (the
+  (`deploy/compose/README.md`). Live in shadow on the host only on the operator's go; then step 8 (the
   UI's slice 2) and the gate (5 shadow plans the operator agrees with).
 - **Step 8a, the UI's Cases and Case pages (read side):** built 2026-11-13. `/cases` (open, or all),
   `/cases/{id}` (the case, each plan with its outcome, autonomy, "would have been", hash and reasons,
@@ -141,7 +141,7 @@ promotion to propose).
 - **The deploy stand-down** (before any plan above shadow): built 2026-11-13.
   `deploy/server/standdown.sh` takes a hold on `host:HOST` by the installation's `deploy` caller (role
   agent; its token read by path from flotillad's secrets volume) and never fails its caller. flotilla's
-  `deploy.sh` takes one for 30m before `up` (`FLOTILLA_STANDDOWN_HOST`); the homelab's `mini-deploy.sh`
+  `deploy.sh` takes one for 30m before `up` (`FLOTILLA_STANDDOWN_HOST`); the installation's `host-deploy.sh`
   from a pre-pull hook. The e2e takes one and checks it is the host's hold, and that one that
   cannot be
   taken is skipped.
@@ -165,9 +165,9 @@ promotion to propose).
   releases its target. 18 mutants killed (2 survivors of the first round: one my own equivalent
   mutant, redone; one a missing test, added). The e2e now runs three executions on its stand-in host.
   Then, the same day (operator: "build what we should before the switch"):
-  - **`ops/verify-backup`**, the check routine for `backup_newer_than_execution` (the mini's
+  - **`ops/verify-backup`**, the check routine for `backup_newer_than_execution` (the host's
     `backup.rerun_observability`): verified once the off-box backup's last success
-    (`homelab_backup_offsite_last_success_timestamp`, VictoriaMetrics) is at or after the rerun's
+    (`example_backup_offsite_last_success_timestamp`, VictoriaMetrics) is at or after the rerun's
     done, not yet before; a check that is not its own is a configuration error (exit 2, no result).
     Unit tests and a run as the worker runs it; a test that the registry's check is the routine's.
   - **The executing deadline:** a case still executing past its action's timeout (the registry's,
@@ -182,7 +182,7 @@ promotion to propose).
   default, the boundary of "at or after"); 1 equivalent (dropping verify-backup's `Z` check: a time
   with an offset fails to parse either way).
   Not built: the outcome check (days, "did it help"): nothing before the switch depends on it.
-- **Deploy checklist** for the mini, with the UI and v1: **Saturday 2026-11-21, after the scheduled
+- **Deploy checklist** for the host, with the UI and v1: **Saturday 2026-11-21, after the scheduled
   weekly freeze and check pass on the promoted code** (operator, asked again; the first answer,
   "Saturday 11-15", rested on a wrong calendar of mine: 11-14 is the Saturday, its freeze runs before
   the promotion, and the next scheduled one is 11-21; the fleet session caught it). On the operator's
@@ -190,7 +190,7 @@ promotion to propose).
   the store-copy check for schema steps 5 to 9 (step 9, `hosts` and `host_enrolments`, is the host
   agent's H5b, empty until a host enrols); `ui_listen`/`ui_host`; the ops workers' tokens,
   `worker-ops.env` and profile `ops` (or their routines disabled); the `deploy` caller, its token and
-  `FLOTILLA_STANDDOWN_HOST`; then the homelab proxy node.
+  `FLOTILLA_STANDDOWN_HOST`; then the installation proxy node.
 
   **Deployed 2026-11-14, a week early** (operator: skip the 11-21 gate, deploy today). Between the
   promoted triage code and main, the fleet's own code (`signal-fleet/`, `runtime/`, `fleets/triage`)
@@ -198,18 +198,19 @@ promotion to propose).
   same triage logic.
   - **The store-copy check:** sha-f80c0c0, `--read-only --cap-drop ALL`, on a copy of the live store:
     schema 4 to 9, 27,518 ledger entries and 1,170 filings kept.
-  - **`ui_listen: 0.0.0.0:8486`, `ui_host: flotilla.<tailnet>.ts.net`.**
+  - **`ui_listen: 0.0.0.0:8486`, `ui_host: flotilla.<your-domain>`.**
   - **The ops routines disabled** (`disabled_routines`): their workers come next.
   - **No deploy caller and no stand-down yet.**
-  - **The store copy before the deploy:** `~/flotilla/state-bak-20261114-ui-1227` on the mini. The
+  - **The store copy before the deploy:** `~/flotilla/state-bak-20261114-ui-1227` on the host. The
     rollback is that copy plus `deploy.sh sha-c7652aa`; an older flotillad refuses the newer store.
   - **`DEPLOY PASS (sha-f80c0c0)`.**
-  - **The first admin,** `marko`, created with the host's operator token, which that retires. Its
-    token is in `~/flotilla/admin-marko.token` (mode 600), and it resumed `triage/cycle`.
+  - **The first admin,** `operator`, created with the host's operator token, which that retires. Its
+    token is in `~/flotilla/admin.token` (mode 600), and it resumed `triage/cycle`.
   - **The UI from inside its network:** `/signin` 200 for `ui_host`, 421 for another host.
-  - **Then the homelab proxy node.** The caddy-tailscale auth key had expired on 11-13, so the new
+  - **Then the installation proxy node.** The caddy-tailscale auth key had expired on 11-13, so the
+    new
     node could not register, and that failed caddy's whole config (every node down about 90 s, then
-    restored). It came up once the operator made a new key: `https://flotilla.<tailnet>.ts.net`
+    restored). It came up once the operator made a new key: `https://flotilla.<your-domain>`
     answers 303, then the sign-in page, and all 9 other nodes answer.
 
   **Two faults of mine on the way:**
@@ -221,7 +222,7 @@ promotion to propose).
     before stopping anything.
 
   **The ops workers, live in shadow 2026-11-14 15:35Z** (operator's go): their tokens (mode 600),
-  `config/worker-ops.env` (`ROUTINE_BACKUP_INSTANCE=homelab`, `ROUTINE_BACKUP_TARGET=host:mini`),
+  `config/worker-ops.env` (`ROUTINE_BACKUP_INSTANCE=example`, `ROUTINE_BACKUP_TARGET=host:backup-01`),
   both workers in `flotillad.yaml`, the ops routines out of `disabled_routines`, `COMPOSE_PROFILES`
   with `ops`; backups `*.bak-ops-20261114`. `DEPLOY PASS (sha-83b641c)`, both workers healthy, and a
   manual `ops/backup-monitor` run ok with no case (the newest offsite backup was 12 h old, under
@@ -230,14 +231,14 @@ promotion to propose).
 
   **Not done:**
   - The deploy caller and the stand-down.
-  - The host agent on the mini.
+  - The host agent.
   - Ending the candidate (`triage/cycle-shadow`).
 
   **Found:** flotillad exits at once when every routine is disabled (the scheduler's loop returns).
   Production always has the heartbeat, but the API and the UI should keep serving without routines.
 
   **The first shadow case, 2026-11-14 23:45Z** (`case-20261114-6983646f65`): the backup was 20.1 h old,
-  the chain planned `backup.rerun_observability` on the mini in shadow (would propose), absorbed every
+  the chain planned `backup.rerun_observability` on the host in shadow (would propose), absorbed every
   later detection into the one case, and cleared at 03:54Z when the daily backup landed (24.1 h at its
   oldest). The chain was right; the threshold was not: at 20 h a case opens every night on a healthy
   backup. The operator, 2026-11-15:

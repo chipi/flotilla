@@ -10,4 +10,4 @@ node_modules/
 fleets/*/playbooks/
 fleets/*/skills/
 # The installation's earlier fleet docs, moved 2026-11-17 and kept as the record as they were written (docs/fleets/README.md)
-docs/history/homelab/
+docs/history/origin/

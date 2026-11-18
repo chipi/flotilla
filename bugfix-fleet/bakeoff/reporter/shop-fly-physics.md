@@ -1,4 +1,4 @@
-# Reporter knowledge — orrery-fly-physics
+# Reporter knowledge — shop-fly-physics
 
 What I know as the reporter/maintainer (intent only — I don't know which
 file or function is responsible):

@@ -35,7 +35,7 @@ Renamed everywhere flotilla owns the word:
 | The store | `runs.job` | `runs.routine` (a forward schema step) |
 | flotillad ↔ worker messages | `job` | `routine` |
 | Worker settings (env files) | `JOB_*` | `ROUTINE_*` |
-| The homelab's stale alert | `flotilla-job-stale` | `flotilla-routine-stale` |
+| The installation's stale alert | `flotilla-job-stale` | `flotilla-routine-stale` |
 | Metrics | label `job`; `flotilla_job_last_success_timestamp_seconds`, `flotilla_job_freshness_seconds` | label `routine`; `flotilla_routine_last_success_timestamp_seconds`, `flotilla_routine_freshness_seconds` |
 | The Python side | "the job runtime" | "the runtime" |
 
@@ -48,17 +48,17 @@ Renamed everywhere flotilla owns the word:
 ## Rollout
 
 1. The docs and the UI mockup.
-2. The code in one release, deployed together with the homelab dashboard (`flotilla.json`) and the
-   freshness alert that read the old metric names. The installation's config key is renamed in the
-   same deploy. flotillad parses its config strictly, so a leftover `disabled_jobs` stops it at start
-   instead of being ignored (an ignored key would enable a routine the operator disabled).
+2. The code in one release, deployed together with the installation's dashboard (`flotilla.json`)
+   and the freshness alert that read the old metric names. The installation's config key is renamed
+   in the same deploy. flotillad parses its config strictly, so a leftover `disabled_jobs` stops it
+   at start instead of being ignored (an ignored key would enable a routine the operator disabled).
 3. The old metric series stop and age out; nothing is backfilled.
 
 ## Consequences
 
 **Positive:** one meaning per word in Ops conversations and in the metrics database.
 
-**Negative:** a coordinated change across flotilla and the homelab's dashboard and alert; old runs'
+**Negative:** a coordinated change across flotilla and the installation's dashboard and alert; old runs'
 metrics keep the old label until they age out.
 
 **Neutral:** the store keeps every run; only the column's name changes.

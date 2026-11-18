@@ -45,5 +45,5 @@ are the fleetd era, before flotilla):
 | [`EVAL.md`](EVAL.md), [`EVAL-LESSONS-0.6.0.md`](EVAL-LESSONS-0.6.0.md) | how it was evaluated, and what round r4 found (2026-11-04) |
 | [`PHASE-0-infra.md`](PHASE-0-infra.md) | how each source is read, with the first live evidence |
 | [`REVIEW-2026-07-24-fleet1-architectural.md`](REVIEW-2026-07-24-fleet1-architectural.md), [`REVIEW-ASK-round7.md`](REVIEW-ASK-round7.md) | design reviews |
-| [RFC-0003, the signal-to-action fleet](../docs/history/homelab/RFC-0003-signal-to-action-fleet.md) | the RFC it was built from, in agentic-ai-homelab |
+| [RFC-0003, the signal-to-action fleet](../docs/history/origin/RFC-0003-signal-to-action-fleet.md) | the RFC it was built from, in the installation's ops repo |
 | [`test-receiver/`](test-receiver/receiver.py) | the webhook test-ingress stub of phase 0 |

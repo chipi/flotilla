@@ -1,9 +1,9 @@
-# fleetd — build, deploy, operate (Mac mini)
+# fleetd — build, deploy, operate (host)
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/recipes/fleetd-deploy.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/recipes/fleetd-deploy.md)), kept as the record.
-> fleetd retired on 2026-11-16; flotillad replaced it. The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/recipes/fleetd-deploy.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/recipes/fleetd-deploy.md)), kept as the record.
+> fleetd retired on 2026-11-16; flotillad replaced it.
 
-> **Retired 2026-11-16.** The fleets run in [flotilla](https://github.com/chipi/flotilla) (its `docs/operations/`); the code this page describes left this repo, and the mini's `fleetd` and `bugfix-metrics` jobs are gone. Kept for the record; the commands below no longer apply.
+> **Retired 2026-11-16.** The fleets run in [flotilla](https://github.com/chipi/flotilla) (its `docs/operations/`); the code this page describes left this repo, and the host's `fleetd` and `bugfix-metrics` jobs are gone. Kept for the record; the commands below no longer apply.
 
 The fleet supervisor ([RFC-0004](RFC-0004-fleetd-supervisor.md),
 tech rationale [ADR-0008](ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md))
@@ -14,11 +14,11 @@ one-liners with explicit PASS/FAIL, no Go knowledge needed.
 
 | Command | What it does |
 |---|---|
-| `make vet build` | vet + build with the git sha stamped into the binary (`fleetd <sha>` in logs + a `version` label on metrics — "what runs on the mini" is always answerable) |
+| `make vet build` | vet + build with the git sha stamped into the binary (`fleetd <sha>` in logs + a `version` label on metrics — "what runs on the host" is always answerable) |
 | `make smoke` | end-to-end local check: cycle-run, spend accounting, STOP flag, budget pause (deploy/smoke.sh) |
 | `make deploy` | vet + test, builds an amd64 binary, keeps the previous one as `fleetd.prev`, ships the new binary, compares (never overwrites) the live `fleetd.json`, then `launchctl kickstart -k` the LaunchDaemon. **Ask the operator before running — deploys are shared-state.** |
 | `make rollback` | swaps `fleetd.prev` back and reloads — the 30-second undo |
-| `make status` / `make logs` | launchd state + log tail from the mini |
+| `make status` / `make logs` | launchd state + log tail from the host |
 | `make stop` / `make start` | stop = STOP flags for both fleets **and** unload; start = flags removed + load |
 
 ## Config & secrets
@@ -30,9 +30,9 @@ one-liners with explicit PASS/FAIL, no Go knowledge needed.
   reports when the two differ.
 - As of 2026-10-02 the triage block is `enabled: true` at stage `propose`; the
   bug-fix block is `enabled: false`. Enabling a fleet = config edit + daemon
-  restart (`sudo launchctl kickstart -k system/com.homelab.fleetd`), a deliberate,
+  restart (`sudo launchctl kickstart -k system/com.example.fleetd`), a deliberate,
   auditable act per rollout-plan stage.
-- fleetd runs as a **system LaunchDaemon** (`/Library/LaunchDaemons/com.homelab.fleetd.plist`),
+- fleetd runs as a **system LaunchDaemon** (`/Library/LaunchDaemons/com.example.fleetd.plist`),
   never a LaunchAgent: an agent copy would start a second supervisor.
 - Operating the triage fleet itself (ledgers, deploys, weekly review):
   [Triage fleet runbook](../../operations/triage-runbook.md).

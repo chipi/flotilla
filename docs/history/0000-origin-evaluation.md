@@ -10,11 +10,12 @@
 - Hermes Agent and OpenClaw (§6) stay as inspiration.
 
 **Status:** the record of how that decision was reached, unchanged since 2026-11-08 except that host
-details are removed. It was written in agentic-ai-homelab (`docs/wip/agent-platform-evaluation.md`,
+details are removed. It was written in the installation's ops repo (`docs/wip/agent-platform-evaluation.md`,
 commit f6a18e7) and moved here when that note closed on 2026-11-17. The paths it cites as sources
-(`infra/…`, `docs/adr/ADR-0008`, `rules.yaml`, `fleetd/README.md`) are agentic-ai-homelab's. The use
+(`infra/…`, `docs/adr/ADR-0008`, `rules.yaml`, `fleetd/README.md`) belong to the installation's ops
+repo. The use
 cases and decisions flotilla had not covered by 2026-11-17 are carried in the flotilla session's
-[backlog](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/wip/flotilla-items.md) as input
+[backlog](https://github.com/example/ops/blob/main/docs/wip/flotilla-items.md) as input
 for the next cycle.
 **Input:** the operator's
 *Local-First SEO Intelligence — Architecture Brief* (a proposal, treated here as one candidate
@@ -22,12 +23,13 @@ design, not the frame) and the operator's notes of 2026-11-08:
 
 - Umami is the analytics source, and GA4 is out completely.
 - Google's search data is needed.
-- Model choice is ours: use the DGX's prod model, and keep one model running non-stop on the X3.
+- Model choice is ours: use the model host's prod model, and keep one model running non-stop on the
+  second machine.
 
 This note keeps three things apart:
 
 1. the problem (what we want, ranked, with no technology);
-2. the constraints and non-functional requirements this homelab already lives by;
+2. the constraints and non-functional requirements this installation already lives by;
 3. the candidate solutions, judged against 1 and 2.
 
 The facts in sections 2 and 3 were checked on 2026-11-08; how is given inline.
@@ -62,9 +64,9 @@ Ranked by the operator's priority. "Exists" marks what already runs today.
 | A7 | Referral and community reach | Where do visitors come from (Umami referrers), and which links bring them? | weekly | trends, new sources |
 | A8 | Availability and speed from outside | Is it up and fast for visitors and crawlers? | continuous | **Exists**: blackbox probes, Cloudflare edge poller, Hub Projects tab |
 
-Orrery is the natural first site. Its sitemap was submitted to Search Console on 2026-08-28: 3,668
+The shop is the natural first site. Its sitemap was submitted to Search Console on 2026-08-28: 3,668
 URLs in 14 locales. It already has a written plan with a monthly Search Console watch-list
-(orrery `docs/wip/multilingual-seo-analysis.md`) that nobody runs today.
+(the shop `docs/wip/multilingual-seo-analysis.md`) that nobody runs today.
 
 #### B. Own infrastructure
 
@@ -73,14 +75,14 @@ URLs in 14 locales. It already has a written plan with a monthly Search Console 
 | B1 | Alert and error triage | **Exists**: the triage fleet (Fleet 2), every 10 min, files proposals |
 | B2 | Periodic reviews (the daily Postgres review, weekly fleet health, the o11y review after a deploy) | done by hand, through scheduled prompts in a Claude session |
 | B3 | Investigation of a slowdown or an incident (traces, logs, metrics) | done by hand |
-| B4 | Capacity and cost watch (mini memory, disk, spend per key) | partly in alerts and the Hub |
+| B4 | Capacity and cost watch (host memory, disk, spend per key) | partly in alerts and the Hub |
 
 #### C. Personal briefs
 
 | # | Use case | Today |
 | --- | --- | --- |
 | C1 | The daily brief | **Exists**: the Hub briefing at 07:00. Code gathers the facts, an LLM writes two opening sentences, and it is pushed to the iPhone through Home Assistant. |
-| C2 | Home (energy, appliances, alerts) | Home Assistant automations; the X3 model is a read-only Assist agent |
+| C2 | Home (energy, appliances, alerts) | Home Assistant automations; the second machine model is a read-only Assist agent |
 | C3 | A cross-domain weekly digest (sites, infra, home, spend) | none |
 
 **D. Product insight** (Umami behaviour: funnels, feature use, beta users). Partly covered by
@@ -105,17 +107,17 @@ The platform question is how to build that loop once and reuse it.
 | --- | --- | --- |
 | N1 | **Humans decide anything outward.** No auto-publish, no prod change, per-instance approval for destructive or shared-state actions. GitHub issues only with the operator's approval. | global AGENTS.md rules 1, 4, 35 |
 | N2 | **Secrets never in git.** Credentials live in mode-600 files, every credential is recorded in the handbook's credentials table, and keys are minted with `mint-credential`. | AGENTS.md 29; `docs/recipes/agent-access.md` |
-| N3 | **Tailnet only, implicit deny.** No new public ports, logins or ACL grants without approval. | the homelab's tailnet policy; AGENTS.md |
+| N3 | **Tailnet only, implicit deny.** No new public ports, logins or ACL grants without approval. | the installation's tailnet policy; AGENTS.md |
 | N4 | **Every scheduled job is observable.** It pushes a `*_last_success_timestamp`, a stale alert watches it, logs go to VictoriaLogs, and LLM calls are traced (Langfuse through LiteLLM). | `rules.yaml` (hub-briefing-missing, poller-stale rules) |
-| N5 | **Scheduling is launchd on the mini** (no cron), as `/Library/LaunchDaemons` plists. Long-running loops use KeepAlive. | `infra/homelab-home/README.md` |
-| N6 | **Inference is local first; cloud is a per-key, budgeted, explicit choice.** Every LiteLLM alias fails loudly except one: `assistant` (the X3 model) falls back to OpenRouter, and the Hub briefing uses it. | `infra/litellm/config.yaml` |
+| N5 | **Scheduling is launchd on the host** (no cron), as `/Library/LaunchDaemons` plists. Long-running loops use KeepAlive. | `infra/example-home/README.md` |
+| N6 | **Inference is local first; cloud is a per-key, budgeted, explicit choice.** Every LiteLLM alias fails loudly except one: `assistant` (the second machine model) falls back to OpenRouter, and the Hub briefing uses it. | `infra/litellm/config.yaml` |
 | N7 | **Agent frameworks are not adopted by default.** ADR-0008 adopted LiteLLM, rejected CrewAI and AutoGen, and left LangGraph and Temporal out. Adopting one is an ADR. | `docs/adr/ADR-0008` |
-| N8 | **Agents on the mini run as the `claude` account**, not as the operator. | ADR-0009 |
+| N8 | **Agents on the host run as the `claude` account**, not as the operator. | ADR-0009 |
 | N9 | **LLM decisions are gated.** Deterministic gates come after the LLM, and a fleet moves through shadow, then propose, then live stages with a daily budget and a STOP flag. | RFC-0004, `fleetd/README.md` |
 | N10 | **Behaviour changes are replay-proven** before they ship. | `replay-proven-fix` skill |
 | N11 | **Web content is untrusted input.** Prompt injection from crawled or competitor pages must not reach tools. | brief §4.7; RFC-0008 is read-only by construction |
-| N12 | **The mini, planned at 64 GB.** Intel i7-8700B, 6 cores / 12 threads, macOS 15.7. Today it has 32 GB: 31 GB used and 1.3 GB unused, with load ~6 on 12 threads, 35 containers and swap p95 at 10.2 GiB. The +32 GB is bought and waiting to be fitted (operator, 2026-11-08; NEXT_STEPS), and **this plan assumes 64 GB**. Fitting it is a precondition for anything new on the mini. The prod colima VM is off-limits for dev work: trials use the dev engine (ADR-0009). | `sysctl`/`top` on 2026-11-08; ADR-0009 |
-| N13 | **The DGX has one GPU shared by modes** (prod / ollama / code / research). Prod vLLM serves the nightly pipeline. DGX changes need the operator's go. | `gpu-mode` skill; infra/dgx AGENTS.md |
+| N12 | **The host, planned at 64 GB.** Intel i7-8700B, 6 cores / 12 threads, macOS 15.7. Today it has 32 GB: 31 GB used and 1.3 GB unused, with load ~6 on 12 threads, 35 containers and swap p95 at 10.2 GiB. The +32 GB is bought and waiting to be fitted (operator, 2026-11-08; NEXT_STEPS), and **this plan assumes 64 GB**. Fitting it is a precondition for anything new on the host. The prod colima VM is off-limits for dev work: trials use the dev engine (ADR-0009). | `sysctl`/`top` on 2026-11-08; ADR-0009 |
+| N13 | **The model host has one GPU shared by modes** (prod / ollama / code / research). Prod vLLM serves the nightly pipeline. Model host changes need the operator's go. | `gpu-mode` skill; infra/model-host AGENTS.md |
 | N14 | **Retention:** VictoriaLogs keeps 30 days and VictoriaMetrics 6 months. Search Console keeps 16 months with no backfill of its BigQuery export, so collection must start early. | `infra/observability/backend/docker-compose.yml`; Google docs |
 | N15 | **Docs and decisions in git:** an ADR or RFC for platform choices, WIP notes, and a strict mkdocs build. | docs/AGENTS.md |
 
@@ -125,7 +127,7 @@ The platform question is how to build that loop once and reuse it.
 
 **Data sources:**
 
-- **Umami** covers all the sites, including markodragoljevic.com and airandspacehistory.com.
+- **Umami** covers all the sites, including folio.example.com and history.example.com.
 - **Cloudflare:**
   - `cloudflare-edge` polls requests by class, host and source (browser, bot, assistant, monitor),
     plus 5xx;
@@ -133,8 +135,8 @@ The platform question is how to build that loop once and reuse it.
 - **Blackbox probes** check every public host every minute.
 - **Not found** in either repo: Search Console, Bing Webmaster, sitemap checks or crawlers.
 - **Search Console:**
-  - Orrery is verified, and humancopilot.eu has a `google-site-verification` TXT record
-    (humancopilot.eu ADR-0001). The other sites are not checked.
+  - The shop is verified, and example.org has a `google-site-verification` TXT record
+    (example.org ADR-0001). The other sites are not checked.
   - The Search Console API facts (Google's developer docs):
     - data arrives 2–3 days late, and partial fresh data is available with `dataState=all`;
     - 25,000 rows per request and at most 50,000 rows per day per search type;
@@ -147,15 +149,18 @@ The platform question is how to build that loop once and reuse it.
 
 **Models:**
 
-- **DGX prod:** `NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4` in vLLM, 64k context.
+- **Model host prod:** `NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4` in vLLM, 64k context.
   - **Tool calling is not enabled**: no `--enable-auto-tool-choice` and no `--tool-call-parser`
     (checked on the server, 2026-11-08).
   - Turning it on restarts the server the nightly depends on (N13).
-- **X3 always-on:** `qwen3:30b-a3b-instruct-2507-q4_K_M`, 25.4 GB loaded, 64k context. Ollama does
-  tool calling for it. The X3 is also the operator's workstation: 124 GB total, 27 GB available with
+- **Second machine always-on:** `qwen3:30b-a3b-instruct-2507-q4_K_M`, 25.4 GB loaded, 64k context.
+  Ollama does
+  tool calling for it. The second machine is also the operator's workstation: 124 GB total, 27 GB
+  available with
   dev work running. Larger models are installed for on-demand use: gpt-oss 120B, Qwen3.5 122B,
   Nemotron 3.5 Super 120B.
-- So both "a model on the DGX and a model on the X3" are **the same model family**, Qwen3-30B-A3B,
+- So both "a model on the model host and a model on the second machine" are **the same model
+  family**, Qwen3-30B-A3B,
   at two quantizations. That is good for consistency; there is no larger reasoner online by default.
 
 **Runners:**
@@ -199,7 +204,7 @@ campaign in January 2026.
 
 All three keep the same skeleton (§1.3). They differ in what runs the LLM step.
 
-### Option 1 — the brief as written: Hermes on the mini, Parquet + DuckDB, Markdown findings
+### Option 1 — the brief as written: Hermes on the host, Parquet + DuckDB, Markdown findings
 
 - **Fits:** the data design is sound and fits N14: GSC facts in Parquet with DuckDB, deterministic
   detectors before the LLM, and findings as Markdown with YAML frontmatter in git. So is the tool
@@ -207,14 +212,14 @@ All three keep the same skeleton (§1.3). They differ in what runs the LLM step.
   facts, SQL owns the calculations, the agent investigates, humans decide*. All of that should carry
   over to any option.
 - **Breaks:**
-  - Hermes cannot run natively on the Intel mini. It can run as its official Linux amd64 Docker
+  - Hermes cannot run natively on the Intel host. It can run as its official Linux amd64 Docker
     image inside colima. At 64 GB the memory (1–4 GB) fits, but its Docker backend skips the
     dangerous-command check. See §6 for the runtime comparison.
   - Self-editing skills and the approval gaps conflict with N9 and N10: a behaviour change would no
     longer be reviewed in git.
   - Its default web search breaks N6.
   - It is a framework adoption (N7) on a project with six or more CVEs in 2026 and weekly releases.
-- **Verdict:** keep the data and tool design, and do not put Hermes on the mini.
+- **Verdict:** keep the data and tool design, and do not put Hermes on the host.
 
 ### Option 2 — no new framework: deterministic collectors plus a narrow LLM step, run like our fleets
 
@@ -222,7 +227,8 @@ All three keep the same skeleton (§1.3). They differ in what runs the LLM step.
   - Collectors (GSC, Bing, sitemap and crawl, Umami, Cloudflare) run under launchd and write
     Parquet, plus freshness gauges for N4.
   - DuckDB detectors produce candidates.
-  - An LLM step answers each candidate through LiteLLM, on the X3 model for routine work and the DGX
+  - An LLM step answers each candidate through LiteLLM, on the second machine model for routine
+    work and the model host
     for weekly depth. It uses structured output, or a fixed set of read-only tools served over MCP,
     and writes a finding file.
   - `fleetd` runs it with a budget, the shadow → propose → live stages and a STOP flag (N9).
@@ -239,8 +245,8 @@ All three keep the same skeleton (§1.3). They differ in what runs the LLM step.
 - **What it is:** everything in Option 2, plus an agent runtime as the investigator for open-ended
   work: A5 content proposals, B3 incidents. It is OpenClaw or Hermes (§6), or opencode or Claude
   Code headless against local models.
-  - **Where:** a Linux container, either on the mini (64 GB, its dev engine for trials) or on the
-    X3.
+  - **Where:** a Linux container, either on the host (64 GB, its dev engine for trials) or on the
+    second machine.
   - **Toolsets:** cut down to an MCP client against our read-only `seo.*` and `obs.*` tools, plus
     write access to a findings directory.
   - **Off:** shell, web search (or a self-hosted SearXNG), fallback providers, chat channels and
@@ -258,35 +264,36 @@ All three keep the same skeleton (§1.3). They differ in what runs the LLM step.
 
 | | Option 1 | Option 2 | Option 3 |
 | --- | --- | --- | --- |
-| Runs on the hardware we have | only in Docker on the mini (native Intel macOS unsupported) | yes | yes (Docker on the 64 GB mini, or the X3) |
+| Runs on the hardware we have | only in Docker on the host (native Intel macOS unsupported) | yes | yes (Docker on the 64 GB host, or the second machine) |
 | Meets N1, N9, N10 (gated, replayable) | weak (self-editing skills) | yes | yes, with skills frozen |
 | Local only (N6) | needs config (search, fallback) | yes | needs config |
 | Open-ended investigation | yes | no | yes |
 | New framework (N7) | yes | no | yes, behind an ADR |
-| Effort to first value (Orrery GSC) | high | lowest | medium |
+| Effort to first value (the shop GSC) | high | lowest | medium |
 
 ---
 
 ## 5. Recommendation (for discussion)
 
-1. **Start with Option 2's data layer for Orrery, now.** It is needed by every option and its data
+1. **Start with Option 2's data layer for the shop, now.** It is needed by every option and its data
    is time-sensitive (N14).
    - **Operator action:** create a Google Cloud project with the Search Console API enabled, and
-     either a service account added as a restricted user on the Orrery property, or an OAuth
+     either a service account added as a restricted user on the shop property, or an OAuth
      client with the `webmasters.readonly` scope.
-   - **Then homelab builds:**
+   - **Then installation builds:**
      - a launchd GSC collector writing Parquet, with a stale alert;
      - a sitemap and hreflang checker;
      - two DuckDB detectors (A1 regressions, A3 opportunities);
      - a weekly finding report on the Hub.
    - **Start the BigQuery bulk export the same day:** it has no backfill.
-2. **Run the LLM step on the X3's always-on Qwen3-30B** through a new LiteLLM alias **without**
+2. **Run the LLM step on the second machine's always-on Qwen3-30B** through a new LiteLLM alias **without**
    cloud fallback. The `assistant` alias falls back to OpenRouter, so it should not be reused for
-   site data. Use the DGX prod model for weekly depth only after the operator decides on enabling
+   site data. Use the model host prod model for weekly depth only after the operator decides on enabling
    its tool-call parser, which means a prod vLLM restart in a quiet window.
 3. **Put an agent runtime through a bounded Phase 0, OpenClaw first and Hermes as the
-   challenger (§6).** Run it in Docker on the mini's dev engine, after the 64 GB is fitted, or on
-   the X3. Give it the same read-only MCP tools and one week of Orrery data, beside the Option 2
+   challenger (§6).** Run it in Docker on the host's dev engine, after the 64 GB is fitted, or on
+   the second machine. Give it the same read-only MCP tools and one week of the shop data, beside
+   the Option 2
    step on the same candidates. Judge both by:
    - finding quality, against explicit evidence;
    - false positives;
@@ -326,8 +333,8 @@ comparisons. Neither runtime has been installed here.
 | --- | --- | --- |
 | What it is | Node gateway as the control plane: agents, plugins, CLI/TUI, chat channels, apps. MIT, ~394k stars, OpenClaw Foundation since Feb 2026 (founder joined OpenAI). | Python+Node "self-improving" agent with a learning loop (writes its own skills, searches past sessions). MIT, ~262k stars, Nous Research. |
 | Release cadence | calendar versions, several stable and beta per week (v2026.11.1 on 11-05) | several a month (v0.23.0 on 11-05) |
-| **Intel Mac mini (macOS 15.7)** | **npm gateway:** no stated OS or arch limit, Node 26.5 already on the mini; 15.7/Intel itself unverified. **Docker:** official amd64 image, so yes inside colima. **macOS app:** no (needs macOS 26.2). | **Native:** unsupported (no Intel macOS build or CI). **Docker:** yes (amd64 image) inside colima. |
-| Linux (X3) | yes | yes |
+| **Intel host (macOS 15.7)** | **npm gateway:** no stated OS or arch limit, Node 26.5 already on the host; 15.7/Intel itself unverified. **Docker:** official amd64 image, so yes inside colima. **macOS app:** no (needs macOS 26.2). | **Native:** unsupported (no Intel macOS build or CI). **Docker:** yes (amd64 image) inside colima. |
+| Linux (second machine) | yes | yes |
 | Footprint | ~150–500 MB idle, 2 GB+ recommended (third-party) | 1–4 GB, 2 GB+ with a browser (third-party) |
 | Local models | any OpenAI-compatible server (vLLM, LiteLLM). Ollama through its native API only: its `/v1` breaks tool calls. Docs warn about small local models; a field report found 25k-token system prompts overflowing small contexts. | custom OpenAI-compatible endpoints; vLLM needs tool-call flags; set Ollama's context server-side |
 | Cloud egress by default | a daily version check. Web search only with a configured key; keyless providers never auto-selected. LLM fallback only if configured. | **keyless cloud web search rotation** (Exa, Parallel, Firecrawl, Keenable) unless SearXNG is set. LLM fallback only if configured. |
@@ -339,14 +346,14 @@ comparisons. Neither runtime has been installed here.
 | Scheduler | in the gateway, persisted in SQLite; the gateway must run; **missed runs are rescheduled, not replayed** | in the gateway daemon, a 60 s tick; must be running |
 | Observability | official OpenTelemetry plugin (traces, metrics, logs over OTLP), a Prometheus diagnostics endpoint | opt-in OpenTelemetry plugin |
 | **2026 security record** | **131 CVEs (5 critical, 67 high), all five criticals fixed**; ~700 GitHub advisories; ~40k instances found exposed on the internet | 6+ CVEs, guard and scanner bypasses; CVE-2026-14625 is an authenticated RCE (CVSS 6.3) with a public PoC and **no confirmed fix; the vendor did not respond**; no published GitHub advisories |
-| Independent tests | one homelab bake-off (2026-06-11, 14B local model, MCP tools): OpenClaw 91.0 vs Hermes 75.8 of 500, OpenClaw won 4 of 5 tasks; "local models are for tinkerers". Reviews: OpenClaw for reliable scheduled automation, Hermes for self-improvement. | |
+| Independent tests | one installation bake-off (2026-06-11, 14B local model, MCP tools): OpenClaw 91.0 vs Hermes 75.8 of 500, OpenClaw won 4 of 5 tasks; "local models are for tinkerers". Reviews: OpenClaw for reliable scheduled automation, Hermes for self-improvement. | |
 
 ### 6.3 Judgement for this job
 
 **OpenClaw fits the job better than Hermes. Neither is needed for the core, and OpenClaw's security
 churn is the price.**
 
-- **Hardware.** OpenClaw is the only one with a chance of running natively on the mini, and both
+- **Hardware.** OpenClaw is the only one with a chance of running natively on the host, and both
   run in Docker inside colima. With 64 GB either fits. Prefer Docker on both counts: one supported
   path, and isolation from the host.
 - **Our rules (N6, N9, N10).** OpenClaw's defaults are closer:
@@ -379,7 +386,7 @@ churn is the price.**
 incidents), trial **OpenClaw first, Hermes as the challenger**, both on the same tools and data, and
 adopt one by ADR (N7). Until then, Option 2 needs neither.
 
-### 6.4 Can OpenClaw run on the Mac mini?
+### 6.4 Can OpenClaw run on the host?
 
 **Yes, in Docker; probably natively; not as the app.**
 
@@ -387,23 +394,24 @@ adopt one by ADR (N7). Until then, Option 2 needs neither.
   This is the supported path and the one to use: it isolates the agent from the host and the
   operator's files, and fits N8 when run as its own container. Memory is 150–500 MB idle, 2 GB+
   recommended. After the 64 GB upgrade that is no concern; today, at 1.3 GB unused, it is.
-- **Native npm gateway:** OpenClaw needs Node 24.16+ or 26.1+, and the mini has Node 26.5.0 for
+- **Native npm gateway:** OpenClaw needs Node 24.16+ or 26.1+, and the host has Node 26.5.0 for
   both the operator and the `claude` account. No doc limits the gateway's OS version or
   architecture,
   but no source confirms macOS 15.7 on Intel either. Unverified; a 10-minute install on the dev
   account would settle it. Running natively on the host is the riskier option anyway (the gateway
   is never sandboxed).
-- **macOS app:** no. It needs macOS 26.2 Tahoe, and the 2018 Intel mini runs 15.7.
+- **macOS app:** no. It needs macOS 26.2 Tahoe, and the 2018 Intel host runs 15.7.
 
 ### Decisions for the operator
 
 - Which Google access to set up: a service account added to each Search Console property, or an
-  OAuth client. And which sites first: Orrery, then which?
+  OAuth client. And which sites first: the shop, then which?
 - Whether to add Bing Webmaster (API key) alongside.
 - Cloud inference for this platform: none (the brief's rule), or allowed per key with a budget as
   elsewhere.
-- Whether and when to enable tool calling on the DGX prod vLLM, which needs a restart.
-- Whether the X3 model may become a 24/7 service dependency, given that the X3 is a workstation.
+- Whether and when to enable tool calling on the model host prod vLLM, which needs a restart.
+- Whether the second machine model may become a 24/7 service dependency, given that the second
+  machine is a workstation.
 - Where findings live: a new repo `seo-intelligence` as the brief proposes, or a directory in an
   existing one.
 
@@ -420,7 +428,7 @@ adopt one by ADR (N7). Until then, Option 2 needs neither.
 - I have not checked the fixed version for Hermes's CVE-2026-14625; none is confirmed.
 - I have not measured tool-call reliability of Qwen3-30B-A3B, on Ollama or on vLLM, on our own
   tasks.
-- I have not checked which of the sites besides Orrery and humancopilot.eu are verified in Search
+- I have not checked which of the sites besides the shop and example.org are verified in Search
   Console.
-- I have not costed the mini's memory for Parquet, DuckDB and a crawler; that depends on site count
+- I have not costed the host's memory for Parquet, DuckDB and a crawler; that depends on site count
   and crawl size.

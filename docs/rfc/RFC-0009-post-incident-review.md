@@ -9,7 +9,7 @@ and notes), G14 and T17 (the recurrence rule).
 ## Motivation
 
 The first shadow case (`case-20261114-6983646f65`, 2026-11-14 23:45Z) went exactly as designed: the
-backup was 20.1 h old, the chain planned a rerun on the mini, absorbed every later detection into the
+backup was 20.1 h old, the chain planned a rerun on the host, absorbed every later detection into the
 one case, and cleared at 03:54Z when the daily backup landed (24.1 h at its oldest). The chain was
 right within its preconditions. The check was not: a 20 h threshold on a backup that runs about every
 24 h opens a case every night on a healthy backup. Nothing in flotilla said so; a person reading the
@@ -82,7 +82,7 @@ nothing for 30 days unless the evidence changes.
 1. **Applying before step 4.** Until Bugfix brings `github.open_pr`: **proposed**, an approved
    `process_change` shows its diff and the operator applies it by hand (the case records the commit).
    The alternative is to build the repo write now, here, and use it again in step 4.
-2. **Installation config.** Some changes are not in the repo (`flotillad.yaml` on the mini, such as
+2. **Installation config.** Some changes are not in the repo (`flotillad.yaml` on the host, such as
    `vlogs_url`). **Proposed:** v1 proposes only repo changes; for installation config it writes a note
    naming the key and the value.
 3. **Where review runs.** **Proposed:** a routine on `ops-read` (code only, reads the API). The

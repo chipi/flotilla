@@ -23,7 +23,7 @@ reads or writes (the model gateway, metrics and traces; `deploy/e2e/stub.py`).
 | **Security** | the threat model's controls | injection fixtures never lead to an executed write and taint caps them at propose; tools refuse out-of-scope requests; MCP has no way to approve; a local-only routine refuses a cloud model; secrets never appear in logs or traces; the host agent refuses forged, replayed, expired, out-of-allowlist and above-cap executions; a Slack approval from another user, for high risk or for a changed plan is refused | every push |
 | **Integration** | flotillad and a worker together, real SQLite | a case from trigger to closed with a **stub model endpoint** returning recorded responses and stub sources (fixture alerts, fixture Search Console rows); an approval starts the execute run; repo writes go to a **stub GitHub**, host writes to a host agent running a no-op allowlist | every push to main and PR (`ci`) |
 | **End to end** | the deployment itself | the compose stack (flotillad, workers, egress proxy) and a host agent in a container, in the dev Docker engine, with a stub model endpoint, stub sources, stub GitHub and a stub provider; drive it through the CLI and the API; check metrics, logs and traces come out (`deploy/e2e/run.sh`) | before every release |
-| **Live smoke** | the deployed system on the mini | the canary fleet (below) runs on schedule; `flotilla status` is healthy; the deploy-verify check passes | after every deploy, then continuously |
+| **Live smoke** | the deployed system on the host | the canary fleet (below) runs on schedule; `flotilla status` is healthy; the deploy-verify check passes | after every deploy, then continuously |
 
 **Rules:**
 
@@ -65,7 +65,7 @@ this repo. It is synthetic, deterministic and harmless:
 | **Decision quality, live** | is it still making good decisions? | from cases: approval and rejection rate, the reasons for rejections, duplicates caught by the triage fleet's code checks before filing, `gated` and `invalid_output` rates, outcomes (issues fixed, findings that improved a page). Each fleet declares the levels that should raise an alert. |
 | **Drift** | did something change underneath? | the mix of decisions per week against the last weeks; model, playbook and spec versions are in every row, so a shift can be traced to a change |
 | **Model and prompt evaluation** | is a different model or playbook better? | evaluated offline on the replay corpus (with eval-harness), never by switching production and watching |
-| **Health** | is it running? | per routine: freshness (last success), run success rate, duration, cost against budget; dashboards and alerts in the homelab stack |
+| **Health** | is it running? | per routine: freshness (last success), run success rate, duration, cost against budget; dashboards and alerts in the installation's stack |
 
 Each fleet's spec states its **validation contract**:
 

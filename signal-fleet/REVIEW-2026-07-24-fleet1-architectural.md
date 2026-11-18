@@ -119,7 +119,7 @@ downstream (agrees with the doc's lean).
 kick-back rule, orchestrator MVP), §6.3 ("Observed 2026-07-24" blocks: k=3
 rates, fixmap experiment), §4.3 (prompt-as-config); artifacts under
 `~/.bugfix-fleet/bakeoff/results/` (`triage_runs.tsv`, `runs.tsv`,
-`orrery-mission-arc-L0-triage*/`).*
+`shop-mission-arc-L0-triage*/`).*
 
 ---
 
@@ -186,7 +186,7 @@ through Fleet 1.
 
 §6/§8 pin `:8428/:9428/:10428` but never name the host — and the
 observability stack is mid-migration (VictoriaMetrics/Grafana currently on
-the DGX, planned move to the Mac mini; the DGX-side repo has diverged —
+the model host, planned move to the host; the model-host-side repo has diverged —
 operator memory, `project_observability_selfhost`). Phase A wiring should
 name the canonical host explicitly and note the migration, or the fleet
 binds to a target that is about to move under it.
@@ -441,7 +441,7 @@ Fleet-1's measured experience:**
    Your live stream is noise-dominated (all ~6 runs to date). A labeled
    set drawn from history will score an always-dismiss triager near-
    perfect. Seed real-defect signals deliberately — and you have a
-   generator nobody else has: **Fleet-1's replayed bugs.** Run orrery at
+   generator nobody else has: **Fleet-1's replayed bugs.** Run shop at
    a bug's base commit, trigger the defect, let the real error land in
    GlitchTip, capture that signal + evidence → ground truth = File(bug)
    with *known* acceptance. Cross-fleet reuse that gives the File class
@@ -781,7 +781,7 @@ correlated. What IS defensible at this N: "flash exhibits a strong,
 consistent dismiss-bias on this fixture family" — a directional finding
 that fully justifies the prompt fix and the model comparison, and
 nothing stronger. Before any "unfit" verdict lands in a doc: widen the
-file class with the seeded-defect generator (Round 5 §2 — run orrery at
+file class with the seeded-defect generator (Round 5 §2 — run shop at
 a Fleet-1 bug's base, capture the real GlitchTip error), which gives you
 file-labeled fixtures with *known* ground truth in both columns at ~zero
 labeling cost. Also honestly note the dismiss class is trivially easy

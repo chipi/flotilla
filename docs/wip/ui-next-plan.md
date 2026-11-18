@@ -37,7 +37,7 @@ operator can answer each of these in about a minute, from the UI alone:
 1. **One small deploy, first** (every day without it loses run data):
    - triage passes the calls file to its client (one line, with the fleet session: it is triage's
      code) and starts tracing (one line); the model contract starts tracing (one line);
-   - the fleet page's two bugs: the ended `triage-candidate` shown as a healthy worker; the X3
+   - the fleet page's two bugs: the ended `triage-candidate` shown as a healthy worker; the second machine
      worker links counted as "2 down" host agents.
 2. **Bucket 2,** the decision mix (the operator's go stands).
 3. **Bucket 1,** one mockup on real data, then the build.
@@ -77,12 +77,12 @@ approve; then the build.
 | T0.1: dev errors not investigated, never filed (the operator's choice) | 2397af0 to review | me (review), then the operator's deploy go |
 | Bugfix's pi calls recorded (pi does not use the runtime's client) | not started | the fleet session (phase B) |
 | One triage cycle skipped per deploy | known | mine, a deploy-script change |
-| Service levels (homelab RFC-0009): the plan's 4 decisions | plan pushed | operator, then I build |
-| The three endpoints under target (two Umami trackers, airandspacehistory.com) | not looked at | mine, with the SLO view |
+| Service levels (the installation's RFC-0009): the plan's 4 decisions | plan pushed | operator, then I build |
+| The three endpoints under target (two Umami trackers, `www.example.org`) | not looked at | mine, with the SLO view |
 | RFC-0013's build: §1 in `fix.py`, then stages and the clarifier | accepted | fleet session (§1), me (stages); the go |
-| M2a / M2b: Qwen on the DGX's prod vLLM, a shadow on it | blocked | operator's go, the prod side's word |
+| M2a / M2b: Qwen on the model host's prod vLLM, a shadow on it | blocked | operator's go, the prod side's word |
 | K4: the knowledge volume | waiting | operator's go |
-| SEO findings: airandspacehistory's `/home` canonical, evals not indexed, 3 opportunities | open cases | operator |
+| SEO findings: a site's `/home` canonical, evals not indexed, 3 opportunities | open cases | operator |
 | The Slack app; the robotics assessment | the vision plan's last items | operator |
 
 ## What the advisor's review changed

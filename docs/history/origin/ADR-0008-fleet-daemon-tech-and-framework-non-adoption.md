@@ -1,12 +1,12 @@
 # ADR-0008 — Fleet daemon in Go; deliberate framework non-adoption (with revisit triggers)
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md)), kept as the record.
-> fleetd's technology decision (2026-07-25); flotilla's are its own ADRs. The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/adr/ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md)), kept as the record.
+> fleetd's technology decision (2026-07-25); flotilla's are its own ADRs.
 
 **Status:** Accepted (2026-07-25)
 **Context:** RFC-0002 / RFC-0003 fleets are approaching go-live
 ([rollout plan](fleet-architecture.md#rollout-status)); both need an always-on
-daemon on the mini. The operator's stack is Python/TypeScript and wants a
+daemon on the host. The operator's stack is Python/TypeScript and wants a
 deliberate learning surface for new tech — plus an explicit
 "are we reinventing a wheel?" audit against the agent-framework ecosystem.
 
@@ -43,7 +43,7 @@ and where the project's measured value is concentrated.
 |---|---|---|
 | **LangGraph** (1.0, checkpointing) | not adopted | its value = durable state graphs for LLM-driven flows; our sacred rule is the opposite (no LLM in control flow), loops are ~150 deterministic lines, and chains cost ~$0.50 to simply re-run — durability is not our pain |
 | **Temporal** | **track OPEN** | industrial durable execution; the right answer if fleets outgrow "restart the cycle" reliability. **Revisit trigger:** a lost in-flight chain costs more than an hour of operator attention, or fleet count/volume makes launchd babysitting real work |
-| **LiteLLM** | **TRIGGER FIRED 2026-07-25 → adopted** | the operator declared production must route beyond OpenRouter (direct DeepSeek/Moonshot/Z.ai/US, cheap-first) — same day. Stood up as the homelab gateway (`infra/litellm/`, RFC-0001 → Accepted): provider-swappable aliases, per-consumer budget keys, Langfuse/GlitchTip callbacks. OpenRouter remains the lab route | <!-- gitleaks:allow: "provider-swappable ... budget key" is prose, no secret -->
+| **LiteLLM** | **TRIGGER FIRED 2026-07-25 → adopted** | the operator declared production must route beyond OpenRouter (direct DeepSeek/Moonshot/Z.ai/US, cheap-first) — same day. Stood up as the installation gateway (`infra/litellm/`, RFC-0001 → Accepted): provider-swappable aliases, per-consumer budget keys, Langfuse/GlitchTip callbacks. OpenRouter remains the lab route | <!-- gitleaks:allow: "provider-swappable ... budget key" is prose, no secret -->
 | CrewAI / AutoGen-style | rejected | LLM-driven multi-agent orchestration — the architecture ADR-0004 measured at 10–180× our cost for equal outcomes |
 | promptfoo / DeepEval | not adopted | our eval's value is fixtures + frozen probe tables (domain-specific); the runner is trivial |
 | n8n | deferred as designed | RFC-0002 already earmarks it as glue for non-core integrations |
@@ -55,7 +55,7 @@ survive the inventory.
 
 ## Consequences
 
-- New top-level `fleetd/` (Go module); mini runs a cross-compiled binary —
+- New top-level `fleetd/` (Go module); host runs a cross-compiled binary —
   only the dev laptop needs the toolchain.
 - Two explicitly-open adoption tracks (Temporal, LiteLLM) with named
   triggers — this ADR is the place to return to when either fires.

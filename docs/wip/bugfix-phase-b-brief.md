@@ -10,9 +10,10 @@ nothing new and no expansion until what exists is understood and solid.** Read t
 
 The chain, end to end (live since 2026-11-15, all in shadow):
 
-1. **`bugfix/intake`** (hourly, mini): orrery's open issues labelled `bug` or routed by triage become
+1. **`bugfix/intake`** (hourly, host-01): the shop's open issues labelled `bug` or routed by triage
+   become
    `code_bug` cases, one per issue (`bugfix/intake.py`).
-2. **`bugfix/fix`** (on a case, X3): the fleetd chain ported to the platform (`bugfix/fix.py`).
+2. **`bugfix/fix`** (on a case, second machine): the fleetd chain ported to the platform (`bugfix/fix.py`).
    - A **verdict** step (pi, `fleet-bugfix-flash`) decides actionable or needs-info.
    - A **fix** step writes the change and its test, with an **advisor** (`fleet-bugfix-reviewer`)
      for kick-backs, up to 2 rounds.
@@ -20,7 +21,8 @@ The chain, end to end (live since 2026-11-15, all in shadow):
      related tests (`vitest related`) with no new failures. Not the whole suite.
    - A **model review** (`fleet-bugfix-reviewer`), then a plan: `github.open_pr` with the diff.
 3. **Policy** records the plan. At shadow the case closes as a shadow plan.
-4. **`bugfix/open-pr`** (on an approved plan, X3 act worker): one commit on `flotilla/<case>`, a draft
+4. **`bugfix/open-pr`** (on an approved plan, second-machine act worker): one commit on
+   `flotilla/<case>`, a draft
    PR, with an installation token narrowed to the plan's repo and contents/PR write.
 5. **`bugfix/pr-check`**: merged is verified, closed unmerged is failed.
 
@@ -28,10 +30,10 @@ The chain, end to end (live since 2026-11-15, all in shadow):
 | --- | --- |
 | `bugfix/fix` autonomy | **shadow**: plans are recorded, nothing reaches GitHub |
 | `github.open_pr` action | propose (the operator, 2026-11-16); no effect while the routine is at shadow |
-| Repos | orrery only (intake's `--repo`) |
+| Repos | the shop only (intake's `--repo`) |
 | Models | through LiteLLM key `fleet-bugfix` ($100 budget, $4.01 spent); routine cap $5 a day |
-| Where | workers on the X3 (RFC-0011), the mini orchestrates |
-| GitHub App | `orrery-bugfix-fleet`, reused from the homelab fleet; installed on the operator's 18 repos; flotilla asks only for narrowed tokens |
+| Where | workers on the second machine (RFC-0011), the host orchestrates |
+| GitHub App | `shop-bugfix-fleet`, reused from the installation fleet; installed on the operator's 18 repos; flotilla asks only for narrowed tokens |
 | Reviewer App | `bugfix-fleet-reviewer` (17 repos): exists, unused by flotilla |
 
 ## 2. What it has done (2026-11-15 to 11-16)
@@ -39,7 +41,7 @@ The chain, end to end (live since 2026-11-15, all in shadow):
 - **10 cases:** 4 ended with a PR plan recorded (#648, #651, #656, #659), 4 needs-info from the
   reporter, 2 with no verdict (#657, #661: the verdict step's answer had no JSON).
 - **55 fix runs:** 30 ok, 23 skipped (a worker not connected during deploys), 2 interrupted (deploys).
-  About 6 minutes a run on the X3; under $0.10 a run in model spend.
+  About 6 minutes a run on the second machine; under $0.10 a run in model spend.
 - **Nobody has judged the 4 plans.** Whether they are right fixes is unknown; that is phase B's first
   question.
 
@@ -48,7 +50,7 @@ What went wrong in the form, each fixed or open:
 | Seen | State |
 | --- | --- |
 | Tests served on loopback went through the egress proxy and failed | fixed (`NO_PROXY` loopback) |
-| orrery's `prepare` script wrote `core.hooksPath` into the shared repo cache; 8 runs escalated | fixed (the config is put back after setup) |
+| the shop's `prepare` script wrote `core.hooksPath` into the shared repo cache; 8 runs escalated | fixed (the config is put back after setup) |
 | GitHub refused anonymous blob fetches in a burst (5 runs in 3 minutes); not reproduced since | retry added (30 s, 90 s); cause not proven |
 | The verdict step sometimes returns no JSON (#657, #661) | **open**: harness or prompt |
 | The same issue got different verdicts on different runs (#646) | **open**: nondeterminism, unmeasured |
@@ -67,8 +69,9 @@ What went wrong in the form, each fixed or open:
 
 **Then measure, as RFC-0010 §8 says,** in eval-harness:
 
-1. **The dataset `orrery-bugfix`:** orrery's closed `bug` issues with the commit that fixed them; that
-   commit's tests are the hidden oracle, its parent the base. Frozen in fleet-eval-data. Count how
+1. **The dataset `shop-bugfix`:** the shop's closed `bug` issues with the commit that fixed them; that
+   commit's tests are the hidden oracle, its parent the base. Frozen in the installation's research
+   repo. Count how
    many have a linked fix first.
 2. **The adapter:** run `bugfix/fix` itself on an item, GitHub stubbed: the routine and the evaluation
    are the same code.
@@ -97,16 +100,16 @@ Both were raised on 2026-11-16 and deliberately not done; phase B decides them.
 
 | Repo | Open `bug` | Notes |
 | --- | --- | --- |
-| podcast_scraper | 35 | Python; heavy ML extras that may not install in the worker; many issues filed by the triage fleet |
-| orrery | 11 | the only repo today |
-| agentic-ai-homelab | 6 | shell and infra, no test suite: a fix could not be proven |
+| the api | 35 | Python; heavy ML extras that may not install in the worker; many issues filed by the triage fleet |
+| the shop | 11 | the only repo today |
+| the installation's ops repo | 6 | shell and infra, no test suite: a fix could not be proven |
 | eval-harness | 3 | Python |
 | 14 others | 0 | nothing to do |
 
 - What it would take: a per-repo profile read by `fix.py` (setup, test command, related-tests
   command, excluded paths), because one acting routine serves the `code_bug` kind. The worker image
   may need a Python toolchain.
-- **The bar before it:** orrery solid by §3; then podcast_scraper as its own dataset and profile, in
+- **The bar before it:** the shop solid by §3; then the api as its own dataset and profile, in
   shadow first. Watch the triage → bugfix loop: triage files what bugfix fixes.
 
 ## 5. Decisions for the operator
@@ -114,7 +117,7 @@ Both were raised on 2026-11-16 and deliberately not done; phase B decides them.
 1. The bar for point 2 (an oracle pass rate, a cost, a review time).
 2. Whether `github.open_pr` stays at propose until then, or goes back to shadow to say "not decided".
 3. Whether "needs info" should comment on the issue.
-4. The order of repos for point 3, and whether agentic-ai-homelab is ever in scope.
+4. The order of repos for point 3, and whether the installation's ops repo is ever in scope.
 5. Whether the reviewer App has a role (a separate identity for review comments) or is retired.
 
 ## 6. Where things are
@@ -124,6 +127,6 @@ Both were raised on 2026-11-16 and deliberately not done; phase B decides them.
 | The chain | `bugfix/fix.py`, `bugfix/intake.py`, `bugfix/open_pr.py`, `bugfix/pr_check.py`; the bake-off leaves in `bugfix-fleet/bakeoff/` |
 | Specs | `fleets/bugfix/*.yaml` |
 | Tests | `bugfix/test_*.py` (`make test-unit`) |
-| Remote stack | `deploy/remote/` (X3: `~/flotilla-remote`, unit `flotilla-remote.service`) |
-| Records | `flotilla case list`, `flotilla runs bugfix/fix`, the fleet page; X3 worker logs `BUGFIX FIX …` lines |
+| Remote stack | `deploy/remote/` (second machine: `~/flotilla-remote`, unit `flotilla-remote.service`) |
+| Records | `flotilla case list`, `flotilla runs bugfix/fix`, the fleet page; the second machine's worker logs `BUGFIX FIX …` lines |
 | Phase A history | [history 0003](../history/0003-wip-notes-closed.md) (the closed build order) |

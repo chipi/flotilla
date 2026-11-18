@@ -52,9 +52,9 @@ landed on an answer.
   (Accepted → ADR-0016, 2026-11-15)
 - [RFC-0010 — Bugfix on the platform: from a bug to a draft PR, as a case](RFC-0010-bugfix-on-the-platform.md)
   (Accepted, 2026-11-15)
-- [RFC-0011 — Remote workers: routines on any machine, the mini orchestrating](RFC-0011-remote-workers.md)
+- [RFC-0011 — Remote workers: routines on any machine, the host orchestrating](RFC-0011-remote-workers.md)
   (Accepted, 2026-11-15)
-- [RFC-0012 — The SEO fleet: Orrery's search presence, measured](RFC-0012-seo-fleet.md) (Accepted,
+- [RFC-0012 — The SEO fleet: the shop's search presence, measured](RFC-0012-seo-fleet.md) (Accepted,
   2026-11-15)
 - [RFC-0013 — The clarifier: answering "needs info" before the fix](RFC-0013-bugfix-clarifier.md) (Accepted,
   2026-11-16)

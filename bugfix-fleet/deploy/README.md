@@ -26,15 +26,15 @@ Only worth investigating if `last exit code` is still 1 well beyond a few
 minutes past boot:
 
 ```sh
-sudo launchctl print system/com.homelab.bugfix-metrics | grep -E 'runs|last exit code'
+sudo launchctl print system/com.example.bugfix-metrics | grep -E 'runs|last exit code'
 tail /tmp/bugfix-metrics.log
 ```
 
 ## Install
 
 ```sh
-sudo cp com.homelab.bugfix-metrics.plist /Library/LaunchDaemons/
-sudo chown root:wheel /Library/LaunchDaemons/com.homelab.bugfix-metrics.plist
-sudo chmod 644 /Library/LaunchDaemons/com.homelab.bugfix-metrics.plist
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.homelab.bugfix-metrics.plist
+sudo cp com.example.bugfix-metrics.plist /Library/LaunchDaemons/
+sudo chown root:wheel /Library/LaunchDaemons/com.example.bugfix-metrics.plist
+sudo chmod 644 /Library/LaunchDaemons/com.example.bugfix-metrics.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.example.bugfix-metrics.plist
 ```

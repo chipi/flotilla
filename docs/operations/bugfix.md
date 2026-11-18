@@ -24,10 +24,10 @@ propose. The repos it may act on are the installation's: `action_enums` in `flot
 ## Per-repo profiles
 
 `bugfix/fix` knows nothing of a repo but its flags, so a repo is a routine spec that sets them
-(`fleets/bugfix/fix.yaml` is orrery's; its defaults are orrery's: npm, vitest). One acting routine
-per case kind, so a second repo needs a kind of its own.
+(`fleets/bugfix/fix.yaml` is the example shop's; its defaults are the shop's: npm, vitest). One
+acting routine per case kind, so a second repo needs a kind of its own.
 
-| Flag | What it sets | Default (orrery) |
+| Flag | What it sets | Default (shop) |
 | --- | --- | --- |
 | `--setup`, `--setup-timeout` | install on the base, run under `sh` in the worktree | `npm ci ...`, 1200 s |
 | `--test-cmd` | the test command: `%s` is the report's path, the test files are appended | `npx vitest run ...` |
@@ -40,7 +40,7 @@ per case kind, so a second repo needs a kind of its own.
 **The pytest format.** The report is read into the one per-file result the gates use for vitest:
 a failed or errored test is a failure `file::name`; a file whose collection failed is unloaded;
 **a skipped test is not a pass**: a file whose tests were all skipped (or xfailed) counts as not run
-(unloaded), and so does a requested test file the report does not mention. podcast_scraper's
+(unloaded), and so does a requested test file the report does not mention. the api's
 integration files guard themselves with `pytest.importorskip`, so a broken install skips them, and a
 run that only skipped must not look green. The test command should pass
 `--continue-on-collection-errors`, or one file that cannot load on the base stops the others.
@@ -83,11 +83,11 @@ before its SIGKILL. A cancelled run (a STOP of the fleet,
 `flotilla cancel`) is stopped the same way and reports the same.
 
 **The fleet's rules, not the repo's AGENTS.md.** pi loads the repo's `AGENTS.md` into every call
-by default: about 30,000 tokens on orrery, 44% of the input tokens of the fleet's sessions on
+by default: about 30,000 tokens on the shop, 44% of the input tokens of the fleet's sessions on
 2026-11-15 and 16. Every pi step (verdict, advisor, fix, review) runs with `--no-context-files`
 and `bugfix/fleet_rules.md` instead (`--pi-rules`; `''` keeps pi's default). The rules keep tool
 results small: find before reading, ranges of long files, no generated or vendored files, no
-`git log -p`. On orrery pi's first request went from 123,326 to 7,082 characters.
+`git log -p`. On the shop pi's first request went from 123,326 to 7,082 characters.
 
 **The review judges what it is given.** The reviewer gets the gates' result, the diff, the task
 the fix was given (the verdict's analysis), the fix agent's own summary, the issue as filed and the
@@ -159,22 +159,23 @@ kick-back. Both roots are therefore required with `--test-format pytest`. A fix 
 helper or an `__init__.py` under the tests is a person's change.
 
 `PYTHONPATH` stays in the profile but removes nothing: `python -m pytest` puts the working
-directory on `sys.path` anyway, and podcast_scraper's `from tests.conftest import ...` needs the repo
+directory on `sys.path` anyway, and the api's `from tests.conftest import ...` needs the repo
 root, which `tests/__init__.py` also gets pytest to insert (checked on a scratch package with pytest
-and pytest-json-report from an existing venv, not on podcast_scraper). The shadowing risk is closed
+and pytest-json-report from an existing venv, not on the api). The shadowing risk is closed
 by the scope rule, not by dropping the variable.
 
 **A setup or teardown error is not a failure.** pytest-json-report's outcome `error` (a fixture that
 exists only in the fix, say) counts as not run, not as the test failing on the base; only a failed
 call phase is a failure.
 
-**The image.** `python3` is bookworm's 3.11.2 and podcast_scraper requires `>=3.10` at every base
+**The image.** `python3` is bookworm's 3.11.2 and the api requires `>=3.10` at every base
 checked. The image has `python3-pip` and `python3-venv` and no compiler: a dependency with no wheel
 for it will not build.
 
-`fleets/bugfix/fix-podcast.yaml` is the profile for a Python repo (pytest), with `intake-podcast`,
-which detects its case kind (`code_bug_python`). It relies on the repo in `github.open_pr`'s repos
-(`action_enums`) and `pypi.org` and `files.pythonhosted.org` in the bugfix proxy's allowlist.
+A profile for a Python repo (pytest), such as `fix-api.yaml` in an installation's fleets, comes with
+an `intake-api`, which detects its case kind (`code_bug_python`). It relies on the repo in
+`github.open_pr`'s repos (`action_enums`) and `pypi.org` and `files.pythonhosted.org` in the bugfix
+proxy's allowlist.
 
 ## Quick reference
 
@@ -195,27 +196,27 @@ printed:
 
 1. **Worker tokens:** `worker-bugfix.token` and `worker-bugfix-act.token`, 32 random bytes as hex each,
    made the way the ops workers' were.
-2. **The model keys:** one per fix routine (`fleet-bugfix-fix`, `fleet-bugfix-fix-podcast`, $1 a
+2. **The model keys:** one per fix routine (`fleet-bugfix-fix`, `fleet-bugfix-fix-api`, $1 a
    day each), each alone in its file and mounted only into that routine's remote worker, as
-   `/run/flotilla/model-fix.key` and `/run/flotilla/model-fix-podcast.key`, named by the endpoints
-   `gateway-bugfix-fix` and `gateway-bugfix-fix-podcast`, so a run's spend is its key's alone.
+   `/run/flotilla/model-fix.key` and `/run/flotilla/model-fix-api.key`, named by the endpoints
+   `gateway-bugfix-fix` and `gateway-bugfix-fix-api`, so a run's spend is its key's alone.
 3. **`flotillad.yaml`:**
 
    ```yaml
    workers:   # remote, on the bugfix machine (deploy/remote/README.md)
-     bugfix: {remote: w-bugfix-<host>}                       # intake, intake-podcast, pr-check: no model
+     bugfix: {remote: w-bugfix-<host>}                       # intake, intake-api, pr-check: no model
      bugfix-act: {remote: w-bugfix-act-<host>}               # open-pr
      bugfix-fix: {remote: w-bugfix-fix-<host>}               # fix: only fleet-bugfix-fix's key
-     bugfix-fix-podcast: {remote: w-bugfix-fix-podcast-<host>}   # fix-podcast: only its own key
+     bugfix-fix-api: {remote: w-bugfix-fix-api-<host>}   # fix-api: only its own key
    models:
      endpoints:
        gateway-bugfix-fix: {base_url: "http://<gateway-host>:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix.key}
-       gateway-bugfix-fix-podcast: {base_url: "http://<gateway-host>:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix-podcast.key}
+       gateway-bugfix-fix-api: {base_url: "http://<gateway-host>:4001/v1", kind: litellm, key_file: /run/flotilla/model-fix-api.key}
      aliases:
        fix-flash: {endpoint: gateway-bugfix-fix, model: fleet-bugfix-flash}
        fix-reviewer: {endpoint: gateway-bugfix-fix, model: fleet-bugfix-reviewer}
-       fix-podcast-flash: {endpoint: gateway-bugfix-fix-podcast, model: fleet-bugfix-flash}
-       fix-podcast-reviewer: {endpoint: gateway-bugfix-fix-podcast, model: fleet-bugfix-reviewer}
+       fix-api-flash: {endpoint: gateway-bugfix-fix-api, model: fleet-bugfix-flash}
+       fix-api-reviewer: {endpoint: gateway-bugfix-fix-api, model: fleet-bugfix-reviewer}
    ```
 
    flotillad's `-check` refuses the bugfix specs without these aliases (security T4).
@@ -229,7 +230,7 @@ printed:
      project: flotilla-bugfix
      action: enforce
      allowed_domains: [litellm, github.com, codeload.github.com, api.github.com, registry.npmjs.org,
-                       pypi.org, files.pythonhosted.org]   # pypi: fix-podcast's venv
+                       pypi.org, files.pythonhosted.org]   # pypi: fix-api's venv
    ```
 
    A package whose install fetches a binary from elsewhere is denied, and the denial is logged: add

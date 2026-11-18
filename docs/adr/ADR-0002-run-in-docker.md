@@ -8,11 +8,11 @@ service and designed in its own ADR.*
 
 ## Context
 
-ADR-0001 puts flotilla on the homelab mini, as the `claude` account. Today the fleets run as host
+ADR-0001 puts flotilla on the host, as the `claude` account. Today the fleets run as host
 processes:
 
 - fleetd as a LaunchDaemon under the operator's account;
-- the triage fleet as `python3` from the git checkout, with the mini's system Python 3.9;
+- the triage fleet as `python3` from the git checkout, with the host's system Python 3.9;
 - the brief as a launchd Node job.
 
 Their credentials sit in files the whole account can read. The operator asked whether flotilla
@@ -20,7 +20,7 @@ should run in Docker.
 
 ## Decision
 
-Run flotilla in Docker on the mini, like the homelab's other services:
+Run flotilla in Docker on the host, like the installation's other services:
 
 - **flotillad** in one container, with the state volume and no fleet secrets;
 - **one long-running worker container per fleet**, holding only that fleet's secrets and toolchain;
@@ -32,11 +32,11 @@ Run flotilla in Docker on the mini, like the homelab's other services:
 **Which engine, and who deploys** (operator's conditions, 2026-11-08: "run like any other Docker
 thing we have", and agents must be able to redeploy it):
 
-- flotilla is one more compose stack in the mini's production engine (the homelab's ADR-0009),
+- flotilla is one more compose stack in the host's production engine (the installation's ADR-0009),
   next to the observability backend, GlitchTip and the others: a compose file in the flotilla
   checkout under the operator account, brought up with `docker compose up -d` there.
 - Agents redeploy it the way they redeploy those stacks today: over SSH to the operator account
-  with the key the homelab's operations handbook names, then `docker compose pull && docker compose
+  with the key the installation's operations handbook names, then `docker compose pull && docker compose
   up -d` in the checkout.
 - The production engine's socket is `root:admin 0660`, reachable from the operator account only, so
   this replaces "as the `claude` account" in ADR-0001's decision 2. Inside the containers every
@@ -52,8 +52,8 @@ The defaults for everything the deployment leaves open are in
 
 - **Isolation:** a run cannot read the host, the operator's files, or another fleet's credentials.
 - **A known runtime:** pinned Python and Go per image, not the host's Python 3.9.
-- **Same operation as the other homelab services:** compose, logs through Alloy, deploy events,
-  rollback to a previous tag.
+- **Same operation as the other services of the installation:** compose, logs through Alloy, deploy
+  events, rollback to a previous tag.
 - **Resource limits** per fleet.
 
 **Negative:**
@@ -61,8 +61,8 @@ The defaults for everything the deployment leaves open are in
 - More moving parts: images, a registry, compose files, an egress proxy.
 - The bugfix fleet's worker needs a full toolchain.
 - Debugging goes through `docker exec` and logs, not a shell in the checkout.
-- Deploys go through the operator account's SSH access, as for every production stack on the mini;
-  the `claude` account on the mini cannot deploy it.
+- Deploys go through the operator account's SSH access, as for every production stack on the host;
+  the `claude` account on the host cannot deploy it.
 
 **Neutral:**
 

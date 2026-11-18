@@ -44,24 +44,25 @@ reopened issue) may still be added to a closed case.
 From the reference installation (the v1 chain).
 
 1. **Detect.** A code-only Ops monitor sees the observability backup is older than 26 hours and opens
-   a `failed_backup` case for the mini. Its keys are computed by code; an open case with the same key
+   a `failed_backup` case for `backup-01`. Its keys are computed by code; an open case with the same
+   key
    would have received the signal instead.
 2. **Hand-over.** A code monitor knows the kind, so the case goes straight to `handed_over`, and the
    event starts the Ops remediation routine in the `ops-act-host` worker, which takes the case's lease.
 3. **Re-check and plan.** The routine re-checks by code (backup age, whether the backup job is
-   running). Still a problem, so it plans `backup.rerun_observability(mini)`, citing the numbers.
+   running). Still a problem, so it plans `backup.rerun_observability(backup-01)`, citing the numbers.
 4. **Policy.** flotillad checks the plan: the action exists, is declared for `failed_backup`,
    its target is the case's; autonomy is the lowest of the routine's, the action's earned
-   autonomy, the mini's autonomy cap, taint and the freeze; the lock is free, limits and holds
+   autonomy, the host's autonomy cap, taint and the freeze; the lock is free, limits and holds
    clear.
    - In **shadow**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
      the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first
      action promoted to propose). The approval starts a new run.
    - In **auto**: it goes straight on.
-5. **Execute.** flotillad signs the execution and sends it to the mini's host agent, which checks the
+5. **Execute.** flotillad signs the execution and sends it to the host agent, which checks the
    signature, expiry, its own allowlist and autonomy cap, re-checks the precondition, and runs the exact
-   command (`launchctl kickstart system/com.homelab.db-backup`), recording it in its own audit log.
+   command (`launchctl kickstart system/com.example.db-backup`), recording it in its own audit log.
 6. **Check.** After the window, a timer starts a code check in the acting worker: a backup newer
    than the execution. The case closes as verified, or escalates. Days later an outcome may be
    added.

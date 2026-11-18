@@ -71,10 +71,10 @@ flotillad holds no Slack credential: the agent does (ADR-0006, decided 4).
 
    ```yaml
    slack:
-     connector_host: mini
+     connector_host: host-01
      team_id: T0123456789
-     ui_url: https://flotilla.<tailnet>.ts.net
-     users: {U0123456789: marko}
+     ui_url: https://flotilla.<your-domain>
+     users: {U0123456789: operator}
      daily_cap: 10
    ```
 
@@ -84,7 +84,7 @@ flotillad holds no Slack credential: the agent does (ADR-0006, decided 4).
 ## Verify
 
 - flotillad logs `approvals in Slack` at start; the agent logs `slack socket connected`.
-- Autonomy's guardrail reads "through mini's connector, 1 person pinned…".
+- Autonomy's guardrail reads "through host-01's connector, 1 person pinned…".
 - The next plan waiting for a person appears in the channel within 15 seconds; a click answers it and
   the message shows the answer.
 

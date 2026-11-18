@@ -4,9 +4,10 @@
 see.** A control plane decides and records, workers diagnose and plan, and host agents run only what
 is signed and allowed on their host.
 
-It runs one homelab's operations today: a **triage** fleet that files real issues from alerts and
-errors, an **ops** fleet that watches backups and reviews closed cases, an **seo** fleet that checks
-sites' search reach, and a **bugfix** fleet that drafts fixes as PRs. Every problem is a case, every
+It runs one installation's operations today: a **triage** fleet that files real issues from alerts and
+errors, a **jobs** fleet that watches backups, a **review** fleet that reviews closed cases, a **sites**
+fleet that checks sites' search reach, and a **bugfix** fleet that drafts fixes as PRs. Every
+problem is a case, every
 action starts in shadow and earns its autonomy, and what leaves the platform is decided by code after
 the model.
 

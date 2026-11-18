@@ -172,7 +172,7 @@ change.
 1. **Playbooks stay the routine's own text,** not skills.
 2. **Skills are pinned per deploy,** in three layers (§3): flotilla's defaults and the fleets' skills
    ship in the images; the installation's skills repo is pinned by commit in config and filled by the
-   deploy. Which repo and path the homelab uses is set when the first installation skill is adopted.
+   deploy. Which repo and path the installation uses is set when the first installation skill is adopted.
 3. **Agents do not write skills in v1.** Later, at most as a pull request the operator reviews.
 
 ## 11. Docs amended on acceptance

@@ -6,7 +6,7 @@
 
 ## Context
 
-The homelab runs agents in four places, built separately:
+The installation runs agents in four places, built separately:
 
 - fleetd (Go);
 - the triage fleet (Python);
@@ -36,15 +36,15 @@ inventory and the design.
 7. **Public repo, private state.**
    - In git: code, specs, playbooks and schemas.
    - On the host only: config, secrets, the ledger, findings and fleet data.
-   - Production payloads stay in the private `fleet-eval-data` repo.
-8. **It runs on the homelab mini** (64 GB once fitted) as the `claude` account. *Amended by
+   - Production payloads stay in the installation's private research repo.
+8. **It runs on the host** (64 GB once fitted) as the `claude` account. *Amended by
    [ADR-0002](ADR-0002-run-in-docker.md): it runs in containers in the production engine, deployed
    by the operator account, as non-root users.*
 9. **Local models first.** Each job declares its model policy, and every call goes through LiteLLM.
    The daily brief is local only. *Amended by [RFC-0002](../rfc/RFC-0002-job-runtime.md) §3
    (operator, 2026-11-08): every call goes through the one model client to an OpenAI-compatible
    endpoint; LiteLLM is the reference deployment, not a requirement.*
-10. **It reports into the homelab's observability stack** like every other service: metrics, logs,
+10. **It reports into the installation's observability stack** like every other service: metrics, logs,
     traces, LLM traces, errors, ops events, dashboards and alerts.
 11. **MIT licence. The docs site is MkDocs Material**, strict, on GitHub Pages.
 
@@ -70,7 +70,7 @@ of their logic.
 
 - **Adopt Hermes Agent or OpenClaw as the runtime.** Evaluated 2026-11-08 (see
   [the evaluation](../history/0000-origin-evaluation.md)).
-  Rejected for now: Hermes is unsupported on the Intel mini, has self-editing skills and cloud
+  Rejected for now: Hermes is unsupported on the Intel host, has self-editing skills and cloud
   web search by default; OpenClaw has a heavy CVE stream. Both are kept as inspiration.
 - **Everything in Python** (rewrite fleetd) or **everything in Go** (rewrite the triage fleet).
   Neither buys enough to justify the rewrite.

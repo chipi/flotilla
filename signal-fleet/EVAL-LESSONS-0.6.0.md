@@ -1,20 +1,20 @@
 # What the triage-fleet evaluation teaches the fleet itself
 
 **Status:** living, 2026-10-30; section 7 (2026-11-04) answers section 6 and corrects F1, F3 and F7. Written to be handed to an agent
-that will improve the homelab triage fleet (signal-fleet, Fleet 2) on its own, outside eval-harness.
+that will improve the installation's triage fleet (signal-fleet, Fleet 2) on its own, outside eval-harness.
 
 **Provenance:** moved here from eval-harness on 2026-11-04 (the owner's instruction), unchanged; the original is
-`research/internal/TRIAGE_FLEET_LESSONS_0.6.0.md` at chipi/eval-harness commit `d42e0437c`. Paths and commits below are
+`research/internal/TRIAGE_FLEET_LESSONS_0.6.0.md` at example/eval-harness commit `d42e0437c`. Paths and commits below are
 the ones it was written against (signal-fleet `c739792`, the dataset builder `21bc902`).
 
-**Read first:** the fleet's own guide, `docs/operations/triage.md` (moved from agentic-ai-homelab 2026-11-17) (how it works and why), and
+**Read first:** the fleet's own guide, `docs/operations/triage.md` (moved from the installation's ops repo 2026-11-17) (how it works and why), and
 `signal-fleet/EVAL.md` (its evaluation design). This document only adds what building a gold dataset from the
 fleet's production decisions showed. Every number below was measured; the command or file is named beside it.
 
 ## 1. Where this comes from
 
-- **The data:** the fleet's 233 Orrery decisions from 2026-07-25 to 2026-10-29 (test signals removed), published as
-  `chipi-nbgd/orrery-triage` on Hugging Face, built by `signal-fleet/datasets/build_orrery_items.py` at `21bc902`.
+- **The data:** the fleet's 233 Shop decisions from 2026-07-25 to 2026-10-29 (test signals removed), published as
+  `example/shop-triage` on Hugging Face, built by `signal-fleet/datasets/build_shop_items.py` at `21bc902`.
 - **The labels:** the operator's verdicts on the 44 closed issues the fleet filed (from his close comments, each
   confirmed), carried to 60 decisions; and labels on 33 `exact` decisions (the probe answers the model saw),
   proposed by a labeller model (Claude Fable 5.1) and decided by the operator. `verdicts.jsonl` beside the
@@ -36,7 +36,7 @@ fleet's production decisions showed. Every number below was measured; the comman
   logs, metric or trace, so for client-side noise there is nothing to corroborate with, and every correct dismissal
   becomes an operator escalation.
 - **Effect:** production escalates **21%** of signals (49 of 233); its own prompt asks for about 1 in 20 (5%).
-- **Example:** `ORRERY-PROD-U`, 2026-10-16. The model wrote "a classic browser-extension hook patching
+- **Example:** `SHOP-PROD-U`, 2026-10-16. The model wrote "a classic browser-extension hook patching
   addEventListener" (the stack's `addEL_hook` at `<anonymous>:9`), decided dismiss, and the gate escalated it. The
   operator later closed the issue for that error.
 
@@ -47,7 +47,7 @@ fleet's production decisions showed. Every number below was measured; the comman
 - **What it never names:** a stale client running an old build (version skew, chunk-load failures after a deploy),
   injected browser-extension code, a staging bundle mirrored somewhere and hit by bots.
 - **What the operator closed as noise** (sheet part A, his own close comments): 4 issues "external browser noise, not
-  orrery code" (#545 #548 #549 #551), 4 "a deployed staging bundle mirrored …, not real visitors" (#556–#559), 3
+  shop code" (#545 #548 #549 #551), 4 "a deployed staging bundle mirrored …, not real visitors" (#556–#559), 3
   duplicates of those (#560 #561 #563), a low-signal rollup (#523), a config-tuning issue (#429).
 - **Example:** 5 decisions on "Cannot read properties of undefined (reading 'universal')" in SvelteKit's client were
   filed as genuine defects; the labeller reads them as stale-client version skew around the fix of 2026-10-21.
@@ -59,7 +59,7 @@ fleet's production decisions showed. Every number below was measured; the comman
   `labels` and `summary` (`triage.py:237`), and `event_detail` names the release only by id (`gha-<sha>`).
 - So "this event came from a build weeks older than the current one" is in the fleet's hands but not the model's,
   though it is the operator's most common reason for closing chunk-skew and stale-client errors (#553, #554), and
-  the labeller's reason on 5 decisions (`ORRERY-PROD-1D/1O/1T/1U/1V`, release created 2026-09-16, events in late
+  the labeller's reason on 5 decisions (`SHOP-PROD-1D/1O/1T/1U/1V`, release created 2026-09-16, events in late
   October).
 - Not covered: whether a fix shipped after that release; no probe says so.
 
@@ -87,7 +87,7 @@ fleet's production decisions showed. Every number below was measured; the comman
 
 - `triage.investigate()` retries a turn whose reply is empty (`continue`). On the last turn there is no turn
   left, the loop ends, and the function returns `None`; `triage()` returns it, and acting on it fails.
-- Seen in the replay with gpt-oss:20b on X3 (2026-10-30): a reasoning model whose answer was cut off. Production's
+- Seen in the replay with gpt-oss:20b on a second machine (2026-10-30): a reasoning model whose answer was cut off. Production's
   model rarely returns empty, which is why it has not shown up there. The replay records it as an escalation with
   "no terminal decision" and counts it (`no_decision`).
 - Fix: after the loop, fall through to the existing "no terminal decision" escalation, as the non-JSON path does.
@@ -144,7 +144,7 @@ The dataset, labels and replay exist; a change to the prompt or a gate is one mo
 1. Commit the change in signal-fleet; point `TRIAGE_FLEET_SRC` at that checkout.
 2. Add an arm config in `examples/triage-fleet/configs/` with the baseline model (`eval-fleet-triage-pro`).
 3. `evh run --config <it> --repeat 3` (there is no `evh experiment-run`; corrected 2026-11-04) over the labelled set;
-   `evh goals --goal triage_orrery` compares it with the
+   `evh goals --goal triage_shop` compares it with the
    baseline arm on `triage_cost` (deciding: a missed real problem costs 5 false alarms), with `false_alarm`
    under its ceiling, `false_dismiss`, `escalated` and cost beside it.
 4. Read the per-evidence-level breakdown in the inspector: only `exact` items are what production's model saw.
@@ -158,10 +158,10 @@ The dataset, labels and replay exist; a change to the prompt or a gate is one mo
 
 ## 7. What the fleet session measured and changed (2026-11-04)
 
-Measured in eval-harness round r4 of the goal `triage_orrery`, on `orrery_triage_v1_labelled_v2` (below): the
+Measured in eval-harness round r4 of the goal `triage_shop`, on `shop_triage_v1_labelled_v2` (below): the
 same 65 owner-labelled decisions, production's model (`eval-fleet-triage-pro`) on every arm, only the fleet's code
 changing. Each arm ran 3 passes; each comparison is a paired sign-flip test by item, each side the mean of its 3
-passes. `triage_cost` counts a missed real problem as 5 false alarms. Runs: chipi/eval-harness branch 062 (data
+passes. `triage_cost` counts a missed real problem as 5 false alarms. Runs: example/eval-harness branch 062 (data
 under `harness/data/runs/triage_*_2026110*`).
 
 ### Answer to section 6: the model is not the lever
@@ -178,7 +178,7 @@ moved it were to the fleet's brief.
 - **v1 held hindsight.** 7 of the model's 18 false dismissals on v1 cited a probe answer production never saw:
   "GlitchTip issue X no longer exists". v1's rebuild also took `lastSeen` from the browser-set event timestamp
   (2023-11-14 on four items, midnight on ten) and, on 13 of 233 items, a `lastRelease` created after the decision.
-  v2 (`signal-fleet/datasets/build_orrery_items_v2.py`, published as revision `v2` of `chipi-nbgd/orrery-triage`)
+  v2 (`signal-fleet/datasets/build_shop_items_v2.py`, published as revision `v2` of `example/shop-triage`)
   removes them and records each change in `provenance.v2`. On the 15 affected labelled items the model's own false
   dismissals fell from 0.94 to 0.21 (p 0.002); the fleet's final decisions did not change (the gate had caught them).
   `provenance` still quotes what was removed: never give it to a model as evidence.
@@ -186,10 +186,10 @@ moved it were to the fleet's brief.
   signal was re-triaged, and paid for, every cycle and never escalated. A reply that never parsed as JSON took the
   same path. Fixed in `e2fbd6a`: an empty last reply defers (counted, escalated after 6 cycles), an unparseable one
   is the "no terminal decision" escalation.
-- **F3 (release age) does not separate the cases it was meant to.** ORRERY-PROD-1P (real) and -1V (noise) carry
+- **F3 (release age) does not separate the cases it was meant to.** SHOP-PROD-1P (real) and -1V (noise) carry
   the same build age; what differs is whether a fix had shipped by then, which the filing stage knows and the model
   does not. A stale-client rule in filing would have changed 3 of the fleet's 63 real reopens and regressions
-  (`freeze_stale_client.py`, in chipi/fleet-eval-data `projects/stale-client-rule/`): parked.
+  (`freeze_stale_client.py`, in the installation's research repo `projects/stale-client-rule/`): parked.
 
 ### Shipped: the app failing to load its own code is a real problem (prompt `219b34bf`)
 
@@ -211,11 +211,11 @@ escalations and dismissals into filings, so slightly more decisions reach the op
 improves is that fewer of them are noise and far fewer real problems are missed. Read the escalation row with the
 two below it. The 12 decisions it moved rest on 12 distinct owner verdicts (none shares one; across all 65 labelled
 decisions only issue #554 carries two), so the paired test is not inflated by labels carried between decisions.
-Measured on Orrery only: the brief is the same for every project, and PLAYER is a browser app too.
+Measured on Shop only: the brief is the same for every project, and PLAYER is a browser app too.
 | false alarms (of 31) | 0.699 | 0.613 | 0.13 (not worse) |
 
-Its hypothesis was recorded in the commit before the run, and held: ORRERY-5, -7, -PROD-3, -PROD-G filed in 3 of
-3 passes; the CSS-preload noise was not filed. One noise item got worse (ORRERY-U). Without the 15 hindsight items
+Its hypothesis was recorded in the commit before the run, and held: SHOP-5, -7, -PROD-3, -PROD-G filed in 3 of
+3 passes; the CSS-preload noise was not filed. One noise item got worse (SHOP-U). Without the 15 hindsight items
 the effect holds (-0.453, p 0.0018). Deployed 2026-11-04 16:30 UTC (`8213775`, `DEPLOY PASS`).
 
 ### Measured, not shipped
@@ -233,20 +233,20 @@ the effect holds (-0.453, p 0.0018). Deployed 2026-11-04 16:30 UTC (`8213775`, `
 
 ### Not covered by this section
 
-- One model, one project (Orrery), GlitchTip errors only; 65 decisions, of which 30 are `exact`.
+- One model, one project (Shop), GlitchTip errors only; 65 decisions, of which 30 are `exact`.
 - No held-out set: every change was designed and measured on the same 65 decisions. The shipped change was named
   from the gate analysis before its run; the rest were not tested on unseen data.
 - The live effect is not observed yet: no new signal reached the fleet in the first hour after the deploy.
-- ORRERY-S (real) was dismissed in 3 of 3 v2 baseline passes against 1 of 3 on v1; its evidence differs only in the
+- SHOP-S (real) was dismissed in 3 of 3 v2 baseline passes against 1 of 3 on v1; its evidence differs only in the
   wording of the store-unavailable answers. Whether that wording moves the model is not separated from its own
   pass-to-pass variation at k=3.
 
 ## Not covered
 
-- Grafana alerts: this dataset is GlitchTip errors from Orrery only; the gate's behaviour on server-side alerts is
+- Grafana alerts: this dataset is GlitchTip errors from Shop only; the gate's behaviour on server-side alerts is
   not measured here.
-- podcast_scraper and homelab signals: not in this dataset.
-- The filing stage's own correctness (dedup, grouping): the dedup dataset `chipi-nbgd/signal-fleet-dedup` covers its
+- api and installation signals: not in this dataset.
+- The filing stage's own correctness (dedup, grouping): the dedup dataset `example/signal-fleet-dedup` covers its
   normalisation functions, not this.
 - None of the suggestions has been tried; each needs its replay before it ships.
 - Hosted Llama 4 Scout (OpenRouter, 2026-10-30): not runnable as the fleet calls it. No endpoint supports

@@ -1,15 +1,15 @@
 # RFC-0005 — Fleet 3 v1: `remediation-fleet`, unattended recovery of prod after a reboot
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md)), kept as the record.
-> Fleet 3's proposal (2026-09-30). Whether flotilla's ops fleet replaces it is not decided in either repo. The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0005-remediation-fleet-post-reboot-recovery.md)), kept as the record.
+> Fleet 3's proposal (2026-09-30). Whether flotilla's ops fleet replaces it is not decided in either repo.
 
 **Status:** Proposed (2026-09-30)
-**Runs on:** the `homelab` Mac mini, as one fleet under `fleetd` (RFC-0004).
-**Acts on:** the podcast_scraper production VPS (`prod-podcast`), only through one GitHub Actions
-workflow in the public `chipi/podcast_scraper` repo.
+**Runs on:** the control-plane host, as one fleet under `fleetd` (RFC-0004).
+**Acts on:** the api production VPS (`prod-api`), only through one GitHub Actions
+workflow in the public `example/api` repo.
 **Relates to:** RFC-0003 (Fleet 2 hands remediation to Fleet 3), RFC-0004 (`fleetd`),
 [fleet architecture](fleet-architecture.md) (Fleet 3 = the config/runtime lever).
-**Relates to (podcast_scraper):** ADR-115 (prod secrets live in RAM only),
+**Relates to (the api):** ADR-115 (prod secrets live in RAM only),
 `docs/guides/DEPLOY_GOTCHAS.md` §1 / §1b, `.github/workflows/restage-prod-secrets.yml`,
 `scripts/ops/restage_prod_recreate.sh`, and — built for this RFC in `b9c07ff8f` —
 `scripts/ops/prod_recovery_check.sh` and `scripts/ops/prod_health_lib.sh`.
@@ -28,7 +28,7 @@ All times UTC.
 | --- | --- |
 | 01:35 → 02:17 | Last jobs of an overnight corpus-repair queue ran and finished. |
 | 03:26 | The VPS went down hard. The journal just stops, with no clean shutdown. |
-| 03:36 / 03:42 | Grafana fired `prod-podcast dark (no samples 10m)` and `prod logs dark (no lines 15m)`. Detection worked. |
+| 03:36 / 03:42 | Grafana fired `prod-api dark (no samples 10m)` and `prod logs dark (no lines 15m)`. Detection worked. |
 | 04:03 | The VPS came back up. |
 | 04:03 → 06:00 | The public player and operator APIs were **down for ~2 hours**. Nobody was awake. |
 | ~06:00 | Recovered by hand, which needed the operator's approval of a prod deployment gate. |
@@ -37,11 +37,11 @@ What the box looked like after the reboot:
 
 - `player-api-1` and `operator-api-1` were `Exited (127)`, with **no application logs**. `runc` failed
   the bind mount before any process started:
-  `open /dev/shm/player-secrets/podcast_sentry_dsn_api: no such file or directory`.
+  `open /dev/shm/player-secrets/api_sentry_dsn_api: no such file or directory`.
 - `player-learning-app-1` and `operator-viewer-1` (nginx) were crash-looping with
   `host not found in upstream "api"`, one layer downstream of the dead APIs.
 - `compose-api-1` (the control plane) was **Up and healthy, with no provider keys**.
-  `podcast-scraper.service` runs `docker compose up` at boot without the secrets overlay, so it
+  `api.service` runs `docker compose up` at boot without the secrets overlay, so it
   recreated the container with no `/run/secrets` at all. Any pipeline job started from it would have
   run without model keys.
 - The host log shipper (`alloy`) was not started by Docker at boot, although it is set to
@@ -56,7 +56,7 @@ exist again only when GitHub Actions stages them from GitHub's secret store. Bef
 way to trigger that was a human dispatching `restage-prod-secrets.yml` and approving its `prod`
 environment gate. At 4 a.m. that means the product is down until someone wakes up.
 
-### Already fixed on the prod side (podcast_scraper, 2026-09-30)
+### Already fixed on the prod side (the api, 2026-09-30)
 
 These are **prerequisites this RFC builds on**, not part of it:
 
@@ -67,7 +67,7 @@ These are **prerequisites this RFC builds on**, not part of it:
   The secrets now last until the next reboot.
 - **The recovery workflow actually recovers** (commit `f68b4388f`). Its first real run went green
   while recovering one surface of three:
-  - `printf %q` escaped the surface list, so `podcast` and `operator` were skipped as "unknown";
+  - `printf %q` escaped the surface list, so `api` and `operator` were skipped as "unknown";
   - the image tag was read off a sibling container, which moved `player-api` to an untested image;
   - the keyless control plane was never recreated, because it looked healthy.
 
@@ -78,7 +78,7 @@ is expected to fully recover prod after a reboot. **What is missing is something
 call, and approves it, without a human.**
 
 **The fixed workflow has not run in production yet.** Its only run ever is
-[`36675886130`](https://github.com/chipi/podcast_scraper/actions/runs/36675886130) (05:58 UTC,
+[`36675886130`](https://github.com/example/api/actions/runs/36675886130) (05:58 UTC,
 head `9949699df`) — the partially-successful run above, *before* the fix. `f68b4388f` landed at
 06:38. "Fully recovers" therefore rests on the unit tests, not on a real reboot. The class-A drill
 (deleting one secret dir) does not close that gap either; the class-B runs in the propose stage do —
@@ -172,14 +172,14 @@ and run exactly like Fleets 1 and 2, so a reviewer can check it line by line:
 
 - **Directory:** `remediation-fleet/` at the repo root, a sibling of `signal-fleet/` and
   `bugfix-fleet/`.
-- **Language:** stdlib-only Python 3 (`/usr/bin/python3`, 3.9.6 on the mini), like the Fleet 2 core
+- **Language:** stdlib-only Python 3 (`/usr/bin/python3`, 3.9.6 on the host), like the Fleet 2 core
   and `infra/ci-ops-poller/poll.py`, which already calls the GitHub Actions API. No dependencies.
   This is ADR-0008's split: `fleetd` (Go) supervises, the fleet's logic stays Python.
 - **Supervisor:** a block in `fleetd.json`. `fleetd` gives us the scheduler, the STOP-file kill
   switch, the no-overlap rule, the cycle timeout, the `stage` ladder and its own
   `fleetd_cycle{fleet=…}` metric. It does **not** give a per-fleet dead-man (see Reporting), and its
   timeout is a blunt kill (below). **No new LaunchDaemon plist** and no change to
-  `infra/mini-setup.sh`.
+  `infra/host-setup.sh`.
 - **Code vs state — the Fleet 1/2 split.** Code runs from the git checkout; state and secrets live
   outside it, in `~/remediation-fleet/`, never inside the repo directory. Fleet 2 does exactly this
   (`~/signal-fleet/{results,queue,logs}` + its `.env`, all paths absolute and env-overridable as
@@ -199,7 +199,7 @@ remediation-fleet/                   (in the repo — code only)
   reference-remediation/
     cases.json         versioned check outputs, starting with the 2026-09-30 incident
 
-~/remediation-fleet/                 (on the mini — state + secrets, gitignored by location)
+~/remediation-fleet/                 (on the host — state + secrets, gitignored by location)
   .env                 0600; see "Credentials"
   known_hosts          pinned prod host key
   STOP                 kill switch (fleetd stop_flag)
@@ -216,9 +216,9 @@ remediation-fleet/                   (in the repo — code only)
   "enabled": true,
   "interval": "5m",
   "cycle_cmd": "/usr/bin/python3 cycle.py",
-  "workdir": "/Users/<user>/agentic-ai-homelab/remediation-fleet",
-  "env_file": "/Users/<user>/remediation-fleet/.env",
-  "stop_flag": "/Users/<user>/remediation-fleet/STOP",
+  "workdir": "~/ops/remediation-fleet",
+  "env_file": "~/remediation-fleet/.env",
+  "stop_flag": "~/remediation-fleet/STOP",
   "budget_day_usd": 0,
   "stage": "shadow",
   "cycle_timeout": "40m"
@@ -264,12 +264,12 @@ that, not a field in `.env`, is what `cycle.py` reads to decide between `shadow`
 did not start. A metrics-based trigger would have seen "no data" — indistinguishable from "box
 down". The check has to look at the box directly.
 
-**How.** A new read-only script in podcast_scraper, `scripts/ops/prod_recovery_check.sh`, runs on
+**How.** A new read-only script in the api, `scripts/ops/prod_recovery_check.sh`, runs on
 prod and prints one JSON object. The fleet reaches it with a **dedicated SSH key whose
 `authorized_keys` entry pins it to that one command**:
 
 ```text
-restrict,command="/srv/podcast-scraper/scripts/ops/prod_recovery_check.sh" ssh-ed25519 AAAA… remediation-fleet
+restrict,command="/srv/api/scripts/ops/prod_recovery_check.sh" ssh-ed25519 AAAA… remediation-fleet
 ```
 
 `restrict` disables port, agent and X11 forwarding and the pty. `command=` ignores whatever the
@@ -278,15 +278,15 @@ the `deploy` user (already in the `docker` group, so it can run `docker ps` / `d
 without sudo). The entry lives in `infra/cloud-init/prod.user-data` and is applied to the live box
 once.
 
-**Network:** already allowed. The tailnet policy grants `tag:homelab-host → tag:prod:22`.
+**Network:** already allowed. The tailnet policy grants `tag:example-host → tag:prod:22`.
 
-**What the check reports** — built as `scripts/ops/prod_recovery_check.sh` in podcast_scraper
+**What the check reports** — built as `scripts/ops/prod_recovery_check.sh` in the api
 `b9c07ff8f` (2026-09-30), schema `prod_recovery_check/v1`, one JSON line, exit 0 whenever the check
 itself ran. All read-only:
 
 | field | how | sets `needs_recovery` when |
 | --- | --- | --- |
-| `secrets_dirs` | count of **non-empty** files in `/dev/shm/{podcast,operator,player}-secrets` (`prod_secret_file_count`) | any count is 0 — dir missing or empty |
+| `secrets_dirs` | count of **non-empty** files in `/dev/shm/{api,operator,player}-secrets` (`prod_secret_file_count`) | any count is 0 — dir missing or empty |
 | `down_containers` | `prod_broken_containers`: status `Exited*` / `Restarting*` / `Created*` in the `compose`, `operator`, `player` projects, **plus** `compose-api-1` when it is Up but has no `/run/secrets/*` mount | non-empty |
 | `keyless_control_plane` | that `compose` `api` container is Up with no secrets mounts (`prod_has_secret_mounts`) | true (it is also listed in `down_containers`) |
 | `boot_time` | `/proc/stat` `btime` | never by itself — but the fleet does not act until the box has been up ≥ 10 min (the settle precondition, step 1) |
@@ -298,7 +298,7 @@ guard for it stays on the GitHub side (the pre-flight check, step 1).
 Real output from prod on the morning of 2026-09-30 (read-only run):
 
 ```json
-{"schema":"prod_recovery_check/v1","boot_time":1790740976,"secrets_dirs":{"podcast":0,"operator":0,"player":0},"down_containers":[],"keyless_control_plane":false,"alloy_running":true,"needs_recovery":true}
+{"schema":"prod_recovery_check/v1","boot_time":1790740976,"secrets_dirs":{"api":0,"operator":0,"player":0},"down_containers":[],"keyless_control_plane":false,"alloy_running":true,"needs_recovery":true}
 ```
 
 The secret dirs had been deleted at 06:14 UTC — by logind's `RemoveIPC`, before `RemoveIPC=no` was
@@ -310,7 +310,7 @@ For comparison, the 2026-09-30 reboot itself would have read (reconstructed from
 not captured — the check did not exist yet):
 
 ```json
-{"schema":"prod_recovery_check/v1","boot_time":1790740976,"secrets_dirs":{"podcast":0,"operator":0,"player":0},"down_containers":["compose-api-1","operator-api-1","operator-viewer-1","player-api-1","player-learning-app-1"],"keyless_control_plane":true,"alloy_running":false,"needs_recovery":true}
+{"schema":"prod_recovery_check/v1","boot_time":1790740976,"secrets_dirs":{"api":0,"operator":0,"player":0},"down_containers":["compose-api-1","operator-api-1","operator-viewer-1","player-api-1","player-learning-app-1"],"keyless_control_plane":true,"alloy_running":false,"needs_recovery":true}
 ```
 
 **Detection and action cannot disagree — built, and tested.** Both `prod_recovery_check.sh` (the
@@ -322,7 +322,7 @@ that `down_containers` equals the set of containers the recovery recreates. The 
 `needs_recovery` independently from the fields and refuses to act if the two differ.
 
 **Where the script lives on prod.** The forced command runs
-`/srv/podcast-scraper/scripts/ops/prod_recovery_check.sh`. `/srv/podcast-scraper` is a git checkout,
+`/srv/api/scripts/ops/prod_recovery_check.sh`. `/srv/api` is a git checkout,
 owned by `deploy`, that the control-plane deploy resets to the deployed sha — so the script exists on
 the box only **after a deploy that includes `b9c07ff8f`**. Until then the key would run a missing file.
 
@@ -355,7 +355,7 @@ a mismatch.
    - **containment check green** — GitHub's settings still match what the design relies on (see "The
      lever environment" → containment check);
    - **settled:** the box has been up ≥ 10 minutes (`now − boot_time`), and `needs_recovery` was also
-     true on the previous cycle. At boot, `podcast-scraper.service` is still running its own
+     true on the previous cycle. At boot, `api.service` is still running its own
      `docker compose up`, and the rules library counts a `Created` container as broken. Acting on the
      first tick could recreate containers the boot unit is still starting, on the same compose
      project. The cost is ~10 minutes of recovery time. v2 of the check could report whether the boot
@@ -375,10 +375,10 @@ a mismatch.
      holes at the GitHub level — decided, and now a Gate-to-MVP prereq (Open question 2). The guard
      stays afterwards as belt-and-braces.
 2. **Dispatch.** First write the new `request_id=<uuid4>` to `state.json` and a `dispatching` row to the
-   ledger. Then `POST /repos/chipi/podcast_scraper/actions/workflows/restage-prod-secrets.yml/dispatches`
+   ledger. Then `POST /repos/example/api/actions/workflows/restage-prod-secrets.yml/dispatches`
    with `ref: main`, inputs `confirm=RESTAGE_SECRETS`, `surfaces=all`, `recreate=true`, `request_id`,
    and `return_run_details: true`.
-3. **Find the run — by `request_id`.** Built in podcast_scraper `b9c07ff8f`:
+3. **Find the run — by `request_id`.** Built in the api `b9c07ff8f`:
    the workflow has an optional `request_id` input and
    `run-name: Restage prod tmpfs secrets ${{ inputs.request_id }}` (empty for a human dispatch). The
    fleet polls `GET …/actions/workflows/restage-prod-secrets.yml/runs?event=workflow_dispatch&branch=main`
@@ -405,7 +405,7 @@ a mismatch.
      the dispatch token) and
      `{"environment_ids":[<id>],"state":"approved","comment":"remediation-fleet <request_id>"}`.
      GitHub records the approval as the bot account. The comment carries **only** the `request_id`:
-     `podcast_scraper` is public, and container names and boot times do not belong in it. The evidence
+     the api repo is public, and container names and boot times do not belong in it. The evidence
      stays in the ledger row with that `request_id`.
    - Any mismatch → do not approve, alert, latch. These checks are layer 1 of containment; GitHub
      refusing the bot anywhere but `lever-restage` is layer 3 (see "The lever environment").
@@ -428,9 +428,9 @@ a mismatch.
    | layer | how | required? |
    | --- | --- | --- |
    | a. structure | re-run the SSH check until `needs_recovery=false`, for up to 3 min. The recreate goes in `docker ps` order with `--no-deps`, so an nginx surface can restart-loop until its `api` is up (as `player-learning-app-1` and `operator-viewer-1` did in the incident); one early read would call a working recovery failed | yes |
-   | b. user-facing | from the mini, `GET https://<prod-host>.<tailnet>.ts.net/api/health` → `200`, plus the player and operator surfaces' health endpoints (the exact URLs to be taken from the deploy workflows' own post-deploy probes — not yet identified here), retried for up to 3 min (the first request after a recreate took ~70 s on 2026-09-30). Reachable today: `tag:homelab-host → tag:prod:443` is granted, and the probe returned `200` on 2026-09-30. | yes |
+   | b. user-facing | from the host, `GET https://<prod-host>.<tailnet>.ts.net/api/health` → `200`, plus the player and operator surfaces' health endpoints (the exact URLs to be taken from the deploy workflows' own post-deploy probes — not yet identified here), retried for up to 3 min (the first request after a recreate took ~70 s on 2026-09-30). Reachable today: `tag:example-host → tag:prod:443` is granted, and the probe returned `200` on 2026-09-30. | yes |
    | c. secret-dependent paths | dispatch `prod-ops-health.yml` (no approval: its `prod-ops-health` environment has no protection rules by design), wait for it, then read the **fresh** `prod_ops_health_check{check=…}` from VictoriaMetrics — `last_run_timestamp` newer than the recovery. Its `gateway` check exercises the provider keys through the LLM gateway; `o11y_glitchtip` exercises the Sentry DSN. Those are exactly the paths a missing secret breaks. Runs took 33–59 s (12/12 green, 2026-09-18 → 29). | `gateway`, `o11y_glitchtip`: yes |
-   | d. observability flowing | `o11y_metrics` / `o11y_logs` / `o11y_traces` from the same run, plus fresh `node_*{instance="prod-podcast"}` samples in VictoriaMetrics | reported, not required |
+   | d. observability flowing | `o11y_metrics` / `o11y_logs` / `o11y_traces` from the same run, plus fresh `node_*{instance="prod-api"}` samples in VictoriaMetrics | reported, not required |
 
    Layer d is reported rather than required because it depends on `alloy`, which this lever does not
    fix (Open question 5). Failing it after a/b/c pass is a distinct outcome — **"product recovered,
@@ -526,13 +526,13 @@ This is containment layer 3 from the lever model: GitHub itself, not the fleet's
 fleet can approve. Decided by the operator on 2026-09-30.
 
 **Why an environment, and why a bot.** A GitHub token cannot be scoped to one workflow; an environment
-can. If the fleet approved in `prod` — whose reviewer is the operator, `chipi` — any credential able to
+can. If the fleet approved in `prod` — whose reviewer is the operator, `example` — any credential able to
 approve there could approve all **20** dispatchable workflows gated by `prod` (listed via the workflows
 API on 2026-09-30), including `infra-apply.yml`, `prod-restore-corpus.yml` and
 `mint-prod-gateway-key.yml`. So:
 
 - `restage-prod-secrets.yml` deploys to a new environment, **`lever-restage`**, instead of `prod`.
-- `lever-restage` has two required reviewers: the **bot machine account** and the operator (`chipi`).
+- `lever-restage` has two required reviewers: the **bot machine account** and the operator (`example`).
   GitHub: *"Only one of the required reviewers needs to approve the job for it to proceed"* — so the bot
   alone can approve at `live`, and the operator can approve in `propose` or by hand.
 - The bot is a reviewer on **no environment that is not a lever's**, and a **read-only** collaborator
@@ -547,31 +547,31 @@ API on 2026-09-30), including `infra-apply.yml`, `prod-restore-corpus.yml` and
   identity route — a GitHub App as a custom deployment protection rule — is to be re-evaluated (see
   Alternatives).
 - Deployment branches: protected branches only, like `prod`.
-- A CI check in podcast_scraper asserts that **exactly one workflow file** names `lever-restage`. Without
+- A CI check in the api asserts that **exactly one workflow file** names `lever-restage`. Without
   it, a later workflow could quietly declare that environment and inherit the bot's approval. Any such
   workflow still has to be merged to `main` by the operator; the check makes the change visible and red.
 
 **Containment check — every cycle, before acting.** The environment settings are the containment, and
 they are one admin API call away from changing. `gh` on the operator's machines is authenticated as
-`chipi`, the repo admin (checked 2026-09-30), and agent sessions run there. A settings change is as much
+`example`, the repo admin (checked 2026-09-30), and agent sessions run there. A settings change is as much
 a threat as a stolen token, and the CI check above does not watch settings. So each cycle the fleet
-reads `GET /repos/chipi/podcast_scraper/environments`. The repo is public, so this needs **no
+reads `GET /repos/example/api/environments`. The repo is public, so this needs **no
 permission at all** (checked 2026-09-30: unauthenticated, it returns every environment with its
 reviewers, `prevent_self_review` and branch policy). The fleet refuses to act, latches, and pages if any
 of these fails:
 
 - the bot is a reviewer only on environments in the fleet architecture's lever registry — today
   `lever-restage`;
-- `lever-restage` reviewers are exactly {bot, `chipi`}, `prevent_self_review` is `false`, and
+- `lever-restage` reviewers are exactly {bot, `example`}, `prevent_self_review` is `false`, and
   `deployment_branch_policy.protected_branches` is `true`;
-- `prod` reviewers are exactly {`chipi`}.
+- `prod` reviewers are exactly {`example`}.
 
 It pushes `remediation_fleet_containment_ok` (1/0). This makes "enforced by GitHub" something the fleet
 verifies every five minutes, not something it assumes.
 
 **Why a machine account and not a GitHub App.** Approving a required-reviewer gate needs a user or team
 (*"up to six users or teams"*). An App can gate a deployment only as a custom deployment protection
-rule, which is webhook-driven, so the mini would need an endpoint reachable from the internet. GitHub's
+rule, which is webhook-driven, so the host would need an endpoint reachable from the internet. GitHub's
 terms allow one free machine account beside a personal account, *"used exclusively for performing
 automated tasks"*. See Alternatives.
 
@@ -579,7 +579,7 @@ automated tasks"*. See Alternatives.
 the restage uses (SSH key, Tailscale OAuth, several app secrets) is repo-level and reaches any
 environment unchanged. Of those 10, the restage reads **6**:
 
-- `PROD_OPENAI_API_KEY`, `PROD_GEMINI_API_KEY`, `LITELLM_PROJ_PODCAST_PROD_KEY` — environment-level only;
+- `PROD_OPENAI_API_KEY`, `PROD_GEMINI_API_KEY`, `LITELLM_PROJ_API_PROD_KEY` — environment-level only;
 - `PROD_DEEPSEEK_API_KEY`, `PROD_SENTRY_DSN_API`, `PROD_SENTRY_DSN_PIPELINE` — defined at **both**
   environment and repo level.
 
@@ -592,7 +592,7 @@ the one prod runs on. Guards, deliberately cheap:
 - **At setup:** the operator sets all six in `lever-restage` from the same source as `prod`, and
   confirms with `gh secret list --env lever-restage` that all six names are present (Gate to MVP).
 - **At rotation:** a rotated prod key is set in **both** environments. This is a line in the
-  podcast_scraper runbook, next to the rotation steps. Secret values are write-only in GitHub, so the
+  the api runbook, next to the rotation steps. Secret values are write-only in GitHub, so the
   two can never be compared or copied — only set twice.
 - **After every run:** verify layer c catches a wrong provider key (the `prod-ops-health` `gateway`
   check exercises the keys) and a wrong Sentry DSN (`o11y_glitchtip`).
@@ -604,30 +604,30 @@ do not prove equal values, and it would need a fourth credential with secrets-re
 does not use. `PROD_TAILNET_FQDN`, which it does use, is repo-level (both checked 2026-09-30). So
 `lever-restage` needs no variables.
 
-**Self-review.** In `propose` the operator (`chipi`) approves runs that were dispatched with the
+**Self-review.** In `propose` the operator (`example`) approves runs that were dispatched with the
 operator's own token, so `prevent_self_review` must stay **off** on `lever-restage`. It stays off on
 `prod` too, where the operator dispatches and approves their own deploys. At `live`, dispatcher
-(`chipi`) and approver (bot) differ anyway.
+(`example`) and approver (bot) differ anyway.
 
 ### Credentials
 
-Four credentials, all on the mini only, all in the fleet's gitignored `.env` (mode `0600`), the
+Four credentials, all on the host only, all in the fleet's gitignored `.env` (mode `0600`), the
 same pattern as the other daemons. A LaunchDaemon has no login Keychain, so Keychain is not an
 option. The rule behind the split: **each credential gets the power its stage needs, no earlier.**
 
 1. **SSH key** `~/.ssh/remediation_fleet_prod` (ed25519, no passphrase). Its only power is running
    the check script, via the forced command. `.env`: `PROD_CHECK_SSH_KEY`, `PROD_CHECK_SSH_TARGET`
-   (`deploy@prod-podcast`), `PROD_CHECK_KNOWN_HOSTS` (a pinned `known_hosts` file).
+   (`deploy@prod-api`), `PROD_CHECK_KNOWN_HOSTS` (a pinned `known_hosts` file).
 2. **Read token** — a fine-grained personal access token with **public repositories, read-only**
    access and no permissions, `.env`: `GITHUB_READ_TOKEN`. Present **from `shadow`**. Every read goes
    through it: run lists for the pre-flight guard, run state on resume, the containment check. The
    repo is public, so these reads would work without any token. The token exists only for the
-   authenticated rate limit, because the mini's unauthenticated budget (60 requests an hour, shared by
+   authenticated rate limit, because the host's unauthenticated budget (60 requests an hour, shared by
    everything on that IP) is too small for a 5-minute cycle. It can write nothing.
 3. **Dispatch token** — the operator's fine-grained personal access token, `.env`:
    `GITHUB_DISPATCH_TOKEN`. Present **only from `propose`**: shadow never dispatches, so it gets no
    write credential at all.
-   - Resource owner: `chipi`. Repository access: **only** `chipi/podcast_scraper`.
+   - Resource owner: `example`. Repository access: **only** `example/api`.
    - Permissions: **Actions: read and write** (dispatch), **Metadata: read** (mandatory). **No
      Deployments permission, at any stage** — this token never approves anything.
    - Used for exactly two calls: dispatching `restage-prod-secrets.yml` and `prod-ops-health.yml`.
@@ -641,7 +641,7 @@ option. The rule behind the split: **each credential gets the power its stage ne
 
 **All three GitHub tokens, the same hygiene:**
 
-- **An explicit expiry, never "No expiration" — 90 days.** `chipi` is a personal account, so no org
+- **An explicit expiry, never "No expiration" — 90 days.** `example` is a personal account, so no org
   policy caps the lifetime, and personal tokens may be created with no expiry at all. A non-expiring
   token sends no `GitHub-Authentication-Token-Expiration` header, so the expiry alert would silently
   never fire. The 90-day renewal is also the lever registry's review point: renewing the approval token
@@ -649,7 +649,7 @@ option. The rule behind the split: **each credential gets the power its stage ne
 - **Checked every cycle, not only when acting.** On a healthy box the cycle would otherwise never call
   GitHub, so a revoked or expired token would first be discovered at 4 a.m., in the middle of the outage
   it was meant to fix. Every cycle makes one cheap authenticated read per token (e.g.
-  `GET /repos/chipi/podcast_scraper`), pushes `remediation_fleet_github_token_ok{token="read|dispatch|approve"}`
+  `GET /repos/example/api`), pushes `remediation_fleet_github_token_ok{token="read|dispatch|approve"}`
   (1/0), and parses the expiry header into
   `remediation_fleet_github_token_expiry_days{token=…}`. An absent header, or one in the past, means
   "unknown" and sets `…_token_ok=0`, never "0 days left". (That header has misbehaved before: for a
@@ -658,7 +658,7 @@ option. The rule behind the split: **each credential gets the power its stage ne
   Daily use also keeps every token out of GitHub's automatic removal of tokens unused for a year.
 
 **Blast radius, stated plainly** (checked 2026-09-30 against all 60 workflow files in
-podcast_scraper `main` `3f2a9f43b` and the environments API; `drill`, `prod-backup` and
+The api `main` `3f2a9f43b` and the environments API; `drill`, `prod-backup` and
 `prod-ops-health` have no protection rules, and only `prod` has a reviewer):
 
 - **Read token, all stages:** nothing. It reads a public repo.
@@ -700,9 +700,9 @@ podcast_scraper `main` `3f2a9f43b` and the environments API; `drill`, `prod-back
   leaked dispatch token: extra restages of prod, which is the lever's own blast radius, by construction,
   plus everything the dispatch token can do alone.
 
-**Where the tokens sit** — mitigations as they actually stand (checked on the mini 2026-09-30):
+**Where the tokens sit** — mitigations as they actually stand (checked on the host 2026-09-30):
 
-- the mini is physically at home;
+- the host is physically at home;
 - `.env` is `0600`;
 - each token is scoped to one repository and the minimum its role needs;
 - every approval shows as the **bot** in GitHub's UI and audit log, with a
@@ -711,11 +711,11 @@ podcast_scraper `main` `3f2a9f43b` and the environments API; `drill`, `prod-back
 Two things a reviewer might assume are **not** true:
 
 - **The disk is not encrypted.** `fdesetup status` → `FileVault is Off`. That was a deliberate
-  trade-off to let the mini boot without a login (see `infra/README.md` prerequisite 6 and ADR-0006). Anyone
-  with physical access to the mini has the tokens, and so does any process running as
-  `markodragoljevic` on it, agent sessions included.
-- **The mini is not tailnet-only.** `sshd` listens on `*:22`, the macOS application firewall is
-  disabled, and the mini has a LAN address. Anyone on the home network can reach its SSH port (key
+  trade-off to let the host boot without a login (see `infra/README.md` prerequisite 6 and ADR-0006). Anyone
+  with physical access to the host has the tokens, and so does any process running as
+  `operator` on it, agent sessions included.
+- **The host is not tailnet-only.** `sshd` listens on `*:22`, the macOS application firewall is
+  disabled, and the host has a LAN address. Anyone on the home network can reach its SSH port (key
   auth still applies). Restricting `sshd` to the tailnet interface is a cheap hardening the operator
   may take separately.
 
@@ -783,7 +783,7 @@ Same channels as the other daemons.
     treats absence as an alarm.
   - **`severity: info` is new.** No existing rule uses it (the rules file has 18 `critical`, 30
     `warning`), and no policy route matches it, so it lands on the default receiver (email) like
-    `warning`, and the homelab home page's alert banner shows any non-critical alert as a yellow
+    `warning`, and the installation home page's alert banner shows any non-critical alert as a yellow
     warning. That matches the intent — but it is a new severity value, and worth a line in the
     alerting README when the rule lands.
 
@@ -797,9 +797,9 @@ own config (`RF_LIVE_CLASSES` in `.env`) — a class not listed there behaves as
 
 **Gate to MVP** (start shadow when all are ticked):
 
-- **Prereqs in podcast_scraper** — status from the prod-side session, 2026-09-30. The concurrency group
+- **Prereqs in the api** — status from the prod-side session, 2026-09-30. The concurrency group
   and the stale run-id comment are tracked in
-  [chipi/podcast_scraper#2203](https://github.com/chipi/podcast_scraper/issues/2203):
+  [example/api#2203](https://github.com/example/api/issues/2203):
   - [x] shared rules library `scripts/ops/prod_health_lib.sh`, sourced by both the check and
     `restage_prod_recreate.sh`, with the parity test (`b9c07ff8f`);
   - [x] `scripts/ops/prod_recovery_check.sh` plus `tests/unit/scripts/ops/test_prod_recovery_check.py`
@@ -807,7 +807,7 @@ own config (`RF_LIVE_CLASSES` in `.env`) — a class not listed there behaves as
   - [x] `request_id` input and `run-name` on `restage-prod-secrets.yml`; the workflow copies
     `prod_health_lib.sh` to `/tmp` beside the recreate script (`b9c07ff8f`);
   - [ ] CI green on `b9c07ff8f`, and **a deploy that includes it reaches prod** — until then
-    `/srv/podcast-scraper/scripts/ops/prod_recovery_check.sh` does not exist on the box. Checked later
+    `/srv/api/scripts/ops/prod_recovery_check.sh` does not exist on the box. Checked later
     on 2026-09-30: `b9c07ff8f` had `coverage-unified` failing and `docs` / `test-e2e` cancelled;
     `main` (`3f2a9f43b`) had `gate` failing; and the last prod deploys (`9949699df`, `6f5bfd5a4`) were
     both behind `b9c07ff8f`;
@@ -817,9 +817,9 @@ own config (`RF_LIVE_CLASSES` in `.env`) — a class not listed there behaves as
     that set;
   - [ ] the forced-command `authorized_keys` entry for `deploy`, in `infra/cloud-init/prod.user-data`
     **and** applied once to the live box (operator-approved host change). The public key is generated on
-    the mini, so this step follows key creation there;
+    the host, so this step follows key creation there;
   - [ ] **the `lever-restage` environment** (see "The lever environment"): required reviewers = the bot
-    machine account + `chipi`, `prevent_self_review` off, protected branches only, the six
+    machine account + `example`, `prevent_self_review` off, protected branches only, the six
     environment-scoped secrets set from the operator's source; `restage-prod-secrets.yml` switched from
     `environment: prod` to `environment: lever-restage`; the CI check that exactly one workflow names
     `lever-restage`; `gh secret list --env lever-restage` showing all six names; the rotation runbook
@@ -827,13 +827,13 @@ own config (`RF_LIVE_CLASSES` in `.env`) — a class not listed there behaves as
     exercises the real environment (with the operator approving there);
   - [ ] a DEPLOY_GOTCHAS §1b note that recovery is automatic and how to stop it — once the fleet is live.
 - [ ] **The bot machine account** created, with two-factor authentication on and its own email;
-  invited as a **read-only** collaborator on `chipi/podcast_scraper` and the invitation **accepted** (a
+  invited as a **read-only** collaborator on `example/api` and the invitation **accepted** (a
   pending invitee cannot be a reviewer); added as a reviewer on `lever-restage` only; its notification
   settings muted for deployment reviews, so its inbox does not fill. Its token is **not** issued yet —
   that happens at Stage C3.
 - [x] **`fleetd` kills whole process groups on timeout** — done 2026-09-30, `61e1886` (#77): each cycle
   runs in its own process group; on timeout or shutdown the group gets SIGTERM, then SIGKILL after 10 s,
-  and `WaitDelay` stops fleetd from waiting on children still holding the output. Deployed to the mini,
+  and `WaitDelay` stops fleetd from waiting on children still holding the output. Deployed to the host,
   and verified live with a probe fleet: a child that ignored SIGTERM was gone at +15 s (5 s timeout
   + 10 s grace), and nothing was left in the group. The triage fleet was unaffected.
 - [ ] **Fleet code** with `test_units.py` faking SSH and the GitHub API. Cover:
@@ -878,7 +878,7 @@ own config (`RF_LIVE_CLASSES` in `.env`) — a class not listed there behaves as
   incident case (see "Eval").
 - [ ] **`deploy/deploy.sh`** wired to run the eval and the unit tests, with auto-rollback.
 - [ ] **Surfaces, like Fleets 1 and 2**: alert rules provisioned (see Reporting); a Remediation fleet row
-  on the homelab home page next to "Triage fleet" and "Bug-fix fleet"; a Fleet Workforce dashboard
+  on the installation home page next to "Triage fleet" and "Bug-fix fleet"; a Fleet Workforce dashboard
   alongside `signal-fleet-disp` and `bugfix-fleet-work`.
 
 **Stage C1 — Shadow (1–2 weeks).** `stage: "shadow"`. The fleet detects, decides, runs the containment check, checks the read token and
@@ -900,7 +900,7 @@ the next cycle resumes the run, runs the full verify (step 6) and records the ou
   dispatches; the operator approves; the recreate finds nothing to do; verify passes.
 - **Class B: first on the drill box, then a controlled reboot of prod** (decided 2026-09-30, Open
   question 3):
-  1. **The DR drill box first**, if podcast_scraper extends the drill to reproduce the failure (what is
+  1. **The DR drill box first**, if the api extends the drill to reproduce the failure (what is
      missing today is listed under Open question 3). The fleet points at the drill host instead of prod.
      It detects the reboot, dispatches the drill-parameterised restage, and verifies. No prod impact,
      and it can repeat on every weekly drill.
@@ -911,7 +911,7 @@ the next cycle resumes the run, runs the full verify (step 6) and records the ou
      unit (Open question 6).
 
 **Stage C3 — Live, per class.** `stage: "live"` with `RF_LIVE_CLASSES` listing the promoted classes.
-**Prerequisite (Open question 11, option B):** in podcast_scraper, the ungated workflows that spend,
+**Prerequisite (Open question 11, option B):** in the api, the ungated workflows that spend,
 destroy or delete — `drill-infra-apply`, `drill-infra-destroy`, `drill-exercise`,
 `prod-failover-stand-up`, `ghcr-retention`, `tailscale-cleanup` — require the operator's approval when
 dispatched by hand, while their scheduled runs stay unattended. Promotion to `live` is when the bot's approval token is issued (90-day expiry) and set as
@@ -964,7 +964,7 @@ implementation.
    does, and it should wait for anything already running. The fleet's pre-flight guard stays as
    belt-and-braces, checking the same set.
    - *Defined by rule, not by list:* a workflow is in the group if it writes `/dev/shm/*-secrets`,
-     creates or recreates a prod container, or restarts a prod service. Checked against podcast_scraper
+     creates or recreates a prod container, or restarts a prod service. Checked against the api
      `main` on 2026-09-30, that is 10 workflows: `restage-prod-secrets`, `deploy-prod`,
      `recreate-operator-api` (these three already share `deploy-prod`); `deploy-player`,
      `deploy-operator`, `mint-prod-gateway-key` (writes secrets, force-recreates), `prod-restore-corpus`
@@ -1008,18 +1008,18 @@ implementation.
    - **the box is ephemeral.** `drill-exercise.yml` builds it on Wednesdays 02:00 UTC and always
      destroys it at the end of the run. No drill host was on the tailnet when checked.
 
-   Making D real is podcast_scraper work: drill-scoped secrets staged the ADR-115 way, the player and
+   Making D real is api work: drill-scoped secrets staged the ADR-115 way, the player and
    operator surfaces deployed, a drill-parameterised restage, the check script and a forced-command key
    on the drill host, and a reboot step in the exercise. What D can prove: the whole mechanism (secrets
    vanish, detect, restage, recreate on the right image, fix the keyless control plane, verify
    structure and user-facing probes). What it cannot: the `lever-restage` approval (the `drill`
    environment has no reviewers) and real provider keys, so verify layer c is prod-only. Once built,
-   it could re-prove recovery on every weekly drill rather than once. Whether podcast_scraper builds
+   it could re-prove recovery on every weekly drill rather than once. Whether the api builds
    this is that repo's decision; B stands either way.
 4. **A bot identity that approves as itself — decided: the machine account, from the start.** It is the
    containment for the lever (see "The lever environment"), so it is set up in the Gate to MVP and
    holds the only approval credential from `live` on. The operator's personal token is never an approval
-   credential. GitHub shows the **approval** as the bot. The **dispatch** still shows as `chipi`, the
+   credential. GitHub shows the **approval** as the bot. The **dispatch** still shows as `example`, the
    token's owner; the run name carries the `request_id`, and the approval comment points to the ledger.
    *Still open:* making the dispatch show as a bot too. A GitHub App installed with **Actions: write**
    could dispatch as `<app>[bot]` without the webhook that ruled Apps out for approval. Not verified
@@ -1029,16 +1029,16 @@ implementation.
    2026-09-16; the daemon log shows only "Removing stale sandbox". Until this is understood, the
    fleet only **reports** `alloy_running`. Restarting it could be a second lever, and that needs its
    own decision.
-6. **Should `podcast-scraper.service` stop recreating the control plane keyless at boot?** Today the
+6. **Should `api.service` stop recreating the control plane keyless at boot?** Today the
    fleet's recreate fixes it within minutes. A boot unit that leaves the old container alone, or
-   waits for secrets, would remove the keyless window entirely. That is a podcast_scraper decision.
-7. **The mini is a single point of failure — for both the recovery and the alert about it.** The
-   fleet runs on the mini, and so do the VictoriaMetrics and Grafana that would raise
-   `remediation-silent`. If the mini is down when prod reboots, there is no recovery **and** no alert
-   saying so. This is not theoretical: on 2026-09-08 the mini lost power and stayed off the tailnet for
+   waits for secrets, would remove the keyless window entirely. That is an api decision.
+7. **The host is a single point of failure — for both the recovery and the alert about it.** The
+   fleet runs on the host, and so do the VictoriaMetrics and Grafana that would raise
+   `remediation-silent`. If the host is down when prod reboots, there is no recovery **and** no alert
+   saying so. This is not theoretical: on 2026-09-08 the host lost power and stayed off the tailnet for
    30 hours (fixed since 2026-09-10 by `infra/tailscale/tailscale-up.sh`, which rejoins at boot without
    a login — but a power cut still stops everything). Options: accept it for v1; or add an external
-   dead-man that expects a periodic ping from the mini.
+   dead-man that expects a periodic ping from the host.
 8. **GitHub outage during a reboot.** Recovery waits for GitHub. This is accepted for v1; the
    secrets' only source of truth is GitHub.
 9. **Should successful attempts be capped too? — decided: yes.** The fleet architecture's lever
@@ -1056,7 +1056,7 @@ implementation.
     run history. GitHub has no finer permission for dispatch. The token exists only from `propose`.
     Options:
     - **A — accept** as stated, for the `propose` and `live` stages;
-    - **B — gate the dangerous ungated workflows** in podcast_scraper: give the spend / destroy / delete
+    - **B — gate the dangerous ungated workflows** in the api: give the spend / destroy / delete
       workflows an environment with the operator as reviewer, **for manual dispatch only**, so their
       scheduled runs are not stalled (a reviewer on a scheduled job stalls it forever — see
       `prod-ops-health.yml`'s header). Whether a job's environment can be chosen by an expression on
@@ -1065,7 +1065,7 @@ implementation.
       `propose` only *notify* while the operator dispatches. This undoes "the operator's part shrinks to
       one tap", and `live` needs dispatch anyway.
     - *Decision (operator, 2026-09-30):* **A for `propose`, B before `live`.** In `propose` the operator
-      is watching every run, and the token is only a few weeks old. By `live` the token sits on the mini
+      is watching every run, and the token is only a few weeks old. By `live` the token sits on the host
       for good, so the workflows that spend money or destroy things get the same one-tap gate as prod
       deploys — for manual dispatches only, so the scheduled runs keep working. B is a Stage C3
       prerequisite. If a job's environment cannot be chosen by trigger, the fallback is to be decided
@@ -1091,13 +1091,13 @@ implementation.
   could approve any of the 20 `prod`-gated workflows, including `infra-apply.yml` and
   `prod-restore-corpus.yml`, with only the fleet's own code saying no.
 - **A GitHub App as a custom deployment protection rule**, so approvals show as `<app>[bot]` —
-  rejected for now. GitHub drives it by webhook, so the mini would need an endpoint reachable from the
+  rejected for now. GitHub drives it by webhook, so the host would need an endpoint reachable from the
   internet (e.g. Tailscale Funnel), and how it combines with a required-reviewer rule was not
   confirmed. The machine account gives the same attribution with neither. **To be re-evaluated when
   lever #2 arrives:** GitHub allows one machine account, so every lever shares one bot. An App rule is
   the route to a separate identity per lever, and it could also dispatch as `<app>[bot]` (Open
   question 4).
-- **The mini keeps a copy of the secrets and pushes them to prod** — rejected. It adds a second
+- **The host keeps a copy of the secrets and pushes them to prod** — rejected. It adds a second
   secrets store to keep in sync with GitHub.
 - **Trigger from the Grafana "prod dark" alert via webhook** — not for v1. In the incident the dark
   alert could not tell "box down" from "box up, shipper dead". It may become a faster trigger later,
@@ -1107,20 +1107,20 @@ implementation.
 
 - **2026-09-30** — Written after the incident above, from a working session with the operator. The
   prod-side fixes (`RemoveIPC=no`, the three recovery-workflow bugs) shipped the same day in
-  podcast_scraper. Decisions taken in the session:
+  the api. Decisions taken in the session:
   - use the existing `prod` environment and let the fleet approve its own run, with no secret
     duplication;
   - check every 5 minutes, not every minute;
   - GitHub stays CI only;
-  - the fleet runs on the homelab mini as the first Fleet 3 member.
+  - the fleet runs on the installation host as the first Fleet 3 member.
 - **2026-09-30 (later)** — Fact-check pass before external review. Every claim that could be checked
-  was checked against the live system: the mini (`fdesetup`, `lsof`, `launchctl`), prod's metrics in
-  VictoriaMetrics, the GitHub API for `chipi/podcast_scraper` (workflows, environments, run history),
+  was checked against the live system: the host (`fdesetup`, `lsof`, `launchctl`), prod's metrics in
+  VictoriaMetrics, the GitHub API for `example/api` (workflows, environments, run history),
   and GitHub's docs. Corrected:
-  - *Wrong facts:* FileVault is **off** on the mini, and the mini is **not** tailnet-only — both had
+  - *Wrong facts:* FileVault is **off** on the host, and the host is **not** tailnet-only — both had
     been listed as mitigations for the token risk. Only `deploy-prod.yml` shares the restage's
     concurrency group; the other three deploy workflows do not, which makes the pre-flight guard
-    load-bearing rather than a nicety. `chipi` is a user, so "the maximum the org allows" was not a
+    load-bearing rather than a nicety. `example` is a user, so "the maximum the org allows" was not a
     real token expiry. "Fully recovers" was stated as proven; the fixed workflow has never run in
     production.
   - *Outdated premise:* the dispatch API has returned a run id (opt-in, `return_run_details`) since
@@ -1132,20 +1132,20 @@ implementation.
     stated; invariant 7 `meta` labels and `noDataState: OK` specified for the alerts; the GitHub token
     is exercised every cycle instead of only when acting; detection and recreate now share one rules
     library instead of two copies; drill coverage stated honestly; five new open questions (invariant
-    6, concurrency, proving the recreate path, the mini as single point of failure, capping successes).
+    6, concurrency, proving the recreate path, the host as single point of failure, capping successes).
   - *Confirmed as written:* the incident timeline (prod metrics gap 03:26:07 → 06:06:07 UTC; prod boot
-    time 04:02:56; the restage job 05:59:12 → 06:00:42 = 1m30s); every podcast_scraper path, ADR-115,
+    time 04:02:56; the restage job 05:59:12 → 06:00:42 = 1m30s); every api path, ADR-115,
     commit `f68b4388f`, DEPLOY_GOTCHAS §1/§1b, `RemoveIPC=no` in cloud-init, the `deploy` user in the
-    `docker` group; the tailnet grant `tag:homelab-host → tag:prod:22` and live reachability from the
-    mini; `prod` requiring reviewer `chipi` with `prevent_self_review: false`; `prod-restage` deleted;
+    `docker` group; the tailnet grant `tag:example-host → tag:prod:22` and live reachability from the
+    host; `prod` requiring reviewer `example` with `prevent_self_review: false`; `prod-restage` deleted;
     the token permissions (Actions read/write, Deployments write) per GitHub's per-endpoint table;
     `fleetd` accepting every field of the proposed block, with `budget_day_usd: 0` meaning "no cap";
     `fleetd` running as a system LaunchDaemon, so the no-Keychain reasoning holds.
 - **2026-09-30 (review with the operator)** — Goal and decisions stated by the operator, and folded in:
-  - *Goal:* full automation. The mini reacts to the signal, dispatches the restage and — because the
+  - *Goal:* full automation. The host reacts to the signal, dispatches the restage and — because the
     operator may be asleep — approves it. The concept is deliberately extended so that automation can
     approve a prod workflow. Invariant 6 is to be amended accordingly (Open question 1).
-  - *Identity:* "the app" means the fleet on the mini running under the operator's personal token —
+  - *Identity:* "the app" means the fleet on the host running under the operator's personal token —
     for now. Long term the operator wants GitHub to show that **a bot** approved, not the operator,
     with no impersonation; routes in Open question 4.
   - *Concurrency:* one group for every prod-mutating workflow — decided (Open question 2).
@@ -1156,7 +1156,7 @@ implementation.
     and secrets outside the checkout, an append-only ledger, a frozen-replay eval with a bar and
     per-class promotion, a gated `deploy.sh`, the shadow → propose → live ladder, `remediation_fleet_*`
     metrics, and the same operator surfaces. See the table under "Fit with the fleet architecture".
-- **2026-09-30 (prod-side handover, podcast_scraper `b9c07ff8f`)** — The prerequisites were built and
+- **2026-09-30 (prod-side handover, the api `b9c07ff8f`)** — The prerequisites were built and
   pushed to `main` by the session doing the prod-side work; the RFC now matches them:
   - the shared library is `scripts/ops/prod_health_lib.sh` (not the `lib/prod_containers.sh` this
     document had proposed), with a parity test proving the check reports exactly what the recovery

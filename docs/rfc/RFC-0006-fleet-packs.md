@@ -141,7 +141,7 @@ is shown and approved like an override (§6) and recorded with every run (§8).
 
 **`installation` and `environment`.** `environment` is today's required telemetry label, pushed to
 every run as `FLOTILLA_ENVIRONMENT`. `installation` names this flotilla: two installations may share
-an environment (a capped and an acting one on one homelab), never an installation name. Every run
+an environment (a capped and an acting one on one installation), never an installation name. Every run
 row, record, metric and span carries both.
 
 ### What travels and what stays
@@ -354,7 +354,7 @@ behaviour. Its part is to make every run a good input.
 | Place | Holds | Does not hold |
 | --- | --- | --- |
 | **flotilla** | the system; its recording (captures, filing and sweep records, run rows); the export; the replay entry point; development tests and deploy gates | scores, labels, gold answers, variants, held-out splits, production data in the tree (corpora come from a private path, `SF_REPLAY_DATA` for triage) |
-| **a fleet's evaluation project** (for triage: the private `fleet-eval-data`) | that fleet's freezes, corpora, readers from flotilla's records to items, outcome rules and labels, its held-out split | generic evaluation machinery |
+| **a fleet's evaluation project** (for triage: the installation's private research repo) | that fleet's freezes, corpora, readers from flotilla's records to items, outcome rules and labels, its held-out split | generic evaluation machinery |
 | **the evaluation harness** | the generic machinery: datasets, runs, scoring, rounds, label import, splits | any one fleet's data or readers |
 
 Applied to what exists:

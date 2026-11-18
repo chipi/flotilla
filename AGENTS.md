@@ -12,13 +12,13 @@ is generally true), or state the deviation here with the *reason*.
 ## Project overview
 
 flotilla is a plain, spec-driven platform for small fleets of AI agents. It is built from scratch
-to learn how agent systems work from the inside, while running real work for one homelab. Its
-fleets:
+to learn how agent systems work from the inside, while running real work for one installation. Its
+example fleets:
 
 - **triage:** alerts and errors;
 - **bugfix:** drafts code fixes;
-- **ops:** daily brief and operational reviews;
-- **seo:** search reach of the operator's sites.
+- **jobs and review:** operational jobs and reviews of closed cases;
+- **sites:** what the operator's sites serve live.
 
 A small control plane (`flotillad`) runs declared routines, keeps a ledger of every decision, and holds
 anything outward for the operator's approval. Design: [RFC-0001](docs/rfc/RFC-0001-fleet-platform.md),
@@ -34,12 +34,12 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | Runtime | Python (stdlib-first) | the triage fleet is Python; SEO data work (Parquet, DuckDB) (ADR-0001) |
 | State | SQLite on the host (runs, ledger, approvals, budgets); Parquet for analytical fleet data | one file, transactional, easy to back up |
 | Models | any OpenAI-compatible endpoint through one model client; LiteLLM is the reference deployment; local first; per-routine model policy | ADR-0001 §9, RFC-0002 §3 |
-| Test framework | `go test` (fleetd); the triage fleet's own stdlib test scripts (`test_units.py`, `test_capture.py`, `test_scrub.py`) and replays (`make replay`) | as imported from the homelab, phase 1 |
+| Test framework | `go test` (fleetd); the triage fleet's own stdlib test scripts (`test_units.py`, `test_capture.py`, `test_scrub.py`) and replays (`make replay`) | as first imported, phase 1 |
 | Linter / formatter | gofmt + go vet (fleetd); Python byte-compile (ruff not yet: it would be a new dependency) | phase 1 |
-| CI runner | GitHub Actions | matches `chipi` standard |
+| CI runner | GitHub Actions | matches the `chipi` standard |
 | Docs site | MkDocs Material → GitHub Pages, strict build | matches `chipi` standard |
 | Secrets / config | mode-600 files on the host, named in `~/.config/flotilla/config.yaml`; never in git | public repo |
-| Deploy target | the homelab Mac mini: containers in the production engine, deployed by the operator account; development on the dev engine | ADR-0002 |
+| Deploy target | a host of the installation: containers in its production engine, deployed by the operator account; development on a separate dev engine | ADR-0002 |
 
 ---
 
@@ -51,7 +51,7 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
      placeholders, and the real values live in host config.
    - Run the secrets scan before every push.
    - Real-data test corpora and the operator's own fleets live in a private fleets repo, never here
-     (vision plan step 7). flotilla does not depend on `fleet-eval-data`, the research repo.
+     (vision plan step 7). flotilla does not depend on the installation's research repo.
 2. **An agent is never the operator.**
    - Approving an outward action (an issue, a PR, a push, a published change) is operator-only, in
      the UI or the CLI, or from the operator's pinned Slack user within ADR-0005's limits (low and
@@ -65,8 +65,8 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
    the routine's declared model policy (RFC-0002 §3). LiteLLM is the reference deployment, not a
    requirement. No undeclared fallback. An `external` step (a coding harness) points at the same
    endpoint, and the runtime records its inputs and outputs.
-6. **Observable like every homelab service.**
-   - Metrics, logs, traces, LLM traces, errors, ops events, dashboards and alerts on the homelab's
+6. **Observable like every service the installation runs.**
+   - Metrics, logs, traces, LLM traces, errors, ops events, dashboards and alerts on the installation's
      conventions (RFC-0001 §6.2).
    - Every routine has a freshness metric and a stale alert.
 7. **The live triage fleet never stops** during the migration (RFC-0001 §9): shadow-compare, then
@@ -83,17 +83,17 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 | `signal-fleet/` | the triage fleet (Python, stdlib): `mvp/` the cycle and its tests; its facts come from `fleets/triage/installation.json` (`mvp/installation.py`) | the triage worker image |
 | `bugfix/`, `ops/`, `seo/` | the bugfix, ops and SEO fleets' routines | their worker images (bugfix's on a second machine, as remote workers) |
 | `fleets/` | the example fleets: specs, playbooks, skills, example facts (`fleets/README.md`) | the images; an installation mounts its own over them |
-| `deploy/` | compose, the mini's deploy scripts, the remote stack, the host agent's installer, the e2e stack | the hosts |
+| `deploy/` | compose, the deploy scripts, the remote stack, the host agent's installer, the e2e stack | the hosts |
 | `host/` | the host agent's action registry (`host/registry.json`) | flotillad's image |
-| `fleetd/` | the retired scheduler and its bugfix chain, kept for its tests and history | nowhere (retired on the mini 2026-11-16) |
+| `fleetd/` | the retired scheduler and its bugfix chain, kept for its tests and history | nowhere (retired on the installation's host 2026-11-16) |
 | `bugfix-fleet/` | the bugfix fleet's bake-off harness and its July TypeScript prototype (no CI, RFC-0001 §11) | nowhere |
 
-- Imported from agentic-ai-homelab at `f0ed072` with their history (`git filter-repo`), without
+- Imported from the installation's ops repo at `f0ed072` with their history (`git filter-repo`), without
   `signal-fleet/reference*`: the replay corpora are real scrubbed production data and live in the
-  private fleets repo, `triage/replays` (moved there from `fleet-eval-data` on 2026-11-17). The
+  private fleets repo, `triage/replays` (moved there from the research repo on 2026-11-17). The
   replays and the gates that run them are the installation's too, in its `triage/gates/`
   (`make replay` with `SF_REPLAYS` and `SF_ALERT_RULES`).
-- A replay's `BASE_REV` is a commit in **this** repo's history; each carries the homelab commit it
+- A replay's `BASE_REV` is a commit in **this** repo's history; each carries the ops-repo commit it
   replaced in a comment.
 - **Rule 1 is enforced** (vision plan step 7, 2026-11-17): `fleets/` holds example fleets only
   (`fleets/README.md`); an installation's facts live in its private fleets repo and host config, and
@@ -104,18 +104,14 @@ decided as [ADR-0001](docs/adr/ADR-0001-platform-foundations.md).
 
 ## Domain knowledge
 
-- The fleets being migrated came from
-  [agentic-ai-homelab](https://github.com/chipi/agentic-ai-homelab): `fleetd/`, `signal-fleet/`,
-  `bugfix-fleet/` (now here), and `infra/homelab-home/briefing-job.js` (still there). RFC-0001 §2 has
-  the inventory: what each does, its state, and its coupling.
-- The homelab services flotilla depends on (LiteLLM, the observability stack, GlitchTip, Grafana)
-  are operated from agentic-ai-homelab. Its operations handbook (`docs/recipes/agent-access.md`)
-  says how to reach each one.
-- Models:
-  - the DGX's prod Qwen3-30B-A3B in vLLM, which has tool calling not yet enabled;
-  - the X3's always-on Qwen3-30B-A3B in Ollama, which does tool calling;
-
-  both reached through LiteLLM aliases.
+- The fleets being migrated came from the installation's ops repo: `fleetd/`, `signal-fleet/`,
+  `bugfix-fleet/` (now here), and its daily-brief job (still there). RFC-0001 §2 has the inventory:
+  what each does, its state, and its coupling.
+- The services flotilla depends on (a LiteLLM gateway, the observability stack, GlitchTip, Grafana)
+  are operated from the installation's ops repo, which holds its operations handbook.
+- Models: any OpenAI-compatible endpoint, reached through gateway aliases; which model servers an
+  installation runs, and whether each has tool calling, is its own fact.
+- An installation's own facts (hosts, models, repos) live in its private fleets repo and host config.
 
 ---
 

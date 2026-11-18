@@ -9,16 +9,16 @@ actuator, designed in its own ADR), [ADR-0002](ADR-0002-run-in-docker.md) (deplo
 
 ADR-0005 needs host writes (restart a container, rerun a backup job) to run through a privileged
 component on each host, decided by policy in flotillad and executed under strict limits. The operator,
-2026-11-09: think beyond this homelab. How anyone deploys host agents and communication connectors
+2026-11-09: think beyond this installation. How anyone deploys host agents and communication connectors
 should follow one standard, for deployment and for security, and be able to meet compliance needs.
-The mini, the DGX and the production VPS are three installations of that standard.
+The host, the model host and the production VPS are three installations of that standard.
 
 What the standard needs from a host: an account with sudo for the operator, reached over SSH.
 
-Facts on the first host, the mini (checked 2026-11-09): the operator account has passwordless sudo,
-and root LaunchDaemons are installed by `infra/mini-setup.sh`; a dedicated account with exactly
+Facts on the first host, the host (checked 2026-11-09): the operator account has passwordless sudo,
+and root LaunchDaemons are installed by `infra/host-setup.sh`; a dedicated account with exactly
 listed sudo commands already exists (`_dockerdev`, checked with `visudo -c`); the production Docker
-engine is driven as `_dockerhost`. The backup job (`com.homelab.db-backup`) is a root LaunchDaemon,
+engine is driven as `_dockerhost`. The backup job (`com.example.db-backup`) is a root LaunchDaemon,
 so `launchctl kickstart system/…` needs sudo. The agent connects out, so whether containers can
 reach a listener on the Mac does not matter.
 
@@ -31,17 +31,17 @@ signing code with flotillad. Roles, enabled by the host's config:
 
 - **actuator:** runs the host's allowed writes;
 - **connector:** talks to a communication provider (Slack first) on flotillad's behalf, with that
-  provider's credentials, so flotillad holds none (decided 4: on the mini, the same instance as the
+  provider's credentials, so flotillad holds none (decided 4: on the host, the same instance as the
   actuator).
 
 ### 2. It connects out
 
 The agent dials flotillad and keeps one long-lived connection; flotillad sends work down it. No host
-opens an inbound port, so the Docker VM on the mini, a VPS firewall and the DGX's network make no
-difference. flotillad exposes one endpoint for agents and **terminates the mutual TLS itself**; a
-proxy in front may only pass TCP through. How the endpoint is reached is the installation's choice
-(decided 1). A lost connection means no executions: flotillad marks the host unreachable, and an
-execution in flight becomes `unknown` (ADR-0005).
+opens an inbound port, so the Docker VM on the host, a VPS firewall and the model host's network
+make no difference. flotillad exposes one endpoint for agents and **terminates the mutual TLS
+itself**; a proxy in front may only pass TCP through. How the endpoint is reached is the
+installation's choice (decided 1). A lost connection means no executions: flotillad marks the host
+unreachable, and an execution in flight becomes `unknown` (ADR-0005).
 
 The agent opens exactly two outbound connections: flotillad, and the provider when it is the
 connector.
@@ -112,7 +112,7 @@ capability with its own rules.
 
 - A dedicated user (`_flotilla` on macOS, `flotilla` on Linux), no login, no shell.
 - `sudo` without a password only for the exact lines in §5; Docker through the engine's own user
-  (on the mini: `sudo -u _dockerhost docker …`), never membership of a Docker group.
+  (on the host: `sudo -u _dockerhost docker …`), never membership of a Docker group.
 - **The binary, the allowlist, the sudoers file and the service unit are root-owned** and not
   writable by the agent's user, so a compromised agent cannot widen its own allowlist. The private
   key, the certificate and the store are owned by the agent's user, mode 600.
@@ -131,7 +131,7 @@ capability with its own rules.
 ### 8. Audit
 
 - A local append-only log (JSONL in a root-owned directory), each entry hash-chained to the previous,
-  collected off the host by the host's log collector (on the mini: Alloy into VictoriaLogs). No
+  collected off the host by the host's log collector (on the host: Alloy into VictoriaLogs). No
   shipping code in the agent.
 - Every result the agent sends carries its log's current chain head; flotillad stores the head per
   node. A log that no longer leads to the stored head has been rewritten.
@@ -172,7 +172,7 @@ capability with its own rules.
 
 ### 12. v1 scope
 
-v1 is one host (the mini), one write (`backup.rerun_observability`), in shadow: flotillad records the
+v1 is one host (the host), one write (`backup.rerun_observability`), in shadow: flotillad records the
 plan and sends nothing to the host. v1 builds §1 to §7, the log and chain head of §8, the operator
 build of §9, `node list` and the disconnected alert of §10. The connector is **outbound only**
 (notifications); relaying approvals comes with the first promotion to propose, since v1 approves by
@@ -193,8 +193,8 @@ CLI.
 
 **Positive:**
 
-- One way to add a host: install the agent, write its allowlist. The same on the mini, the DGX and the
-  VPS, and for anyone else running flotilla.
+- One way to add a host: install the agent, write its allowlist. The same on the host, the model
+  host and the VPS, and for anyone else running flotilla.
 - No inbound ports on hosts; the reachability problems of each network disappear.
 - A compromised control plane is limited to each host's allowlist and rate limits.
 
@@ -220,7 +220,8 @@ CLI.
 ## Alternatives considered
 
 - **An inbound service on each host** (flotillad or a worker calls it): each network needs its own
-  route in (the Docker VM's gateway, VPS firewalls, the DGX), and every host exposes a port. Rejected.
+  route in (the Docker VM's gateway, VPS firewalls, the model host), and every host exposes a port.
+  Rejected.
 - **SSH forced commands:** no idempotency, no local audit, no signed requests without extra work, and
   flotilla's workers would hold SSH keys to every host. Rejected (RFC-0004 §12, decision 12).
 - **Configuration management** (Ansible, Salt) for both install and execution: a second control plane
@@ -236,14 +237,14 @@ CLI.
 
 1. **The agent endpoint is generic:** flotillad listens on one configurable port and requires mutual
    TLS from every agent. How agents reach it is the installation's choice (a tailnet, a VPN, a private
-   network, the internet): mutual TLS is the protection, so nothing assumes Tailscale. This homelab
+   network, the internet): mutual TLS is the protection, so nothing assumes Tailscale. This installation
    publishes it on its tailnet only.
 2. **Keys split by duty:** the CA's root offline with the operator (as the backup decryption key is),
    an intermediate CA in flotillad's secrets volume; the execution-signing key in flotillad's secrets
    volume; the release-signing key only in CI (from the second host, §9).
 3. **Signing:** Ed25519 from Go's standard library, over the exact bytes sent (§4), in our own small
    envelope shared by flotillad and the agent, and tested hard (no dependency).
-4. **The Slack connector is a role of the host agent on the mini, one instance with both roles.**
+4. **The Slack connector is a role of the host agent on the host, one instance with both roles.**
    Accepted trade-off: a breach of that process exposes the host's writes, the Slack tokens, and,
    once the connector relays approvals, the ability to forge approvals for any write Slack may
    approve, on any host. The low and medium risk limit, the daily cap and switching to CLI-only

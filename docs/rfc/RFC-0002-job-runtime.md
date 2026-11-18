@@ -32,8 +32,8 @@ written yet. It becomes RFC-0003, and this one takes RFC-0002.
 
 **Non-goals:**
 
-- A memory shared by every agent. This is the fleets' memory. Claude sessions and the X3 assistant
-  keep their own and read flotilla's through MCP (operator, 2026-11-08).
+- A memory shared by every agent. This is the fleets' memory. Claude sessions and the second
+  machine's assistant keep their own and read flotilla's through MCP (operator, 2026-11-08).
 - Semantic or vector search, until a real case needs it (operator, 2026-11-08).
 - Agents that write their own prompts, memory or specs.
 - Model-written queries (SQL, PromQL, LogsQL). Tools are named and typed (§4). A fleet that needs
@@ -85,7 +85,7 @@ Read from the code, 2026-11-08:
   - **What is recorded:** `capture.py` stores the probe table, the text shown, the final decision
     and the decision before the gates. The per-turn messages, raw replies, the edge gate's lookups
     and the run's time are not stored. Capture is on in the live fleet: `SF_CAPTURE_PROBES=1` in
-    the fleet's env file on the mini, which the shadow worker also reads (checked 2026-11-08).
+    the fleet's env file on the host, which the shadow worker also reads (checked 2026-11-08).
   - **Shadow comparison** (`deploy/server/shadow_compare.py`) compares flotilla's shadow decisions
     with fleetd's, per subject.
 - **Cost.** A price table keyed by model name (`config.py:63-70`).
@@ -98,8 +98,8 @@ One client for every model call.
 streaming. LiteLLM, vLLM, Ollama, OpenRouter and OpenAI accept it.
 
 **Configuration** (not in git). Endpoints carry defaults, and an alias can override them, because
-one endpoint can front models with and without tool calling. The DGX vLLM model has no tool calling
-today; the X3 Ollama model has it.
+one endpoint can front models with and without tool calling. The model host's vLLM model has no
+tool calling today; the second machine's Ollama model has it.
 
 ```yaml
 models:
@@ -110,7 +110,7 @@ models:
       defaults: { tools: native, json: object, cost: reported }
   aliases:
     triage-default: { endpoint: gateway, model: fleet-triage-pro }
-    local-dgx:
+    local-model-host:
       endpoint: gateway
       model: NVFP4/Qwen3-30B-A3B-Instruct-2507-FP4
       tools: none
@@ -326,7 +326,7 @@ context:
     - { layer: case, budget: 4000 }
     - { layer: memory, query: subject_history, limit: 5, budget: 2000 }
     - { layer: memory, query: active_notes, budget: 1500 }
-    - { layer: knowledge, source: homelab-handbook, query: by_service, budget: 3000 }
+    - { layer: knowledge, source: ops-handbook, query: by_service, budget: 3000 }
   tool_result_trim: 1800
 ```
 
@@ -404,7 +404,7 @@ state on the host, never in git.
   - MCP write tools, `feedback_propose` and `note_propose`, come in phase 5 too.
   - MCP has no tool to activate a note, confirm feedback or approve anything.
 - **A daily JSONL export** to the state directory, for grep, backup, and handing corpora to
-  fleet-eval-data.
+  the installation's research repo.
 
 **Configured per fleet** (spec `memory:`):
 
@@ -428,7 +428,7 @@ Retention is not a setting: the ledger is kept forever (Data).
 **Definition.** External knowledge is reference material written by people or third parties, which
 flotilla reads and does not own:
 
-- the homelab operations handbook;
+- the installation's operations handbook;
 - a repo's ADRs and READMEs;
 - runbooks;
 - vendor documentation;
@@ -468,18 +468,18 @@ signal supplied. Configured per installation, used per fleet:
 ```yaml
 # config.yaml (this installation)
 knowledge:
-  homelab-handbook:
+  ops-handbook:
     kind: files
     volume: flotilla-knowledge              # mounted read-only at /knowledge in the worker
     # the host checkout the deploy copies from is in the deploy's FLOTILLA_HOME/.env
-    # (KNOWLEDGE_HOMELAB_FROM), like the secrets paths secrets.sh reads
+    # (KNOWLEDGE_OPS_FROM), like the secrets paths secrets.sh reads
     paths: [docs/recipes/**, docs/adr/**, infra/**/README.md]
     maps:
       by_service: { litellm: infra/litellm/README.md, glitchtip: infra/glitchtip/README.md }
 
 # a fleet spec
 knowledge:
-  sources: [homelab-handbook]
+  sources: [ops-handbook]
   queries: [by_service]
 ```
 
@@ -528,7 +528,7 @@ version the corpus pins, not re-evaluated on every commit.
 
 - **A change ships only with its mode's evaluation.** The evaluation run's id is recorded with the
   change (commit message, note activation).
-- **Corpora with production data live in the private `fleet-eval-data` repo.** Labels use the
+- **Corpora with production data live in the installation's private research repo.** Labels use the
   scorer's format (triage: `ground_truth.disposition`, `correct_autonomous`, `work_type`).
 - **A replay that cannot reproduce its own recorded history proves nothing,** and fails.
 - **Every run records what exact replay needs:**
@@ -545,7 +545,7 @@ version the corpus pins, not re-evaluated on every commit.
 evaluation:
   code_replays: signal-fleet/replays.sh
   scorer: { run: signal-fleet/mvp/score.py, k: 3 }   # the bar is code in score.py today
-  corpus: fleet-eval-data:projects/signal-fleet-replays
+  corpus: research:projects/signal-fleet-replays
 ```
 
 **Extension points:**
@@ -583,8 +583,8 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 
 **When:**
 
-- Step 1 starts now: it only adds recording, and it lands in agentic-ai-homelab first, since the
-  live fleet runs that code until phase 2's switch (2.8).
+- Step 1 starts now: it only adds recording, and it lands in the installation's ops repo first,
+  since the live fleet runs that code until phase 2's switch (2.8).
 - Steps 2 to 6 start after the switch, on flotilla.
 
 **The live proof after the switch:**
@@ -637,8 +637,8 @@ Each step is evaluated in its mode, and the fleet session agrees each one before
 
    - *Proof:* model replay, each against the scorer's bar.
 
-**Compatibility with fleet-eval-data** (the fleet session's readers, 2026-11-08). Each step keeps
-these, or agrees the replacement with the fleet session before it lands:
+**Compatibility with the installation's research repo** (the fleet session's readers, 2026-11-08).
+Each step keeps these, or agrees the replacement with the fleet session before it lands:
 
 - **Capture files: new data only in new fields or new files.**
   - No rename or removal of `signal`, `frozen_at`, `fleet_decision.disposition` or
@@ -668,8 +668,8 @@ these, or agrees the replacement with the fleet session before it lands:
 6. Harness, context, memory and external knowledge are the core concepts, each configured per fleet;
    triage is the first use case, and the concepts grow with the next fleets. (Extended by 7.)
 7. Revise after the advisor's review, with evaluation as a fifth core concept (operator, 2026-11-08).
-8. The order in §9: step 1 now, in agentic-ai-homelab; steps 2 to 6 after the switch, proven live by
-   a second shadow job on a candidate image (operator, 2026-11-08).
+8. The order in §9: step 1 now, in the installation's ops repo; steps 2 to 6 after the switch,
+   proven live by a second shadow job on a candidate image (operator, 2026-11-08).
 9. Evaluation in any form lives outside flotilla; development tests stay; a versioned replay entry
    point; `eval_*` replays renamed `gate_*` (operator, 2026-11-12; §8's amendment).
 

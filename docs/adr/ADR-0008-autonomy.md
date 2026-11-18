@@ -54,7 +54,7 @@ their wording as records; this ADR is the mapping.
 **Positive:** one word and one scale for "how far may this go without asking", the same in the
 routine, the capability, the host, the UI and the alerts; "the lowest of three" reads naturally.
 
-**Negative:** a second coordinated rename in a week (code, stored controls, metrics, the mini's
+**Negative:** a second coordinated rename in a week (code, stored controls, metrics, the host's
 operator habits: `flotilla stage` becomes `flotilla autonomy`).
 
 **Neutral:** the stored history keeps every run; old `stage` metric series age out.

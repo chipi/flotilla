@@ -51,7 +51,7 @@ checklists, customer-success health scores); its statistics are vendor claims, n
 
 A repo-wide run of `scripts/installation_facts.py` with the installation's plain names added to the
 denylist (2026-11-17) found 965 lines outside the docs: the host's name 492 (with the `deploy/server/`
-folder), one site 166, the homelab 110, one repo 82, the model host 44, the remote host 27. Mostly
+folder), one site 166, the installation 110, one repo 82, the model host 44, the remote host 27. Mostly
 comments and tests. After the examples: generic names in code, comments and tests; the installation's
 deploy scripts to its private repo; the private denylist grows to the plain names so the lint keeps
 it so.
@@ -74,7 +74,7 @@ rows carried over:
 - the host action `backup.rerun_observability` (Go: `dispatch`, `registry`, the host registry, tests);
 - the routine names `backup-monitor`, `rerun-backup`, `verify-backup` in Go (`ui/views.go`,
   `mcpserver.go`) and the case kind `failed_backup` (`spec.go`, `store/briefs.go`);
-- the per-repo bugfix profile `intake-podcast` / `fix-podcast` (`bugfix/intake.py`, the remote
+- the per-repo bugfix profile `intake-api` / `fix-api` (`bugfix/intake.py`, the remote
   compose, the e2e run);
 - the triage candidate `cycle-shadow` (compose, e2e, `deploy_fleets.sh`), whose spec describes the
   operator's model host and nightly.
@@ -112,7 +112,7 @@ its own backup action moves it into a registry of its own, in this order, each w
    Also in `.env`: `FLOTILLA_DEPLOY_HOOKS=<the private fleets checkout>/deploy/hooks.sh`, or the next
    deploy runs with no installation gate (it says so); and the state mirror's LaunchDaemon re-installed
    from the private checkout (`deploy/install-mirror.sh` there), since flotilla no longer carries
-   `mirror.py`. Both before the first deploy of a commit without `deploy/mini/`.
+   `mirror.py`. Both before the first deploy of a commit without `deploy/server/`.
 3. Deploy the image whose `fleets.yml` mounts the fleets folder into the ops workers, then deploy the
    fleets commit again with this `deploy_fleets.sh`, so its folder carries `.commit` (a process
    change's PR is based on it; without it the change is by hand).
@@ -122,4 +122,4 @@ its PR on the repo its spec names, on the registry's path there, based on the de
 (`.commit` beside the registry, else the image's); with no repo named, the change is by hand.
 
 Done when `fleets/` holds the six and `platform`, none names the operator's installation (lint and a
-grep for the private names), e2e covers each, and the mini runs unchanged from the private repo.
+grep for the private names), e2e covers each, and the host runs unchanged from the private repo.

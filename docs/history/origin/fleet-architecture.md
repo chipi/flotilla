@@ -1,11 +1,11 @@
 # Agentic fleets — the architecture
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/fleet-architecture.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/fleet-architecture.md)), kept as the record.
-> The fleets' architecture before flotilla; flotilla's is [its architecture](../../architecture/index.md). The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/fleet-architecture.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/fleet-architecture.md)), kept as the record.
+> The fleets' architecture before flotilla; flotilla's is [its architecture](../../architecture/index.md).
 
-> **Retired 2026-11-16.** The fleets run in [flotilla](https://github.com/chipi/flotilla) (its `docs/operations/`); the code this page describes left this repo, and the mini's `fleetd` and `bugfix-metrics` jobs are gone. Kept for the record; the commands below no longer apply.
+> **Retired 2026-11-16.** The fleets run in [flotilla](https://github.com/chipi/flotilla) (its `docs/operations/`); the code this page describes left this repo, and the host's `fleetd` and `bugfix-metrics` jobs are gone. Kept for the record; the commands below no longer apply.
 
-The homelab's autonomous-agent system, in one picture. This page ties the
+The installation's autonomous-agent system, in one picture. This page ties the
 RFCs together; each RFC owns its own depth. Written 2026-07-25, at the
 lab→wild transition. Where each fleet stands now: [Rollout status](#rollout-status).
 
@@ -181,7 +181,7 @@ approves anything until one of its classes says `live`.
 
 | lever | action | environment | owner | status per class |
 |---|---|---|---|---|
-| post-reboot restage | `restage-prod-secrets.yml` (`surfaces=all`, `recreate=true`) in `chipi/podcast_scraper` | `lever-restage` | [RFC-0005](RFC-0005-remediation-fleet-post-reboot-recovery.md) | A (secrets missing): proposed · B (containers down): proposed — **not in force** |
+| post-reboot restage | `restage-prod-secrets.yml` (`surfaces=all`, `recreate=true`) in `example/api` | `lever-restage` | [RFC-0005](RFC-0005-remediation-fleet-post-reboot-recovery.md) | A (secrets missing): proposed · B (containers down): proposed — **not in force** |
 
 ## The measurement machinery (why we trust any of this)
 
@@ -203,7 +203,7 @@ approves anything until one of its classes says `live`.
 
 pi (agent harness) · OpenRouter (routing/billing; per-key caps) · Langfuse
 (LLM traces/cost) · GlitchTip (errors) · VictoriaMetrics/Logs/Traces +
-Grafana (o11y) — all self-hosted on the mini. Deliberately NOT adopted:
+Grafana (o11y) — all self-hosted on the host. Deliberately NOT adopted:
 agent frameworks (audit + revisit triggers for Temporal/LiteLLM in
 [ADR-0008](ADR-0008-fleet-daemon-tech-and-framework-non-adoption.md)).
 
@@ -212,7 +212,7 @@ agent frameworks (audit + revisit triggers for Temporal/LiteLLM in
 As of 2026-11-05. The original per-fleet plan (Track A = triage, Track B =
 bug-fix; lab → shadow → propose → per-class autonomy) lived in a wip note,
 closed this day; its finished parts are below, its open ones are in
-[`wip/NEXT_STEPS.md`](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/wip/NEXT_STEPS.md) under "Fleets".
+[`wip/NEXT_STEPS.md`](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/wip/NEXT_STEPS.md) under "Fleets".
 
 - **Shared foundations, done:** LiteLLM gateway with Langfuse callbacks (one
   trace per triage/bug-fix call); the STOP-flag kill switch (fleetd,
@@ -227,10 +227,10 @@ closed this day; its finished parts are below, its open ones are in
   (`results/probes/`), so new decisions replay exactly. On 2026-11-04 the first brief change measured in
   eval-harness shipped (`8213775`: the app's failures to load its own code are filed; `triage_cost` 0.872 →
   0.446 on the labelled decisions). What comes next is the fleet
-  session's roadmap (`ROADMAP.md` in the private repo chipi/fleet-eval-data, since 2026-11-16): triage v2
+  session's roadmap (`ROADMAP.md` in the private repo example/research, since 2026-11-16): triage v2
   (known gaps, knowledge, a self-hosted model, held-out confirmation), then bug fixing.
 - **Track B, bug-fix (Fleet 1):** dormant on purpose after one real batch;
-  it targets `chipi/orrery` only (`fleetd/deploy/chain.json`).
+  it targets `example/shop` only (`fleetd/deploy/chain.json`).
 
 ## Reading order for a fresh brain
 

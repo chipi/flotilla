@@ -10,10 +10,10 @@ cannot approve, over the tailnet, an identity per caller") and §8; [ADR-0001](.
 
 ## Motivation
 
-flotilla has a CLI for the operator on the mini and a UI for people. Other agents (Claude sessions on
-the X3 and the laptop, the X3 assistant, later others) have no way in: today a Claude session reads
-flotilla by SSH and `docker exec flotilla …`, with the container's own token, as one shared identity.
-RFC-0001 promised an MCP server from the start; it is not built.
+flotilla has a CLI for the operator on the host and a UI for people. Other agents (Claude sessions on
+the second machine and the laptop, the second machine's assistant, later others) have no way in:
+today a Claude session reads flotilla by SSH and `docker exec flotilla …`, with the container's own
+token, as one shared identity. RFC-0001 promised an MCP server from the start; it is not built.
 
 ## Proposal
 
@@ -52,9 +52,9 @@ claim, never trusted. Revoking one caller's token cuts that caller only.
 
 `POST /mcp` on flotillad's UI listener, reached at `https://flotilla.<tailnet>.ts.net/mcp` through
 the caddy-tailscale node that already serves the UI (TLS there; the tailnet ACL decides who reaches
-it). Bearer token per caller. No new port, no new node. Claude Code and the X3 assistant both speak
-it (`claude mcp add --transport http flotilla https://…/mcp --header "Authorization: Bearer …"`, with
-the header read from a file by a wrapper, never typed).
+it). Bearer token per caller. No new port, no new node. Claude Code and the second machine's
+assistant both speak it (`claude mcp add --transport http flotilla https://…/mcp --header
+"Authorization: Bearer …"`, with the header read from a file by a wrapper, never typed).
 
 Read-only, idempotent tools first; action tools in the same release, behind the API's checks.
 
@@ -83,8 +83,8 @@ Read-only, idempotent tools first; action tools in the same release, behind the 
    server (stdlib), tested against the spec's examples and a real client, as with the host envelope
    (ADR-0006 decided 3). The alternative is the SDK, approved as a dependency (ADR-0003).
 2. **Transport.** **Proposed:** HTTP on the UI node (§3). The alternative, stdio through
-   `ssh mini docker exec -i flotillad flotilla mcp`, opens nothing new, but every caller then shares
-   the container's token unless each passes its own, and it needs SSH to the mini.
+   `ssh host-01 docker exec -i flotillad flotilla mcp`, opens nothing new, but every caller then shares
+   the container's token unless each passes its own, and it needs SSH to the host.
 3. **Agents reading the ledger.** Today `ledger-read` is people only. **Proposed:** allow it for agents
    (read only): the ledger is how an agent learns what triage decided and why.
 4. **Agents proposing notes.** Today `feedback` (verdicts and notes) is people only. **Proposed:**
@@ -95,8 +95,8 @@ Read-only, idempotent tools first; action tools in the same release, behind the 
 
 ## Alternatives considered
 
-- **No MCP, the CLI over SSH:** works today for a session with SSH to the mini, not for the X3 assistant,
-  and shares one identity.
+- **No MCP, the CLI over SSH:** works today for a session with SSH to the host, not for the second
+  machine's assistant, and shares one identity.
 - **The API itself to agents (REST with a token):** possible, but each client would need its own tool
   definitions; MCP gives every MCP client the same tools with no glue.
 - **An MCP gateway in front of the API (another process):** one more thing to run and secure, for no

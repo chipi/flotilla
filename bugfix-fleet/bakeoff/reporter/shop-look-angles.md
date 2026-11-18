@@ -1,4 +1,4 @@
-# Reporter knowledge — orrery-look-angles
+# Reporter knowledge — shop-look-angles
 
 What I know as the reporter/maintainer (intent only — I don't know which
 file or function is responsible):

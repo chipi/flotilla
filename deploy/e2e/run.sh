@@ -20,12 +20,15 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 D="docker --context ${DOCKER_CONTEXT_DEV:-dev}"
+$D version >/dev/null 2>&1 || { echo "no Docker context '${DOCKER_CONTEXT_DEV:-dev}': name your development engine's context in DOCKER_CONTEXT_DEV (DOCKER_CONTEXT_DEV=default on a machine with one engine)" >&2; exit 2; }
 P=flotilla-e2e
 TAG=e2e-local
 LABEL=flotilla.e2e=1
 NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse"
 PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
+# the model contract check measures real models; against the stand-in gateway it can only fail: off in the demo
+if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEMO_DISABLED=""; fi
 if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
 # The browser check's TLS front, standing in for the installation's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
@@ -69,7 +72,9 @@ ok "images built"
 echo "== config and stand-ins"
 mkdir -p "$WORK/config"
 # the specs: the shipped fleets and the e2e-only fleet (its host.true path, H9c); its registry extension
-mkdir -p "$WORK/config/specs" && cp -r "$ROOT/fleets/." "$WORK/config/specs/" && cp -r "$ROOT/deploy/e2e/fleets/." "$WORK/config/specs/"
+mkdir -p "$WORK/config/specs" && cp -r "$ROOT/fleets/." "$WORK/config/specs/"
+# the e2e-only fleet tests the platform itself (a hang, a remote echo, harmless host actions): not in the demo
+[ "${DEMO:-}" = 1 ] || cp -r "$ROOT/deploy/e2e/fleets/." "$WORK/config/specs/"
 cp "$ROOT/deploy/e2e/registry-e2e.json" "$WORK/config/registry-e2e.json"
 printf '%s\n' "${E2E_ENV[@]}" > "$WORK/.env"
 tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
@@ -112,12 +117,10 @@ workers:
   # name the local bugfix worker
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   remote-e2e: {remote: w-remote-e2e}   # RFC-0011: a worker reached through its link
-  # the site watch runs on ops-read (its spec); marketing is the installation's worker for its own SEO fleet
-  marketing: {url: "http://worker-marketing:8081", token_file: /run/flotilla/worker-triage.token}
 # the candidate triage needs a candidate model; bugfix/fix clones the repo, installs its toolchain and runs a
 # coding agent on a real model through many tool calls: a stand-in for that would show the stand-in, not
 # flotilla. Its unit tests cover it on local repos (bugfix/test_fix.py); here its intake opens the case.
-disabled_routines: [triage/cycle-shadow, bugfix/fix]
+disabled_routines: [triage/cycle-shadow, bugfix/fix$DEMO_DISABLED]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -133,6 +136,7 @@ models:
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
+[ "${DEMO:-}" != 1 ] || sed -i "/^  remote-e2e: /d" "$WORK/config/flotillad.yaml"   # the e2e fleet's remote worker: not in the demo
 cat > "$WORK/config/worker-triage.env" <<EOF
 ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
 ROUTINE_HEARTBEAT_DENIED_URL=http://forbidden:8080/

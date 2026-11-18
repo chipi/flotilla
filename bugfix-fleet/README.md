@@ -9,18 +9,18 @@ code on 2026-11-15.
 This directory keeps two earlier things, as a record (no CI, RFC-0001 §11):
 
 1. **The TypeScript prototype** (`src/main.ts`, July 2026): the GitHub issue → triage → fix → PR loop
-   of the homelab's first bugfix fleet. It ran one batch, was paused, and was retired with fleetd on
+   of the installation's first bugfix fleet. It ran one batch, was paused, and was retired with fleetd on
    2026-11-16. Only its `direct` worker adapter was ever wired; `piAdapter.ts` and
    `opencodeAdapter.ts` are stubs.
 2. **The bake-off rig** (`bakeoff/`): the pi-vs-opencode measurement study that shelled the real
    coding CLIs. It found that the harness barely moves the fix rate and ticket quality is the lever
    ([BAKEOFF.md](BAKEOFF.md) §8; the arc:
-   [history/homelab/0005](../docs/history/homelab/0005-bakeoff-matrix-arc.md)). Its real bug data
+   [history/origin/0005](../docs/history/origin/0005-bakeoff-matrix-arc.md)). Its real bug data
    has left this repo (research lives in the evaluation project).
 
-"RFC-0002" below and in `BAKEOFF.md` is agentic-ai-homelab's RFC-0002 (the bugfix fleet), not
+"RFC-0002" below and in `BAKEOFF.md` is the installation's ops repo's RFC-0002 (the bugfix fleet), not
 flotilla's RFC-0002 (the job runtime). The prototype's model calls went through a LiteLLM gateway
-with the homelab's keys; its settings are in `.env.example`.
+with the installation's keys; its settings are in `.env.example`.
 
 ## What's here (MVP scope)
 

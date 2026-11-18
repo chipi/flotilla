@@ -1,10 +1,10 @@
 # RFC-0004 — `fleetd`: the fleet supervisor daemon
 
-> **Moved from agentic-ai-homelab on 2026-11-17** (`docs/rfc/RFC-0004-fleetd-supervisor.md` at [dcc3e63](https://github.com/chipi/agentic-ai-homelab/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0004-fleetd-supervisor.md)), kept as the record.
-> fleetd retired on 2026-11-16; flotillad replaced it ([ADR-0002](../../adr/ADR-0002-run-in-docker.md)). The per-fleet index: [Fleets](../../fleets/README.md).
+> **Moved from the installation's ops repo on 2026-11-17** (`docs/rfc/RFC-0004-fleetd-supervisor.md` at [dcc3e63](https://github.com/example/ops/blob/dcc3e632983272a309766ed9d0b2685c2e9f51b6/docs/rfc/RFC-0004-fleetd-supervisor.md)), kept as the record.
+> fleetd retired on 2026-11-16; flotillad replaced it ([ADR-0002](../../adr/ADR-0002-run-in-docker.md)).
 
 **Status:** Proposed (2026-07-25)
-**Runs on:** the `homelab` Mac mini, under `launchd`, as one static Go binary.
+**Runs on:** the control-plane host, under `launchd`, as one static Go binary.
 **Relates to:** RFC-0002 (bug-fix fleet), RFC-0003 (signal-to-action fleet),
 ADR-0008 (tech choice + framework non-adoption),
 [rollout plan](fleet-architecture.md#rollout-status) (the gate items this implements).
@@ -29,10 +29,10 @@ for readability), N fleet blocks:
 [fleet.triage]
 enabled   = true
 interval  = "10m"
-cycle_cmd = "python3 /Users/operator/signal-fleet/mvp/orchestrator.py --cycle"
-workdir   = "/Users/operator/signal-fleet/mvp"
-env_file  = "/Users/operator/signal-fleet/fleet.env"
-stop_flag = "/Users/operator/signal-fleet/STOP"
+cycle_cmd = "python3 ~/signal-fleet/mvp/orchestrator.py --cycle"
+workdir   = "~/signal-fleet/mvp"
+env_file  = "~/signal-fleet/fleet.env"
+stop_flag = "~/signal-fleet/STOP"
 budget_day_usd = 2.0
 stage     = "shadow"          # shadow | propose | live  (passed to the cycle)
 
@@ -74,7 +74,7 @@ that is the **Temporal revisit trigger** (ADR-0008), not a fleetd feature.
 fleetd itself follows the plan's Track A: first deployed with
 `stage=shadow` for the triage fleet only; the bugfix block flips on when
 Track B's gate closes. Deploy = `GOOS=darwin GOARCH=arm64 go build` on the
-laptop, scp the binary + a launchd plist to the mini.
+laptop, scp the binary + a launchd plist to the host.
 
 ## Open questions
 

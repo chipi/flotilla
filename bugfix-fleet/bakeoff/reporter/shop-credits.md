@@ -1,4 +1,4 @@
-# Reporter knowledge — orrery-credits
+# Reporter knowledge — shop-credits
 
 What I know as the reporter/maintainer (intent only — I don't know which
 file or function is responsible):

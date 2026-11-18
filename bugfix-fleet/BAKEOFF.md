@@ -52,9 +52,9 @@ harnesses** — `direct` wins trivially and opencode/pi look identical. So we us
 **two real, actively-worked projects** ("verticals") that force agentic behavior
 (big, multi-file, investigation-required, test-covered):
 
-- **`chipi/orrery`** — TypeScript (SvelteKit + Three.js); styling → AR/3D;
+- **`example/shop`** — TypeScript (SvelteKit + Three.js); styling → AR/3D;
   frontend-heavy; exercises the `ui` specialist + large-context 3D bugs.
-- **`chipi/podcast_scraper`** — Python back-end + FastAPI + TS viewer + infra;
+- **`example/api`** — Python back-end + FastAPI + TS viewer + infra;
   exercises `backend`/`db`/`ui`/`infra`/`docs`.
 
 Both have test suites (the objective floor) and are big enough that `direct`
@@ -71,7 +71,7 @@ the golden reference** (§7), and the difficulty is authentic.
 **One base commit `C` per repo — where a cluster of bugs coexists.** The naive
 "revert every fix onto HEAD" model breaks on a fast repo: bugs scattered across
 history don't share a baseline (a later bug's buggy code is often introduced
-*after* an earlier bug is already fixed — they never coexisted; on `orrery` the
+*after* an earlier bug is already fixed — they never coexisted; on `shop` the
 `/fly` file alone churned ~195 commits between one fix and HEAD). So instead we
 pick **one base commit `C`** at which a *contiguous cluster* of bugs is all
 simultaneously present — buggy code exists at `C`, and every fix lands *after*
@@ -81,7 +81,7 @@ repos → **two bases `C` → two clusters → two suites**. This single base `C
 **both** run scenarios (§6): A resets to it per bug, B works forward from it.
 
 **Anchor on fix commits, not issue numbers.** Fast repos mislabel `closes #N`
-(on `orrery`, `6048fb11` claims "closes #225" but is a different bug). The fix
+(on `shop`, `6048fb11` claims "closes #225" but is a different bug). The fix
 *commit* is the reliable unit; the problem statement is a hand-verified bug
 description, and the commit diff is the golden reference. Bundled fixes → pin the
 **surgical code slice** (the exact files, in the Appendix).
@@ -398,7 +398,7 @@ manifest (production: a GitHub-issue adapter renders `bug`-labeled issues
 into the same ticket shape); result sink = flow.tsv + artifacts
 (production: labels / `fixes`-branch commit / PR per RFC-0002); invocation
 = operator CLI per ticket (production: always-on webhook service on the
-mini). The state machine itself is the part that does not change — it is
+host). The state machine itself is the part that does not change — it is
 harness-generic by construction, which is exactly what lets the bake-off
 swap pi/opencode/claude under an identical pipeline.
 
@@ -409,7 +409,7 @@ same bug at L1 vs L2 across harnesses: **the minimum upping-level a harness need
 to pass = its context-establishment (recon) score.** A harness that fixes a bug
 from **L1** is measurably stronger at recon than one that needs **L2**.
 
-Observed (2026-07-23, orrery gate): on `fly-physics` at L0/L1 ("the vis-viva
+Observed (2026-07-23, shop gate): on `fly-physics` at L0/L1 ("the vis-viva
 function returns NaN…"), **both deepseek-v4-pro and sonnet fixed the wrong,
 name-matching function** (`visViva`, not the tested `heliocentricSpeed`) — right
 logic, wrong target. Pinning to L2 → v4-pro passed. The gap was **recon, not
@@ -516,7 +516,7 @@ Readings:
   substrate is the scalable operating point" is downgraded accordingly:
   the doc substrate reliably moves *scope* (localization), but on a bug
   with a strong in-repo decoy it does not reliably move the *verdict*.
-- **Why the doc loses: it competes with the repo's own docs.** The orrery
+- **Why the doc loses: it competes with the repo's own docs.** The shop
   `AGENTS.md` file-map at base maps `orbital.ts ← keplerPos(), visViva()`
   and inlines a `visViva` snippet — two authoritative-looking signals
   pointing at the decoy vs one README pointing away. A substrate doc must
@@ -541,7 +541,7 @@ cells to n=3 (ledger: `results/runs.tsv`, now auto-appended by `run.sh`):
 The fixmap cell injected the base `AGENTS.md` with its stale file-map
 corrected (`orbital/fly-physics.ts` + `heliocentricSpeed()` named as the
 /fly HUD speed; `orbital.ts` marked NOT-the-HUD; the inline `visViva`
-snippet left in — substrate: `substrates/orrery-agents-fixmap.md`). Result:
+snippet left in — substrate: `substrates/shop-agents-fixmap.md`). Result:
 
 - **Both doc levers land at exactly 1/3** (README 1/3, corrected map 1/3).
   On a bug whose ticket contains an active **name-trap** ("the vis-viva
@@ -1142,8 +1142,8 @@ judged comparison of the passing patches remains open (§7).
 
 ## 9. Prep sequence (ordered)
 
-1. ~~**Pick the two repos' bugs together**~~ **DONE** — 7 (`orrery`) + 8
-   (`podcast_scraper`) replay bugs locked in the Appendix, spanning easy →
+1. ~~**Pick the two repos' bugs together**~~ **DONE** — 7 (`shop`) + 8
+   (`api`) replay bugs locked in the Appendix, spanning easy →
    investigation-heavy with area spread.
 2. **Prep base `C` + hidden oracles** — per repo, tag the coexistence base `C`
    (checkout, no reverts — bugs are already present). Build each bug's hidden
@@ -1170,9 +1170,9 @@ judged comparison of the passing patches remains open (§7).
    more reasoning). Whichever, held constant across opencode/pi. Claude architect
    (rung 3) is fixed = `fable`; Chinese architect = `kimi-k2.6`.
 5. **Judge** — Claude (bias, mitigated) vs a neutral model.
-6. **App scope** — install on the two real repos (`orrery`, `podcast_scraper`).
-7. **Bug list** — orrery **LOCKED** (8 logic bugs, Scenario A per-bug base
-   `<fix>^`, Appendix); podcast
+6. **App scope** — install on the two real repos (`shop`, `api`).
+7. **Bug list** — shop **LOCKED** (8 logic bugs, Scenario A per-bug base
+   `<fix>^`, Appendix); the api
    **to rebuild** at its own base `C` in its Phase 0 (candidate pool in Appendix).
 
 ## 11. Execution rollout — order of operations + git strategy
@@ -1181,10 +1181,10 @@ judged comparison of the passing patches remains open (§7).
 for round 2, report — then the next repo.** Claude-first each round doubles as the
 pipeline shakedown (most reliable harness → debug runner/grading before the flakier
 cheap adapters). Lessons flow in three loops: within a harness (troubleshoot),
-within a repo (round 1 → round 2), and **across repos (all orrery lessons carry
-into podcast from the start)**.
+within a repo (round 1 → round 2), and **across repos (all shop lessons carry
+into the api from the start)**.
 
-### Per-repo phases (run for `orrery`, then repeat for `podcast_scraper`)
+### Per-repo phases (run for `shop`, then repeat for `api`)
 
 - **Phase 0 · Prep (once, harness-independent):** build the repo's **messy branch**
   (revert all its fixes, surgical slice where flagged); **tag it immutable**
@@ -1232,14 +1232,14 @@ verticals? → RFC-0002 conclusion / a new ADR.
 - **Parallelism (later rounds / cross-repo): one worktree per lane** — they share
   one `.git` object store (cheap), each needs its own deps install once. Round 1
   stays single-worktree.
-- **Two repos = two worktrees + two baseline tags**; podcast's is built in its
+- **Two repos = two worktrees + two baseline tags**; the api's is built in its
   Phase 0.
 
 ## Appendix — the locked replay bug set
 
 Anchored on **fix commits** (§3.1; issue refs unreliable on fast repos). Grading is
 **unit-test only — no playwright/visual** (that was the lesson from the first
-orrery draft: UI/CSS/3D defects can't be graded deterministically). So the set is
+shop draft: UI/CSS/3D defects can't be graded deterministically). So the set is
 **logic bugs**, and the oracle is a `src/**/*.test.ts` — **Opt1** = the fix shipped
 its own test (reuse it, faithful + free), **Opt2** = we author one.
 
@@ -1250,7 +1250,7 @@ B** = the subset of these that happens to coexist at one base (June–July here)
 cumulatively — derived when we build B, not now. Nothing about A/B measurement
 changes; only where each bug's baseline sits.
 
-### `chipi/orrery` (TS) — 6 **run-verified** logic bugs · Scenario A, per-bug base `<fix>^`
+### `example/shop` (TS) — 6 **run-verified** logic bugs · Scenario A, per-bug base `<fix>^`
 All six verified end-to-end (`bakeoff/verify.sh`): oracle RED at `<fix>^`, GREEN
 after the golden fix. Oracle = the unit test the fix shipped (Opt1), except #251
 (authored). Manifests in `bakeoff/bugs/`.
@@ -1277,10 +1277,10 @@ the first run.*
 hard physics/math bugs anchor the top; nothing needs a browser. Ladder: 1 easy-med
 / 4 medium / 3 hard.*
 
-### `chipi/podcast_scraper` (Py back + UI + infra) — ⚠ TO REBUILD at its own base `C`
+### `example/api` (Py back + UI + infra) — ⚠ TO REBUILD at its own base `C`
 > The 8 below were picked **scattered across history** (PRs #173…#1196) before the
-> coexistence-base model. They must be **re-selected around a podcast base `C`** in
-> podcast's Phase 0, the same way orrery was. Kept here as the candidate pool:
+> coexistence-base model. They must be **re-selected around a api base `C`** in
+> the api's Phase 0, the same way shop was. Kept here as the candidate pool:
 | # | bug | fix ref | area | difficulty | test |
 |---|---|---|---|---|---|
 | #161 | summarizer init fails importing `Pipeline` from transformers | PR #173 | backend/deps | easy | author |
@@ -1297,5 +1297,5 @@ hard physics/math bugs anchor the top; nothing needs a browser. Ladder: 1 easy-m
 ## References
 - RFC-0002 — the fleet design (this is its Phase 0 plan).
 - `src/worker/types.ts` — the harness-agnostic `Worker` seam (3 adapters).
-- Langfuse (`homelab:4000`) — measurement rig; model pricing registered → $ cost.
+- Langfuse (`host-01:4000`) — measurement rig; model pricing registered → $ cost.
 - Grafana "Bug-fix Fleet" — the `flow:` funnel.

@@ -7,9 +7,9 @@ fleet session; phase B of bugfix ([the brief](../wip/bugfix-phase-b-brief.md)).
 [RFC-0002](RFC-0002-job-runtime.md) §6–7 (memory, external knowledge), the runtime harness
 (`runtime/harness.py`), triage's probes (`signal-fleet/mvp/probes.py`),
 [SR-0001](../security-reviews/SR-0001-bugfix-coding-harness.md).
-**Inputs:** fleet-eval-data `projects/bugfix-phase-b/ASSESSMENT.md` (§1b the four plans judged, §2
-item 8 the step budgets, §4.4 the reporter loop); `bugfix-fleet/BAKEOFF.md` (§3h–3m the simulated
-reporter; line 316 and lines 575–576 on intent).
+**Inputs:** the installation's research repo `projects/bugfix-phase-b/ASSESSMENT.md` (§1b the four
+plans judged, §2 item 8 the step budgets, §4.4 the reporter loop); `bugfix-fleet/BAKEOFF.md`
+(§3h–3m the simulated reporter; line 316 and lines 575–576 on intent).
 
 ## Motivation
 
@@ -36,7 +36,7 @@ a machine can do:
 
 **Non-goals:** the dev-branch filter in triage's routing (the fleet session's, with a replay gate; it
 stops most dev-environment errors before they become bugs, and step one is the second line); memory
-lookups across cases (§6 records only); other repos than orrery.
+lookups across cases (§6 records only); other repos than the shop.
 
 ## Proposal
 
@@ -78,7 +78,7 @@ Today a case kind has **one** acting routine (`actingRoutine` in dispatch.go), a
 cannot open a case. The clarifier needs the same case to go fix → clarify → fix. Proposed:
 
 - **A stage on the case:** `cases.stage`, empty by default. It is a schema step, checked read-only on
-  a copy of the mini's store before deploy.
+  a copy of the host's store before deploy.
 - **A routine's case trigger names a stage:** `trigger: {case: {kind: code_bug, stage: clarify}}`.
   One routine per (kind, stage); the empty stage is today's routine.
 - **An acting routine may hand a case on:** outcome
@@ -97,14 +97,14 @@ The same mechanism serves other fleets later (a diagnose stage before an act sta
 
 ### 3. `bugfix/clarify`: what it is and what it may touch
 
-- **Where:** on the mini, a new worker role `bugfix-read`, built from the triage image (it has the
-  runtime harness and the probes). Not on the X3: the fix worker runs untrusted repo code, and must
-  not hold observability credentials (SR-0001, H5).
+- **Where:** on the host, a new worker role `bugfix-read`, built from the triage image (it has the
+  runtime harness and the probes). Not on the second machine: the fix worker runs untrusted repo
+  code, and must not hold observability credentials (SR-0001, H5).
 - **Credentials:** GlitchTip's read token; VictoriaLogs and VictoriaTraces through its own egress
   proxy on the services' networks; the LiteLLM alias it is allowed. No GitHub write, no flotillad
   API token.
 - **The repo:** read at the base sha through GitHub's contents API (no checkout, no repo code runs).
-  Tools `repo_file(path)` and `repo_tree(dir)`, both pinned to the base. orrery is public; a private
+  Tools `repo_file(path)` and `repo_tree(dir)`, both pinned to the base. The shop is public; a private
   repo needs a read-only token on `bugfix-read`, scoped to that repo.
 - **Knowledge, first version:** the repo's own docs at the base (`AGENTS.md`, `docs/adr/`, module
   READMEs) as a declared path list (RFC-0002 §7's rules: declared, versioned by the sha, data not
@@ -132,16 +132,16 @@ questions; the intent the simulated reporter supplied comes only from §4.
 
 ### 4. Asking a person, once
 
-- **Who answers:** in practice the operator. 10 of the 11 open orrery `bug` issues were filed by the
+- **Who answers:** in practice the operator. 10 of the 11 open shop `bug` issues were filed by the
   triage fleet (checked 2026-11-16), so "the issue's author" is the fleet itself.
 - **Where (operator, 2026-11-16): in flotilla.** The intent questions go on the case page and into the
   brief's Needs you; the operator answers on the case page, and the answer hands the case to the fix
   stage with it added to the clarified ticket. No GitHub write.
 - **Only for an issue a person filed** (not the triage fleet): a registry action
   **`github.issue_question`** may post the questions as one comment and add the label `needs-info`,
-  executed by the X3 act worker with a token narrowed to that repo and `issues: write`. At propose:
-  the question's text comes from untrusted input, and a person reads it before it is posted. An answer
-  there re-enters through intake.
+  executed by the second machine act worker with a token narrowed to that repo and `issues: write`.
+  At propose: the question's text comes from untrusted input, and a person reads it before it is
+  posted. An answer there re-enters through intake.
 - **No answer in 7 days:** a case timer closes the case as `no_answer`.
 - One question round per case.
 
@@ -221,13 +221,13 @@ questions; the intent the simulated reporter supplied comes only from §4.
   limit is escalated. Money counts only the spend a run reports: bugfix's pi calls do not reach
   flotillad yet (the fleet session's C1), so until then the limit bites on time.
 - 2026-11-16 — §1 built: `bugfix/stepone.py`, run by `fix.py` after the checkout and before the
-  verdict (`--no-step-one` skips it). On the four issues as filed, against orrery's main of
+  verdict (`--no-step-one` skips it). On the four issues as filed, against the shop's main of
   2026-11-16 (28548a3): #651 closes (`surface_true_scale_short` is in `messages/*.json`), #659
   closes (`panel_tab_sky` is nowhere at the base), #648 and #656 are not checked (a library class
   and bundle paths only). The same four are `bugfix/test_stepone.py`'s cases.
-- 2026-11-17 — §1 made advisory (operator): it never closes a case. Homelab's reviews found both
-  close-rule versions (444a153, 0731108) closing real bugs: an attribute error on a common name,
-  `undefined is not a function`, a NameError whose name is defined in another file (a missing
-  import), a computed name, a name only in a test, a doc or a generated file. The cases it was
-  for, #651 and #659, are dev errors that intake (`is_dev`) and triage already leave out. Step one
-  now notes on the chain what main has of the names the error calls missing.
+- 2026-11-17 — §1 made advisory (operator): it never closes a case. The installation's reviews
+  found both close-rule versions (444a153, 0731108) closing real bugs: an attribute error on a
+  common name, `undefined is not a function`, a NameError whose name is defined in another file (a
+  missing import), a computed name, a name only in a test, a doc or a generated file. The cases it
+  was for, #651 and #659, are dev errors that intake (`is_dev`) and triage already leave out. Step
+  one now notes on the chain what main has of the names the error calls missing.

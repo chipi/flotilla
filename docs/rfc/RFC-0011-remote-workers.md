@@ -1,22 +1,23 @@
-# RFC-0011 — Remote workers: routines on any machine, the mini orchestrating
+# RFC-0011 — Remote workers: routines on any machine, the host orchestrating
 
 **Status:** Accepted (operator, 2026-11-15: the three questions as proposed: the link is a mode of
-the host agent's binary, the worker's version must be flotillad's, the X3 first). Built and live
-2026-11-15: the bugfix workers on the X3.
+the host agent's binary, the worker's version must be flotillad's, the second machine first). Built
+and live 2026-11-15: the bugfix workers on the second machine.
 **Builds on:** [ADR-0006](../adr/ADR-0006-node-agent.md) (host agents: they dial in, mutual TLS, the
 host CA, enrolment and revocation), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (workers per role),
-[RFC-0010](RFC-0010-bugfix-on-the-platform.md) §9 (bugfix's fix and push workers on the X3, its first
-user).
+[RFC-0010](RFC-0010-bugfix-on-the-platform.md) §9 (bugfix's fix and push workers on the second
+machine, its first user).
 
 ## Motivation
 
-Every worker runs today on the mini, beside flotillad, on its internal Docker network. The bugfix
-fleet's first live runs (2026-11-15) showed that heavy agentic work does not belong there: orrery's
-suite took more than 20 minutes on the mini where the X3 takes 195 s, and it competed with the mini's
-services. The operator's direction:
+Every worker runs today on the host, beside flotillad, on its internal Docker network. The bugfix
+fleet's first live runs (2026-11-15) showed that heavy agentic work does not belong there: the shop's
+suite took more than 20 minutes on the host where the second machine takes 195 s, and it competed
+with the host's services. The operator's direction:
 
-- the mini orchestrates and serves; it does no dev work;
-- heavy work runs on the X3 now, and on other machines later (the DGX, the MacBook, the VPS);
+- the host orchestrates and serves; it does no dev work;
+- heavy work runs on the second machine now, and on other machines later (the model host, the
+  MacBook, the VPS);
 - placement is a generic capability, usable by any flow, not a bugfix detail.
 
 ## Proposal
@@ -28,8 +29,8 @@ services. The operator's direction:
 ```yaml
 workers:
   ops-read: {url: "http://worker-ops-read:8081", token_file: /run/flotilla/worker-ops-read.token}
-  bugfix: {remote: x3}         # a remote worker: it connects in from the node named x3
-  bugfix-act: {remote: x3}
+  bugfix: {remote: worker-host}         # a remote worker: it connects in from the node named worker-host
+  bugfix-act: {remote: worker-host}
 ```
 
 Routine specs do not change: a routine names its worker, and the installation decides where that
@@ -77,21 +78,21 @@ One compose stack per machine, generic: the link, the worker(s) for the roles pl
 egress proxy with that machine's allowlist. The secrets the roles need (a model key, the GitHub
 App's key) live on that machine, mode 600; flotillad never holds them. `flotilla worker install
 <node>` does the enrolment and brings the stack up over SSH, as `flotilla node install` does for
-agents. On the X3 it follows `infra/x3/AGENTS.md` (the deploy checkout, user units).
+agents. On the second machine it follows `infra/worker-host/AGENTS.md` (the deploy checkout, user units).
 
 ### 6. What a remote routine cannot do in v1
 
 It cannot reach flotillad's worker listener (the ledger, case reads, note proposals): those are on
 flotillad's internal network. Routines that need them (triage's api ledger, ops/case-review) stay on
-the mini. v2 carries those calls over the link.
+the host. v2 carries those calls over the link.
 
 ### 7. First user, and the done check
 
-The bugfix fleet: `worker-bugfix` and `worker-bugfix-act` move to the X3 with their egress proxy;
-`bugfix/intake` and `bugfix/pr-check` stay on the mini. With RFC-0010 §9's narrower tests, a fix run
-is minutes on the X3. **Done** when a code_bug case on the mini is fixed by a run on the X3 to a
-shadow plan, the X3 switched off leaves the cases waiting without events, and switching it on
-resumes them.
+The bugfix fleet: `worker-bugfix` and `worker-bugfix-act` move to the second machine with their
+egress proxy; `bugfix/intake` and `bugfix/pr-check` stay on the host. With RFC-0010 §9's narrower
+tests, a fix run is minutes on the second machine. **Done** when a code_bug case on the host is
+fixed by a run on the second machine to a shadow plan, the second machine switched off leaves the
+cases waiting without events, and switching it on resumes them.
 
 ### 8. From the review (Fable 5.1, 2026-11-15), to build with it
 
@@ -117,7 +118,8 @@ resumes them.
 2. **The worker's image on the remote machine.** *Proposed:* the same `ghcr.io/chipi/flotilla-worker-*`
    images, at the tag flotillad runs; a worker at another version is refused at `worker_hello`. The
    alternative allows a window of versions.
-3. **Which machines first.** *Proposed:* the X3 only, now; the DGX when a routine needs a GPU.
+3. **Which machines first.** *Proposed:* the second machine only, now; the model host when a
+   routine needs a GPU.
 
 ## Alternatives considered
 
@@ -131,7 +133,7 @@ resumes them.
 
 ## Discussion
 
-- 2026-11-15, the operator: "I want to run heavy agentic work like this on the X3 … the mini as
-  orchestrator and services platform, no dev work … this orchestration should be a generic capability
-  and we could use it for other flows also … and on other machines as well."
+- 2026-11-15, the operator: "I want to run heavy agentic work like this on the second machine … the
+  host as orchestrator and services platform, no dev work … this orchestration should be a generic
+  capability and we could use it for other flows also … and on other machines as well."
 - 2026-11-15, the operator: "all good, suggestions accepted".

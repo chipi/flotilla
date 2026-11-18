@@ -30,15 +30,15 @@ FALSE-DISMISS rate : 6/9 = 0.67   (of file-labeled runs, dismissed)
 over-FILE rate     : 1/30 = 0.03
 file-recall        : 1/9 = 0.11
 escalate rate      : 4/30 = 0.13
-inconsistent       : 3/10  [ORRERY-6, PODCAST-4, PODCAST-6]
+inconsistent       : 3/10  [SHOP-6, API-4, API-6]
 confusion (GT -> got):
   dismiss->dismiss 9    file->dismiss 6   file->escalate 2   file->file 1
   cleanup->cleanup 5  cleanup->dismiss 4  cleanup->escalate 2  cleanup->file 1
 ```
 
-Fixture set (mini-local, not committed — data hygiene): 3 dismiss (client-noise
-ORRERY-8/A + grafana-orrery-stale), 4 cleanup (test hooks ORRERY-5/6, markers
-PLAYER-3/PODCAST-6), 3 file (PLAYER-4/5 `bug`, PODCAST-4 `config-enhancement`).
+Fixture set (host-local, not committed — data hygiene): 3 dismiss (client-noise
+SHOP-8/A + grafana-shop-stale), 4 cleanup (test hooks SHOP-5/6, markers
+PLAYER-3/API-6), 3 file (PLAYER-4/5 `bug`, API-4 `config-enhancement`).
 Labels: operator-given for the 5 judgement calls; triager-citable for the 5
 marker/repo-data cases.
 

@@ -16,11 +16,11 @@ of the [vision plan](../wip/vision-plan.md).
   gates the diff, and opens a draft PR at stage `propose`. Its fleetd entry is disabled. The TypeScript
   MVP (`bugfix-fleet/src/`) ran one batch against a sandbox repo and is retired (RFC-0001 §7).
 - **The production chain has never run.**
-  - The mini has no `~/.bugfix-fleet/real/` (its ledger directory).
-  - `chipi/orrery` has no `fleet/fix-*` PR.
-  - No issue in orrery, podcast_scraper or flotilla has ever carried the routed label. The label is
+  - The host has no `~/.bugfix-fleet/real/` (its ledger directory).
+  - `example/shop` has no `fleet/fix-*` PR.
+  - No issue in the shop, the api or flotilla has ever carried the routed label. The label is
     `ROUTE_LABEL` in `signal-fleet/mvp/filing.py`.
-  - orrery has 11 open `bug` issues, and podcast_scraper has 35.
+  - the shop has 11 open `bug` issues, and the api has 35.
 - **The bake-off** (`bugfix-fleet/BAKEOFF.md` §8, the 2026-07-26 seat auction):
   - The harness is not the lever. pi and opencode had identical success on every cell (k=3).
   - Claude sonnet-4.6 had the same outcomes at about 20 times the cost. The hard bugs are bounded by
@@ -45,12 +45,12 @@ of the [vision plan](../wip/vision-plan.md).
 ### 1. `code_bug` cases from issues
 
 `bugfix/intake` is code only. It runs every hour, reads the open issues with the intake label in each
-configured repo, and opens one case per repo and issue (target `repo:chipi/orrery#123`).
+configured repo, and opens one case per repo and issue (target `repo:example/shop#123`).
 
 - A known issue is absorbed into its case.
 - A closed issue closes its case (RFC-0004's mirror).
 
-The issue body is untrusted evidence. v1 configures orrery only, because the bake-off corpus and the
+The issue body is untrusted evidence. v1 configures the shop only, because the bake-off corpus and the
 gates were built on it.
 
 ### 2. `bugfix/fix`: the chain as a routine
@@ -62,7 +62,7 @@ and its gates:
    escalate the case with that reason (a person answers the reporter or closes it); nothing is
    written to GitHub in v1.
 2. **Fix** (pi + flash through LiteLLM, in the worker's container): a scratch worktree of the repo's
-   main, cloned one commit deep, without blobs it does not check out, and sparse (orrery's images,
+   main, cloned one commit deep, without blobs it does not check out, and sparse (the shop's images,
    audio and LFS masters left out: its history is 14 GB and its tree 6.8 GB). The step is limited by
    a 20-minute wall clock per episode.
 3. **Gates**, mechanical, as `chain.go` has them:
@@ -105,7 +105,7 @@ fleet not running), the "Applied in commit" form is the fallback.
 
 ### 4. The worker and its credentials
 
-- **Image:** `bugfix` with git, Node (orrery's toolchain) and a pinned `pi`. 4 GiB and 2 CPUs. The
+- **Image:** `bugfix` with git, Node (the shop's toolchain) and a pinned `pi`. 4 GiB and 2 CPUs. The
   worktree is on a scratch volume, deleted at the end of every run. It has no Docker inside.
 - **Egress:** the bugfix workers' own proxy, `egress-bugfix`, with its own allowlist (GitHub's
   github.com, codeload and api, `registry.npmjs.org` for `npm ci`, the LiteLLM gateway). The other
@@ -118,18 +118,18 @@ fleet not running), the "Applied in commit" form is the fallback.
 - **GitHub:** a GitHub App installed on the target repos (contents, pull requests: write; metadata:
   read). Its private key is a mode-600 file in the `bugfix-act` worker's volume only, with an
   installation token minted per execution (it expires within an hour).
-- **Shadow needs no GitHub credential at all:** orrery is public.
+- **Shadow needs no GitHub credential at all:** the shop is public.
 
 ### 5. Shadow first, then the evidence bar
 
 `github.open_pr` starts at shadow like every action. The plans, the diffs and the reviews show on the
-case page and the bugfix fleet page, and nothing leaves the mini. Promotion to propose is the
+case page and the bugfix fleet page, and nothing leaves the host. Promotion to propose is the
 operator's, on Autonomy, after the coding harness's security review (T-row in
 [security.md](../security.md): it is due before this fleet acts).
 
 ### 6. Tests and the replay
 
-- **The port runs the chain's flow.** One of the bake-off's orrery bugs (`bugfix-fleet/bakeoff/bugs/`)
+- **The port runs the chain's flow.** One of the bake-off's shop bugs (`bugfix-fleet/bakeoff/bugs/`)
   goes through `bugfix/fix` end to end to a plan. Matching the seat auction's results is phase B (§7).
 - **Gate mutants:**
   - a diff with no test;
@@ -142,8 +142,8 @@ operator's, on Autonomy, after the coding harness's security review (T-row in
   - against a fake GitHub: the approved diff is exactly what is pushed;
   - a changed diff is refused by its hash;
   - a base commit that is gone escalates.
-- **Done** (the vision plan): bugfix runs in shadow on the mini on orrery's open bugs, its runs on its
-  fleet page.
+- **Done** (the vision plan): bugfix runs in shadow on the host on the shop's open bugs, its runs
+  on its fleet page.
 
 ### 7. Two phases: the form now, making it work later
 
@@ -156,7 +156,7 @@ criterion now is a better place, not working fixes.
   - `bugfix/fix` with its gates and plan (§2);
   - `github.open_pr`, with `process_change` on it (§3);
   - the `bugfix` worker (§4);
-  - shadow on the mini, with its runs on the fleet page (§5);
+  - shadow on the host, with its runs on the fleet page (§5);
   - the tests (§6).
 
   The baseline (pi, flash, the generic prompt) runs as it is. Whether its fixes are any good is not
@@ -168,21 +168,21 @@ criterion now is a better place, not working fixes.
 ### 8. The evaluation (phase B): does the loop work, and what moves it
 
 The bake-off found every harness and model equal, Claude included. That is not evidence that they are
-equal: it measured 5 orrery bug families (with description variants of each) at k of 1 to 3, every cell
+equal: it measured 5 shop bug families (with description variants of each) at k of 1 to 3, every cell
 was all pass or all fail, and every arm used the same generic 7-line prompt (`BAKEOFF.md` §4.3). A
 benchmark like that cannot tell arms apart. Not shown different is not the same as equal. So nothing
 the bake-off chose is assumed to work; each is an arm to measure.
 
-The evaluation runs in [eval-harness](https://github.com/chipi/eval-harness), as the triage fleet's
+The evaluation runs in [eval-harness](https://github.com/example/eval-harness), as the triage fleet's
 does (`examples/triage-fleet`: a frozen dataset, arms, k runs, paired tests, cost per arm):
 
-- **The dataset: `orrery-bugfix`.**
-  - Orrery's closed `bug` issues (40 on 2026-11-15), each with the commit that fixed it where one is
-    linked (how many have one is not yet counted).
+- **The dataset: `shop-bugfix`.**
+  - the shop's closed `bug` issues (40 on 2026-11-15), each with the commit that fixed it where one
+    is linked (how many have one is not yet counted).
   - The fix commit's own tests are the hidden oracle, and its parent is the base.
   - Items whose fix has no test are kept for the verdict step only.
-  - It is frozen in the private fleet-eval-data, with the bake-off's 5 families as a subset.
-  - podcast_scraper's closed bugs follow as a second repo.
+  - It is frozen in the installation's private research repo, with the bake-off's 5 families as a subset.
+  - the api's closed bugs follow as a second repo.
 - **The adapter** runs `bugfix/fix` itself, the ported code, on an item, with GitHub stubbed. The
   routine and the evaluation are the same code, so a result in the evaluation is a result for the
   fleet.
@@ -210,14 +210,15 @@ later fixed by a person becomes a new item.
 ## 9. Revision, 2026-11-15: what a fix runs, and where
 
 **Accepted** (operator, 2026-11-15), with the placement as [RFC-0011](RFC-0011-remote-workers.md). Not
-built; `bugfix/fix` is paused on the mini until it is.
+built; `bugfix/fix` is paused on the host until it is.
 
-The first live runs on the mini (shadow, 2026-11-15) showed the port's cost.
+The first live runs on the host (shadow, 2026-11-15) showed the port's cost.
 
-- **Every fix ran orrery's whole suite 2 to 5 times:** once on the base for its red set, then once a
-  round. That is 7,505 tests in 433 files: 195 s on the X3 at 2 CPUs, more than 20 minutes on the mini,
-  where #646 escalated on the suite's timeout. `chain.go` did the same; the port copied it unexamined.
-- **The mini is for orchestration and services, not for dev work** (operator, 2026-11-15).
+- **Every fix ran the shop's whole suite 2 to 5 times:** once on the base for its red set, then
+  once a round. That is 7,505 tests in 433 files: 195 s on the second machine at 2 CPUs, more than
+  20 minutes on the host, where #646 escalated on the suite's timeout. `chain.go` did the same; the
+  port copied it unexamined.
+- **The host is for orchestration and services, not for dev work** (operator, 2026-11-15).
 
 **What a fix checks (proposed).** Only what the fix touches. The PR's own CI runs the whole suite
 once, when the operator marks the draft ready.
@@ -238,22 +239,22 @@ From the review (Fable 5.1, 2026-11-15), to build with it:
   the base; a load failure is reported as such.
 - **What `vitest related` cannot see is out of scope for a fix:** the repo's config, `package.json`,
   the lockfile, `tsconfig`, the vitest config, i18n sources.
-- **Optional, the operator's call:** the whole suite once on the final clean diff on the X3 (about 3
-  minutes), against the base's red set cached per base commit. orrery's CI also runs it on the draft
-  PR.
+- **Optional, the operator's call:** the whole suite once on the final clean diff on the second
+  machine (about 3 minutes), against the base's red set cached per base commit. The shop's CI also
+  runs it on the draft PR.
 - **Seams for phase B, added now:** `--base <commit>` (a dataset item's base is its fix's parent) and
   `--harness <name>` (the other bake-off harnesses), and a per-run tag on the model calls for cost per
   arm.
 
-**Where it runs (proposed).** The mini orchestrates, the X3 works.
+**Where it runs (proposed).** The host orchestrates, the second machine works.
 
-- flotillad stays on the mini and dispatches. `bugfix/intake` and `bugfix/pr-check` (light API reads)
-  stay on a mini worker.
+- flotillad stays on the host and dispatches. `bugfix/intake` and `bugfix/pr-check` (light API reads)
+  stay on a host worker.
 - `worker-bugfix` (the fix) and `worker-bugfix-act` (the push), with their egress proxy, run on the
-  X3 as one small compose stack on its local Docker engine. Their secrets, the model key and later
-  the GitHub App key, live on the X3, mode 600.
-- When the X3 is off, its cases wait without events, as a busy routine's do, and the stuck-state timer
-  is the only limit.
+  the second machine as one small compose stack on its local Docker engine. Their secrets, the
+  model key and later the GitHub App key, live on the second machine, mode 600.
+- When the second machine is off, its cases wait without events, as a busy routine's do, and the
+  stuck-state timer is the only limit.
 
 **Open for the design (each with a proposal):**
 
@@ -261,9 +262,9 @@ From the review (Fable 5.1, 2026-11-15), to build with it:
   out is its egress proxy. Superseded: the operator asked for placement as a generic capability, on
   any machine. [RFC-0011](RFC-0011-remote-workers.md) proposes remote workers that dial in, as the host
   agents do.
-- **The X3's rules** (`infra/x3/AGENTS.md`): its deploy checkout and user units, and the eval-harness
-  GPU rule (a fix run uses no GPU).
-- **Cost of the move:** a second compose stack to deploy, and the mini's worker-bugfix and its proxy
+- **The second machine's rules** (`infra/worker-host/AGENTS.md`): its deploy checkout and user
+  units, and the eval-harness GPU rule (a fix run uses no GPU).
+- **Cost of the move:** a second compose stack to deploy, and the host's worker-bugfix and its proxy
   removed after it.
 
 Not changed: intake, cases, `github.open_pr`, autonomy, the evidence bar.
@@ -271,7 +272,7 @@ Not changed: intake, cases, `github.open_pr`, autonomy, the evidence bar.
 ## Open questions (the operator's)
 
 1. **Intake label.** The routed label has never been applied, so triage hands nothing over today.
-   **Proposed:** the `bug` label (the original RFC-0002 trigger, 11 open in orrery), plus the routed
+   **Proposed:** the `bug` label (the original RFC-0002 trigger, 11 open in the shop), plus the routed
    label when triage starts applying it. The alternative is the routed label only, which gives shadow
    no input until triage routes something.
 2. **Harness.** **Proposed:** pi. The success rates are identical; pi stops its own grinds; the
@@ -282,8 +283,8 @@ Not changed: intake, cases, `github.open_pr`, autonomy, the evidence bar.
    holds only its own key. The alternative is Claude (`claude -p` on your account), the bake-off's
    choice: it would put your Claude login inside a container that runs repo code.
 4. **GitHub credential.** **Proposed:** a new App `flotilla-bugfix`, which you create (Settings →
-   Developer settings), installed on orrery and flotilla. The alternatives:
-   - reuse the July App, whose key is `~/.bugfix-fleet/reviewer.pem` on the mini, made for the sandbox;
+   Developer settings), installed on the shop and flotilla. The alternatives:
+   - reuse the July App, whose key is `~/.bugfix-fleet/reviewer.pem` on the host, made for the sandbox;
    - a fine-grained PAT (one token for every repo, no expiry per execution).
 5. **`process_change` through `open_pr`.** **Proposed:** in this step (flotilla in the App's
    installation). The alternative is to keep the hand-applied form until bugfix's PRs have a record.
@@ -313,9 +314,9 @@ Not changed: intake, cases, `github.open_pr`, autonomy, the evidence bar.
   better place now, but not end up with fixes." §7 added; the evaluation is phase B (§8).
 - 2026-11-15, the census for §8's dataset (read-only, GitHub API and each repo's history): closed `bug`
   issues fixed (not duplicates or not planned), with a commit naming them, whose commits touch tests:
-  podcast_scraper 177, 142, 136; orrery 28, 17, 8; agentic-ai-homelab 15, 9, 4. None is yet checked
+  the api 177, 142, 136; the shop 28, 17, 8; the installation's ops repo 15, 9, 4. None is yet checked
   as an oracle (failing on the parent, passing at the fix).
 - 2026-11-15, after the first live runs, the operator: "we have run the entire test suite for a massive
   project, which we cannot do at agent issue level … I want to run heavy agentic work like this on the
-  X3 … the mini as orchestrator and services platform, no dev work … minimal cockpit and CI/test effort,
-  and indeed we have the PR to validate all." §9 added.
+  the second machine … the host as orchestrator and services platform, no dev work … minimal
+  cockpit and CI/test effort, and indeed we have the PR to validate all." §9 added.

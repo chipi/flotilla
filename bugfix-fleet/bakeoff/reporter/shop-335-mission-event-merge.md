@@ -1,4 +1,4 @@
-# Reporter knowledge — orrery-335-mission-event-merge
+# Reporter knowledge — shop-335-mission-event-merge
 
 What I know as the reporter/maintainer (intent only — I don't know which
 file or function is responsible):

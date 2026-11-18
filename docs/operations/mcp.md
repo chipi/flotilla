@@ -1,6 +1,6 @@
 # MCP for other agents
 
-Other agents reach flotilla through MCP at `https://flotilla.<tailnet>.ts.net/mcp`
+Other agents reach flotilla through MCP at `https://flotilla.<your-domain>/mcp`
 ([ADR-0015](../adr/ADR-0015-mcp-server.md)): the API's own read and tightening tools, under each
 caller's own token. Nothing there approves, rejects or loosens.
 
@@ -26,10 +26,10 @@ a minute.
    sha256sum < ~/.config/flotilla/mcp-token | cut -d' ' -f1     # the hash, for step 2
    ```
 
-2. **The caller in flotillad's `callers.yaml`** on the mini, role `agent`, one entry per caller:
+2. **The caller in flotillad's `callers.yaml`** on the host, role `agent`, one entry per caller:
 
    ```yaml
-   - {name: claude-x3, role: agent, token_sha256: <the hash>}
+   - {name: claude-agent-01, role: agent, token_sha256: <the hash>}
    ```
 
    flotillad reads the file at start: deploy (`deploy.sh` with the running tag) to load it.
@@ -44,7 +44,7 @@ a minute.
    EOF
    chmod 700 ~/.config/flotilla/mcp-headers.sh
    claude mcp add-json --scope user flotilla \
-     '{"type":"http","url":"https://flotilla.<tailnet>.ts.net/mcp","headersHelper":"'"$HOME"'/.config/flotilla/mcp-headers.sh"}'
+     '{"type":"http","url":"https://flotilla.<your-domain>/mcp","headersHelper":"'"$HOME"'/.config/flotilla/mcp-headers.sh"}'
    ```
 
 ## Verify

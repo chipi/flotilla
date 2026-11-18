@@ -1,6 +1,6 @@
 # Reporter-oracle facts files — authoring protocol
 
-One file per bug family (`orrery-<bug>.md`), written from the golden fix's
+One file per bug family (`shop-<bug>.md`), written from the golden fix's
 knowledge, in the reporter's voice. Injected only by `reporter_answer.sh`
 (eval-side); production has a human here.
 

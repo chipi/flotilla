@@ -50,7 +50,7 @@ its routines may plan.
 | `ops-act-host` | none for hosts: the only role whose routines may plan host writes; flotillad signs them, host agents execute (ADR-0006) | Ops remediation routines |
 | `ops-act-repo` (later) | a GitHub App limited to config repos | config changes as PRs |
 | `marketing` | the sites it checks (its own proxy, `egress-seo`); later Search Console and Umami read | the seo fleet (RFC-0012) |
-| `bugfix`, `bugfix-fix`, `bugfix-fix-podcast` | `bugfix` (intake, PR check) no model key; each fix routine's worker only its own LiteLLM key; git, Node, Python and pi; no GitHub write; their own egress proxy (GitHub, the npm and Python registries, LiteLLM). They run on another machine as remote workers ([RFC-0011](../rfc/RFC-0011-remote-workers.md)) | the bugfix fleet's intake, fix and PR check ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) |
+| `bugfix`, `bugfix-fix`, `bugfix-fix-api` | `bugfix` (intake, PR check) no model key; each fix routine's worker only its own LiteLLM key; git, Node, Python and pi; no GitHub write; their own egress proxy (GitHub, the npm and Python registries, LiteLLM). They run on another machine as remote workers ([RFC-0011](../rfc/RFC-0011-remote-workers.md)) | the bugfix fleet's intake, fix and PR check ([RFC-0010](../rfc/RFC-0010-bugfix-on-the-platform.md)) |
 | `bugfix-act` | the bugfix GitHub App's key; no model key, runs no repo code | the bugfix fleet's `open-pr`, after a person approved a PR |
 | `knowledge-refresh` (later) | read access to knowledge sources | refreshing and indexing knowledge |
 
@@ -72,7 +72,7 @@ its routines may plan.
   hash. `flotilla host revoke` cuts an agent off in flotillad alone; `install.sh remove` also
   uninstalls.
 - **Connects out:** the agent opens one connection to flotillad's host endpoint; nothing on the host
-  listens. Which network carries it is the installation's choice (a VPN, a tailnet, a private
+  listens. Which network carries it is the installation's choice (a VPN, a private
   network); mutual TLS is required on any of them.
 - **The host's allowlist** (exact command templates per action, each with a rate limit, and the
   host's autonomy cap) lives in the installation's private config, is reviewed like code, and is
@@ -157,9 +157,9 @@ commit to this page, with the reason.
 
 | What | Where |
 | --- | --- |
-| Control plane | the homelab Mac mini (Intel, macOS), in the production colima VM beside the homelab's other services, deployed by the operator account with `deploy/server/deploy.sh` |
+| Control plane | the installation's host, in its production container engine beside its other services, deployed by the operator account with `deploy/server/deploy.sh` |
 | Running today | `flotillad`; `worker-triage` (triage at propose) and `worker-triage-candidate` (shadow); `worker-ops-read`, `worker-ops-act-host`; `worker-marketing`; the egress proxies `egress` and `egress-seo`. The bugfix workers run on a second machine as remote workers |
-| Model endpoint | the homelab's LiteLLM gateway, reached through the egress proxy |
-| Network | a tailnet; the UI, API and MCP behind a caddy-tailscale node of their own |
-| Host agents | the mini, live since 2026-11-14 (v1: `backup.rerun_observability`, in shadow; the Slack connector once Slack is wired), then the DGX and the production VPS |
-| Credentials | each one has a row in the homelab handbook's credentials table, minted with its `mint-credential` skill |
+| Model endpoint | the installation's LiteLLM gateway, reached through the egress proxy |
+| Network | a private network; the UI, API and MCP behind a reverse proxy node of their own |
+| Host agents | the host, live since 2026-11-14 (v1: `backup.rerun_observability`, in shadow; the Slack connector once Slack is wired), then the model host and the production VPS |
+| Credentials | each one has a row in the installation's credentials table |

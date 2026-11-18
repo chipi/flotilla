@@ -1,7 +1,8 @@
 # Triage fleet (Fleet 2) — how it works and why
 
-This page was brought up to date on 2026-11-17. Its fleetd-era text, from agentic-ai-homelab, is in
-git history. The index of every fleet note: [Fleets](../fleets/README.md).
+This page was brought up to date on 2026-11-17. Its fleetd-era text, from the installation's ops
+repo, is in git history. The example fleets:
+[fleets/README.md](https://github.com/chipi/flotilla/blob/main/fleets/README.md).
 
 This guide explains the triage fleet (`signal-fleet`, Fleet 2): its parts, one signal's path through
 it, the two ledgers that hold its memory, and the reasoning behind each rule. It is the "why" for
@@ -9,10 +10,10 @@ the next agent who has to change it.
 
 - **How to run, deploy, roll back and improve it:** [Triage fleet runbook](triage-runbook.md).
 - **The full design history:**
-  [RFC-0003 (homelab)](../history/homelab/RFC-0003-signal-to-action-fleet.md) and
+  [RFC-0003 (origin)](../history/origin/RFC-0003-signal-to-action-fleet.md) and
   [`SIGNALS.md`](https://github.com/chipi/flotilla/blob/main/signal-fleet/SIGNALS.md).
 - **How this fleet fits with the others:** [Fleet
-  architecture](../history/homelab/fleet-architecture.md) (history) and
+  architecture](../history/origin/fleet-architecture.md) (history) and
   [RFC-0004](../rfc/RFC-0004-agent-pipeline.md).
 
 Where it stands (2026-11-17): the live routine `triage/cycle` runs on flotilla at autonomy
@@ -71,7 +72,7 @@ flotillad (Go, one binary: scheduler, ledger store, API, UI, CLI)
 | installation facts | `triage/installation.json` in the fleet folder | which repo each project files into, and the rest (see the runbook). flotilla ships an example; an installation's real file is in its private fleets repo, mounted over `/opt/flotilla/fleets`. |
 | state | a Docker volume, `/home/worker/signal-fleet` in the worker (`TRIAGE_STATE_VOLUME`), never in git | `results/` (the TSV ledgers), `queue/`, `export/` |
 | ledger | flotillad's store (`SF_LEDGER_BACKEND=api`), with the TSVs still written | the fleet's memory (below) |
-| LLM | any OpenAI-compatible endpoint; the reference deployment is the homelab LiteLLM gateway, model alias set by `SF_TRIAGE_MODEL` (the code's default is `deepseek/deepseek-v4-flash`) | the investigation, the choice of file / dismiss / cleanup / escalate, and the issue's title and acceptance criteria when it files (see "How the triage LLM works"). Never dedup, never routing. |
+| LLM | any OpenAI-compatible endpoint; the reference deployment is the installation's LiteLLM gateway, model alias set by `SF_TRIAGE_MODEL` (the code's default is `deepseek/deepseek-v4-flash`) | the investigation, the choice of file / dismiss / cleanup / escalate, and the issue's title and acceptance criteria when it files (see "How the triage LLM works"). Never dedup, never routing. |
 | surfaces | the UI's fleet page for `triage` (tabs: Workflow, Routines, Decisions, Costs and stats, Logs) and the run pages; the `signal_fleet_*` and `flotilla_*` metrics; the alerts the runbook lists; Langfuse | how the operator and the next agent see it |
 
 The code is stateless between cycles. Everything the fleet "remembers" is in the two ledgers and the
@@ -276,9 +277,9 @@ then     the gates (section 3 above) may turn the decision into an escalation
   `signal-fleet/mvp/`: `gate_harness_replay.py` (the probe loop), `gate_ledger_backend_replay.py`
   (dedup through flotillad's ledger against the TSVs), `gate_model_client_replay.py` and
   `gate_skills_replay.py`. The deploy also runs a filing gate (see the runbook). Until 2026-11-16
-  eighteen gates ran from `signal-fleet/deploy/gates.sh` in the homelab repo.
+  eighteen gates ran from `signal-fleet/deploy/gates.sh` in the installation's ops repo.
 - **Decisions against what the operator did:** eval-harness
-  ([chipi/eval-harness](https://github.com/chipi/eval-harness)), `examples/triage-fleet`. It
+  (`example/eval-harness`), `examples/triage-fleet`. It
   replays a recorded decision through the fleet's own `triage.investigate` with the probe answers
   frozen as of the decision, so the brief, the probes and the gates run as in production and only
   the model or the fleet's code changes between arms. The measure is `triage_cost`: a missed real

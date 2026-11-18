@@ -1,8 +1,8 @@
-# AGENTS.md — Orrery
+# AGENTS.md — Shop
 
 Instructions for any AI / coding agent working on this codebase. Read this before touching any file.
 
-This is the **canonical** instruction file. `CLAUDE.md` and `.cursor/rules/orrery.mdc` are thin pointers to this document so there's a single source of truth — no 2-way drift between tool-specific copies. Tool-specific notes (e.g. a Claude Code bash-output caveat) live in those thin files when they only apply to one agent.
+This is the **canonical** instruction file. `CLAUDE.md` and `.cursor/rules/shop.mdc` are thin pointers to this document so there's a single source of truth — no 2-way drift between tool-specific copies. Tool-specific notes (e.g. a Claude Code bash-output caveat) live in those thin files when they only apply to one agent.
 
 ---
 
@@ -29,7 +29,7 @@ Then drill into the matching doc by question type:
 
 ## What this project is
 
-Orrery is a browser-based solar system explorer, mission simulator, encyclopedia, station explorer, and spaceflight fleet inventory rolled into one. Eleven primary nav destinations, real orbital mechanics, **42 missions** in the catalog (21 Moon + 17 Mars + 4 outer-system: Galileo, Voyager 2, New Horizons, Dawn), **137 fleet entries** across 9 categories cross-linked bidirectionally to the rest of the corpus, and a canonical **ORRERY-1** free-return Mars flyby scenario for generic `/fly` runs. It runs entirely in the browser, deploys offline, and has no backend or user accounts. Built for millions of users worldwide — mobile-first, internationalised in **14 locales** at 100% UI parity (en-US + es / fr / de / pt-BR / it / nl / zh-CN / ja / ko / hi / ar / ru / sr-Cyrl).
+Shop is a browser-based solar system explorer, mission simulator, encyclopedia, station explorer, and spaceflight fleet inventory rolled into one. Eleven primary nav destinations, real orbital mechanics, **42 missions** in the catalog (21 Moon + 17 Mars + 4 outer-system: Galileo, Voyager 2, New Horizons, Dawn), **137 fleet entries** across 9 categories cross-linked bidirectionally to the rest of the corpus, and a canonical **SHOP-1** free-return Mars flyby scenario for generic `/fly` runs. It runs entirely in the browser, deploys offline, and has no backend or user accounts. Built for millions of users worldwide — mobile-first, internationalised in **14 locales** at 100% UI parity (en-US + es / fr / de / pt-BR / it / nl / zh-CN / ja / ko / hi / ar / ru / sr-Cyrl).
 
 The eleven primary nav destinations:
 
@@ -47,7 +47,7 @@ The eleven primary nav destinations:
 | `/science` | Encyclopedia (85 sections × 10 tabs + Space-101 landing) | `src/routes/science/+page.svelte` |
 | `/fleet` | Spaceflight Fleet (166 entries × 11 categories — `launcher`, `crewed-spacecraft`, `cargo-spacecraft`, `station`, `rover`, `lander`, `orbiter`, `observatory`, `space-suit`, `constellation`, `launch-site` — with bidirectional cross-links) | `src/routes/fleet/+page.svelte` |
 
-Plus three read-only pages: `/credits` (per-image provenance + text-source attributions), `/library` (bill-of-links across the entire app — every outbound LEARN link with provenance), and `/posters` (Orrery art-print gallery — 11 hand-authored SVG posters across three style families: JPL travel-poster, era-matched, indie-pop).
+Plus three read-only pages: `/credits` (per-image provenance + text-source attributions), `/library` (bill-of-links across the entire app — every outbound LEARN link with provenance), and `/posters` (Shop art-print gallery — 11 hand-authored SVG posters across three style families: JPL travel-poster, era-matched, indie-pop).
 
 Other routes under `src/routes/` are landing pages or experiments (see repo layout).
 
@@ -78,7 +78,7 @@ Do not propose alternatives. If a locked decision needs revisiting, write an ADR
 | Mission flight params | Optional `flight` sub-object + `flight_data_quality` honesty flag | ADR-027 |
 | Panel tabs + galleries | Tabbed detail panels (OVERVIEW · GALLERY · TECHNICAL · SIZES · LEARN · FLIGHT); GALLERY is always the 2nd tab when present (conditional on per-category manifest); LEARN links in locale overlays | ADR-017, ADR-016 |
 | Lambert solver | Web Worker | ADR-008 |
-| Default fly scenario | ORRERY-1 free-return flyby (library missions add landings / cislunar arcs) | ADR-009 |
+| Default fly scenario | SHOP-1 free-return flyby (library missions add landings / cislunar arcs) | ADR-009 |
 | Transfer arc | Keplerian half-ellipses | ADR-010 |
 | `/science` math rendering | KaTeX server-rendered at build; client receives plain HTML, no JS math library | ADR-034 |
 | `/science` diagrams | Hand-coded SVG sources committed under `static/diagrams/science/`; fail-closed `validate-diagrams.ts` integrity check chained into `validate-data` | ADR-035 |
@@ -92,7 +92,7 @@ Do not propose alternatives. If a locked decision needs revisiting, write an ADR
 | Fleet schema + cross-refs | Per-category folders + generated index manifest; bidirectional `fleet_refs` ↔ `linked_missions`/`linked_sites` enforced by symmetric-link validator (fail-closed) | ADR-052 |
 | Fleet imagery + i18n | Same agency-first pipeline as the rest of the corpus; 137 entries × 14 locales = 1,918 overlay files translated in-session by the LLM | ADR-053, ADR-054 |
 | E2e readiness signals | Every canvas route exposes `window.__pickAt(x, y)` + `data-route-ready` + `data-loading` attributes; no `sleep(N)` polling in Playwright tests | ADR-056 |
-| Locale persistence | Single `orrery_locale` cookie is the ONLY exception to "no client storage"; everything else stays runtime-only | ADR-057 |
+| Locale persistence | Single `shop_locale` cookie is the ONLY exception to "no client storage"; everything else stays runtime-only | ADR-057 |
 
 For the complete locked-decision matrix (all 58 ADRs, every component, every contract, every constraint, every 3D scene, every pipeline), see [`docs/adr/TA.md`](docs/adr/TA.md). This table is the dev-facing day-to-day reference; TA.md is the authoritative architectural map.
 
@@ -106,7 +106,7 @@ Superseded (do not use): ADR-002 (vanilla JS), ADR-003 (Vite standalone), ADR-00
 /
 ├── AGENTS.md               ← this file (canonical universal AI / agent instructions)
 ├── CLAUDE.md               ← thin pointer to AGENTS.md + Claude-Code-specific notes
-├── .cursor/rules/orrery.mdc ← thin pointer to AGENTS.md for Cursor
+├── .cursor/rules/shop.mdc ← thin pointer to AGENTS.md for Cursor
 ├── IMPLEMENTATION.md       ← implementation slices and gates
 ├── README.md               ← public project introduction
 ├── LICENSE                 ← MIT
@@ -204,7 +204,7 @@ Superseded (do not use): ADR-002 (vanilla JS), ADR-003 (Vite standalone), ADR-00
 │   │   │   ├── cargo-spacecraft/
 │   │   │   ├── station/  rover/  lander/  orbiter/  observatory/  space-suit/
 │   │   ├── mars-traverses/ ← rover route polylines (Curiosity, Perseverance, Opportunity, Spirit)
-│   │   ├── scenarios/      ← ORRERY-1 free-return + others
+│   │   ├── scenarios/      ← SHOP-1 free-return + others
 │   │   ├── science/        ← 10 tab folders × ~7 sections each (ADR-034); 85 sections total
 │   │   ├── i18n/
 │   │   │   ├── en-US/      ← English overlays (source language)
@@ -533,7 +533,7 @@ The bot regenerates the four linux baselines (credits-head + science-tabs × des
 4. Run the broader spec set the change touches (e.g. all of `explore.spec.ts moon.spec.ts mars.spec.ts` if the fix is cross-cutting).
 5. *Then* push. The CI run becomes the final verification, not the debugging tool.
 
-**Push-and-wait-for-CI is a debugging anti-pattern.** Each iteration costs at least 25 min wall-clock vs. ~2 min for a single local spec. The maintainer (Marko) has flagged this explicitly: deliberate, precise, expected — not "let's see what CI says".
+**Push-and-wait-for-CI is a debugging anti-pattern.** Each iteration costs at least 25 min wall-clock vs. ~2 min for a single local spec. The maintainer has flagged this explicitly: deliberate, precise, expected — not "let's see what CI says".
 
 **When to escape this rule (rare):** the failure depends on a CI-only condition that genuinely can't be reproduced locally — Ubuntu+Docker filesystem case-sensitivity, runner network latency, GH Actions concurrency racing the launches-bot cron. In those cases, say so out loud, and instrument the push (e.g. add a CI-only debug log) so the next CI run yields new information. "Let's try this and see" is not in scope.
 
@@ -654,7 +654,7 @@ When code and TA.md / ADRs disagree, one is wrong. Fix the wrong one. Do not tol
 - Do not design desktop-first
 - Do not use `any` in TypeScript without justification
 - Do not add npm dependencies without ADR
-- Do not use `localStorage` or `sessionStorage`. Cookies are also forbidden for user preferences EXCEPT the single narrowly-scoped `orrery_locale` cookie permitted by ADR-057 (explicit user-set locale override only — auto-detect, Science Lens, mission filters, and any other state stay runtime-only). Any new cookie requires its own ADR.
+- Do not use `localStorage` or `sessionStorage`. Cookies are also forbidden for user preferences EXCEPT the single narrowly-scoped `shop_locale` cookie permitted by ADR-057 (explicit user-set locale override only — auto-detect, Science Lens, mission filters, and any other state stay runtime-only). Any new cookie requires its own ADR.
 - Do not use `THREE.CapsuleGeometry` (not in r128)
 - Do not use `console.log` in production code
 - **NON-NEGOTIABLE — every committed image must end up on `/credits`.** No matter how the image got there (manual download, Wikipedia REST, Open Library API, podcast RSS, YouTube avatar, hand-authored SVG, agency-direct fetch), there has to be a path from the file on disk to a row on `/credits` via `static/data/image-provenance.json`. The same rule applies to LEARN links (must end up on `/library` via `link-provenance.json`) and to source-logos / text fragments (`source-logos.json` / `text-sources.json`). If you add an image and it doesn't appear on `/credits` after `npm run build-image-provenance`, the work is not done — extend the script with a new walker, or register the source in the appropriate map in `scripts/build-image-provenance.ts`. See ADR-046 / ADR-047 / ADR-051. New license short names must land in `scripts/license-allowlist.ts` or be waived in `static/data/license-waivers.json`.
@@ -668,4 +668,4 @@ When code and TA.md / ADRs disagree, one is wrong. Fix the wrong one. Do not tol
 
 ---
 
-*Orrery · AGENTS.md · May 2026 · v0.6.0 · paired with [TA.md v2.0](docs/adr/TA.md) — update both when locked decisions change*
+*Shop · AGENTS.md · May 2026 · v0.6.0 · paired with [TA.md v2.0](docs/adr/TA.md) — update both when locked decisions change*

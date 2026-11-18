@@ -8,8 +8,8 @@ measure a change is the runbook's §5. Read this page for the design's reasoning
 > - The triager is not "a single classification call" (§3.6, §6): it is one conversation per signal, up to 3
 >   probes then a decision, followed by deterministic gates (the guide's "How the triage LLM works").
 > - The reference set here (`reference/`, 23 fixtures) and `score.py` are superseded by eval-harness's datasets:
->   the 233 Orrery decisions and the 65 the operator labelled, revisions `v1` and `v2` of Hugging Face
->   `chipi-nbgd/orrery-triage`. The measure is `triage_cost` (a missed real problem counts as five false
+>   the 233 Shop decisions and the 65 the operator labelled, revisions `v1` and `v2` of Hugging Face
+>   `example/shop-triage`. The measure is `triage_cost` (a missed real problem counts as five false
 >   alarms), not the false-dismiss/escalate-rate pair of §3.4.
 > - The "quality bar PASSED" below was on curated fixtures. On the labelled production decisions (v2),
 >   production missed 20.6% of real problems before the brief change of 2026-11-04 (`a7dfcd2`) and 5.9% after.
@@ -49,7 +49,7 @@ propose-first digest); (iii) additionally pends the executable File check
 (seeded thrown-bug fixtures — §3.2 — still the thin spot: 3 file fixtures,
 2 near-duplicates). The staged rollout, per-class autonomy promotion, and
 the full tick list live in
-[`docs/fleet-architecture.md` → Rollout status](https://github.com/chipi/agentic-ai-homelab/blob/main/docs/fleet-architecture.md#rollout-status)
+[`docs/fleet-architecture.md` → Rollout status](../docs/history/origin/fleet-architecture.md#rollout-status)
 (Track A).
 
 ## 2. Why an eval at all (the failure the pipeline hides)
@@ -75,7 +75,7 @@ provider/MoE nondeterminism, measured in Fleet-1 too.)
 ### 3.2 Fight the base rate — seed real defects from Fleet-1's bugs
 Our live stream is **noise-dominated**; a labeled set drawn from history scores an
 always-dismiss triager near-perfect. We have a defect generator nobody else does:
-**Fleet-1's replayed bug set.** Run orrery at a bug's base commit (`<fix>^`),
+**Fleet-1's replayed bug set.** Run shop at a bug's base commit (`<fix>^`),
 trigger the defect so the real error lands in GlitchTip, capture *that* signal +
 its evidence bundle → **ground truth = File(bug) with a *known* acceptance** (the
 bug's oracle). Cross-fleet reuse that gives the File class real, non-synthetic
@@ -128,18 +128,18 @@ ground_truth_disposition, [expected work_type + acceptance/oracle]}`. Live at
 
 | Class | Real examples | Ground truth |
 |---|---|---|
-| clear dismiss (noise/test) | `PLAYER-3` "ops validation test event", `*validation/smoke/probe*`, `ORRERY-DEV-1` "x" | dismiss |
-| real client defect | `ORRERY-5/6` `null` deref (n=3), `ORRERY-8` dynamic-import fail | File(bug) |
-| real backend defect | `PODCAST-4` span-export timeout (n=42) | File(bug) |
-| miscalibrated alert | Grafana `orrery-stale` while data fresh | dismiss + `config-enhancement` |
+| clear dismiss (noise/test) | `PLAYER-3` "ops validation test event", `*validation/smoke/probe*`, `SHOP-DEV-1` "x" | dismiss |
+| real client defect | `SHOP-5/6` `null` deref (n=3), `SHOP-8` dynamic-import fail | File(bug) |
+| real backend defect | `API-4` span-export timeout (n=42) | File(bug) |
+| miscalibrated alert | Grafana `shop-stale` while data fresh | dismiss + `config-enhancement` |
 | genuine ops | Grafana `disk-critical`, `scrape-down` | File(config) / escalate |
 | expected security noise | Grafana `ssh-probes`, `fail2ban` | dismiss |
 | **consistency pair** | `PLAYER-4` vs `PLAYER-5` (same `SyntaxError`) | same disposition |
 | **false-dismiss trap** | seeded Fleet-1 bug that *looks* like noise | File(bug) — dismiss = FAIL |
-| **seeded defect (executable)** | orrery bug at `<fix>^` → real GlitchTip error | File(bug) w/ oracle (§3.2/3.3) |
+| **seeded defect (executable)** | shop bug at `<fix>^` → real GlitchTip error | File(bug) w/ oracle (§3.2/3.3) |
 
 Grafana rules each contribute ≥2 cases (real vs false-alarm): `5xx elevated`,
-`scrape down`, `disk low/critical`, `orrery stale`, `ssh probes`, `fail2ban`.
+`scrape down`, `disk low/critical`, `shop stale`, `ssh probes`, `fail2ban`.
 
 **Sourcing, in order:** (1) replay real signals (snapshot + freeze the bundle);
 (2) **operator labels the ground truth** — the human oracle, ~20–30 cases, the one
@@ -168,7 +168,7 @@ input only the operator can give; (3) seed real defects from Fleet-1 bugs (§3.2
 
 ## What the evaluation found (2026-10-30)
 
-[`EVAL-LESSONS-0.6.0.md`](EVAL-LESSONS-0.6.0.md): findings from eval-harness's replay of the 233 Orrery
+[`EVAL-LESSONS-0.6.0.md`](EVAL-LESSONS-0.6.0.md): findings from eval-harness's replay of the 233 Shop
 decisions (the dismiss gate makes 39 of 49 escalations; the brief files every error-shaped signal; the
 release's age is fetched but not shown to the model; an empty last-turn reply returns `None`), six
 changes each measurable as one arm, and how to measure one. Since then (round r4, 2026-11-04): the empty-reply

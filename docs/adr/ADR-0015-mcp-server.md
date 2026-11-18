@@ -8,8 +8,8 @@
 
 ## Context
 
-Other agents (Claude sessions, the X3 assistant) had no way into flotilla but SSH and the container's
-CLI token, one identity for all. RFC-0001 promised an MCP server from the start.
+Other agents (Claude sessions, the second machine's assistant) had no way into flotilla but SSH and
+the container's CLI token, one identity for all. RFC-0001 promised an MCP server from the start.
 
 ## Decision
 

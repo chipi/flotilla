@@ -8,8 +8,8 @@ How flotilla is built. The decisions are in the ADRs: [ADR-0001](../adr/ADR-0001
 came from.
 
 These pages describe flotilla in general. Where a fact belongs to one installation, it is marked as
-the **reference installation**: the homelab flotilla was built for (a Mac mini running the control
-plane, a DGX and a production VPS as other hosts).
+the **reference installation**: the installation flotilla was built for (a host running the control
+plane, a model host and a production VPS as other hosts).
 
 | Page | What it answers |
 | --- | --- |
