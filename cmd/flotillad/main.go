@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -361,17 +362,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		for _, j := range versions.Bound(routines, plan) {
-			fmt.Printf("%-24s enabled=%-5v worker=%-8s every=%-6s autonomy=%-7s spec=%s version=v%d versions=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Autonomy, j.Hash,
-				j.Version, plan.States(j.ID()))
-			for _, n := range j.Notes {
-				fmt.Printf("note %s: %s\n", j.ID(), n)
-			}
+		textNotes, err := checkTexts(cfg.SpecsDir, routines, plan)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
 		}
-		fmt.Println(freeze)
-		for _, n := range plan.Notes {
-			fmt.Println("note versions:", n)
-		}
+		printVersions(os.Stdout, routines, plan, freeze, textNotes)
 		n := 0
 		if cfg.Models != nil {
 			n = len(cfg.Models.Aliases)
@@ -750,4 +746,27 @@ func checkTexts(specsDir string, routines []*spec.Routine, plan versions.Plan) (
 		}
 	}
 	return notes, errors.Join(errs...)
+}
+
+// printVersions is -check's report of the routines and their versions: one line per routine as it will run, the
+// freeze line, each flat v1 that will be re-recorded (the deploy repeats those lines as its proof), and the notes the
+// freeze tolerates. The deploy greps "versions: " lines, so each of them starts with it.
+func printVersions(w io.Writer, routines []*spec.Routine, plan versions.Plan, freeze string, textNotes []string) {
+	for _, j := range versions.Bound(routines, plan) {
+		fmt.Fprintf(w, "%-24s enabled=%-5v worker=%-8s every=%-6s autonomy=%-7s spec=%s version=v%d versions=%s\n", j.ID(), j.Enabled, j.Worker, j.Every, j.Autonomy, j.Hash,
+			j.Version, plan.States(j.ID()))
+		for _, n := range j.Notes {
+			fmt.Fprintf(w, "note %s: %s\n", j.ID(), n)
+		}
+	}
+	fmt.Fprintln(w, freeze)
+	for _, u := range plan.Updates {
+		fmt.Fprintln(w, "versions:", u.Line())
+	}
+	for _, n := range plan.Notes {
+		fmt.Fprintln(w, "note versions:", n)
+	}
+	for _, n := range textNotes {
+		fmt.Fprintln(w, "note versions:", n)
+	}
 }
