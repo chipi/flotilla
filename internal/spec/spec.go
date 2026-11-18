@@ -91,11 +91,16 @@ type Routine struct {
 	Chain   []ChainLink       `yaml:"chain"`
 
 	// filled by Load
-	Path  string        `yaml:"-"`
-	Hash  string        `yaml:"-"`
-	Every time.Duration `yaml:"-"`
-	Limit time.Duration `yaml:"-"`
-	Fresh time.Duration `yaml:"-"`
+	Path string `yaml:"-"`
+	Hash string `yaml:"-"`
+	// The routine's versions (version.go): every loaded version, the number of the one these fields are
+	// bound to (0 when none loaded) and its frozen hash. A flat spec is one routine with one version, v1.
+	Versions    []*Version    `yaml:"-"`
+	Version     int           `yaml:"-"`
+	VersionHash string        `yaml:"-"`
+	Every       time.Duration `yaml:"-"`
+	Limit       time.Duration `yaml:"-"`
+	Fresh       time.Duration `yaml:"-"`
 	// the sha256 of each declared prompt file when the spec was loaded ("" for a file that cannot be
 	// read: prompts.Check refuses it)
 	PromptSHA map[string]string `yaml:"-"`
@@ -351,18 +356,45 @@ type Budget struct {
 // ID is fleet/routine, the key everything else uses.
 func (j *Routine) ID() string { return j.Fleet + "/" + j.Routine }
 
-// Load reads every fleets/<fleet>/<routine>.yaml under dir. Any invalid spec fails the whole load, so a
-// bad spec stops a deploy instead of silently dropping a routine.
+// Load reads every routine under dir: the flat fleets/<fleet>/<routine>.yaml and the folder
+// fleets/<fleet>/<routine>/routine.yaml with its v<n>/ versions (version.go). Any invalid spec or
+// version fails the whole load, so a bad spec stops a deploy instead of silently dropping a routine.
 func Load(dir string) ([]*Routine, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "*", "*.yaml"))
+	routines, err := LoadVersions(dir)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(paths)
-	var routines []*Routine
-	seen := map[string]string{}
 	var errs []error
-	for _, p := range paths {
+	for _, j := range routines {
+		for _, v := range j.Versions {
+			if v.Err != nil {
+				errs = append(errs, v.Err)
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return routines, nil
+}
+
+type loadedRoutine struct {
+	j *Routine
+	p string
+}
+
+// LoadVersions is Load that keeps a folder routine's invalid versions (Version.Err) instead of
+// failing on them, so the caller can tell a retired one from a live one. Everything else that is
+// wrong still fails. Each routine is bound to its lowest valid version.
+func LoadVersions(dir string) ([]*Routine, error) {
+	var found []loadedRoutine
+	var errs []error
+	flat, err := filepath.Glob(filepath.Join(dir, "*", "*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(flat)
+	for _, p := range flat {
 		if filepath.Base(p) == FleetFile {
 			continue // the fleet's own description (LoadFleets), not a routine
 		}
@@ -379,6 +411,25 @@ func Load(dir string) ([]*Routine, error) {
 			errs = append(errs, fmt.Errorf("%s: routine %q, but the file is %s.yaml", p, j.Routine, want))
 			continue
 		}
+		found = append(found, loadedRoutine{j, p})
+	}
+	folders, err := filepath.Glob(filepath.Join(dir, "*", "*", RoutineFile))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(folders)
+	for _, p := range folders {
+		j, err := loadFolder(p)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		found = append(found, loadedRoutine{j, p})
+	}
+	var routines []*Routine
+	seen := map[string]string{}
+	for _, f := range found {
+		j, p := f.j, f.p
 		if prev, dup := seen[j.ID()]; dup {
 			errs = append(errs, fmt.Errorf("%s: %s already defined in %s", p, j.ID(), prev))
 			continue
@@ -401,6 +452,7 @@ func Load(dir string) ([]*Routine, error) {
 		}
 		routines = append(routines, j)
 	}
+	sort.SliceStable(routines, func(a, b int) bool { return routines[a].Path < routines[b].Path })
 	errs = append(errs, checkChains(routines)...)
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -494,6 +546,7 @@ func LoadFile(path string) (*Routine, error) {
 		sum = [32]byte(h.Sum(nil))
 	}
 	j.Path, j.Hash = path, hex.EncodeToString(sum[:])[:12]
+	j.legacyVersion(filepath.Dir(filepath.Dir(path)))
 	return &j, nil
 }
 
@@ -515,7 +568,9 @@ func validPromptPath(p string) bool {
 	return ext == ".md" || ext == ".txt"
 }
 
-func (j *Routine) validate() error {
+func (j *Routine) validate() error { return errors.Join(j.validateErrs()...) }
+
+func (j *Routine) validateErrs() []error {
 	var errs []error
 	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
 	if !nameRe.MatchString(j.Fleet) {
@@ -703,7 +758,7 @@ func (j *Routine) validate() error {
 	if j.Every > 0 && j.Fresh > 0 && j.Fresh < j.Every {
 		bad("freshness %s is shorter than the interval %s: the routine would always look stale", j.Fresh, j.Every)
 	}
-	return errors.Join(errs...)
+	return errs
 }
 
 // PromptRoles lists the roles of the declared prompts, sorted.
