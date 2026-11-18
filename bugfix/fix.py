@@ -201,6 +201,15 @@ class Terminated(BaseException):
     the step in flight and report the run's spend."""
 
 
+def file_sha(path):
+    """sha256 of a file's bytes, "" when it does not exist (a frozen reproducing test that was deleted)."""
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return ""
+
+
 def cap_bytes(s, n):
     """s cut to at most n UTF-8 bytes, keeping its start, the cut marked."""
     b = s.encode()
@@ -316,10 +325,10 @@ def errors_of(out, n=400):
 class Tests:
     """One test run's result, from a vitest or a pytest JSON report: the failed tests (file::name), the files
     that failed to load or ran no test (vitest: no assertions and a failed status; pytest: a failed
-    collection, or every test skipped), and the files that ran."""
+    collection, or every test skipped), the files that ran, and the failed tests' messages (Chain.repro reads them)."""
 
-    def __init__(self, fails, unloaded, ran):
-        self.fails, self.unloaded, self.ran = fails, unloaded, ran
+    def __init__(self, fails, unloaded, ran, messages=None):
+        self.fails, self.unloaded, self.ran, self.messages = fails, unloaded, ran, messages or []
 
 
 def run_tests(wt, cmd, files, env, timeout, fmt="vitest"):
@@ -346,7 +355,7 @@ def run_tests(wt, cmd, files, env, timeout, fmt="vitest"):
 
 
 def parse_vitest(rep, wt):
-    fails, unloaded, ran = set(), set(), set()
+    fails, unloaded, ran, messages = set(), set(), set(), []
     for tr in rep.get("testResults") or []:
         name = os.path.relpath(tr.get("name", ""), wt)
         ran.add(name)
@@ -356,7 +365,8 @@ def parse_vitest(rep, wt):
         for ar in assertions:
             if ar.get("status") == "failed":
                 fails.add(name + "::" + ar.get("fullName", ""))
-    return Tests(fails, unloaded, ran)
+                messages.extend(str(m) for m in ar.get("failureMessages") or [])
+    return Tests(fails, unloaded, ran, messages)
 
 
 def parse_pytest(rep, files):
@@ -365,7 +375,7 @@ def parse_pytest(rep, files):
     broken install skips them and a run that only skipped must not look green. A file with no test that
     passed or failed, a collector that did not pass, and a requested file with no result at all are all
     unloaded (not run)."""
-    fails, unloaded, seen = set(), set(), {}
+    fails, unloaded, seen, messages = set(), set(), {}, []
     for t in rep.get("tests") or []:
         nodeid = t.get("nodeid") or ""
         file, _, name = nodeid.partition("::")
@@ -378,6 +388,7 @@ def parse_pytest(rep, files):
         seen[file] = seen.get(file, False) or executed
         if outcome == "failed":
             fails.add(nodeid)
+            messages.append(str((t.get("call") or {}).get("longrepr") or ""))
         elif outcome == "error":
             unloaded.add(nodeid)
     unloaded |= {f for f, executed in seen.items() if not executed}
@@ -386,7 +397,7 @@ def parse_pytest(rep, files):
             unloaded.add((c.get("nodeid") or "").partition("::")[0] or "(collection)")
     unloaded |= {f for f in files if f.endswith(".py") and f not in seen}
     ran = {f for f, executed in seen.items() if executed} - unloaded
-    return Tests(fails, unloaded, ran)
+    return Tests(fails, unloaded, ran, messages)
 
 
 def assistant_text(stream):
@@ -770,6 +781,7 @@ class Chain:
         self.wt = os.path.join(run_dir, "wt")              # BAKEOFF_WT: the worktree
         self.triaged = os.path.join(run_dir, "triaged")    # BAKEOFF_TRIAGED_DIR: the manifests
         self.log = []
+        self.repro_patch, self.repro_files = "", {}   # the frozen reproducing test (repro), none without --repro
         self.issue, body_note = issue_for_case(self.issue, self.repo, environ)
         if body_note:
             self.note(body_note)
@@ -838,6 +850,10 @@ class Chain:
             kept = getattr(self, "kept", None)
             st["kept"] = {"round": kept[0], "diff": kept[1], "review": kept[2], "checked": kept[3] or "",
                           "unloaded": list(kept[4] or [])} if kept else None
+            if getattr(self, "repro_files", None):   # the frozen proof: a resumed run holds its rounds to the same test
+                with open(os.path.join(self.run_dir, "checkpoint.repro.patch"), "w") as f:
+                    f.write(self.repro_patch)
+                st["repro"] = {"patch": "checkpoint.repro.patch", "files": dict(self.repro_files)}
             if state.get("resume"):
                 session, patch, feedback = state["resume"]
                 with open(os.path.join(self.run_dir, "checkpoint.resume.patch"), "w") as f:
@@ -964,6 +980,15 @@ class Chain:
         sh(["git", "-C", self.wt, "reset", "-q", "--hard", self.base], self.run_dir, self.env, 60, check=True)
         sh(["git", "-C", self.wt, "clean", "-fdq"], self.run_dir, self.env, 60, check=True)  # not -x: node_modules stays
 
+    def put_repro(self):
+        """Put the frozen reproducing test (repro) back on the reset worktree."""
+        if not self.repro_patch:
+            return
+        pf = os.path.join(self.run_dir, "repro.patch")
+        with open(pf, "w") as f:
+            f.write(self.repro_patch)
+        sh(["git", "-C", self.wt, "apply", "--index", "--binary", pf], self.run_dir, self.env, 60, check=True)
+
     # 1 · the verdict
     def verdict(self, evidence=None, prior=None, acceptance_gap=False):
         ticket = os.path.join(self.run_dir, "ticket.json")
@@ -1001,6 +1026,70 @@ class Chain:
             v = dict(v, verdict="needs-info")
             self.note("downgrade", "the verdict said actionable but listed what is missing: needs-info")
         return v, path
+
+    # 2 · the reproducing test, before any fix
+    def repro(self, manifest):
+        """A separate agent writes the failing test from the issue's evidence (harnesses/repro.sh, agents/repro.md), or
+        says what is missing; it never fixes. The proof must not come from the agent that chose the fix: on 2026-11-17
+        five approved #553 plans were five different guesses, each proven by its own fixer's test (fleet-eval-data
+        projects/bugfix-cost, the advisor's review). Checked here: test files only, no assertion on main changed, no
+        source text read, the failure text it promises is the issue's own, and the test fails on the base with it.
+        The test is then frozen: every fix round starts from it and may not change it (attempt), and it is the repro
+        gate's test (gates). No test: the case ends as needs-info, before any fix session."""
+        with open(manifest) as f:
+            task = json.load(f).get("description") or ""
+        self.reset()
+        issue = (self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or "")
+        desc = cap_bytes(f"THE ISSUE AS FILED:\n{issue}\n\nTHE TASK THE VERDICT STEP WROTE FROM IT (it can be wrong):\n{task}",
+                         REVIEW_PROMPT_MAX)
+        code, stream = sh([os.path.join(BAKEOFF, "harnesses", "repro.sh"), self.wt, desc], BAKEOFF, self.env,
+                          self.a.episode_timeout, max_turns=self.a.fix_max_turns)
+        said = assistant_text(stream or "")
+        blocks = re.findall(r"```json\s*(\{.*?\})\s*```", said, re.S)
+        try:
+            ans = json.loads(blocks[-1]) if blocks else None
+        except ValueError:
+            ans = None
+        if not isinstance(ans, dict):
+            raise Stop(f"the reproducer gave no answer (exit {code}): {tail(' '.join(said.split()), 200)}")
+        if ans.get("repro") == "none":
+            raise Stop(f"needs info from the reporter: no failing test can be written from the issue: "
+                       f"{str(ans.get('why') or '')[:300]}; needed: {str(ans.get('needed') or '')[:300]}")
+        self.stage()
+        _, names = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", self.base],
+                      self.run_dir, self.env, 60, check=True)
+        files = [x for x in names.split("\0") if x.strip() and not x.startswith(".flotilla-suite")]
+        other = [x for x in files if not TEST_FILE.search(x)]
+        if other:
+            raise Stop(f"the reproducer changed files that are not tests: {', '.join(other)[:300]}")
+        tests = [x for x in files if os.path.exists(os.path.join(self.wt, x))]
+        if self.a.test_format == "pytest":
+            tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]
+        if not tests:
+            raise Stop("the reproducer wrote no test")
+        changed = changed_assertions(self.wt, self.base, self.run_dir, self.env)
+        if changed:
+            raise Stop("the reproducer removed or rewrote an assertion of a test on main: "
+                       + "; ".join(f"{f}: {' | '.join(lines[:3])}" for f, lines in changed)[:300])
+        reads = source_text_tests(self.wt, self.base, self.run_dir, self.env)
+        if reads:
+            raise Stop("the reproducer's test reads a source file's text: " + "; ".join(f"{f}: {ln}" for f, ln in reads)[:300])
+
+        def norm(s):
+            return " ".join(str(s).lower().split())
+        match = norm(ans.get("expect_failure_match") or "")
+        if not match or match not in norm(issue):
+            raise Stop(f"the reproducer's failure text is not the issue's own: {match[:200]!r}")
+        res = self.tests(self.a.test_cmd, tests)
+        if not res.fails:
+            raise Stop(f"the reproducing test does not fail on the base ({', '.join(tests)}): it does not reproduce the bug")
+        if match not in norm(" ".join(res.messages)):
+            raise Stop(f"the reproducing test fails on the base, but not with the issue's symptom: {match[:120]!r} "
+                       f"is not in its failure ({tail(' '.join(norm(m) for m in res.messages), 200)})")
+        _, self.repro_patch = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", self.base, "--", ".",
+                                  ":(exclude).flotilla-suite.json"], self.run_dir, self.env, 60, check=True)
+        self.repro_files = {x: file_sha(os.path.join(self.wt, x)) for x in tests}
+        self.note("repro", f"{', '.join(tests)} fails on the base with the issue's symptom ({match[:80]!r})")
 
     # 3 · one fix attempt and its gates
     def sessions(self):
@@ -1046,9 +1135,14 @@ class Chain:
         patch and the gates run, with no new pi episode."""
         with open(manifest) as f:
             desc = json.load(f)["description"]
-        note = "\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+        if self.repro_files:
+            frozen = ", ".join(sorted(self.repro_files))
+            note = (f"\n\nIMPORTANT: the failing test {frozen} reproduces the bug and is frozen. Fix the source so that it "
+                    "passes; do not change, move or delete it (you may add other tests).")
+        else:
+            note = "\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
         env, resumed_from, finished, self.fixed_ok = self.env, None, False, False
-        if cont and cont.get("patch") is not None:
+        if cont and cont.get("patch") is not None:   # a saved fix holds the frozen test: its diff is from the base
             self.reset()
             ok, out = self.apply(cont["patch"])
             if ok:
@@ -1060,6 +1154,9 @@ class Chain:
         elif not cont:
             self.reset()
         if cont and not finished:
+            # the worktree as the killed session left it; the frozen test goes back only if it is gone
+            if any(not os.path.exists(os.path.join(self.wt, x)) for x in self.repro_files):
+                self.put_repro()
             trim_session(cont["session"])
             desc, env = INTERRUPTED + note, dict(self.env, PI_RESUME_SESSION=cont["session"])
         elif finished:
@@ -1072,12 +1169,15 @@ class Chain:
                 if not ok:
                     self.note("resume", f"the previous round's diff does not apply ({tail(out, 120)}): a new session")
                     self.reset()
+            if not (ok and patch.strip()):   # a round's diff holds the frozen test; without one, put it back
+                self.put_repro()
             if ok:
                 desc = feedback + "\n\nThe worktree is as your previous attempt left it." + note
                 env, resumed_from = dict(self.env, PI_RESUME_SESSION=session), patch
             else:
                 desc += note
         else:
+            self.put_repro()
             desc += note
         harness = os.path.join(BAKEOFF, "harnesses", self.a.harness + ".sh")
         if not re.fullmatch(r"[a-z0-9-]+", self.a.harness) or not os.path.exists(harness):
@@ -1104,13 +1204,17 @@ class Chain:
         stats = (turns, out_tok)
         if not finished and self.snap:
             self.save_fixed(stream)
+        moved = [x for x, sha in sorted(self.repro_files.items()) if file_sha(os.path.join(self.wt, x)) != sha]
+        if moved:
+            return f"the fix changed the frozen reproducing test: {', '.join(moved)}", files, stream, stats
+        own = [x for x in files if x not in self.repro_files]   # what the fix itself changed
         if resumed_from is not None and self.last_patch == resumed_from:   # the tree still holds the last round's change
             return "the fix changed nothing since its last round", files, stream, stats
-        if code == 124 and not files:
+        if code == 124 and not own:
             return "the fix episode ran out of time with no change", files, stream, stats
-        if code == TURN_CAPPED and not files:
+        if code == TURN_CAPPED and not own:
             return f"the fix episode reached its turn cap ({self.a.fix_max_turns}) with no change", files, stream, stats
-        if not files:
+        if not own:
             return "the fix changed nothing", files, stream, stats
         pytest = self.a.test_format == "pytest"
         bad = []
@@ -1145,6 +1249,8 @@ class Chain:
         tests = [x for x in files if TEST_FILE.search(x) and os.path.exists(os.path.join(self.wt, x))]
         if pytest:   # only .py files go to pytest; a conftest or config is never a test
             tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]
+        if self.repro_files:   # the repro gate's test is the reproducer's, never one the fixer wrote
+            tests = sorted(self.repro_files)
         if not tests:
             return "repro-first violated: no test in the diff", files, stream, stats
         if bad:
@@ -1430,9 +1536,18 @@ class Chain:
             if v.get("verdict") != "actionable":
                 raise Stop(self.not_actionable(v))
             manifest = os.path.join(self.triaged, f"{self.tid}-triaged.json")
+            # 2 · the reproducing test, by its own agent, before any fix (--no-repro: the fixer writes its own, as
+            # before). A run killed here does it again: the checkpoint is still "checkout"; every later one carries it
+            if self.a.repro:
+                if not os.path.exists(manifest):
+                    raise Stop("stuck: the verdict step wrote no triaged manifest")
+                self.repro(manifest)
             pins, prior, reviewed_back, resume = [], vpath, 0, None
         else:
             st = ck["state"]
+            rp = st.get("repro")
+            if rp:   # the frozen proof this case's fix rounds were held to
+                self.repro_patch, self.repro_files = self.read_saved(rp["patch"]), dict(rp["files"])
             start, pins, reviewed_back = st["round"], list(st["pins"]), st["reviewed_back"]
             prior, manifest = os.path.join(self.run_dir, st["prior"]), os.path.join(self.run_dir, st["manifest"])
             r = st["resume"]
@@ -1663,6 +1778,10 @@ def parse(argv):
     # a kick-back roughly doubles a case's cost (a new fix session, and before it a new verdict): 2 and 1 bound it
     ap.add_argument("--min-output", type=int, default=32768,
                     help="a floor for each model's reply limit pi is told (its catalog gives flash 4096, which reasoning used up before the answer); 0 keeps the catalog's")
+    ap.add_argument("--no-repro", dest="repro", action="store_false",
+                    help="no separate reproducer: the fixer writes its own failing test, as before 2026-11-18 (for comparing "
+                         "the two in an eval). Default: a reproducer agent writes the failing test from the issue's evidence "
+                         "before any fix, and the test is frozen for every fix round")
     ap.add_argument("--no-step-one", dest="step_one", action="store_false",
                     help="skip RFC-0013 §1's advisory step one (bugfix/stepone.py), which notes on the chain what the base "
                          "has of what the error calls missing; it never closes a case")

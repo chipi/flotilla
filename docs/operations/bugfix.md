@@ -112,6 +112,16 @@ last, and is told the task can be wrong and to judge against the issue's own acc
 (on 2026-11-16/17 every #553 re-verdict's task prescribed a `beforeSend` filter the issue never
 asks for, and each review approved it). A one-call review anchors on what it reads first.
 
+**The proof comes before the fix, from another agent (2026-11-18).** After the verdict, a
+reproducer (`harnesses/repro.sh`, `agents/repro.md`) writes the failing test from the issue's
+evidence, or answers that it cannot and what is needed (the case ends as needs-info, before any
+fix session). The chain checks its test: test files only, no assertion on main changed, no
+source text read, the failure text it names is copied from the issue, and the test fails on
+the base with that text. The test is then frozen: every fix round starts from it, a round that
+changes it fails, and the repro gate runs it alone (tests the fixer adds do not count). On
+2026-11-17 five approved #553 plans were five guesses, each proven by its own fixer's test.
+`--no-repro` gives the old chain (the fixer writes its own test), for comparing the two.
+
 **The chain's own checks on #553's failure (2026-11-17).** Each is deterministic:
 
 - an actionable verdict that lists what is `missing` is needs-info, the verdict prompt's own

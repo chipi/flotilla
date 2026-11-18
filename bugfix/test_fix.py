@@ -73,6 +73,9 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
     cd "$WT"
     case "$F" in
       good)     echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/a.js 2' > src/a.test.js ;;
+      srconly)  echo 'module.exports = () => 2;' > src/a.js ;;
+      srcplus)  echo 'module.exports = () => 2;' > src/a.js; echo 'expect src/b.js 1' > src/b.test.js ;;
+      wrongsrc) echo 'module.exports = () => 3;' > src/a.js ;;
       hang)     echo $$ > "$FAKE_STATE/harness.pid"; sleep 60 ;;
       notest)   echo 'module.exports = () => 2;' > src/a.js ;;
       chatty)   for i in 1 2 3 4 5; do echo '{"type": "message_end", "message": {"role": "assistant", "usage": {"output": 1}}}'; done
@@ -145,6 +148,38 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
     printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output":7}}}\\n'
     ''')
 
+# the reproducer (harnesses/repro.sh): pops a kind from $FAKE_STATE/repros, writes its test in the worktree and answers
+# with a pi message_end carrying the JSON block. The issue (fixture) says "value() returns 1, want 2".
+REPRO_HARNESS = textwrap.dedent('''\
+    WT="$1"; K=$(head -n 1 "$FAKE_STATE/repros"); sed -i 1d "$FAKE_STATE/repros"
+    echo "repro $K" >> "$FAKE_STATE/calls"
+    python3 - "$WT" "$K" <<'PY'
+    import json, os, sys
+    wt, k = sys.argv[1], sys.argv[2]
+    def w(p, t):
+        open(os.path.join(wt, p), "w").write(t)
+    ans = {"repro": "test", "files": ["src/a.test.js"], "evidence_quoted": "value() returns 1, want 2",
+           "expect_failure_match": "returns 1, want 2"}
+    if k == "good":
+        w("src/a.test.js", "msg value() returns 1, want 2\\nexpect src/a.js 2\\n")
+    elif k == "none":
+        ans = {"repro": "none", "why": "a minified frame only", "needed": "a source map"}
+    elif k == "src":
+        w("src/a.test.js", "msg value() returns 1, want 2\\nexpect src/a.js 2\\n"); w("src/a.js", "module.exports = () => 2;\\n")
+    elif k == "nomatch":
+        w("src/a.test.js", "expect src/a.js 2\\n"); ans["expect_failure_match"] = "a crash the issue never mentions"
+    elif k == "passes":
+        w("src/a.test.js", "msg value() returns 1, want 2\\nexpect src/b.js 1\\n")
+    elif k == "othersymptom":
+        w("src/a.test.js", "expect src/a.js 2\\n")
+    elif k == "noanswer":
+        ans = None
+    text = ("done\\n```json\\n" + json.dumps(ans) + "\\n```") if ans else "I could not decide."
+    print(json.dumps({"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": text}],
+                                                         "usage": {"output": 5}}}))
+    PY
+    ''')
+
 ADVISOR = SESS + textwrap.dedent('''\
     sess advisor
     echo "advisor tools=${PI_TOOLS:-all}" >> "$FAKE_STATE/calls"
@@ -202,7 +237,8 @@ SUITE = textwrap.dedent('''\
                 _, target, n = ln.split()
                 if not os.path.exists(target) or f"=> {n};" not in open(target).read():
                     st = "failed"
-        res.append({"name": p, "status": st, "assertionResults": [{"status": st, "fullName": f}]})
+        res.append({"name": p, "status": st, "assertionResults": [{"status": st, "fullName": f,
+                    "failureMessages": [" | ".join(lines)] if st == "failed" else []}]})
     json.dump({"testResults": res}, open(report, "w"))
     ''')
 
@@ -269,6 +305,7 @@ class Fixture:
         write(os.path.join(b, "triage_run.sh"), TRIAGE)
         write(os.path.join(b, "advisor_run.sh"), ADVISOR)
         write(os.path.join(b, "harnesses", "pi.sh"), PI_HARNESS)
+        write(os.path.join(b, "harnesses", "repro.sh"), REPRO_HARNESS)
         write(os.path.join(self.d, "bin", "pi"), PI_BIN)
         self.suite = os.path.join(self.d, "suite.py")
         write(self.suite, PYSUITE if py else SUITE, 0o644)
@@ -331,7 +368,8 @@ class Fixture:
                     ["--test-cmd", f"python3 {self.suite} run %s", "--related-cmd", f"python3 {self.suite} related %s"])
             out = fix.main(["--repo", self.repo, "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer",
                             "--reviewer-model", "bugfix-reviewer", "--setup", "true", *cmds,
-                            "--scratch", self.scratch, *extra], environ=env)
+                            "--scratch", self.scratch, *([] if getattr(self, "repro", False) else ["--no-repro"]),
+                            *extra], environ=env)
         finally:
             fix.BAKEOFF = old
         with open(plan) as f:
@@ -670,6 +708,65 @@ exec {real} "$@"
         self.assertEqual({c["cost_source"] for c in turns}, {"gateway-share"})
         with open(os.path.join(home, ".spend")) as fh:
             self.assertEqual(float(fh.read()), 1.0)
+
+    def rfixture(self, verdicts, fixes, repros):
+        """A fixture with the reproducer on (no --no-repro), its answers queued."""
+        f = self.fixture(verdicts, fixes)
+        with open(os.path.join(f.state, "repros"), "w") as fh:
+            fh.write("".join(x + "\n" for x in repros))
+        f.repro = True
+        return f
+
+    def test_the_reproducers_test_is_the_proof_and_the_fixer_only_fixes(self):
+        f = self.rfixture(["actionable"], ["srconly"], ["good"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(f.calls(), ["triage", "repro", "fix", "review"])
+        self.assertIn("repro: src/a.test.js fails on the base with the issue's symptom ('returns 1, want 2')",
+                      plan["params"]["body"])
+        self.assertIn("+++ b/src/a.test.js", plan["params"]["diff"], "the frozen test ships with the fix")
+        with open(os.path.join(f.state, "fix_desc")) as fh:
+            self.assertIn("the failing test src/a.test.js reproduces the bug and is frozen", fh.read())
+
+    def test_no_reproducing_test_is_needs_info_before_any_fix(self):
+        f = self.rfixture(["actionable"], [], ["none"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertEqual(plan["detail"], "needs info from the reporter: no failing test can be written from the issue: "
+                                         "a minified frame only; needed: a source map")
+        self.assertEqual(f.calls(), ["triage", "repro"], "no fix session")
+
+    def test_the_reproducers_output_is_checked(self):
+        for kind, want in (("src", "the reproducer changed files that are not tests: src/a.js"),
+                           ("nomatch", "the reproducer's failure text is not the issue's own"),
+                           ("passes", "the reproducing test does not fail on the base (src/a.test.js)"),
+                           ("othersymptom", "fails on the base, but not with the issue's symptom: 'returns 1, want 2'"),
+                           ("noanswer", "the reproducer gave no answer")):
+            f = self.rfixture(["actionable"], [], [kind])
+            plan, _ = f.run()
+            self.assertEqual(plan["outcome"], "escalate", (kind, plan))
+            self.assertIn(want, plan["detail"], kind)
+            self.assertEqual(f.calls(), ["triage", "repro"], kind)
+
+    def test_a_fix_that_changes_the_frozen_test_fails_its_round(self):
+        # the "good" fake fix also rewrites src/a.test.js; round 1's fix leaves it alone
+        f = self.rfixture(["actionable", "actionable"], ["good", "srconly"], ["good"])
+        plan, _ = f.run("--no-resume")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("round 0: the fix changed the frozen reproducing test: src/a.test.js", plan["params"]["body"])
+
+    def test_the_repro_gate_reads_only_the_frozen_test(self):
+        # the fixer may add tests (src/b.test.js passes on the base too); they are not the proof
+        f = self.rfixture(["actionable"], ["srcplus"], ["good"])
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("+++ b/src/b.test.js", plan["params"]["diff"])
+
+    def test_a_wrong_fix_fails_the_frozen_test(self):
+        f = self.rfixture(["actionable", "actionable"], ["wrongsrc", "srconly"], ["good"])
+        plan, _ = f.run("--no-resume")
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("round 0: the fix's own tests fail with the fix: src/a.test.js", plan["params"]["body"])
 
     def test_a_round_that_inverts_an_assertion_on_main_fails_its_gates(self):
         # #553 (2026-11-16/17): every filter fix flipped `.not.toBeNull()` to `.toBeNull()` in a test on main, which
@@ -1398,7 +1495,7 @@ exec {real} "$@"
         p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
                               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
                               "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
-                              "--scratch", f.scratch, "--spend-file", ".spend", "--spend-poll", "0.1"],
+                              "--scratch", f.scratch, "--spend-file", ".spend", "--spend-poll", "0.1", "--no-repro"],
                              env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
         calls = os.path.join(f.state, "calls")
@@ -1696,6 +1793,25 @@ class Durable(unittest.TestCase):
                     self.assertEqual(len(r), 1, r)
                     self.assertRegex(r[0], r"^resume s-good-\d+\.jsonl changed=2 desc=The run was interrupted")
 
+    def test_a_kill_after_the_proof_resumes_held_to_the_same_frozen_test(self):
+        # the reproducer's test is in every checkpoint after it: a resumed run does not write another proof, its rounds
+        # are held to the frozen one, and the review is told it is frozen
+        for name, phase in (("attempt", "attempt"), ("pi", "attempt"), ("gates", "fixed"), ("review", "gated"),
+                            ("plan", "reviewed")):
+            with self.subTest(killed=name):
+                f = self.fixture(["actionable"], ["srconly", "srconly"])
+                with open(os.path.join(f.state, "repros"), "w") as fh:
+                    fh.write("good\n")
+                f.repro = True
+                self.kill(f, name)
+                ck = self.checkpoint(f)
+                self.assertEqual(ck["phase"], phase)
+                self.assertEqual(list(ck["state"]["repro"]["files"]), ["src/a.test.js"])
+                plan, _ = f.run(resume=RESUME)
+                self.assertEqual(plan["outcome"], "plan", plan)
+                self.assertEqual([c for c in f.calls() if c.startswith("repro")], ["repro"], "one proof, not two")
+                self.assertIn("+++ b/src/a.test.js", plan["params"]["diff"], "the frozen test ships with the fix")
+
     def test_a_kill_in_a_kick_back_redoes_the_kick_back_and_resumes_the_session(self):
         f = self.fixture(["actionable", "actionable"], ["notest", "good"])
         self.kill(f, "verdict", nth=2)
@@ -1868,7 +1984,7 @@ class Durable(unittest.TestCase):
         p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
                               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
                               "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
-                              "--scratch", f.scratch],
+                              "--scratch", f.scratch, "--no-repro"],
                              env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
         calls = os.path.join(f.state, "calls")
@@ -2017,7 +2133,7 @@ class Locking(unittest.TestCase):
                    FLOTILLA_CASE=json.dumps({"id": self.CASE, "kind": "code_bug", "target": "t",
                                              "data": {"issue": {"repo": "example/shop", "number": 12, "title": "t", "body": "b", "url": "u"}}}))
         p = subprocess.run([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
-                            "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--scratch", f.scratch,
+                            "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--scratch", f.scratch, "--no-repro",
                             "--lock-wait", "0.3"], env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, fix.EXIT_BUSY, p.stdout + p.stderr)
         self.assertIn("another run of this case is still running", p.stdout)
@@ -2114,7 +2230,7 @@ class Locking(unittest.TestCase):
         p = subprocess.Popen([sys.executable, os.path.abspath(fix.__file__), "--repo", "example/shop", "--worker-model", "bugfix-flash",
                               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
                               "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
-                              "--scratch", f.scratch],
+                              "--scratch", f.scratch, "--no-repro"],
                              env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
         calls = os.path.join(f.state, "calls")
