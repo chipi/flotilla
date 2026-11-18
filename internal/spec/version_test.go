@@ -479,3 +479,150 @@ func TestLegacyVersionHashIsTheYAMLNotTheStructs(t *testing.T) {
 		t.Fatal("a changed value is")
 	}
 }
+
+// The same guard outside Go, where the compiler cannot help. The old word is still the stage a routine reads
+// (FLEETD_STAGE) and triage's own disposition stage, so none of those is a hit; what is: the word as an autonomy
+// level in a template's options, in a Python list of levels or an autonomy comparison, or in a spec that is not a
+// flat spec on the golden list (a flat spec's alias `autonomy: shadow` stays because its bytes are its golden hash;
+// a routine.yaml or a version never writes it).
+func TestOldAutonomyWordStaysOutOfTemplatesPythonAndNewSpecs(t *testing.T) {
+	root := filepath.Join("..", "..")
+	skip := func(p string) bool {
+		for _, dir := range []string{".git", ".claude", ".venv", "web", "site", "node_modules", ".impeccable", "docs"} {
+			if d := filepath.Join(root, dir); p == d || strings.HasPrefix(p, d+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
+	tmpl := regexp.MustCompile(`(value|selected)="shadow"|>shadow<`)
+	py := regexp.MustCompile(`['"]shadow['"][^\n]{0,40}['"]propose['"]|['"]propose['"][^\n]{0,40}['"]shadow['"]|autonomy[\w"']*\s*(==|!=|in|:|=)\s*[\(\[{]?['"]shadow['"]`)
+	alias := regexp.MustCompile(`(?m)^(max_)?autonomy:\s*shadow\b`)
+	raw, err := os.ReadFile(filepath.Join("testdata", "golden_hashes.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden := map[string]bool{}
+	for _, l := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		golden[strings.Fields(l)[0]] = true
+	}
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if skip(p) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		slash := filepath.ToSlash(rel)
+		switch {
+		case strings.HasSuffix(p, ".html") && strings.Contains(slash, "templates/"):
+			b, _ := os.ReadFile(p)
+			if m := tmpl.Find(b); m != nil {
+				t.Errorf("%s offers shadow as an autonomy level (%q): the level is record", slash, m)
+			}
+		case strings.HasSuffix(p, ".py") && !strings.HasSuffix(slash, "deploy/e2e/old_store.py"): // old_store.py is the schema-25 store, on purpose
+			b, _ := os.ReadFile(p)
+			if m := py.Find(b); m != nil {
+				t.Errorf("%s uses shadow as an autonomy level (%q): the level is record (FLEETD_STAGE and triage's stage stay shadow)", slash, m)
+			}
+		case strings.HasSuffix(p, ".yaml") && (strings.HasPrefix(slash, "fleets/") || strings.HasPrefix(slash, "deploy/e2e/fleets/")):
+			b, _ := os.ReadFile(p)
+			if !alias.Match(b) {
+				return nil
+			}
+			parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(slash, "deploy/e2e/"), "fleets/"), "/")
+			if len(parts) != 2 || !golden[parts[0]+"/"+strings.TrimSuffix(parts[1], ".yaml")] {
+				t.Errorf("%s writes the old autonomy word: only a flat spec on golden_hashes.txt keeps it (its bytes are its hash); write record", slash)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Loader edges of the folder layout, each pinned: what a version folder may hold and how it is named.
+func TestFolderLoaderEdges(t *testing.T) {
+	t.Run("a version folder without spec.yaml loads as a broken version, not a crash", func(t *testing.T) {
+		d := t.TempDir()
+		writeFolder(t, d)
+		write(t, d, "triage/cycle/v2/system.md", "text only\n")
+		rs, err := LoadVersions(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v := rs[0].VersionNamed(2); v == nil || v.Valid() || !strings.Contains(v.Err.Error(), "spec.yaml") {
+			t.Fatalf("v2: %+v", v)
+		}
+		if rs[0].Version != 1 || rs[0].Every.String() != "10m0s" {
+			t.Fatalf("v1 stays bound: %d %s", rs[0].Version, rs[0].Every)
+		}
+	})
+	t.Run("a file in a subdirectory is part of the version", func(t *testing.T) {
+		d := t.TempDir()
+		writeFolder(t, d)
+		a, _ := Load(d)
+		write(t, d, "triage/cycle/v1/sub/deeper/note.md", "x")
+		b, err := Load(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := b[0].Versions[0].Manifest["sub/deeper/note.md"]; !ok || a[0].VersionHash == b[0].VersionHash {
+			t.Fatalf("manifest %v", b[0].Versions[0].Manifest)
+		}
+	})
+	t.Run("hidden files: ignored beside routine.yaml, part of the version inside it", func(t *testing.T) {
+		d := t.TempDir()
+		writeFolder(t, d)
+		a, _ := Load(d)
+		write(t, d, "triage/cycle/.DS_Store", "junk") // the routine's folder: not a version, not an error
+		if _, err := Load(d); err != nil {
+			t.Fatalf("a dotfile beside routine.yaml: %v", err)
+		}
+		// inside v1/ a frozen version must not change without the hash saying so, so a hidden file counts
+		write(t, d, "triage/cycle/v1/.DS_Store", "junk")
+		b, err := Load(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := b[0].Versions[0].Manifest[".DS_Store"]; !ok || a[0].VersionHash == b[0].VersionHash {
+			t.Fatalf("a hidden file in a version is hashed: %v", b[0].Versions[0].Manifest)
+		}
+	})
+	t.Run("v0, v01 and a number too large are not versions", func(t *testing.T) {
+		for _, name := range []string{"v0", "v01", "v99999999999999999999", "V1", "v1.bak"} {
+			d := t.TempDir()
+			writeFolder(t, d)
+			write(t, d, "triage/cycle/"+name+"/spec.yaml", folderVersion)
+			if _, err := Load(d); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("%s: want an error naming it, got %v", name, err)
+			}
+		}
+	})
+	t.Run("the hash does not depend on the order files were made in", func(t *testing.T) {
+		hash := func(order []string) string {
+			d := t.TempDir()
+			write(t, d, "triage/cycle/routine.yaml", folderRoutine)
+			for _, f := range order {
+				body := "text " + f + "\n"
+				if f == "spec.yaml" {
+					body = strings.Replace(folderVersion, "system.md", "a.md", 1)
+				}
+				write(t, d, "triage/cycle/v1/"+f, body)
+			}
+			rs, err := Load(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return rs[0].VersionHash
+		}
+		if a, b := hash([]string{"spec.yaml", "a.md", "z/b.md", "c.md"}), hash([]string{"c.md", "z/b.md", "a.md", "spec.yaml"}); a != b {
+			t.Fatalf("%s != %s", a, b)
+		}
+	})
+}

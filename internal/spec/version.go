@@ -275,7 +275,11 @@ func loadFolder(p string) (*Routine, error) {
 			continue
 		}
 		if m := versionDirRe.FindStringSubmatch(name); m != nil && e.IsDir() {
-			n, _ := strconv.Atoi(m[1])
+			n, err := strconv.Atoi(m[1])
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %s is not a version number (too large)", dir, name))
+				continue
+			}
 			nums = append(nums, n)
 			continue
 		}
