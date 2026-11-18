@@ -65,7 +65,7 @@ with sync_playwright() as pw:
     # the backup chain's case (run.sh's cases section ran first; the business examples close theirs too): its page, reached from the list
     page.goto(BASE + "/cases?status=closed")
     # the closed one: flotillad restarts during the e2e and its monitor runs again, opening a newer case
-    link = page.locator("tr", has_text="shadow plan recorded").filter(has_text=re.compile("backup")).locator("a[href^='/cases/case-']").first
+    link = page.locator("tr", has_text="plan recorded").filter(has_text=re.compile("backup")).locator("a[href^='/cases/case-']").first
     case_path = link.get_attribute("href") if link.count() else ""
     check(case_path != "", "the cases page lists the chain's case")
     for path in ["/", "/approvals", "/cases", "/runs", "/fleets", "/fleets/platform", "/fleets/platform?tab=stats", "/hosts",
@@ -77,7 +77,7 @@ with sync_playwright() as pw:
     if case_path:
         page.goto(BASE + case_path)
         body = page.content()
-        missing = [w for w in ("backup.rerun", "would have been", "shadow_plan_recorded") if w not in body]
+        missing = [w for w in ("backup.rerun", "would have been", "plan_recorded") if w not in body]
         check(not missing, f"the case page shows the plan, what it would have been, and the close (missing: {missing})")
     faces = page.evaluate("[...document.fonts].filter(f => f.status === 'loaded').map(f => f.family.replace(/\"/g, ''))")
     check("Inter" in faces and "JetBrains Mono" in faces, f"the self-hosted fonts load ({sorted(set(faces))})")

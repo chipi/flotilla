@@ -62,7 +62,7 @@ func TestSnapshots(t *testing.T) {
 		}
 	}
 	_ = st.StartRun(ctx, store.Run{ID: "triage-cycle-running", Routine: "triage/cycle", SpecHash: "cad5f7e194e0aa", Trigger: "schedule",
-		Actor: "flotillad", Autonomy: "shadow", StartedAt: at(time.Minute), Status: "running"})
+		Actor: "flotillad", Autonomy: "record", StartedAt: at(time.Minute), Status: "running"})
 
 	// The installation's models and the triage runs' model calls (G1), for Runs, Now and Models.
 	f.sch.ModelsJSON = `{"endpoints":{"gateway":{"base_url":"http://litellm:4000/v1","kind":"litellm","key_env":"K","defaults":{"tools":"native","json":"object","cost":"reported"}},` +
@@ -102,7 +102,7 @@ func TestSnapshots(t *testing.T) {
 			"reason":    "The diagnosis is unsure between two causes; " + strings.Repeat("the evidence says more ", 6)}, "")
 	}
 
-	// Cases: one waiting for approval with its plan, one escalated, one verified, one shadow plan.
+	// Cases: one waiting for approval with its plan, one escalated, one verified, one recorded plan.
 	open := func(kind, target, detail string) string {
 		k := store.Key{Kind: "target", Value: kind + "/" + target}
 		id, _, err := st.OpenCase(ctx, store.NewCase{Kind: kind, Target: target, Project: "ops", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", detail)
@@ -136,8 +136,8 @@ func TestSnapshots(t *testing.T) {
 	_ = st.MoveCase(ctx, okID, cases.Executing, cases.ByOperator, "", "user:ada", "approved backup.rerun on host:vps (plan 4f1c9a20b7d3)")
 	_ = st.MoveCase(ctx, okID, cases.Checking, cases.ByAct, "", "flotillad", "the host ran it: exit 0")
 	_ = st.MoveCase(ctx, okID, cases.Closed, cases.ByCheck, cases.Verified, "ops/verify-backup", "run ops-verify-backup-0001: a new backup, 3 minutes old")
-	shadowID := open("failed_backup", "host:nas", "run ops-backup-monitor-0004: the newest offsite backup is 26.1 hours old (limit 26h)")
-	plan(shadowID, "host:nas", "ops-rerun-backup-0003", "shadow", "shadow", "propose", cases.Closed, cases.ShadowPlan, false)
+	recordedID := open("failed_backup", "host:nas", "run ops-backup-monitor-0004: the newest offsite backup is 26.1 hours old (limit 26h)")
+	plan(recordedID, "host:nas", "ops-rerun-backup-0003", "record", "record", "propose", cases.Closed, cases.PlanRecorded, false)
 
 	// Hosts: backup-01 and model-host connected, vps down for 12 minutes; executions on vps.
 	for _, h := range []string{"backup-01", "model-host", "vps"} {
@@ -160,7 +160,7 @@ func TestSnapshots(t *testing.T) {
 	_ = st.EndHostExecution(ctx, "exe-8pz4", "done", 0, "ab", "exit 0 in 2.1 s", "9b1e5d2a")
 
 	// An autonomy change, for Autonomy's Recent changes.
-	_ = st.SetControlBecause(ctx, "action:backup.rerun", "autonomy", "propose", "user:ada", "ui", "5 shadow plans I agreed with")
+	_ = st.SetControlBecause(ctx, "action:backup.rerun", "autonomy", "propose", "user:ada", "ui", "5 recorded plans I agreed with")
 	_ = st.SetControl(ctx, "ops/backup-monitor", "paused", "0", "user:ada", "api")
 
 	op := f.addOperator()

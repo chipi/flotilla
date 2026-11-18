@@ -57,7 +57,7 @@ def executed(events):
 
 def cleared_itself(case, events):
     return case["status"] == "closed" and not executed(events) and \
-        case.get("resolution") in ("shadow_plan_recorded", "resolved_itself") and \
+        case.get("resolution") in ("plan_recorded", "resolved_itself") and \
         any(e["kind"] in ("incident.cleared", "case.closed") for e in events)
 
 

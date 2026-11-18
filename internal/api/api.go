@@ -398,7 +398,7 @@ func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 		Reason   string `json:"reason"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"shadow|propose|auto\", \"reason\": \"...\"}"})
+		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"record|propose|auto\", \"reason\": \"...\"}"})
 		return
 	}
 	err := s.SetAutonomy(r.Context(), c, "api", routineID(r), body.Autonomy, body.Reason)

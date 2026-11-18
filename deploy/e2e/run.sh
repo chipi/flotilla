@@ -315,16 +315,16 @@ echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
 # (every 15s) hands the case to jobs/rerun-backup, whose plan policy records in shadow, closing the case.
 for i in $(seq 1 45); do
   CASES="$(cli case list --all 2>&1)"
-  echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*shadow_plan_recorded" && break; sleep 2
+  echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*plan_recorded" && break; sleep 2
 done
-echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*shadow_plan_recorded" \
+echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*plan_recorded" \
   && ok "the backup monitor's detection became a case, planned and closed as a shadow plan" || bad "the chain: $CASES"
 CID="$(echo "$CASES" | awk '/failed_backup/ {print $1; exit}')"
 SHOW="$(cli case show "$CID" 2>&1)"
 echo "$SHOW" | grep >/dev/null "case.handed_over .*jobs/backup-monitor .*by detector" && ok "opened by jobs/backup-monitor, handed over as a code detector" || bad "case show (detector): $SHOW"
 echo "$SHOW" | grep >/dev/null "case.planned .*jobs/rerun-backup .*by act .*backup_age_above(25h): holds" \
   && ok "planned by jobs/rerun-backup, citing its re-check" || bad "case show (plan): $SHOW"
-echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*shadow_plan_recorded.*would propose" \
+echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*plan_recorded.*would propose" \
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
   && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
@@ -334,7 +334,7 @@ echo "== the business examples (crm, campaigns, outbound, renewals), on their st
 # each, and policy records the plan in shadow and closes the case. The gates' refusals escalate instead.
 want_closed() {  # kind target: a case of that kind on that target closed as a recorded shadow plan
   for _ in $(seq 1 45); do
-    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*shadow_plan_recorded" && return 0; sleep 2
+    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*plan_recorded" && return 0; sleep 2
   done
   return 1
 }
@@ -369,7 +369,7 @@ want_case seo_live_regression "site:certificate/www.example.com/" "" && ok "site
   || bad "sites certificate: $(cli case list --all 2>&1 | grep seo_live)"
 cli case list --all 2>&1 | grep >/dev/null "site:retired" && bad "sites: the retired host answering 404 became a case" \
   || ok "sites: the retired host answers 404, as it should: no case"
-want_case dependency_update "repo:example/shop/deps/requests" "closed .*shadow_plan_recorded" \
+want_case dependency_update "repo:example/shop/deps/requests" "closed .*plan_recorded" \
   && ok "deps: the vulnerable pin became a case, its upgrade PR planned and recorded in shadow" \
   || bad "deps vulnerable: $(cli case list --all 2>&1 | grep dependency_update)"
 want_case dependency_update "repo:example/api/deps/fastapi" "" && ok "deps: the outdated pin of a repo that asks for them is a case" \
@@ -433,7 +433,7 @@ if [ "${DEMO:-}" = 1 ]; then
 fi
 
 echo "== controls and auth"
-OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat shadow 2>&1)"
+OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat record 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot change a routine's autonomy ($OUT)" || bad "agent autonomy change: $OUT"
 cli stop platform >/dev/null && cli run platform/heartbeat >/dev/null
 sleep 3
@@ -460,7 +460,7 @@ for i in $(seq 1 30); do
   L="$(cli runs platform/heartbeat -n 500)"
   [ "$(echo "$L" | wc -l)" -gt "$N0" ] && ! echo "$L" | sed -n 2p | grep >/dev/null " running " && break; sleep 1
 done
-echo "$L" | sed -n 2p | grep >/dev/null " shadow " && ok "frozen, a heartbeat run (set auto) ran at shadow" || bad "frozen run: $(echo "$L" | sed -n 2p)"
+echo "$L" | sed -n 2p | grep >/dev/null " record " && ok "frozen, a heartbeat run (set auto) ran at record" || bad "frozen run: $(echo "$L" | sed -n 2p)"
 OUT="$(agent autonomy unfreeze --reason "e2e" 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot lift the freeze" || bad "agent unfreeze: $OUT"
 OUT="$(cli autonomy unfreeze 2>&1)"
@@ -532,7 +532,7 @@ CE="$($D inspect flotilla-worker-triage-candidate --format '{{range .Config.Env}
 [ "$CE" = "ROUTINE_SF_GLITCHTIP_SYNC=0 ROUTINE_SF_SERVICE=triage-fleet-candidate " ] \
   && ok "the candidate keeps its own name and no GlitchTip sync over the live fleet's env file" || bad "candidate env: '$CE'"
 OUT="$(cli autonomy triage/cycle-shadow propose 2>&1)"
-echo "$OUT" | grep >/dev/null "capped at shadow" && ok "triage/cycle-shadow cannot leave shadow, even for the operator ($OUT)" \
+echo "$OUT" | grep >/dev/null "capped at record" && ok "triage/cycle-shadow cannot leave record, even for the operator ($OUT)" \
   || bad "autonomy on the capped routine: $OUT"
 OUT="$(cli status 2>&1)"
 echo "$OUT" | grep >/dev/null 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"

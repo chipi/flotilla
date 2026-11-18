@@ -34,7 +34,7 @@ func plannedCase(t *testing.T, s *Server, key, runID string) string {
 	}
 	if runID != "" {
 		_ = s.Store.StartRun(ctx, store.Run{ID: runID, Routine: "triage/cycle", SpecHash: "x", Trigger: "event", Actor: "flotillad",
-			Autonomy: "shadow", StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning})
+			Autonomy: "record", StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning})
 	}
 	return id
 }
@@ -52,9 +52,9 @@ func caseStatus(t *testing.T, s *Server, id string) store.Case {
 	return c
 }
 
-// v1: a new action is shadow; the plan is recorded with what it would have done, the case closes, and
+// v1: a new action is record; the plan is recorded with what it would have done, the case closes, and
 // nothing holds the target.
-func TestShadowPlanIsRecordedAndClosed(t *testing.T) {
+func TestRecordedPlanIsRecordedAndClosed(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	id := plannedCase(t, s, "", "run-1")
@@ -62,11 +62,11 @@ func TestShadowPlanIsRecordedAndClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Outcome != policy.Shadow || d.Would != policy.Propose {
+	if d.Outcome != policy.Record || d.Would != policy.Propose {
 		t.Fatalf("decision %+v", d)
 	}
 	c := caseStatus(t, s, id)
-	if c.Status != cases.Closed || c.Resolution != cases.ShadowPlan {
+	if c.Status != cases.Closed || c.Resolution != cases.PlanRecorded {
 		t.Fatalf("case %+v", c)
 	}
 	plans, _ := s.Store.Plans(ctx, id)
@@ -74,7 +74,7 @@ func TestShadowPlanIsRecordedAndClosed(t *testing.T) {
 		t.Fatalf("plan record %+v", plans)
 	}
 	if h, _ := s.Store.LockHolder(ctx, "host:backup-01"); h != "" {
-		t.Fatalf("a shadow plan holds the target: %s", h)
+		t.Fatalf("a recorded plan holds the target: %s", h)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestRefusedPlansEscalate(t *testing.T) {
 	_ = s.Store.MoveCase(ctx, id3, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = s.Store.MoveCase(ctx, id3, cases.Planned, cases.ByAct, "", "ops/act-host", "")
 	_ = s.Store.StartRun(ctx, store.Run{ID: "run-3", Routine: "triage/cycle", SpecHash: "x", Trigger: "event", Actor: "flotillad",
-		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning})
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning})
 	d, _, _ = s.DecidePlan(ctx, planFor(id3, "run-3", "backup-01"))
 	if d.Outcome != policy.Refuse || !strings.Contains(strings.Join(d.Reasons, ";"), "not on the case's record") {
 		t.Fatalf("another routine's run: %+v", d)
@@ -167,8 +167,8 @@ func TestHoldsDefer(t *testing.T) {
 	}
 }
 
-// The freeze reaches policy: whatever is set, a plan is shadow.
-func TestFrozenPlansAreShadow(t *testing.T) {
+// The freeze reaches policy: whatever is set, a plan is record.
+func TestFrozenPlansAreRecorded(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	_ = s.Store.SetControl(ctx, "triage/cycle", sched.KeyAutonomy, "auto", "user:ada", "api")
@@ -176,7 +176,7 @@ func TestFrozenPlansAreShadow(t *testing.T) {
 	_ = s.Store.SetControl(ctx, sched.FreezeSubject, sched.KeyFrozen, "1", "user:ada", "api")
 	id := plannedCase(t, s, "", "run-1")
 	d, _, _ := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01"))
-	if d.Outcome != policy.Shadow || !strings.Contains(strings.Join(d.Reasons, ";"), "frozen") {
+	if d.Outcome != policy.Record || !strings.Contains(strings.Join(d.Reasons, ";"), "frozen") {
 		t.Fatalf("frozen, and the record says so: %+v", d)
 	}
 }
@@ -185,7 +185,7 @@ func TestOnlyAPlannedCaseIsDecided(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})
 	id := plannedCase(t, s, "", "run-1")
-	_, _, _ = s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")) // closes it (shadow)
+	_, _, _ = s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")) // closes it (record)
 	if _, _, err := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01")); !errors.Is(err, store.ErrNotPlanned) {
 		t.Fatalf("a closed case decided again: %v", err)
 	}

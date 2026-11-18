@@ -86,7 +86,7 @@ func TestPermissionTable(t *testing.T) {
 		{ActRead, "GET", "/v1/cases", ""},
 		{ActPause, "POST", "/v1/routines/triage/cycle/pause", ""},
 		{ActResume, "POST", "/v1/routines/triage/cycle/resume", `{"reason":"t"}`},
-		{ActAutonomy, "POST", "/v1/routines/triage/cycle/autonomy", `{"autonomy":"shadow"}`},
+		{ActAutonomy, "POST", "/v1/routines/triage/cycle/autonomy", `{"autonomy":"record"}`},
 		{ActStop, "POST", "/v1/fleets/triage/stop", ""},
 		{ActCancel, "POST", "/v1/runs/none/cancel", `{"reason":"t"}`},
 		{ActStart, "POST", "/v1/fleets/triage/start", `{"reason":"t"}`},
@@ -98,7 +98,7 @@ func TestPermissionTable(t *testing.T) {
 		{ActHold, "POST", "/v1/holds", `{"scope":"host:backup-01","for":"1h","reason":"t"}`},
 		{ActUnhold, "POST", "/v1/holds/1/lift", `{"reason":"t"}`},
 		{ActRead, "GET", "/v1/actions", ""},
-		{ActAutonomy, "POST", "/v1/actions/backup.rerun/autonomy", `{"autonomy":"shadow"}`},
+		{ActAutonomy, "POST", "/v1/actions/backup.rerun/autonomy", `{"autonomy":"record"}`},
 	}
 	for _, role := range []string{RoleWorker, RoleAgent, RoleViewer, RoleOperator, RoleAdmin} {
 		for _, q := range reqs {
@@ -147,10 +147,10 @@ func TestLooseningNeedsAReason(t *testing.T) {
 		t.Fatalf("raise with a reason: %d", c)
 	}
 	// Lowering needs none.
-	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"shadow"}`); c != 200 {
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"record"}`); c != 200 {
 		t.Fatalf("lowering without a reason: %d", c)
 	}
-	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyAutonomy); v != "shadow" {
+	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyAutonomy); v != "record" {
 		t.Fatalf("autonomy %q", v)
 	}
 }

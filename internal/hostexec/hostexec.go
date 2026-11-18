@@ -165,8 +165,8 @@ func (x *Executor) decide(ctx context.Context, raw []byte) (Result, envelope.Exe
 		return refused(e.ID, err.Error()), e
 	}
 	switch {
-	case x.Cfg.Ceiling == "shadow":
-		return refused(e.ID, "this host accepts nothing (its ceiling is shadow)"), e
+	case x.Cfg.Ceiling == "record":
+		return refused(e.ID, "this host accepts nothing (its ceiling is record)"), e
 	case e.Approved == "auto" && x.Cfg.Ceiling != "auto":
 		return refused(e.ID, "approved automatically, above this host's ceiling ("+x.Cfg.Ceiling+")"), e
 	}

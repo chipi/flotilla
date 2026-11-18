@@ -46,8 +46,8 @@ type autonomyData struct {
 // recurRow is one kind under "Recurrence rule per kind" (G14).
 type recurRow struct{ Kind, Rule string }
 
-var levelUp = map[string]string{spec.AutonomyShadow: spec.AutonomyPropose, spec.AutonomyPropose: spec.AutonomyAuto}
-var levelDown = map[string]string{spec.AutonomyAuto: spec.AutonomyPropose, spec.AutonomyPropose: spec.AutonomyShadow}
+var levelUp = map[string]string{spec.AutonomyRecord: spec.AutonomyPropose, spec.AutonomyPropose: spec.AutonomyAuto}
+var levelDown = map[string]string{spec.AutonomyAuto: spec.AutonomyPropose, spec.AutonomyPropose: spec.AutonomyRecord}
 
 func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
 	ctx := r.Context()
@@ -220,7 +220,7 @@ func (u *Server) actionAutonomy(w http.ResponseWriter, r *http.Request, s *store
 // freezeAction freezes at once, or unfreezes with a reason; both from the brakes on Autonomy.
 func (u *Server) freezeAction(frozen bool) func(http.ResponseWriter, *http.Request, *store.Session, string) {
 	return func(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
-		ok := "Frozen: every routine runs at shadow until you unfreeze."
+		ok := "Frozen: every routine runs at record until you unfreeze."
 		if !frozen {
 			ok = "Unfrozen: each routine runs at its own autonomy again."
 		}
@@ -280,8 +280,8 @@ func evidence(a api.ActionStatus, atMax bool, st store.Streak) (string, int, boo
 		return fmt.Sprintf("at %s, its highest level; %s", a.Autonomy, plural(a.Record.Failed, "failure", "failures")), 100, false
 	}
 	what := "approved and verified"
-	if a.Autonomy == spec.AutonomyShadow {
-		what = "shadow plans you judged right"
+	if a.Autonomy == spec.AutonomyRecord {
+		what = "recorded plans you judged right"
 	}
 	text := fmt.Sprintf("%s: %d of %d", what, st.Clean, store.PromotionNeed)
 	pct := st.Clean * 100 / store.PromotionNeed

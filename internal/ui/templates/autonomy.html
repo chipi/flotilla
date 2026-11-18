@@ -34,7 +34,7 @@
       </form>
       {{end}}{{end}}
     </div>
-    {{if .Frozen}}<p class="banner banner--frozen" role="status">Frozen by {{.FrozenBy}} at {{.FrozenAt}}. Every routine runs at shadow, so nothing outward happens; each keeps its own level for when you unfreeze. A run that started before the freeze keeps the autonomy it started with.</p>{{end}}
+    {{if .Frozen}}<p class="banner banner--frozen" role="status">Frozen by {{.FrozenBy}} at {{.FrozenAt}}. Every routine runs at record, so nothing outward happens; each keeps its own level for when you unfreeze. A run that started before the freeze keeps the autonomy it started with.</p>{{end}}
     <div class="changes">
       <h3>Recent changes</h3>
       <ul>{{range .Changes}}<li><span class="exact">{{.When}}</span><span>{{.Text}}</span></li>{{else}}<li><span>No autonomy change yet.</span></li>{{end}}</ul>
@@ -52,7 +52,7 @@
             <td data-label="For kinds" class="exact soft">{{.Kinds}}</td>
             <td data-label="Risk">{{.Risk}}</td>
             <td data-label="Reversible">{{.Rev}}</td>
-            <td data-label="Level"><span class="{{if $.Data.Frozen}}level level--frozen{{else}}{{level .Autonomy}}{{end}}">{{if and $.Data.Frozen (ne .Autonomy "shadow")}}{{.Autonomy}} → shadow (frozen){{else}}{{.Autonomy}}{{end}}</span></td>
+            <td data-label="Level"><span class="{{if $.Data.Frozen}}level level--frozen{{else}}{{level .Autonomy}}{{end}}">{{if and $.Data.Frozen (ne .Autonomy "record")}}{{.Autonomy}} → record (frozen){{else}}{{.Autonomy}}{{end}}</span></td>
             <td data-label="Evidence toward the next level" class="stack"><span class="evidence"><span>{{.Evidence}}</span>
               <svg class="evbar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="evbar-track" width="100" height="6" rx="3"></rect>{{if .Pct}}<rect class="evbar-fill{{if ge .Pct 100}} evbar-fill--full{{end}}" width="{{.Pct}}" height="6" rx="3"></rect>{{end}}</svg>
               <span class="soft">{{.Record}}</span></span></td>
@@ -71,12 +71,12 @@
         </tbody>
       </table>
     </div>
-    <p class="footnote">An action is ready for its next level after 5 clean plans in a row (a shadow plan you judged right; a proposed one approved as it stood and verified) and no wrong verdict, failed execution or rejection in the last 7 days. You still promote, one step at a time.</p>
+    <p class="footnote">An action is ready for its next level after 5 clean plans in a row (a recorded plan you judged right; a proposed one approved as it stood and verified) and no wrong verdict, failed execution or rejection in the last 7 days. You still promote, one step at a time.</p>
   </section>
 
   <section class="casecards" aria-labelledby="routines">
     <h2 id="routines">Routines</h2>
-    <p class="meta">A routine's own level caps every action it plans. Raising it needs a reason; while the freeze holds every routine runs at shadow whatever is set.</p>
+    <p class="meta">A routine's own level caps every action it plans. Raising it needs a reason; while the freeze holds every routine runs at record whatever is set.</p>
     <div class="table-box">
       <table class="data">
         <thead><tr><th scope="col">Routine</th><th scope="col">Runs at</th><th scope="col">Set</th><th scope="col">Spec default</th><th scope="col">Cap</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
@@ -91,7 +91,7 @@
               {{template "csrf" $csrf}}<input type="hidden" name="back" value="/autonomy#routines">
               <div class="actions">
                 <select name="autonomy" aria-label="Autonomy for {{.ID}}" class="btn btn--small">
-                  <option value="shadow"{{if eq .AutonomySet "shadow"}} selected{{end}}>shadow</option>
+                  <option value="record"{{if eq .AutonomySet "record"}} selected{{end}}>record</option>
                   <option value="propose"{{if eq .AutonomySet "propose"}} selected{{end}}>propose</option>
                   <option value="auto"{{if eq .AutonomySet "auto"}} selected{{end}}>auto</option>
                 </select>

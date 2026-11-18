@@ -46,7 +46,7 @@ def built_case():
         age += 10 / 60
     events.append({"kind": "incident.cleared", "actor": "ops/backup-monitor", "detail": "the monitor no longer reports it"})
     return {"case": {"id": CASE_ID, "kind": "failed_backup", "target": "host:backup-01", "status": "closed",
-                     "resolution": "shadow_plan_recorded", "opened_at": "2026-11-14T23:45:03Z",
+                     "resolution": "plan_recorded", "opened_at": "2026-11-14T23:45:03Z",
                      "closed_at": "2026-11-14T23:45:19Z"}, "events": events, "plans": []}
 
 

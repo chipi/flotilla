@@ -178,7 +178,7 @@ func TestRefusals(t *testing.T) {
 		"another host":                 {"propose", sign(t, otherHost), "another host"},
 		"not in this host's config":    {"propose", sign(t, notAllowed), "not allowed on this host"},
 		"auto above a propose host":    {"propose", sign(t, auto), "above this host's ceiling"},
-		"anything on a shadow host":    {"shadow", sign(t, exe("exec-s")), "accepts nothing"},
+		"anything on a record host":    {"record", sign(t, exe("exec-s")), "accepts nothing"},
 		"an extra parameter":           {"propose", sign(t, func() envelope.Execution { e := exe("exec-x"); e.Params["force"] = "1"; return e }()), "not declared"},
 		"a parameter for another host": {"propose", sign(t, func() envelope.Execution { e := exe("exec-y"); e.Params["host"] = "model-host"; return e }()), "this is host-01"},
 	} {

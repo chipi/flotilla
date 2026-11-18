@@ -23,29 +23,52 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Autonomy levels, a lifecycle (ADR-0008): shadow, then propose, then auto. What each allows is the
-// routine's business in phase 2: the autonomy is passed to the routine as FLEETD_STAGE, as fleetd did,
+// Autonomy levels, a lifecycle (ADR-0008): record, then propose, then auto. The lowest level records
+// the plan and acts on nothing; it was called shadow until routine versions (v2 step 1) took that word.
+// What each allows is the routine's business: the autonomy is passed to the routine as FLEETD_STAGE,
 // and the triage fleet enforces it.
 const (
-	AutonomyShadow  = "shadow"
+	AutonomyRecord  = "record"
 	AutonomyPropose = "propose"
 	AutonomyAuto    = "auto"
 )
 
-var levels = map[string]bool{AutonomyShadow: true, AutonomyPropose: true, AutonomyAuto: true}
+// deprecatedShadow is the old name of AutonomyRecord. A spec may still say it (a deploy that predates the
+// rename keeps loading); the loader reads it as record and says so in Routine.Notes. The spec's bytes,
+// and so its hash, are untouched.
+const deprecatedShadow = "shadow"
 
-var levelRank = map[string]int{AutonomyShadow: 0, AutonomyPropose: 1, AutonomyAuto: 2}
+var levels = map[string]bool{AutonomyRecord: true, AutonomyPropose: true, AutonomyAuto: true}
 
-// FleetdStage is the FLEETD_STAGE value the triage fleet's frozen code reads: its top step is still
-// "live" (ADR-0008 keeps that contract until the code is ported).
+var levelRank = map[string]int{AutonomyRecord: 0, AutonomyPropose: 1, AutonomyAuto: 2}
+
+// FleetdStage is the FLEETD_STAGE value routines read. It is a contract older than the rename: the
+// triage fleet's dry-run guarantee and the ops routines test the string "shadow", so record maps to
+// it, and auto to "live" (ADR-0008 keeps both until the code is ported). Only a new version of a routine
+// may read the new name; spec_test.go pins the table.
 func FleetdStage(autonomy string) string {
-	if autonomy == AutonomyAuto {
+	switch autonomy {
+	case AutonomyAuto:
 		return "live"
+	case AutonomyRecord:
+		return deprecatedShadow
 	}
 	return autonomy
 }
 
-// Rank orders the autonomy levels (shadow 0, propose 1, auto 2), so a change can be told apart as
+// normalizeLevels reads the deprecated autonomy word as record, and notes each use.
+func (j *Routine) normalizeLevels() {
+	if j.Autonomy == deprecatedShadow {
+		j.Autonomy = AutonomyRecord
+		j.Notes = append(j.Notes, "autonomy: shadow is the old name of record; write record")
+	}
+	if j.MaxAutonomy == deprecatedShadow {
+		j.MaxAutonomy = AutonomyRecord
+		j.Notes = append(j.Notes, "max_autonomy: shadow is the old name of record; write record")
+	}
+}
+
+// Rank orders the autonomy levels (record 0, propose 1, auto 2), so a change can be told apart as
 // raising or lowering.
 func Rank(autonomy string) int { return levelRank[autonomy] }
 
@@ -95,6 +118,7 @@ type Routine struct {
 	Hash string `yaml:"-"`
 	// The routine's versions (version.go): every loaded version, the number of the one these fields are
 	// bound to (0 when none loaded) and its frozen hash. A flat spec is one routine with one version, v1.
+	Notes       []string      `yaml:"-"` // what -check says about the spec itself (a deprecated word)
 	Versions    []*Version    `yaml:"-"`
 	Version     int           `yaml:"-"`
 	VersionHash string        `yaml:"-"`
@@ -526,6 +550,7 @@ func LoadFile(path string) (*Routine, error) {
 	if err := dec.Decode(&j); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	j.normalizeLevels()
 	if err := j.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -589,10 +614,10 @@ func (j *Routine) validateErrs() []error {
 		bad("run.command is required")
 	}
 	if !levels[j.Autonomy] {
-		bad("autonomy %q: one of shadow, propose, auto", j.Autonomy)
+		bad("autonomy %q: one of record, propose, auto", j.Autonomy)
 	}
 	if j.MaxAutonomy != "" && !levels[j.MaxAutonomy] {
-		bad("max_autonomy %q: one of shadow, propose, auto", j.MaxAutonomy)
+		bad("max_autonomy %q: one of record, propose, auto", j.MaxAutonomy)
 	} else if levels[j.Autonomy] && !j.Allows(j.Autonomy) {
 		bad("autonomy %s is above max_autonomy %s", j.Autonomy, j.MaxAutonomy)
 	}

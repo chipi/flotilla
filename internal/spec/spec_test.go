@@ -93,7 +93,7 @@ func TestRejects(t *testing.T) {
 		"no command":                  {"triage/cycle.yaml", strings.Replace(good, `command: "python3 x.py", `, "", 1), "run.command is required"},
 		"no description":              {"triage/cycle.yaml", strings.Replace(good, "description: one pass\n", "", 1), "description is required"},
 		"bad max_autonomy":            {"triage/cycle.yaml", good + "max_autonomy: yolo\n", `max_autonomy "yolo"`},
-		"autonomy above its cap":      {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: propose", 1) + "max_autonomy: shadow\n", "above max_autonomy shadow"},
+		"autonomy above its cap":      {"triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: propose", 1) + "max_autonomy: shadow\n", "above max_autonomy record"},
 		"skills on demand":            {"triage/cycle.yaml", good + "skills: {on_demand: [x]}\n", "comes with RFC-0002 §9 step 4"},
 		"skill rule without when":     {"triage/cycle.yaml", good + "skills: {rule: [{load: [x]}]}\n", "non-empty when and load"},
 		"skill rule without load":     {"triage/cycle.yaml", good + "skills: {rule: [{when: {class: a}}]}\n", "non-empty when and load"},
@@ -253,14 +253,14 @@ func TestRepoSpecs(t *testing.T) {
 	if !ok {
 		t.Fatal("triage/cycle missing")
 	}
-	if tri.Autonomy != AutonomyShadow {
-		t.Fatalf("triage/cycle must default to shadow (the switch raises it with a control), got %s", tri.Autonomy)
+	if tri.Autonomy != AutonomyRecord {
+		t.Fatalf("triage/cycle must default to record (the switch raises it with a control), got %s", tri.Autonomy)
 	}
 	if _, ok := ids["platform/heartbeat"]; !ok {
 		t.Fatal("platform/heartbeat missing")
 	}
-	if j := ids["sites/site-check"]; j == nil || j.Autonomy != AutonomyShadow {
-		t.Error("sites/site-check: the example site watch, read only, in shadow")
+	if j := ids["sites/site-check"]; j == nil || j.Autonomy != AutonomyRecord {
+		t.Error("sites/site-check: the example site watch, read only, at record")
 	}
 	// harness-default.json is what triage applies without flotillad (eval runs): the specs' harness
 	raw, err := os.ReadFile(filepath.Join("..", "..", "fleets", "triage", "harness-default.json"))

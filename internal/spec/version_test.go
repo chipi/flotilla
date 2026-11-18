@@ -1,8 +1,10 @@
 package spec
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -287,5 +289,78 @@ func TestInvalidVersionKept(t *testing.T) {
 	}
 	if _, err := j.WithVersion(2); err == nil {
 		t.Fatal("an invalid version cannot be bound")
+	}
+}
+
+// FLEETD_STAGE is the contract the triage code and the ops routines read: autonomy record gives
+// "shadow", and the rename must not move it. Only a new version of a routine may read "record".
+func TestFleetdStageTable(t *testing.T) {
+	for in, want := range map[string]string{AutonomyRecord: "shadow", AutonomyPropose: "propose", AutonomyAuto: "live"} {
+		if got := FleetdStage(in); got != want {
+			t.Errorf("FleetdStage(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The old word still loads, as record, with a note; the spec's bytes (and so its hash) are untouched.
+func TestShadowIsTheDeprecatedNameOfRecord(t *testing.T) {
+	for _, name := range []string{"flat", "folder"} {
+		t.Run(name, func(t *testing.T) {
+			d := t.TempDir()
+			if name == "flat" {
+				write(t, d, "triage/cycle.yaml", good+"max_autonomy: propose\n")
+			} else {
+				writeFolder(t, d)
+				write(t, d, "triage/cycle/routine.yaml", folderRoutine+"max_autonomy: shadow\n")
+			}
+			rs, err := Load(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			j := rs[0]
+			if j.Autonomy != AutonomyRecord {
+				t.Fatalf("autonomy %q", j.Autonomy)
+			}
+			want := 1
+			if name == "folder" {
+				want = 2
+				if j.MaxAutonomy != AutonomyRecord {
+					t.Fatalf("max_autonomy %q", j.MaxAutonomy)
+				}
+			}
+			if len(j.Notes) != want || !strings.Contains(j.Notes[0], "write record") {
+				t.Fatalf("notes %v", j.Notes)
+			}
+		})
+	}
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", strings.Replace(good, "autonomy: shadow", "autonomy: record", 1))
+	rs, err := Load(d)
+	if err != nil || rs[0].Autonomy != AutonomyRecord || len(rs[0].Notes) != 0 {
+		t.Fatalf("record is the name: %v %v", err, rs)
+	}
+}
+
+// The lowest autonomy level is record. A new use of the old identifiers would bring the word shadow
+// back into a place that now belongs to versions; the compiler cannot catch it, so this does.
+func TestOldAutonomyIdentifiersStayGone(t *testing.T) {
+	old := regexp.MustCompile(`AutonomyShadow|ShadowPlan|policy\.Shadow`)
+	for _, root := range []string{"../../cmd", "../../internal"} {
+		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "spec/version_test.go") {
+				return err
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			if m := old.Find(b); m != nil {
+				t.Errorf("%s uses %s: the level is spec.AutonomyRecord, the outcome policy.Record, the resolution cases.PlanRecorded", p, m)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -7,12 +7,12 @@
 //     the case's own target, and the plan cites the run that re-checked it;
 //  2. autonomy, lowest wins: the routine's, the action's own (earned, ADR-0008), the host's ceiling, a
 //     tainted run (at most propose), an action that cannot be undone (at most propose), the freeze (at
-//     most shadow: ADR-0014 changed RFC-0004's propose);
+//     most record: ADR-0014 changed RFC-0004's propose);
 //  3. the per-target lock and the limits (per target per day, per host per hour, platform-wide per
 //     hour, the circuit breaker, the host incident rule);
 //  4. holds: the fleet's STOP, an operator's hold on the host or the target.
 //
-// Shadow records what policy would have done, then closes the case: v1's gate compares those records
+// Record records what policy would have done, then closes the case: v1's gate compares those records
 // with what the operator would have done (RFC-0004 §10).
 package policy
 
@@ -32,7 +32,7 @@ import (
 const (
 	Refuse  = "refuse"  // the registry or autonomy says no: the case escalates
 	Defer   = "defer"   // a lock, a limit or a hold: the case returns to handed_over
-	Shadow  = "shadow"  // recorded only: the case closes as shadow_plan_recorded
+	Record  = "record"  // recorded only: the case closes as plan_recorded
 	Propose = "propose" // awaits the operator's approval of this exact plan
 	Auto    = "auto"    // runs
 )
@@ -93,7 +93,7 @@ type State struct {
 	ActionFound          bool
 	RunOnRecord          bool   // the cited run exists and belongs to the case's acting routine
 	RoutineAutonomy      string // the planning routine's autonomy (the freeze already applied by sched)
-	ActionAutonomy       string // earned; a new action is shadow
+	ActionAutonomy       string // earned; a new action is record
 	HostCeiling          string
 	Tainted              bool
 	Frozen               bool
@@ -114,7 +114,7 @@ type State struct {
 type Decision struct {
 	Outcome  string   `json:"outcome"`
 	Autonomy string   `json:"autonomy"`        // the lowest of the autonomy checks
-	Would    string   `json:"would,omitempty"` // in shadow: what it would have decided
+	Would    string   `json:"would,omitempty"` // at record: what it would have decided
 	Reasons  []string `json:"reasons"`
 	PlanHash string   `json:"plan_hash"`
 }
@@ -132,14 +132,14 @@ func HostOf(target string) string {
 	return ""
 }
 
-// lowest is the lowest level; a word that is not a level counts as shadow, never as itself.
+// lowest is the lowest level; a word that is not a level counts as record, never as itself.
 func lowest(levels ...string) string {
 	low := spec.AutonomyAuto
 	for _, l := range levels {
 		switch l {
-		case spec.AutonomyShadow, spec.AutonomyPropose, spec.AutonomyAuto:
+		case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 		default:
-			l = spec.AutonomyShadow
+			l = spec.AutonomyRecord
 		}
 		if spec.Rank(l) < spec.Rank(low) {
 			low = l
@@ -219,17 +219,17 @@ func Decide(p Plan, s State, lim Limits) Decision {
 		say("recurrence: %s was fixed and verified, and the problem came back within 7 days: at most propose, a person decides", s.RecursVerified)
 	}
 	if s.Frozen {
-		caps = append(caps, spec.AutonomyShadow)
-		say("frozen: at most shadow")
+		caps = append(caps, spec.AutonomyRecord)
+		say("frozen: at most record")
 	}
 	d.Autonomy = lowest(caps...)
-	var above []string // what the caps say once the shadow ones are set aside: what shadow would have done
+	var above []string // what the caps say once the record ones are set aside: what record would have done
 	for _, c := range caps {
-		if lowest(c) != spec.AutonomyShadow {
+		if lowest(c) != spec.AutonomyRecord {
 			above = append(above, c)
 		}
 	}
-	unshadowed := lowest(above...)
+	unrecorded := lowest(above...)
 
 	// 3 and 4. Locks, limits and holds: what would defer it.
 	var blocks []string
@@ -253,8 +253,8 @@ func Decide(p Plan, s State, lim Limits) Decision {
 	}
 
 	level := d.Autonomy
-	if level == spec.AutonomyShadow {
-		level = unshadowed
+	if level == spec.AutonomyRecord {
+		level = unrecorded
 	}
 	switch {
 	case len(blocks) > 0:
@@ -265,8 +265,8 @@ func Decide(p Plan, s State, lim Limits) Decision {
 	default:
 		d.Outcome = Propose
 	}
-	if d.Autonomy == spec.AutonomyShadow {
-		d.Would, d.Outcome = d.Outcome, Shadow
+	if d.Autonomy == spec.AutonomyRecord {
+		d.Would, d.Outcome = d.Outcome, Record
 	}
 	return d
 }

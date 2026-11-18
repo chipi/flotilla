@@ -20,13 +20,13 @@ var pageNow = time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 
 func flowFixture(t *testing.T) *fixture {
 	t.Helper()
-	triage := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "one pass", Enabled: true, Worker: "triage", Autonomy: "shadow",
+	triage := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "one pass", Enabled: true, Worker: "triage", Autonomy: "record",
 		Run: spec.Run{Command: "python3 orchestrator.py --cycle", Timeout: "20m"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute,
 		Trigger: spec.Trigger{Every: "10m"}, Freshness: "35m", Budget: spec.Budget{DayUSD: 1},
 		Harness: &spec.Harness{Protocol: "json", Tools: []string{"event_detail"}, Gates: []string{"edge"},
 			Limits: spec.HarnessLimits{MaxToolCalls: 3, MaxSteps: 4, ToolCallsPerTurn: 1}, Quirks: spec.HarnessQuirks{FinalDecisionCall: true}},
 		Explain: map[string]string{"harness.protocol": "A model answers in JSON."}}
-	fix := &spec.Routine{Fleet: "bugfix", Routine: "fix", Description: "fixes", Enabled: true, Worker: "bugfix", Autonomy: "shadow",
+	fix := &spec.Routine{Fleet: "bugfix", Routine: "fix", Description: "fixes", Enabled: true, Worker: "bugfix", Autonomy: "record",
 		Run: spec.Run{Command: "python3 fix.py", Timeout: "3h"}, Limit: time.Hour, Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "code_bug"}},
 		Budget: spec.Budget{DayUSD: 1}}
 	f := setupWith(t, []*spec.Routine{triage, fix})
@@ -37,7 +37,7 @@ func flowFixture(t *testing.T) *fixture {
 func startRun(t *testing.T, f *fixture, id, routine string, at time.Time) {
 	t.Helper()
 	if err := f.st.StartRun(context.Background(), store.Run{ID: id, Routine: routine, SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-		Autonomy: "shadow", StartedAt: at.UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		Autonomy: "record", StartedAt: at.UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
 		t.Fatal(err)
 	}
 }

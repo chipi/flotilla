@@ -14,7 +14,7 @@ import (
 
 // withClarify adds a second-stage routine for failed_backup cases (RFC-0013 §2), on the same fake worker.
 func withClarify(f *fixture) *spec.Routine {
-	c := &spec.Routine{Fleet: "ops", Routine: "clarify", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
+	c := &spec.Routine{Fleet: "ops", Routine: "clarify", Description: "d", Enabled: true, Worker: "ops", Autonomy: "record",
 		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup", Stage: "clarify"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	f.d.API.Sched.Routines = append(f.d.API.Sched.Routines, c)
 	return c

@@ -136,10 +136,13 @@ func (c *Config) validate() error {
 	if !userRe.MatchString(c.User) || c.User == "root" {
 		bad("user %q: the agent's own user, not root", c.User)
 	}
+	if c.Ceiling == "shadow" {
+		c.Ceiling = "record" // the old name of the lowest level, still in the hosts' installed configs
+	}
 	switch c.Ceiling {
-	case "shadow", "propose", "auto":
+	case "record", "propose", "auto":
 	default:
-		bad("ceiling must be shadow, propose or auto")
+		bad("ceiling must be record, propose or auto")
 	}
 	if len(c.SigningKeys) == 0 || len(c.SigningKeys) > 2 {
 		bad("signing_keys: one, or two during a rotation")

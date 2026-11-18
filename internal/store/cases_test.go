@@ -15,8 +15,8 @@ func backupCase() NewCase {
 }
 
 // v1's path (RFC-0004 §10): detected, handed over by the monitor, planned by the acting job, closed by
-// policy as a recorded shadow plan; every step on the timeline with who made it.
-func TestCaseShadowPath(t *testing.T) {
+// policy as a recorded plan; every step on the timeline with who made it.
+func TestCaseRecordedPath(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	id, opened, err := s.OpenCase(ctx, backupCase(), "ops/backup-monitor", "age 20.4h")
@@ -26,7 +26,7 @@ func TestCaseShadowPath(t *testing.T) {
 	steps := []struct{ to, by, res string }{
 		{cases.HandedOver, cases.ByDetector, ""},
 		{cases.Planned, cases.ByAct, ""},
-		{cases.Closed, cases.ByPolicy, cases.ShadowPlan},
+		{cases.Closed, cases.ByPolicy, cases.PlanRecorded},
 	}
 	for _, x := range steps {
 		if err := s.MoveCase(ctx, id, x.to, x.by, x.res, "test", ""); err != nil {
@@ -34,7 +34,7 @@ func TestCaseShadowPath(t *testing.T) {
 		}
 	}
 	c, _ := s.Case(ctx, id)
-	if c.Status != cases.Closed || c.Resolution != cases.ShadowPlan || c.ClosedAt == nil || len(c.Keys) != 1 {
+	if c.Status != cases.Closed || c.Resolution != cases.PlanRecorded || c.ClosedAt == nil || len(c.Keys) != 1 {
 		t.Fatalf("closed case: %+v", c)
 	}
 	ev, _ := s.CaseEvents(ctx, id)

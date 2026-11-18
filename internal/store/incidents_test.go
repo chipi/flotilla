@@ -7,7 +7,7 @@ import (
 	"github.com/chipi/flotilla/internal/cases"
 )
 
-func shadowIncident(t *testing.T, s *Store, kind, target, monitor string) string {
+func recordedIncident(t *testing.T, s *Store, kind, target, monitor string) string {
 	t.Helper()
 	ctx := context.Background()
 	k := Key{Kind: "target", Value: kind + "/" + target}
@@ -17,8 +17,8 @@ func shadowIncident(t *testing.T, s *Store, kind, target, monitor string) string
 	}
 	_ = s.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", monitor, "")
 	_ = s.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
-	if _, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: "r", Action: "a.b", Params: map[string]string{}, Outcome: "shadow",
-		Autonomy: "shadow"}, cases.Closed, cases.ShadowPlan, target, false); err != nil {
+	if _, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: "r", Action: "a.b", Params: map[string]string{}, Outcome: "record",
+		Autonomy: "record"}, cases.Closed, cases.PlanRecorded, target, false); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -28,8 +28,8 @@ func shadowIncident(t *testing.T, s *Store, kind, target, monitor string) string
 func TestClearIncidentsIsTheMonitorsOwn(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
-	backup := shadowIncident(t, s, "failed_backup", "host:backup-01", "ops/backup-monitor")
-	disk := shadowIncident(t, s, "disk_full", "host:backup-01", "ops/disk-monitor")
+	backup := recordedIncident(t, s, "failed_backup", "host:backup-01", "ops/backup-monitor")
+	disk := recordedIncident(t, s, "disk_full", "host:backup-01", "ops/disk-monitor")
 	if c, _ := s.ClearIncidents(ctx, "ops/other-monitor", map[string]bool{}); len(c) != 0 {
 		t.Fatalf("another monitor cleared %v", c)
 	}

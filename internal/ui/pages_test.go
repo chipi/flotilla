@@ -37,7 +37,7 @@ func TestEveryPageRendersForEveryRole(t *testing.T) {
 	ctx := context.Background()
 	evil := `<script>alert(1)</script>`
 	_ = f.st.StartRun(ctx, store.Run{ID: "run-1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-		Autonomy: "shadow", StartedAt: "2026-11-13T10:00:00Z", Status: "running", Detail: evil})
+		Autonomy: "record", StartedAt: "2026-11-13T10:00:00Z", Status: "running", Detail: evil})
 	_, _ = f.st.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"fingerprint": "glitchtip:X-1", "occurrence_id": "glitchtip:X-1@1",
 		"disposition": "file", "ts": "2026-11-13T10:00:00Z", "reason": evil, "alertname": "an alert"}, "")
 	op := f.addOperator()

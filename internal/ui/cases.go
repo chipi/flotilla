@@ -559,7 +559,7 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		d.Levels = append(d.Levels, policyLevel{"Autonomy freeze", frozen})
 		d.Result, d.Decided = p.Outcome, u.clock(p.DecidedAt)
 		if p.Would != "" {
-			d.Result += " (in shadow; it would have been " + p.Would + ")"
+			d.Result += " (recorded only; it would have been " + p.Would + ")"
 		}
 		if rec, err := u.API.Store.ActionRecord(ctx, p.Action); err == nil {
 			d.Record = fmt.Sprintf("%s: %s, %d verified, %d failed", p.Action, plural(rec.Plans, "plan", "plans"), rec.Verified, rec.Failed)

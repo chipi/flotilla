@@ -23,7 +23,7 @@ func signals(t *testing.T, s *Store, id string) int {
 }
 
 // A detection that repeats the case's last signal exactly is counted on the case, not written as an event,
-// both while the case is open (attached) and after it closed as a shadow plan (absorbed). New data, or a
+// both while the case is open (attached) and after it closed as a recorded plan (absorbed). New data, or a
 // detection without data, is still an event. (shop #656's case gained an event every hour, 2026-11-16.)
 func TestRepeatedDetectionsAreCounted(t *testing.T) {
 	ctx := context.Background()
@@ -54,11 +54,11 @@ func TestRepeatedDetectionsAreCounted(t *testing.T) {
 		t.Fatal("a detection without data is always an event")
 	}
 
-	// closed as a shadow plan: absorbed, and repeats are counted the same way
+	// closed as a recorded plan: absorbed, and repeats are counted the same way
 	_ = s.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "bugfix/intake", "")
 	_ = s.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "bugfix/fix", "")
-	if _, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: "r", Action: "a.b", Params: map[string]string{}, Outcome: "shadow",
-		Autonomy: "shadow"}, cases.Closed, cases.ShadowPlan, "repo:example/shop", false); err != nil {
+	if _, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: "r", Action: "a.b", Params: map[string]string{}, Outcome: "record",
+		Autonomy: "record"}, cases.Closed, cases.PlanRecorded, "repo:example/shop", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, how, _ := s.DetectIncident(ctx, n(edited), "bugfix/intake", "run"); how != Absorbed || signals(t, s, id) != 3 {

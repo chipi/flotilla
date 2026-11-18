@@ -157,3 +157,14 @@ func TestWriteSudoers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A host's installed config may still say ceiling "shadow", the lowest level's old name: it loads as record.
+func TestCeilingShadowIsTheOldNameOfRecord(t *testing.T) {
+	good, _ := os.ReadFile("testdata/host-01.json")
+	for _, name := range []string{"shadow", "record"} {
+		c, err := Parse([]byte(strings.Replace(string(good), `"ceiling": "propose"`, `"ceiling": "`+name+`"`, 1)))
+		if err != nil || c.Ceiling != "record" {
+			t.Errorf("ceiling %q: %v, got %+v", name, err, c)
+		}
+	}
+}

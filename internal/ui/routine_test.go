@@ -12,7 +12,7 @@ import (
 // explanation from the spec; an open block shows its panel; an unexplained block says so; the board's
 // block for the routine leads here.
 func TestRoutinePage(t *testing.T) {
-	triage := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "one pass", Enabled: true, Worker: "triage", Autonomy: "shadow",
+	triage := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "one pass", Enabled: true, Worker: "triage", Autonomy: "record",
 		Run: spec.Run{Command: "python3 orchestrator.py --cycle", Timeout: "20m"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute,
 		Trigger: spec.Trigger{Every: "10m"}, Freshness: "35m",
 		Harness: &spec.Harness{Protocol: "json", Tools: []string{"event_detail"}, Gates: []string{"edge"},
@@ -20,7 +20,7 @@ func TestRoutinePage(t *testing.T) {
 		Explain: map[string]string{"trigger": "Every ten minutes. Then more.", "gate.edge": "A burst during a restart is never dismissed."},
 		Steps:   []spec.Step{{ID: "dedup", Lane: "sort", Who: "code", Title: "already decided", Short: "a recurrence", Explain: "Written as a recurrence.", Count: "recurrences"}},
 		Chain:   []spec.ChainLink{{Routine: "bugfix/fix", Via: "a GitHub issue"}}}
-	fix := &spec.Routine{Fleet: "bugfix", Routine: "fix", Description: "fixes", Enabled: true, Worker: "bugfix", Autonomy: "shadow",
+	fix := &spec.Routine{Fleet: "bugfix", Routine: "fix", Description: "fixes", Enabled: true, Worker: "bugfix", Autonomy: "record",
 		Run: spec.Run{Command: "python3 fix.py", Timeout: "3h"}, Limit: time.Hour, Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "code_bug"}},
 		Explain: map[string]string{"run": "fix.py fixes the bug."},
 		Steps:   []spec.Step{{ID: "coder", Lane: "agent", Who: "agent", Title: "coding agent", Short: "writes the fix", Explain: "pi writes the fix."}}}

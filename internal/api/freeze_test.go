@@ -9,7 +9,7 @@ import (
 
 // ADR-0014 decision 8 through the API: an agent may pull the freeze and never lift it; lifting needs a
 // reason; status shows what runs next to what is set; raising autonomy while frozen is measured against
-// what is set, not against the freeze's shadow.
+// what is set, not against the freeze's record.
 func TestFreezeAPI(t *testing.T) {
 	ts, st := server(t)
 	ctx := context.Background()
@@ -22,7 +22,7 @@ func TestFreezeAPI(t *testing.T) {
 	_, out := call(t, ts, "GET", "/v1/status", agentTok, "")
 	fr := out["freeze"].(map[string]any)
 	r := out["routines"].([]any)[0].(map[string]any)
-	if fr["frozen"] != true || fr["by"] != "claude-example" || r["autonomy"] != "shadow" || r["autonomy_set"] != "propose" {
+	if fr["frozen"] != true || fr["by"] != "claude-example" || r["autonomy"] != "record" || r["autonomy_set"] != "propose" {
 		t.Fatalf("status while frozen: freeze %v, routine autonomy %v set %v", fr, r["autonomy"], r["autonomy_set"])
 	}
 	// propose -> propose is no raise, even though propose is above what runs now.

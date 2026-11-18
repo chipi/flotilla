@@ -13,7 +13,7 @@ import (
 // The recurrence rule (G14, the operator 2026-11-14): a new case of the same kind on the same target,
 // opened within RecurrenceWindow of an earlier one closing, is a recurrence of it. The new case links to
 // the earlier one, both timelines say so, and the Autonomy page counts them per kind. A case closed as a
-// recorded shadow plan is still the incident's case (incidents.go), so it absorbs detections instead.
+// recorded plan is still the incident's case (incidents.go), so it absorbs detections instead.
 const RecurrenceWindow = 7 * 24 * time.Hour
 
 func linkRecurrence(ctx context.Context, tx *sql.Tx, id string, n NewCase, now time.Time) error {

@@ -31,21 +31,21 @@ func TestActionAutonomy(t *testing.T) {
 		t.Fatalf("an agent promoting: %d", c)
 	}
 	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "auto", "r")); c != 400 {
-		t.Fatalf("shadow straight to auto: %d", c)
+		t.Fatalf("record straight to auto: %d", c)
 	}
 	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "propose", " ")); c != 400 {
 		t.Fatalf("a promotion without a reason: %d", c)
 	}
-	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "propose", "5 shadow plans agreed")); c != 200 {
-		t.Fatalf("shadow to propose: %d", c)
+	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "propose", "5 recorded plans agreed")); c != 200 {
+		t.Fatalf("record to propose: %d", c)
 	}
 	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "auto", "10 approved unchanged")); c != 200 {
 		t.Fatalf("propose to auto: %d", c)
 	}
-	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "shadow", "")); c != 200 {
+	if c := code(s.SetActionAutonomy(ctx, op, "api", rerun, "record", "")); c != 200 {
 		t.Fatalf("a demotion without a reason: %d", c)
 	}
-	if c := code(s.SetActionAutonomy(ctx, op, "api", "no.such", "shadow", "")); c != 404 {
+	if c := code(s.SetActionAutonomy(ctx, op, "api", "no.such", "record", "")); c != 404 {
 		t.Fatalf("an unknown action: %d", c)
 	}
 	// Policy reads it: at propose, a plan proposes (the routine at propose too).
@@ -64,7 +64,7 @@ func TestActionAutonomy(t *testing.T) {
 		t.Fatalf("actions %+v", as)
 	}
 	// a repo change never goes past propose (ADR-0016)
-	if pc := byName["repo.process_change"]; pc.Max != "propose" || pc.Autonomy != "shadow" {
+	if pc := byName["repo.process_change"]; pc.Max != "propose" || pc.Autonomy != "record" {
 		t.Fatalf("repo.process_change %+v", pc)
 	}
 }

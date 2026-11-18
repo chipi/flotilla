@@ -357,7 +357,7 @@ func (u *Server) wrongNow(ctx context.Context, now time.Time, routines []api.Rou
 	n := now.In(u.loc())
 	fr, _ := u.API.FreezeState(ctx)
 	if fr.Frozen {
-		out.Items = append(out.Items, wrongItem{What: "Autonomy is frozen", Detail: "since " + u.clock(fr.At) + " by " + fr.By + ": every routine runs at shadow",
+		out.Items = append(out.Items, wrongItem{What: "Autonomy is frozen", Detail: "since " + u.clock(fr.At) + " by " + fr.By + ": every routine runs at record",
 			Go: "Autonomy", Href: "/autonomy"})
 	}
 	stopped := map[string]bool{}

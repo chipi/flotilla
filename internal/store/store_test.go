@@ -120,7 +120,7 @@ func TestControlRecordsWho(t *testing.T) {
 func TestRunLifecycle(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
-	r := Run{ID: "r1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Autonomy: "shadow",
+	r := Run{ID: "r1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Autonomy: "record",
 		StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning}
 	if err := s.StartRun(ctx, r); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestRunLifecycle(t *testing.T) {
 func TestInterrupted(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
-	_ = s.StartRun(ctx, Run{ID: "r1", Routine: "j/a", SpecHash: "h", Trigger: "schedule", Actor: "x", Autonomy: "shadow",
+	_ = s.StartRun(ctx, Run{ID: "r1", Routine: "j/a", SpecHash: "h", Trigger: "schedule", Actor: "x", Autonomy: "record",
 		StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning})
 	n, err := s.MarkInterrupted(ctx)
 	if err != nil || n != 1 {

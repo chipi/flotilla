@@ -13,7 +13,7 @@ func TestRunShowHasTheCallsStepAndFinishReason(t *testing.T) {
 	a, ts := world(t)
 	ctx := context.Background()
 	if err := a.Store.StartRun(ctx, store.Run{ID: "r-1", Routine: "ops/backup-monitor", SpecHash: "h", Trigger: "manual", Actor: "operator",
-		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	step := int64(2)

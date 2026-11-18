@@ -56,7 +56,7 @@ func newServer(t *testing.T, mod func(*spec.Routine)) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage", Autonomy: "shadow",
+	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage", Autonomy: "record",
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute}
 	mod(j)
 	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
@@ -149,24 +149,24 @@ func TestOperatorStage(t *testing.T) {
 	}
 	_, out := call(t, ts, "GET", "/v1/status", opTok, "")
 	routine := out["routines"].([]any)[0].(map[string]any)
-	if routine["autonomy"] != "propose" || routine["spec_autonomy"] != "shadow" {
+	if routine["autonomy"] != "propose" || routine["spec_autonomy"] != "record" {
 		t.Fatalf("status shows the effective and the spec autonomy: %v", routine)
 	}
 }
 
 func TestStageCappedBySpec(t *testing.T) {
-	ts, st := serverWith(t, func(j *spec.Routine) { j.MaxAutonomy = spec.AutonomyShadow })
+	ts, st := serverWith(t, func(j *spec.Routine) { j.MaxAutonomy = spec.AutonomyRecord })
 	for _, s := range []string{"propose", "auto"} {
 		c, out := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"`+s+`"}`)
-		if c != 400 || !strings.Contains(fmt.Sprint(out["error"]), "capped at shadow") {
-			t.Fatalf("%s on a shadow-capped routine: %d %v", s, c, out)
+		if c != 400 || !strings.Contains(fmt.Sprint(out["error"]), "capped at record") {
+			t.Fatalf("%s on a record-capped routine: %d %v", s, c, out)
 		}
 	}
 	if v, _ := st.Control(context.Background(), "triage/cycle", sched.KeyAutonomy); v != "" {
 		t.Fatalf("a refused autonomy left a control: %q", v)
 	}
-	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"shadow"}`); c != 200 {
-		t.Fatalf("shadow on a shadow-capped routine: %d", c)
+	if c, _ := call(t, ts, "POST", "/v1/routines/triage/cycle/autonomy", opTok, `{"autonomy":"record"}`); c != 200 {
+		t.Fatalf("record on a record-capped routine: %d", c)
 	}
 }
 

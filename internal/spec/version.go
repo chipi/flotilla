@@ -271,6 +271,7 @@ func loadFolder(p string) (*Routine, error) {
 	base := &Routine{Fleet: rf.Fleet, Routine: rf.Routine, Description: rf.Description, Enabled: rf.Enabled, Worker: rf.Worker,
 		Trigger: rf.Trigger, Detects: rf.Detects, Autonomy: rf.Autonomy, MaxAutonomy: rf.MaxAutonomy, Budget: rf.Budget,
 		Freshness: rf.Freshness, Resume: rf.Resume, BriefSection: rf.BriefSection, Chain: rf.Chain, Path: p}
+	base.normalizeLevels()
 	for i, n := range nums {
 		v, a := loadVersionDir(base, raw, filepath.Join(dir, "v"+strconv.Itoa(n)), n)
 		base.Versions = append(base.Versions, v)

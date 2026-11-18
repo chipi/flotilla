@@ -68,7 +68,7 @@ type RoutineStatus struct {
 	Enabled      bool    `json:"enabled"`
 	Worker       string  `json:"worker"`
 	Every        string  `json:"every"`
-	Autonomy     string  `json:"autonomy"`     // what a run starting now gets: shadow while frozen
+	Autonomy     string  `json:"autonomy"`     // what a run starting now gets: record while frozen
 	AutonomySet  string  `json:"autonomy_set"` // the routine's own, which the freeze leaves alone
 	SpecAutonomy string  `json:"spec_autonomy"`
 	MaxAutonomy  string  `json:"max_autonomy,omitempty"`
@@ -262,9 +262,9 @@ func (s *Server) SetAutonomy(ctx context.Context, c Caller, via, routineID, leve
 		return err
 	}
 	switch level {
-	case spec.AutonomyShadow, spec.AutonomyPropose, spec.AutonomyAuto:
+	case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
-		return problem(400, "autonomy must be shadow, propose or auto")
+		return problem(400, "autonomy must be record, propose or auto")
 	}
 	if !j.Allows(level) {
 		return problem(400, "%s is capped at %s by its spec (max_autonomy)", j.ID(), j.MaxAutonomy)
@@ -305,7 +305,7 @@ func (s *Server) FreezeState(ctx context.Context) (Freeze, error) {
 	return Freeze{}, nil
 }
 
-// SetFrozen pulls the freeze (every routine runs at shadow, ADR-0014 decision 8) or, with a reason,
+// SetFrozen pulls the freeze (every routine runs at record, ADR-0014 decision 8) or, with a reason,
 // lifts it. Routines' own autonomy is never touched, so lifting it restores each one.
 func (s *Server) SetFrozen(ctx context.Context, c Caller, via string, frozen bool, reason string) error {
 	a, v := ActFreeze, "1"

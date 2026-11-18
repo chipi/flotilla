@@ -26,10 +26,10 @@ type Streak struct {
 // Ready is whether the record is enough for the next level.
 func (s Streak) Ready() bool { return s.Clean >= PromotionNeed && !s.Held }
 
-// PromotionStreak reads an action's plans newest first. A plan is clean when a shadow plan was judged
+// PromotionStreak reads an action's plans newest first. A plan is clean when a recorded plan was judged
 // right, or a proposed or automatic one was approved as it stood and verified. It is bad when its
 // diagnosis was judged wrong, its execution failed, or a person rejected it. A plan still open, or a
-// shadow plan nobody judged, neither counts nor breaks the run.
+// recorded plan nobody judged, neither counts nor breaks the run.
 func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, error) {
 	var st Streak
 	rows, err := s.db.QueryContext(ctx, `SELECT p.outcome, p.decided_at, c.resolution,
@@ -66,7 +66,7 @@ func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, err
 			}
 			break
 		}
-		clean := (outcome == "shadow" && right) || (outcome != "shadow" && resolution == cases.Verified)
+		clean := (outcome == "record" && right) || (outcome != "record" && resolution == cases.Verified)
 		if clean && st.Clean < PromotionNeed {
 			st.Clean++
 		}

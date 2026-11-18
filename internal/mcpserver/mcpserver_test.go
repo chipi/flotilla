@@ -38,7 +38,7 @@ func world(t *testing.T) (*api.Server, *httptest.Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	j := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops-read", Autonomy: "shadow",
+	j := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops-read", Autonomy: "record",
 		Run: spec.Run{Command: "true"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 25 * time.Minute}
 	s := &sched.Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]sched.Runner{"ops-read": okRunner{}}}
 	reg, err := registry.Load(filepath.Join("..", "..", "host", "registry.json"))
@@ -151,7 +151,7 @@ func TestAgentCalls(t *testing.T) {
 		t.Fatalf("status: %v", st)
 	}
 	dr, isErr := call(t, cs, "routine_dry_run", map[string]any{"routine": "ops/backup-monitor"})
-	if isErr || dr["would_start"] != true || dr["autonomy"] != "shadow" || dr["worker"] != "ops-read" {
+	if isErr || dr["would_start"] != true || dr["autonomy"] != "record" || dr["worker"] != "ops-read" {
 		t.Fatalf("dry run: %v", dr)
 	}
 	if runs, _, _ := a.Store.RunsPage(context.Background(), store.RunQuery{Limit: 10}); len(runs) != 0 {

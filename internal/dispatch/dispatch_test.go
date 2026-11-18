@@ -91,11 +91,11 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := &spec.Routine{Fleet: "ops", Routine: "rerun", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
+	j := &spec.Routine{Fleet: "ops", Routine: "rerun", Description: "d", Enabled: true, Worker: "ops", Autonomy: "record",
 		Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
-	mon := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
+	mon := &spec.Routine{Fleet: "ops", Routine: "backup-monitor", Description: "d", Enabled: true, Worker: "ops", Autonomy: "record",
 		Trigger: spec.Trigger{Every: "10m"}, Every: 10 * time.Minute, Detects: []string{"failed_backup"}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
-	chk := &spec.Routine{Fleet: "ops", Routine: "verify-backup", Description: "d", Enabled: true, Worker: "ops", Autonomy: "shadow",
+	chk := &spec.Routine{Fleet: "ops", Routine: "verify-backup", Description: "d", Enabled: true, Worker: "ops", Autonomy: "record",
 		Trigger: spec.Trigger{Check: &spec.CheckTrigger{Verify: "backup_newer_than_execution"}}, Run: spec.Run{Command: "true"}, Limit: time.Minute}
 	w := &fakeWorker{status: "ok"}
 	f := &fixture{st: st, w: w, now: time.Now(), logs: &bytes.Buffer{}}
@@ -143,18 +143,18 @@ func lastEvent(t *testing.T, f *fixture, id string) store.CaseEvent {
 	return ev[len(ev)-1]
 }
 
-// v1's chain from hand-over to the recorded shadow plan, with the case in the run's environment.
+// v1's chain from hand-over to the recorded plan, with the case in the run's environment.
 func TestAPlanGoesToPolicy(t *testing.T) {
 	f := setup(t)
 	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}}`
 	id := f.handOver(t, "")
 	f.pass(t)
 	c := f.cs(t, id)
-	if c.Status != cases.Closed || c.Resolution != cases.ShadowPlan || c.Holder != "" {
+	if c.Status != cases.Closed || c.Resolution != cases.PlanRecorded || c.Holder != "" {
 		t.Fatalf("case %+v", c)
 	}
 	plans, _ := f.st.Plans(context.Background(), id)
-	if len(plans) != 1 || plans[0].Outcome != "shadow" {
+	if len(plans) != 1 || plans[0].Outcome != "record" {
 		t.Fatalf("plans %+v", plans)
 	}
 	var seen caseJSON
@@ -497,8 +497,8 @@ func TestUnreadableReportFailsTheRun(t *testing.T) {
 }
 
 // The whole chain without a host: the monitor detects, the dispatcher hands the case to the acting
-// routine, its plan goes to policy, and the case closes with the shadow plan recorded.
-func TestDetectionToShadowPlan(t *testing.T) {
+// routine, its plan goes to policy, and the case closes with the plan recorded.
+func TestDetectionToRecordedPlan(t *testing.T) {
 	f := setup(t)
 	f.monitor(t, "ok", `{"outcome": "detections", "detections": [{"kind": "failed_backup", "target": "host:host-01", "detail": "age 20.4h"}]}`)
 	id := f.open(t)[0].ID
@@ -506,7 +506,7 @@ func TestDetectionToShadowPlan(t *testing.T) {
 	f.w.plan = `{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}}`
 	f.w.mu.Unlock()
 	f.pass(t)
-	if c := f.cs(t, id); c.Status != cases.Closed || c.Resolution != cases.ShadowPlan {
+	if c := f.cs(t, id); c.Status != cases.Closed || c.Resolution != cases.PlanRecorded {
 		t.Fatalf("case %+v", c)
 	}
 }
@@ -523,7 +523,7 @@ func (f *fixture) all(t *testing.T) []store.Case {
 }
 
 // One case per incident (operator, 2026-11-13): while the backup stays old, the monitor's detections go
-// into the incident's case, closed as a shadow plan; once a run reports it clear, the next detection is
+// into the incident's case, closed as a recorded plan; once a run reports it clear, the next detection is
 // a new case.
 func TestOneCasePerIncident(t *testing.T) {
 	f := setup(t)
@@ -560,7 +560,7 @@ func TestOneCasePerIncident(t *testing.T) {
 	}
 }
 
-// Only a shadow close holds the incident: a case the acting routine closed as resolved ended it.
+// Only a recorded-plan close holds the incident: a case the acting routine closed as resolved ended it.
 func TestResolvedEndsTheIncident(t *testing.T) {
 	f := setup(t)
 	f.monitor(t, "ok", old)

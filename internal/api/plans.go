@@ -17,7 +17,7 @@ import (
 )
 
 // actionSubject is where an action's earned autonomy is kept in the controls (ADR-0008): a new action
-// has none, so it is shadow.
+// has none, so it is record.
 func actionSubject(name string) string { return "action:" + name }
 
 // hostCeiling is the highest autonomy a host accepts. ADR-0006 §5 puts it in each host's reviewed config,
@@ -29,7 +29,7 @@ const hostCeiling = spec.AutonomyPropose
 const incidentWindow = 15 * time.Minute
 
 // DecidePlan gathers the state for a plan on a planned case, asks policy, and applies its decision in one
-// transaction (ADR-0005 decision 4): refuse escalates, defer hands the case back, shadow closes it with
+// transaction (ADR-0005 decision 4): refuse escalates, defer hands the case back, record closes it with
 // the plan recorded, propose awaits approval and auto executes, those two holding the target's lock.
 func (s *Server) DecidePlan(ctx context.Context, p policy.Plan) (policy.Decision, int64, error) {
 	c, err := s.Store.Case(ctx, p.CaseID)
@@ -63,8 +63,8 @@ func (s *Server) applyDecision(ctx context.Context, c store.Case, p policy.Plan,
 		to = cases.Escalated
 	case policy.Defer:
 		to = cases.HandedOver
-	case policy.Shadow:
-		to, resolution = cases.Closed, cases.ShadowPlan
+	case policy.Record:
+		to, resolution = cases.Closed, cases.PlanRecorded
 	case policy.Propose:
 		to, lock = cases.AwaitingApproval, true
 	case policy.Auto:
@@ -77,7 +77,7 @@ func (s *Server) applyDecision(ctx context.Context, c store.Case, p policy.Plan,
 }
 
 func (s *Server) planState(ctx context.Context, c store.Case, p policy.Plan) (policy.State, error) {
-	st := policy.State{CaseKind: c.Kind, CaseTarget: c.Target, HostCeiling: hostCeiling, ActionAutonomy: spec.AutonomyShadow}
+	st := policy.State{CaseKind: c.Kind, CaseTarget: c.Target, HostCeiling: hostCeiling, ActionAutonomy: spec.AutonomyRecord}
 	if s.Registry != nil {
 		st.Action, st.ActionFound = s.Registry.Action(p.Action)
 	}

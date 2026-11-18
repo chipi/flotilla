@@ -19,7 +19,7 @@ func TestCancelledRunIsNotAFailure(t *testing.T) {
 	for i, st := range []string{store.StatusError, store.StatusCancelled, store.StatusCancelled} {
 		id := fmt.Sprintf("triage-cycle-%03d", i)
 		_ = f.st.StartRun(ctx, store.Run{ID: id, Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-			Autonomy: "shadow", StartedAt: base.Add(time.Duration(i) * time.Minute).Format(store.TimeFormat), Status: "running"})
+			Autonomy: "record", StartedAt: base.Add(time.Duration(i) * time.Minute).Format(store.TimeFormat), Status: "running"})
 		_ = f.st.FinishRun(ctx, id, st, nil, 0.1, 1, "cancelled: operator, test")
 	}
 	ck := f.signin(f.vic)

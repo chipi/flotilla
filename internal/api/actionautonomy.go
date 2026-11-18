@@ -10,7 +10,7 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-// An action's own autonomy (ADR-0008, RFC-0004 §5.2): shadow -> propose -> auto, each step earned on its
+// An action's own autonomy (ADR-0008, RFC-0004 §5.2): record -> propose -> auto, each step earned on its
 // record and promoted only by an operator or an admin, with a reason; one step at a time; down any
 // number of steps, no reason needed. An action that cannot be undone never goes above propose. Policy
 // reads it from the controls (actionSubject) and takes the lowest of it and the other caps.
@@ -39,7 +39,7 @@ func (s *Server) Actions(ctx context.Context) ([]ActionStatus, error) {
 			return nil, err
 		}
 		if lvl == "" {
-			lvl = spec.AutonomyShadow
+			lvl = spec.AutonomyRecord
 		}
 		rec, err := s.Store.ActionRecord(ctx, name)
 		if err != nil {
@@ -64,9 +64,9 @@ func (s *Server) SetActionAutonomy(ctx context.Context, c Caller, via, name, lev
 		return problem(404, "no such action")
 	}
 	switch level {
-	case spec.AutonomyShadow, spec.AutonomyPropose, spec.AutonomyAuto:
+	case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
-		return problem(400, "autonomy must be shadow, propose or auto")
+		return problem(400, "autonomy must be record, propose or auto")
 	}
 	if spec.Rank(level) > spec.Rank(a.MaxAutonomy()) {
 		return problem(400, "%s cannot be undone (reversible: no): at most propose", name)
@@ -76,7 +76,7 @@ func (s *Server) SetActionAutonomy(ctx context.Context, c Caller, via, name, lev
 		return err
 	}
 	if cur == "" {
-		cur = spec.AutonomyShadow
+		cur = spec.AutonomyRecord
 	}
 	reason = strings.TrimSpace(reason)
 	if spec.Rank(level) > spec.Rank(cur) {
@@ -112,7 +112,7 @@ func (s *Server) actionAutonomy(w http.ResponseWriter, r *http.Request, c Caller
 		Reason   string `json:"reason"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "shadow|propose|auto", "reason": "..."}`})
+		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "record|propose|auto", "reason": "..."}`})
 		return
 	}
 	err := s.SetActionAutonomy(r.Context(), c, "api", r.PathValue("name"), body.Autonomy, body.Reason)

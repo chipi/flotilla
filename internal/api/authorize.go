@@ -18,7 +18,7 @@ const (
 	ActStart       Action = "start"        // start a STOPped fleet (loosening: needs a reason)
 	ActAutonomy    Action = "autonomy"     // set a routine's autonomy (raising it needs a reason)
 	ActUsers       Action = "users"        // users and sessions
-	ActFreeze      Action = "freeze"       // pull the installation's freeze (every routine at shadow)
+	ActFreeze      Action = "freeze"       // pull the installation's freeze (every routine at record)
 	ActUnfreeze    Action = "unfreeze"     // lift it (loosening: needs a reason)
 	ActHold        Action = "hold"         // hold a host or a target (RFC-0004 §5.1 step 4)
 	ActUnhold      Action = "unhold"       // lift a hold early (loosening: needs a reason)

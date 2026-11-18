@@ -68,7 +68,7 @@
           {{template "csrf" .CSRF}}
           <input type="hidden" name="back" value="{{.Back}}">
           <strong id="rej-{{$d.ID}}">Reject plan {{$d.Short}}?</strong>
-          <span>Nothing runs. The case is escalated to you, and {{$d.ActionName}} goes back to shadow on its record.</span>
+          <span>Nothing runs. The case is escalated to you, and {{$d.ActionName}} goes back to the record level.</span>
           <label class="field field--strong">Why (kept with the case and shown to the worker)
             <textarea name="reason" rows="2" required data-needs placeholder="For example: it keeps recurring, it needs a real fix"></textarea>
           </label>

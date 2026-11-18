@@ -17,7 +17,7 @@ import (
 
 // RFC-0004 §5 and ADR-0005: a plan policy proposed waits in awaiting_approval for a person. Approving
 // sends it on (executing: flotillad signs and sends it to its host, approved by that person); rejecting
-// escalates the case, releases the target and demotes the action to shadow. The CLI, HTTP and the UI
+// escalates the case, releases the target and demotes the action to record. The CLI, HTTP and the UI
 // (its Decision box) answer the same way.
 
 func (s *Server) caseRoutes(m *http.ServeMux) {
@@ -146,7 +146,7 @@ func (s *Server) ApprovePlan(ctx context.Context, c Caller, via, id, planHash, n
 }
 
 // RejectCase escalates a proposed case, with the caller's reason; the store releases the target and
-// demotes the action to shadow (RFC-0004 §5.2).
+// demotes the action to record (RFC-0004 §5.2).
 func (s *Server) RejectCase(ctx context.Context, c Caller, via, id, why string) error {
 	if err := s.Check(ctx, c, ActApprove); err != nil {
 		return err

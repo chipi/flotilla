@@ -10,17 +10,17 @@ import (
 )
 
 // G13: five clean plans in a row make an action ready; a wrong verdict, a failed execution or a
-// rejection ends the run, and holds it for 7 days; an unjudged shadow plan neither counts nor breaks.
+// rejection ends the run, and holds it for 7 days; an unjudged recorded plan neither counts nor breaks.
 func TestPromotionStreak(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	n := 0
-	shadow := func(verdict string) {
+	recorded := func(verdict string) {
 		n++
 		id := plannedOn(t, s, fmt.Sprintf("#s%d", n))
 		r := rec(id)
-		r.Outcome, r.Autonomy, r.Would = "shadow", "shadow", "auto"
-		if _, err := s.ApplyPlan(ctx, r, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
+		r.Outcome, r.Autonomy, r.Would = "record", "record", "auto"
+		if _, err := s.ApplyPlan(ctx, r, cases.Closed, cases.PlanRecorded, "host:backup-01", false); err != nil {
 			t.Fatal(err)
 		}
 		if verdict != "" {
@@ -41,21 +41,21 @@ func TestPromotionStreak(t *testing.T) {
 	}
 	got(Streak{})
 	for i := 0; i < 4; i++ {
-		shadow(VerdictRight)
+		recorded(VerdictRight)
 	}
-	shadow("") // unjudged: neither counts nor breaks
+	recorded("") // unjudged: neither counts nor breaks
 	got(Streak{Clean: 4})
-	shadow(VerdictRight)
+	recorded(VerdictRight)
 	if st, _ := s.PromotionStreak(ctx, "backup.rerun"); !st.Ready() {
 		t.Fatalf("five judged right is ready: %+v", st)
 	}
-	shadow(VerdictRight) // at most PromotionNeed
+	recorded(VerdictRight) // at most PromotionNeed
 	got(Streak{Clean: 5})
 
-	shadow(VerdictWrong)
+	recorded(VerdictWrong)
 	got(Streak{Held: true, BadWhat: "wrong"})
 	for i := 0; i < 5; i++ {
-		shadow(VerdictRight)
+		recorded(VerdictRight)
 	}
 	st, _ := s.PromotionStreak(ctx, "backup.rerun")
 	if st.Clean != 5 || !st.Held || st.Ready() {

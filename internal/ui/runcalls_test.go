@@ -15,7 +15,7 @@ func TestRunPageShowsStepAndFinishReason(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	if err := f.st.StartRun(ctx, store.Run{ID: "run-len", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	s1, s2 := int64(1), int64(2)
@@ -58,7 +58,7 @@ func TestRunPageShowsRoleAndTools(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	if err := f.st.StartRun(ctx, store.Run{ID: "run-role", Routine: "bugfix/fix", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Now().UTC().Format(store.TimeFormat)

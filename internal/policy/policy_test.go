@@ -48,7 +48,7 @@ func TestDecide(t *testing.T) {
 		{"refused even when frozen", func(p *Plan) { p.Params["host"] = "model-host" }, func(s *State) { s.Frozen = true }, Refuse, "", "", "no retargeting"},
 		// 2. Autonomy, lowest wins.
 		{"the routine in propose", nil, func(s *State) { s.RoutineAutonomy = "propose" }, Propose, "propose", "", ""},
-		{"a new action (shadow)", nil, func(s *State) { s.ActionAutonomy = "shadow" }, Shadow, "shadow", Auto, ""},
+		{"a new action (record)", nil, func(s *State) { s.ActionAutonomy = "record" }, Record, "record", Auto, ""},
 		{"the host's ceiling", nil, func(s *State) { s.HostCeiling = "propose" }, Propose, "propose", "", ""},
 		{"a tainted run", nil, func(s *State) { s.Tainted = true }, Propose, "propose", "", "tainted"},
 		{"cannot be undone", nil, func(s *State) { s.Action.Reversible = "no" }, Propose, "propose", "", "cannot be undone"},
@@ -56,8 +56,8 @@ func TestDecide(t *testing.T) {
 		{"below the breaker", nil, func(s *State) { s.FailedHour = 2 }, Auto, "auto", "", ""},
 		{"a host incident", nil, func(s *State) { s.HostNewCases = 6 }, Propose, "propose", "", "host incident"},
 		{"a verified fix that came back", nil, func(s *State) { s.RecursVerified = "case-0" }, Propose, "propose", "", "came back within 7 days"},
-		{"the freeze is shadow, not propose", nil, func(s *State) { s.Frozen = true }, Shadow, "shadow", Auto, "frozen"},
-		{"an unknown autonomy word is shadow", nil, func(s *State) { s.ActionAutonomy = "yolo" }, Shadow, "shadow", Auto, ""},
+		{"the freeze is record, not propose", nil, func(s *State) { s.Frozen = true }, Record, "record", Auto, "frozen"},
+		{"an unknown autonomy word is record", nil, func(s *State) { s.ActionAutonomy = "yolo" }, Record, "record", Auto, ""},
 		// 3 and 4. Defer: the case goes back to handed_over.
 		{"the target locked", nil, func(s *State) { s.LockHeldBy = "case-0" }, Defer, "auto", "", "locked by case-0"},
 		{"the target's daily limit", nil, func(s *State) { s.TargetToday = 2 }, Defer, "auto", "", "2 of 2"},
@@ -67,9 +67,9 @@ func TestDecide(t *testing.T) {
 		{"the fleet STOPped", nil, func(s *State) { s.FleetStopped = true }, Defer, "auto", "", "STOPped"},
 		{"an operator's hold", nil, func(s *State) { s.Holds = []string{"host:host-01 until 12:00 by user:ada"} }, Defer, "auto", "", "hold: host:host-01"},
 		{"a defer at propose", nil, func(s *State) { s.RoutineAutonomy = "propose"; s.LockHeldBy = "case-0" }, Defer, "propose", "", "locked"},
-		// Shadow records what it would have done.
-		{"shadow that would defer", nil, func(s *State) { s.ActionAutonomy = "shadow"; s.LockHeldBy = "case-0" }, Shadow, "shadow", Defer, "locked"},
-		{"shadow that would propose", nil, func(s *State) { s.ActionAutonomy = "shadow"; s.Tainted = true }, Shadow, "shadow", Propose, ""},
+		// Record records what it would have done.
+		{"record that would defer", nil, func(s *State) { s.ActionAutonomy = "record"; s.LockHeldBy = "case-0" }, Record, "record", Defer, "locked"},
+		{"record that would propose", nil, func(s *State) { s.ActionAutonomy = "record"; s.Tainted = true }, Record, "record", Propose, ""},
 	} {
 		p, s := plan(), clear()
 		s.Action.Params = map[string]registry.Param{"host": {Kind: "target_host"}}

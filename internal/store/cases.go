@@ -215,12 +215,12 @@ func (s *Store) moveCase(ctx context.Context, tx *sql.Tx, id, to, by, resolution
 	}
 	// Automatic demotion (RFC-0004 §5.2), in the same transaction as the move that earns it, so no path
 	// that moves a case skips it: a failed or unknown execution drops the action from auto to propose; an
-	// operator's rejection of its proposal drops it from propose to shadow. Never a promotion.
+	// operator's rejection of its proposal drops it from propose to record. Never a promotion.
 	switch {
 	case from == cases.Executing && to == cases.Escalated:
 		return demoteAction(ctx, tx, id, "propose", at, "the execution failed or its result is unknown (case "+id+")")
 	case from == cases.AwaitingApproval && to == cases.Escalated && by == cases.ByOperator:
-		return demoteAction(ctx, tx, id, "shadow", at, "the operator rejected its proposal (case "+id+")")
+		return demoteAction(ctx, tx, id, "record", at, "the operator rejected its proposal (case "+id+")")
 	}
 	return nil
 }
@@ -241,7 +241,7 @@ func demoteAction(ctx context.Context, tx *sql.Tx, caseID, to, at, why string) e
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	rank := map[string]int{"shadow": 0, "propose": 1, "auto": 2}
+	rank := map[string]int{"record": 0, "propose": 1, "auto": 2}
 	if cur == "" || rank[cur] <= rank[to] {
 		return nil // already at or below: nothing to lower
 	}

@@ -33,7 +33,7 @@ func decided(t *testing.T, s *Store, key, to string) string {
 }
 
 // RFC-0004 §5.2: a failed or unknown execution demotes auto to propose; an operator's rejection demotes
-// propose to shadow; recorded on the case and in the events. Never a promotion, never from elsewhere.
+// propose to record; recorded on the case and in the events. Never a promotion, never from elsewhere.
 func TestAutomaticDemotion(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
@@ -51,8 +51,8 @@ func TestAutomaticDemotion(t *testing.T) {
 
 	id = decided(t, s, "#reject", cases.AwaitingApproval)
 	_ = s.MoveCase(ctx, id, cases.Escalated, cases.ByOperator, "", "user:ada", "rejected")
-	if l := level(t, s); l != "shadow" {
-		t.Fatalf("after a rejection the action is %q, want shadow", l)
+	if l := level(t, s); l != "record" {
+		t.Fatalf("after a rejection the action is %q, want record", l)
 	}
 
 	// An expiry is not a rejection.
@@ -64,11 +64,11 @@ func TestAutomaticDemotion(t *testing.T) {
 	}
 
 	// Already at or below the target: nothing changes, and a demotion never raises.
-	actionAt(t, s, "shadow")
+	actionAt(t, s, "record")
 	id = decided(t, s, "#low", cases.Executing)
 	_ = s.MoveCase(ctx, id, cases.Escalated, cases.ByTimer, "", "flotillad", "unknown")
-	if l := level(t, s); l != "shadow" {
-		t.Fatalf("a demotion raised shadow to %q", l)
+	if l := level(t, s); l != "record" {
+		t.Fatalf("a demotion raised record to %q", l)
 	}
 
 	// An escalation from elsewhere demotes nothing: policy refusing a plan (planned -> escalated), where

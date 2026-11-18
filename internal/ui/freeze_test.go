@@ -70,7 +70,7 @@ func TestActionAutonomyInTheUI(t *testing.T) {
 		t.Fatal("an operator's Autonomy page has no action or no form")
 	}
 	// G13: the record toward the next level, with its bar
-	if !strings.Contains(page, "shadow plans you judged right: 0 of 5") || !strings.Contains(page, `class="evbar"`) {
+	if !strings.Contains(page, "recorded plans you judged right: 0 of 5") || !strings.Contains(page, `class="evbar"`) {
 		t.Error("the Autonomy page has no evidence toward the next level")
 	}
 	// G14: the recurrence rule for each kind an action is for
@@ -86,14 +86,14 @@ func TestActionAutonomyInTheUI(t *testing.T) {
 	if !strings.Contains(resp.Header.Get("Location"), "err=") {
 		t.Fatalf("a promotion without a reason: %s", resp.Header.Get("Location"))
 	}
-	resp, _ = f.do("POST", "/actions/backup.rerun/autonomy", ck, url.Values{"csrf": {csrf}, "autonomy": {"propose"}, "reason": {"5 shadow plans agreed"}}, nil)
+	resp, _ = f.do("POST", "/actions/backup.rerun/autonomy", ck, url.Values{"csrf": {csrf}, "autonomy": {"propose"}, "reason": {"5 recorded plans agreed"}}, nil)
 	if !strings.Contains(resp.Header.Get("Location"), "msg=") {
 		t.Fatalf("a promotion with a reason: %s", resp.Header.Get("Location"))
 	}
 	if v, _ := f.st.Control(context.Background(), "action:backup.rerun", "autonomy"); v != "propose" {
 		t.Fatalf("the action's autonomy is %q", v)
 	}
-	resp, _ = f.do("POST", "/actions/backup.rerun/autonomy", vck, url.Values{"csrf": {vcsrf}, "autonomy": {"shadow"}}, nil)
+	resp, _ = f.do("POST", "/actions/backup.rerun/autonomy", vck, url.Values{"csrf": {vcsrf}, "autonomy": {"record"}}, nil)
 	if !strings.Contains(resp.Header.Get("Location"), "err=") {
 		t.Fatalf("a viewer changing it: %s", resp.Header.Get("Location"))
 	}

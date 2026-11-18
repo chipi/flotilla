@@ -56,7 +56,7 @@ func setup(t *testing.T, budget float64) (*Scheduler, *fakeRunner, *fakeMetrics)
 	fr := &fakeRunner{res: &worker.Result{Status: "ok", ExitCode: &zero, DurationS: 1.5, SpendUSD: 0.4}}
 	fm := &fakeMetrics{}
 	j := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "d", Enabled: true, Worker: "triage",
-		Run: spec.Run{Command: "python3 x.py", Workdir: "signal-fleet/mvp", SpendFile: "s"}, Autonomy: spec.AutonomyShadow,
+		Run: spec.Run{Command: "python3 x.py", Workdir: "signal-fleet/mvp", SpendFile: "s"}, Autonomy: spec.AutonomyRecord,
 		Budget: spec.Budget{DayUSD: budget}, Every: 10 * time.Minute, Limit: 20 * time.Minute, Fresh: 35 * time.Minute, Hash: "abc"}
 	return &Scheduler{Store: st, Routines: []*spec.Routine{j}, Workers: map[string]Runner{"triage": fr}, Metrics: fm}, fr, fm
 }
@@ -95,7 +95,7 @@ func TestStageControlOverridesSpec(t *testing.T) {
 	}
 }
 
-// ADR-0014 decision 8: frozen, a run starts at shadow; the routine's own control is untouched, so
+// ADR-0014 decision 8: frozen, a run starts at record; the routine's own control is untouched, so
 // lifting the freeze restores it; a run already in flight keeps what it started with.
 func TestFreeze(t *testing.T) {
 	ctx := context.Background()
@@ -116,7 +116,7 @@ func TestFreeze(t *testing.T) {
 	}
 	fr.block = nil
 	r, _ := s.RunNow(ctx, "triage/cycle", "manual", "operator")
-	if r.Autonomy != "shadow" || fr.got[1].Env["FLEETD_STAGE"] != "shadow" {
+	if r.Autonomy != "record" || fr.got[1].Env["FLEETD_STAGE"] != "shadow" {
 		t.Fatalf("frozen, a run started at %s / %s", r.Autonomy, fr.got[1].Env["FLEETD_STAGE"])
 	}
 	if v, _ := s.Store.Control(ctx, "triage/cycle", KeyAutonomy); v != "auto" {
@@ -134,11 +134,11 @@ func TestFreeze(t *testing.T) {
 
 func TestControlAboveMaxAutonomyNotObeyed(t *testing.T) {
 	s, fr, _ := setup(t, 2)
-	s.Routines[0].MaxAutonomy = spec.AutonomyShadow
+	s.Routines[0].MaxAutonomy = spec.AutonomyRecord
 	_ = s.Store.SetControl(context.Background(), "triage/cycle", KeyAutonomy, "auto", "operator", "api")
 	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
 	if fr.got[0].Env["FLEETD_STAGE"] != "shadow" {
-		t.Fatalf("a shadow-capped routine ran at %s", fr.got[0].Env["FLEETD_STAGE"])
+		t.Fatalf("a record-capped routine ran at %s", fr.got[0].Env["FLEETD_STAGE"])
 	}
 }
 

@@ -21,9 +21,9 @@ func TestPushFormat(t *testing.T) {
 	}))
 	defer ts.Close()
 	p := &Pusher{URL: ts.URL, Env: "operations", Version: "sha-abc1234", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	p.Run("triage/cycle", "ok", "shadow", 12.5, 0.08)
-	p.Run("triage/cycle", "skipped", "shadow", 0, 0)
-	if !strings.Contains(bodies[0], `flotilla_run{autonomy="shadow",environment="operations",routine="triage/cycle",service="flotillad",status="ok",version="sha-abc1234"} 1`) {
+	p.Run("triage/cycle", "ok", "record", 12.5, 0.08)
+	p.Run("triage/cycle", "skipped", "record", 0, 0)
+	if !strings.Contains(bodies[0], `flotilla_run{autonomy="record",environment="operations",routine="triage/cycle",service="flotillad",status="ok",version="sha-abc1234"} 1`) {
 		t.Fatalf("run sample: %s", bodies[0])
 	}
 	if !strings.Contains(bodies[0], `flotilla_spend_day_usd{environment="operations",routine="triage/cycle",service="flotillad"} 0.08`) {

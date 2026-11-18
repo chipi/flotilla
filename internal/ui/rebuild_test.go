@@ -110,7 +110,7 @@ func TestLogLines(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	if err := f.st.StartRun(ctx, store.Run{ID: "run-l", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-		Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	ck := f.signin(f.vic)
@@ -184,7 +184,7 @@ func TestFeedbackAndNotes(t *testing.T) {
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r1", Action: "backup.rerun", Params: map[string]string{"host": "backup-01"},
-		PlanHash: "abcdef0123", Outcome: "shadow", Autonomy: "shadow", Reasons: []string{"r"}}, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
+		PlanHash: "abcdef0123", Outcome: "record", Autonomy: "record", Reasons: []string{"r"}}, cases.Closed, cases.PlanRecorded, "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	op := f.addOperator()
@@ -299,7 +299,7 @@ func TestRunsPage(t *testing.T) {
 	for i := 0; i < 120; i++ {
 		id := fmt.Sprintf("triage-cycle-%03d", i)
 		_ = f.st.StartRun(ctx, store.Run{ID: id, Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-			Autonomy: "shadow", StartedAt: base.Add(time.Duration(i) * time.Minute).Format(store.TimeFormat), Status: "running"})
+			Autonomy: "record", StartedAt: base.Add(time.Duration(i) * time.Minute).Format(store.TimeFormat), Status: "running"})
 		st := store.StatusOK
 		if i%10 == 0 {
 			st = store.StatusError
@@ -397,7 +397,7 @@ func TestWhatTheAgentRead(t *testing.T) {
 	ctx := context.Background()
 	for _, id := range []string{"run-r", "run-clean"} {
 		if err := f.st.StartRun(ctx, store.Run{ID: id, Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
-			Autonomy: "shadow", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
+			Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -423,8 +423,8 @@ func TestWhatTheAgentRead(t *testing.T) {
 	}
 }
 
-// The v1 gate (operator, 2026-11-15): a shadow plan's case says what its verdict judges.
-func TestShadowVerdictMeaning(t *testing.T) {
+// The v1 gate (operator, 2026-11-15): a recorded plan's case says what its verdict judges.
+func TestRecordedVerdictMeaning(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	k := store.Key{Kind: "target", Value: "failed_backup/host:backup-01#s"}
@@ -435,11 +435,11 @@ func TestShadowVerdictMeaning(t *testing.T) {
 	_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
 	_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "a", "")
 	if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, Action: "backup.rerun", Params: map[string]string{"host": "backup-01"},
-		PlanHash: "h", Outcome: "shadow", Autonomy: "shadow", Would: "propose"}, cases.Closed, cases.ShadowPlan, "host:backup-01", false); err != nil {
+		PlanHash: "h", Outcome: "record", Autonomy: "record", Would: "propose"}, cases.Closed, cases.PlanRecorded, "host:backup-01", false); err != nil {
 		t.Fatal(err)
 	}
 	ck, _ := f.csrfOf(f.addOperator())
-	if _, page := f.do("GET", "/cases/"+id, ck, nil, nil); !strings.Contains(page, "A shadow plan: judge the chain at its threshold.") {
-		t.Error("a shadow plan's case does not say what its verdict judges")
+	if _, page := f.do("GET", "/cases/"+id, ck, nil, nil); !strings.Contains(page, "A recorded plan: judge the chain at its threshold.") {
+		t.Error("a recorded plan's case does not say what its verdict judges")
 	}
 }

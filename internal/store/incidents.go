@@ -9,8 +9,8 @@ import (
 )
 
 // One case per incident (operator, 2026-11-13). RFC-0004 §3.5 matches a detection only against open
-// cases and dismissed ones, so while a fault lasts every monitor run after a shadow close would open a
-// new case. Instead a case closed as a recorded shadow plan stays the incident's case until the monitor
+// cases and dismissed ones, so while a fault lasts every monitor run after a recorded-plan close would open a
+// new case. Instead a case closed as a recorded plan stays the incident's case until the monitor
 // that opened it reports its key clear (an incident.cleared event); detections in between are absorbed
 // into it. Any other close (resolved itself, verified, by an operator) ends the incident: the next
 // detection is a new case, which is what the recurrence rule counts.
@@ -19,7 +19,7 @@ import (
 const (
 	Opened   = "opened"   // a new case
 	Attached = "attached" // to the open case with the same key
-	Absorbed = "absorbed" // into the incident's case, closed as a shadow plan and not cleared
+	Absorbed = "absorbed" // into the incident's case, closed as a recorded plan and not cleared
 )
 
 const (
@@ -53,7 +53,7 @@ func (s *Store) DetectIncident(ctx context.Context, n NewCase, actor, detail str
 	}
 	err = tx.QueryRowContext(ctx, `SELECT c.id FROM cases c WHERE c.canonical_key = ? AND c.resolution = ?
 		AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id = c.id AND e.kind = ?)
-		ORDER BY c.opened_at DESC LIMIT 1`, ck, cases.ShadowPlan, incidentCleared).Scan(&id)
+		ORDER BY c.opened_at DESC LIMIT 1`, ck, cases.PlanRecorded, incidentCleared).Scan(&id)
 	switch {
 	case err == nil:
 		if err := addSignal(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: signalAbsorbed, Actor: actor, Detail: detail, Data: n.Data}); err != nil {
@@ -93,7 +93,7 @@ func (s *Store) HandedOverBy(ctx context.Context, monitor string) ([]MonitorCase
 }
 
 // ClearIncidents ends the incidents a monitor opened whose keys its latest successful run no longer
-// reports: each case it opened, closed as a shadow plan and not cleared, whose key is not in present,
+// reports: each case it opened, closed as a recorded plan and not cleared, whose key is not in present,
 // gets an incident.cleared event (a kind the monitor stopped detecting is no longer reported, so its
 // incidents clear too). It returns the cases it cleared.
 func (s *Store) ClearIncidents(ctx context.Context, monitor string, present map[string]bool) ([]string, error) {
@@ -105,7 +105,7 @@ func (s *Store) ClearIncidents(ctx context.Context, monitor string, present map[
 	rows, err := tx.QueryContext(ctx, `SELECT c.id, c.canonical_key FROM cases c WHERE c.resolution = ?
 		AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id = c.id AND e.kind = ?)
 		AND EXISTS (SELECT 1 FROM case_events d WHERE d.case_id = c.id AND d.kind = 'case.detected' AND d.actor = ?)`,
-		cases.ShadowPlan, incidentCleared, monitor)
+		cases.PlanRecorded, incidentCleared, monitor)
 	if err != nil {
 		return nil, err
 	}

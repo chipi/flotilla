@@ -38,7 +38,7 @@ const (
 	// RFC-0013: the problem never existed on main (a dev branch's error); counted apart from resolved_itself,
 	// which means it went away
 	NotReproducible  = "not_reproducible"
-	ShadowPlan       = "shadow_plan_recorded"
+	PlanRecorded     = "plan_recorded"
 	Verified         = "verified"
 	OperatorResolved = "operator_resolved"
 	IssueResolved    = "issue_resolved"
@@ -65,7 +65,7 @@ var table = map[move]struct {
 	{HandedOver, Closed}: {by: []string{ByAct, ByDetector}, resolutions: []string{ResolvedItself, NotReproducible},
 		only: map[string][]string{ByDetector: {ResolvedItself}}},
 	{HandedOver, Escalated}:       {by: []string{ByAct, ByPolicy, ByTimer}},
-	{Planned, Closed}:             {by: []string{ByPolicy}, resolutions: []string{ShadowPlan}},
+	{Planned, Closed}:             {by: []string{ByPolicy}, resolutions: []string{PlanRecorded}},
 	{Planned, AwaitingApproval}:   {by: []string{ByPolicy}},
 	{Planned, Executing}:          {by: []string{ByPolicy}},
 	{Planned, HandedOver}:         {by: []string{ByPolicy}},

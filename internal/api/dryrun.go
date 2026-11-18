@@ -12,7 +12,7 @@ type DryRun struct {
 	Routine    string   `json:"routine"`
 	WouldStart bool     `json:"would_start"`
 	Why        string   `json:"why,omitempty"` // why it would not start
-	Autonomy   string   `json:"autonomy"`      // what the run would get (shadow while frozen)
+	Autonomy   string   `json:"autonomy"`      // what the run would get (record while frozen)
 	Worker     string   `json:"worker"`
 	Command    string   `json:"command"`
 	Timeout    string   `json:"timeout"`

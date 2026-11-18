@@ -56,11 +56,11 @@ func TestTableIsTheDiagram(t *testing.T) {
 }
 
 func TestResolutions(t *testing.T) {
-	if Check(Planned, Closed, ByPolicy, ShadowPlan) != nil {
-		t.Fatal("v1's shadow close refused")
+	if Check(Planned, Closed, ByPolicy, PlanRecorded) != nil {
+		t.Fatal("v1's record close refused")
 	}
 	if Check(Planned, Closed, ByPolicy, Verified) == nil {
-		t.Fatal("a shadow plan closed as verified")
+		t.Fatal("a recorded plan closed as verified")
 	}
 	if Check(Planned, Closed, ByPolicy, "") == nil {
 		t.Fatal("a close without a resolution")

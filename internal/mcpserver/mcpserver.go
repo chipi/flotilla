@@ -370,7 +370,7 @@ func (s *Server) register(srv *mcp.Server, c api.Caller) []string {
 			}
 			return okOut{OK: true, Detail: "stopped " + in.Fleet}, nil
 		})
-	add(r, "freeze", "Freeze all autonomy: every routine at shadow (only a person unfreezes).", func(ctx context.Context, in reasonIn) (okOut, error) {
+	add(r, "freeze", "Freeze all autonomy: every routine at record (only a person unfreezes).", func(ctx context.Context, in reasonIn) (okOut, error) {
 		if err := s.API.SetFrozen(ctx, c, "mcp", true, in.Reason); err != nil {
 			return okOut{}, err
 		}

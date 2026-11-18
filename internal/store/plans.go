@@ -244,7 +244,7 @@ func (s *Store) Counts(ctx context.Context, action, target, host string, dayStar
 }
 
 // ActionRecord is what an action has done, the evidence a promotion is decided on (RFC-0004 §5.2):
-// its plans by policy's outcome and, in shadow, by what they would have been; its executions verified
+// its plans by policy's outcome and, at record, by what they would have been; its executions verified
 // and failed or unknown.
 type ActionRecord struct {
 	Plans    int            `json:"plans"`

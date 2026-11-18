@@ -106,8 +106,8 @@ func TestReject(t *testing.T) {
 	if h, _ := s.Store.LockHolder(ctx, "host:backup-01"); h != "" {
 		t.Fatalf("a rejected case still holds the target: %q", h)
 	}
-	if v, _ := s.Store.Control(ctx, actionSubject(rerun), "autonomy"); v != "shadow" {
-		t.Fatalf("the action after a rejection: %q, want shadow", v)
+	if v, _ := s.Store.Control(ctx, actionSubject(rerun), "autonomy"); v != "record" {
+		t.Fatalf("the action after a rejection: %q, want record", v)
 	}
 }
 

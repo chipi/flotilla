@@ -171,11 +171,11 @@ form.inline { display: inline-flex; margin: 0; }
 .level { display: inline-block; font: 600 12px var(--font-exact); padding: 3px 8px; border-radius: var(--rounded-chip); }
 .level--auto { background: var(--ok-wash); color: var(--ok-ink); }
 .level--propose { background: var(--wait-wash); color: var(--wait-ink); }
-.level--shadow, .level--frozen { background: var(--chip-neutral); color: var(--slate); }
+.level--record, .level--frozen { background: var(--chip-neutral); color: var(--slate); }
 .level-text { font: 600 13px var(--font-exact); }
 .level-text--auto { color: var(--ok-ink); }
 .level-text--propose { color: var(--wait-ink); }
-.level-text--shadow, .level-text--none, .level-text--off { color: var(--slate); }
+.level-text--record, .level-text--none, .level-text--off { color: var(--slate); }
 /* tags: kind and target chips that filter (Cases); roles on hosts */
 .tag { display: inline-block; font: 400 12px var(--font-exact); padding: 3px 8px; border-radius: var(--rounded-chip); text-decoration: none; white-space: nowrap; }
 .tag--kind { background: var(--chip-neutral); color: var(--ink-soft); }

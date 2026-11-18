@@ -51,7 +51,7 @@ func (s *Scheduler) StoreError(op string) {
 
 // Control keys. A fleet's "stop" skips every routine of the fleet; a routine's "paused" skips that routine; a
 // routine's "autonomy" overrides the spec's default. The installation's "frozen" (ADR-0014 decision 8) runs
-// every routine at shadow; it is kept on FreezeSubject, which no fleet or routine id can be.
+// every routine at record; it is kept on FreezeSubject, which no fleet or routine id can be.
 const (
 	KeyStop       = "stop"
 	KeyPaused     = "paused"
@@ -599,7 +599,7 @@ func (s *Scheduler) retryCancel(ctx context.Context, c Canceller, id, runID stri
 	s.Log.Error("cancel: the worker never took the run", "routine", id, "run_id", runID)
 }
 
-// Autonomy is the autonomy a run starts with: shadow while the installation is frozen, else the routine's
+// Autonomy is the autonomy a run starts with: record while the installation is frozen, else the routine's
 // own (Configured). A run keeps what it started with, so a freeze does not reach a run in flight.
 func (s *Scheduler) Autonomy(ctx context.Context, j *spec.Routine) (string, error) {
 	set, err := s.Configured(ctx, j)
@@ -607,7 +607,7 @@ func (s *Scheduler) Autonomy(ctx context.Context, j *spec.Routine) (string, erro
 		return set, err
 	}
 	if frozen, err := s.Frozen(ctx); err != nil || frozen {
-		return spec.AutonomyShadow, err
+		return spec.AutonomyRecord, err
 	}
 	return set, nil
 }
