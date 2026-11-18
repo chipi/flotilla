@@ -604,7 +604,7 @@ func LoadFile(path string) (*Routine, error) {
 		sum = [32]byte(h.Sum(nil))
 	}
 	j.Path, j.Hash = path, hex.EncodeToString(sum[:])[:12]
-	j.legacyVersion(filepath.Dir(filepath.Dir(path)))
+	j.legacyVersion(filepath.Dir(filepath.Dir(path)), raw)
 	return &j, nil
 }
 
@@ -628,9 +628,30 @@ func validPromptPath(p string) bool {
 
 func (j *Routine) validate() error { return errors.Join(j.validateErrs()...) }
 
-func (j *Routine) validateErrs() []error {
+// durField parses a duration field, reporting a bad or too-short value.
+func durField(bad func(string, ...any), field, s string, min time.Duration) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		bad("%s %q: a duration such as 10m", field, s)
+		return 0
+	}
+	if d < min {
+		bad("%s %s: at least %s", field, d, min)
+	}
+	return d
+}
+
+// validateRoutineErrs checks what the routine is whichever version runs (identity, autonomy, budget, trigger,
+// freshness, ...) and sets Every and Fresh. A folder routine runs it once on routine.yaml, so a broken or
+// retired version cannot leave them unset.
+func (j *Routine) validateRoutineErrs() []error {
 	var errs []error
 	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
+	j.validateRoutine(bad)
+	return errs
+}
+
+func (j *Routine) validateRoutine(bad func(string, ...any)) {
 	if !nameRe.MatchString(j.Fleet) {
 		bad("fleet %q: lower-case letters, digits and dashes", j.Fleet)
 	}
@@ -642,9 +663,6 @@ func (j *Routine) validateErrs() []error {
 	}
 	if !nameRe.MatchString(j.Worker) {
 		bad("worker %q: lower-case letters, digits and dashes", j.Worker)
-	}
-	if strings.TrimSpace(j.Run.Command) == "" {
-		bad("run.command is required")
 	}
 	if !levels[j.Autonomy] {
 		bad("autonomy %q: one of record, propose, auto", j.Autonomy)
@@ -665,6 +683,71 @@ func (j *Routine) validateErrs() []error {
 	}
 	if j.Budget.DayUSD < 0 {
 		bad("budget.day_usd %.2f: must not be negative", j.Budget.DayUSD)
+	}
+	j.validateResume(bad)
+	n := 0
+	for _, set := range []bool{j.Trigger.Every != "", j.Trigger.Case != nil, j.Trigger.Execute != nil, j.Trigger.Check != nil} {
+		if set {
+			n++
+		}
+	}
+	switch {
+	case n > 1:
+		bad("trigger: one of every, case, execute and check")
+	case j.Trigger.Case != nil:
+		if !caseFieldRe.MatchString(j.Trigger.Case.Kind) {
+			bad("trigger.case.kind %q: a case kind such as failed_backup", j.Trigger.Case.Kind)
+		}
+		if st := j.Trigger.Case.Stage; st != "" && !caseFieldRe.MatchString(st) {
+			bad("trigger.case.stage %q: a stage name such as clarify", st)
+		}
+		if l := j.Trigger.Case.Limit; l != nil {
+			if j.Trigger.Case.Stage != "" {
+				bad("trigger.case.limit: declared on the kind's first-stage routine, not on stage %q", j.Trigger.Case.Stage)
+			}
+			if l.USD <= 0 || l.Minutes <= 0 {
+				bad("trigger.case.limit: usd and minutes both above 0")
+			}
+		}
+	case j.Trigger.Execute != nil:
+		if !actionRe.MatchString(j.Trigger.Execute.Action) {
+			bad("trigger.execute.action %q: a registry action such as github.open_pr", j.Trigger.Execute.Action)
+		}
+	case j.Trigger.Check != nil:
+		if !verifyRe.MatchString(j.Trigger.Check.Verify) {
+			bad("trigger.check.verify %q: a registry check condition such as backup_newer_than_execution", j.Trigger.Check.Verify)
+		}
+	default:
+		j.Every = durField(bad, "trigger.every", j.Trigger.Every, time.Minute)
+	}
+	for _, k := range j.Detects {
+		if !caseFieldRe.MatchString(k) {
+			bad("detects: %q is not a case kind", k)
+		}
+	}
+	if len(j.Detects) > 0 && j.OnEvent() {
+		bad("detects: a routine on cases acts on them; a monitor runs on time")
+	}
+	if j.BriefSection != "" {
+		switch {
+		case len(j.Detects) == 0:
+			bad("brief_section: only a monitor (a routine with detects) reports summary lines")
+		case !briefSectionRe.MatchString(j.BriefSection):
+			bad("brief_section: %q is not a short title (a capital, then letters and spaces, at most 32)", j.BriefSection)
+		case j.BriefSection == "Needs you" || j.BriefSection == "Handled overnight" || j.BriefSection == "Watch" || j.BriefSection == "Decisions":
+			bad("brief_section: %q is one of the brief's own sections", j.BriefSection)
+		}
+	}
+	if j.Freshness != "" || !j.OnEvent() { // a routine on cases runs when there is work: no freshness
+		j.Fresh = durField(bad, "freshness", j.Freshness, time.Minute)
+	}
+}
+
+func (j *Routine) validateErrs() []error {
+	errs := j.validateRoutineErrs()
+	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
+	if strings.TrimSpace(j.Run.Command) == "" {
+		bad("run.command is required")
 	}
 	for i, r := range j.Skills.Rule {
 		if len(r.When) == 0 || len(r.Load) == 0 {
@@ -692,7 +775,6 @@ func (j *Routine) validateErrs() []error {
 			bad("prompts.%s: %q is not a .md or .txt path inside the fleet's folder (relative, no ..)", role, p)
 		}
 	}
-	j.validateResume(bad)
 	if h := j.Harness; h != nil {
 		if h.Protocol != "json" {
 			bad("harness.protocol %q: json (native tool calls come later)", h.Protocol)
@@ -743,52 +825,6 @@ func (j *Routine) validateErrs() []error {
 			bad("harness.quirks: reply_echo_chars, decision_echo_chars and result_chars must be positive")
 		}
 	}
-	dur := func(field, s string, min time.Duration) time.Duration {
-		d, err := time.ParseDuration(s)
-		if err != nil {
-			bad("%s %q: a duration such as 10m", field, s)
-			return 0
-		}
-		if d < min {
-			bad("%s %s: at least %s", field, d, min)
-		}
-		return d
-	}
-	n := 0
-	for _, set := range []bool{j.Trigger.Every != "", j.Trigger.Case != nil, j.Trigger.Execute != nil, j.Trigger.Check != nil} {
-		if set {
-			n++
-		}
-	}
-	switch {
-	case n > 1:
-		bad("trigger: one of every, case, execute and check")
-	case j.Trigger.Case != nil:
-		if !caseFieldRe.MatchString(j.Trigger.Case.Kind) {
-			bad("trigger.case.kind %q: a case kind such as failed_backup", j.Trigger.Case.Kind)
-		}
-		if st := j.Trigger.Case.Stage; st != "" && !caseFieldRe.MatchString(st) {
-			bad("trigger.case.stage %q: a stage name such as clarify", st)
-		}
-		if l := j.Trigger.Case.Limit; l != nil {
-			if j.Trigger.Case.Stage != "" {
-				bad("trigger.case.limit: declared on the kind's first-stage routine, not on stage %q", j.Trigger.Case.Stage)
-			}
-			if l.USD <= 0 || l.Minutes <= 0 {
-				bad("trigger.case.limit: usd and minutes both above 0")
-			}
-		}
-	case j.Trigger.Execute != nil:
-		if !actionRe.MatchString(j.Trigger.Execute.Action) {
-			bad("trigger.execute.action %q: a registry action such as github.open_pr", j.Trigger.Execute.Action)
-		}
-	case j.Trigger.Check != nil:
-		if !verifyRe.MatchString(j.Trigger.Check.Verify) {
-			bad("trigger.check.verify %q: a registry check condition such as backup_newer_than_execution", j.Trigger.Check.Verify)
-		}
-	default:
-		j.Every = dur("trigger.every", j.Trigger.Every, time.Minute)
-	}
 	seenModel := map[string]bool{}
 	for _, m := range j.Models {
 		if m == "" || seenModel[m] {
@@ -796,29 +832,8 @@ func (j *Routine) validateErrs() []error {
 		}
 		seenModel[m] = true
 	}
-	for _, k := range j.Detects {
-		if !caseFieldRe.MatchString(k) {
-			bad("detects: %q is not a case kind", k)
-		}
-	}
-	if len(j.Detects) > 0 && j.OnEvent() {
-		bad("detects: a routine on cases acts on them; a monitor runs on time")
-	}
-	if j.BriefSection != "" {
-		switch {
-		case len(j.Detects) == 0:
-			bad("brief_section: only a monitor (a routine with detects) reports summary lines")
-		case !briefSectionRe.MatchString(j.BriefSection):
-			bad("brief_section: %q is not a short title (a capital, then letters and spaces, at most 32)", j.BriefSection)
-		case j.BriefSection == "Needs you" || j.BriefSection == "Handled overnight" || j.BriefSection == "Watch" || j.BriefSection == "Decisions":
-			bad("brief_section: %q is one of the brief's own sections", j.BriefSection)
-		}
-	}
 	j.validateExplain(bad)
-	j.Limit = dur("run.timeout", j.Run.Timeout, 10*time.Second)
-	if j.Freshness != "" || !j.OnEvent() { // a routine on cases runs when there is work: no freshness
-		j.Fresh = dur("freshness", j.Freshness, time.Minute)
-	}
+	j.Limit = durField(bad, "run.timeout", j.Run.Timeout, 10*time.Second)
 	if j.Every > 0 && j.Limit > j.Every*3 {
 		bad("run.timeout %s is more than three intervals (%s)", j.Limit, j.Every)
 	}

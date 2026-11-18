@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -145,23 +144,44 @@ func (j *Routine) VersionNamed(n int) *Version {
 	return nil
 }
 
-// legacyVersion makes a flat spec's v1. specsDir is the fleets folder, where the skill layers are.
-func (j *Routine) legacyVersion(specsDir string) {
-	m := map[string]string{}
-	field := func(name string, set bool, v any) {
-		if !set {
-			return
-		}
-		b, _ := json.Marshal(v)
-		m[name] = shaHex(b)
+// legacyOwned are the top-level keys of a flat spec that belong to its v1 (what a version's spec.yaml holds).
+var legacyOwned = []string{"run", "explain", "steps", "skills", "harness", "prompts", "models"}
+
+// legacyFields is, per version-owned key a flat spec writes, the sha256 of that key's value re-encoded from
+// the spec's own YAML (decoded to plain values and marshalled with sorted keys): independent of the Go
+// structs, so a new field, a tag or a default in them never moves a recorded hash. A comment or the layout
+// of the YAML does not move it either.
+func legacyFields(raw []byte) map[string]string {
+	out := map[string]string{}
+	var doc yaml.Node
+	if yaml.Unmarshal(raw, &doc) != nil || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return out
 	}
-	field("run", true, j.Run)
-	field("explain", len(j.Explain) > 0, j.Explain)
-	field("steps", len(j.Steps) > 0, j.Steps)
-	field("skills", len(j.Skills.Rule) > 0 || len(j.Skills.OnDemand) > 0, j.Skills)
-	field("harness", j.Harness != nil, j.Harness)
-	field("prompts", len(j.Prompts) > 0, j.Prompts)
-	field("models", len(j.Models) > 0, j.Models)
+	m := doc.Content[0]
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		key := m.Content[i].Value
+		for _, own := range legacyOwned {
+			if key != own {
+				continue
+			}
+			var v any
+			if m.Content[i+1].Decode(&v) != nil {
+				continue
+			}
+			b, err := yaml.Marshal(v)
+			if err != nil {
+				continue
+			}
+			out[key] = shaHex(b)
+		}
+	}
+	return out
+}
+
+// legacyVersion makes a flat spec's v1. specsDir is the fleets folder, where the skill layers are; raw is the
+// spec's bytes.
+func (j *Routine) legacyVersion(specsDir string, raw []byte) {
+	m := legacyFields(raw)
 	for _, role := range sortedKeys(j.Prompts) {
 		m["prompt-file:"+j.Prompts[role]] = j.PromptSHA[role]
 	}
@@ -273,12 +293,13 @@ func loadFolder(p string) (*Routine, error) {
 		Trigger: rf.Trigger, Detects: rf.Detects, Autonomy: rf.Autonomy, MaxAutonomy: rf.MaxAutonomy, Budget: rf.Budget,
 		Freshness: rf.Freshness, Resume: rf.Resume, BriefSection: rf.BriefSection, Chain: rf.Chain, Acceptance: rf.Acceptance, Path: p}
 	base.normalizeLevels()
-	for i, n := range nums {
-		v, a := loadVersionDir(base, raw, filepath.Join(dir, "v"+strconv.Itoa(n)), n)
+	// the routine's own fields are checked once, here: Every and Fresh are the same for every version, broken or retired ones included
+	if errs := base.validateRoutineErrs(); len(errs) > 0 {
+		return nil, fmt.Errorf("%s: %w", p, errors.Join(errs...))
+	}
+	for _, n := range nums {
+		v, _ := loadVersionDir(base, raw, filepath.Join(dir, "v"+strconv.Itoa(n)), n)
 		base.Versions = append(base.Versions, v)
-		if i == 0 {
-			base.Every, base.Fresh = a.Every, a.Fresh // the routine's own, the same for every version
-		}
 	}
 	base.Hash = shaHex(raw)[:12]
 	for _, v := range base.Versions {

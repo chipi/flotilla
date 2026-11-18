@@ -101,7 +101,7 @@ func TestFlatSpecHashesAreGolden(t *testing.T) {
 	}
 }
 
-// The legacy v1's hash recipe is pinned on a fixed spec, so a new field of Version cannot move every
+// The legacy v1's hash recipe is pinned on a fixed spec (an independent computation of it is in the want comment), so a new field of Version cannot move every
 // recorded hash without a test saying so.
 func TestLegacyVersionHashRecipe(t *testing.T) {
 	d := t.TempDir()
@@ -110,7 +110,9 @@ func TestLegacyVersionHashRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = "634db2c3804da10a59bd2873d4042ab92dd2e8d26611f86280fb24f3d816debc"
+	// sha256 over "run\x00" + sha256("command: python3 x.py\ntimeout: 20m\nworkdir: signal-fleet/mvp\n") + "\n": the recipe is the
+	// version-owned keys' own YAML, re-encoded with sorted keys, never the Go structs
+	const want = "cfe909770ba8d771f2ef30b51cb2646af3112aa635f5de720d45dd3e705dede6"
 	if got := routines[0].VersionHash; got != want {
 		t.Fatalf("legacy v1 hash %s, pinned %s", got, want)
 	}
@@ -417,5 +419,63 @@ func TestAcceptance(t *testing.T) {
 		if _, err := Load(flat); err == nil || !strings.Contains(err.Error(), "acceptance") {
 			t.Fatalf("%q: %v", bad, err)
 		}
+	}
+}
+
+// A routine's interval and freshness are the routine's, whichever version is bound or broken: a retired v1
+// that no longer parses must not leave Every at 0 (time.NewTicker(0) panics in the scheduler).
+func TestRoutineTimingSurvivesABrokenFirstVersion(t *testing.T) {
+	d := t.TempDir()
+	writeFolder(t, d)
+	write(t, d, "triage/cycle/v1/spec.yaml", "run: [this is: not, a version\n")
+	write(t, d, "triage/cycle/v2/spec.yaml", folderVersion)
+	write(t, d, "triage/cycle/v2/system.md", "two\n")
+	rs, err := LoadVersions(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := rs[0]
+	if j.Versions[0].Valid() || j.Version != 2 {
+		t.Fatalf("v1 should be broken and v2 bound: %+v", j.Versions)
+	}
+	if j.Every.String() != "10m0s" || j.Fresh.String() != "35m0s" {
+		t.Fatalf("Every %s, Fresh %s: the routine's own", j.Every, j.Fresh)
+	}
+}
+
+// A bad routine-level field is the routine's error, once, not every version's.
+func TestRoutineFieldErrorsFailTheRoutineOnce(t *testing.T) {
+	d := t.TempDir()
+	writeFolder(t, d)
+	write(t, d, "triage/cycle/routine.yaml", strings.Replace(folderRoutine, "every: 10m", "every: soon", 1))
+	_, err := LoadVersions(d)
+	if err == nil || strings.Count(err.Error(), "trigger.every") != 1 {
+		t.Fatalf("want one trigger.every error, got %v", err)
+	}
+}
+
+// The legacy hash reads the spec's own YAML: a comment, the order of keys and the flow or block style of a
+// mapping do not move it; a changed value does.
+func TestLegacyVersionHashIsTheYAMLNotTheStructs(t *testing.T) {
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", good)
+	a, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reshaped := strings.Replace(good, `run: {command: "python3 x.py", workdir: signal-fleet/mvp, timeout: 20m}`,
+		"# the run, as a block\nrun:\n  timeout: 20m\n  workdir: signal-fleet/mvp\n  command: python3 x.py\n", 1)
+	write(t, d, "triage/cycle.yaml", reshaped)
+	b, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a[0].VersionHash != b[0].VersionHash {
+		t.Fatal("comments, key order and mapping style are not the version's content")
+	}
+	write(t, d, "triage/cycle.yaml", strings.Replace(reshaped, "timeout: 20m", "timeout: 21m", 1))
+	c, _ := Load(d)
+	if c[0].VersionHash == a[0].VersionHash {
+		t.Fatal("a changed value is")
 	}
 }
