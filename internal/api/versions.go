@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -266,6 +267,14 @@ func ParseEval(s string) (store.EvalRun, error) {
 	return store.EvalRun{RunID: id, Verdict: verdict}, nil
 }
 
+// strictJSON decodes one JSON object and refuses a field the request does not have: a typo in "without_pairs" or
+// "autonomy" must not be a silently ignored setting on a state change.
+func strictJSON(r io.Reader, into any) error {
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+	return dec.Decode(into)
+}
+
 func versionNumber(r *http.Request) (int, error) {
 	n, err := strconv.Atoi(r.PathValue("n"))
 	if err != nil || n < 1 {
@@ -290,7 +299,7 @@ func (s *Server) versionPromote(w http.ResponseWriter, r *http.Request, c Caller
 		return
 	}
 	var body PromoteRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body); err != nil {
+	if err := strictJSON(http.MaxBytesReader(w, r.Body, 16384), &body); err != nil {
 		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "record|propose|auto", "reason": "...", "without_pairs": false, "gates": [{"name": "...", "result": "pass|fail", "ref": "..."}], "evals": [{"run_id": "...", "verdict": "pass|fail"}]}`})
 		return
 	}
@@ -312,7 +321,7 @@ func (s *Server) versionRetire(w http.ResponseWriter, r *http.Request, c Caller)
 
 func (s *Server) versionRollback(w http.ResponseWriter, r *http.Request, c Caller) {
 	var body RollbackRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+	if err := strictJSON(http.MaxBytesReader(w, r.Body, 4096), &body); err != nil {
 		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "record|propose|auto", "reason": "..."}`})
 		return
 	}

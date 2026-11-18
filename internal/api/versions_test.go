@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/policy"
+	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/versions"
@@ -509,5 +511,378 @@ func TestRerecordRoute(t *testing.T) {
 	if c != 200 || out["routine"] != "triage/cycle" || out["version"] != float64(1) || out["by"] != "operator" || out["old_hash"] == out["new_hash"] ||
 		out["changed"].([]any)[0] != "spec.yaml (changed)" {
 		t.Fatalf("%d %v", c, out)
+	}
+}
+
+// A start barrier: every goroutine waits on it, so the calls overlap as much as the scheduler lets them.
+func together(n int, f func(i int)) {
+	var ready, wg sync.WaitGroup
+	start := make(chan struct{})
+	ready.Add(n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			ready.Done()
+			<-start
+			f(i)
+		}(i)
+	}
+	ready.Wait()
+	close(start)
+	wg.Wait()
+}
+
+// versionInvariants: one live version, at most one previous, and the scheduler runs the version the store says is live.
+func versionInvariants(t *testing.T, s *Server) string {
+	t.Helper()
+	rows, err := s.Store.Versions(context.Background(), "triage/cycle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, prev := 0, 0
+	liveN := 0
+	for _, r := range rows {
+		switch r.State {
+		case store.VersionLive:
+			live, liveN = live+1, r.Version
+		case store.VersionPrevious:
+			prev++
+		}
+	}
+	got := states(t, s)
+	if live != 1 || prev > 1 {
+		t.Fatalf("%d live and %d previous: %s", live, prev, got)
+	}
+	if bound := s.Sched.Routine("triage/cycle").Version; bound != liveN {
+		t.Fatalf("the store says v%d is live and the scheduler runs v%d: %s", liveN, bound, got)
+	}
+	return got
+}
+
+// Overlapping state changes, under -race: the store's own rules decide, one change wins where only one can, and
+// what is left is always one live version, at most one previous, with the scheduler bound to the live one. A
+// refused change is a 409, never a 500 or a locked database.
+func TestVersionStateChangesRace(t *testing.T) {
+	ctx := context.Background()
+	ok := PromoteRequest{Autonomy: "record", Reason: "no pairs yet; the diff was read"}
+	okCode := func(err error) int {
+		if err == nil {
+			return 200
+		}
+		if p := AsProblem(err); p != nil {
+			return p.Code
+		}
+		return 500
+	}
+	t.Run("two operators promote the same shadow", func(t *testing.T) {
+		for round := 0; round < 5; round++ {
+			s := versioned(t, "")
+			codes := make([]int, 2)
+			together(2, func(i int) { codes[i] = okCode(s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, ok)) })
+			if !(codes[0] == 200 && codes[1] == 409 || codes[0] == 409 && codes[1] == 200) {
+				t.Fatalf("one wins and the other is refused: %v", codes)
+			}
+			if got := versionInvariants(t, s); got != "v1=previous v2=live v3=shadow" {
+				t.Fatalf("states %s", got)
+			}
+		}
+	})
+	t.Run("v2 and v3 promoted together", func(t *testing.T) {
+		for round := 0; round < 5; round++ {
+			s := versioned(t, "")
+			codes := make([]int, 2)
+			together(2, func(i int) { codes[i] = okCode(s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", i+2, ok)) })
+			if codes[0] != 200 || codes[1] != 200 {
+				t.Fatalf("both are legal in either order: %v", codes)
+			}
+			got := versionInvariants(t, s)
+			if got != "v1=retired v2=live v3=previous" && got != "v1=retired v2=previous v3=live" {
+				t.Fatalf("states %s", got)
+			}
+		}
+	})
+	t.Run("a promote races a rollback", func(t *testing.T) {
+		for round := 0; round < 5; round++ {
+			s := versioned(t, "")
+			if err := s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, ok); err != nil {
+				t.Fatal(err)
+			}
+			var perr, rerr error
+			together(2, func(i int) {
+				if i == 0 {
+					perr = s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 3, ok)
+				} else {
+					rerr = mustRollback(s, RollbackRequest{Autonomy: "record", Reason: "racing"})
+				}
+			})
+			for _, c := range []int{okCode(perr), okCode(rerr)} {
+				if c != 200 && c != 409 {
+					t.Fatalf("a refused change is a 409: promote %v, rollback %v", perr, rerr)
+				}
+			}
+			versionInvariants(t, s)
+		}
+	})
+	t.Run("a retire races a promote of the same shadow", func(t *testing.T) {
+		for round := 0; round < 5; round++ {
+			s := versioned(t, "")
+			var perr, rerr error
+			together(2, func(i int) {
+				if i == 0 {
+					perr = s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, ok)
+				} else {
+					rerr = s.RetireVersion(ctx, opCaller, "test", "triage/cycle", 2, "racing")
+				}
+			})
+			if okCode(perr)+okCode(rerr) != 200+409 {
+				t.Fatalf("exactly one of promote and retire wins: promote %v, retire %v", perr, rerr)
+			}
+			versionInvariants(t, s)
+		}
+	})
+}
+
+// The HTTP layer of the version routes with real tokens: the happy paths (status, JSON shape, the states after),
+// what a bad request is, and what the mux says for a wrong method.
+func TestVersionRoutes(t *testing.T) {
+	srv := versioned(t, "")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	const base = "/v1/routines/triage/cycle"
+
+	t.Run("refusals change nothing", func(t *testing.T) {
+		for name, c := range map[string]struct {
+			method, path, body string
+			want               int
+		}{
+			"malformed body":          {"POST", base + "/versions/2/promote", `{`, 400},
+			"an unknown field":        {"POST", base + "/versions/2/promote", `{"autonomy":"record","reason":"x","bogus":1}`, 400},
+			"an unknown rollback key": {"POST", base + "/rollback", `{"autonomy":"record","reason":"x","force":true}`, 400},
+			"a malformed rollback":    {"POST", base + "/rollback", `nope`, 400},
+			"unknown routine":         {"POST", "/v1/routines/triage/nothing/versions/2/promote", `{"autonomy":"record","reason":"x"}`, 404},
+			"unknown version":         {"POST", base + "/versions/9/promote", `{"autonomy":"record","reason":"x"}`, 404},
+			"retire an unknown one":   {"POST", base + "/versions/9/retire", `{"reason":"x"}`, 404},
+			"version abc":             {"POST", base + "/versions/abc/promote", `{"autonomy":"record","reason":"x"}`, 400},
+			"version 0":               {"POST", base + "/versions/0/promote", `{"autonomy":"record","reason":"x"}`, 400},
+			"version -1":              {"POST", base + "/versions/-1/retire", `{"reason":"x"}`, 400},
+			"GET on promote":          {"GET", base + "/versions/2/promote", ``, 405},
+			"GET on rollback":         {"GET", base + "/rollback", ``, 405},
+			"DELETE on a version":     {"DELETE", base + "/versions/2/retire", ``, 405},
+			"POST on the list":        {"POST", base + "/versions", `{}`, 405},
+			"rollback, no previous":   {"POST", base + "/rollback", `{"autonomy":"record","reason":"x"}`, 409},
+		} {
+			if code, out := call(t, ts, c.method, c.path, opTok, c.body); code != c.want {
+				t.Errorf("%s: %d %v, want %d", name, code, out, c.want)
+			}
+		}
+		if got := states(t, srv); got != "v1=live v2=shadow v3=shadow" {
+			t.Fatalf("a refused request changed the states: %s", got)
+		}
+	})
+
+	t.Run("promote, retire and roll back", func(t *testing.T) {
+		code, out := call(t, ts, "POST", base+"/versions/2/promote", opTok, `{"autonomy":"propose","reason":"no pairs yet; the diff was read","without_pairs":true}`)
+		if code != 200 || out["routine"] != "triage/cycle" || out["version"] != "2" || out["state"] != "live" || out["autonomy"] != "propose" || out["by"] != "operator" {
+			t.Fatalf("promote: %d %v", code, out)
+		}
+		if got := states(t, srv); got != "v1=previous v2=live v3=shadow" {
+			t.Fatalf("states %s", got)
+		}
+		code, out = call(t, ts, "POST", base+"/versions/3/retire", opTok, `{"reason":"not needed"}`)
+		if code != 200 || out["version"] != "3" || out["state"] != "retired" || out["by"] != "operator" {
+			t.Fatalf("retire: %d %v", code, out)
+		}
+		code, out = call(t, ts, "POST", base+"/rollback", opTok, `{"autonomy":"record","reason":"v2 files too much"}`)
+		if code != 200 || out["rolled_back"] != float64(2) || out["live"] != float64(1) {
+			t.Fatalf("rollback: %d %v", code, out)
+		}
+		if got := states(t, srv); got != "v1=live v2=retired v3=retired" {
+			t.Fatalf("states %s", got)
+		}
+		code, out = call(t, ts, "GET", base+"/versions", agentTok, "")
+		if code != 200 || out["live"] != float64(1) {
+			t.Fatalf("list: %d %v", code, out)
+		}
+	})
+}
+
+// Authentication at HTTP on every version route: a viewer, a revoked user, the retired callers-file operator token
+// and no token at all are refused, and nothing moves.
+func TestVersionRoutesRefuseWhoIsNotAnOperator(t *testing.T) {
+	srv := versioned(t, "")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	_, out := call(t, ts, "POST", "/v1/users", opTok, `{"name":"ada","role":"admin"}`)
+	admin := out["token"].(string)
+	_, out = call(t, ts, "POST", "/v1/users", admin, `{"name":"vic","role":"viewer"}`)
+	viewer := out["token"].(string)
+	_, out = call(t, ts, "POST", "/v1/users", admin, `{"name":"gone","role":"operator"}`)
+	revoked := out["token"].(string)
+	if c, _ := call(t, ts, "POST", "/v1/users/gone/revoke", admin, ""); c != 200 {
+		t.Fatalf("revoke: %d", c)
+	}
+	routes := []struct{ method, path, body string }{
+		{"POST", "/v1/routines/triage/cycle/versions/2/promote", `{"autonomy":"record","reason":"x"}`},
+		{"POST", "/v1/routines/triage/cycle/versions/3/retire", `{"reason":"x"}`},
+		{"POST", "/v1/routines/triage/cycle/rollback", `{"autonomy":"record","reason":"x"}`},
+		{"POST", "/v1/routines/triage/cycle/versions/1/rerecord", `{"reason":"x"}`},
+	}
+	for who, tok := range map[string]string{"a viewer": viewer, "a revoked operator": revoked, "the retired callers-file operator token": opTok, "no token": "", "a guess": "flt_" + strings.Repeat("0", 64)} {
+		for _, r := range routes {
+			if c, _ := call(t, ts, r.method, r.path, tok, r.body); c != 401 && c != 403 {
+				t.Errorf("%s on %s: %d, want 401 or 403", who, r.path, c)
+			}
+		}
+	}
+	if got := states(t, srv); got != "v1=live v2=shadow v3=shadow" {
+		t.Fatalf("a refused request changed the states: %s", got)
+	}
+	// the admin may
+	if c, _ := call(t, ts, "POST", routes[0].path, admin, routes[0].body); c != 200 {
+		t.Fatalf("an admin promoting: %d", c)
+	}
+}
+
+// The previous version was live when it made its plans: after a promote, approving one of them still works (a plan
+// of the version that was rolled back is the one that cannot be approved).
+func TestPreviousVersionsPlanStaysApprovableAfterAPromote(t *testing.T) {
+	ctx := context.Background()
+	s := versioned(t, "")
+	if err := s.Store.StartRun(ctx, store.Run{ID: "run-v1", Routine: "triage/cycle", Version: 1, SpecHash: "x", Trigger: "case", Actor: "flotillad", Autonomy: "propose",
+		StartedAt: "2026-11-18T10:00:00Z", Status: store.StatusOK}); err != nil {
+		t.Fatal(err)
+	}
+	id := plannedCase(t, s, "prev", "")
+	if _, err := s.Store.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "run-v1", Action: rerun, Params: map[string]string{"host": "backup-01"},
+		PlanHash: "hash-prev-0123456789", Outcome: policy.Propose, Autonomy: policy.Propose}, cases.AwaitingApproval, "", "host:backup-01", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, PromoteRequest{Autonomy: "propose", Reason: "no pairs yet; the diff was read"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := states(t, s); got != "v1=previous v2=live v3=shadow" {
+		t.Fatalf("states %s", got)
+	}
+	if hash, err := s.ApprovePlan(ctx, opCaller, "test", id, "", ""); err != nil || hash != "hash-prev-0123456789" {
+		t.Fatalf("approving the previous version's plan: %q %v", hash, err)
+	}
+	if c := caseStatus(t, s, id); c.Status != cases.Executing {
+		t.Fatalf("the case: %s", c.Status)
+	}
+}
+
+// A version whose folder is deleted or broken after flotillad loaded the routines (it restarted without it, or the
+// routines were reloaded): promote and roll back refuse it by status and change nothing.
+func TestVersionActionsOnAFolderThatWentAway(t *testing.T) {
+	ctx := context.Background()
+	s, d := versionedIn(t, "")
+	reload := func() {
+		rs, err := spec.LoadVersions(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Sched.SetRoutines(rs)
+	}
+	verWrite(t, d, "triage/cycle/v3/spec.yaml", "run: {command: x, timeout: 1s}\n") // broken: the timeout is under the minimum
+	if err := os.RemoveAll(filepath.Join(d, "triage/cycle/v2")); err != nil {
+		t.Fatal(err)
+	}
+	reload()
+	ok := PromoteRequest{Autonomy: "record", Reason: "no pairs yet; the diff was read"}
+	if p := AsProblem(s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, ok)); p == nil || p.Code != 404 || !strings.Contains(p.Msg, "no version v2 in the fleets folder") {
+		t.Fatalf("a deleted shadow: %v", p)
+	}
+	if p := AsProblem(s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 3, ok)); p == nil || p.Code != 409 || !strings.Contains(p.Msg, "does not load") {
+		t.Fatalf("a broken shadow: %v", p)
+	}
+	if got := states(t, s); got != "v1=live v2=shadow v3=shadow" {
+		t.Fatalf("states %s", got)
+	}
+
+	// roll back with the previous version's folder gone: refused, v2 stays live
+	s2, d2 := versionedIn(t, "")
+	if err := s2.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, ok); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(d2, "triage/cycle/v1")); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := spec.LoadVersions(d2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2.Sched.SetRoutines(rs)
+	if p := AsProblem(mustRollback(s2, RollbackRequest{Autonomy: "record", Reason: "x"})); p == nil || p.Code != 409 || !strings.Contains(p.Msg, "is not in the fleets folder or does not load") {
+		t.Fatalf("a missing previous: %v", p)
+	}
+	if got := states(t, s2); got != "v1=previous v2=live v3=shadow" {
+		t.Fatalf("a refused rollback changed the states: %s", got)
+	}
+}
+
+// A running row the scheduler does not have (a worker's run flotillad is not tracking) is not cancelled by the
+// rollback and is not an error: it is reported to the caller by the store only, and the API's Cancelled stays empty.
+func TestRollbackWithARunningRowTheSchedulerDoesNotHave(t *testing.T) {
+	ctx := context.Background()
+	s := versioned(t, "")
+	if err := s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, PromoteRequest{Autonomy: "record", Reason: "no pairs yet; the diff was read"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.StartRun(ctx, store.Run{ID: "ghost", Routine: "triage/cycle", Version: 2, SpecHash: "x", Trigger: "schedule", Actor: "flotillad", Autonomy: "record",
+		StartedAt: "2026-11-18T10:00:00Z", Status: store.StatusRunning}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.RollbackVersion(ctx, opCaller, "test", "triage/cycle", RollbackRequest{Autonomy: "record", Reason: "x"})
+	if err != nil || res.Live != 1 || len(res.Cancelled) != 0 {
+		t.Fatalf("rollback: %v %+v", err, res)
+	}
+	if got := states(t, s); got != "v1=live v2=retired v3=shadow" {
+		t.Fatalf("states %s", got)
+	}
+}
+
+// A promote is the operator's control and is not held by the installation's other controls: while it is frozen, its
+// fleet is STOPped or the routine is paused it still records the version and the autonomy chosen (the effective
+// level stays what the freeze makes it), and the event says who.
+func TestPromoteWhileHeld(t *testing.T) {
+	ctx := context.Background()
+	for name, hold := range map[string]func(s *Server) error{
+		"frozen": func(s *Server) error { return s.SetFrozen(ctx, opCaller, "test", true, "") },
+		"stopped": func(s *Server) error {
+			return s.SetStopped(ctx, opCaller, "test", "triage", true, "")
+		},
+		"paused": func(s *Server) error {
+			return s.Store.SetControl(ctx, "triage/cycle", sched.KeyPaused, "1", "operator", "test")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := versioned(t, "")
+			if err := hold(s); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.PromoteVersion(ctx, opCaller, "ui", "triage/cycle", 2, PromoteRequest{Autonomy: "propose", Reason: "no pairs yet; the diff was read"}); err != nil {
+				t.Fatalf("promote while %s: %v", name, err)
+			}
+			if got := states(t, s); got != "v1=previous v2=live v3=shadow" {
+				t.Fatalf("states %s", got)
+			}
+			if v, _ := s.Store.Control(ctx, "triage/cycle", "autonomy"); v != "propose" {
+				t.Fatalf("the autonomy chosen is recorded: %q", v)
+			}
+			if j := s.Sched.Routine("triage/cycle"); j.Version != 2 {
+				t.Fatalf("bound to v%d", j.Version)
+			}
+			e, _ := s.Store.LatestEvent(ctx, "version.promote", "triage/cycle@v2")
+			if e == nil || e.Actor != "operator" || !strings.Contains(e.Detail, "autonomy propose") {
+				t.Fatalf("event %+v", e)
+			}
+			if name == "frozen" {
+				st, _, _ := s.Status(ctx)
+				if st[0].AutonomySet != "propose" || st[0].Autonomy != "record" {
+					t.Fatalf("the freeze lowers what runs, not what is set: set %q, runs %q", st[0].AutonomySet, st[0].Autonomy)
+				}
+			}
+		})
 	}
 }

@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/spec"
 )
 
 const rt = "triage/cycle"
@@ -885,4 +887,284 @@ func TestRunVersionRolledBack(t *testing.T) {
 	if _, _, rb, _ = s.RunVersionRolledBack(ctx, "nope"); rb {
 		t.Fatal("no such run")
 	}
+}
+
+func startRun(t *testing.T, s *Store, id, routine string, version int, status string) {
+	t.Helper()
+	if err := s.StartRun(context.Background(), Run{ID: id, Routine: routine, Version: version, SpecHash: "x", Trigger: "case", Actor: "flotillad", Autonomy: "propose",
+		StartedAt: "2026-11-18T10:00:00Z", Status: status}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// What a rollback must leave alone: a case whose newest plan is the live version's (though an older plan of the
+// rolled-back version is on it), a case already executing, a plan of another routine's version with the same
+// number, and a plan whose version was never the rolled-back one. Only the newest awaiting plan of the
+// rolled-back version is withdrawn.
+func TestRollbackLeavesWhatIsNotTheRolledBackVersionsPlanAlone(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	seed(t, s, 2)
+	if err := s.Promote(ctx, promote(s, 2, "h2")); err != nil {
+		t.Fatal(err)
+	}
+	startRun(t, s, "run-v2", rt, 2, StatusOK)
+	startRun(t, s, "run-v1", rt, 1, StatusOK)
+	startRun(t, s, "run-other-v2", "ops/other", 2, StatusOK)
+
+	older := addPlanAwaiting(t, s, "run-v2", "-old") // a v2 plan, then v1 plans again: the newest plan is v1's
+	for _, to := range []struct{ status, by string }{{cases.Escalated, cases.ByOperator}, {cases.HandedOver, cases.ByOperator}, {cases.Planned, cases.ByAct}} {
+		if err := s.MoveCase(ctx, older, to.status, to.by, "", "user:ada", ""); err != nil { // rejected, reassigned, planned again
+			t.Fatal(err)
+		}
+	}
+	p := rec(older)
+	p.RunID, p.Outcome, p.Autonomy, p.PlanHash = "run-v1", "propose", "propose", "h-newer"
+	if _, err := s.ApplyPlan(ctx, p, cases.AwaitingApproval, "", "host:backup-01-old", true); err != nil {
+		t.Fatal(err)
+	}
+	executing := addPlanAwaiting(t, s, "run-v2", "-exec") // a v2 plan already approved
+	if err := s.MoveCase(ctx, executing, cases.Executing, cases.ByOperator, "", "user:ada", "approved"); err != nil {
+		t.Fatal(err)
+	}
+	other := addPlanAwaiting(t, s, "run-other-v2", "-other") // another routine's v2
+	target := addPlanAwaiting(t, s, "run-v2", "-target")     // the one that is withdrawn
+
+	res, err := s.Rollback(ctx, RollbackArgs{Routine: rt, Hash: "h1", Autonomy: "record", Current: "record", Actor: "user:ada", Via: "api", Reason: "bad"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cases) != 1 || res.Cases[0] != target {
+		t.Fatalf("only %s is withdrawn, got %v", target, res.Cases)
+	}
+	for name, c := range map[string]struct{ id, want string }{
+		"older v2 plan under a newer v1 plan": {older, cases.AwaitingApproval},
+		"an executing case":                   {executing, cases.Executing},
+		"another routine's v2":                {other, cases.AwaitingApproval},
+		"the withdrawn case":                  {target, cases.HandedOver},
+	} {
+		if cs, _ := s.Case(ctx, c.id); cs.Status != c.want {
+			t.Errorf("%s: %s, want %s", name, cs.Status, c.want)
+		}
+	}
+	for _, id := range []string{older, executing, other} {
+		for _, pl := range mustPlans(t, s, id) {
+			if pl.RolledBackAt != "" {
+				t.Errorf("a plan on %s was marked rolled back: %+v", id, pl)
+			}
+		}
+	}
+	if h, _ := s.LockHolder(ctx, "host:backup-01-old"); h != older {
+		t.Errorf("the older case lost its target lock: %q", h)
+	}
+}
+
+func mustPlans(t *testing.T, s *Store, id string) []PlanRecord {
+	t.Helper()
+	p, err := s.Plans(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// makeSchemaUpTo is an empty store as an older binary left it: steps 1 to n applied and recorded.
+func makeSchemaUpTo(t *testing.T, path string, n int) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := db.Exec(schema[i]); err != nil {
+			t.Fatalf("step %d: %v", i+1, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (n) VALUES (?)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Step 29 on its own: a store at schema 28 with recorded versions gains promote_evidence, empty on the rows it had,
+// and every row is as it was.
+func TestMigrateStep29Alone(t *testing.T) {
+	if len(schema) != EvidenceSchema {
+		t.Skipf("the newest step is %d, this test is for step %d being the last", len(schema), EvidenceSchema)
+	}
+	p := filepath.Join(t.TempDir(), "s28.db")
+	makeSchemaUpTo(t, p, EvidenceSchema-1)
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO routine_versions (routine, version, hash, manifest, state, deployed_at, live_at, state_by, state_at, state_why)
+		VALUES ('triage/cycle', 1, 'h1', '{"run":"r"}', 'live', 't', 't', 'flotillad', 't', 'first'), ('triage/cycle', 2, 'h2', '{}', 'shadow', 't', '', 'flotillad', 't', '')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err := CheckSchema(p); err != nil {
+		t.Fatalf("a store one step behind passes the read-only check: %v", err)
+	}
+	if got, err := ReadVersions(p); err != nil || got.Schema != EvidenceSchema-1 || len(got.Rows) != 2 {
+		t.Fatalf("read before: %+v %v", got, err) // the column-less read path
+	}
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	vs, err := s.Versions(context.Background(), rt)
+	if err != nil || len(vs) != 2 || vs[0].Hash != "h1" || vs[0].Manifest["run"] != "r" || vs[0].Promotion != nil || vs[1].State != VersionShadow {
+		t.Fatalf("rows after: %+v %v", vs, err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT MAX(n) FROM schema_version`).Scan(&n); err != nil || n != EvidenceSchema {
+		t.Fatalf("schema %d %v", n, err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM routine_versions WHERE promote_evidence = ''`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("the column is empty on the rows it had: %d %v", n, err)
+	}
+}
+
+// A step that fails part-way changes nothing: the schema version stays and the statements before the failure are
+// undone, so the next start tries the same step on the same store.
+func TestAFailedMigrationStepLeavesTheSchemaAlone(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "s.db")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	was := schema
+	t.Cleanup(func() { schema = was })
+	schema = append(append([]string{}, was...), `ALTER TABLE runs ADD COLUMN injected_by_test INTEGER; SELECT * FROM no_such_table;`)
+	if s, err = Open(p); err == nil {
+		s.Close()
+		t.Fatal("a failing step must fail Open")
+	} else if !strings.Contains(err.Error(), "schema step "+strconv.Itoa(len(was)+1)) {
+		t.Fatalf("the error names the step: %v", err)
+	}
+	schema = was
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow(`SELECT MAX(n) FROM schema_version`).Scan(&n); err != nil || n != len(was) {
+		t.Fatalf("schema version %d, want %d (%v)", n, len(was), err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name = 'injected_by_test'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("the statement before the failure stayed: %d %v", n, err)
+	}
+	if s, err = Open(p); err != nil { // and the store still opens
+		t.Fatal(err)
+	}
+	s.Close()
+}
+
+// The version a case event carries is the acting routine's: step 27 gives 1 to a routine's events (an actor with a
+// "/") and 0 to anyone else's: an operator, a user, a host, flotillad.
+func TestMigrationBackfillsCaseEventVersions(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "s.db")
+	makeSchemaUpTo(t, p, 25)
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const T = "2026-11-17T00:00:00Z"
+	if _, err := db.Exec(`INSERT INTO cases (id, kind, target, canonical_key, status, opened_at, status_at) VALUES ('c1', 'failed_backup', 'host:a', 'k', 'closed', '` + T + `', '` + T + `')`); err != nil {
+		t.Fatal(err)
+	}
+	for i, actor := range []string{"triage/cycle", "ops/rerun-backup", "host:a", "host:b", "user:x", "user:y", "operator", "flotillad"} {
+		if _, err := db.Exec(`INSERT INTO case_events (case_id, at, kind, actor, by_role, from_status, to_status, detail) VALUES ('c1', ?, 'case.moved', ?, 'act', 'a', 'b', '')`, T+strconv.Itoa(i), actor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	evs, err := s.CaseEvents(context.Background(), "c1")
+	if err != nil || len(evs) != 8 {
+		t.Fatalf("%d events %v", len(evs), err)
+	}
+	for _, e := range evs {
+		want := 0
+		if strings.Contains(e.Actor, "/") {
+			want = 1
+		}
+		if e.Version != want {
+			t.Errorf("%s: version %d, want %d", e.Actor, e.Version, want)
+		}
+	}
+}
+
+// The first start on a migrated store: every routine's v1 is recorded live over the history the migration left, and
+// a later promote and rollback leave that history on version 1 (the old runs, plans and their approvals).
+func TestFirstStartOnAMigratedStoreKeepsHistoryOnV1(t *testing.T) {
+	ctx := context.Background()
+	p := filepath.Join(t.TempDir(), "s25.db")
+	makeSchema25(t, p)
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rs, err := spec.LoadVersions(filepath.Join("..", "..", "fleets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range rs {
+		if _, err := s.EnsureVersions(ctx, j.ID(), []LoadedVersion{{Version: 1, Hash: j.VersionHash, Manifest: j.Versions[0].Manifest, Legacy: true}}, "flotillad"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a second version of triage/cycle arrives, goes live, and is rolled back
+	if _, err := s.EnsureVersions(ctx, rt, []LoadedVersion{lv(1, "unused-already-recorded"), lv(2, "h2")}, "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Promote(ctx, promote(s, 2, "h2")); err != nil {
+		t.Fatal(err)
+	}
+	v1, _, _ := s.stateOf(t, rt, 1)
+	if _, err := s.Rollback(ctx, RollbackArgs{Routine: rt, Hash: v1.Hash, Autonomy: "record", Current: "record", Actor: "user:ada", Via: "cli", Reason: "bad"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := states(t, s, rt); got != "v1=live v2=retired" {
+		t.Fatalf("states %s", got)
+	}
+	runs, _ := s.Runs(ctx, rt, 100)
+	if len(runs) != 2 {
+		t.Fatalf("%d triage/cycle runs", len(runs))
+	}
+	for _, r := range runs {
+		if r.Version != 1 {
+			t.Errorf("run %s moved to version %d", r.ID, r.Version)
+		}
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM plans WHERE version != 1 OR rolled_back_at IS NOT NULL`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("plans changed version or were withdrawn: %d %v", n, err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE version != 1`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("a run left version 1: %d %v", n, err)
+	}
+}
+
+func (s *Store) stateOf(t *testing.T, routine string, n int) (RoutineVersion, bool, error) {
+	t.Helper()
+	vs, err := s.Versions(context.Background(), routine)
+	for _, v := range vs {
+		if v.Version == n {
+			return v, true, err
+		}
+	}
+	return RoutineVersion{}, false, err
 }

@@ -2,6 +2,7 @@ package versions
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -451,5 +452,154 @@ func TestRerecordUnblocksAFolderMove(t *testing.T) {
 	e, _ := s.LatestEvent(ctx, "version.rerecord", "triage/cycle@v1")
 	if e == nil || e.Actor != "operator" || e.Via != "api" || !strings.Contains(e.Detail, res.OldHash+" -> "+res.NewHash) || !strings.Contains(e.Detail, "step 6: moved to the folder layout") {
 		t.Fatalf("event %+v", e)
+	}
+}
+
+// Reconcile's refusals write nothing, for any routine: two routines, one with a new shadow to record and one whose
+// live folder changed, leave the store as it was.
+func TestAFailedCheckWritesNothingForAnyRoutine(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := fleets(t, map[string]string{"v1": "python3 a.py"})
+	write(t, d, "ops/backup/routine.yaml", strings.Replace(strings.Replace(routineYAML, "fleet: triage", "fleet: ops", 1), "routine: cycle", "routine: backup", 1))
+	write(t, d, "ops/backup/v1/spec.yaml", versionYAML("python3 b.py"))
+	write(t, d, "ops/backup/v1/system.md", "b\n")
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	before := rows(t, s)
+	write(t, d, "triage/cycle/v2/spec.yaml", versionYAML("python3 two.py")) // a new shadow for triage/cycle: would be recorded
+	write(t, d, "triage/cycle/v2/system.md", "two\n")
+	write(t, d, "ops/backup/v1/system.md", "edited\n") // ops/backup's live folder changed: refused
+	events0, _ := s.Events(ctx, 1000)
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err == nil || !strings.Contains(err.Error(), "ops/backup v1 is live and its folder changed") {
+		t.Fatalf("the freeze must refuse: %v", err)
+	}
+	if after := rows(t, s); after != before {
+		t.Fatalf("a refused check wrote: %q -> %q", before, after)
+	}
+	if events1, _ := s.Events(ctx, 1000); len(events1) != len(events0) {
+		t.Fatalf("a refused check wrote events: %d -> %d", len(events0), len(events1))
+	}
+}
+
+// A first deploy of a folder that holds only v3 goes live with v3 (the lowest loaded is the first version, whatever
+// its number).
+func TestOnlyV3PresentGoesLive(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := fleets(t, map[string]string{"v3": "python3 c.py"})
+	bound, plan, err := Reconcile(ctx, s, load(t, d))
+	if err != nil || bound[0].Version != 3 || rows(t, s) != "triage/cycle v3=live" || plan.States("triage/cycle") != "v3:live(new)" {
+		t.Fatalf("%v %s %s", err, rows(t, s), plan.States("triage/cycle"))
+	}
+}
+
+// Recorded versions and none live is a store this code did not make: Reconcile refuses to guess a version to run.
+func TestRowsButNoLiveIsAnError(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "f.db")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	d := fleets(t, map[string]string{"v1": "python3 a.py", "v2": "python3 b.py"})
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE routine_versions SET state = 'retired' WHERE state = 'live'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err == nil || !strings.Contains(err.Error(), "triage/cycle has no live version recorded") {
+		t.Fatalf("rows and no live version: %v", err)
+	}
+}
+
+// A routine recorded in the store and gone from the fleets folder is a note, and the start goes on with the rest.
+func TestARecordedRoutineRemovedFromFleetsIsANote(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := fleets(t, map[string]string{"v1": "python3 a.py"})
+	write(t, d, "ops/backup/routine.yaml", strings.Replace(strings.Replace(routineYAML, "fleet: triage", "fleet: ops", 1), "routine: cycle", "routine: backup", 1))
+	write(t, d, "ops/backup/v1/spec.yaml", versionYAML("python3 b.py"))
+	write(t, d, "ops/backup/v1/system.md", "b\n")
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(d, "ops")); err != nil {
+		t.Fatal(err)
+	}
+	bound, plan, err := Reconcile(ctx, s, load(t, d))
+	if err != nil || len(bound) != 1 || bound[0].ID() != "triage/cycle" {
+		t.Fatalf("the start goes on: %v %+v", err, bound)
+	}
+	if len(plan.Notes) != 1 || !strings.Contains(plan.Notes[0], "ops/backup has recorded versions and no spec") {
+		t.Fatalf("notes %v", plan.Notes)
+	}
+	if !strings.Contains(rows(t, s), "ops/backup v1=live") {
+		t.Fatalf("its history stays: %s", rows(t, s))
+	}
+}
+
+// Each is every version that loads, bound; Bound is each routine as its live version; Runnable leaves out what is
+// retired, and RetiredLoaded is what it leaves out.
+func TestEachBoundRunnableAndRetired(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := fleets(t, map[string]string{"v1": "python3 a.py", "v2": "python3 b.py", "v3": "python3 c.py"})
+	write(t, d, "triage/cycle/v4/spec.yaml", "run: {command: x, timeout: 1s}\n") // does not load
+	rs := load(t, d)
+	if _, _, err := Reconcile(ctx, s, rs); err == nil {
+		t.Fatal("a new version that does not load is refused")
+	}
+	if err := os.RemoveAll(filepath.Join(d, "triage/cycle/v4")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, d, "triage/cycle/v4/spec.yaml", "run: {command: x, timeout: 1s}\n")
+	rs = load(t, d)
+	var cmds []string
+	for _, b := range Each(rs) {
+		cmds = append(cmds, b.Run.Command)
+	}
+	if strings.Join(cmds, ",") != "python3 a.py,python3 b.py,python3 c.py" {
+		t.Fatalf("Each is every version that loads: %v", cmds)
+	}
+	if err := os.RemoveAll(filepath.Join(d, "triage/cycle/v4")); err != nil {
+		t.Fatal(err)
+	}
+	rs = load(t, d)
+	bound, plan, err := Reconcile(ctx, s, rs)
+	if err != nil || bound[0].Version != 1 {
+		t.Fatal(err)
+	}
+	if err := s.Promote(ctx, store.PromoteArgs{Routine: "triage/cycle", Version: 2, Hash: rs[0].VersionNamed(2).Hash, Autonomy: "record", Current: "record", Actor: "a", Reason: "r"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Promote(ctx, store.PromoteArgs{Routine: "triage/cycle", Version: 3, Hash: rs[0].VersionNamed(3).Hash, Autonomy: "record", Current: "record", Actor: "a", Reason: "r"}); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.AllVersions(ctx) // v1 retired, v2 previous, v3 live
+	plan, err = Check(rs, stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := Bound(rs, plan); len(b) != 1 || b[0].Version != 3 || b[0].Run.Command != "python3 c.py" {
+		t.Fatalf("Bound is the live version: %+v", b)
+	}
+	var run, retired []string
+	for _, b := range plan.Runnable(rs) {
+		run = append(run, b.Run.Command)
+	}
+	for _, b := range plan.RetiredLoaded(rs) {
+		retired = append(retired, b.Run.Command)
+	}
+	if strings.Join(run, ",") != "python3 b.py,python3 c.py" || strings.Join(retired, ",") != "python3 a.py" {
+		t.Fatalf("runnable %v, retired %v", run, retired)
 	}
 }
