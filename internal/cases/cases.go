@@ -72,7 +72,10 @@ var table = map[move]struct {
 	{Planned, Escalated}:          {by: []string{ByPolicy}},
 	{AwaitingApproval, Executing}: {by: []string{ByOperator}},
 	{AwaitingApproval, Escalated}: {by: []string{ByOperator, ByTimer}},
-	{Executing, Checking}:         {by: []string{ByAct}},
+	// a version rolled back (docs/wip/v2-design.md section 1): its plan awaiting approval is withdrawn and the case
+	// returns to the acting routine, which plans again with the live version
+	{AwaitingApproval, HandedOver}: {by: []string{ByOperator}},
+	{Executing, Checking}:          {by: []string{ByAct}},
 	// a person closes a repo change they applied by hand as verified (ADR-0016); the acting job still
 	// closes only as resolved itself
 	{Executing, Closed}: {by: []string{ByAct, ByOperator}, resolutions: []string{ResolvedItself, Verified},

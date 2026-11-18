@@ -110,7 +110,7 @@ func TestPromote(t *testing.T) {
 	if v, _ := s.Control(ctx, rt, "autonomy"); v != "record" {
 		t.Fatalf("the autonomy control is set at promote, not inherited: %q", v)
 	}
-	if e := lastVersionEvent(t, s, "version.promote", rt+"@v2"); e.Actor != "user:ada" || e.Via != "cli" || !strings.Contains(e.Detail, "no compared pairs") || !strings.Contains(e.Detail, "v1 is previous") {
+	if e := lastVersionEvent(t, s, "version.promote", rt+"@v2"); e.Actor != "user:ada" || e.Via != "cli" || !strings.Contains(e.Detail, "missing pairs") || !strings.Contains(e.Detail, "v1 is previous") {
 		t.Fatalf("event %+v", e)
 	}
 	if e := lastVersionEvent(t, s, "control.autonomy", rt); e.Actor != "user:ada" || !strings.HasPrefix(e.Detail, "record: ") {
@@ -144,7 +144,7 @@ func TestPromoteRefusals(t *testing.T) {
 		"not a shadow":                  {func(a *PromoteArgs) { a.Version, a.Hash = 1, "h1" }, ErrVersionConflict, "is live, not a shadow"},
 		"no such version":               {func(a *PromoteArgs) { a.Version = 9 }, ErrNoSuchVersion, "v9"},
 		"a changed shadow":              {func(a *PromoteArgs) { a.Hash = "other" }, ErrVersionConflict, "changed since it was recorded"},
-		"no reason without pairs":       {func(a *PromoteArgs) { a.Reason = " " }, ErrVersionInvalid, "no compared pairs"},
+		"no reason without pairs":       {func(a *PromoteArgs) { a.Reason = " " }, ErrVersionInvalid, "lacks the evidence its acceptance names (pairs)"},
 		"no autonomy":                   {func(a *PromoteArgs) { a.Autonomy = "" }, ErrVersionInvalid, "choose record, propose or auto"},
 		"an unknown autonomy":           {func(a *PromoteArgs) { a.Autonomy = "shadow" }, ErrVersionInvalid, "choose record, propose or auto"},
 		"no actor":                      {func(a *PromoteArgs) { a.Actor = "" }, ErrVersionInvalid, "who promotes"},
@@ -181,7 +181,7 @@ func addPlanAwaiting(t *testing.T, s *Store, run, key string) string {
 	id := plannedOn(t, s, key)
 	p := rec(id)
 	p.RunID, p.Outcome, p.Autonomy = run, "propose", "propose"
-	if _, err := s.ApplyPlan(context.Background(), p, cases.AwaitingApproval, "", "host:backup-01"+key, false); err != nil {
+	if _, err := s.ApplyPlan(context.Background(), p, cases.AwaitingApproval, "", "host:backup-01"+key, true); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -215,6 +215,11 @@ func TestRollback(t *testing.T) {
 	if _, err := s.Rollback(ctx, bad); !errors.Is(err, ErrVersionInvalid) {
 		t.Fatalf("no reason: %v", err)
 	}
+	for key, id := range map[string]string{"-a": c2, "-b": c1} {
+		if h, _ := s.LockHolder(ctx, "host:backup-01"+key); h != id {
+			t.Fatalf("before the rollback %s holds its target: %q", id, h)
+		}
+	}
 	res, err := s.Rollback(ctx, a)
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +229,24 @@ func TestRollback(t *testing.T) {
 	}
 	if got := states(t, s, rt); got != "v1=live v2=retired" {
 		t.Fatalf("states %s", got)
+	}
+	// the rolled-back plan's case went back to the acting routine: handed over, its target lock released, one
+	// case.rolled_back event; the case of v1's plan is untouched
+	cs2, _ := s.Case(ctx, c2)
+	cs1, _ := s.Case(ctx, c1)
+	if cs2.Status != cases.HandedOver || cs1.Status != cases.AwaitingApproval {
+		t.Fatalf("cases: v2's is %s, v1's is %s", cs2.Status, cs1.Status)
+	}
+	evs, _ := s.CaseEvents(ctx, c2)
+	if last := evs[len(evs)-1]; last.Kind != "case.rolled_back" || last.Actor != "user:ada" || last.By != cases.ByOperator ||
+		last.From != cases.AwaitingApproval || last.To != cases.HandedOver || last.Version != 0 || !strings.Contains(last.Detail, "v2 was rolled back") {
+		t.Fatalf("last event of the rolled-back case: %+v", last)
+	}
+	if h, _ := s.LockHolder(ctx, "host:backup-01-a"); h != "" {
+		t.Fatalf("the rolled-back case still holds its target: %q", h)
+	}
+	if h, _ := s.LockHolder(ctx, "host:backup-01-b"); h != c1 {
+		t.Fatalf("v1's case lost its target lock: %q", h)
 	}
 	vs, _ := s.Versions(ctx, rt)
 	if vs[1].RetiredKind != RetiredRolledBack || vs[1].StateBy != "user:ada" || vs[1].StateWhy != "v2 files too much" || vs[0].LiveAt == "" || vs[0].Hash != "h1" {
@@ -627,4 +650,102 @@ func tableCounts(t *testing.T, path string) map[string]int {
 		out[n] = c
 	}
 	return out
+}
+
+func TestPromoteAcceptanceAndEvidence(t *testing.T) {
+	ctx := context.Background()
+	pass := Gate{Name: "replay-corpus", Result: "pass", Ref: "ci/1234"}
+	fail := Gate{Name: "lint", Result: "fail"}
+	for name, c := range map[string]struct {
+		edit func(a *PromoteArgs)
+		msg  string // "" promotes
+	}{
+		"pairs by default, none in step 1": {func(a *PromoteArgs) { a.Reason = "" }, "lacks the evidence its acceptance names (pairs)"},
+		"replay declared, no gate":         {func(a *PromoteArgs) { a.Acceptance, a.Reason = []string{"replay"}, "" }, "(replay)"},
+		"replay declared, a passing gate":  {func(a *PromoteArgs) { a.Acceptance, a.Reason, a.Evidence.Gates = []string{"replay"}, "", []Gate{pass} }, ""},
+		"scenario_eval declared, no eval":  {func(a *PromoteArgs) { a.Acceptance, a.Reason = []string{"scenario_eval"}, "" }, "(scenario_eval)"},
+		"scenario_eval, a passing eval": {func(a *PromoteArgs) {
+			a.Acceptance, a.Reason, a.Evidence.Evals = []string{"scenario_eval"}, "", []EvalRun{{"run-7", "pass"}}
+		}, ""},
+		"every declared kind is required": {func(a *PromoteArgs) {
+			a.Acceptance, a.Reason, a.Evidence.Gates = []string{"replay", "scenario_eval"}, "", []Gate{pass}
+		}, "(scenario_eval)"},
+		"a failed gate, declared or not": {func(a *PromoteArgs) {
+			a.Acceptance, a.Reason, a.Evidence.Gates = []string{"replay"}, "", []Gate{pass, fail}
+		}, "failed result (gate lint)"},
+		"a failed eval": {func(a *PromoteArgs) {
+			a.Acceptance, a.Reason, a.Evidence.Evals = []string{"scenario_eval"}, "", []EvalRun{{"run-8", "fail"}}
+		}, "failed result (eval run-8)"},
+		"a failed gate with a reason goes on": {func(a *PromoteArgs) { a.Acceptance, a.Evidence.Gates = []string{"replay"}, []Gate{fail} }, ""},
+		"a gate is pass or fail":              {func(a *PromoteArgs) { a.Evidence.Gates = []Gate{{Name: "x", Result: "maybe"}} }, "name=pass|fail"},
+		"an eval is pass or fail":             {func(a *PromoteArgs) { a.Evidence.Evals = []EvalRun{{RunID: "r", Verdict: ""}} }, "run_id=pass|fail"},
+		"an unknown kind":                     {func(a *PromoteArgs) { a.Acceptance = []string{"vibes"} }, "one of pairs, replay, scenario_eval"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := open(t)
+			seed(t, s, 2)
+			a := promote(s, 2, "h2")
+			c.edit(&a)
+			err := s.Promote(ctx, a)
+			if c.msg != "" {
+				if !errors.Is(err, ErrVersionInvalid) || !strings.Contains(err.Error(), c.msg) {
+					t.Fatalf("want %q, got %v", c.msg, err)
+				}
+				if got := states(t, s, rt); got != "v1=live v2=shadow" {
+					t.Fatalf("a refused promote changed states: %s", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+
+	// what was recorded: on the row, as JSON, and in the event
+	s, _ := open(t)
+	seed(t, s, 2)
+	a := promote(s, 2, "h2")
+	a.Acceptance, a.Reason, a.WithoutPairs = []string{"pairs", "replay"}, "read the diff; the corpus passes", true
+	a.Evidence = Evidence{Gates: []Gate{pass}, Evals: []EvalRun{{"run-9", "pass"}}}
+	if err := s.Promote(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	v2, _, _ := s.LiveVersion(ctx, rt)
+	p := v2.Promotion
+	if p == nil || strings.Join(p.Acceptance, ",") != "pairs,replay" || p.Pairs != 0 || len(p.Gates) != 1 || p.Gates[0] != pass ||
+		len(p.Evals) != 1 || p.Evals[0].Verdict != "pass" || strings.Join(p.Missing, ",") != "pairs" || len(p.Failed) != 0 || !p.WithoutPairs {
+		t.Fatalf("recorded %+v", p)
+	}
+	e := lastVersionEvent(t, s, "version.promote", rt+"@v2")
+	for _, want := range []string{"acceptance pairs,replay", "gate replay-corpus=pass", "eval run-9=pass", "missing pairs", "without pairs, acknowledged", `"run_id":"run-9"`, ": read the diff"} {
+		if !strings.Contains(e.Detail, want) {
+			t.Fatalf("event detail lacks %q: %s", want, e.Detail)
+		}
+	}
+	// a version that was never promoted records none; the first, live at deploy, neither
+	vs, _ := s.Versions(ctx, rt)
+	if vs[0].Promotion != nil {
+		t.Fatalf("v1 %+v", vs[0])
+	}
+}
+
+// A store that has routine_versions but not yet promote_evidence (schema 26 to 28, as a deploy's -check
+// finds it before the new image migrates it) reads without that column.
+func TestReadVersionsBeforeEvidenceColumn(t *testing.T) {
+	s, p := open(t)
+	seed(t, s, 2)
+	s.Close()
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE routine_versions DROP COLUMN promote_evidence; DELETE FROM schema_version WHERE n = 29`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	read, err := ReadVersions(p)
+	if err != nil || read.Schema != 28 || len(read.Rows) != 2 || read.Rows[0].Promotion != nil {
+		t.Fatalf("%+v %v", read, err)
+	}
 }

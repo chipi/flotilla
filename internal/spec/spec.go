@@ -77,6 +77,25 @@ func (j *Routine) Allows(s string) bool {
 	return j.MaxAutonomy == "" || levelRank[s] <= levelRank[j.MaxAutonomy]
 }
 
+// Acceptance kinds a routine may require of a version before it is promoted.
+const (
+	AcceptPairs        = "pairs"
+	AcceptReplay       = "replay"
+	AcceptScenarioEval = "scenario_eval"
+)
+
+// AcceptanceKinds is the set of kinds a routine may declare.
+var AcceptanceKinds = map[string]bool{AcceptPairs: true, AcceptReplay: true, AcceptScenarioEval: true}
+
+// Accepts is the evidence a promote of this routine's versions needs: what acceptance: declares, [pairs]
+// when it declares nothing.
+func (j *Routine) Accepts() []string {
+	if len(j.Acceptance) == 0 {
+		return []string{AcceptPairs}
+	}
+	return append([]string(nil), j.Acceptance...)
+}
+
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 
 type Routine struct {
@@ -112,6 +131,9 @@ type Routine struct {
 	Explain map[string]string `yaml:"explain"`
 	Steps   []Step            `yaml:"steps"`
 	Chain   []ChainLink       `yaml:"chain"`
+	// What a promote of one of this routine's versions needs as evidence (docs/wip/v2-design.md section 6): a
+	// list from pairs, replay and scenario_eval; Accepts says [pairs] when it is empty.
+	Acceptance []string `yaml:"acceptance"`
 
 	// filled by Load
 	Path string `yaml:"-"`
@@ -620,6 +642,15 @@ func (j *Routine) validateErrs() []error {
 		bad("max_autonomy %q: one of record, propose, auto", j.MaxAutonomy)
 	} else if levels[j.Autonomy] && !j.Allows(j.Autonomy) {
 		bad("autonomy %s is above max_autonomy %s", j.Autonomy, j.MaxAutonomy)
+	}
+	seenKind := map[string]bool{}
+	for _, k := range j.Acceptance {
+		if !AcceptanceKinds[k] {
+			bad("acceptance %q: one of pairs, replay, scenario_eval", k)
+		} else if seenKind[k] {
+			bad("acceptance %q is listed twice", k)
+		}
+		seenKind[k] = true
 	}
 	if j.Budget.DayUSD < 0 {
 		bad("budget.day_usd %.2f: must not be negative", j.Budget.DayUSD)

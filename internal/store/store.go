@@ -414,6 +414,8 @@ var schema = []string{
 	UPDATE plans SET outcome = 'record' WHERE outcome = 'shadow';
 	UPDATE cases SET resolution = 'plan_recorded' WHERE resolution = 'shadow_plan_recorded';
 	UPDATE hosts SET ceiling = 'record' WHERE ceiling = 'shadow';`,
+	// What a promote recorded (v2 step 1): the acceptance in force and the evidence given, as JSON, on the version it made live.
+	`ALTER TABLE routine_versions ADD COLUMN promote_evidence TEXT NOT NULL DEFAULT '';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

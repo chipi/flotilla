@@ -28,6 +28,7 @@ const (
 	ActNotes       Action = "notes"        // activate or drop a note agents will read
 	ActNotePropose Action = "note-propose" // propose a note from a case; a person still activates it (RFC-0008 Q4)
 	ActCaseRead    Action = "case-read"    // a worker's routine reads cases (ops/case-review, ADR-0016)
+	ActVersion     Action = "version"      // promote, roll back or retire a routine's version; never an agent's
 	ActEval        Action = "eval"         // record an eval result (what a prompt measured on a model); never an agent's
 )
 
@@ -62,6 +63,7 @@ var may = map[Action]map[string]bool{
 	ActNotes:       {RoleOperator: true, RoleAdmin: true},
 	ActNotePropose: {RoleAgent: true, RoleWorker: true, RoleOperator: true, RoleAdmin: true},
 	ActCaseRead:    {RoleWorker: true},
+	ActVersion:     {RoleOperator: true, RoleAdmin: true},
 	ActEval:        {RoleOperator: true, RoleAdmin: true},
 }
 

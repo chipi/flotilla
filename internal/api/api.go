@@ -149,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	m.Handle("POST /v1/fleets/{fleet}/start", s.auth(ActStart, s.startFleet))
 	m.Handle("POST /v1/freeze", s.auth(ActFreeze, s.freeze))
 	m.Handle("POST /v1/unfreeze", s.auth(ActUnfreeze, s.unfreeze))
+	s.versionRoutes(m)
 	s.userRoutes(m)
 	s.hostRoutes(m)
 	s.caseRoutes(m)

@@ -73,6 +73,8 @@ type RoutineStatus struct {
 	SpecAutonomy string  `json:"spec_autonomy"`
 	MaxAutonomy  string  `json:"max_autonomy,omitempty"`
 	SpecHash     string  `json:"spec_hash"`
+	Version      int     `json:"version"`      // the version bound to this routine: the live one
+	VersionHash  string  `json:"version_hash"` // its frozen hash
 	Paused       bool    `json:"paused"`
 	Stopped      bool    `json:"fleet_stopped"`
 	Running      string  `json:"running,omitempty"`
@@ -103,6 +105,7 @@ func (s *Server) Status(ctx context.Context) ([]RoutineStatus, map[string]any, e
 		spent, _ := s.Store.Spend(ctx, day, j.ID())
 		js := RoutineStatus{ID: j.ID(), Fleet: j.Fleet, Description: j.Description, Enabled: j.Enabled, Worker: j.Worker,
 			Every: j.Every.String(), Autonomy: st, AutonomySet: set, SpecAutonomy: j.Autonomy, MaxAutonomy: j.MaxAutonomy, SpecHash: j.Hash,
+			Version: j.Version, VersionHash: j.VersionHash,
 			Paused: paused == "1", Stopped: stopped == "1", Running: running[j.ID()], SpendToday: spent, BudgetDay: j.Budget.DayUSD,
 			Stale: j.Enabled && j.Fresh > 0 && (last.IsZero() || now.Sub(last) > j.Fresh)}
 		if !last.IsZero() {

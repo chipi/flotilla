@@ -202,6 +202,7 @@ type routineFile struct {
 	Resume       *Resume     `yaml:"resume"`
 	BriefSection string      `yaml:"brief_section"`
 	Chain        []ChainLink `yaml:"chain"`
+	Acceptance   []string    `yaml:"acceptance"`
 }
 
 // versionFile is v<n>/spec.yaml: what one version does.
@@ -270,7 +271,7 @@ func loadFolder(p string) (*Routine, error) {
 
 	base := &Routine{Fleet: rf.Fleet, Routine: rf.Routine, Description: rf.Description, Enabled: rf.Enabled, Worker: rf.Worker,
 		Trigger: rf.Trigger, Detects: rf.Detects, Autonomy: rf.Autonomy, MaxAutonomy: rf.MaxAutonomy, Budget: rf.Budget,
-		Freshness: rf.Freshness, Resume: rf.Resume, BriefSection: rf.BriefSection, Chain: rf.Chain, Path: p}
+		Freshness: rf.Freshness, Resume: rf.Resume, BriefSection: rf.BriefSection, Chain: rf.Chain, Acceptance: rf.Acceptance, Path: p}
 	base.normalizeLevels()
 	for i, n := range nums {
 		v, a := loadVersionDir(base, raw, filepath.Join(dir, "v"+strconv.Itoa(n)), n)

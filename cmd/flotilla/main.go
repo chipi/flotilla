@@ -7,6 +7,10 @@
 //	flotilla pause fleet/routine                        (the run in flight finishes; only stop and cancel end it)
 //	flotilla resume fleet/routine --reason "..."        (operator; loosening needs a reason)
 //	flotilla autonomy fleet/routine record|propose|auto [--reason "..."]   (operator; raising needs one)
+//	flotilla versions fleet/routine                     (its versions: state, hash, who moved them and why)
+//	flotilla promote fleet/routine vN --autonomy L --reason "..." [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]...   (operator)
+//	flotilla rollback fleet/routine --autonomy L --reason "..."   (operator: the previous version is live at once)
+//	flotilla retire fleet/routine vN --reason "..."     (operator: stops a shadow)
 //	flotilla stop fleet                                 (also cancels the fleet's runs in flight)
 //	flotilla cancel RUN_ID --reason "..."               (operator: one run in flight)
 //	flotilla start fleet --reason "..."                 (operator)
@@ -180,6 +184,8 @@ func main() {
 		}
 		need(args, 2, `autonomy fleet/routine record|propose|auto [--reason "..."] | autonomy freeze | autonomy unfreeze --reason "..."`)
 		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": args[1], "reason": reason})
+	case "versions", "promote", "rollback", "retire":
+		versionCmd(cmd, args, reason)
 	case "stop":
 		need(args, 1, "stop fleet")
 		post("/v1/fleets/"+args[0]+"/stop", nil)
@@ -517,7 +523,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | versions ROUTINE | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

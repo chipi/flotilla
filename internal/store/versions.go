@@ -9,6 +9,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/chipi/flotilla/internal/cases"
 )
 
 // Routine versions (docs/wip/v2-design.md section 1): which version of a routine is live, shadow,
@@ -65,6 +67,8 @@ type RoutineVersion struct {
 	StateWhy          string            `json:"state_why,omitempty"`
 	RetiredKind       string            `json:"retired_kind,omitempty"`
 	AutonomyAtPromote string            `json:"autonomy_at_promote,omitempty"`
+	// Promotion is what the promote that made it live recorded: the acceptance in force and the evidence given.
+	Promotion *PromoteRecord `json:"promotion,omitempty"`
 }
 
 // LoadedVersion is a version as flotillad loaded it from the fleets folder.
@@ -74,16 +78,25 @@ type LoadedVersion struct {
 	Manifest map[string]string
 }
 
-const versionCols = `routine, version, hash, manifest, state, deployed_at, live_at, state_by, state_at, state_why, retired_kind, autonomy_at_promote`
+const versionCols = `routine, version, hash, manifest, state, deployed_at, live_at, state_by, state_at, state_why, retired_kind, autonomy_at_promote, promote_evidence`
+
+// versionColsBefore29 is versionCols for a store older than the step that added promote_evidence.
+const versionColsBefore29 = `routine, version, hash, manifest, state, deployed_at, live_at, state_by, state_at, state_why, retired_kind, autonomy_at_promote, ''`
 
 func scanVersion(sc interface{ Scan(...any) error }) (RoutineVersion, error) {
 	var v RoutineVersion
-	var manifest string
+	var manifest, evidence string
 	if err := sc.Scan(&v.Routine, &v.Version, &v.Hash, &manifest, &v.State, &v.DeployedAt, &v.LiveAt, &v.StateBy, &v.StateAt,
-		&v.StateWhy, &v.RetiredKind, &v.AutonomyAtPromote); err != nil {
+		&v.StateWhy, &v.RetiredKind, &v.AutonomyAtPromote, &evidence); err != nil {
 		return v, err
 	}
 	_ = json.Unmarshal([]byte(manifest), &v.Manifest)
+	if evidence != "" {
+		var pr PromoteRecord
+		if json.Unmarshal([]byte(evidence), &pr) == nil {
+			v.Promotion = &pr
+		}
+	}
 	return v, nil
 }
 
@@ -92,7 +105,11 @@ type queryer interface {
 }
 
 func versionsOf(ctx context.Context, q queryer, where string, args ...any) ([]RoutineVersion, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+versionCols+` FROM routine_versions `+where+` ORDER BY routine, version`, args...)
+	return versionsOfCols(ctx, q, versionCols, where, args...)
+}
+
+func versionsOfCols(ctx context.Context, q queryer, cols, where string, args ...any) ([]RoutineVersion, error) {
+	rows, err := q.QueryContext(ctx, `SELECT `+cols+` FROM routine_versions `+where+` ORDER BY routine, version`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -220,9 +237,113 @@ type PromoteArgs struct {
 	// Current is what the routine runs at now: a raise needs a reason.
 	Autonomy, Current  string
 	Actor, Via, Reason string
-	// WithoutPairs: the operator promotes with no compared pairs. A reason is then required (always, until
-	// shadows record pairs in build step 2).
+	// WithoutPairs: the operator says they know the version has no compared pairs. It is only recorded (in the
+	// event): the reason a promote with missing or failed evidence needs is the acknowledgement.
 	WithoutPairs bool
+	// Acceptance is what the routine declares a promote needs (spec.Routine.Accepts); empty means [pairs].
+	// Evidence is what the operator gives for it: flotilla stores the verdicts, it never computes them.
+	Acceptance []string
+	Evidence   Evidence
+}
+
+// Gate is a gate's result, as the operator gives it: Result is pass or fail, Ref where it can be read.
+type Gate struct {
+	Name   string `json:"name"`
+	Result string `json:"result"`
+	Ref    string `json:"ref,omitempty"`
+}
+
+// EvalRun is an eval-harness run and its verdict (pass or fail).
+type EvalRun struct {
+	RunID   string `json:"run_id"`
+	Verdict string `json:"verdict"`
+}
+
+// Evidence is what a promote is given beside the compared pairs, which the store counts itself.
+type Evidence struct {
+	Gates []Gate    `json:"gates,omitempty"`
+	Evals []EvalRun `json:"evals,omitempty"`
+}
+
+// PromoteRecord is the acceptance in force at a promote and the evidence it had, stored with the version it
+// made live (routine_versions.promote_evidence) and in its version.promote event. Missing and Failed are what
+// the promote went ahead without or in spite of, which only a reason allows.
+type PromoteRecord struct {
+	Acceptance   []string  `json:"acceptance"`
+	Pairs        int       `json:"pairs"`
+	Gates        []Gate    `json:"gates,omitempty"`
+	Evals        []EvalRun `json:"evals,omitempty"`
+	Missing      []string  `json:"missing,omitempty"`
+	Failed       []string  `json:"failed,omitempty"`
+	WithoutPairs bool      `json:"without_pairs,omitempty"`
+}
+
+func passing(v string) bool { return v == "pass" }
+
+// assess checks the evidence given against the acceptance and says what is missing (a declared kind with
+// nothing behind it) and what failed (a gate or verdict given as fail, whether or not its kind is declared).
+// pairs: a compared pair exists; replay: a gate result was given; scenario_eval: an eval run was given.
+func assess(accept []string, pairs int, ev Evidence) (rec PromoteRecord, err error) {
+	if len(accept) == 0 {
+		accept = []string{"pairs"}
+	}
+	rec = PromoteRecord{Acceptance: accept, Pairs: pairs, Gates: ev.Gates, Evals: ev.Evals}
+	for _, g := range ev.Gates {
+		if strings.TrimSpace(g.Name) == "" || (g.Result != "pass" && g.Result != "fail") {
+			return rec, fmt.Errorf("%w: a gate is name=pass|fail, not %q=%q", ErrVersionInvalid, g.Name, g.Result)
+		}
+		if !passing(g.Result) {
+			rec.Failed = append(rec.Failed, "gate "+g.Name)
+		}
+	}
+	for _, e := range ev.Evals {
+		if strings.TrimSpace(e.RunID) == "" || (e.Verdict != "pass" && e.Verdict != "fail") {
+			return rec, fmt.Errorf("%w: an eval is run_id=pass|fail, not %q=%q", ErrVersionInvalid, e.RunID, e.Verdict)
+		}
+		if !passing(e.Verdict) {
+			rec.Failed = append(rec.Failed, "eval "+e.RunID)
+		}
+	}
+	for _, k := range accept {
+		switch k {
+		case "pairs":
+			if pairs == 0 {
+				rec.Missing = append(rec.Missing, "pairs")
+			}
+		case "replay":
+			if len(ev.Gates) == 0 {
+				rec.Missing = append(rec.Missing, "replay")
+			}
+		case "scenario_eval":
+			if len(ev.Evals) == 0 {
+				rec.Missing = append(rec.Missing, "scenario_eval")
+			}
+		default:
+			return rec, fmt.Errorf("%w: acceptance %q: one of pairs, replay, scenario_eval", ErrVersionInvalid, k)
+		}
+	}
+	return rec, nil
+}
+
+func (r PromoteRecord) summary() string {
+	parts := []string{"acceptance " + strings.Join(r.Acceptance, ",")}
+	parts = append(parts, fmt.Sprintf("%d compared pair(s)", r.Pairs))
+	for _, g := range r.Gates {
+		parts = append(parts, "gate "+g.Name+"="+g.Result)
+	}
+	for _, e := range r.Evals {
+		parts = append(parts, "eval "+e.RunID+"="+e.Verdict)
+	}
+	if len(r.Missing) > 0 {
+		parts = append(parts, "missing "+strings.Join(r.Missing, ","))
+	}
+	if len(r.Failed) > 0 {
+		parts = append(parts, "failed "+strings.Join(r.Failed, ","))
+	}
+	if r.WithoutPairs {
+		parts = append(parts, "without pairs, acknowledged")
+	}
+	return strings.Join(parts, "; ")
 }
 
 func upsertAutonomy(ctx context.Context, tx *sql.Tx, routine, level, actor, via, reason, at string) error {
@@ -280,9 +401,22 @@ func (s *Store) Promote(ctx context.Context, a PromoteArgs) error {
 	if err != nil {
 		return err
 	}
-	if pairs == 0 && strings.TrimSpace(a.Reason) == "" {
-		return fmt.Errorf("%w: v%d has no compared pairs: give a reason to promote it without", ErrVersionInvalid, a.Version)
+	rec, err := assess(a.Acceptance, pairs, a.Evidence)
+	if err != nil {
+		return err
 	}
+	rec.WithoutPairs = a.WithoutPairs
+	if (len(rec.Missing) > 0 || len(rec.Failed) > 0) && strings.TrimSpace(a.Reason) == "" {
+		var why []string
+		if len(rec.Missing) > 0 {
+			why = append(why, "lacks the evidence its acceptance names ("+strings.Join(rec.Missing, ", ")+")")
+		}
+		if len(rec.Failed) > 0 {
+			why = append(why, "has a failed result ("+strings.Join(rec.Failed, ", ")+")")
+		}
+		return fmt.Errorf("%w: v%d %s: give a reason to promote it anyway", ErrVersionInvalid, a.Version, strings.Join(why, " and "))
+	}
+	evidence, _ := json.Marshal(rec)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -320,17 +454,15 @@ func (s *Store) Promote(ctx context.Context, a PromoteArgs) error {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE routine_versions SET state = 'live', live_at = ?, state_by = ?, state_at = ?, state_why = ?, autonomy_at_promote = ?
-		WHERE routine = ? AND version = ?`, at, a.Actor, at, a.Reason, a.Autonomy, a.Routine, a.Version); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE routine_versions SET state = 'live', live_at = ?, state_by = ?, state_at = ?, state_why = ?, autonomy_at_promote = ?, promote_evidence = ?
+		WHERE routine = ? AND version = ?`, at, a.Actor, at, a.Reason, a.Autonomy, string(evidence), a.Routine, a.Version); err != nil {
 		return err
 	}
 	detail := "autonomy " + a.Autonomy
 	if hasLive {
 		detail += fmt.Sprintf("; v%d is previous", live.Version)
 	}
-	if pairs == 0 {
-		detail += "; no compared pairs"
-	}
+	detail += "; " + rec.summary() + "; evidence " + string(evidence)
 	if a.Reason != "" {
 		detail += ": " + a.Reason
 	}
@@ -426,8 +558,13 @@ func (s *Store) Rollback(ctx context.Context, a RollbackArgs) (RollbackResult, e
 	if err := rows.Err(); err != nil {
 		return res, err
 	}
-	for _, id := range planIDs {
+	for i, id := range planIDs {
 		if _, err := tx.ExecContext(ctx, `UPDATE plans SET rolled_back_at = ?, rolled_back_by = ? WHERE id = ?`, at, a.Actor, id); err != nil {
+			return res, err
+		}
+		// the case goes back to the acting routine, which plans again with the live version; the target lock is released
+		if err := s.moveCaseAs(ctx, tx, "case.rolled_back", res.Cases[i], cases.HandedOver, cases.ByOperator, "", a.Actor,
+			fmt.Sprintf("v%d was rolled back, its plan is withdrawn: %s", live.Version, a.Reason)); err != nil {
 			return res, err
 		}
 	}
@@ -521,9 +658,16 @@ func ReadVersions(path string) (VersionsRead, error) {
 	if out.Schema < VersionsSchema {
 		return out, nil
 	}
-	out.Rows, err = versionsOf(context.Background(), db, ``)
+	cols := versionCols
+	if out.Schema < EvidenceSchema {
+		cols = versionColsBefore29
+	}
+	out.Rows, err = versionsOfCols(context.Background(), db, cols, ``)
 	return out, err
 }
 
 // VersionsSchema is the schema step that added routine_versions.
 const VersionsSchema = 26
+
+// EvidenceSchema is the schema step that added routine_versions.promote_evidence.
+const EvidenceSchema = 29

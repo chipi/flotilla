@@ -131,6 +131,9 @@ func (s *Server) ApprovePlan(ctx context.Context, c Caller, via, id, planHash, n
 		return "", problem(409, "case %s has no plan to approve", id)
 	}
 	p := plans[len(plans)-1]
+	if p.RolledBackAt != "" {
+		return "", problem(409, "plan from a rolled-back version: v%d was rolled back at %s by %s", p.Version, p.RolledBackAt, p.RolledBackBy)
+	}
 	if hp := strings.TrimPrefix(planHash, "sha256:"); planHash != "" && (len(hp) < 8 || !strings.HasPrefix(p.PlanHash, hp)) {
 		return "", problem(409, "the plan changed: %s is not the plan on case %s now (%s); open the new plan", shortHash(planHash), id, shortHash(p.PlanHash))
 	}
@@ -156,6 +159,11 @@ func (s *Server) RejectCase(ctx context.Context, c Caller, via, id, why string) 
 	}
 	if _, err := s.awaiting(ctx, id); err != nil {
 		return err
+	}
+	if plans, err := s.Store.Plans(ctx, id); err != nil {
+		return err
+	} else if n := len(plans); n > 0 && plans[n-1].RolledBackAt != "" {
+		return problem(409, "plan from a rolled-back version: v%d was rolled back at %s by %s", plans[n-1].Version, plans[n-1].RolledBackAt, plans[n-1].RolledBackBy)
 	}
 	if err := s.Store.MoveCase(ctx, id, cases.Escalated, cases.ByOperator, "", c.Name, "rejected: "+why); err != nil {
 		return err

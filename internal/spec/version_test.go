@@ -364,3 +364,33 @@ func TestOldAutonomyIdentifiersStayGone(t *testing.T) {
 		}
 	}
 }
+
+func TestAcceptance(t *testing.T) {
+	// [pairs] when a routine declares nothing; the golden test above keeps every flat spec's hash
+	d := t.TempDir()
+	writeFolder(t, d)
+	rs, err := Load(d)
+	if err != nil || len(rs[0].Acceptance) != 0 || strings.Join(rs[0].Accepts(), ",") != "pairs" {
+		t.Fatalf("default: %v %v", rs, err)
+	}
+	// routine.yaml declares it
+	write(t, d, "triage/cycle/routine.yaml", folderRoutine+"acceptance: [replay, scenario_eval]\n")
+	if rs, err = Load(d); err != nil || strings.Join(rs[0].Accepts(), ",") != "replay,scenario_eval" {
+		t.Fatalf("folder: %v %v", rs, err)
+	}
+	// a flat spec declares it too, and the routine's own hash moves only because its bytes did
+	flat := t.TempDir()
+	write(t, flat, "triage/cycle.yaml", good)
+	before, _ := Load(flat)
+	write(t, flat, "triage/cycle.yaml", good+"acceptance: [pairs, replay]\n")
+	after, err := Load(flat)
+	if err != nil || strings.Join(after[0].Accepts(), ",") != "pairs,replay" || after[0].Hash == before[0].Hash {
+		t.Fatalf("flat: %v %v", after, err)
+	}
+	for _, bad := range []string{"acceptance: [vibes]\n", "acceptance: [pairs, pairs]\n"} {
+		write(t, flat, "triage/cycle.yaml", good+bad)
+		if _, err := Load(flat); err == nil || !strings.Contains(err.Error(), "acceptance") {
+			t.Fatalf("%q: %v", bad, err)
+		}
+	}
+}
