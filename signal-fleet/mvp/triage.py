@@ -33,20 +33,26 @@ from http_util import post_json
 # here, /opt/flotilla/runtime in the worker image. An extract of signal-fleet/ must carry it beside.
 try:
     import harness
+    import hooks
     import loaded
     import model_client
+    import prompts
     import skills
+    import steprec
     import toolrec
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runtime"))
     try:
         import harness
+        import hooks
         import loaded
         import model_client
+        import prompts
         import skills
+        import steprec
         import toolrec
     except ImportError as e:
-        raise ImportError("triage needs flotilla's runtime/ (harness.py, model_client.py, skills.py, toolrec.py) beside "
+        raise ImportError("triage needs flotilla's runtime/ (harness.py, hooks.py, model_client.py, prompts.py, skills.py, steprec.py, toolrec.py) beside "
                           "signal-fleet/ (../../runtime from signal-fleet/mvp)") from e
 
 # The playbook and the class hints (RFC-0002 §9 step 3) live in fleets/triage/, beside signal-fleet/:
@@ -222,13 +228,16 @@ def signal_class(signal):
             return cls
     return None
 
+# The spec's prompts.system (ADR-0018): flotillad hands the run its path and hash (FLOTILLA_PROMPTS); without
+# flotillad (eval runs) this is the file loaded. A test keeps it equal to fleets/triage/cycle.yaml's.
+_PLAYBOOK = "playbooks/triage.md"
+
+
 def _read_playbook():
-    path = os.path.join(_FLEET_DIR, "playbooks", "triage.md")
     try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    except OSError as e:
-        raise RuntimeError(f"triage's playbook is missing: {path} ({e.strerror})") from e
+        text = prompts.load("system", _FLEET, root=_CODE_ROOT, default=_PLAYBOOK)["text"]
+    except prompts.PromptError as e:
+        raise RuntimeError(f"triage's playbook cannot be loaded: {e}") from e
     return text[:-1] if text.endswith("\n") else text   # the file ends in one newline; the prompt does not
 
 
@@ -516,6 +525,23 @@ _HARNESS_DEFAULT = os.path.join(_FLEET_DIR, "harness-default.json")
 _HARNESS_DEFAULT_CFG = None
 
 
+# The hooks triage registers beyond the shared ones (runtime/hooks.py: redact_credentials): none. The spec's
+# harness.hooks names them; a name neither registry knows fails the run at start, as an unregistered gate does.
+_HOOKS = {}
+
+
+def _on_event(kind, **f):
+    """What the harness did that no trace entry shows. A hook's effect is a calls-file step row (the run's page),
+    a harness.hook span, and a `hooks` entry on the turn that asked for the tool in the exact capture."""
+    if kind != "hook":
+        return
+    steprec.write("hook", hooks.step_detail(f), decision_key=_TURNS["key"], episode=_TURNS["key"],
+                  episode_seq=_EPISODES["n"] or None)
+    hooks.span(f)
+    if _EXACT is not None and _EXACT["turns"]:
+        _EXACT["turns"][-1].setdefault("hooks", []).append(dict(f))
+
+
 def _harness_cfg():
     """The routine's harness configuration: FLOTILLA_HARNESS (flotillad, from the spec's `harness:`) or,
     without it (eval runs), fleets/triage/harness-default.json, which a Go test keeps equal to the spec."""
@@ -538,6 +564,10 @@ def _harness_cfg():
     if cfg["limits"]["max_tool_calls"] != MAX_PROBES:
         raise RuntimeError(f"triage harness: max_tool_calls {cfg['limits']['max_tool_calls']} is not "
                            f"MAX_PROBES {MAX_PROBES}, the count the playbook names")
+    try:
+        hooks.build(cfg.get("hooks"), _HOOKS)
+    except hooks.HookError as e:
+        raise RuntimeError(f"triage harness: {e}") from e
     return cfg
 
 
@@ -603,7 +633,7 @@ def investigate(signal, max_probes=None, probe_table=None):
         tool=lambda name, args: _probe(signal, name, args, probe_table),
         cfg=cfg,
         errors={"fatal": (SystemExit, TriagerDown), "defer": TriageDeferred, "defer_prefix": "triager call failed: "},
-        on_quirk=_mark_quirk)
+        on_quirk=_mark_quirk, on_event=_on_event, fleet_hooks=_HOOKS)
     if not res.in_loop:
         # Out of turns without a decision (F7): the same escalation as an unusable reply. (An empty
         # last reply deferred inside the harness, so the orchestrator escalates after DEFER_LIMIT cycles.)

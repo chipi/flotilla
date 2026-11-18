@@ -1,6 +1,6 @@
 """The harness (ADR-0004, RFC-0002 §4): one model-driven step, the same code for every fleet.
 
-  run_json_step(messages, call, tool, cfg, errors, on_quirk=None, log=print) -> Result
+  run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print) -> Result
 
 The JSON protocol (the first fleet's): each turn the model returns ONE object, either a tool request
 {"action": "probe", "probe": <name>, "probe_args": {...}} or a decision {"action": "decide",
@@ -12,6 +12,8 @@ the tool's result (never raises). Both are the caller's functions, looked up by 
 so a fleet's evaluation can patch them where it always has.
 
 `cfg` is the routine's harness configuration (spec `harness:`, FLOTILLA_HARNESS):
+  tools: the tool names the model may call (required). A request for another name never reaches `tool`: the
+         model gets UNKNOWN_TOOL as the result, and the turn is spent.
   limits: max_tool_calls (tool turns), max_steps (= max_tool_calls + 1 model turns)
   quirks: the first fleet's loop as it was, kept so the move to the harness is like for like and removed
           one at a time later, each as a behaviour change proven by model replay (RFC-0002 §9 step 6):
@@ -22,13 +24,22 @@ so a fleet's evaluation can patch them where it always has.
     reply_echo_chars        earlier replies go back cut to this many characters (decision_echo_chars
                             for a decision that is not flat)
     result_chars            a tool result goes back cut to this many characters
+  hooks: {"before_tool": [{"name", "mode"}], "after_tool": [...]}: code run around each tool call (runtime/hooks.py).
+         A name no registry knows (runtime/hooks.py's, plus `fleet_hooks`) fails before the first turn.
   errors: {"fatal": (exception classes re-raised as they are), "defer": exception class, "defer_prefix": str}
 
 `on_quirk(name)` is told when a turn hits a quirk, so the caller can mark that turn's record.
+`on_event(kind, **fields)` is told what the harness itself did that no trace entry shows: "tool_unknown"
+(name=...) and "hook" (a hook's effect: phase, name, mode, effect, reason, tool, ...; hooks.step_detail words it).
 """
 
 import json
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hooks as hooks_mod  # noqa: E402
 
 
 class Result:
@@ -36,6 +47,8 @@ class Result:
         self.decision, self.trace, self.usage = decision, trace, usage
         self.in_loop = in_loop   # decided inside the turns (False: the turns ran out)
 
+
+UNKNOWN_TOOL = "<unknown probe: %s>"
 
 NO_DECISION = {"disposition": "escalate", "reason": "no terminal decision",
                "question": "triager did not reach a disposition"}
@@ -53,7 +66,7 @@ def trim(v, n):
     return s if len(s) <= n else s[:n] + f"\n…[truncated {len(s)-n} of {len(s)} chars]"
 
 
-def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, log=print):
+def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print):
     lim, q = cfg["limits"], cfg["quirks"]
     n, steps = lim["max_tool_calls"], lim["max_steps"]
     if steps != n + 1:
@@ -61,9 +74,14 @@ def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, log=print):
     for k in ("bad_json_uses_turn", "empty_retry", "final_decision_call"):
         if q.get(k) is not True:
             raise ValueError(f"harness quirk {k}: only true is implemented until RFC-0002 §9 step 6")
+    tools = cfg.get("tools")
+    if not isinstance(tools, list) or not tools:
+        raise ValueError("harness: cfg needs tools, the names the model may call")
+    hooks = hooks_mod.build(cfg.get("hooks"), fleet_hooks)
     echo, decho, rchars = q["reply_echo_chars"], q["decision_echo_chars"], q["result_chars"]
     fatal, defer, prefix = errors["fatal"], errors["defer"], errors["defer_prefix"]
     mark = on_quirk or (lambda name: None)
+    event = on_event or (lambda kind, **fields: None)
     trace, usage = [], {"prompt_tokens": 0, "completion_tokens": 0}
     last_empty = False
     for step in range(steps):
@@ -92,7 +110,14 @@ def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, log=print):
             continue
         if out.get("action") == "probe" and step < n:
             name, args = out.get("probe"), out.get("probe_args") or {}
-            result = tool(name, args)
+            if name not in tools:
+                result = UNKNOWN_TOOL % name
+                event("tool_unknown", name=name)
+            else:
+                call_info = {"name": name, "args": args}
+                result = hooks.run_before(call_info, event)
+                if result is None:
+                    result = hooks.run_after(call_info, tool(name, args), event)
             trace.append({"probe": name, "args": args, "result": result})
             log(f"    probe[{step+1}] {name} -> {trim(result, 90)}")
             messages.append({"role": "assistant", "content": raw[:echo]})

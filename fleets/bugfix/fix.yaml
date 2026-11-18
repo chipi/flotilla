@@ -14,6 +14,10 @@ trigger:
   # instead of run again. Money counts only what the runs report as spend.
   case: {kind: code_bug, limit: {usd: 1, minutes: 90}}
 models: [fix-flash, fix-reviewer]
+# The rules every pi step gets instead of the repo's AGENTS.md (ADR-0018): a file in the fleet's folder, its
+# hash handed to the run (FLOTILLA_PROMPTS), which refuses any other file. The same bytes as bugfix/fleet_rules.md.
+prompts:
+  rules: playbooks/rules.md
 run:
   command: >-
     python3 /opt/flotilla/bugfix/fix.py --repo example/shop --worker-model fix-flash
@@ -42,6 +46,10 @@ explain:
     then a plan or an escalation.
     Step one first, no model (RFC-0013 §1), advisory: it notes on the chain what main has of the names the
     error calls missing, and never closes a case.
+  prompts: >-
+    The rules the coding agent gets in every step instead of the repo's own AGENTS.md: keep what it
+    reads and runs small, no generated files, no history dumps, no commits. The run refuses a rules file
+    that is not the one flotillad hashed.
   models: >-
     The only aliases its runs can call: fix-flash for the coding agent, fix-reviewer for
     the advisor and the reviewer. Both use this routine's own gateway key (its own daily budget), so a

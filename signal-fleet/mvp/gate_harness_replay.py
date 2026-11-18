@@ -10,7 +10,7 @@ records; nothing is sent anywhere.
    the probe results come from the capture's probe table and the edge lookups from `exact.lookups`.
    Every request the new loop sends equals the recorded one byte for byte, and the old and new runs
    end alike: decision, pre-gate decision, gates string, probe trace, turn records (latency and the new
-   `quirk` field aside). The new run's disposition and gates also equal the capture's.
+   `quirk` and `hooks` fields aside). The new run's disposition and gates also equal the capture's.
 2. Quirks, old against new on scripted replies: empty replies, bad JSON, a decision that is not flat
    (before and after the turns run out, the final call answering, failing or empty), probes past the
    budget, an unknown probe, transport failures, 401/402/403, and a TriagerDown inside the final call.
@@ -113,7 +113,7 @@ def drive(mod, signal, answers, table=None, lookups=None, max_probes=None):
                                      "marker", "certainty", "_pre_gate", "_probe_trace")}
         res["gates"] = (d.get("_meta") or {}).get("gates")
         res["usage"] = (d.get("_meta") or {}).get("usage")
-        res["turns"] = [{k: v for k, v in t.items() if k not in ("latency_s", "quirk")}
+        res["turns"] = [{k: v for k, v in t.items() if k not in ("latency_s", "quirk", "hooks")}
                         for t in (d.get("_exact") or {}).get("turns", [])]
         res["lookups"] = (d.get("_exact") or {}).get("lookups")
         out = ("decided", res)

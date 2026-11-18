@@ -80,6 +80,7 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@python3 business/test_business.py >/tmp/flotilla-test_business.log 2>&1 && echo "PASS business/test_business.py" || { echo "FAIL business/test_business.py"; tail -30 /tmp/flotilla-test_business.log; exit 1; }
 	@timeout 300 python3 bugfix/test_fix.py >/tmp/flotilla-test_fix.log 2>&1 && echo "PASS bugfix/test_fix.py" || { echo "FAIL bugfix/test_fix.py"; tail -30 /tmp/flotilla-test_fix.log; exit 1; }
 	@timeout 240 python3 bugfix/test_spend.py >/tmp/flotilla-test_spend.log 2>&1 && echo "PASS bugfix/test_spend.py" || { echo "FAIL bugfix/test_spend.py"; tail -30 /tmp/flotilla-test_spend.log; exit 1; }
+	@python3 bugfix/test_declared_prompts.py >/tmp/flotilla-test_declared_prompts.log 2>&1 && echo "PASS bugfix/test_declared_prompts.py" || { echo "FAIL bugfix/test_declared_prompts.py"; tail -30 /tmp/flotilla-test_declared_prompts.log; exit 1; }
 	@python3 bugfix/test_callrec_pi.py >/tmp/flotilla-test_callrec_pi.log 2>&1 && echo "PASS bugfix/test_callrec_pi.py" || { echo "FAIL bugfix/test_callrec_pi.py"; tail -30 /tmp/flotilla-test_callrec_pi.log; exit 1; }
 	@timeout 120 python3 bugfix/test_stepone.py >/tmp/flotilla-test_stepone.log 2>&1 && echo "PASS bugfix/test_stepone.py" || { echo "FAIL bugfix/test_stepone.py"; tail -30 /tmp/flotilla-test_stepone.log; exit 1; }
 	@python3 seo/test_seo.py >/tmp/flotilla-test_seo.log 2>&1 && echo "PASS seo/test_seo.py" || { echo "FAIL seo/test_seo.py"; tail -30 /tmp/flotilla-test_seo.log; exit 1; }
@@ -92,7 +93,9 @@ test-unit: ## go test (both modules), the worker's tests, the triage fleet's uni
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_contract_routine.py >/tmp/flotilla-test_contract_routine.log 2>&1 && echo "PASS runtime/test_contract_routine.py" || { echo "FAIL runtime/test_contract_routine.py"; tail -30 /tmp/flotilla-test_contract_routine.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@h=$$(mktemp -d); HOME=$$h python3 runtime/test_loaded.py >/tmp/flotilla-test_loaded.log 2>&1 && echo "PASS runtime/test_loaded.py" || { echo "FAIL runtime/test_loaded.py"; tail -30 /tmp/flotilla-test_loaded.log; rm -rf $$h; exit 1; }; rm -rf $$h
 	@python3 runtime/test_skills.py >/tmp/flotilla-test_skills.log 2>&1 && echo "PASS runtime/test_skills.py" || { echo "FAIL runtime/test_skills.py"; tail -30 /tmp/flotilla-test_skills.log; exit 1; }
+	@python3 runtime/test_prompts.py >/tmp/flotilla-test_prompts.log 2>&1 && echo "PASS runtime/test_prompts.py" || { echo "FAIL runtime/test_prompts.py"; tail -30 /tmp/flotilla-test_prompts.log; exit 1; }
 	@python3 runtime/test_toolrec.py >/tmp/flotilla-test_toolrec.log 2>&1 && echo "PASS runtime/test_toolrec.py" || { echo "FAIL runtime/test_toolrec.py"; tail -30 /tmp/flotilla-test_toolrec.log; exit 1; }
+	@python3 runtime/test_hooks.py >/tmp/flotilla-test_hooks.log 2>&1 && echo "PASS runtime/test_hooks.py" || { echo "FAIL runtime/test_hooks.py"; tail -30 /tmp/flotilla-test_hooks.log; exit 1; }
 	@python3 runtime/test_harness.py >/tmp/flotilla-test_harness.log 2>&1 && echo "PASS runtime/test_harness.py" || { echo "FAIL runtime/test_harness.py"; tail -30 /tmp/flotilla-test_harness.log; exit 1; }
 	@python3 runtime/test_ledger.py >/tmp/flotilla-test_ledger.log 2>&1 && echo "PASS runtime/test_ledger.py" || { echo "FAIL runtime/test_ledger.py"; tail -30 /tmp/flotilla-test_ledger.log; exit 1; }
 	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py test_replay_api.py test_dev_filter.py test_probes.py; do \

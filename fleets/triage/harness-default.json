@@ -10,5 +10,6 @@
     "reply_echo_chars": 600,
     "decision_echo_chars": 400,
     "result_chars": 1800
-  }
+  },
+  "hooks": {"after_tool": [{"name": "redact_credentials", "mode": "observe"}]}
 }

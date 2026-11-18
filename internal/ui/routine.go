@@ -213,6 +213,9 @@ func specBlocks(j *spec.Routine, c mixCounts, href func(string) string) []rLane 
 	if len(j.Skills.Rule) > 0 {
 		add("sort", rBlock{ID: "skills", Name: fmt.Sprintf("skills: %s", plural(len(j.Skills.Rule), "rule", "rules")), Who: "code", Where: "spec", Key: "skills.rule", YAML: yamlOf(map[string]any{"skills": j.Skills})})
 	}
+	if len(j.Prompts) > 0 {
+		add("agent", rBlock{ID: "prompts", Name: "prompts: " + strings.Join(j.PromptRoles(), ", "), Who: "code", Where: "spec", Key: "prompts", YAML: yamlOf(map[string]any{"prompts": j.Prompts})})
+	}
 	if h := j.Harness; h != nil {
 		add("agent", rBlock{ID: "harness.protocol", Name: "the model", Who: "agent", Where: "spec", Key: "harness.protocol", YAML: "harness:\n  protocol: " + h.Protocol})
 		add("agent", rBlock{ID: "harness.limits", Name: fmt.Sprintf("up to %d turns", h.Limits.MaxSteps), Who: "code", Where: "spec", Key: "harness.limits",
@@ -222,6 +225,10 @@ func specBlocks(j *spec.Routine, c mixCounts, href func(string) string) []rLane 
 		if h.Quirks.FinalDecisionCall {
 			add("agent", rBlock{ID: "harness.quirks", Name: "final decision call", Who: "code", Where: "spec", Key: "harness.quirks",
 				YAML: yamlOf(map[string]any{"harness": map[string]any{"quirks": h.Quirks}})})
+		}
+		if h.Hooks != nil {
+			add("agent", rBlock{ID: "harness.hooks", Name: "hooks", Who: "code", Where: "spec", Key: "harness.hooks",
+				YAML: yamlOf(map[string]any{"harness": map[string]any{"hooks": h.Hooks}})})
 		}
 		for _, g := range h.Gates {
 			add("gates", rBlock{ID: "gate." + g, Name: strings.ReplaceAll(g, "_", " "), Who: "code", Where: "spec", Key: "harness.gates", YAML: yamlOf(map[string]any{"harness": map[string]any{"gates": h.Gates}}), Nums: c.show("gate:" + g)})

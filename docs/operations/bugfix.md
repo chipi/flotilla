@@ -85,7 +85,9 @@ before its SIGKILL. A cancelled run (a STOP of the fleet,
 **The fleet's rules, not the repo's AGENTS.md.** pi loads the repo's `AGENTS.md` into every call
 by default: about 30,000 tokens on the shop, 44% of the input tokens of the fleet's sessions on
 2026-11-15 and 16. Every pi step (verdict, advisor, fix, review) runs with `--no-context-files`
-and `bugfix/fleet_rules.md` instead (`--pi-rules`; `''` keeps pi's default). The rules keep tool
+and the fleet's rules file instead: the routine's declared `rules` prompt
+(`prompts: {rules: playbooks/rules.md}`, hash-checked by the run, ADR-0018), else
+`bugfix/fleet_rules.md` (`--pi-rules`; `''` keeps pi's default). The rules keep tool
 results small: find before reading, ranges of long files, no generated or vendored files, no
 `git log -p`. On the shop pi's first request went from 123,326 to 7,082 characters.
 

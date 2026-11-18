@@ -15,7 +15,7 @@ import re
 ARG_MAX = 160
 MASK = "<redacted>"
 
-_RULES = [
+_CREDENTIAL_RULES = [
     (re.compile(r"sk-or-v1-[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
                 r"|glsa_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}"
                 r"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), MASK),
@@ -26,6 +26,8 @@ _RULES = [
     (re.compile(r"(?i)(\"[^\"]*(?:key|token|secret|passw(?:or)?d|credential)[^\"]*\"\s*:\s*)\"[^\"]*\""), r"\1\"" + MASK + "\""),
     (re.compile(r"(?i)\b([A-Za-z0-9_.-]*(?:key|token|secret|passw(?:or)?d|credential)[A-Za-z0-9_.-]*=)(?:\"[^\"]*\"|'[^']*'|[^\s'\"&;]+)"),
      r"\1" + MASK),
+]
+_RULES = _CREDENTIAL_RULES + [
     (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}\b"), "<email>"),
     (re.compile(r"(?<![A-Za-z]/)\b\d{1,3}(?:\.\d{1,3}){3}\b"), "<ip>"),
 ]
@@ -36,6 +38,15 @@ _PREFERRED = ("command", "pattern", "path", "file_path", "filePath", "file", "ur
 
 def redact(text):
     for rx, repl in _RULES:
+        text = rx.sub(repl, text)
+    return text
+
+
+def redact_credentials(text):
+    """text with credentials masked (keys, tokens, bearer and basic, URL credentials, NAME=value for secret names):
+    redact() without the e-mail and IPv4 rules, which are for a short argument in a record, not for a tool's result
+    a model reads (the redact_credentials hook, runtime/hooks.py)."""
+    for rx, repl in _CREDENTIAL_RULES:
         text = rx.sub(repl, text)
     return text
 

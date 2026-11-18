@@ -40,7 +40,7 @@ credentials and toolchain (`triage`, `ops-read`, `ops-act-host`, …). Each run 
 
 | Runtime component | Responsibility |
 | --- | --- |
-| **Harness** | the one loop for a model step: context in, tools offered, an answer of the step's output type (decision, prose, plan), validated (`jsonschema`); limits on turns, calls, tokens, time, cost; everything recorded for replay |
+| **Harness** | the one loop for a model step: context in, tools offered, an answer of the step's output type (decision, prose, plan), validated (`jsonschema`); limits on turns, calls, tokens, time, cost; a tool a model invents is refused, and hooks (ADR-0018) run around each tool call; everything recorded for replay |
 | **Context builder** | layers with budgets: playbook, the case (structured events only, with the skills loaded by rule), the skills index, memory and knowledge, tool results; untrusted content wrapped as data; the run's **taint** derived from what entered it |
 | **Lookup client** | memory: exact lookups of flotilla's records by key; knowledge: search over plugged-in sources (path maps, full-text, semantic), by trust tier |
 | **Tool calls** | tools, scoped and size-capped, recorded; actions only as entries of a plan |

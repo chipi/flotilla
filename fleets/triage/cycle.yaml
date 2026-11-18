@@ -33,6 +33,10 @@ skills:
       load: [hint-environment]
     - when: {class: recoverable}
       load: [hint-recoverable]
+# The system prompt (ADR-0018): a file in the fleet's folder, its hash handed to the run (FLOTILLA_PROMPTS).
+# triage.py's default path is the same file for runs without flotillad (a test keeps them equal).
+prompts:
+  system: playbooks/triage.md
 # The model-driven step (RFC-0002 §4). fleets/triage/harness-default.json is the same for runs
 # without flotillad (a Go test keeps them equal). The quirks keep today's loop like for like; RFC-0002
 # §9 step 6 removes them one at a time, each by model replay.
@@ -48,6 +52,9 @@ harness:
     reply_echo_chars: 600
     decision_echo_chars: 400
     result_chars: 1800
+  hooks:
+    after_tool:
+      - {name: redact_credentials, mode: observe}
 # What the routine page draws (internal/spec/explain.go): a text per block, the steps the code takes that
 # no field above shows, and the routines after it. Keep each text true to the code it describes.
 explain:
@@ -71,10 +78,16 @@ explain:
   skills: >-
     The code classes each signal, and a rule loads that class's hint into the model's prompt:
     external-transient, external, environment or recoverable. A signal with no class gets no hint.
+  prompts: >-
+    The system prompt the model starts from: the triage playbook, a file in the fleet's folder. The run
+    refuses a playbook that is not the file flotillad hashed, and records which one it loaded.
   harness.protocol: >-
     A model reads the signal and its hint and answers in JSON: a decision (file, escalate, dismiss or
     cleanup) with its reason and certainty, or a request for one probe. Its model is SF_TRIAGE_MODEL
     through the model gateway.
+  harness.hooks: >-
+    redact_credentials runs on every tool result before the model reads it and records where it would mask
+    a key, token or password (observe: it changes nothing yet). Each firing is a step on the run's page.
   harness.limits: >-
     At most 4 turns and one tool call a turn. A turn that asks for a probe gets the answer in the next
     turn; the 4th turn must decide.

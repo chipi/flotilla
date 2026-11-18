@@ -48,6 +48,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callrec_pi  # noqa: E402
+import declared_prompts  # noqa: E402
 import pi_config  # noqa: E402
 import spend  # noqa: E402
 import stepone  # noqa: E402
@@ -1063,9 +1064,10 @@ def parse(argv):
                     help="none: the reviewer judges from the issue, the diff and the changed files it is given, in one "
                          "call; read: it also gets pi's read tools and explores (the behaviour before C4)")
     ap.add_argument("--scratch", default=os.environ.get("BUGFIX_SCRATCH", "/scratch"))
-    ap.add_argument("--pi-rules", default=os.path.join(HERE, "fleet_rules.md"),
+    ap.add_argument("--pi-rules", default=None,
                     help="the rule file every pi step gets instead of the repo's AGENTS.md (--no-context-files); '' keeps "
-                         "pi's default of loading the repo's AGENTS.md")
+                         "pi's default of loading the repo's AGENTS.md. Not given: the spec's declared `rules` prompt "
+                         "(FLOTILLA_PROMPTS, hash-checked), else bugfix/fleet_rules.md")
     ap.add_argument("--spend-file", default="", help="the routine's spend_file, relative to HOME: the run writes its cost "
                     "there (the gateway's bill for its keys; bugfix/spend.py)")
     ap.add_argument("--spend-poll", type=float, default=5.0, help="seconds between the spend reads after the run")
@@ -1078,9 +1080,20 @@ def parse(argv):
     return a
 
 
+def pi_rules(a, environ):
+    """The rule file for pi: --pi-rules when given; else the spec's declared `rules` prompt, which must hash to
+    what flotillad was loaded with (ADR-0018); else the fleet_rules.md beside this file, as before."""
+    if a.pi_rules is not None:
+        return a.pi_rules
+    root = environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE)
+    fleet = (environ.get("FLOTILLA_ROUTINE") or "bugfix/fix").split("/")[0]
+    return declared_prompts.resolve("rules", environ, root, fleet) or os.path.join(HERE, "fleet_rules.md")
+
+
 def main(argv=None, environ=None):
     environ = dict(os.environ if environ is None else environ)
     a = parse(argv)
+    a.pi_rules = pi_rules(a, environ)
     case = json.loads(environ["FLOTILLA_CASE"])
     run_dir = os.path.join(a.scratch, "runs", f"{case.get('id', 'case')}-{int(time.time())}")
     os.makedirs(run_dir)

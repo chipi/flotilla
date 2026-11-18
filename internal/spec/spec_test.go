@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -280,7 +282,9 @@ func TestRepoSpecs(t *testing.T) {
 }
 
 func TestHarness(t *testing.T) {
-	h := `harness:
+	h := `prompts:
+  system: playbooks/triage.md
+harness:
   protocol: json
   tools: [a, b]
   gates: [g]
@@ -304,6 +308,7 @@ func TestHarness(t *testing.T) {
 		"no gates":           {"gates: [g]", "gates: []", "tools and gates are required"},
 		"zero echo":          {"reply_echo_chars: 600", "reply_echo_chars: 0", "must be positive"},
 		"unknown field":      {"protocol: json", "protocol: json\n  model: x", "field model not found"},
+		"no system prompt":   {"prompts:\n  system: playbooks/triage.md\n", "", "a routine with a harness declares its system prompt"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dd := t.TempDir()
@@ -317,5 +322,118 @@ func TestHarness(t *testing.T) {
 	routines, _ = Load(d)
 	if routines[0].HarnessJSON() != "" {
 		t.Fatal("no harness: no FLOTILLA_HARNESS")
+	}
+}
+
+func TestPrompts(t *testing.T) {
+	d := t.TempDir()
+	write(t, d, "triage/playbooks/triage.md", "the playbook\n")
+	write(t, d, "triage/playbooks/rules.md", "rules\n")
+	write(t, d, "triage/plain.yaml", strings.Replace(good, "routine: cycle", "routine: plain", 1))
+	write(t, d, "triage/cycle.yaml", good+"prompts:\n  system: playbooks/triage.md\n  rules: playbooks/rules.md\n")
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var j, plain *Routine
+	for _, r := range routines {
+		if r.Routine == "cycle" {
+			j = r
+		} else {
+			plain = r
+		}
+	}
+	sha := func(s string) string { x := sha256.Sum256([]byte(s)); return hex.EncodeToString(x[:]) }
+	want := `{"rules":{"path":"playbooks/rules.md","sha256":"` + sha("rules\n") + `"},"system":{"path":"playbooks/triage.md","sha256":"` + sha("the playbook\n") + `"}}`
+	if got := j.PromptsJSON(); got != want {
+		t.Fatalf("PromptsJSON: %s\nwant %s", got, want)
+	}
+	if plain.PromptsJSON() != "" {
+		t.Fatal("no prompts: no FLOTILLA_PROMPTS")
+	}
+
+	// a routine without prompts keeps the hash of its own bytes; one with prompts follows its files
+	if x := sha256.Sum256([]byte(strings.Replace(good, "routine: cycle", "routine: plain", 1))); plain.Hash != hex.EncodeToString(x[:])[:12] {
+		t.Fatalf("a routine without prompts changed its hash: %s", plain.Hash)
+	}
+	before := j.Hash
+	write(t, d, "triage/playbooks/triage.md", "the playbook, edited\n")
+	routines, _ = Load(d)
+	for _, r := range routines {
+		if r.Routine == "cycle" && r.Hash == before {
+			t.Fatal("a changed prompt file must change the routine's hash")
+		}
+		if r.Routine == "plain" && r.Hash != plain.Hash {
+			t.Fatal("a routine without prompts must not follow another routine's files")
+		}
+	}
+
+	for name, c := range map[string]struct{ body, want string }{
+		"absolute":   {"prompts:\n  system: /etc/passwd.md\n", "inside the fleet's folder"},
+		"up":         {"prompts:\n  system: ../other/x.md\n", "inside the fleet's folder"},
+		"inside up":  {"prompts:\n  system: a/../x.md\n", "inside the fleet's folder"},
+		"not text":   {"prompts:\n  system: playbooks/triage.py\n", "inside the fleet's folder"},
+		"bad role":   {"prompts:\n  System: playbooks/triage.md\n", "role"},
+		"empty path": {"prompts:\n  system: \"\"\n", "inside the fleet's folder"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dd := t.TempDir()
+			write(t, dd, "triage/cycle.yaml", good+c.body)
+			if _, err := Load(dd); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want an error with %q, got %v", c.want, err)
+			}
+		})
+	}
+}
+
+func TestHarnessHooks(t *testing.T) {
+	h := `prompts:
+  system: playbooks/triage.md
+harness:
+  protocol: json
+  tools: [a, b]
+  gates: [g]
+  limits: {max_tool_calls: 3, max_steps: 4, tool_calls_per_turn: 1}
+  quirks: {bad_json_uses_turn: true, empty_retry: true, final_decision_call: true, reply_echo_chars: 600, decision_echo_chars: 400, result_chars: 1800}
+  hooks:
+    before_tool: [{name: deny_big}]
+    after_tool:
+      - {name: redact_credentials, mode: observe}
+`
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", good+h)
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"hooks":{"before_tool":[{"name":"deny_big","mode":"enforce"}],"after_tool":[{"name":"redact_credentials","mode":"observe"}]}`
+	if got := routines[0].HarnessJSON(); !strings.Contains(got, want) {
+		t.Fatalf("HarnessJSON: %s\nwant it to hold %s", got, want)
+	}
+	if !strings.Contains(strings.Join(routines[0].ExplainKeys(), " "), "harness.hooks") {
+		t.Error("harness.hooks is an explain key for a harness with hooks")
+	}
+	for name, c := range map[string]struct{ from, to, want string }{
+		"bad mode":      {"mode: observe", "mode: audit", `mode "audit" is enforce or observe`},
+		"bad name":      {"name: deny_big", "name: Deny-Big", "hook name"},
+		"duplicate":     {"before_tool: [{name: deny_big}]", "before_tool: [{name: deny_big}, {name: deny_big}]", "declared twice"},
+		"unknown field": {"mode: observe", "mode: observe, fn: x", "field fn not found"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dd := t.TempDir()
+			write(t, dd, "triage/cycle.yaml", good+strings.Replace(h, c.from, c.to, 1))
+			if _, err := Load(dd); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want an error with %q, got %v", c.want, err)
+			}
+		})
+	}
+	// a harness without hooks hands the run the JSON it always did
+	write(t, d, "triage/cycle.yaml", good+strings.Replace(h, "  hooks:\n    before_tool: [{name: deny_big}]\n    after_tool:\n      - {name: redact_credentials, mode: observe}\n", "", 1))
+	routines, err = Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(routines[0].HarnessJSON(), "hooks") {
+		t.Fatalf("no hooks: no hooks key: %s", routines[0].HarnessJSON())
 	}
 }

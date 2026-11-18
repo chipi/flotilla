@@ -64,3 +64,5 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0015 — The MCP server](ADR-0015-mcp-server.md) (Accepted, 2026-11-15)
 - [ADR-0016 — Post-incident review](ADR-0016-post-incident-review.md) (Accepted, 2026-11-15)
 - [ADR-0017 — Routine actions](ADR-0017-routine-actions.md) (Accepted, 2026-11-17)
+- [ADR-0018 — Harness parts: the system prompt, unknown tools and hooks](ADR-0018-harness-parts.md)
+  (Accepted, 2026-11-18)

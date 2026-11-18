@@ -51,6 +51,9 @@ func (j *Routine) ExplainKeys() []string {
 	if len(j.Skills.Rule) > 0 {
 		keys = append(keys, "skills")
 	}
+	if len(j.Prompts) > 0 {
+		keys = append(keys, "prompts")
+	}
 	if len(j.Models) > 0 {
 		keys = append(keys, "models")
 	}
@@ -59,6 +62,9 @@ func (j *Routine) ExplainKeys() []string {
 	}
 	if h := j.Harness; h != nil {
 		keys = append(keys, "harness.protocol", "harness.limits", "harness.tools", "harness.quirks")
+		if h.Hooks != nil {
+			keys = append(keys, "harness.hooks")
+		}
 		for _, g := range h.Gates {
 			keys = append(keys, "gate."+g)
 		}
@@ -86,7 +92,7 @@ func (j *Routine) validateExplain(bad func(string, ...any)) {
 			bad("steps: id %q (lower-case, digits, _)", s.ID)
 		case seen[s.ID]:
 			bad("steps: id %q named twice", s.ID)
-		case in([]string{"trigger", "worker", "run", "autonomy", "budget", "freshness", "skills", "models", "detects"}, s.ID):
+		case in([]string{"trigger", "worker", "run", "autonomy", "budget", "freshness", "skills", "prompts", "models", "detects"}, s.ID):
 			bad("steps: id %q is a spec part's own key", s.ID)
 		}
 		seen[s.ID] = true

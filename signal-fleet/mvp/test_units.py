@@ -1151,6 +1151,41 @@ class TestSignalIsDelimitedData(unittest.TestCase):
         self.assertIn("<<<DATA", t._sys())   # the playbook tells the model what the block is
 
 
+class TestSystemPromptIsADeclaredPart(unittest.TestCase):
+    """ADR-0018: the playbook is the spec's prompts.system, hashed by flotillad; a run refuses any other file."""
+
+    ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+    def test_the_spec_and_the_default_name_the_same_file(self):
+        import re
+        import triage as t
+        for spec in ("cycle.yaml", "cycle-shadow.yaml"):
+            with open(os.path.join(self.ROOT, "fleets", "triage", spec), encoding="utf-8") as f:
+                m = re.search(r"^prompts:\n  system: (\S+)$", f.read(), re.M)
+            self.assertEqual(m and m.group(1), t._PLAYBOOK, spec)
+
+    def _import(self, declared):
+        import subprocess
+        import sys
+        env = dict(os.environ, OPENROUTER_API_KEY="x", SF_OBSERV_DISABLED="1")
+        env.pop("FLOTILLA_PROMPTS", None)
+        if declared is not None:
+            env["FLOTILLA_PROMPTS"] = json.dumps(declared)
+        return subprocess.run([sys.executable, "-c", "import triage; print(triage.PROMPT_SHA)"], env=env,
+                              cwd=os.path.dirname(os.path.abspath(__file__)), capture_output=True, text=True)
+
+    def test_a_run_refuses_a_playbook_that_is_not_the_declared_one(self):
+        import hashlib
+        import triage as t
+        with open(os.path.join(self.ROOT, "fleets", "triage", t._PLAYBOOK), "rb") as f:
+            sha = hashlib.sha256(f.read()).hexdigest()
+        ok = self._import({"system": {"path": t._PLAYBOOK, "sha256": sha}})
+        self.assertEqual((ok.returncode, ok.stdout.strip()), (0, t.PROMPT_SHA), ok.stderr)
+        bad = self._import({"system": {"path": t._PLAYBOOK, "sha256": "0" * 64}})
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("refused", bad.stderr)
+
+
 class TestTriagerFailureDeferral(unittest.TestCase):
     """#11: transient triager failures defer (retry next cycle); 402 fails closed;
     a signal deferred DEFER_LIMIT times escalates; an all-deferred cycle is an outage."""
@@ -1732,6 +1767,61 @@ class TestDecisionTurns(unittest.TestCase):
         self.assertEqual(ask({"n": 5}), [{"name": "get_logs", "arg": "5"}])
         self.assertEqual(ask(None), [{"name": "get_logs", "arg": ""}])
         self.assertEqual(self.t._requested_tools({"content": '{"action":"decide"}'}), [])
+
+    KEY = "sk-" + "a" * 24
+    ASK = '{"action":"probe","probe":"service_logs","probe_args":{}}'
+
+    def _hooked(self, mode, name="redact_credentials"):
+        with open(os.path.join(self.t._FLEET_DIR, "harness-default.json")) as f:
+            cfg = json.load(f)
+        cfg["hooks"] = {"after_tool": [{"name": name, "mode": mode}]}
+        os.environ["FLOTILLA_HARNESS"] = json.dumps(cfg)
+        self.addCleanup(os.environ.pop, "FLOTILLA_HARNESS", None)
+
+    def _run_with_a_key_in_the_probe_result(self):
+        sent = []
+        it = iter([(self.ASK, "stop"), (self.DECIDE, "stop")])
+
+        def post(url, body, headers=None, timeout=None):
+            sent.append(body["messages"][-1]["content"])
+            content, finish = next(it)
+            return {"model": body["model"], "choices": [{"message": {"content": content}, "finish_reason": finish}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+        self.t.post_json = post
+        self.t.config.CAPTURE_PROBES = True
+        self.addCleanup(setattr, self.t.config, "CAPTURE_PROBES", False)
+        d = self.t.investigate(self.SIG, probe_table={"service_logs:{}": f"deploy log: token={self.KEY}"})
+        with open(self.path) as f:
+            steps = [json.loads(x) for x in f if x.strip() and '"kind": "step"' in x]
+        return d, sent, steps
+
+    def test_an_observing_hook_records_what_it_would_do_and_changes_nothing(self):
+        d, sent, steps = self._run_with_a_key_in_the_probe_result()
+        self._hooked("observe")
+        d2, sent2, steps2 = self._run_with_a_key_in_the_probe_result()
+        self.assertEqual(sent2, sent)
+        self.assertIn(self.KEY, sent2[1])
+        self.assertEqual((d2["_probe_trace"], d2["disposition"]), (d["_probe_trace"], d["disposition"]))
+        self.assertEqual(len(steps2) - len(steps), 1)
+        row = steps2[-1]
+        self.assertEqual((row["kind"], row["role"], row["decision_key"]), ("step", "hook", "glitchtip:FP-1"))
+        self.assertIn("after_tool redact_credentials (observe): would have replaced the result of service_logs", row["detail"])
+        self.assertNotIn(self.KEY, json.dumps(row))
+        hooks = [h for t in d2["_exact"]["turns"] for h in t.get("hooks", [])]
+        self.assertEqual([(h["name"], h["effect"], h["mode"]) for h in hooks], [("redact_credentials", "replace", "observe")])
+        self.assertNotIn(self.KEY, json.dumps(hooks))
+
+    def test_an_enforcing_hook_masks_the_result_the_model_reads_and_the_trace_keeps(self):
+        self._hooked("enforce")
+        d, sent, _ = self._run_with_a_key_in_the_probe_result()
+        self.assertNotIn(self.KEY, sent[1])
+        self.assertIn("token=<redacted>", sent[1])
+        self.assertEqual(d["_probe_trace"][0]["result"], "deploy log: token=<redacted>")
+
+    def test_an_unregistered_hook_fails_the_run_at_start(self):
+        self._hooked("enforce", name="no_such_hook")
+        with self.assertRaisesRegex(RuntimeError, "no_such_hook is not registered"):
+            self.t.investigate(self.SIG, probe_table={})
 
     def test_quirk_names_are_distinct_and_joined(self):
         self._replies(("", "stop"), ("not json", "stop"), ("also not", "stop"), (self.DECIDE, "stop"))

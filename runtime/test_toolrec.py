@@ -33,6 +33,20 @@ class Redact(unittest.TestCase):
         self.assertEqual(toolrec.redact(once), once)
 
 
+class RedactCredentials(unittest.TestCase):
+    def test_credentials_are_masked_but_not_addresses(self):
+        for text, gone in [(f"echo {KEY}", KEY), (f"git push https://{GH}@github.com/o/r", GH), (f"jwt {JWT}", JWT),
+                           ("psql postgres://user:hunter2@db/x", "hunter2"), ("API_KEY=topsecret ./run", "topsecret"),
+                           ('{"api_key": "abc123def", "n": 1}', "abc123def"), ("Authorization: Bearer abcdefghij1234567890", "abcdefghij1234567890")]:
+            self.assertNotIn(gone, toolrec.redact_credentials(text), text)
+        for text in ["mail ada@example.com from 10.1.2.3", "service logs: 5xx rate 0.2, host 192.168.1.4", "plain"]:
+            self.assertEqual(toolrec.redact_credentials(text), text, text)
+        self.assertEqual(toolrec.redact_credentials(f"a {KEY} b"), "a <redacted> b")
+
+    def test_it_is_redact_without_the_last_two_rules(self):
+        self.assertEqual(toolrec.redact(f"{KEY} a@b.example 10.0.0.1"), "<redacted> <email> <ip>")
+
+
 class Clean(unittest.TestCase):
     def test_one_line_cut_at_160_after_redaction(self):
         self.assertEqual(toolrec.clean_arg("ls\n  -la\t/tmp"), "ls -la /tmp")

@@ -33,6 +33,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostlink"
 	"github.com/chipi/flotilla/internal/mcpserver"
 	"github.com/chipi/flotilla/internal/models"
+	"github.com/chipi/flotilla/internal/prompts"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/skills"
@@ -248,6 +249,10 @@ func main() {
 	}
 	if err := skills.Check(cfg.SpecsDir, routines); err != nil {
 		fmt.Fprintln(os.Stderr, "skills:", err)
+		os.Exit(2)
+	}
+	if err := prompts.Check(cfg.SpecsDir, routines); err != nil {
+		fmt.Fprintln(os.Stderr, "prompts:", err)
 		os.Exit(2)
 	}
 	fleets, err := spec.LoadFleets(cfg.SpecsDir, routines)

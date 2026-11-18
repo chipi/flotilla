@@ -33,6 +33,10 @@ skills:
       load: [hint-environment]
     - when: {class: recoverable}
       load: [hint-recoverable]
+# The system prompt (ADR-0018): a file in the fleet's folder, its hash handed to the run (FLOTILLA_PROMPTS).
+# triage.py's default path is the same file for runs without flotillad (a test keeps them equal).
+prompts:
+  system: playbooks/triage.md
 # The model-driven step (RFC-0002 §4). fleets/triage/harness-default.json is the same for runs
 # without flotillad (a Go test keeps them equal). The quirks keep today's loop like for like; RFC-0002
 # §9 step 6 removes them one at a time, each by model replay.
@@ -48,3 +52,6 @@ harness:
     reply_echo_chars: 600
     decision_echo_chars: 400
     result_chars: 1800
+  hooks:
+    after_tool:
+      - {name: redact_credentials, mode: observe}

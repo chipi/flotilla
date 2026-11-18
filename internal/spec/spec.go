@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -69,6 +70,9 @@ type Routine struct {
 	Freshness   string   `yaml:"freshness"`
 	Skills      Skills   `yaml:"skills"`  // ADR-0012: the skills the routine may load; default none
 	Harness     *Harness `yaml:"harness"` // RFC-0002 §4: the routine's model-driven step, when it has one
+	// The system prompts the routine runs with (ADR-0018): a role (system, rules) to a file under the
+	// fleet's folder. A routine with a harness declares `system`.
+	Prompts map[string]string `yaml:"prompts"`
 	// The case kinds this routine may open (pipeline v1 step 6): a monitor reports detections in its
 	// plan file and flotillad opens the cases; a kind not listed here is refused.
 	Detects []string `yaml:"detects"`
@@ -91,6 +95,9 @@ type Routine struct {
 	Every time.Duration `yaml:"-"`
 	Limit time.Duration `yaml:"-"`
 	Fresh time.Duration `yaml:"-"`
+	// the sha256 of each declared prompt file when the spec was loaded ("" for a file that cannot be
+	// read: prompts.Check refuses it)
+	PromptSHA map[string]string `yaml:"-"`
 }
 
 // Trigger is what starts the routine (ADR-0007): time (every) or an event on a case (RFC-0004 §3.7):
@@ -189,6 +196,7 @@ var (
 	verifyRe       = regexp.MustCompile(`^[a-z][a-z0-9_]*(\([^()]*\))?$`)        // as the registry's conditions
 	actionRe       = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`) // as the registry's names
 	briefSectionRe = regexp.MustCompile(`^[A-Z][A-Za-z ]{0,31}$`)
+	promptPathRe   = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
 )
 
 // Harness (RFC-0002 §4) configures the routine's model-driven step: its protocol, the tools offered, the
@@ -200,6 +208,21 @@ type Harness struct {
 	Gates    []string      `yaml:"gates" json:"gates"`
 	Limits   HarnessLimits `yaml:"limits" json:"limits"`
 	Quirks   HarnessQuirks `yaml:"quirks" json:"quirks"`
+	// Hooks (ADR-0018): code run around each tool call, named here and implemented in the routine's code
+	// (runtime/hooks.py). A pointer, so a harness without hooks hands the run the JSON it always did.
+	Hooks *HarnessHooks `yaml:"hooks" json:"hooks,omitempty"`
+}
+
+type HarnessHooks struct {
+	BeforeTool []HookRef `yaml:"before_tool" json:"before_tool,omitempty"`
+	AfterTool  []HookRef `yaml:"after_tool" json:"after_tool,omitempty"`
+}
+
+// HookRef names a hook; Mode is enforce (the default: its refusal or replacement stands) or observe (it runs and
+// what it would have done is recorded, nothing changes).
+type HookRef struct {
+	Name string `yaml:"name" json:"name"`
+	Mode string `yaml:"mode" json:"mode"`
 }
 
 type HarnessLimits struct {
@@ -223,6 +246,24 @@ func (j *Routine) HarnessJSON() string {
 		return ""
 	}
 	b, _ := json.Marshal(j.Harness)
+	return string(b)
+}
+
+// PromptsJSON is what a run gets in FLOTILLA_PROMPTS ({"system": {"path": ..., "sha256": ...}}), or "" when the
+// routine declares none. The run refuses a prompt whose file does not hash to this (runtime/prompts.py).
+func (j *Routine) PromptsJSON() string {
+	if len(j.Prompts) == 0 {
+		return ""
+	}
+	type entry struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+	}
+	m := map[string]entry{}
+	for role, p := range j.Prompts {
+		m[role] = entry{p, j.PromptSHA[role]}
+	}
+	b, _ := json.Marshal(m)
 	return string(b)
 }
 
@@ -390,8 +431,41 @@ func LoadFile(path string) (*Routine, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	sum := sha256.Sum256(raw)
+	if len(j.Prompts) > 0 {
+		// a changed prompt is a changed routine: its hash covers the prompt files. A routine without prompts keeps
+		// the hash of its spec bytes alone, so the fleet's pack hash does not move for it.
+		j.PromptSHA = map[string]string{}
+		h := sha256.New()
+		h.Write(raw)
+		for _, role := range sortedKeys(j.Prompts) {
+			if b, err := os.ReadFile(filepath.Join(filepath.Dir(path), filepath.FromSlash(j.Prompts[role]))); err == nil {
+				ps := sha256.Sum256(b)
+				j.PromptSHA[role] = hex.EncodeToString(ps[:])
+			}
+			fmt.Fprintf(h, "\nprompt %s=%s", role, j.PromptSHA[role])
+		}
+		sum = [32]byte(h.Sum(nil))
+	}
 	j.Path, j.Hash = path, hex.EncodeToString(sum[:])[:12]
 	return &j, nil
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// validPromptPath: a clean path relative to the fleet's folder, a .md or .txt file, no way out of the folder.
+func validPromptPath(p string) bool {
+	if !promptPathRe.MatchString(p) || path.Clean(p) != p || strings.HasPrefix(p, "/") || p == ".." || strings.HasPrefix(p, "../") {
+		return false
+	}
+	ext := path.Ext(p)
+	return ext == ".md" || ext == ".txt"
 }
 
 func (j *Routine) validate() error {
@@ -441,6 +515,17 @@ func (j *Routine) validate() error {
 	if len(j.Skills.OnDemand) > 0 {
 		bad("skills.on_demand: on-demand loading comes with RFC-0002 §9 step 4, not yet supported")
 	}
+	for _, role := range sortedKeys(j.Prompts) {
+		if !caseFieldRe.MatchString(role) {
+			bad("prompts: role %q (lower-case, digits, _)", role)
+		}
+		if p := j.Prompts[role]; !validPromptPath(p) {
+			bad("prompts.%s: %q is not a .md or .txt path inside the fleet's folder (relative, no ..)", role, p)
+		}
+	}
+	if j.Harness != nil && j.Prompts["system"] == "" {
+		bad("prompts.system: a routine with a harness declares its system prompt")
+	}
 	if h := j.Harness; h != nil {
 		if h.Protocol != "json" {
 			bad("harness.protocol %q: json (native tool calls come later)", h.Protocol)
@@ -457,6 +542,31 @@ func (j *Routine) validate() error {
 		if l.MaxToolCalls < 1 || l.MaxSteps != l.MaxToolCalls+1 || l.ToolCallsPerTurn != 1 {
 			bad("harness.limits: max_tool_calls >= 1, max_steps = max_tool_calls + 1, tool_calls_per_turn 1 (got %d, %d, %d)",
 				l.MaxToolCalls, l.MaxSteps, l.ToolCallsPerTurn)
+		}
+		if hk := h.Hooks; hk != nil {
+			for _, ph := range []struct {
+				phase string
+				refs  []HookRef
+			}{{"before_tool", hk.BeforeTool}, {"after_tool", hk.AfterTool}} {
+				phase, refs := ph.phase, ph.refs
+				seen := map[string]bool{}
+				for i := range refs {
+					r := &refs[i]
+					switch {
+					case !caseFieldRe.MatchString(r.Name):
+						bad("harness.hooks.%s: hook name %q (lower-case, digits, _)", phase, r.Name)
+					case seen[r.Name]:
+						bad("harness.hooks.%s: hook %q is declared twice", phase, r.Name)
+					}
+					seen[r.Name] = true
+					if r.Mode == "" {
+						r.Mode = "enforce"
+					}
+					if r.Mode != "enforce" && r.Mode != "observe" {
+						bad("harness.hooks.%s.%s: mode %q is enforce or observe", phase, r.Name, r.Mode)
+					}
+				}
+			}
 		}
 		q := h.Quirks
 		if !q.BadJSONUsesTurn || !q.EmptyRetry || !q.FinalDecisionCall {
@@ -550,3 +660,6 @@ func (j *Routine) validate() error {
 	}
 	return errors.Join(errs...)
 }
+
+// PromptRoles lists the roles of the declared prompts, sorted.
+func (j *Routine) PromptRoles() []string { return sortedKeys(j.Prompts) }

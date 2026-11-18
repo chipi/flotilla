@@ -191,6 +191,25 @@ func TestRunGetsItsHarness(t *testing.T) {
 	}
 }
 
+func TestRunGetsItsPromptsAndRecordsThem(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if _, ok := fr.got[0].Env["FLOTILLA_PROMPTS"]; ok {
+		t.Fatal("FLOTILLA_PROMPTS set for a routine without prompts")
+	}
+	s.Routines[0].Prompts = map[string]string{"system": "playbooks/triage.md"}
+	s.Routines[0].PromptSHA = map[string]string{"system": "ab12"}
+	r, _ := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	want := `{"system":{"path":"playbooks/triage.md","sha256":"ab12"}}`
+	if got := fr.got[1].Env["FLOTILLA_PROMPTS"]; got != want {
+		t.Fatalf("FLOTILLA_PROMPTS: %q", got)
+	}
+	ev, err := s.Store.LatestEvent(context.Background(), "run.prompts", r.ID)
+	if err != nil || ev == nil || ev.Detail != want {
+		t.Fatalf("the run's prompts event: %+v, %v", ev, err)
+	}
+}
+
 func TestSkips(t *testing.T) {
 	for name, c := range map[string]struct{ subject, key, want string }{
 		"fleet stopped":  {"triage", KeyStop, "STOPped"},

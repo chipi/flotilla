@@ -351,6 +351,12 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	if sk := j.SkillsJSON(); sk != "" {
 		env["FLOTILLA_SKILLS"] = sk // the spec's skills.rule (ADR-0012), matched by the routine's code
 	}
+	if pr := j.PromptsJSON(); pr != "" {
+		env["FLOTILLA_PROMPTS"] = pr // the spec's prompts: with the hashes their files had at load; a run refuses any other
+		if err := s.Store.Event(ctx, "flotillad", "flotillad", "run.prompts", runID, pr); err != nil {
+			s.Log.Warn("the run's prompts event", "routine", id, "run_id", runID, "err", err)
+		}
+	}
 	if h := j.HarnessJSON(); h != "" {
 		env["FLOTILLA_HARNESS"] = h // the spec's harness: (RFC-0002 §4)
 	}

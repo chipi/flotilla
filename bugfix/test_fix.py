@@ -300,6 +300,7 @@ class Fixture:
                                              "data": {"issue": {"repo": self.repo, "number": 12, "title": "value is 1",
                                                                 "body": getattr(self, "body", "value() returns 1, want 2"),
                                                                 "url": "u"}}}))
+        env.update(getattr(self, "extra_env", {}))
         old = fix.BAKEOFF
         fix.BAKEOFF = self.bakeoff
         try:
@@ -1131,6 +1132,48 @@ exec {real} "$@"
         self.assertIn("[... cut:", p)
         self.assertIn("THE ISSUE AS FILED:\nvalue() returns 1, want 2", p)
         self.assertTrue(p.rstrip().endswith("VERDICT: request-changes CLASS: <one of the classes>."))
+
+    def declared(self, f, data=None, sha=None):
+        # a code root whose fleets/bugfix/playbooks/rules.md is the declared prompt (ADR-0018)
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, "fleets", "bugfix", "playbooks"))
+        data = data if data is not None else b"declared rules\n"
+        with open(os.path.join(root, "fleets", "bugfix", "playbooks", "rules.md"), "wb") as fh:
+            fh.write(data)
+        import hashlib
+        f.extra_env = {"FLOTILLA_CODE_ROOT": root, "FLOTILLA_ROUTINE": "bugfix/fix",
+                       "FLOTILLA_PROMPTS": json.dumps({"rules": {"path": "playbooks/rules.md",
+                                                                 "sha256": sha or hashlib.sha256(data).hexdigest()}})}
+        return os.path.join(root, "fleets", "bugfix", "playbooks", "rules.md")
+
+    def test_the_declared_rules_prompt_is_what_pi_gets(self):
+        f = self.fixture(["actionable"], ["good"])
+        path = self.declared(f)
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(self.rules(f), [f"verdict {path}", f"fix {path}", "review none no-context-files=yes"])
+
+    def test_a_rules_file_that_is_not_the_declared_one_is_refused_before_any_step(self):
+        f = self.fixture(["actionable"], ["good"])
+        self.declared(f, sha="0" * 64)
+        with self.assertRaisesRegex(Exception, "refused"):
+            f.run()
+        self.assertFalse(os.path.exists(os.path.join(f.state, "rules")))
+
+    def test_an_explicit_pi_rules_wins_over_the_declared_prompt(self):
+        f = self.fixture(["actionable"], ["good"])
+        self.declared(f)
+        f.run("--pi-rules", "")
+        self.assertEqual(self.rules(f), ["verdict none", "fix none", "review none no-context-files=no"])
+
+    def test_the_fleets_rules_prompt_is_the_default_rules_file(self):
+        # the example fleet declares fleets/bugfix/playbooks/rules.md; without flotillad the default is
+        # bugfix/fleet_rules.md: one text, so a run behaves alike either way
+        root = os.path.dirname(os.path.dirname(os.path.abspath(fix.__file__)))
+        with open(os.path.join(root, "bugfix", "fleet_rules.md"), "rb") as a, \
+                open(os.path.join(root, "fleets", "bugfix", "playbooks", "rules.md"), "rb") as b:
+            self.assertEqual(a.read(), b.read())
 
     def test_an_empty_pi_rules_keeps_pis_default(self):
         f = self.fixture(["actionable"], ["good"])
