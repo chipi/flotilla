@@ -72,8 +72,10 @@ Field names are the code's: `RoleRequest`, `Invocation`, `Turn`, `Episode`, `Mod
   `FLOTILLA_MODELS` by `harness.route`. The adapter points the CLI at `base_url` in the wire protocol the CLI speaks (chat
   completions; later `/v1/messages`, `/v1/responses`), asks for `model`, and sends the key as `harness.read_key` returns it:
   in the child's environment, or in a mode-600 file named in `Invocation.files` under `run_dir`; **never in argv**, never in a
-  file of the repository. No other endpoint, no fallback model. Alias names are per routine (`<fleet>-<routine>-<role>`), since
-  in flotillad an alias maps to one endpoint and one key; the adapter takes whatever `FLOTILLA_MODELS` gives the routine.
+  file of the repository. No other endpoint, no fallback model. Alias names are per routine (`<fleet>-<routine>-<role>`), a
+  convention: an endpoint names a key's variable or file, which each worker resolves to its own key, so routines could share
+  an alias; per-routine names keep them apart in the calls (`run_calls.alias`), the Models page and `models:`. The adapter
+  takes whatever `FLOTILLA_MODELS` gives the routine.
 - **Owner.** The chain picks the alias per role; the adapter wires it.
 - **pi today.** `pi_config.write` makes `<run_dir>/pi/models.json`: a provider `flotilla-<endpoint>` (OpenAI completions) with
   `apiKey: "!cat <key_file>"` or `"$<key_env>"`, so the key is read by pi at call time and written nowhere. argv: `--provider`,
