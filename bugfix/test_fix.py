@@ -1046,7 +1046,7 @@ exec {real} "$@"
         git("add", "-A", cwd=d)
         got = fix.changed_assertions(d, base, d, dict(os.environ))
         self.assertEqual(got, [("src/sentry.test.ts", ["expect(beforeSend(ev)).not.toBeNull();"])])
-        chain = types.SimpleNamespace(repo="chipi/orrery", n=553, issue={"title": "t", "body": "b"}, checked="",
+        chain = types.SimpleNamespace(repo="example/shop", n=553, issue={"title": "t", "body": "b"}, checked="",
                                       a=types.SimpleNamespace(review_tools="none"), wt=d, base=base, run_dir=d, env=dict(os.environ))
         p = fix.Chain.review_prompt(chain, "diff")
         self.assertIn("THE FIX REMOVES OR REWRITES ASSERTIONS OF TESTS THAT ARE ON MAIN (found by the chain): "
@@ -1932,6 +1932,9 @@ class Durable(unittest.TestCase):
                 self.assertEqual(plan["outcome"], "plan", plan)
                 self.assertEqual([c for c in f.calls() if c.startswith("repro")], ["repro"], "one proof, not two")
                 self.assertIn("+++ b/src/a.test.js", plan["params"]["diff"], "the frozen test ships with the fix")
+                if name != "plan":   # killed before its review: the resumed review is told the proof is frozen
+                    with open(os.path.join(f.state, "review_prompt")) as fh:
+                        self.assertIn("THE FROZEN PROOF: src/a.test.js", fh.read())
 
     def test_a_kill_in_a_kick_back_redoes_the_kick_back_and_resumes_the_session(self):
         f = self.fixture(["actionable", "actionable"], ["notest", "good"])
