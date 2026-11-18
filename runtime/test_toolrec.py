@@ -43,6 +43,13 @@ class RedactCredentials(unittest.TestCase):
             self.assertEqual(toolrec.redact_credentials(text), text, text)
         self.assertEqual(toolrec.redact_credentials(f"a {KEY} b"), "a <redacted> b")
 
+    def test_a_long_dashed_string_is_not_quadratic(self):
+        import time
+        for text in ("a-" * 25000, "a" * 50000, "key" * 17000):
+            t = time.time()
+            toolrec.redact_credentials(text)
+            self.assertLess(time.time() - t, 0.1, text[:6])
+
     def test_it_is_redact_without_the_last_two_rules(self):
         self.assertEqual(toolrec.redact(f"{KEY} a@b.example 10.0.0.1"), "<redacted> <email> <ip>")
 

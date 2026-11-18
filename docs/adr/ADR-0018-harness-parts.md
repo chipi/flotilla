@@ -35,8 +35,8 @@ enforced by the harness, not by each fleet's habits.
 
 - The spec has `prompts:`, a map from a role to a file under the fleet's folder: `prompts: {system:
   playbooks/triage.md}`. Roles are lower-case names; paths are relative, clean (no `..`), and end
-  in `.md` or `.txt`. A routine with a `harness:` must declare `system`. A routine with no harness
-  may declare other roles (the bugfix fleet's `rules`, which pi takes as an appended system
+  in `.md` or `.txt`. `system` is optional, also for a routine with a `harness:`. A routine with no
+  harness may declare other roles (the bugfix fleet's `rules`, which pi takes as an appended system
   prompt).
 - **flotillad checks and hashes.** `internal/prompts` (beside `internal/skills`) runs at start and
   in `-check`: a regular file inside the fleet's folder, no symlink on the way, UTF-8, not empty,
@@ -114,6 +114,16 @@ made for a probe that did not run, and a table replay answers the unknown-tool t
 - **Behaviour is unchanged where it is observed.** Triage's `PROMPT_SHA` and its replays stay as
   they were; hooks added in `observe` change no request and no trace. The `observe` mode is how a
   hook is proved on real runs before it is allowed to change what a model reads.
+- **Deploy order.** `prompts:` is optional, also for a routine with a harness: one without it loads
+  its default as before. The image goes first (an older private spec still loads, and the new code
+  falls back to its defaults), then the installation's fleets with the `prompts:` lines. An older
+  flotillad rejects `prompts:` as an unknown field, so the specs must not lead the image.
+- **A prompt edit reaches the runs through a fleets deploy.** flotillad and the local workers are
+  recreated together, so they agree on the hash. A run whose file differs from the handed hash
+  refuses with one clear line: triage exits at start naming both hashes, and the bugfix fix run
+  ends as an escalation whose reason says the prompt differs from the one flotillad checked.
+- **The remote bugfix workers read the image's public copy** of the declared file, so the
+  installation must mount its fleets folder there too, or the two copies must stay byte-identical.
 - **A mounted fleets folder must carry the declared files.** An installation's own fleets folder is
   mounted over the image's: it holds the declared prompt files too. The bugfix fix routine on a
   second machine does not mount it, so the declared `rules` file must be the same bytes in the

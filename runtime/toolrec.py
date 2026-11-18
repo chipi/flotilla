@@ -15,6 +15,8 @@ import re
 ARG_MAX = 160
 MASK = "<redacted>"
 
+# the NAME=value rule starts at the keyword: the name before it stays as it is, and a scan that began at every
+# character of a long dashed string was quadratic
 _CREDENTIAL_RULES = [
     (re.compile(r"sk-or-v1-[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
                 r"|glsa_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}"
@@ -24,7 +26,7 @@ _CREDENTIAL_RULES = [
     (re.compile(r"(://)[^/\s:@'\"]+:[^/\s@'\"]+@"), r"\1" + MASK + "@"),
     (re.compile(r"(?i)(--?(?:token|password|passwd|secret|api-?key)(?:=|\s+))(?:\"[^\"]*\"|'[^']*'|[^\s'\"]+)"), r"\1" + MASK),
     (re.compile(r"(?i)(\"[^\"]*(?:key|token|secret|passw(?:or)?d|credential)[^\"]*\"\s*:\s*)\"[^\"]*\""), r"\1\"" + MASK + "\""),
-    (re.compile(r"(?i)\b([A-Za-z0-9_.-]*(?:key|token|secret|passw(?:or)?d|credential)[A-Za-z0-9_.-]*=)(?:\"[^\"]*\"|'[^']*'|[^\s'\"&;]+)"),
+    (re.compile(r"(?i)((?:key|token|secret|passw(?:or)?d|credential)[A-Za-z0-9_.-]{0,64}=)(?:\"[^\"]*\"|'[^']*'|[^\s'\"&;]+)"),
      r"\1" + MASK),
 ]
 _RULES = _CREDENTIAL_RULES + [

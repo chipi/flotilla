@@ -308,7 +308,6 @@ harness:
 		"no gates":           {"gates: [g]", "gates: []", "tools and gates are required"},
 		"zero echo":          {"reply_echo_chars: 600", "reply_echo_chars: 0", "must be positive"},
 		"unknown field":      {"protocol: json", "protocol: json\n  model: x", "field model not found"},
-		"no system prompt":   {"prompts:\n  system: playbooks/triage.md\n", "", "a routine with a harness declares its system prompt"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dd := t.TempDir()
@@ -435,5 +434,24 @@ harness:
 	}
 	if strings.Contains(routines[0].HarnessJSON(), "hooks") {
 		t.Fatalf("no hooks: no hooks key: %s", routines[0].HarnessJSON())
+	}
+}
+
+// A harness routine without prompts loads as before: no FLOTILLA_PROMPTS, so the run loads its default.
+func TestHarnessWithoutPrompts(t *testing.T) {
+	d := t.TempDir()
+	write(t, d, "triage/cycle.yaml", good+`harness:
+  protocol: json
+  tools: [a]
+  gates: [g]
+  limits: {max_tool_calls: 3, max_steps: 4, tool_calls_per_turn: 1}
+  quirks: {bad_json_uses_turn: true, empty_retry: true, final_decision_call: true, reply_echo_chars: 600, decision_echo_chars: 400, result_chars: 1800}
+`)
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if routines[0].PromptsJSON() != "" || routines[0].HarnessJSON() == "" {
+		t.Fatal("a harness routine without prompts gets FLOTILLA_HARNESS and no FLOTILLA_PROMPTS")
 	}
 }

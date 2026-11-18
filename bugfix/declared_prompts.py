@@ -51,5 +51,5 @@ def resolve(role, environ, code_root, fleet):
         raise PromptError(f"prompt {role}: {rel} is empty")
     sha = hashlib.sha256(data).hexdigest()
     if sha != expect:
-        raise PromptError(f"prompt {role}: {rel} hashes to {sha[:12]}, the spec was loaded with {expect[:12]}; refused")
+        raise PromptError(f"the {role} prompt differs from the one flotillad checked: {rel} expected {expect} got {sha}")
     return cur

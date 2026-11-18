@@ -1157,8 +1157,9 @@ exec {real} "$@"
     def test_a_rules_file_that_is_not_the_declared_one_is_refused_before_any_step(self):
         f = self.fixture(["actionable"], ["good"])
         self.declared(f, sha="0" * 64)
-        with self.assertRaisesRegex(Exception, "refused"):
-            f.run()
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "escalate")
+        self.assertIn("differs from the one flotillad checked", plan["detail"])
         self.assertFalse(os.path.exists(os.path.join(f.state, "rules")))
 
     def test_an_explicit_pi_rules_wins_over_the_declared_prompt(self):

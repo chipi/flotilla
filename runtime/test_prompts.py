@@ -33,9 +33,17 @@ class Loader(unittest.TestCase):
         self.assertEqual((p["role"], p["path"], p["text"], p["sha256"]),
                          ("system", "playbooks/a.md", "the prompt\n", sha(b"the prompt\n")))
 
+    def test_the_text_is_what_a_text_mode_read_gives_and_the_hash_is_of_the_bytes(self):
+        raw = b"line one\r\nline two\rline three\n"
+        self.put("playbooks/a.md", raw)
+        with open(os.path.join(self.dir, "playbooks", "a.md"), encoding="utf-8") as f:
+            old = f.read()
+        p = prompts.load("system", "f", self.root, self.env(data=raw))
+        self.assertEqual((p["text"], p["sha256"]), (old, sha(raw)))
+
     def test_a_changed_file_is_refused(self):
         self.put("playbooks/a.md", "the prompt, edited\n")
-        with self.assertRaisesRegex(prompts.PromptError, "refused"):
+        with self.assertRaisesRegex(prompts.PromptError, "differs from the one flotillad checked"):
             prompts.load("system", "f", self.root, self.env())
 
     def test_without_flotillad_the_default_loads_unverified(self):
@@ -52,8 +60,9 @@ class Loader(unittest.TestCase):
 
     def test_a_role_the_spec_does_not_declare(self):
         self.put("playbooks/a.md", "x\n")
+        self.assertEqual(prompts.load("rules", "f", self.root, self.env(), default="playbooks/a.md")["text"], "x\n")
         with self.assertRaisesRegex(prompts.PromptError, "declares none"):
-            prompts.load("rules", "f", self.root, self.env(), default="playbooks/a.md")
+            prompts.load("rules", "f", self.root, self.env())
 
     def test_refusals(self):
         self.put("playbooks/empty.md", " \n")

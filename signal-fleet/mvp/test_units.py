@@ -1183,7 +1183,8 @@ class TestSystemPromptIsADeclaredPart(unittest.TestCase):
         self.assertEqual((ok.returncode, ok.stdout.strip()), (0, t.PROMPT_SHA), ok.stderr)
         bad = self._import({"system": {"path": t._PLAYBOOK, "sha256": "0" * 64}})
         self.assertNotEqual(bad.returncode, 0)
-        self.assertIn("refused", bad.stderr)
+        self.assertIn("differs from the one flotillad checked", bad.stderr)
+        self.assertNotIn("Traceback", bad.stderr)
 
 
 class TestTriagerFailureDeferral(unittest.TestCase):

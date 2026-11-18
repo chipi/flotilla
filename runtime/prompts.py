@@ -51,9 +51,12 @@ def load(role, fleet, root=None, environ=None, default=None):
     expect = None
     if spec is not None:
         entry = spec.get(role)
-        if not isinstance(entry, dict) or not entry.get("path") or not entry.get("sha256"):
+        if isinstance(entry, dict) and entry.get("path") and entry.get("sha256"):
+            rel, expect = entry["path"], entry["sha256"]
+        elif default:
+            rel = default   # a routine whose spec declares no prompt for this role keeps its default
+        else:
             raise PromptError(f"prompt {role}: the spec declares none (FLOTILLA_PROMPTS has {sorted(spec)})")
-        rel, expect = entry["path"], entry["sha256"]
     elif default:
         rel = default
     else:
@@ -78,7 +81,8 @@ def load(role, fleet, root=None, environ=None, default=None):
     if not text.strip():
         raise PromptError(f"prompt {role}: {rel} is empty")
     sha = hashlib.sha256(raw).hexdigest()
+    text = text.replace("\r\n", "\n").replace("\r", "\n")   # the old read was text mode: the hash is of the bytes
     if expect is not None and sha != expect:
-        raise PromptError(f"prompt {role}: {rel} hashes to {sha[:12]}, the spec was loaded with {expect[:12]}; refused")
+        raise PromptError(f"the {role} prompt differs from the one flotillad checked: {rel} expected {expect} got {sha}")
     loaded.record("playbook", "source", f"prompt {role}", f"{rel} (fleet {fleet})", sha, environ=environ)
     return {"role": role, "path": rel, "sha256": sha, "text": text}

@@ -1093,8 +1093,16 @@ def pi_rules(a, environ):
 def main(argv=None, environ=None):
     environ = dict(os.environ if environ is None else environ)
     a = parse(argv)
-    a.pi_rules = pi_rules(a, environ)
     case = json.loads(environ["FLOTILLA_CASE"])
+    try:
+        a.pi_rules = pi_rules(a, environ)
+    except declared_prompts.PromptError as e:
+        # fail closed, and end as a setup failure ends: an escalation with the reason
+        out = {"outcome": "escalate", "detail": f"prompt: {e}"}
+        with open(environ["FLOTILLA_PLAN_FILE"], "w") as f:
+            json.dump(out, f)
+        print(f"BUGFIX FIX case={case.get('id')} outcome=escalate {out['detail']}")
+        return out
     run_dir = os.path.join(a.scratch, "runs", f"{case.get('id', 'case')}-{int(time.time())}")
     os.makedirs(run_dir)
     chain = None

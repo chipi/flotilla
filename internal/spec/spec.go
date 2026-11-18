@@ -71,7 +71,7 @@ type Routine struct {
 	Skills      Skills   `yaml:"skills"`  // ADR-0012: the skills the routine may load; default none
 	Harness     *Harness `yaml:"harness"` // RFC-0002 §4: the routine's model-driven step, when it has one
 	// The system prompts the routine runs with (ADR-0018): a role (system, rules) to a file under the
-	// fleet's folder. A routine with a harness declares `system`.
+	// fleet's folder. `system` is optional: a harness routine without it loads its default as before.
 	Prompts map[string]string `yaml:"prompts"`
 	// The case kinds this routine may open (pipeline v1 step 6): a monitor reports detections in its
 	// plan file and flotillad opens the cases; a kind not listed here is refused.
@@ -522,9 +522,6 @@ func (j *Routine) validate() error {
 		if p := j.Prompts[role]; !validPromptPath(p) {
 			bad("prompts.%s: %q is not a .md or .txt path inside the fleet's folder (relative, no ..)", role, p)
 		}
-	}
-	if j.Harness != nil && j.Prompts["system"] == "" {
-		bad("prompts.system: a routine with a harness declares its system prompt")
 	}
 	if h := j.Harness; h != nil {
 		if h.Protocol != "json" {

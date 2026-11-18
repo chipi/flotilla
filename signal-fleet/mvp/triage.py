@@ -237,7 +237,8 @@ def _read_playbook():
     try:
         text = prompts.load("system", _FLEET, root=_CODE_ROOT, default=_PLAYBOOK)["text"]
     except prompts.PromptError as e:
-        raise RuntimeError(f"triage's playbook cannot be loaded: {e}") from e
+        # still refuses (a prompt that is not the declared one never reaches the model), but as one clear line
+        sys.exit(f"[triage] REFUSED to start: the playbook cannot be loaded: {e}")
     return text[:-1] if text.endswith("\n") else text   # the file ends in one newline; the prompt does not
 
 
