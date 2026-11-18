@@ -10,8 +10,8 @@ and goes live on the operator's word; if it turns out wrong, the operator rolls 
 moves to this format; a routine that calls no model has versions and no stations.
 
 **Status: the spec is done (2026-11-18).** Reviewed in five rounds by an advisor and by the
-installation's fleet session; both gave GO on this text. It becomes ADR-0020 once built and the first
-routine moves to it.
+installation's fleet session; both gave GO on this text, and on section 6 (evaluation), agreed
+with eval-harness. It becomes ADR-0020 once built and the first routine moves to it.
 
 ## 1. A routine and its versions
 
@@ -25,7 +25,7 @@ fleets/<fleet>/<routine>/v<n>/<texts>       the texts its stations declare; path
 
 **What belongs to the routine** (`routine.yaml`, changed by an ordinary deploy): its name and
 description, worker and shadow worker, trigger, the case kinds it detects, enabled, autonomy and
-max_autonomy, budget, freshness, resume, brief section, chain. Its identity, controls, ledger
+max_autonomy, budget, freshness, resume, brief section, chain, acceptance. Its identity, controls, ledger
 namespace, cases, freshness alert and metrics are the routine's; every version shares them.
 
 **What belongs to a version** (`v<n>/spec.yaml`): its `run:` (command, timeout), its stations and
@@ -59,7 +59,8 @@ why, like autonomy.
 - **Promote** makes a shadow live; the live one becomes previous, the old previous retired. The
   operator chooses the routine's autonomy for it at promote (pre-filled with the current level); it
   is never inherited in silence. Promote is refused when the version fails the checks (section 2),
-  or with no compared pairs unless the operator gives a reason. The live run in flight finishes and
+  or when the evidence its `acceptance:` names is missing or failed (section 6; `pairs` when it
+  declares none), unless the operator gives a reason. The live run in flight finishes and
   counts; a shadow run in flight finishes as a shadow; the previous version's plans awaiting
   approval stay approvable (it was live when it made them).
 - **Roll back** makes the previous version live at once. The rolled-back version's runs in flight
@@ -241,24 +242,69 @@ the test cannot pass because the shadow did nothing.
 - model-contract: no stations; it audits. `audits: models` makes flotillad hand it the
   installation's aliases with their routes, through `platform-*` aliases.
 
-## 6. Build order
+## 6. Evaluation is first-class
+
+Agreed with eval-harness and its owner (2026-11-18). Evaluation itself (datasets, scoring, decisions)
+stays in eval-harness (RFC-0002 item 9); flotilla owns the recording, the entry point and the formats.
+
+- **The episode schema** (`runtime/episode.schema.json`, versioned): one station's run as the
+  harness layer records it, embedded verbatim in eval-harness's transcripts. It holds the station
+  name and sequence, the version and spec hash, per turn its time, model, rendered texts and usage
+  (input, output, cache and reasoning tokens), per action its name, arguments and result (after
+  redaction; above a size cap as a hash and a length) with its duration and success, the gateway's
+  cost with its source always set, the session id, how it ended, the notes, and the raw stream's
+  path. Every adapter's episode is validated against it.
+- **The input schema** (`runtime/input.schema.json`, versioned): the frozen input of section 4. The
+  same envelope is a scenario's start: a captured live input exports as the envelope with the ledger
+  rows as of its mark and the state snapshot, scrubbed by the installation into its private data. An
+  export is written to a folder the operator names, outside any repo, and is production data until
+  the installation scrubs it; the episode carries the raw stream's path only, never the stream.
+  Optionally it carries recorded tool results: per station, the calls and results of a captured run
+  (from its episodes) or a scenario's fixtures, matched by station, tool name and normalised
+  arguments, never by sequence. They answer the tools the runtime serves (harness `flotilla`'s tool
+  names); a station on an adopted harness gets the envelope's commit in a fixture workspace and no
+  network but the gateway. An input built from a dataset item rather than captured live validates
+  too: the fields only a live capture has (ledger mark, live case keys, snapshot) are optional.
+- **The offline entry point:** `flotillad -stations` and one command that runs a version's own
+  `run:` on a given input, in the routine's shadow worker (its image, the read environment, a fresh
+  HOME, `FLOTILLA_SHADOW=1`), never in the caller's environment, with a models config of its own (so
+  an eval spends on its own key, never a live or shadow key). The run's API is an in-process
+  stand-in that serves the envelope (the ledger as of its mark, the case keys, the state snapshot)
+  and turns every would-be write into a decision record; the command accepts no live flotillad
+  address or token. Given recorded tool results, a station answers its tool calls from them; a call
+  with no recorded result fails the run and is never sent live. That is how an input is evaluated
+  after its sources changed or expired, and it is RFC-0002 §8's model replay. It writes its
+  episodes, calls and decision records to a given folder outside the state folder and the fleets
+  tree. A tested contract; the runner that calls it lives with the installation's evaluation data.
+- **Acceptance names its evidence.** `routine.yaml` declares what a promote needs: `acceptance:`, a
+  list from `pairs`, `replay`, `scenario_eval`; `[pairs]` when absent; every listed kind is
+  required. Promote records the acceptance in force and the evidence given (pair counts, gate
+  results, eval-harness run ids with their verdicts), and refuses a promote that lacks a declared
+  kind, or whose given evidence is a failed gate or verdict, unless the operator gives a reason.
+  flotilla stores the verdict; it does not compute it.
+
+## 7. Build order
 
 1. **Routine and versions:** the folder layout, `routine.yaml` and `v<n>/`, the states as an
    operator control, promote, roll back and retire with their rules, the first version live at
    deploy, frozen live and previous, the version on every record, the routine page's versions;
    autonomy `shadow` renamed `record` (`FLEETD_STAGE` unchanged, pinned by a test; the stored values
    move by a one-off store migration, checked read-only on a copy of the real store first; triage's
-   own dispositions keep their `stage: shadow`, labelled as v1's word on the decisions tab).
+   own dispositions keep their `stage: shadow`, labelled as v1's word on the decisions tab);
+   `acceptance:` and the evidence a promote records.
 2. **Shadows with no effect:** the per-run token; the shadow record and every redirect in flotillad;
    the worker's read and write split, state snapshot and shadow worker; telemetry labels, and the
-   readers of errors and logs excluding `shadow=1`; the frozen input and pairs per subject; the
-   no-effect test, which gates step 5.
-3. **Stations:** the format, `fleets/harnesses.json` and its check, `FLOTILLA_STATIONS`,
-   `flotillad -stations`, texts as templates recorded per call.
+   readers of errors and logs excluding `shadow=1`; the frozen input as `runtime/input.schema.json`
+   with its export, and pairs per subject; the no-effect test, which gates step 5.
+3. **Stations:** the format, `fleets/harnesses.json` and its check, `FLOTILLA_STATIONS`, `flotillad
+   -stations`, texts as templates recorded per call; `runtime/episode.schema.json`; the offline
+   entry point with recorded tool results.
 4. **The harness layer in `runtime/`:** the adapter interface without station names, pi's adapter
-   serving every `tools` value, the seams and pi's seam end-to-end, moved from `bugfix/`.
+   serving every `tools` value, the seams and pi's seam end-to-end, moved from `bugfix/`; every
+   adapter's episode validated against the episode schema.
 5. **The example fleets move to this format;** the e2e covers versions, shadows, rollback, backward
-   readable state and the no-effect test.
+   readable state, the no-effect test and an offline run of one example version on an authored
+   fixture input (never an exported capture).
 6. **Freeze;** the installation moves its routines (each current spec its v1, live, identical; its
    existing candidate routines, such as triage's cycle-shadow, become shadow versions), then writes
    its v2s. Before any promote, the installation's own gates run each routine's previous version
@@ -266,7 +312,7 @@ the test cannot pass because the shadow did nothing.
    example routines.
 7. **Harnesses adopted one by one** (section 3).
 
-## 7. Examples (not part of the platform)
+## 8. Examples (not part of the platform)
 
 - Triage's cycle: one station, `decide`, on `harness: flotilla` with its tool names and gates.
 - Bugfix's fix chain: as many stations as its chain has steps, each on whichever adopted harness the
