@@ -42,6 +42,13 @@ func verWrite(t *testing.T, dir, rel, body string) {
 // appended to routine.yaml), reconciled the way flotillad's start does: v1 live, v2 and v3 shadows.
 func versioned(t *testing.T, extra string) *Server {
 	t.Helper()
+	s, _ := versionedIn(t, extra)
+	return s
+}
+
+// versionedIn is versioned with the fleets folder it loaded (srv.SpecsDir is set to it).
+func versionedIn(t *testing.T, extra string) (*Server, string) {
+	t.Helper()
 	d := t.TempDir()
 	verWrite(t, d, "triage/cycle/routine.yaml", verRoutine+extra)
 	for _, v := range []string{"v1", "v2", "v3"} {
@@ -57,7 +64,8 @@ func versioned(t *testing.T, extra string) *Server {
 		t.Fatal(err)
 	}
 	srv.Sched.SetRoutines(bound)
-	return srv
+	srv.SpecsDir = d
+	return srv, d
 }
 
 func states(t *testing.T, s *Server) string {
@@ -409,5 +417,97 @@ func TestPlanFiledAfterTheRollbackCannotBeApproved(t *testing.T) {
 	}
 	if c := caseStatus(t, s, id); c.Status != cases.AwaitingApproval {
 		t.Fatalf("a refused approve or reject moved the case: %s", c.Status)
+	}
+}
+
+// Re-recording is the operator's controlled way past the freeze: it records the folder as it is now as the live
+// or previous version's hash, in one transaction with an event; a shadow and a retired version have nothing to
+// re-record, the same hash is refused, and a reason is required.
+func TestRerecordVersion(t *testing.T) {
+	ctx := context.Background()
+	s, d := versionedIn(t, "")
+	was, _, _ := s.Store.LiveVersion(ctx, "triage/cycle")
+	rec := func(c Caller, routine string, n int, why string) (RerecordResult, error) {
+		return s.RerecordVersion(ctx, c, "test", routine, n, why)
+	}
+	for name, c := range map[string]struct {
+		c       Caller
+		routine string
+		n       int
+		why     string
+		code    int
+		msg     string
+	}{
+		"an agent":        {agentCaller, "triage/cycle", 1, "x", 403, ""},
+		"a worker":        {Caller{Name: "w", Role: RoleWorker}, "triage/cycle", 1, "x", 403, ""},
+		"no reason":       {opCaller, "triage/cycle", 1, " ", 400, "needs a reason"},
+		"unknown routine": {opCaller, "triage/nothing", 1, "x", 404, "not in the fleets folder"},
+		"unknown version": {opCaller, "triage/cycle", 9, "x", 404, "no version v9"},
+		"nothing changed": {opCaller, "triage/cycle", 1, "x", 409, "nothing to re-record"},
+		"a shadow":        {opCaller, "triage/cycle", 2, "x", 409, "is a shadow"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := rec(c.c, c.routine, c.n, c.why)
+			if p := AsProblem(err); p == nil || p.Code != c.code || !strings.Contains(p.Msg, c.msg) {
+				t.Fatalf("want %d with %q, got %v", c.code, c.msg, err)
+			}
+		})
+	}
+	if e, _ := s.Store.LatestEvent(ctx, "version.rerecord", "triage/cycle@v1"); e != nil {
+		t.Fatalf("a refused re-record wrote an event: %+v", e)
+	}
+
+	verWrite(t, d, "triage/cycle/v1/spec.yaml", "run: {command: \"echo v1 edited\", timeout: 20m}\n")
+	res, err := rec(opCaller, "triage/cycle", 1, "a deliberate change to v1")
+	if err != nil || res.OldHash != was.Hash || res.NewHash == was.Hash || len(res.Changed) != 1 || res.Changed[0] != "spec.yaml (changed)" || res.By != "operator" {
+		t.Fatalf("re-record: %v %+v", err, res)
+	}
+	now, _, _ := s.Store.LiveVersion(ctx, "triage/cycle")
+	if now.Hash != res.NewHash || now.State != store.VersionLive || now.LiveAt != was.LiveAt {
+		t.Fatalf("the row: %+v", now)
+	}
+	e, _ := s.Store.LatestEvent(ctx, "version.rerecord", "triage/cycle@v1")
+	if e == nil || e.Actor != "operator" || e.Via != "test" || !strings.Contains(e.Detail, res.OldHash+" -> "+res.NewHash) || !strings.Contains(e.Detail, "spec.yaml (changed)") || !strings.Contains(e.Detail, "a deliberate change to v1") {
+		t.Fatalf("event %+v", e)
+	}
+	// the start now passes over the edited folder: v1 stays live, nothing is refused
+	rs, _ := spec.LoadVersions(d)
+	stored, _ := s.Store.AllVersions(ctx)
+	if _, err := versions.Check(rs, stored); err != nil {
+		t.Fatalf("after the re-record: %v", err)
+	}
+	// retired versions are history
+	if err := s.RetireVersion(ctx, opCaller, "test", "triage/cycle", 3, "not needed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rec(opCaller, "triage/cycle", 3, "x"); AsProblem(err) == nil || AsProblem(err).Code != 409 || !strings.Contains(err.Error(), "is retired") {
+		t.Fatalf("a retired version: %v", err)
+	}
+	// a folder that does not load is refused
+	verWrite(t, d, "triage/cycle/v1/spec.yaml", "run: {command: x, timeout: 1s}\n")
+	if _, err := rec(opCaller, "triage/cycle", 1, "x"); AsProblem(err) == nil || AsProblem(err).Code != 409 || !strings.Contains(err.Error(), "does not load") {
+		t.Fatalf("a version that does not load: %v", err)
+	}
+}
+
+// Over HTTP: the route is the operator's and the body is a reason.
+func TestRerecordRoute(t *testing.T) {
+	srv, d := versionedIn(t, "")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	verWrite(t, d, "triage/cycle/v1/spec.yaml", "run: {command: \"echo v1 edited\", timeout: 20m}\n")
+	p := "/v1/routines/triage/cycle/versions/1/rerecord"
+	for _, tok := range []string{agentTok, workerTok, ""} {
+		if c, _ := call(t, ts, "POST", p, tok, `{"reason":"x"}`); c != 403 && c != 401 {
+			t.Errorf("token %q: %d, want 403 or 401", tok, c)
+		}
+	}
+	if c, _ := call(t, ts, "POST", p, opTok, `{}`); c != 400 {
+		t.Fatalf("no reason: %d", c)
+	}
+	c, out := call(t, ts, "POST", p, opTok, `{"reason":"deliberate"}`)
+	if c != 200 || out["routine"] != "triage/cycle" || out["version"] != float64(1) || out["by"] != "operator" || out["old_hash"] == out["new_hash"] ||
+		out["changed"].([]any)[0] != "spec.yaml (changed)" {
+		t.Fatalf("%d %v", c, out)
 	}
 }

@@ -29,6 +29,9 @@ type Plan struct {
 	Live map[string]int
 	// states is each loaded version's state as it will be, with "(new)" on one this start records.
 	states map[string]map[int]string
+	// Updates are a flat spec's live or previous v1 whose hash moved: not frozen, so each is re-recorded at the start
+	// (an event, a line in -check and in the deploy).
+	Updates []Update
 	// Notes are problems the freeze tolerates: a retired version whose folder is gone or does not load,
 	// a recorded routine with no spec.
 	Notes []string
@@ -59,7 +62,9 @@ func short(h string) string {
 // Check compares what is loaded with what is recorded. It returns a Plan, and an error naming every
 // problem that must stop a start or a deploy, one line each, "versions: <routine> v<n> ...":
 //   - a live or previous version whose folder is missing (deleted or renumbered), does not load, or has
-//     a different hash than the one recorded when it went live (the files that differ are named);
+//     a different hash than the one recorded when it went live (the files that differ are named, and the
+//     way out: a new number, or `flotilla versions rerecord`). A flat spec's v1 is the exception: it is
+//     not frozen, its changed hash is a plan Update (re-recorded at the start);
 //   - a shadow whose folder is missing or does not load;
 //   - a version not recorded yet that does not load.
 //
@@ -105,21 +110,26 @@ func Check(routines []*spec.Routine, stored []store.RoutineVersion) (Plan, error
 			case store.VersionLive, store.VersionPrevious:
 				switch {
 				case v == nil:
-					bad("%s v%d is %s and its folder is missing (renumbered or deleted: a live or previous version never changes)", id, n, row.State)
+					bad("%s v%d is %s and its folder is missing (deleted or renumbered): restore v%d/ as it was; a live or previous version never changes", id, n, row.State, n)
 				case !v.Valid():
-					bad("%s v%d is %s and does not load: %v", id, n, row.State, v.Err)
+					bad("%s v%d is %s and does not load: %v: restore it as it was, or fix it and `flotilla versions rerecord %s v%d --reason R` if the change is deliberate", id, n, row.State, v.Err, id, n)
+				case v.Hash != row.Hash && v.Legacy && store.RecordedLegacy(row):
+					// a flat spec's v1 is not frozen: the change is recorded, with an event and a line in -check and the deploy
+					p.Updates = append(p.Updates, Update{Routine: id, Version: n, OldHash: row.Hash, NewHash: v.Hash, Changed: spec.ChangedFiles(row.Manifest, v.Manifest)})
+					p.Ensure[id] = append(p.Ensure[id], lv(v))
+					p.states[id][n] = row.State
 				case v.Hash != row.Hash:
-					bad("%s v%d is %s and its folder changed (recorded %s, found %s): %s", id, n, row.State, short(row.Hash), short(v.Hash),
-						strings.Join(spec.ChangedFiles(row.Manifest, v.Manifest), ", "))
+					bad("%s v%d is %s and its folder changed (recorded %s, found %s): %s; ship the change as v%d (a shadow or retired folder may change), or `flotilla versions rerecord %s v%d --reason R` if this change is deliberate",
+						id, n, row.State, short(row.Hash), short(v.Hash), strings.Join(spec.ChangedFiles(row.Manifest, v.Manifest), ", "), nextNumber(rows, j), id, n)
 				default:
 					p.states[id][n] = row.State
 				}
 			case store.VersionShadow:
 				switch {
 				case v == nil:
-					bad("%s v%d is a shadow and its folder is missing: retire it first", id, n)
+					bad("%s v%d is a shadow and its folder is missing: retire it first (`flotilla retire %s v%d --reason R`) or restore the folder", id, n, id, n)
 				case !v.Valid():
-					bad("%s v%d is a shadow and does not load: %v", id, n, v.Err)
+					bad("%s v%d is a shadow and does not load: %v: fix it, or retire it (`flotilla retire %s v%d --reason R`)", id, n, v.Err, id, n)
 				default:
 					p.states[id][n] = store.VersionShadow
 					p.Ensure[id] = append(p.Ensure[id], lv(v))
@@ -135,7 +145,7 @@ func Check(routines []*spec.Routine, stored []store.RoutineVersion) (Plan, error
 				continue
 			}
 			if !v.Valid() {
-				bad("%s v%d is not recorded yet and does not load: %v", id, v.Number, v.Err)
+				bad("%s v%d is not recorded yet and does not load: %v: fix it, or take v%d/ out of the fleets folder", id, v.Number, v.Err, v.Number)
 				continue
 			}
 			fresh = append(fresh, v)
@@ -164,7 +174,7 @@ func Check(routines []*spec.Routine, stored []store.RoutineVersion) (Plan, error
 }
 
 func lv(v *spec.Version) store.LoadedVersion {
-	return store.LoadedVersion{Version: v.Number, Hash: v.Hash, Manifest: v.Manifest}
+	return store.LoadedVersion{Version: v.Number, Hash: v.Hash, Manifest: v.Manifest, Legacy: v.Legacy}
 }
 
 // Reconcile is flotillad's start: Check against the store, record what is new, and return the routines
@@ -261,4 +271,33 @@ func (p Plan) bound(routines []*spec.Routine, retired bool) []*spec.Routine {
 		}
 	}
 	return out
+}
+
+// Update is a legacy (flat) v1 whose recorded hash moved: what flotillad re-records instead of refusing.
+type Update struct {
+	Routine          string
+	Version          int
+	OldHash, NewHash string
+	Changed          []string // spec.ChangedFiles: "prompt-file:playbooks/triage.md (changed)"
+}
+
+// Line is how -check and the deploy say it: "triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md (changed)".
+func (u Update) Line() string {
+	return fmt.Sprintf("%s v%d (flat) re-recorded: %s", u.Routine, u.Version, strings.Join(u.Changed, ", "))
+}
+
+// nextNumber is the number a new version of the routine would take: one above the highest recorded or loaded.
+func nextNumber(rows map[int]store.RoutineVersion, j *spec.Routine) int {
+	max := 0
+	for n := range rows {
+		if n > max {
+			max = n
+		}
+	}
+	for _, v := range j.Versions {
+		if v.Number > max {
+			max = v.Number
+		}
+	}
+	return max + 1
 }

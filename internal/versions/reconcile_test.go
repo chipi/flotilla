@@ -275,8 +275,9 @@ func TestRoutineLevelEditsAreOrdinaryDeploys(t *testing.T) {
 	}
 }
 
-// A flat spec is a routine with one legacy v1: a fresh store records it live, its Hash is untouched, a change
-// to what v1 owns is refused and a routine-level change is not.
+// A flat spec is a routine with one legacy v1: a fresh store records it live and its Hash is untouched. A change to
+// what v1 owns is not frozen: it is re-recorded (see TestFlatSpecChangeIsReRecorded); a routine-level change is not
+// even a change of the version.
 func TestFlatSpecIsItsOwnLiveV1(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
@@ -292,10 +293,6 @@ func TestFlatSpecIsItsOwnLiveV1(t *testing.T) {
 	write(t, d, "triage/cycle.yaml", strings.Replace(flat, "day_usd: 2", "day_usd: 3", 1))
 	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
 		t.Fatalf("a budget change in a flat spec: %v", err)
-	}
-	write(t, d, "triage/cycle.yaml", strings.Replace(flat, "python3 x.py", "python3 y.py", 1))
-	if _, _, err := Reconcile(ctx, s, load(t, d)); err == nil || !strings.Contains(err.Error(), "triage/cycle v1 is live and its folder changed") || !strings.Contains(err.Error(), "run (changed)") {
-		t.Fatalf("a changed command in a flat spec: %v", err)
 	}
 }
 
@@ -344,5 +341,115 @@ func TestReadVersionsReadOnly(t *testing.T) {
 	r, err := store.ReadVersions(p)
 	if err != nil || !r.Exists || r.Schema < store.VersionsSchema || len(r.Rows) != 1 || r.Rows[0].State != store.VersionLive {
 		t.Fatalf("a current store: %+v %v", r, err)
+	}
+}
+
+// A legacy (flat) v1 is not frozen: a changed live v1 is re-recorded at the start with a version.update event, and
+// the plan says so in a line -check and the deploy print. Routine.Hash keeps moving with the spec's bytes as before.
+func TestFlatSpecChangeIsReRecorded(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := t.TempDir()
+	flat := routineYAML + "run: {command: \"python3 x.py\", workdir: signal-fleet/mvp, timeout: 20m}\nprompts:\n  system: playbooks/triage.md\n"
+	write(t, d, "triage/cycle.yaml", flat)
+	write(t, d, "triage/playbooks/triage.md", "one\n")
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	was, _, _ := s.LiveVersion(ctx, "triage/cycle")
+
+	// a playbook edit: the ordinary change of a flat routine
+	write(t, d, "triage/playbooks/triage.md", "two\n")
+	rs := load(t, d)
+	stored, _ := s.AllVersions(ctx)
+	plan, err := Check(rs, stored)
+	if err != nil || len(plan.Updates) != 1 || plan.Updates[0].Line() != "triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md (changed)" {
+		t.Fatalf("check: %v %+v", err, plan.Updates)
+	}
+	if plan.States("triage/cycle") != "v1:live" {
+		t.Fatalf("a re-recorded v1 stays live: %s", plan.States("triage/cycle"))
+	}
+	if now, _, _ := s.LiveVersion(ctx, "triage/cycle"); now.Hash != was.Hash {
+		t.Fatal("Check is read-only: it recorded something")
+	}
+	bound, plan, err := Reconcile(ctx, s, rs)
+	if err != nil || bound[0].Version != 1 || len(plan.Updates) != 1 {
+		t.Fatalf("reconcile: %v %+v", err, plan)
+	}
+	now, _, _ := s.LiveVersion(ctx, "triage/cycle")
+	if now.Hash == was.Hash || now.Hash != rs[0].VersionHash || now.State != store.VersionLive || now.LiveAt != was.LiveAt {
+		t.Fatalf("recorded %+v, was %+v", now, was)
+	}
+	e, _ := s.LatestEvent(ctx, "version.update", "triage/cycle@v1")
+	if e == nil || e.Actor != Actor || !strings.Contains(e.Detail, was.Hash+" -> "+now.Hash) || !strings.Contains(e.Detail, "prompt-file:playbooks/triage.md (changed)") {
+		t.Fatalf("event %+v", e)
+	}
+	// recorded once: the next start finds nothing to do
+	stored, _ = s.AllVersions(ctx)
+	if plan, err = Check(load(t, d), stored); err != nil || len(plan.Updates) != 0 {
+		t.Fatalf("second check: %v %+v", err, plan.Updates)
+	}
+	// a changed command is a change of the version too
+	write(t, d, "triage/cycle.yaml", strings.Replace(flat, "python3 x.py", "python3 y.py", 1))
+	stored, _ = s.AllVersions(ctx)
+	if plan, err = Check(load(t, d), stored); err != nil || len(plan.Updates) != 1 || plan.Updates[0].Line() != "triage/cycle v1 (flat) re-recorded: run (changed)" {
+		t.Fatalf("command: %v %+v", err, plan.Updates)
+	}
+}
+
+// A folder version stays frozen, and the refusal says what to do about it: ship the next number, or re-record.
+func TestFolderFreezeMessageNamesTheWayOut(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := fleets(t, map[string]string{"v1": "python3 a.py", "v2": "python3 b.py"})
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, d, "triage/cycle/v1/system.md", "edited\n")
+	_, _, err := Reconcile(ctx, s, load(t, d))
+	if err == nil {
+		t.Fatal("a changed live folder must refuse")
+	}
+	for _, want := range []string{"versions: triage/cycle v1 is live and its folder changed", "system.md (changed)",
+		"ship the change as v3 (a shadow or retired folder may change)", "`flotilla versions rerecord triage/cycle v1 --reason R` if this change is deliberate"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal lacks %q: %v", want, err)
+		}
+	}
+}
+
+// Moving a live flat routine to the folder layout changes its recipe: refused, until the operator re-records it.
+// Then the start passes, v1 stays live, and the event log says who moved the hash and why.
+func TestRerecordUnblocksAFolderMove(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d := t.TempDir()
+	flat := routineYAML + "run: {command: \"python3 a.py\", workdir: signal-fleet/mvp, timeout: 20m}\nprompts:\n  system: system.md\n"
+	write(t, d, "triage/cycle.yaml", flat)
+	write(t, d, "triage/system.md", "the text\n")
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(d, "triage/cycle.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	moved := fleets(t, map[string]string{"v1": "python3 a.py"})
+	rs := load(t, moved)
+	_, _, err := Reconcile(ctx, s, rs)
+	if err == nil || !strings.Contains(err.Error(), "triage/cycle v1 is live and its folder changed") {
+		t.Fatalf("the move is refused: %v", err)
+	}
+	v := rs[0].VersionNamed(1)
+	res, err := s.Rerecord(ctx, store.RerecordArgs{Routine: "triage/cycle", Version: 1, Hash: v.Hash, Manifest: v.Manifest, Actor: "operator", Via: "api", Reason: "step 6: moved to the folder layout"})
+	if err != nil || res.NewHash != v.Hash || res.OldHash == v.Hash || len(res.Changed) == 0 {
+		t.Fatalf("rerecord: %v %+v", err, res)
+	}
+	bound, plan, err := Reconcile(ctx, s, rs)
+	if err != nil || bound[0].Version != 1 || plan.States("triage/cycle") != "v1:live" || len(plan.Updates) != 0 {
+		t.Fatalf("after the re-record: %v %s %+v", err, plan.States("triage/cycle"), plan.Updates)
+	}
+	e, _ := s.LatestEvent(ctx, "version.rerecord", "triage/cycle@v1")
+	if e == nil || e.Actor != "operator" || e.Via != "api" || !strings.Contains(e.Detail, res.OldHash+" -> "+res.NewHash) || !strings.Contains(e.Detail, "step 6: moved to the folder layout") {
+		t.Fatalf("event %+v", e)
 	}
 }

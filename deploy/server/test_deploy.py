@@ -315,7 +315,9 @@ FLEETS_DOCKER = textwrap.dedent("""\
           *"flotilla status -json"*) cat "$STUB_CFG/status.json"; exit 0;;
           *"flotilla status"*) echo "triage/cycle  record  record  10m"; echo 'worker triage: {"ok":true}'; exit 0;;
           *"flotilla versions"*)
-            if [ -f "$STUB_CFG/up" ]; then cat "$STUB_CFG/versions.after"
+            if [ -f "$STUB_CFG/up" ]; then
+              [ -n "${STUB_VERSIONS_FAIL_AFTER:-}" ] && { echo "flotillad is gone" >&2; exit 1; }
+              cat "$STUB_CFG/versions.after"
             elif [ -n "${STUB_NO_VERSIONS:-}" ]; then echo "usage: flotilla ..." >&2; exit 2
             else cat "$STUB_CFG/versions.before"; fi; exit 0;;
           *"flotilla health"*) exit 0;;
@@ -328,6 +330,8 @@ FLEETS_DOCKER = textwrap.dedent("""\
               echo "versions: triage/cycle v1 is live and its folder changed (recorded aaaaaaaaaaaa, found bbbbbbbbbbbb): v1/spec.yaml (changed)"
               exit 1
             fi
+            if [ -n "${STUB_CHECK_OTHER:-}" ]; then echo "specs: triage/cycle.yaml: field x not found" >&2; exit 1; fi
+            [ -n "${STUB_CHECK_RERECORD:-}" ] && echo "versions: triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md (changed)"
             echo "CHECK PASS"; exit 0;;
           *" up "*) : > "$STUB_CFG/up"; exit 0;;
         esac; exit 0;;
@@ -452,6 +456,41 @@ class DeployFleetsTest(unittest.TestCase):
         self.assertNotIn(" up ", calls)
         self.assertNotIn("pause", calls, "a routine was paused before the check passed")
         self.assertFalse(os.path.exists(os.path.join(self.home, "fleets-deployed.tsv")), "a refused deploy is not logged")
+        self.assertIn("rerecord ROUTINE vN", r.stdout, "the refusal says the way out")
+
+    def test_a_flat_v1_that_will_be_re_recorded_is_a_proof_line(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "c")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_CHECK_RERECORD="1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("== re-recorded at the start", r.stdout)
+        self.assertIn("   triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md (changed)", r.stdout)
+        changed = [l.strip() for l in r.stdout.split("== versions:")[1].split("\n") if l.strip().startswith(("<", ">"))]
+        self.assertEqual(changed, ["< triage/cycle v1 live " + "a" * 12, "> triage/cycle v1 live " + "c" * 12], r.stdout)
+
+    def test_a_promote_in_the_proof_is_a_state_change_on_both_versions(self):
+        self.versions(versions_json((1, "live", "a"), (2, "shadow", "b")), versions_json((1, "previous", "a"), (2, "live", "b")))
+        r = self.deploy(self.c1)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        changed = [l.strip() for l in r.stdout.split("== versions:")[1].split("\n") if l.strip().startswith(("<", ">"))]
+        self.assertEqual(changed, ["< triage/cycle v1 live " + "a" * 12, "< triage/cycle v2 shadow " + "b" * 12,
+                                   "> triage/cycle v1 previous " + "a" * 12, "> triage/cycle v2 live " + "b" * 12], r.stdout)
+
+    def test_a_versions_call_that_fails_after_the_restart_is_not_a_pass(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_VERSIONS_FAIL_AFTER="1"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("FLEETS DEPLOY PASS", r.stdout)
+        self.assertIn("FLEETS DEPLOY FAIL", r.stdout)
+
+    def test_a_check_failure_that_is_not_a_version_uses_the_old_path(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_CHECK_OTHER="1"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("FLEETS DEPLOY FAIL: flotillad -check refused fleets", r.stdout)
+        self.assertNotIn("FLEETS DEPLOY FAIL: versions", r.stdout)
+        self.assertIn("field x not found", r.stdout)
+        self.assertNotIn(" up ", self.docker_calls())
+        self.assertFalse(os.path.lexists(os.path.join(self.home, "fleets")), "the live folder was switched")
 
 
 if __name__ == "__main__":

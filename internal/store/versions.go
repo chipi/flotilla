@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/spec"
 )
 
 // Routine versions (docs/wip/v2-design.md section 1): which version of a routine is live, shadow,
@@ -76,6 +77,8 @@ type LoadedVersion struct {
 	Version  int
 	Hash     string
 	Manifest map[string]string
+	// Legacy: it is a flat spec's v1, which is not frozen (a changed one is re-recorded, see EnsureVersions).
+	Legacy bool
 }
 
 const versionCols = `routine, version, hash, manifest, state, deployed_at, live_at, state_by, state_at, state_why, retired_kind, autonomy_at_promote, promote_evidence`
@@ -158,8 +161,9 @@ func addVersionEvent(ctx context.Context, tx *sql.Tx, at, actor, via, kind, rout
 
 // EnsureVersions records what flotillad loaded, at its start: the first versions of a routine with none
 // recorded (the lowest goes live, "deploy"; any others arrive as shadows), and a new number of a routine
-// that has some always as a shadow. A shadow that changed on disk gets its new hash; a live, previous or
-// retired version is never touched here (its freeze is checked by the caller). It reports what it did.
+// that has some always as a shadow. A shadow that changed on disk gets its new hash; so does a flat spec's live or
+// previous v1 (not frozen, see LoadedVersion.Legacy). Any other live, previous or retired version is never touched
+// here (its freeze is checked by the caller). It reports what it did.
 func (s *Store) EnsureVersions(ctx context.Context, routine string, loaded []LoadedVersion, actor string) (EnsureResult, error) {
 	var res EnsureResult
 	if len(loaded) == 0 {
@@ -213,6 +217,18 @@ func (s *Store) EnsureVersions(ctx context.Context, routine string, loaded []Loa
 				return res, err
 			}
 			res.Updated = append(res.Updated, lv.Version)
+		case (row.State == VersionLive || row.State == VersionPrevious) && lv.Legacy && row.Hash != lv.Hash && RecordedLegacy(row):
+			// A flat spec's v1 is not frozen: its playbooks and settings change in the ordinary way, so the new hash and
+			// manifest are recorded and the event says what moved. A folder version stays frozen (Rerecord moves it).
+			if _, err := tx.ExecContext(ctx, `UPDATE routine_versions SET hash = ?, manifest = ? WHERE routine = ? AND version = ?`,
+				lv.Hash, string(manifest), routine, lv.Version); err != nil {
+				return res, err
+			}
+			detail := "legacy v1 (flat) re-recorded: hash " + row.Hash + " -> " + lv.Hash + "; changed: " + strings.Join(spec.ChangedFiles(row.Manifest, lv.Manifest), ", ")
+			if err := addVersionEvent(ctx, tx, at, actor, "deploy", "version.update", routine, lv.Version, detail); err != nil {
+				return res, err
+			}
+			res.Rerecorded = append(res.Rerecorded, lv.Version)
 		}
 	}
 	return res, tx.Commit()
@@ -221,9 +237,18 @@ func (s *Store) EnsureVersions(ctx context.Context, routine string, loaded []Loa
 // EnsureResult is what EnsureVersions changed: the version that went live as the routine's first, new
 // shadows, and shadows whose hash moved.
 type EnsureResult struct {
-	Live    int
-	Shadows []int
-	Updated []int
+	Live       int
+	Shadows    []int
+	Updated    []int
+	Rerecorded []int // a flat spec's live or previous v1 whose hash moved
+}
+
+// RecordedLegacy says the row was recorded from a flat spec (its manifest names version-owned keys such as "run", not
+// the files of a folder): only such a row follows a flat spec's changes.
+func RecordedLegacy(r RoutineVersion) bool {
+	_, run := r.Manifest["run"]
+	_, folder := r.Manifest["spec.yaml"]
+	return run && !folder
 }
 
 // PromoteArgs is a request to make a shadow live.
@@ -682,4 +707,73 @@ func (s *Store) RunVersionRolledBack(ctx context.Context, runID string) (at, by 
 		return "", "", false, nil
 	}
 	return at, by, err == nil, err
+}
+
+// RerecordArgs is a request to re-record the hash of a live or previous version from the folder as it is now.
+type RerecordArgs struct {
+	Routine string
+	Version int
+	// Hash and Manifest are the version's as flotillad loaded it from the folder.
+	Hash     string
+	Manifest map[string]string
+	// Legacy: the loaded version is a flat spec's v1.
+	Legacy             bool
+	Actor, Via, Reason string
+}
+
+// RerecordResult is what a re-record changed.
+type RerecordResult struct {
+	OldHash, NewHash string
+	Changed          []string // the manifest keys that differ, as spec.ChangedFiles names them
+}
+
+// Rerecord replaces the recorded hash and manifest of a live or previous version with the loaded folder's, in one
+// transaction with a version.rerecord event that carries the old and the new hash and what changed. It is the
+// operator's controlled way past the freeze when a change to a live version is deliberate: a flat routine moved to
+// the folder layout, a routine removed and added again. A shadow follows its folder by itself and a retired version
+// is history, so neither is re-recorded.
+func (s *Store) Rerecord(ctx context.Context, a RerecordArgs) (RerecordResult, error) {
+	var res RerecordResult
+	if strings.TrimSpace(a.Actor) == "" || strings.TrimSpace(a.Reason) == "" {
+		return res, fmt.Errorf("%w: a re-record needs who and a reason", ErrVersionInvalid)
+	}
+	if a.Hash == "" {
+		return res, fmt.Errorf("%w: a re-record needs the loaded version's hash", ErrVersionInvalid)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback()
+	v, err := s.rowTx(ctx, tx, a.Routine, a.Version)
+	if err != nil {
+		return res, err
+	}
+	switch v.State {
+	case VersionLive, VersionPrevious:
+	case VersionShadow:
+		return res, fmt.Errorf("%w: %s v%d is a shadow: its hash follows its folder, nothing to re-record", ErrVersionConflict, a.Routine, a.Version)
+	default:
+		return res, fmt.Errorf("%w: %s v%d is retired: it is history and is not re-recorded", ErrVersionConflict, a.Routine, a.Version)
+	}
+	if v.Hash == a.Hash {
+		return res, fmt.Errorf("%w: %s v%d already has this hash (%s): nothing to re-record", ErrVersionConflict, a.Routine, a.Version, a.Hash)
+	}
+	manifest, _ := json.Marshal(a.Manifest)
+	at := s.now().Format(ts)
+	if _, err := tx.ExecContext(ctx, `UPDATE routine_versions SET hash = ?, manifest = ? WHERE routine = ? AND version = ?`,
+		a.Hash, string(manifest), a.Routine, a.Version); err != nil {
+		return res, err
+	}
+	res = RerecordResult{OldHash: v.Hash, NewHash: a.Hash, Changed: spec.ChangedFiles(v.Manifest, a.Manifest)}
+	layout := "folder"
+	if a.Legacy {
+		layout = "flat"
+	}
+	detail := fmt.Sprintf("%s v%d re-recorded (loaded as %s): hash %s -> %s; changed: %s: %s", v.State, a.Version, layout, v.Hash, a.Hash,
+		strings.Join(res.Changed, ", "), a.Reason)
+	if err := addVersionEvent(ctx, tx, at, a.Actor, a.Via, "version.rerecord", a.Routine, a.Version, detail); err != nil {
+		return res, err
+	}
+	return res, tx.Commit()
 }

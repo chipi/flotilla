@@ -11,7 +11,7 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-const versionUsage = `versions ROUTINE | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R`
+const versionUsage = `versions ROUTINE | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R | rerecord ROUTINE vN --reason R (operator: record the folder as it is now as the live or previous version's hash)`
 
 // flagBool removes the bare flag name from args and says whether it was there.
 func flagBool(args *[]string, name string) bool {
@@ -77,6 +77,10 @@ func fail(err error) {
 func versionCmd(cmd string, args []string, reason string) {
 	switch cmd {
 	case "versions":
+		if len(args) > 0 && args[0] == "rerecord" {
+			versionCmd("rerecord", args[1:], reason)
+			return
+		}
 		need(args, 1, "versions ROUTINE")
 		var out api.VersionsView
 		get("/v1/routines/"+args[0]+"/versions", &out)
@@ -113,5 +117,12 @@ func versionCmd(cmd string, args []string, reason string) {
 			fail(err)
 		}
 		post("/v1/routines/"+args[0]+"/versions/"+strconv.Itoa(n)+"/retire", map[string]string{"reason": reason})
+	case "rerecord":
+		need(args, 2, "versions rerecord ROUTINE vN --reason R")
+		n, err := versionNumber(args[1])
+		if err != nil {
+			fail(err)
+		}
+		post("/v1/routines/"+args[0]+"/versions/"+strconv.Itoa(n)+"/rerecord", map[string]string{"reason": reason})
 	}
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/chipi/flotilla/internal/store"
 )
 
-// Routine versions (docs/wip/v2-design.md section 1): list, promote, roll back and retire. Only an operator
+// Routine versions (docs/wip/v2-design.md section 1): list, promote, roll back, retire and re-record. Only an operator
 // may change a version's state (ActVersion), never an agent and never through MCP: which version acts is the
 // operator's word. Each action is one function the HTTP handlers, the CLI's endpoints and the UI all call.
 
@@ -22,6 +22,7 @@ func (s *Server) versionRoutes(m *http.ServeMux) {
 	m.Handle("GET /v1/routines/{fleet}/{routine}/versions", s.auth(ActRead, s.versionsList))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/versions/{n}/promote", s.auth(ActVersion, s.versionPromote))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/versions/{n}/retire", s.auth(ActVersion, s.versionRetire))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/versions/{n}/rerecord", s.auth(ActVersion, s.versionRerecord))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/rollback", s.auth(ActVersion, s.versionRollback))
 }
 
@@ -323,5 +324,85 @@ func (s *Server) versionRollback(w http.ResponseWriter, r *http.Request, c Calle
 		return
 	}
 	res.Note = note
+	writeJSON(w, 200, res)
+}
+
+// RerecordResult is what a re-record changed, as the API answers it.
+type RerecordResult struct {
+	Routine string   `json:"routine"`
+	Version int      `json:"version"`
+	OldHash string   `json:"old_hash"`
+	NewHash string   `json:"new_hash"`
+	Changed []string `json:"changed"`
+	By      string   `json:"by"`
+}
+
+// loadedVersion is the version as the fleets folder holds it now: read from SpecsDir when it is set (a folder
+// moved or a routine re-added since flotillad started is not what the running copy has), else as loaded.
+func (s *Server) loadedVersion(routineID string, n int) (*spec.Routine, *spec.Version, error) {
+	var j *spec.Routine
+	if s.SpecsDir != "" {
+		rs, err := spec.LoadVersions(s.SpecsDir)
+		if err != nil {
+			return nil, nil, problem(409, "the fleets folder does not load: %v", err)
+		}
+		for _, r := range rs {
+			if r.ID() == routineID {
+				j = r
+			}
+		}
+		if j == nil {
+			return nil, nil, problem(404, "%s is not in the fleets folder", routineID)
+		}
+	} else if j = s.Sched.Routine(routineID); j == nil {
+		return nil, nil, problem(404, "no such routine")
+	}
+	v := j.VersionNamed(n)
+	if v == nil {
+		return nil, nil, problem(404, "%s has no version v%d in the fleets folder", routineID, n)
+	}
+	if v.Err != nil {
+		return nil, nil, problem(409, "%s v%d does not load: %v", routineID, n, v.Err)
+	}
+	return j, v, nil
+}
+
+// RerecordVersion re-records the hash of a live or previous version from the folder as it is now (the operator's
+// controlled way past the freeze: a flat routine moved to the folder layout, a routine removed and added again, any
+// deliberate change to a frozen version). Operator or admin only (ActVersion), with a reason; one transaction with a
+// version.rerecord event. flotillad keeps running the copy it loaded: restart it to run the re-recorded folder.
+func (s *Server) RerecordVersion(ctx context.Context, c Caller, via, routineID string, n int, why string) (RerecordResult, error) {
+	var out RerecordResult
+	if err := s.Check(ctx, c, ActVersion); err != nil {
+		return out, err
+	}
+	why = strings.TrimSpace(why)
+	if why == "" {
+		return out, problem(400, "a re-record needs a reason (--reason)")
+	}
+	_, v, err := s.loadedVersion(routineID, n)
+	if err != nil {
+		return out, err
+	}
+	res, err := s.Store.Rerecord(ctx, store.RerecordArgs{Routine: routineID, Version: n, Hash: v.Hash, Manifest: v.Manifest, Legacy: v.Legacy,
+		Actor: c.Name, Via: via, Reason: why})
+	if err != nil {
+		return out, storeProblem(err)
+	}
+	s.Log.Info("version re-recorded", "routine", routineID, "version", n, "old_hash", res.OldHash, "new_hash", res.NewHash, "caller", c.Name, "via", via, "reason", why)
+	return RerecordResult{Routine: routineID, Version: n, OldHash: res.OldHash, NewHash: res.NewHash, Changed: res.Changed, By: c.Name}, nil
+}
+
+func (s *Server) versionRerecord(w http.ResponseWriter, r *http.Request, c Caller) {
+	n, err := versionNumber(r)
+	if err != nil {
+		writeAction(w, err, 200, nil)
+		return
+	}
+	res, err := s.RerecordVersion(r.Context(), c, "api", routineID(r), n, reason(r, w))
+	if err != nil {
+		writeAction(w, err, 200, nil)
+		return
+	}
 	writeJSON(w, 200, res)
 }

@@ -749,3 +749,140 @@ func TestReadVersionsBeforeEvidenceColumn(t *testing.T) {
 		t.Fatalf("%+v %v", read, err)
 	}
 }
+
+// A flat spec's live v1 is not frozen: EnsureVersions records its new hash and manifest, once, with an event. A live
+// folder version (manifest of files) never follows its folder here.
+func TestEnsureVersionsFollowsALegacyLiveV1(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	flat := func(h string) LoadedVersion {
+		return LoadedVersion{Version: 1, Hash: h, Legacy: true, Manifest: map[string]string{"run": "r1", "prompt-file:playbooks/triage.md": h}}
+	}
+	if _, err := s.EnsureVersions(ctx, rt, []LoadedVersion{flat("h1")}, "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.EnsureVersions(ctx, rt, []LoadedVersion{flat("h2")}, "flotillad")
+	if err != nil || len(res.Rerecorded) != 1 || res.Rerecorded[0] != 1 {
+		t.Fatalf("re-record: %+v %v", res, err)
+	}
+	v, _, _ := s.LiveVersion(ctx, rt)
+	if v.Hash != "h2" || v.State != VersionLive || v.Manifest["prompt-file:playbooks/triage.md"] != "h2" {
+		t.Fatalf("row %+v", v)
+	}
+	e := lastVersionEvent(t, s, "version.update", rt+"@v1")
+	if e.Actor != "flotillad" || !strings.Contains(e.Detail, "h1 -> h2") || !strings.Contains(e.Detail, "prompt-file:playbooks/triage.md (changed)") {
+		t.Fatalf("event %+v", e)
+	}
+	n0, _ := s.Events(ctx, 1000)
+	if res, err = s.EnsureVersions(ctx, rt, []LoadedVersion{flat("h2")}, "flotillad"); err != nil || len(res.Rerecorded) != 0 {
+		t.Fatalf("again: %+v %v", res, err)
+	}
+	if n1, _ := s.Events(ctx, 1000); len(n1) != len(n0) {
+		t.Fatal("an unchanged v1 wrote an event")
+	}
+
+	// a folder version, even if the caller marks it Legacy, is not followed: its row names files, not keys
+	s2, _ := open(t)
+	if _, err := s2.EnsureVersions(ctx, rt, []LoadedVersion{lv(1, "f1")}, "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	moved := lv(1, "f2")
+	moved.Legacy = true
+	if res, _ = s2.EnsureVersions(ctx, rt, []LoadedVersion{moved}, "flotillad"); len(res.Rerecorded) != 0 {
+		t.Fatalf("a folder version followed: %+v", res)
+	}
+	if v, _, _ := s2.LiveVersion(ctx, rt); v.Hash != "f1" {
+		t.Fatalf("a folder version's hash moved: %+v", v)
+	}
+}
+
+// Rerecord: live and previous only, a reason, a different hash; one event with the old and new hash and the diff.
+func TestRerecord(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if _, err := s.EnsureVersions(ctx, rt, []LoadedVersion{lv(1, "h1"), lv(2, "h2"), lv(3, "h3")}, "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Promote(ctx, promote(s, 2, "h2")); err != nil {
+		t.Fatal(err)
+	}
+	re := func(n int, h, why string) (RerecordResult, error) {
+		return s.Rerecord(ctx, RerecordArgs{Routine: rt, Version: n, Hash: h, Manifest: map[string]string{"spec.yaml": h, "new.md": "x"}, Actor: "user:ada", Via: "cli", Reason: why})
+	}
+	for name, c := range map[string]struct {
+		n      int
+		h, why string
+		want   error
+	}{
+		"no reason": {2, "hx", " ", ErrVersionInvalid},
+		"no hash":   {2, "", "r", ErrVersionInvalid},
+		"same hash": {2, "h2", "r", ErrVersionConflict},
+		"a shadow":  {3, "hx", "r", ErrVersionConflict},
+		"no such":   {9, "hx", "r", ErrNoSuchVersion},
+	} {
+		if _, err := re(c.n, c.h, c.why); !errors.Is(err, c.want) {
+			t.Errorf("%s: %v, want %v", name, err, c.want)
+		}
+	}
+	if err := s.Retire(ctx, rt, 3, "user:ada", "cli", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := re(3, "hx", "r"); !errors.Is(err, ErrVersionConflict) || !strings.Contains(err.Error(), "retired") {
+		t.Fatalf("a retired version: %v", err)
+	}
+	if e, _ := s.LatestEvent(ctx, "version.rerecord", rt+"@v2"); e != nil {
+		t.Fatalf("a refused re-record wrote an event: %+v", e)
+	}
+	for n, h := range map[int]string{2: "h2b", 1: "h1b"} { // live, then previous
+		res, err := re(n, h, "deliberate")
+		if err != nil || res.NewHash != h || res.OldHash != "h"+string(rune('0'+n)) || strings.Join(res.Changed, ",") != "new.md (added),spec.yaml (changed)" {
+			t.Fatalf("v%d: %v %+v", n, err, res)
+		}
+	}
+	if got := states(t, s, rt); got != "v1=previous v2=live v3=retired" {
+		t.Fatalf("a re-record changes no state: %s", got)
+	}
+	live, _, _ := s.LiveVersion(ctx, rt)
+	if live.Hash != "h2b" || live.Manifest["new.md"] != "x" {
+		t.Fatalf("live row %+v", live)
+	}
+	e := lastVersionEvent(t, s, "version.rerecord", rt+"@v2")
+	if e.Actor != "user:ada" || e.Via != "cli" || !strings.Contains(e.Detail, "h2 -> h2b") || !strings.Contains(e.Detail, "new.md (added), spec.yaml (changed)") || !strings.HasSuffix(e.Detail, "deliberate") {
+		t.Fatalf("event %+v", e)
+	}
+}
+
+// The run of a version that was rolled back is found through its row: a plan it files after the rollback is
+// withdrawn by the same fact.
+func TestRunVersionRolledBack(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if _, err := s.EnsureVersions(ctx, rt, []LoadedVersion{lv(1, "h1"), lv(2, "h2")}, "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Promote(ctx, promote(s, 2, "h2")); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []Run{{ID: "r1", Version: 2}, {ID: "r0", Version: 1}} {
+		r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.StartedAt, r.Status = rt, "x", "schedule", "flotillad", "record", "2026-11-18T10:00:00Z", StatusRunning
+		if err := s.StartRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, rb, err := s.RunVersionRolledBack(ctx, "r1"); err != nil || rb {
+		t.Fatalf("v2 is live: %v %v", rb, err)
+	}
+	if _, err := s.Rollback(ctx, RollbackArgs{Routine: rt, Hash: "h1", Autonomy: "record", Current: "record", Actor: "user:ada", Via: "cli", Reason: "bad"}); err != nil {
+		t.Fatal(err)
+	}
+	at, by, rb, err := s.RunVersionRolledBack(ctx, "r1")
+	if err != nil || !rb || by != "user:ada" || at == "" {
+		t.Fatalf("v2 was rolled back: %q %q %v %v", at, by, rb, err)
+	}
+	if _, _, rb, _ = s.RunVersionRolledBack(ctx, "r0"); rb {
+		t.Fatal("v1 is live again, not rolled back")
+	}
+	if _, _, rb, _ = s.RunVersionRolledBack(ctx, "nope"); rb {
+		t.Fatal("no such run")
+	}
+}

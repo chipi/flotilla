@@ -122,6 +122,9 @@ type Server struct {
 	Exec *Executions
 	// Approvals in Slack through the connector (slack.go); nil: Slack is not wired.
 	Slack *SlackConfig
+	// SpecsDir is the fleets folder flotillad loaded its routines from. A version re-record reads the folder as it is
+	// now (the running copy is the one whose hash no longer matches); empty: the routines as loaded.
+	SpecsDir string
 }
 
 type ctxKey struct{}

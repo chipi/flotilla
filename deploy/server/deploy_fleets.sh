@@ -18,7 +18,9 @@
 # now; after it, every routine whose spec hash changed and every routine version whose state or hash changed
 # (a new version of a routine arrives as one new shadow line). A live or previous version whose folder changed
 # is frozen (docs/wip/v2-design.md section 1): flotillad -check refuses it before anything is paused or switched,
-# and the deploy ends "FLEETS DEPLOY FAIL: versions ...". Ends with FLEETS DEPLOY PASS or FLEETS DEPLOY FAIL.
+# and the deploy ends "FLEETS DEPLOY FAIL: versions ..." (ship a changed live version as a new number, or `flotilla versions
+# rerecord` if the change is deliberate). A flat routine's v1 is not frozen: its change is re-recorded at the start, and
+# the deploy prints each as "== re-recorded". Ends with FLEETS DEPLOY PASS or FLEETS DEPLOY FAIL.
 set -uo pipefail
 export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
 H="${FLOTILLA_HOME:-$HOME/flotilla}"
@@ -84,10 +86,13 @@ OUT="$(FLEETS="$DIR" compose run --rm --no-deps flotillad -config /etc/flotilla/
     # a frozen version is a refusal of its own: name it, whatever else -check printed
     if printf '%s\n' "$OUT" | grep -q '^versions: '; then
       printf '%s\n' "$OUT" | grep '^versions: ' | sed 's/^/   /'
-      die "versions: flotillad -check refused fleets ${SHA:0:7} (a live or previous version changed or does not load, or a new version does not load; nothing was paused or switched)"
+      die "versions: flotillad -check refused fleets ${SHA:0:7} (a live or previous version changed or does not load, or a new version does not load; nothing was paused or switched): ship a changed live version as a new number, or \`flotilla versions rerecord ROUTINE vN --reason R\` if the change is deliberate"
     fi
     say "$OUT" | tail -15 | sed 's/^/   /'; die "flotillad -check refused fleets ${SHA:0:7}"
   }
+# A flat routine's v1 is not frozen: -check says each one it will re-record (the start records it with a version.update event)
+RR="$(printf '%s\n' "$OUT" | grep '^versions: .*re-recorded' || true)"
+if [ -n "$RR" ]; then say "== re-recorded at the start (a flat routine's v1 is not frozen):"; printf '%s\n' "$RR" | sed 's/^versions: /   /'; fi
 
 hashes() { cli status -json | /usr/bin/python3 -c 'import json,sys; [print(r["id"], r.get("spec_hash","-")) for r in json.load(sys.stdin)["routines"]]'; }
 BEFORE="$(hashes)" || die "cannot read the routines' spec hashes"

@@ -11,6 +11,7 @@
 //	flotilla promote fleet/routine vN --autonomy L --reason "..." [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]...   (operator)
 //	flotilla rollback fleet/routine --autonomy L --reason "..."   (operator: the previous version is live at once)
 //	flotilla retire fleet/routine vN --reason "..."     (operator: stops a shadow)
+//	flotilla versions rerecord fleet/routine vN --reason "..."   (operator: the folder as it is now becomes the live or previous version's recorded hash)
 //	flotilla stop fleet                                 (also cancels the fleet's runs in flight)
 //	flotilla cancel RUN_ID --reason "..."               (operator: one run in flight)
 //	flotilla start fleet --reason "..."                 (operator)

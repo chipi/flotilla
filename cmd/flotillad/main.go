@@ -445,6 +445,9 @@ func main() {
 	for _, n := range plan.Notes {
 		log.Warn("versions: tolerated", "note", n)
 	}
+	for _, u := range plan.Updates {
+		log.Warn("versions: re-recorded", "routine", u.Routine, "version", u.Version, "old_hash", u.OldHash, "new_hash", u.NewHash, "changed", u.Changed)
+	}
 	textNotes, err := checkTexts(cfg.SpecsDir, src, plan)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -476,7 +479,7 @@ func main() {
 	s := &sched.Scheduler{Store: st, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	s.SetRoutines(routines)
-	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg}
+	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
 	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}
