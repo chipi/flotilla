@@ -1043,7 +1043,7 @@ class Chain:
         desc = cap_bytes(f"THE ISSUE AS FILED:\n{issue}\n\nTHE TASK THE VERDICT STEP WROTE FROM IT (it can be wrong):\n{task}",
                          REVIEW_PROMPT_MAX)
         code, stream = sh([os.path.join(BAKEOFF, "harnesses", "repro.sh"), self.wt, desc], BAKEOFF, self.env,
-                          self.a.episode_timeout, max_turns=self.a.fix_max_turns)
+                          self.a.episode_timeout, max_turns=self.a.repro_max_turns)
         said = assistant_text(stream or "")
         blocks = re.findall(r"```json\s*(\{.*?\})\s*```", said, re.S)
         try:
@@ -1062,6 +1062,12 @@ class Chain:
         other = [x for x in files if not TEST_FILE.search(x)]
         if other:
             raise Stop(f"the reproducer changed files that are not tests: {', '.join(other)[:300]}")
+        # new files only: on 2026-11-18 a reproducer replaced an existing test of the file it added to (#335)
+        _, added = sh(["git", "-C", self.wt, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=A",
+                       self.base], self.run_dir, self.env, 60, check=True)
+        edited = sorted(set(files) - {x for x in added.split("\0") if x.strip()})
+        if edited:
+            raise Stop(f"the reproducer edited a file that is on main (it must add a new test file): {', '.join(edited)[:300]}")
         tests = [x for x in files if os.path.exists(os.path.join(self.wt, x))]
         if self.a.test_format == "pytest":
             tests = [x for x in tests if x.endswith(".py") and not PYTEST_OUT_OF_SCOPE.search(x)]
@@ -1792,6 +1798,9 @@ def parse(argv):
                     help="times the review's request-changes sends a gate-clean fix back (within --kickback-max)")
     ap.add_argument("--no-advisor", dest="advisor", action="store_false")
     ap.add_argument("--episode-timeout", type=int, default=1200)
+    ap.add_argument("--repro-max-turns", type=int, default=40,
+                    help="stop the reproducer after this many assistant turns (0: no cap). On 2026-11-18 a #553 reproducer "
+                         "explored 90 turns ($0.15) and wrote nothing; the #335 ones wrote their test in fewer")
     ap.add_argument("--fix-max-turns", type=int, default=90,
                     help="stop a fix episode after this many assistant turns (0: no cap). Of the eval runs of 2026-11-16/17 "
                          "every round whose fix passed the oracle took at most 67 turns; #553's round 0s took 105 to 194 "

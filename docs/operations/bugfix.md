@@ -115,10 +115,12 @@ asks for, and each review approved it). A one-call review anchors on what it rea
 **The proof comes before the fix, from another agent (2026-11-18).** After the verdict, a
 reproducer (`harnesses/repro.sh`, `agents/repro.md`) writes the failing test from the issue's
 evidence, or answers that it cannot and what is needed (the case ends as needs-info, before any
-fix session). The chain checks its test: test files only, no assertion on main changed, no
-source text read, the failure text it names is copied from the issue, and the test fails on
-the base with that text. The test is then frozen: every fix round starts from it, a round that
-changes it fails, and the repro gate runs it alone (tests the fixer adds do not count). On
+fix session). The chain checks its test: one new test file only (it may not edit a file on
+main), no source text read, the failure text it names is copied from the issue (the agent puts
+that phrase in the assertion's message), and the test fails on the base with that text. The
+reproducer stops after `--repro-max-turns` turns (default 40). The test is then frozen: every
+fix round starts from it, a round that changes it fails, and the repro gate runs it alone
+(tests the fixer adds do not count). On
 2026-11-17 five approved #553 plans were five guesses, each proven by its own fixer's test.
 `--no-repro` gives the old chain (the fixer writes its own test), for comparing the two.
 

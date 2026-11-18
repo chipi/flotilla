@@ -18,14 +18,20 @@ change it.
    task can be wrong.
 2. Find the code the issue's evidence points at: the stack frame, the input, the error text, the steps, the
    expected and the actual behaviour. Read it; run the existing tests near it if that helps.
-3. Write ONE new test file (or add a test to an existing test file) that drives that code with the issue's
-   input and asserts the behaviour the issue expects. On the current code it must FAIL, and its failure must
-   show the issue's own symptom: the same error text, or the wrong value the issue reports.
-4. Run it and check it fails for that reason, not for a typo, a missing import or a mock you invented.
+3. Write ONE NEW test file, next to the code's existing tests (for example `src/lib/x.repro.test.ts` beside
+   `src/lib/x.test.ts`, or `tests/.../test_x_repro.py`). Never edit an existing test file. The test drives that
+   code with the issue's input and asserts the behaviour the issue expects. On the current code it must FAIL.
+4. Pick a short phrase (3 to 8 words) copied EXACTLY from the issue as filed, character for character, that
+   names the symptom: an error message, a wrong value, an expected count. Put that phrase in the assertion's
+   message, so the failure output prints it: `expect(value, 'PHRASE').toBe(...)` in vitest,
+   `assert value == expected, 'PHRASE'` in pytest. That phrase is your `expect_failure_match`.
+5. Run it and check it fails for that reason, not for a typo, a missing import or a mock you invented, and that
+   the phrase is in the failure output.
 
 ## Rules
 
-- Change test files only. Never a source file, a config file, a lockfile or a snapshot.
+- Add one new test file only. Never edit an existing file: not a test, a source file, a config file, a
+  lockfile or a snapshot.
 - Never read a source file's text in a test (`readFileSync`, `open`, `read_text` of `.svelte`, `.ts`, `.js`,
   `.py`): run the code.
 - Never weaken, remove or rewrite an assertion that is already on main.
@@ -47,4 +53,8 @@ End with ONLY a JSON object in a ```json fenced block, one of:
  "needed": "what the reporter must give (a source map, the input, the steps, the expected value)"}
 ```
 
-`expect_failure_match` must be copied from the issue as filed, and must appear in your test's failure output.
+`expect_failure_match` must be copied from the issue as filed, word for word (not reworded, not summarised), and
+must appear in your test's failure output: put it in the assertion's message (step 4).
+
+If you cannot reproduce it within a few tries, stop and answer "none" with what is missing: a long search is
+not a proof.

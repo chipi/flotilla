@@ -174,6 +174,15 @@ REPRO_HARNESS = textwrap.dedent('''\
         w("src/a.test.js", "expect src/a.js 2\\n")
     elif k == "noanswer":
         ans = None
+    elif k == "editexisting":
+        w("keep.test.js", open(os.path.join(wt, "keep.test.js")).read() + "msg value() returns 1, want 2\\nexpect src/a.js 2\\n")
+        ans["files"] = ["keep.test.js"]
+    elif k == "chatty":
+        turn = {"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "looking"}],
+                                                   "usage": {"output": 1}}}
+        for _ in range(5):
+            print(json.dumps(turn), flush=True)
+        import time; time.sleep(60)
     text = ("done\\n```json\\n" + json.dumps(ans) + "\\n```") if ans else "I could not decide."
     print(json.dumps({"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": text}],
                                                          "usage": {"output": 5}}}))
@@ -741,12 +750,24 @@ exec {real} "$@"
                            ("nomatch", "the reproducer's failure text is not the issue's own"),
                            ("passes", "the reproducing test does not fail on the base (src/a.test.js)"),
                            ("othersymptom", "fails on the base, but not with the issue's symptom: 'returns 1, want 2'"),
-                           ("noanswer", "the reproducer gave no answer")):
+                           ("noanswer", "the reproducer gave no answer"),
+                           # #335 on 2026-11-18: a reproducer replaced an existing test in the file it added to
+                           ("editexisting", "the reproducer edited a file that is on main (it must add a new test file): "
+                                            "keep.test.js")):
             f = self.rfixture(["actionable"], [], [kind])
             plan, _ = f.run()
             self.assertEqual(plan["outcome"], "escalate", (kind, plan))
             self.assertIn(want, plan["detail"], kind)
             self.assertEqual(f.calls(), ["triage", "repro"], kind)
+
+    def test_the_reproducer_stops_at_its_own_turn_cap(self):
+        # #553 on 2026-11-18: a reproducer explored 90 turns and wrote nothing
+        f = self.rfixture(["actionable"], [], ["chatty"])
+        t0 = time.time()
+        plan, _ = f.run("--repro-max-turns", "3")
+        self.assertEqual(plan["outcome"], "escalate", plan)
+        self.assertIn("the reproducer gave no answer (exit 125)", plan["detail"])
+        self.assertLess(time.time() - t0, 30, "the fake sleeps 60 s after its turns: it was stopped")
 
     def test_a_fix_that_changes_the_frozen_test_fails_its_round(self):
         # the "good" fake fix also rewrites src/a.test.js; round 1's fix leaves it alone
