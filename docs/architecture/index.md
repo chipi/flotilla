@@ -81,7 +81,7 @@ flowchart LR
 | **memory** | what flotilla recorded itself: cases, outcomes, feedback, activated notes; looked up exactly, by key ([ADR-0010](../adr/ADR-0010-memory-and-knowledge.md)) |
 | **knowledge** | what is plugged in from elsewhere: repos, docs, runbooks, MCP servers, trusted or untrusted per path; searched |
 | **policy** | flotillad's code that decides each planned write: run, ask the operator, or refuse |
-| **autonomy** | how far something may go without asking, as a lifecycle: `shadow` (plans recorded, nothing done), then `propose` (asks the operator), then `auto` (acts). Capped by the routine, earned by each action, capped by the host; promoted only by the operator ([ADR-0008](../adr/ADR-0008-autonomy.md)) |
+| **autonomy** | how far something may go without asking, as a lifecycle: `record` (plans recorded, nothing done; `shadow` is its old name and still works), then `propose` (asks the operator), then `auto` (acts). Capped by the routine, earned by each action, capped by the host; promoted only by the operator ([ADR-0008](../adr/ADR-0008-autonomy.md)) |
 | **worker** | a long-running container that runs routines for one role, with that role's credentials |
 | **host agent** | the program flotilla installs on a host (`flotilla-host`; managed with `flotilla host …`). Its roles: **`actions`** (runs the host's allowed writes) and, where configured, **connector** (talks to a communication provider). Workers think, host agents act ([ADR-0009](../adr/ADR-0009-host-agent-names.md)) |
 | **channel** | where flotilla tells people things: `alerts`, `approvals`, `notifications`; routed to a provider |

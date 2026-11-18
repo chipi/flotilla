@@ -104,7 +104,7 @@ hosts can revoke it. Destroying its key is what ends that. A leaked one needs th
 When: the root's key or an intermediate's key may have leaked, or the root nears its 10 years.
 Every host needs reinstalling, over SSH.
 
-1. **Freeze:** `flotilla autonomy freeze`. While frozen every routine runs at shadow and no case
+1. **Freeze:** `flotilla autonomy freeze`. While frozen every routine runs at record and no case
    can be approved.
 2. **Make a new root and intermediate**, offline, as at first setup:
 

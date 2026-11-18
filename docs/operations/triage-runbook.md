@@ -23,7 +23,7 @@ run on the machine that hosts the Docker engine.
 | --- | --- | --- |
 | flotillad | container `flotillad` | schedules `triage/cycle` every 10 minutes; owns autonomy, budget, pause, STOP and the ledger store |
 | the triage worker | container `flotilla-worker-triage`, image `flotilla-worker-triage:sha-<7>` | built from `deploy/docker/worker-triage.Dockerfile`; Python standard library plus the OpenTelemetry SDK; **no pip installs on the host** |
-| the candidate worker | container `flotilla-worker-triage-candidate` (compose profile `candidate`) | runs `triage/cycle-shadow` at shadow, with its own state volume |
+| the candidate worker | container `flotilla-worker-triage-candidate` (compose profile `candidate`) | runs `triage/cycle-shadow` at record, with its own state volume |
 | fleet code | in the image: `/opt/flotilla/signal-fleet/mvp`, `/opt/flotilla/runtime`, `/opt/flotilla/fleets` | **not a git checkout**: a deploy is a new image tag |
 | the installation's fleets | `FLOTILLA_FLEETS_DIR` on the host, mounted over `/opt/flotilla/fleets` | holds the real `triage/installation.json`; see section 3 |
 | fleet state | Docker volume `TRIAGE_STATE_VOLUME`, at `/home/worker/signal-fleet` in the worker | `results/` (the TSV ledgers), `queue/`, `export/`; never in git |
@@ -92,8 +92,9 @@ read by flotillad (`flotillad -check` validates it):
 
 - **`trigger.every: 10m`**, `worker: triage`, `run.timeout: 20m`; the command is
   `python3 orchestrator.py --cycle --limit 10 --no-dry-run` in `signal-fleet/mvp`.
-- **`autonomy`:** `shadow` in the spec, the safe default. The installation raises it with
-  `flotilla autonomy triage/cycle propose --reason "..."`. `shadow` takes no outward action;
+- **`autonomy`:** `record` in the spec (the example spec still spells it `shadow`, the old name, which
+  loads as record), the safe default. The installation raises it with
+  `flotilla autonomy triage/cycle propose --reason "..."`. `record` takes no outward action;
   `propose` files issues, comments and reopens; `auto` also resolves cleaned-up errors in
   GlitchTip (ADR-0008).
 - **`--no-dry-run` alone does not make the cycle write.** `orchestrator.run_poll` forces a dry run
@@ -129,7 +130,7 @@ file) and is in [Deployment](../architecture/deployment.md); the triage-specific
     - a `chat/completions` call to the gateway with the key returns 200;
     - Grafana `GET /api/alertmanager/grafana/api/v2/alerts` returns 200.
 
-4. **Deploy** `deploy/server/deploy.sh sha-<7>` (section 3). The routine comes up at `shadow`:
+4. **Deploy** `deploy/server/deploy.sh sha-<7>` (section 3). The routine comes up at `record`:
    check that new ledger rows say `stage` = `shadow`, and that the shadow day looks right (the
    section 4 checks).
 5. **Promote to `propose`:** `docker exec flotillad flotilla autonomy triage/cycle propose --reason
@@ -150,8 +151,8 @@ token from the container).
 | **Recent runs** | `docker exec flotillad flotilla runs triage/cycle -n 20`; the run's page in the UI shows its model calls and spans. A failed run keeps the last 800 characters of its output in its detail |
 | **Run a cycle now** | `docker exec flotillad flotilla run triage/cycle` |
 | **Pause the routine** | `flotilla pause triage/cycle`; `flotilla resume triage/cycle --reason "..."`. The UI's routine page has the same controls |
-| **STOP the fleet** | `flotilla stop triage` cancels the fleet's runs in flight and skips its later starts; `flotilla start triage --reason "..."` ends it. `flotilla autonomy freeze` holds every routine at shadow |
-| **Change autonomy** | `flotilla autonomy triage/cycle shadow\|propose\|auto --reason "..."` (the routine's own cap is in its spec) |
+| **STOP the fleet** | `flotilla stop triage` cancels the fleet's runs in flight and skips its later starts; `flotilla start triage --reason "..."` ends it. `flotilla autonomy freeze` holds every routine at record |
+| **Change autonomy** | `flotilla autonomy triage/cycle record\|propose\|auto --reason "..."` (the routine's own cap is in its spec; `shadow` still works as the old name of `record`) |
 | **Deploy a code change** | merge to `main`, wait for CI, then **[host]** `deploy/server/deploy.sh sha-<7>`: see "Deploy and roll back" below. A new image restarts the worker; the next cycle runs the new code |
 | **Deploy the installation's own fleets** | **[host]** `deploy/server/deploy_fleets.sh <commit>`; first `--diff <commit>` to see what changes; `--rollback` goes back one commit |
 | **Roll back code** | **[host]** `deploy/server/deploy.sh --rollback` |
@@ -407,7 +408,7 @@ section 7.
 5. Ship only through the gates above and the operator's go; then watch it live.
 
 To compare a model or an image against the live fleet on live signals, run it as the candidate
-routine `triage/cycle-shadow` (shadow, never files; `FLOTILLA_CANDIDATE_TAG` picks its image).
+routine `triage/cycle-shadow` (record, never files; `FLOTILLA_CANDIDATE_TAG` picks its image).
 
 ## 6. Troubleshooting
 
@@ -467,7 +468,7 @@ at the cause, what does the review comment say. Merge = shipped. Close with a on
 rejected; every rejection becomes a fixture for the next round. Never merge a fleet PR you
 wouldn't merge from a human.
 
-**Levers** beyond section 3: autonomy back to `shadow` (`flotilla autonomy triage/cycle shadow
+**Levers** beyond section 3: autonomy back to `record` (`flotilla autonomy triage/cycle record
 --reason "..."`); `flotilla stop triage`; `flotilla autonomy freeze`; deploy rollback
 (`deploy.sh --rollback`); GitHub token rotation (a new fine-grained token into the host's
 `TRIAGE_ENV_FILE`, then `secrets.sh`; the next run reads it).
