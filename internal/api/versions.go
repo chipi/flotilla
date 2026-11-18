@@ -119,6 +119,7 @@ func (s *Server) PromoteVersion(ctx context.Context, c Caller, via, routineID st
 	if v.Err != nil {
 		return problem(409, "%s v%d does not load: %v", routineID, n, v.Err)
 	}
+	req.Autonomy, _ = spec.CanonicalLevel(req.Autonomy)
 	switch req.Autonomy {
 	case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
@@ -157,6 +158,7 @@ type RollbackResult struct {
 	Live       int      `json:"live"`
 	Cases      []string `json:"cases,omitempty"`     // plans withdrawn: each case is back with the acting routine
 	Cancelled  []string `json:"cancelled,omitempty"` // runs of the rolled-back version cancelled in flight
+	Note       string   `json:"note,omitempty"`      // "shadow is now called record", when the deprecated word was given
 }
 
 // RollbackVersion makes the previous version live at once. The store marks the rolled-back version's plans
@@ -175,6 +177,7 @@ func (s *Server) RollbackVersion(ctx context.Context, c Caller, via, routineID s
 	if reason == "" {
 		return out, problem(400, "a rollback needs a reason")
 	}
+	req.Autonomy, _ = spec.CanonicalLevel(req.Autonomy)
 	switch req.Autonomy {
 	case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
@@ -290,8 +293,10 @@ func (s *Server) versionPromote(w http.ResponseWriter, r *http.Request, c Caller
 		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "record|propose|auto", "reason": "...", "without_pairs": false, "gates": [{"name": "...", "result": "pass|fail", "ref": "..."}], "evals": [{"run_id": "...", "verdict": "pass|fail"}]}`})
 		return
 	}
+	var note string
+	body.Autonomy, note = spec.CanonicalLevel(body.Autonomy)
 	err = s.PromoteVersion(r.Context(), c, "api", routineID(r), n, body)
-	writeAction(w, err, 200, map[string]string{"routine": routineID(r), "version": strconv.Itoa(n), "state": store.VersionLive, "autonomy": body.Autonomy, "by": c.Name})
+	writeAction(w, err, 200, withNote(map[string]string{"routine": routineID(r), "version": strconv.Itoa(n), "state": store.VersionLive, "autonomy": body.Autonomy, "by": c.Name}, note))
 }
 
 func (s *Server) versionRetire(w http.ResponseWriter, r *http.Request, c Caller) {
@@ -310,10 +315,13 @@ func (s *Server) versionRollback(w http.ResponseWriter, r *http.Request, c Calle
 		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "record|propose|auto", "reason": "..."}`})
 		return
 	}
+	var note string
+	body.Autonomy, note = spec.CanonicalLevel(body.Autonomy)
 	res, err := s.RollbackVersion(r.Context(), c, "api", routineID(r), body)
 	if err != nil {
 		writeAction(w, err, 200, nil)
 		return
 	}
+	res.Note = note
 	writeJSON(w, 200, res)
 }

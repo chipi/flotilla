@@ -74,3 +74,32 @@ func TestVersionsJSON(t *testing.T) {
 		t.Fatalf("exit %d (%s), %s, %q", code, errs, path, out)
 	}
 }
+
+// shadow, the old name of record, is sent as record, with a note on stderr, everywhere a level is given.
+func TestCLIReadsShadowAsRecord(t *testing.T) {
+	var path, body string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		path, body = r.URL.Path, string(b)
+		w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+	for _, c := range []struct {
+		args []string
+		path string
+		want string
+	}{
+		{[]string{"autonomy", "triage/cycle", "shadow"}, "/v1/routines/triage/cycle/autonomy", `"autonomy":"record"`},
+		{[]string{"action", "autonomy", "backup.rerun", "shadow"}, "/v1/actions/backup.rerun/autonomy", `"autonomy":"record"`},
+		{[]string{"promote", "triage/cycle", "v2", "--autonomy", "shadow", "--reason", "x"}, "/v1/routines/triage/cycle/versions/2/promote", `"autonomy":"record"`},
+		{[]string{"rollback", "triage/cycle", "--autonomy", "shadow", "--reason", "x"}, "/v1/routines/triage/cycle/rollback", `"autonomy":"record"`},
+	} {
+		_, errs, code := cli(t, ts.URL, c.args...)
+		if code != 0 || path != c.path || !strings.Contains(body, c.want) || strings.Contains(body, "shadow") || !strings.Contains(errs, "shadow is now called record") {
+			t.Fatalf("%v: exit %d (%s), sent %s %s", c.args, code, errs, path, body)
+		}
+	}
+	if _, errs, _ := cli(t, ts.URL, "autonomy", "triage/cycle", "propose", "--reason", "x"); strings.Contains(errs, "shadow") {
+		t.Fatalf("propose drew a note: %q", errs)
+	}
+}

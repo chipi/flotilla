@@ -56,6 +56,17 @@ func FleetdStage(autonomy string) string {
 	return autonomy
 }
 
+// ShadowNote is what the API and CLI say when they are given the deprecated word.
+const ShadowNote = "shadow is now called record"
+
+// CanonicalLevel reads the deprecated level word as record. The note is ShadowNote when it did, else empty.
+func CanonicalLevel(level string) (canonical, note string) {
+	if level == deprecatedShadow {
+		return AutonomyRecord, ShadowNote
+	}
+	return level, ""
+}
+
 // normalizeLevels reads the deprecated autonomy word as record, and notes each use.
 func (j *Routine) normalizeLevels() {
 	if j.Autonomy == deprecatedShadow {

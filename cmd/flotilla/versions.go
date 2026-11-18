@@ -100,11 +100,12 @@ func versionCmd(cmd string, args []string, reason string) {
 		if err != nil {
 			fail(err)
 		}
+		req.Autonomy = level(req.Autonomy)
 		post("/v1/routines/"+routine+"/versions/"+strconv.Itoa(n)+"/promote", req)
 	case "rollback":
 		autonomy := flagValue(&args, "--autonomy")
 		need(args, 1, "rollback ROUTINE --autonomy L --reason R")
-		post("/v1/routines/"+args[0]+"/rollback", api.RollbackRequest{Autonomy: autonomy, Reason: reason})
+		post("/v1/routines/"+args[0]+"/rollback", api.RollbackRequest{Autonomy: level(autonomy), Reason: reason})
 	case "retire":
 		need(args, 2, "retire ROUTINE vN --reason R")
 		n, err := versionNumber(args[1])

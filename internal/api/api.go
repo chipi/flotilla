@@ -32,6 +32,7 @@ import (
 	"github.com/chipi/flotilla/internal/policy"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
+	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
 )
@@ -338,6 +339,14 @@ func (s *Server) caseShow(w http.ResponseWriter, r *http.Request, _ Caller) {
 func routineID(r *http.Request) string { return r.PathValue("fleet") + "/" + r.PathValue("routine") }
 
 // writeAction answers an action's result: a Problem's code and message, or ok with the body given.
+// withNote adds the deprecated-word note to an action's answer when there is one.
+func withNote(ok map[string]string, note string) map[string]string {
+	if note != "" {
+		ok["note"] = note
+	}
+	return ok
+}
+
 func writeAction(w http.ResponseWriter, err error, code int, ok map[string]string) {
 	if p := AsProblem(err); p != nil {
 		writeJSON(w, p.Code, map[string]string{"error": p.Msg})
@@ -402,8 +411,9 @@ func (s *Server) autonomy(w http.ResponseWriter, r *http.Request, c Caller) {
 		writeJSON(w, 400, map[string]string{"error": "body: {\"autonomy\": \"record|propose|auto\", \"reason\": \"...\"}"})
 		return
 	}
-	err := s.SetAutonomy(r.Context(), c, "api", routineID(r), body.Autonomy, body.Reason)
-	writeAction(w, err, 200, map[string]string{"routine": routineID(r), "autonomy": body.Autonomy, "by": c.Name})
+	level, note := spec.CanonicalLevel(body.Autonomy)
+	err := s.SetAutonomy(r.Context(), c, "api", routineID(r), level, body.Reason)
+	writeAction(w, err, 200, withNote(map[string]string{"routine": routineID(r), "autonomy": level, "by": c.Name}, note))
 }
 
 func (s *Server) hasFleet(f string) bool {

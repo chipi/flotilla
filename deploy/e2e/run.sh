@@ -538,6 +538,9 @@ CE="$($D inspect flotilla-worker-triage-candidate --format '{{range .Config.Env}
 OUT="$(cli autonomy triage/cycle-shadow propose 2>&1)"
 echo "$OUT" | grep >/dev/null "capped at record" && ok "triage/cycle-shadow cannot leave record, even for the operator ($OUT)" \
   || bad "autonomy on the capped routine: $OUT"
+OUT="$(cli autonomy triage/cycle-shadow shadow 2>&1)"
+echo "$OUT" | grep >/dev/null '"autonomy":"record"' && echo "$OUT" | grep >/dev/null "shadow is now called record" \
+  && ok "the old level word shadow is stored as record ($OUT)" || bad "autonomy shadow: $OUT"
 OUT="$(cli status 2>&1)"
 echo "$OUT" | grep >/dev/null 'worker triage-candidate: {"ok":true' && ok "flotillad reaches the candidate worker" || bad "status: $OUT"
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"

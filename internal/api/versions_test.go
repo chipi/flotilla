@@ -113,7 +113,7 @@ func TestPromoteVersion(t *testing.T) {
 		msg   string
 	}{
 		"no autonomy":      {"", func(_ *Server, _ *int, r *PromoteRequest) { r.Autonomy = "" }, 400, "needs the routine's autonomy"},
-		"a bad autonomy":   {"", func(_ *Server, _ *int, r *PromoteRequest) { r.Autonomy = "shadow" }, 400, "needs the routine's autonomy"},
+		"a bad autonomy":   {"", func(_ *Server, _ *int, r *PromoteRequest) { r.Autonomy = "yolo" }, 400, "needs the routine's autonomy"},
 		"above the cap":    {"max_autonomy: record\n", func(_ *Server, _ *int, r *PromoteRequest) { r.Autonomy = "propose" }, 400, "capped at record"},
 		"a raise, no why":  {"", func(_ *Server, _ *int, r *PromoteRequest) { r.Autonomy, r.Reason = "auto", "" }, 400, "raising the autonomy to auto needs a reason"},
 		"no pairs, no why": {"", func(_ *Server, _ *int, r *PromoteRequest) { r.Reason = "" }, 400, "lacks the evidence its acceptance names (pairs)"},

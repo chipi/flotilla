@@ -63,6 +63,7 @@ func (s *Server) SetActionAutonomy(ctx context.Context, c Caller, via, name, lev
 	if !ok {
 		return problem(404, "no such action")
 	}
+	level, _ = spec.CanonicalLevel(level)
 	switch level {
 	case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
@@ -115,6 +116,7 @@ func (s *Server) actionAutonomy(w http.ResponseWriter, r *http.Request, c Caller
 		writeJSON(w, 400, map[string]string{"error": `body: {"autonomy": "record|propose|auto", "reason": "..."}`})
 		return
 	}
-	err := s.SetActionAutonomy(r.Context(), c, "api", r.PathValue("name"), body.Autonomy, body.Reason)
-	writeAction(w, err, 200, map[string]string{"action": r.PathValue("name"), "autonomy": body.Autonomy, "by": c.Name})
+	level, note := spec.CanonicalLevel(body.Autonomy)
+	err := s.SetActionAutonomy(r.Context(), c, "api", r.PathValue("name"), level, body.Reason)
+	writeAction(w, err, 200, withNote(map[string]string{"action": r.PathValue("name"), "autonomy": level, "by": c.Name}, note))
 }

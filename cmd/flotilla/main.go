@@ -46,6 +46,7 @@ import (
 
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/hostaudit"
+	"github.com/chipi/flotilla/internal/spec"
 )
 
 func main() {
@@ -186,7 +187,7 @@ func main() {
 			return
 		}
 		need(args, 2, `autonomy fleet/routine record|propose|auto [--reason "..."] | autonomy freeze | autonomy unfreeze --reason "..."`)
-		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": args[1], "reason": reason})
+		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": level(args[1]), "reason": reason})
 	case "versions", "promote", "rollback", "retire":
 		versionCmd(cmd, args, reason)
 	case "stop":
@@ -411,7 +412,7 @@ func actionCmd(args []string, reason string) {
 		w.Flush()
 	case "autonomy":
 		need(args, 3, `action autonomy NAME record|propose|auto [--reason "..."]`)
-		post("/v1/actions/"+args[1]+"/autonomy", map[string]string{"autonomy": args[2], "reason": reason})
+		post("/v1/actions/"+args[1]+"/autonomy", map[string]string{"autonomy": level(args[2]), "reason": reason})
 	default:
 		usage()
 	}
@@ -596,6 +597,15 @@ func get(path string, out any) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// level reads an autonomy word, the deprecated shadow as record, and says so on stderr.
+func level(s string) string {
+	l, note := spec.CanonicalLevel(s)
+	if note != "" {
+		fmt.Fprintln(os.Stderr, note)
+	}
+	return l
 }
 
 func post(path string, body any) {

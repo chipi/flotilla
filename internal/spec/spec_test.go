@@ -455,3 +455,12 @@ func TestHarnessWithoutPrompts(t *testing.T) {
 		t.Fatal("a harness routine without prompts gets FLOTILLA_HARNESS and no FLOTILLA_PROMPTS")
 	}
 }
+
+func TestCanonicalLevel(t *testing.T) {
+	for in, want := range map[string]string{"shadow": "record", "record": "record", "propose": "propose", "auto": "auto", "yolo": "yolo", "": ""} {
+		got, note := CanonicalLevel(in)
+		if got != want || (in == "shadow") != (note == ShadowNote) {
+			t.Errorf("%q: %q, %q", in, got, note)
+		}
+	}
+}

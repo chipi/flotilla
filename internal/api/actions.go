@@ -264,6 +264,7 @@ func (s *Server) SetAutonomy(ctx context.Context, c Caller, via, routineID, leve
 	if err != nil {
 		return err
 	}
+	level, _ = spec.CanonicalLevel(level)
 	switch level {
 	case spec.AutonomyRecord, spec.AutonomyPropose, spec.AutonomyAuto:
 	default:
