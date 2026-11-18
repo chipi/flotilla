@@ -54,7 +54,9 @@ why, like autonomy.
   existing routine to this format makes its current spec its v1, live, with the same command,
   environment and values: behaviour identical, proven before the deploy. A v1 made this way is
   exempt from the station rules (section 2) until it is retired, and the files it reads outside
-  `v1/` (its playbooks, skills and facts where its code expects them) are hashed in place.
+  `v1/` (its playbooks, skills and facts where its code expects them) are hashed in place. It is
+  also **not frozen while it is a flat spec**: its playbooks and settings change in the ordinary way,
+  so a changed legacy v1 is re-recorded at the start (below, "Rules that keep rollback safe").
 - **A new version** of a routine that has a live one arrives with a fleets deploy (a restart, as
   today) and always as a shadow. Numbers are the author's, unique per routine.
 - **Promote** makes a shadow live; the live one becomes previous, the old previous retired. The
@@ -70,14 +72,30 @@ why, like autonomy.
   "rolled back at T by X: why"; there is no previous until the next promote. A fix ships as a new
   number.
 - **Retire** stops a shadow; a retired version's folder can be deleted later.
+- **Re-record** (`flotilla versions rerecord ROUTINE vN --reason R`) makes the folder as it is now the
+  recorded version of a live or previous one. It is the operator's controlled way past the freeze when
+  a change to a frozen version is deliberate: moving a flat routine to the folder layout (step 6), a
+  routine removed and added again, any other. Only an operator or an admin may ask (never an agent,
+  a worker or MCP), with a reason, in one transaction with a `version.rerecord` event that carries the
+  old and the new hash and the manifest diff. A shadow follows its folder by itself and a retired
+  version is history, so neither is re-recorded.
 
 **Rules that keep rollback safe.**
 
 - **Live and previous are frozen.** At load, the hash of the live and the previous version's folder
   must equal the hash recorded when they went live. A changed, missing or renumbered live or
-  previous folder fails the load and the deploy, as an invalid spec does today. The only way to
-  change a live version is a new number. A shadow may change; every shadow record carries the hash
-  it ran with.
+  previous folder fails the load and the deploy, as an invalid spec does today, and the error says
+  the way out: ship the change as the next number, or `flotilla versions rerecord` if it is
+  deliberate. A shadow may change; every shadow record carries the hash it ran with.
+- **A legacy (flat) v1 is not frozen.** Its hash covers the version-owned keys' own YAML and the
+  playbooks and skills it reads in place, and a flat routine's playbooks change in the ordinary way
+  (the triage playbook edit is an everyday deploy). At the start, a changed legacy live or previous
+  v1 is an update, not a refusal: the new hash and manifest are recorded, with a `version.update`
+  event (actor flotillad; old and new hash and the changed manifest keys), a `-check` line and a
+  deploy proof line, for example `triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md
+  (changed)`. A folder version stays frozen as above, and so does a v1 recorded from a folder, so
+  moving a flat routine to the folder layout (a new recipe) is refused until the operator re-records
+  it.
 - **State stays readable backward.** A version may add to what the routine stores (ledger columns
   and values, columns of its own state files), never remove or rename; readers ignore what they do
   not know. The e2e proves it for each example routine by running the previous version against the
@@ -288,7 +306,8 @@ stays in eval-harness (RFC-0002 item 9); flotilla owns the recording, the entry 
 
 1. **Routine and versions:** the folder layout, `routine.yaml` and `v<n>/`, the states as an
    operator control, promote, roll back and retire with their rules, the first version live at
-   deploy, frozen live and previous, the version on every record, the routine page's versions;
+   deploy, frozen live and previous (a flat routine's legacy v1 excepted, re-recorded at the start),
+   the operator's re-record command, the version on every record, the routine page's versions;
    autonomy `shadow` renamed `record` (`FLEETD_STAGE` unchanged, pinned by a test; the stored values
    move by a one-off store migration, checked read-only on a copy of the real store first; triage's
    own dispositions keep their `stage: shadow`, labelled as v1's word on the decisions tab);
@@ -306,7 +325,8 @@ stays in eval-harness (RFC-0002 item 9); flotilla owns the recording, the entry 
 5. **The example fleets move to this format;** the e2e covers versions, shadows, rollback, backward
    readable state, the no-effect test and an offline run of one example version on an authored
    fixture input (never an exported capture).
-6. **Freeze;** the installation moves its routines (each current spec its v1, live, identical; its
+6. **Freeze;** the installation moves its routines (each current spec its v1, live, identical, each
+   move recorded with `flotilla versions rerecord`; its
    existing candidate routines, such as triage's cycle-shadow, become shadow versions), then writes
    its v2s. Before any promote, the installation's own gates run each routine's previous version
    against the new version's rows and state files (backward-readable state), as the e2e does for the

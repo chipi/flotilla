@@ -72,20 +72,22 @@ any number), **previous** (the version that was live before; the rollback target
 - **Retire** stops a shadow. A live or previous version is moved by promote or roll back, never
   retired.
 - Every state change is one store transaction with its `events` row (`version.deploy`, `update`,
-  `promote`, `rollback`, `retire`; subject `<routine>@v<n>`; who, via, why). Only an operator or an
-  admin may ask (`ActVersion`): never an agent, never a worker, never the MCP server (its `Never`
-  list names promote, rollback and retire, and a test asserts none is registered).
+  `promote`, `rollback`, `retire`, `rerecord`; subject `<routine>@v<n>`; who, via, why). Only an
+  operator or an admin may ask (`ActVersion`): never an agent, never a worker, never the MCP server
+  (its `Never` list names promote, rollback, retire and rerecord, and a test asserts none is
+  registered).
 - Every record says which version made it: runs, model calls, what a run loaded, plans and ledger
   rows take their run's version; a case event takes the acting routine's live version, and 0 for an
   operator's or policy's.
 
 ### 3. Live and previous are frozen (built)
 
-A version has a hash, recorded when it goes live: the sha256 over the sorted (path, sha256) of
-every file under `v<n>/` for the folder layout; for a legacy v1, over its version-owned fields and
-the prompt and skill files it reads in place. The routine's own `Hash` (what `runs.spec_hash`
-records and a deploy's before and after proof diffs) is unchanged for every flat spec; a pinned test
-holds each shipped one.
+A version has a hash, recorded when it goes live: the sha256 over the sorted (path, sha256) of every
+file under `v<n>/` for the folder layout; for a legacy v1, over each version-owned key's own YAML
+(decoded and re-encoded with sorted keys, never the Go structs, so a change to flotilla's own types
+cannot move a recorded hash) and the prompt and skill files it reads in place. The routine's own
+`Hash` (what `runs.spec_hash` records and a deploy's before and after proof diffs) is unchanged for
+every flat spec; a pinned test holds each shipped one.
 
 - At load, the live and the previous version's folder must hash as recorded. A changed, missing or
   renumbered one fails the load and the deploy, as an invalid spec does: `flotillad` exits 2 and
@@ -97,12 +99,23 @@ holds each shipped one.
   anything or switches the symlink, ends `FLEETS DEPLOY FAIL: versions ...` when it refuses, and
   prints every version whose state or hash changed (a new version of a routine is one new shadow
   line).
-- Moving a routine that is already live from the flat layout to the folder layout changes its
-  recipe, so a store that recorded the flat v1 refuses it with this same message. That is the safe
-  answer; step 6 needs a controlled re-record command, which is not built. A new store (the e2e's,
-  a first deploy) records the folder recipe from the start: `platform/heartbeat` is the first
-  routine shipped in the folder layout, its v1 identical to the flat spec it replaces, and its runs'
-  `spec_hash` changes once.
+- **A legacy (flat) v1 is not frozen.** A flat routine's playbooks and settings change in the
+  ordinary way, so a changed legacy live or previous v1 is an update at the start: the new hash and
+  manifest are recorded with a `version.update` event (actor flotillad, the old and new hash, the
+  changed manifest keys), `-check` prints a line such as `versions: triage/cycle v1 (flat)
+  re-recorded: prompt-file:playbooks/triage.md (changed)`, and `deploy_fleets.sh` repeats it as a
+  proof line. A folder version stays frozen, and the refusal for it says the way out (ship the
+  change as v<n+1>, or `flotilla versions rerecord` if this change is deliberate).
+- **`flotilla versions rerecord ROUTINE vN --reason R`** (API `POST .../versions/{n}/rerecord`,
+  `ActVersion`: an operator or an admin) records the folder as flotillad's fleets folder holds it
+  now as the live or previous version's hash and manifest, in one transaction with a
+  `version.rerecord` event (old and new hash, the manifest diff, who, why). It is for a deliberate
+  change to a frozen version: a flat routine moved to the folder layout (its recipe changes, so the
+  store that recorded the flat v1 refuses it until this is run; step 6 uses it), a routine removed
+  and added again. A shadow follows its folder by itself and a retired version is history, so both
+  are refused. A new store (the e2e's, a first deploy) records the folder recipe from the start:
+  `platform/heartbeat` is the first routine shipped in the folder layout, its v1 identical to the
+  flat spec it replaces, and its runs' `spec_hash` changes once.
 
 ### 4. Acceptance names its evidence (built)
 
@@ -176,7 +189,7 @@ the shadow worker, with a models config of its own and recorded tool results sta
 | 3 | stations: the format, `fleets/harnesses.json`, `FLOTILLA_STATIONS`, `flotillad -stations`, the episode schema, the offline entry point | specified |
 | 4 | the harness layer in `runtime/`: the adapter interface, pi's adapter, the seams | specified |
 | 5 | the example fleets move to this format; the e2e covers versions, shadows, rollback, backward-readable state and the no-effect test | specified |
-| 6 | freeze; the installation moves its routines (each current spec its v1, live, identical) and writes its v2s; the controlled re-record command | specified |
+| 6 | the installation moves its routines (each current spec its v1, live, identical, re-recorded with `flotilla versions rerecord`) and writes its v2s | specified |
 | 7 | harnesses adopted one by one | specified |
 
 ## Consequences
@@ -201,7 +214,8 @@ Negative:
 - The deprecated alias `autonomy: shadow` lives until step 6.
 - Until step 2 a shadow is listed and promotable but unproven: pairs are 0, so the default
   acceptance is always missing and every promote needs the operator's reason.
-- Moving an already-live routine to the folder layout needs step 6's re-record command.
+- Moving an already-live routine to the folder layout needs one `flotilla versions rerecord` (built
+  in step 1), because its recipe changes; a flat routine's own edits need nothing.
 
 Neutral:
 
