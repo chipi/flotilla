@@ -30,7 +30,7 @@ _CREDENTIAL_RULES = [
      r"\1" + MASK),
 ]
 _RULES = _CREDENTIAL_RULES + [
-    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}\b"), "<email>"),
+    (re.compile(r"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}\b"), "<email>"),
     (re.compile(r"(?<![A-Za-z]/)\b\d{1,3}(?:\.\d{1,3}){3}\b"), "<ip>"),
 ]
 

@@ -46,9 +46,9 @@ _RULES = [
     (re.compile(r"(://)[^/\s:@'\"]+:[^/\s@'\"]+@"), r"\1" + MASK + "@"),
     (re.compile(r"(?i)(--?(?:token|password|passwd|secret|api-?key)(?:=|\s+))(?:\"[^\"]*\"|'[^']*'|[^\s'\"]+)"), r"\1" + MASK),
     (re.compile(r"(?i)(\"[^\"]*(?:key|token|secret|passw(?:or)?d|credential)[^\"]*\"\s*:\s*)\"[^\"]*\""), r"\1\"" + MASK + "\""),
-    (re.compile(r"(?i)\b([A-Za-z0-9_.-]*(?:key|token|secret|passw(?:or)?d|credential)[A-Za-z0-9_.-]*=)(?:\"[^\"]*\"|'[^']*'|[^\s'\"&;]+)"),
+    (re.compile(r"(?i)((?:key|token|secret|passw(?:or)?d|credential)[A-Za-z0-9_.-]{0,64}=)(?:\"[^\"]*\"|'[^']*'|[^\s'\"&;]+)"),
      r"\1" + MASK),
-    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}\b"), "<email>"),
+    (re.compile(r"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}\b"), "<email>"),
     (re.compile(r"(?<![A-Za-z]/)\b\d{1,3}(?:\.\d{1,3}){3}\b"), "<ip>"),
 ]
 _PREFERRED = ("command", "pattern", "path", "file_path", "filePath", "file", "url", "query")

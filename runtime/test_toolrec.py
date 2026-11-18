@@ -49,6 +49,9 @@ class RedactCredentials(unittest.TestCase):
             t = time.time()
             toolrec.redact_credentials(text)
             self.assertLess(time.time() - t, 0.1, text[:6])
+            t = time.time()
+            toolrec.redact(text)
+            self.assertLess(time.time() - t, 0.1, "redact " + text[:6])
 
     def test_it_is_redact_without_the_last_two_rules(self):
         self.assertEqual(toolrec.redact(f"{KEY} a@b.example 10.0.0.1"), "<redacted> <email> <ip>")

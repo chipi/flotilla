@@ -159,6 +159,12 @@ class ToolDetail(Sessions):
         self.assertNotIn("sk-", out)
         self.assertNotIn("AAAA", out)
 
+    def test_a_long_dashed_string_is_not_quadratic(self):
+        for text in ("a-" * 25000, "a" * 50000, "key" * 17000):
+            t = time.time()
+            callrec_pi.clean_arg(text)
+            self.assertLess(time.time() - t, 0.1, text[:6])
+
     def test_the_two_scrubbers_agree(self):
         """bugfix/ cannot import runtime/toolrec.py in its worker image, so it carries a copy of the rules."""
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime"))
