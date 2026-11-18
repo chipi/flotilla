@@ -13,7 +13,7 @@ import (
 
 // The decision mix (the installation's research roadmap): what a fleet decided per UTC day, counted the way
 // the fleet session's projects/triage-ops/decision_mix.py counts a dispositions.tsv, so the two agree
-// for a day: live stages only (propose, live; shadow left out), the four main dispositions and
+// for a day: live stages only (propose, live; the ledger's stage shadow, v1's word for record, left out), the four main dispositions and
 // "other", recurrences apart, a gate fired when its outcome is neither "passed" nor "n/a" (the
 // "operational" label is not a gate), and the project as the GlitchTip short id's prefix or "grafana".
 
@@ -90,7 +90,7 @@ type decisionMix struct {
 	Projects []mixProj
 	Total    int
 	From, To string
-	Shadow   int // shadow-stage decisions in the window, not counted
+	Shadow   int // decisions whose ledger stage is shadow (v1's word for record) in the window, not counted
 	HasAny   bool
 }
 

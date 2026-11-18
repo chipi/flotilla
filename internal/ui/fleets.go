@@ -540,7 +540,8 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 				nowText = "running"
 			}
 			sl := &selected{ID: pick.ID, Label: pick.ID, Desc: pick.Description, Lamp: "lamp lamp--" + map[string]string{"ok": "", "wait": "wait", "bad": "stop", "idle": "idle"}[lamp],
-				Routine: pick, SpecURL: "https://github.com/chipi/flotilla/blob/main/fleets/" + pick.ID + ".yaml"}
+				Routine: pick}
+			sl.SpecURL, _ = specLink(j)
 			if lamp == "ok" {
 				sl.Lamp = "lamp"
 			}

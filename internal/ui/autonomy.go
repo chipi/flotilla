@@ -126,7 +126,7 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		return
 	}
 	for _, e := range evs {
-		if e.Kind != "control.autonomy" && e.Kind != "control.frozen" {
+		if e.Kind != "control.autonomy" && e.Kind != "control.frozen" && e.Kind != "version.promote" && e.Kind != "version.rollback" {
 			continue
 		}
 		who := strings.TrimPrefix(e.Actor, "user:")
@@ -135,6 +135,19 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		}
 		value, why, _ := strings.Cut(e.Detail, ": ")
 		var text string
+		if strings.HasPrefix(e.Kind, "version.") {
+			// the version's own record (hash, evidence, reason) is on the routine page
+			routine, ver, _ := strings.Cut(e.Subject, "@")
+			text = who + " promoted " + ver + " of " + routine + "."
+			if e.Kind == "version.rollback" {
+				text = who + " rolled back " + ver + " of " + routine + "."
+			}
+			d.Changes = append(d.Changes, changeRow{When: u.clock(e.At), Text: text + " Details on its routine page."})
+			if len(d.Changes) == 8 {
+				break
+			}
+			continue
+		}
 		if e.Kind == "control.frozen" {
 			if value == "1" {
 				text = who + " froze all autonomy."
@@ -229,7 +242,7 @@ func (u *Server) freezeAction(frozen bool) func(http.ResponseWriter, *http.Reque
 	}
 }
 
-// routineAction is run, pause, resume or autonomy on a routine, from a form.
+// routineAction is run, pause, resume, autonomy or rollback on a routine, from a form.
 func (u *Server) routineAction(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
 	id := r.PathValue("fleet") + "/" + r.PathValue("routine")
 	back := safeBack(r.PostFormValue("back"), "/fleets/"+r.PathValue("fleet"))
@@ -246,6 +259,9 @@ func (u *Server) routineAction(w http.ResponseWriter, r *http.Request, s *store.
 	case "autonomy":
 		level := r.PostFormValue("autonomy")
 		err, ok = u.API.SetAutonomy(r.Context(), caller(s), "ui", id, level, reason), id+" is now at "+level+"."
+	case "rollback":
+		u.rollbackAction(w, r, s, id, safeBack(r.PostFormValue("back"), "/fleets/"+id+"#versions"))
+		return
 	default:
 		http.NotFound(w, r)
 		return

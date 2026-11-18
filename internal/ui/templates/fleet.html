@@ -107,7 +107,7 @@
 
   {{if eq .Tab "decisions"}}{{$m := .Mix}}
   <section class="mix" aria-label="Decisions">
-    <p class="meta">What {{$f.Name}} decided each UTC day, {{$m.From}} to {{$m.To}}: live decisions only{{if $m.Shadow}} ({{$m.Shadow}} by a shadow routine are not counted){{end}}. A recurrence is an issue already decided coming back, counted apart. A gate fired when its outcome was neither passed nor n/a. A change of prompt or model is marked on the day it happened.</p>
+    <p class="meta">What {{$f.Name}} decided each UTC day, {{$m.From}} to {{$m.To}}: live decisions only{{if $m.Shadow}} ({{$m.Shadow}} with the stage shadow, v1's word for record, are not counted){{end}}. A recurrence is an issue already decided coming back, counted apart. A gate fired when its outcome was neither passed nor n/a. A change of prompt or model is marked on the day it happened.</p>
     <ul class="mix__legend" aria-label="Colours">
       <li><span class="mix__key mix__key--file" aria-hidden="true"></span>file</li>
       <li><span class="mix__key mix__key--escalate" aria-hidden="true"></span>escalate</li>

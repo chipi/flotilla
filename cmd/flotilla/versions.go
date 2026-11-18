@@ -34,25 +34,6 @@ func flagValues(args *[]string, name string) []string {
 	return out
 }
 
-// parseGate reads NAME=pass|fail[@REF].
-func parseGate(s string) (store.Gate, error) {
-	name, rest, ok := strings.Cut(s, "=")
-	result, ref, _ := strings.Cut(rest, "@")
-	if !ok || name == "" || (result != "pass" && result != "fail") {
-		return store.Gate{}, fmt.Errorf("--gate %q: NAME=pass|fail[@REF]", s)
-	}
-	return store.Gate{Name: name, Result: result, Ref: ref}, nil
-}
-
-// parseEval reads RUN_ID=pass|fail.
-func parseEval(s string) (store.EvalRun, error) {
-	id, verdict, ok := strings.Cut(s, "=")
-	if !ok || id == "" || (verdict != "pass" && verdict != "fail") {
-		return store.EvalRun{}, fmt.Errorf("--eval %q: RUN_ID=pass|fail", s)
-	}
-	return store.EvalRun{RunID: id, Verdict: verdict}, nil
-}
-
 // versionNumber reads vN (or N).
 func versionNumber(s string) (int, error) {
 	n, err := strconv.Atoi(strings.TrimPrefix(s, "v"))
@@ -66,14 +47,14 @@ func versionNumber(s string) (int, error) {
 func parsePromote(args []string, reason string) (string, int, api.PromoteRequest, error) {
 	req := api.PromoteRequest{Reason: reason, Autonomy: flagValue(&args, "--autonomy"), WithoutPairs: flagBool(&args, "--no-pairs")}
 	for _, g := range flagValues(&args, "--gate") {
-		gate, err := parseGate(g)
+		gate, err := api.ParseGate(g)
 		if err != nil {
 			return "", 0, req, err
 		}
 		req.Gates = append(req.Gates, gate)
 	}
 	for _, e := range flagValues(&args, "--eval") {
-		ev, err := parseEval(e)
+		ev, err := api.ParseEval(e)
 		if err != nil {
 			return "", 0, req, err
 		}

@@ -242,6 +242,26 @@ func (s *Server) RetireVersion(ctx context.Context, c Caller, via, routineID str
 	return nil
 }
 
+// ParseGate reads NAME=pass|fail[@REF], a gate's result as the operator writes it (the CLI's --gate, the UI's
+// gates box).
+func ParseGate(s string) (store.Gate, error) {
+	name, rest, ok := strings.Cut(strings.TrimSpace(s), "=")
+	result, ref, _ := strings.Cut(rest, "@")
+	if !ok || name == "" || (result != "pass" && result != "fail") {
+		return store.Gate{}, fmt.Errorf("gate %q: NAME=pass|fail[@REF]", s)
+	}
+	return store.Gate{Name: name, Result: result, Ref: ref}, nil
+}
+
+// ParseEval reads RUN_ID=pass|fail, an eval-harness run and its verdict.
+func ParseEval(s string) (store.EvalRun, error) {
+	id, verdict, ok := strings.Cut(strings.TrimSpace(s), "=")
+	if !ok || id == "" || (verdict != "pass" && verdict != "fail") {
+		return store.EvalRun{}, fmt.Errorf("eval %q: RUN_ID=pass|fail", s)
+	}
+	return store.EvalRun{RunID: id, Verdict: verdict}, nil
+}
+
 func versionNumber(r *http.Request) (int, error) {
 	n, err := strconv.Atoi(r.PathValue("n"))
 	if err != nil || n < 1 {

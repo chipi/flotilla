@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -53,6 +54,8 @@ type routineData struct {
 	Inst                              *instruments
 	Panel                             *modelPanel
 	Paths                             *pathSummary
+	Versions                          *versionsData
+	SpecText                          string
 }
 
 var laneTitles = map[string]string{"when": "When", "where": "Where and what", "sort": "Sort", "agent": "The agent", "gates": "Gates", "outcome": "Outcome and action"}
@@ -352,8 +355,13 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 	sel := r.URL.Query().Get("b")
 	href := func(b string) string { return base + "?b=" + b + "#block" }
 	d := routineData{ID: id, Fleet: j.Fleet, FleetName: f.Name, Title: id, Desc: strings.Join(strings.Fields(j.Description), " "),
-		SpecURL: "https://github.com/chipi/flotilla/blob/main/fleets/" + id + ".yaml", Back: r.URL.RequestURI(), Routine: st,
+		Back: r.URL.RequestURI(), Routine: st,
 		Counted: fmt.Sprintf("the last %d days", window)}
+	d.SpecURL, d.SpecText = specLink(j)
+	if d.Versions, err = u.versionsFor(ctx, id, st); err != nil {
+		http.Error(w, "versions failed", 500)
+		return
+	}
 	lamp := lampOf(*st, f.LastFailed[id])
 	d.Lamp = "lamp lamp--big" + map[string]string{"ok": "", "wait": " lamp--wait", "bad": " lamp--stop", "idle": " lamp--idle"}[lamp]
 	d.Status = map[string]string{"ok": "ok", "wait": "paused", "bad": "failing", "idle": "idle"}[lamp]
@@ -460,6 +468,16 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 	}
 	sort.SliceStable(d.Runs, func(a, b int) bool { return d.Runs[a].Start > d.Runs[b].Start })
 	u.render(w, "routine.html", 200, u.pageFor(s, id, "Fleets", r, d))
+}
+
+// specLink is where a routine's spec is in git and how to name it: a flat spec is a file, a routine folder
+// (routine.yaml and its v<n>/) is a folder.
+func specLink(j *spec.Routine) (url, text string) {
+	const gh = "https://github.com/chipi/flotilla/"
+	if filepath.Base(j.Path) == spec.RoutineFile {
+		return gh + "tree/main/fleets/" + j.ID() + "/", "fleets/" + j.ID() + "/"
+	}
+	return gh + "blob/main/fleets/" + j.ID() + ".yaml", "fleets/" + j.ID() + ".yaml"
 }
 
 // cancelledText is the " · N cancelled" a day's run counts carry only when a run was cancelled.

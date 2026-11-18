@@ -228,6 +228,8 @@ a.chip--neutral:hover { color: var(--slate); }
 .field input, .field textarea, .field select { font: 16px/1.4 var(--font-body); color: var(--ink); background: var(--panel);
   border: 1px solid var(--control-edge); border-radius: var(--rounded-control); padding: 10px var(--space-md); min-height: var(--target); font-weight: 400; }
 .field textarea { resize: vertical; }
+.field--check { flex-direction: row; align-items: center; gap: var(--space-sm); font-weight: 400; }
+.field--check input { width: auto; flex: none; }
 ::placeholder { color: var(--code-grey); }
 
 /* filter rows: compact pills (O1), selects and a search */
