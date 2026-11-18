@@ -153,6 +153,7 @@ PI_HARNESS = POP + SESS + textwrap.dedent('''\
 REPRO_HARNESS = textwrap.dedent('''\
     WT="$1"; K=$(head -n 1 "$FAKE_STATE/repros"); sed -i 1d "$FAKE_STATE/repros"
     echo "repro $K" >> "$FAKE_STATE/calls"
+    printf '%s' "$2" > "$FAKE_STATE/repro_desc"
     python3 - "$WT" "$K" <<'PY'
     import json, os, sys
     wt, k = sys.argv[1], sys.argv[2]
@@ -728,8 +729,13 @@ exec {real} "$@"
 
     def test_the_reproducers_test_is_the_proof_and_the_fixer_only_fixes(self):
         f = self.rfixture(["actionable"], ["srconly"], ["good"])
+        f.body = "value() returns 1, want 2\n\n**Actual:** value() returns 1, want 2"
         plan, _ = f.run()
         self.assertEqual(plan["outcome"], "plan", plan)
+        with open(os.path.join(f.state, "repro_desc")) as fh:
+            desc = fh.read()
+        self.assertIn("THE PHRASES YOU MAY USE as expect_failure_match", desc)
+        self.assertIn("\n- Actual: value() returns 1, want 2", desc, "the issue's own symptom line is offered")
         self.assertEqual(f.calls(), ["triage", "repro", "fix", "review"])
         self.assertIn("repro: src/a.test.js fails on the base with the issue's symptom ('returns 1, want 2')",
                       plan["params"]["body"])
@@ -759,6 +765,22 @@ exec {real} "$@"
             self.assertEqual(plan["outcome"], "escalate", (kind, plan))
             self.assertIn(want, plan["detail"], kind)
             self.assertEqual(f.calls(), ["triage", "repro"], kind)
+
+    def test_phrases_compare_across_dashes_and_quotes(self):
+        # #335 on 2026-11-18: the issue's "~1–2" (en dash) was typed "~1-2"
+        issue = "**Actual:** only ~1–2 events visible — first Venus flyby and maybe Launch."
+        self.assertIn(fix.norm_phrase("only ~1-2 events visible - first venus flyby"), fix.norm_phrase(issue))
+        self.assertIn(fix.norm_phrase('the "label" is wrong'), fix.norm_phrase("The “label” is wrong"))
+        self.assertNotIn(fix.norm_phrase("labelled 'flyby' with empty notes"), fix.norm_phrase(issue))
+
+    def test_the_issues_symptom_lines_are_offered_verbatim(self):
+        issue = ("value is 1\n\n**Signal:** `TypeError: x of null` in addEL_hook\n\n## Repro\n\n- **Expected:** value() "
+                 "returns 2\n- **Actual:** value() returns 1, want 2\n\nSome other prose that is not a symptom.\n")
+        got = fix.symptom_phrases(issue)
+        self.assertEqual(got, ["Signal: `TypeError: x of null` in addEL_hook", "Expected: value() returns 2",
+                               "Actual: value() returns 1, want 2"])
+        for p in got:   # the check must accept every phrase it offers
+            self.assertIn(fix.norm_phrase(p), fix.norm_phrase(issue))
 
     def test_the_reproducer_stops_at_its_own_turn_cap(self):
         # #553 on 2026-11-18: a reproducer explored 90 turns and wrote nothing

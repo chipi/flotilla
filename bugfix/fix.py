@@ -201,6 +201,34 @@ class Terminated(BaseException):
     the step in flight and report the run's spend."""
 
 
+DASHES = str.maketrans({c: "-" for c in "‐‑‒–—―−"} |
+                       {c: "'" for c in "‘’‚‛"} | {c: '"' for c in "“”„‟"})
+
+
+def norm_phrase(s):
+    """A phrase as the reproducer's check compares it: lower case, runs of whitespace as one space, every dash or minus
+    as "-" and curly quotes as straight ones (#335 on 2026-11-18: the issue's "~1–2", en dash, typed as "~1-2"), and
+    markdown's bold and code marks dropped (an offered "Actual: ..." comes from the issue's "**Actual:** ...")."""
+    return " ".join(str(s).translate(DASHES).replace("**", "").replace("`", "").lower().split())
+
+
+SYMPTOM_LINE = re.compile(r"^\W*(?:actual|expected|observed|symptom|signal|error|steps?|repro\w*)\b", re.I)
+
+
+def symptom_phrases(issue, limit=12):
+    """The issue's own lines that state the symptom (Actual:, Expected:, Symptom:, Signal:, an error line), markdown
+    marks stripped, offered to the reproducer as the only phrases it may name as its failure text."""
+    out = []
+    for ln in (issue or "").splitlines():
+        # only the line's markdown frame goes (list, quote and heading marks, bold): the text itself stays verbatim,
+        # `addEL_hook` with its underscore, or the check would refuse the phrase it was offered
+        t = re.sub(r"^\s*(?:[-*+>]\s+|#+\s*|\d+\.\s+)*", "", ln).replace("**", "").strip()
+        if (len(t.split()) >= 3 and len(t) <= 300 and (SYMPTOM_LINE.match(t) or re.search(r"\b\w*Error\b:", t))
+                and t not in out):
+            out.append(t)
+    return out[:limit]
+
+
 def file_sha(path):
     """sha256 of a file's bytes, "" when it does not exist (a frozen reproducing test that was deleted)."""
     try:
@@ -1040,8 +1068,12 @@ class Chain:
             task = json.load(f).get("description") or ""
         self.reset()
         issue = (self.issue.get("title") or "") + "\n\n" + (self.issue.get("body") or "")
-        desc = cap_bytes(f"THE ISSUE AS FILED:\n{issue}\n\nTHE TASK THE VERDICT STEP WROTE FROM IT (it can be wrong):\n{task}",
-                         REVIEW_PROMPT_MAX)
+        phrases = symptom_phrases(issue)
+        offer = ("\n\nTHE PHRASES YOU MAY USE as expect_failure_match (lines of the issue as filed that state the symptom; "
+                 "copy one, or a 3-8 word part of one, exactly; never a phrase from the task):\n"
+                 + "\n".join(f"- {p}" for p in phrases)) if phrases else ""
+        desc = cap_bytes(f"THE ISSUE AS FILED:\n{issue}{offer}\n\nTHE TASK THE VERDICT STEP WROTE FROM IT (it can be wrong; "
+                         f"never take a phrase from it):\n{task}", REVIEW_PROMPT_MAX)
         code, stream = sh([os.path.join(BAKEOFF, "harnesses", "repro.sh"), self.wt, desc], BAKEOFF, self.env,
                           self.a.episode_timeout, max_turns=self.a.repro_max_turns)
         said = assistant_text(stream or "")
@@ -1081,8 +1113,7 @@ class Chain:
         if reads:
             raise Stop("the reproducer's test reads a source file's text: " + "; ".join(f"{f}: {ln}" for f, ln in reads)[:300])
 
-        def norm(s):
-            return " ".join(str(s).lower().split())
+        norm = norm_phrase
         match = norm(ans.get("expect_failure_match") or "")
         if not match or match not in norm(issue):
             raise Stop(f"the reproducer's failure text is not the issue's own: {match[:200]!r}")
