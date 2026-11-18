@@ -176,6 +176,12 @@ def test_change_criteria(v):
     return out
 
 
+def kick_classes(frozen_proof):
+    """The review classes that send a fix back. With a frozen proof, wrong-place is a note: it is about code the diff
+    does not show, and the fix already passes a proof it could not write (#335, 2026-11-18)."""
+    return tuple(c for c in KICK_CLASSES if not (frozen_proof and c == "wrong-place"))
+
+
 def review_class(review):
     """The class the review's last VERDICT line names (CLASS: x), "" without one."""
     lines = [ln for ln in (review or "").splitlines() if VERDICT_LINE.match(ln)]
@@ -229,6 +235,49 @@ def symptom_phrases(issue, limit=12):
                 and t not in out):
             out.append(t)
     return out[:limit]
+
+
+ERROR_TEXT = re.compile(r"\b\w*(?:Error|Exception)\b|\btraceback\b", re.I)
+NOT_REPO = re.compile(r"(^|/)(node_modules|\.svelte-kit|\.venv|venv|site-packages|dist-packages|\.pnpm)/")
+JS_IMPORT = re.compile(r"""(?:\bfrom\s+|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]""")
+PY_IMPORT = re.compile(r"^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))", re.M)
+FRAME = re.compile(r"(?:file://)?((?:/|\b)[\w.@$+-]+(?:/[\w.@$+-]+)*\.(?:[cm]?[tj]sx?|svelte|vue|py)):\d+")
+
+
+def repo_imports(text, wt, fmt="vitest"):
+    """The modules of this repository (not its tests, not a package) that a test file imports. #553's fake proof on
+    2026-11-18 imported only vitest and @sentry/browser-utils: it tested a library, not the repository."""
+    out = []
+    if fmt == "pytest":
+        for m in PY_IMPORT.finditer(text):
+            top = (m.group(1) or m.group(2)).split(".")[0]
+            if top and not top.startswith(("test", "conftest")) and any(
+                    os.path.exists(os.path.join(wt, d, top + ext)) for d in ("", "src") for ext in ("", ".py")):
+                out.append(m.group(1) or m.group(2))
+        return out
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(("//", "/*", "*", "#")))
+    for spec in JS_IMPORT.findall(code):
+        # an import names a test without its extension ('./x.repro.test'): judge it as the .ts file it loads
+        if spec.startswith(("./", "../", "$lib/", "src/", "~/", "@/")) and not TEST_FILE.search(
+                spec if re.search(r"\.[cm]?[tj]sx?$", spec) else spec + ".ts"):
+            out.append(spec)
+    return out
+
+
+def repo_frames(messages, wt):
+    """The source files of this repository (not a test, not a package) in failed tests' stacks or tracebacks."""
+    root = os.path.realpath(wt) + "/"
+    out = []
+    for path in FRAME.findall("\n".join(messages)):
+        if path.startswith("/"):
+            path = os.path.realpath(path)
+            if not path.startswith(root):
+                continue
+            path = path[len(root):]
+        if (not NOT_REPO.search("/" + path) and not TEST_FILE.search(path) and path not in out
+                and os.path.isfile(os.path.join(wt, path))):
+            out.append(path)
+    return out
 
 
 def file_sha(path):
@@ -1125,6 +1174,20 @@ class Chain:
         if match not in norm(" ".join(res.messages)):
             raise Stop(f"the reproducing test fails on the base, but not with the issue's symptom: {match[:120]!r} "
                        f"is not in its failure ({tail(' '.join(norm(m) for m in res.messages), 200)})")
+        # the symptom must come out of this repository's code, not be written into the test (#553 on 2026-11-18:
+        # the issue's TypeError was an assertion's label on a test of @sentry/browser-utils; the advisor's review)
+        imported = []
+        for x in tests:
+            with open(os.path.join(self.wt, x), errors="replace") as f:
+                imported += repo_imports(f.read(), self.wt, self.a.test_format)
+        if not imported:
+            raise Stop(f"the reproducing test imports nothing of this repository ({', '.join(tests)}): it tests a "
+                       f"library or itself, not the code the issue is about")
+        if ERROR_TEXT.search(match):
+            raised = [m for m in res.messages if match in norm(m) and repo_frames([m], self.wt)]
+            if not raised:
+                raise Stop(f"the issue's error is quoted by the reproducing test, not raised by the repository's code: "
+                           f"no failure carrying {match[:80]!r} has a frame in the repository's source")
         _, self.repro_patch = sh(["git", "-C", self.wt, "diff", "--cached", "--binary", self.base, "--", ".",
                                   ":(exclude).flotilla-suite.json"], self.run_dir, self.env, 60, check=True)
         self.repro_files = {x: file_sha(os.path.join(self.wt, x)) for x in tests}
@@ -1438,9 +1501,21 @@ class Chain:
         pi takes the prompt as one argument, which Linux caps at 128 KiB (MAX_ARG_STRLEN): the parts are cut to fit
         REVIEW_PROMPT_MAX, the diff first, then the issue, then the files, each cut said where it is."""
         head = (f"Review this automated fix for {self.repo}#{self.n} ({self.issue.get('title', '')}).\n\n")
-        ask = ("\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes "
+        frozen = ""
+        repro_files = getattr(self, "repro_files", None)
+        if repro_files:
+            # #335 on 2026-11-18: the review spent itself on the proof and asked for a panel test the issue's own
+            # criterion made impossible (the panel shows past events by design), and turned down a fix the
+            # reference fix's tests pass (the advisor's review)
+            frozen = (f"THE FROZEN PROOF: {', '.join(sorted(repro_files))} was written from the issue by a separate "
+                      "agent before any fix, accepted by the chain's checks, fails on the base and passes with this fix. "
+                      "It is not under review and the fixer could not change it: judge the fix against it and the issue. "
+                      "A request for another test, or a test at another layer, is a note, never a request for changes. "
+                      "That the fix is in the wrong place is a note too, naming the file the issue points at.\n\n")
+        ask = ("\n\nGive a concise review: correctness risks, edge cases the fix misses, "
+               + ("" if frozen else "test adequacy, ") + "and whether it fixes "
                "the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what "
-               "is above, and name its class: " + ", ".join(KICK_CLASSES) + ". A fix that does not meet an acceptance "
+               "is above, and name its class: " + ", ".join(kick_classes(bool(repro_files))) + ". A fix that does not meet an acceptance "
                "criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, "
                "filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue "
                "as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class "
@@ -1456,6 +1531,8 @@ class Chain:
             return text if len(b) <= n else b[:max(n - 80, 0)].decode(errors="ignore") + f"\n[... cut: {len(b) - n + 80} more bytes]"
 
         parts = []
+        head += frozen
+        room -= len(frozen.encode())
         gates = getattr(self, "checked", "") or ""
         if gates:
             parts.append(("THE GATES (run by the chain on this diff): ", gates + "\n\n"))
@@ -1655,6 +1732,11 @@ class Chain:
                     return self.plan(rnd, d, review, unresolved="the review gave no verdict: " + tail(" ".join(review.split()), 200))
                 # the review saw what the gates did not on 3 of phase A's 4 plans: request-changes sends the fix
                 # back while the budget lasts; after that the operator sees the plan with the review in it
+                if review_requests_changes(review) and review_class(review) == "wrong-place" and self.repro_files:
+                    self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
+                    self.note("review note", "the review says the fix is in the wrong place; with the frozen proof passing "
+                                             "that is a note for the operator, not a kick-back (see the review below)")
+                    return self.plan(rnd, d, review)
                 if review_requests_changes(review) and review_class(review) not in KICK_CLASSES:
                     self.note(f"round {rnd}", f"gates clean ({len(files)} files, {turns} turns, {out_tok} output tokens): {self.checked}")
                     return self.plan(rnd, d, review, unresolved=(

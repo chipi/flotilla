@@ -22,9 +22,14 @@ change it.
    `src/lib/x.test.ts`, or `tests/.../test_x_repro.py`). Never edit an existing test file. The test drives that
    code with the issue's input and asserts the behaviour the issue expects. On the current code it must FAIL.
 4. Pick a short phrase (3 to 8 words) copied EXACTLY from the issue as filed, character for character, that
-   names the symptom: an error message, a wrong value, an expected count. Put that phrase in the assertion's
-   message, so the failure output prints it: `expect(value, 'PHRASE').toBe(...)` in vitest,
-   `assert value == expected, 'PHRASE'` in pytest. That phrase is your `expect_failure_match`.
+   names the symptom. That phrase is your `expect_failure_match`.
+   - A wrong value or count: put the phrase in the failing assertion's message, so the failure prints it:
+     `expect(value, 'PHRASE').toBe(...)` in vitest, `assert value == expected, 'PHRASE'` in pytest.
+   - An error (a TypeError, an exception): the error itself must be the failure. Import the repository's code
+     and call it with the issue's input, bare: no `expect(...).toThrow`, no `pytest.raises`, no try/except, and
+     never the error text in an assertion's message. The chain checks that the error is raised from the
+     repository's own source, so a quoted error is refused.
+   The test must import and run code of this repository, not only a library.
 5. Run it and check it fails for that reason, not for a typo, a missing import or a mock you invented, and that
    the phrase is in the failure output.
 

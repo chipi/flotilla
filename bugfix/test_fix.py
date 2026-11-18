@@ -162,19 +162,28 @@ REPRO_HARNESS = textwrap.dedent('''\
     ans = {"repro": "test", "files": ["src/a.test.js"], "evidence_quoted": "value() returns 1, want 2",
            "expect_failure_match": "returns 1, want 2"}
     if k == "good":
-        w("src/a.test.js", "msg value() returns 1, want 2\\nexpect src/a.js 2\\n")
+        w("src/a.test.js", "const a = require('./a.js')\\nmsg value() returns 1, want 2\\nexpect src/a.js 2\\n")
     elif k == "none":
         ans = {"repro": "none", "why": "a minified frame only", "needed": "a source map"}
     elif k == "src":
-        w("src/a.test.js", "msg value() returns 1, want 2\\nexpect src/a.js 2\\n"); w("src/a.js", "module.exports = () => 2;\\n")
+        w("src/a.test.js", "const a = require('./a.js')\\nmsg value() returns 1, want 2\\nexpect src/a.js 2\\n"); w("src/a.js", "module.exports = () => 2;\\n")
     elif k == "nomatch":
-        w("src/a.test.js", "expect src/a.js 2\\n"); ans["expect_failure_match"] = "a crash the issue never mentions"
+        w("src/a.test.js", "const a = require('./a.js')\\nexpect src/a.js 2\\n"); ans["expect_failure_match"] = "a crash the issue never mentions"
     elif k == "passes":
-        w("src/a.test.js", "msg value() returns 1, want 2\\nexpect src/b.js 1\\n")
+        w("src/a.test.js", "const a = require('./a.js')\\nmsg value() returns 1, want 2\\nexpect src/b.js 1\\n")
     elif k == "othersymptom":
-        w("src/a.test.js", "expect src/a.js 2\\n")
+        w("src/a.test.js", "const a = require('./a.js')\\nexpect src/a.js 2\\n")
     elif k == "noanswer":
         ans = None
+    elif k == "libonly":   # #553 on 2026-11-18: a test of a library, labelled with the issue's text
+        w("src/a.test.js", "const lib = require('some-lib')\\nmsg value() returns 1, want 2\\nexpect src/a.js 2\\n")
+    elif k == "quotederror":   # the issue's error as an assertion's label: no frame of the repository
+        w("src/a.test.js", "const a = require('./a.js')\\nmsg TypeError: value is null\\nexpect src/a.js 2\\n")
+        ans["expect_failure_match"] = "TypeError: value is null"
+    elif k == "raisederror":   # the error thrown by the repository's code: its stack has src/a.js
+        w("src/a.test.js", "const a = require('./a.js')\\nmsg TypeError: value is null at value (src/a.js:1:9)\\n"
+                           "expect src/a.js 2\\n")
+        ans["expect_failure_match"] = "TypeError: value is null"
     elif k == "editexisting":
         w("keep.test.js", open(os.path.join(wt, "keep.test.js")).read() + "msg value() returns 1, want 2\\nexpect src/a.js 2\\n")
         ans["files"] = ["keep.test.js"]
@@ -209,6 +218,7 @@ PI_BIN = POP + SESS + textwrap.dedent('''\
     [ "$R" = fail ] && exit 1
     V="$R"; [ "$R" = request-changes ] && V="request-changes CLASS: test-proves-nothing"
     [ "$R" = request-changes-unverified ] && V="request-changes CLASS: unverified"
+    [ "$R" = request-changes-wrongplace ] && V="request-changes CLASS: wrong-place"
     if [ "$R" = noverdict ]; then   # a review cut off before its verdict
       printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The test only checks a const"}]}}\\n'
       exit 0
@@ -759,8 +769,14 @@ exec {real} "$@"
                            ("noanswer", "the reproducer gave no answer"),
                            # #335 on 2026-11-18: a reproducer replaced an existing test in the file it added to
                            ("editexisting", "the reproducer edited a file that is on main (it must add a new test file): "
-                                            "keep.test.js")):
+                                            "keep.test.js"),
+                           # #553 on 2026-11-18: the proof tested @sentry/browser-utils and quoted the issue's error
+                           ("libonly", "the reproducing test imports nothing of this repository (src/a.test.js)"),
+                           ("quotederror", "the issue's error is quoted by the reproducing test, not raised by the "
+                                           "repository's code")):
             f = self.rfixture(["actionable"], [], [kind])
+            if kind.endswith("error"):
+                f.body = "value() throws TypeError: value is null"
             plan, _ = f.run()
             self.assertEqual(plan["outcome"], "escalate", (kind, plan))
             self.assertIn(want, plan["detail"], kind)
@@ -785,6 +801,64 @@ exec {real} "$@"
                                "Actual: value() returns 1, want 2"])
         for p in got:   # the check must accept every phrase it offers
             self.assertIn(fix.norm_phrase(p), fix.norm_phrase(issue))
+
+    def test_repo_frames_and_imports_on_real_vitest_shapes(self):
+        # stacks as vitest's JSON reporter printed them on orrery, 2026-11-18 (the advisor's design, checked locally)
+        wt = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, wt)
+        for p in ("src/lib/mission-event-merge.ts", "src/lib/x.repro.test.ts", "node_modules/@sentry/core/build/dom.js"):
+            os.makedirs(os.path.dirname(os.path.join(wt, p)), exist_ok=True)
+            open(os.path.join(wt, p), "w").close()
+        raised = (f"TypeError: Cannot read properties of null (reading 'type')\n"
+                  f"    at mergeFlightEvents ({wt}/src/lib/mission-event-merge.ts:92:33)\n"
+                  f"    at {wt}/src/lib/x.repro.test.ts:6:3\n"
+                  f"    at file://{wt}/node_modules/vitest/dist/chunks/run.js:1632:35")
+        labelled = (f"AssertionError: TypeError: Cannot read properties of null (reading 'tagName'): expected \"vi.fn()\"\n"
+                    f"    at Proxy.methodWrapper (file://{wt}/node_modules/chai/index.js:1737:25)\n"
+                    f"    at {wt}/src/lib/x.repro.test.ts:61:11")
+        in_a_library = (f"TypeError: Cannot read properties of null (reading 'tagName')\n"
+                        f"    at htmlTreeAsString (file://{wt}/node_modules/@sentry/core/build/dom.js:20:5)\n"
+                        f"    at {wt}/src/lib/x.repro.test.ts:9:3")
+        self.assertEqual(fix.repo_frames([raised], wt), ["src/lib/mission-event-merge.ts"])
+        self.assertEqual(fix.repo_frames([labelled], wt), [])
+        self.assertEqual(fix.repo_frames([in_a_library], wt), [], "an error raised inside a package is not the repo's")
+        self.assertEqual(fix.repo_frames(["    at x (/elsewhere/src/lib/mission-event-merge.ts:1:1)"], wt), [])
+        self.assertEqual(fix.repo_imports("import { mergeFlightEvents } from './mission-event-merge';", wt),
+                         ["./mission-event-merge"])
+        self.assertEqual(fix.repo_imports("import { it } from 'vitest';\nimport { htmlTreeAsString } from "
+                                          "'@sentry/browser-utils';\n// import { x } from './mission-event-merge'", wt), [])
+        self.assertEqual(fix.repo_imports("import { thing } from '$lib/x.repro.test';", wt), [], "a test is not the repo")
+
+    def test_an_error_raised_by_the_repositorys_code_is_a_proof(self):
+        f = self.rfixture(["actionable"], ["srconly"], ["raisederror"])
+        f.body = "value() throws TypeError: value is null"
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertIn("repro: src/a.test.js fails on the base with the issue's symptom", plan["params"]["body"])
+
+    def test_wrong_place_is_a_note_when_the_frozen_proof_passes(self):
+        # #335 on 2026-11-18: a review turned down, as wrong-place, a fix the reference fix's tests pass
+        f = self.rfixture(["actionable"], ["srconly"], ["good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes-wrongplace\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertNotIn("unresolved", plan["params"]["body"].split("\n")[0], plan["params"]["body"][:300])
+        self.assertIn("review note: the review says the fix is in the wrong place", plan["params"]["body"])
+        self.assertEqual([c for c in f.calls() if c.startswith("fix")], ["fix"], "no kick-back")
+        with open(os.path.join(f.state, "review_prompt")) as fh:
+            prompt = fh.read()
+        self.assertIn("THE FROZEN PROOF: src/a.test.js", prompt)
+        self.assertNotIn("test adequacy", prompt)
+        self.assertNotIn("wrong-place", prompt.split("name its class:")[1].split(".")[0])
+
+    def test_wrong_place_still_kicks_back_without_a_frozen_proof(self):
+        f = self.fixture(["actionable"], ["good", "good"])
+        with open(os.path.join(f.state, "reviews"), "w") as fh:
+            fh.write("request-changes-wrongplace\napprove\n")
+        plan, _ = f.run()
+        self.assertEqual(plan["outcome"], "plan", plan)
+        self.assertEqual(len([c for c in f.calls() if c.startswith("fix")]), 2, f.calls())
 
     def test_the_reproducer_stops_at_its_own_turn_cap(self):
         # #553 on 2026-11-18: a reproducer explored 90 turns and wrote nothing
