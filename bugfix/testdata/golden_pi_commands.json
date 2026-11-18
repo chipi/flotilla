@@ -1,0 +1,1483 @@
+{
+ "fix_timeout": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   }
+  ],
+  "plan": {
+   "action": null,
+   "body": null,
+   "detail": "stuck: kick-back limit (0) reached; last: the fix episode ran out of time with no change",
+   "outcome": "escalate",
+   "title": null
+  }
+ },
+ "fix_turn_cap": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r0",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-triage/pi/triage.json"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   }
+  ],
+  "plan": {
+   "action": null,
+   "body": null,
+   "detail": "needs info from the reporter after round 0: the expected value",
+   "outcome": "escalate",
+   "title": null
+  }
+ },
+ "fresh_clean_fix": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "--no-context-files",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- review: VERDICT: approve\n- round 0: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "gate_kickback_no_resume": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r0"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "advisor"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r0",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-triage/pi/triage.json"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "--no-context-files",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 1): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- round 0: repro-first violated: no test in the diff\n- advisor: src/a.js\n- review: VERDICT: approve\n- round 1: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 1 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "gate_kickback_resumes_the_session": {
+  "calls": [
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "base: <BASE12>",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 1,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "harness",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   },
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "step one: not checked (no project-specific name the error calls missing)",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 2,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "harness",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   },
+   {
+    "alias": "bugfix-flash",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "endpoint": null,
+    "episode": "sess-verdict-N",
+    "episode_seq": 1,
+    "error": null,
+    "finish_reason": "tool_calls",
+    "latency_s": null,
+    "model": "m",
+    "role": "verdict",
+    "status": null,
+    "step": 1,
+    "tokens_in": 10,
+    "tokens_out": 2,
+    "tools": [
+     {
+      "arg": "",
+      "name": "read"
+     }
+    ]
+   },
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "verdict: actionable",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 3,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "verdict",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   },
+   {
+    "alias": "bugfix-flash",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "endpoint": null,
+    "episode": "sess-coder-N",
+    "episode_seq": 2,
+    "error": null,
+    "finish_reason": "tool_calls",
+    "latency_s": null,
+    "model": "m",
+    "role": "coder",
+    "status": null,
+    "step": 1,
+    "tokens_in": 10,
+    "tokens_out": 2,
+    "tools": [
+     {
+      "arg": "",
+      "name": "read"
+     }
+    ]
+   },
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "round 0: repro-first violated: no test in the diff",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 4,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "gates",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   },
+   {
+    "alias": "bugfix-reviewer",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "endpoint": null,
+    "episode": "sess-advisor-N",
+    "episode_seq": 3,
+    "error": null,
+    "finish_reason": "tool_calls",
+    "latency_s": null,
+    "model": "m",
+    "role": "advisor",
+    "status": null,
+    "step": 1,
+    "tokens_in": 10,
+    "tokens_out": 2,
+    "tools": [
+     {
+      "arg": "",
+      "name": "read"
+     }
+    ]
+   },
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "pin: src/a.js",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 5,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "advisor",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   },
+   {
+    "alias": "bugfix-flash",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "endpoint": null,
+    "episode": "sess-verdict-N",
+    "episode_seq": 4,
+    "error": null,
+    "finish_reason": "tool_calls",
+    "latency_s": null,
+    "model": "m",
+    "role": "verdict",
+    "status": null,
+    "step": 1,
+    "tokens_in": 10,
+    "tokens_out": 2,
+    "tools": [
+     {
+      "arg": "",
+      "name": "read"
+     }
+    ]
+   },
+   {
+    "alias": "bugfix-flash",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "endpoint": null,
+    "episode": "sess-coder-N",
+    "episode_seq": 5,
+    "error": null,
+    "finish_reason": "tool_calls",
+    "latency_s": null,
+    "model": "m",
+    "role": "coder",
+    "status": null,
+    "step": 1,
+    "tokens_in": 10,
+    "tokens_out": 2,
+    "tools": [
+     {
+      "arg": "",
+      "name": "read"
+     }
+    ]
+   },
+   {
+    "alias": "bugfix-reviewer",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "endpoint": null,
+    "episode": "sess-reviewer-N",
+    "episode_seq": 6,
+    "error": null,
+    "finish_reason": "tool_calls",
+    "latency_s": null,
+    "model": "m",
+    "role": "reviewer",
+    "status": null,
+    "step": 1,
+    "tokens_in": 10,
+    "tokens_out": 2,
+    "tools": [
+     {
+      "arg": "",
+      "name": "read"
+     }
+    ]
+   },
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "review: approve",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 6,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "reviewer",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   },
+   {
+    "alias": "",
+    "cost_source": "",
+    "cost_usd": null,
+    "decision_key": "case-20261115-abc",
+    "deployment": null,
+    "detail": "round 1: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing",
+    "endpoint": null,
+    "episode": "",
+    "episode_seq": 7,
+    "error": null,
+    "finish_reason": "",
+    "kind": "step",
+    "latency_s": null,
+    "model": "",
+    "role": "gates",
+    "status": null,
+    "step": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "tools": []
+   }
+  ],
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r0"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "advisor"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r0",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-triage/pi/triage.json"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "YOUR FIX DID NOT PASS ITS GATES: repro-first violated: no test in the diff\n\nTHE TASK, AS THE VERDICT STEP NOW SEES IT:\nmake value() return 2\n\nThe worktree is as your previous attempt left it.\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_RESUME_SESSION": "<D>/scratch/runs/case-20261115-abc/pi/sessions/--wt--/s-notest-N.jsonl",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "--no-context-files",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 1): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- round 0: repro-first violated: no test in the diff\n- advisor: src/a.js\n- review: VERDICT: approve\n- round 1: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 1 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "no_rules": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- review: VERDICT: approve\n- round 0: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "reproducer_then_fix": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "THE ISSUE AS FILED:\nvalue is 1\n\nvalue() returns 1, want 2\n\nTHE TASK THE VERDICT STEP WROTE FROM IT (it can be wrong; never take a phrase from it):\nmake value() return 2"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "repro"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: the failing test src/a.test.js reproduces the bug and is frozen. Fix the source so that it passes; do not change, move or delete it (you may add other tests)."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "--no-context-files",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE FROZEN PROOF: src/a.test.js was written from the issue by a separate agent before any fix, accepted by the chain's checks, fails on the base and passes with this fix. It is not under review and the fixer could not change it: judge the fix against it and the issue. A request for another test, or a test at another layer, is a note, never a request for changes. That the fix is in the wrong place is a note too, naming the file the issue points at.\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..9271cd4\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1,3 @@\n+const a = require('./a.js')\n+msg value() returns 1, want 2\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nconst a = require('./a.js')\nmsg value() returns 1, want 2\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- repro: src/a.test.js fails on the base with the issue's symptom ('returns 1, want 2')\n- review: VERDICT: approve\n- round 0: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "reproducer_turn_cap": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "THE ISSUE AS FILED:\nvalue is 1\n\nvalue() returns 1, want 2\n\nTHE TASK THE VERDICT STEP WROTE FROM IT (it can be wrong; never take a phrase from it):\nmake value() return 2"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "repro"
+   }
+  ],
+  "plan": {
+   "action": null,
+   "body": null,
+   "detail": "the reproducer gave no answer (exit 125): looking",
+   "outcome": "escalate",
+   "title": null
+  }
+ },
+ "review_kickback_resumes_the_session": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "--no-context-files",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "A REVIEW OF YOUR FIX ASKED FOR CHANGES. Address what it says that holds; if a point is wrong, keep your fix and say why in the test or a comment.\n\nTHE REVIEW:\nThe test only checks a constant.\nVERDICT: request-changes CLASS: test-proves-nothing\n\nThe worktree is as your previous attempt left it.\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_RESUME_SESSION": "<D>/scratch/runs/case-20261115-abc/pi/sessions/--wt--/s-good-N.jsonl",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r1"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "advisor"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-r1",
+     "<D>/scratch/runs/case-20261115-abc/bakeoff/results/real-shop-12-triage/pi/triage.json"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "**unresolved: the review asked for changes; round 0's clean fix kept**: the later rounds did not resolve what the review asked for (see the review below).\n\nAn automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- review: VERDICT: request-changes CLASS: test-proves-nothing\n- round 0: the review requested changes: The test only checks a constant. VERDICT: request-changes CLASS: test-proves-nothing\n- round 1: the fix changed nothing since its last round\n- advisor: src/a.js\n- kept: round 0's clean fix; the run ended (Stop): no usable verdict (none) after round 1: the expected value\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: request-changes CLASS: test-proves-nothing\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: unresolved: the review asked for changes; round 0's clean fix kept; a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "review_tools_read": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--tools",
+     "read,grep,find,ls",
+     "--no-context-files",
+     "--append-system-prompt",
+     "<BUGFIX>/fleet_rules.md",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "<BUGFIX>/fleet_rules.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- review: VERDICT: approve\n- round 0: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "rules_given_and_review_has_no_tools": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "/rules/fleet.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "/rules/fleet.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--no-tools",
+     "--no-context-files",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nYou have no tools: judge from what is above.\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "/rules/fleet.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- review: VERDICT: approve\n- round 0: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ },
+ "rules_given_and_review_reads": {
+  "invocations": [
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/ticket.json",
+     "pi"
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ACCEPTANCE_GAP": "0",
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "/rules/fleet.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "PI_TOOLS": "read,grep,find,ls",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "verdict"
+   },
+   {
+    "argv": [
+     "<D>/scratch/runs/case-20261115-abc/wt",
+     "make value() return 2\n\nIMPORTANT: write a failing regression test FIRST (repro-first), then fix. Both must be in your final diff."
+    ],
+    "cwd": "<D>/bakeoff",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "/rules/fleet.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "fix"
+   },
+   {
+    "argv": [
+     "-p",
+     "--mode",
+     "json",
+     "--provider",
+     "flotilla-gateway-bugfix",
+     "--model",
+     "fleet-bugfix-reviewer",
+     "--tools",
+     "read,grep,find,ls",
+     "--no-context-files",
+     "--append-system-prompt",
+     "/rules/fleet.md",
+     "Review this automated fix for example/shop#12 (value is 1).\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE GATES (run by the chain on this diff): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nDIFF:\ndiff --git a/src/a.js b/src/a.js\nindex a7f2724..6b40fe1 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1 @@\n-module.exports = () => 1;\n+module.exports = () => 2;\ndiff --git a/src/a.test.js b/src/a.test.js\nnew file mode 100644\nindex 0000000..ac602e8\n--- /dev/null\n+++ b/src/a.test.js\n@@ -0,0 +1 @@\n+expect src/a.js 2\n\nTHE CHANGED FILES, AFTER THE FIX:\n=== src/a.js ===\nmodule.exports = () => 2;\n\n=== src/a.test.js ===\nexpect src/a.js 2\n\nTHE FIX AGENT'S OWN SUMMARY:\ndone\n\nTHE TASK THE FIX WAS GIVEN (the verdict step's analysis; it can be wrong: judge the fix against the issue as filed above, not against this task):\nmake value() return 2\n\nGive a concise review: correctness risks, edge cases the fix misses, test adequacy, and whether it fixes the issue as filed rather than hiding its symptom. Ask for changes only for a fault you can show from what is above, and name its class: hides-symptom, over-broad, test-proves-nothing, breaks-behaviour, wrong-place. A fix that does not meet an acceptance criterion the issue states, or that stops the error by silently dropping behaviour (skipping, swallowing, filtering it out), is such a fault: class hides-symptom; the issue's acceptance criteria are the ones in the issue as filed, not in the task. A fix that weakens or inverts an assertion of a test that is on main is class test-proves-nothing. Write anything else (what could not be checked from here, style, follow-ups) as notes and approve. End with one line: VERDICT: approve, or VERDICT: request-changes CLASS: <one of the classes>."
+    ],
+    "cwd": "<D>/scratch/runs/case-20261115-abc/wt",
+    "env": {
+     "ADVISOR_MODEL": "fleet-bugfix-reviewer",
+     "BAKEOFF_ROOT": "<D>/scratch/runs/case-20261115-abc/bakeoff",
+     "BAKEOFF_TRIAGED_DIR": "<D>/scratch/runs/case-20261115-abc/triaged",
+     "BAKEOFF_WT": "<D>/scratch/runs/case-20261115-abc/wt",
+     "BUGFIX_PI_RULES": "/rules/fleet.md",
+     "HOME": "<D>/scratch/runs/case-20261115-abc",
+     "PI_CODING_AGENT_DIR": "<D>/scratch/runs/case-20261115-abc/pi",
+     "PI_MODEL": "fleet-bugfix-flash",
+     "PI_PROVIDER": "flotilla-gateway-bugfix",
+     "TRIAGE_BASE": "<BASE>",
+     "TRIAGE_MODEL": "fleet-bugfix-flash"
+    },
+    "leaf": "review"
+   }
+  ],
+  "plan": {
+   "action": "github.open_pr",
+   "body": "An automated fix for example/shop#12 by flotilla's bugfix fleet (RFC-0010), in beta evaluation.\n\nGates (base <BASE12>, round 0): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing; nothing in CI, hooks, config or the lockfile. The whole suite is this PR's CI.\n\nThe chain:\n- base: <BASE12>\n- step one: not checked (no project-specific name the error calls missing)\n- verdict: actionable\n- review: VERDICT: approve\n- round 0: gates clean (2 files, 1 turns, 7 output tokens): 1 test files fail on the base and pass with the fix; 2 related files, none newly failing\n\nReview (fleet reviewer, comment only):\nThe test only checks a constant.\nVERDICT: approve\n\nThe operator merges, always: the fleet never does.",
+   "detail": "#12: a clean fix in round 0 at <BASE12>",
+   "outcome": "plan",
+   "title": "fix #12: value is 1"
+  }
+ }
+}

@@ -1,0 +1,7 @@
+{"type":"session","version":3,"id":"sess-golden","timestamp":"2026-11-18T10:00:00.000Z"}
+{"type":"message","timestamp":"2026-11-18T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"fix it"}]}}
+{"type":"message","timestamp":"2026-11-18T10:00:02.000Z","message":{"role":"assistant","model":"fleet-bugfix-flash","usage":{"input":100,"output":20,"cost":{"total":0.5}},"stopReason":"toolUse","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"cat src/a.js"}},{"type":"toolCall","id":"c2","name":"read","arguments":{"path":"src/b.js"}}]}}
+{"type":"message","timestamp":"2026-11-18T10:00:03.000Z","message":{"role":"toolResult","toolCallId":"c1","isError":false,"content":[]}}
+{"type":"message","timestamp":"2026-11-18T10:00:03.500Z","message":{"role":"toolResult","toolCallId":"c2","isError":true,"content":[]}}
+{"type":"message","timestamp":"2026-11-18T10:00:04.000Z","message":{"role":"assistant","model":"fleet-bugfix-flash","usage":{"input":200,"output":60},"stopReason":"stop","content":[{"type":"text","text":"done"}]}}
+{"type":"message","message":{"role":"assistant","model":"fleet-bugfix-flash","usage":{},"stopReason":"error","errorMessage":"boom","content":[]}}

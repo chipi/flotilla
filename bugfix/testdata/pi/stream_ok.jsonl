@@ -1,0 +1,11 @@
+{"_synthetic": true, "note": "pi --mode json, the documented message_end shape, written by hand; no model produced it"}
+{"type":"session","version":3,"id":"s-ok"}
+{"type":"agent_start"}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"fix it"}]}}
+{"type":"message_update","message":{"role":"assistant","content":[{"type":"text","text":"Looking"}]}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Looking at the code."},{"type":"toolCall","id":"c1","name":"read","arguments":{"path":"src/a.js"}}],"usage":{"input":100,"output":12,"cost":{"total":0.001}},"stopReason":"toolUse"}}
+this line is not JSON
+{"type":"message_end","message":{"role":"toolResult","toolCallId":"c1","content":[{"type":"text","text":"module.exports = () => 1;"}],"isError":false}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"  Fixed: value() now returns 2.  \n"}],"usage":{"input":150,"output":30},"stopReason":"stop"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"done"}],"usage":{"output":3},"stopReason":"stop"}}
+{"type":"agent_end"}

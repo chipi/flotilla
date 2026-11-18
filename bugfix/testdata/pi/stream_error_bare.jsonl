@@ -1,0 +1,2 @@
+{"_synthetic": true, "note": "pi --mode json: an error stop with no errorMessage"}
+{"type":"message_end","message":{"role":"assistant","content":[],"usage":{"output":0},"stopReason":"error"}}

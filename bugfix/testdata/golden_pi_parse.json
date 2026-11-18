@@ -1,0 +1,258 @@
+{
+ "leaves": {
+  "fix_fresh_with_rules": {
+   "argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--provider",
+    "p1",
+    "--model",
+    "m1",
+    "--no-context-files",
+    "--append-system-prompt",
+    "/r.md",
+    "You are fixing a bug in the repository at the current working directory.\n\nBug report:\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\" \\n)\n\nDiagnose the cause in the source and fix it. Add or update a regression test if\nappropriate. Keep the change tight and correct; do not touch unrelated code.\nWhen done, stop \u2014 do not commit, push, or open a PR."
+   ],
+   "cwd": "<D>/wt",
+   "stdin_is_null": true
+  },
+  "fix_fresh_without_rules": {
+   "argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--provider",
+    "p1",
+    "--model",
+    "m1",
+    "You are fixing a bug in the repository at the current working directory.\n\nBug report:\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\" \\n)\n\nDiagnose the cause in the source and fix it. Add or update a regression test if\nappropriate. Keep the change tight and correct; do not touch unrelated code.\nWhen done, stop \u2014 do not commit, push, or open a PR."
+   ],
+   "cwd": "<D>/wt",
+   "stdin_is_null": true
+  },
+  "fix_resume_with_rules": {
+   "argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--provider",
+    "p1",
+    "--model",
+    "m1",
+    "--session",
+    "/s/one.jsonl",
+    "--no-context-files",
+    "--append-system-prompt",
+    "/r.md",
+    "THE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\" \\n)"
+   ],
+   "cwd": "<D>/wt",
+   "stdin_is_null": true
+  },
+  "fix_resume_without_rules": {
+   "argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--provider",
+    "p1",
+    "--model",
+    "m1",
+    "--session",
+    "/s/one.jsonl",
+    "THE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\" \\n)"
+   ],
+   "cwd": "<D>/wt",
+   "stdin_is_null": true
+  },
+  "repro_with_rules": {
+   "argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--provider",
+    "p1",
+    "--model",
+    "m1",
+    "--no-context-files",
+    "--append-system-prompt",
+    "/r.md",
+    "# reproducer\n\nYou prove that the bug in the issue happens, with one failing test, before anyone fixes it. You do not fix it,\nand you do not decide how it should be fixed. Another agent writes the fix later, against your test, and may not\nchange it.\n\n## What to do\n\n1. Read the issue as filed below, and the task the verdict step wrote from it. The issue is the authority: the\n   task can be wrong.\n2. Find the code the issue's evidence points at: the stack frame, the input, the error text, the steps, the\n   expected and the actual behaviour. Read it; run the existing tests near it if that helps.\n3. Write ONE NEW test file, next to the code's existing tests (for example `src/lib/x.repro.test.ts` beside\n   `src/lib/x.test.ts`, or `tests/.../test_x_repro.py`). Never edit an existing test file. The test drives that\n   code with the issue's input and asserts the behaviour the issue expects. On the current code it must FAIL.\n4. Pick a short phrase (3 to 8 words) copied EXACTLY from the issue as filed, character for character, that\n   names the symptom. That phrase is your `expect_failure_match`.\n   - A wrong value or count: put the phrase in the failing assertion's message, so the failure prints it:\n     `expect(value, 'PHRASE').toBe(...)` in vitest, `assert value == expected, 'PHRASE'` in pytest.\n   - An error (a TypeError, an exception): the error itself must be the failure. Import the repository's code\n     and call it with the issue's input, bare: no `expect(...).toThrow`, no `pytest.raises`, no try/except, and\n     never the error text in an assertion's message. The chain checks that the error is raised from the\n     repository's own source, so a quoted error is refused.\n   The test must import and run code of this repository, not only a library.\n5. Run it and check it fails for that reason, not for a typo, a missing import or a mock you invented, and that\n   the phrase is in the failure output.\n\n## Rules\n\n- Add one new test file only. Never edit an existing file: not a test, a source file, a config file, a\n  lockfile or a snapshot.\n- Never read a source file's text in a test (`readFileSync`, `open`, `read_text` of `.svelte`, `.ts`, `.js`,\n  `.py`): run the code.\n- Never weaken, remove or rewrite an assertion that is already on main.\n- Use only what the issue states. If the issue does not give enough to reproduce the bug from the code in this\n  repository (a production-only error, a minified frame with no source map, code the repository does not\n  have, a behaviour the issue leaves open), do not guess: say what is missing.\n\n## Your answer\n\nEnd with ONLY a JSON object in a ```json fenced block, one of:\n\n```json\n{\"repro\": \"test\", \"files\": [\"path/of/the/test\"], \"evidence_quoted\": \"the issue's words your test reproduces, copied exactly\",\n \"expect_failure_match\": \"a short text from the issue that the failing test's output contains\"}\n```\n\n```json\n{\"repro\": \"none\", \"why\": \"1-2 sentences: why it cannot be reproduced from this repository\",\n \"needed\": \"what the reporter must give (a source map, the input, the steps, the expected value)\"}\n```\n\n`expect_failure_match` must be copied from the issue as filed, word for word (not reworded, not summarised), and\nmust appear in your test's failure output: put it in the assertion's message (step 4).\n\nIf you cannot reproduce it within a few tries, stop and answer \"none\" with what is missing: a long search is\nnot a proof.\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\" \\n)"
+   ],
+   "cwd": "<D>/wt",
+   "stdin_is_null": true
+  },
+  "repro_without_rules": {
+   "argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--provider",
+    "p1",
+    "--model",
+    "m1",
+    "# reproducer\n\nYou prove that the bug in the issue happens, with one failing test, before anyone fixes it. You do not fix it,\nand you do not decide how it should be fixed. Another agent writes the fix later, against your test, and may not\nchange it.\n\n## What to do\n\n1. Read the issue as filed below, and the task the verdict step wrote from it. The issue is the authority: the\n   task can be wrong.\n2. Find the code the issue's evidence points at: the stack frame, the input, the error text, the steps, the\n   expected and the actual behaviour. Read it; run the existing tests near it if that helps.\n3. Write ONE NEW test file, next to the code's existing tests (for example `src/lib/x.repro.test.ts` beside\n   `src/lib/x.test.ts`, or `tests/.../test_x_repro.py`). Never edit an existing test file. The test drives that\n   code with the issue's input and asserts the behaviour the issue expects. On the current code it must FAIL.\n4. Pick a short phrase (3 to 8 words) copied EXACTLY from the issue as filed, character for character, that\n   names the symptom. That phrase is your `expect_failure_match`.\n   - A wrong value or count: put the phrase in the failing assertion's message, so the failure prints it:\n     `expect(value, 'PHRASE').toBe(...)` in vitest, `assert value == expected, 'PHRASE'` in pytest.\n   - An error (a TypeError, an exception): the error itself must be the failure. Import the repository's code\n     and call it with the issue's input, bare: no `expect(...).toThrow`, no `pytest.raises`, no try/except, and\n     never the error text in an assertion's message. The chain checks that the error is raised from the\n     repository's own source, so a quoted error is refused.\n   The test must import and run code of this repository, not only a library.\n5. Run it and check it fails for that reason, not for a typo, a missing import or a mock you invented, and that\n   the phrase is in the failure output.\n\n## Rules\n\n- Add one new test file only. Never edit an existing file: not a test, a source file, a config file, a\n  lockfile or a snapshot.\n- Never read a source file's text in a test (`readFileSync`, `open`, `read_text` of `.svelte`, `.ts`, `.js`,\n  `.py`): run the code.\n- Never weaken, remove or rewrite an assertion that is already on main.\n- Use only what the issue states. If the issue does not give enough to reproduce the bug from the code in this\n  repository (a production-only error, a minified frame with no source map, code the repository does not\n  have, a behaviour the issue leaves open), do not guess: say what is missing.\n\n## Your answer\n\nEnd with ONLY a JSON object in a ```json fenced block, one of:\n\n```json\n{\"repro\": \"test\", \"files\": [\"path/of/the/test\"], \"evidence_quoted\": \"the issue's words your test reproduces, copied exactly\",\n \"expect_failure_match\": \"a short text from the issue that the failing test's output contains\"}\n```\n\n```json\n{\"repro\": \"none\", \"why\": \"1-2 sentences: why it cannot be reproduced from this repository\",\n \"needed\": \"what the reporter must give (a source map, the input, the steps, the expected value)\"}\n```\n\n`expect_failure_match` must be copied from the issue as filed, word for word (not reworded, not summarised), and\nmust appear in your test's failure output: put it in the assertion's message (step 4).\n\nIf you cannot reproduce it within a few tries, stop and answer \"none\" with what is missing: a long search is\nnot a proof.\n\nTHE ISSUE AS FILED:\nvalue() returns 1, want 2\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\" \\n)"
+   ],
+   "cwd": "<D>/wt",
+   "stdin_is_null": true
+  }
+ },
+ "streams": {
+  "session.jsonl": {
+   "lines": [
+    {
+     "alias": "bugfix-flash",
+     "at": "2026-11-18T10:00:02.000Z",
+     "cost_source": "gateway-share",
+     "cost_usd": 0.28421052631578947,
+     "decision_key": "case-1",
+     "deployment": null,
+     "endpoint": null,
+     "episode": "sess-golden",
+     "episode_seq": 3,
+     "error": null,
+     "finish_reason": "tool_calls",
+     "latency_s": null,
+     "model": "fleet-bugfix-flash",
+     "role": "coder",
+     "status": null,
+     "step": 1,
+     "tokens_in": 100,
+     "tokens_out": 20,
+     "tools": [
+      {
+       "arg": "cat src/a.js",
+       "name": "bash",
+       "ok": true
+      },
+      {
+       "arg": "src/b.js",
+       "name": "read",
+       "ok": false
+      }
+     ]
+    },
+    {
+     "alias": "bugfix-flash",
+     "at": "2026-11-18T10:00:04.000Z",
+     "cost_source": "gateway-share",
+     "cost_usd": 0.6157894736842106,
+     "decision_key": "case-1",
+     "deployment": null,
+     "endpoint": null,
+     "episode": "sess-golden",
+     "episode_seq": 3,
+     "error": null,
+     "finish_reason": "stop",
+     "latency_s": null,
+     "model": "fleet-bugfix-flash",
+     "role": "coder",
+     "status": null,
+     "step": 2,
+     "tokens_in": 200,
+     "tokens_out": 60,
+     "tools": []
+    },
+    {
+     "alias": "bugfix-flash",
+     "at": "2026-11-18T10:00:09Z",
+     "cost_source": "",
+     "cost_usd": null,
+     "decision_key": "case-1",
+     "deployment": null,
+     "endpoint": null,
+     "episode": "sess-golden",
+     "episode_seq": 3,
+     "error": "boom",
+     "finish_reason": "error",
+     "latency_s": null,
+     "model": "fleet-bugfix-flash",
+     "role": "coder",
+     "status": null,
+     "step": 3,
+     "tokens_in": null,
+     "tokens_out": null,
+     "tools": []
+    }
+   ],
+   "pi_cost": 0.5,
+   "resumed_after_one": [
+    {
+     "alias": "x",
+     "at": "2026-11-18T10:00:04.000Z",
+     "cost_source": "",
+     "cost_usd": null,
+     "decision_key": "case-1",
+     "deployment": null,
+     "endpoint": null,
+     "episode": "sess-golden",
+     "episode_seq": 3,
+     "error": null,
+     "finish_reason": "stop",
+     "latency_s": null,
+     "model": "fleet-bugfix-flash",
+     "role": "coder",
+     "status": null,
+     "step": 2,
+     "tokens_in": 200,
+     "tokens_out": 60,
+     "tools": []
+    },
+    {
+     "alias": "x",
+     "at": "2026-11-18T10:00:09Z",
+     "cost_source": "",
+     "cost_usd": null,
+     "decision_key": "case-1",
+     "deployment": null,
+     "endpoint": null,
+     "episode": "sess-golden",
+     "episode_seq": 3,
+     "error": "boom",
+     "finish_reason": "error",
+     "latency_s": null,
+     "model": "fleet-bugfix-flash",
+     "role": "coder",
+     "status": null,
+     "step": 3,
+     "tokens_in": null,
+     "tokens_out": null,
+     "tools": []
+    }
+   ]
+  },
+  "stream_capped.jsonl": {
+   "assistant_text": "three",
+   "stream_error": "",
+   "usage": [
+    3,
+    3
+   ]
+  },
+  "stream_error.jsonl": {
+   "assistant_text": "Trying.",
+   "stream_error": "400: UnsupportedParamsError reasoning_effort",
+   "usage": [
+    2,
+    2
+   ]
+  },
+  "stream_error_bare.jsonl": {
+   "assistant_text": "",
+   "stream_error": "error",
+   "usage": [
+    1,
+    0
+   ]
+  },
+  "stream_ok.jsonl": {
+   "assistant_text": "Fixed: value() now returns 2.",
+   "stream_error": "",
+   "usage": [
+    3,
+    45
+   ]
+  }
+ }
+}

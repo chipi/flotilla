@@ -1,0 +1,5 @@
+{"_synthetic": true, "note": "pi --mode json: killed at the turn cap, the last line cut short"}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"one"}],"usage":{"output":1},"stopReason":"toolUse"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"two"}],"usage":{"output":1},"stopReason":"toolUse"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"three"}],"usage":{"output":1},"stopReason":"toolUse"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"te

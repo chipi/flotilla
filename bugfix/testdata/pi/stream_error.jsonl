@@ -1,0 +1,3 @@
+{"_synthetic": true, "note": "pi --mode json: the last assistant message ended in an error"}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Trying."}],"usage":{"input":10,"output":2},"stopReason":"toolUse"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"usage":{"input":10,"output":0},"stopReason":"error","errorMessage":"400: UnsupportedParamsError reasoning_effort"}}
