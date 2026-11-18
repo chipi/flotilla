@@ -32,7 +32,7 @@ with the token in `.e2e/demo-admin.token`. `DEMO_PORT` changes the port.
 What to look at:
 
 - **Now:** what the fleets handled in the last 24 hours, and what needs you;
-- **Approvals:** plans waiting for a person. The examples run in `shadow` (they record what they
+- **Approvals:** plans waiting for a person. The examples run at `record` (they record what they
   would do); the demo promotes one, the CRM field fix, to `propose`, so one plan waits for you;
 - **Cases:** each case's timeline, the plan, why policy decided as it did, and what the agent read;
 - **Fleets:** every fleet's routines, runs, cost and logs; a STOP for each fleet and for all.
@@ -46,7 +46,7 @@ toolchain).
 | Command | What it checks | Time |
 | --- | --- | --- |
 | `make lint` | gofmt, go vet, every Python file compiles, `llms.txt` is current, no installation facts in the code | seconds |
-| `make test-unit` | Go tests (both modules), the worker's and every fleet's unit tests | ~1 min |
+| `make test-unit` | Go tests (the root module under `-race`, and fleetd), the worker's and every fleet's unit tests | ~1 min |
 | `make ci-fast` | both of the above: what every push must pass | ~1 min |
 | `make test-e2e` | the whole platform in containers with the stand-ins: every example fleet end to end, the UI in Chromium, a host agent, a remote worker | ~10 min |
 | `make docs-validate` | markdownlint and the strict docs build | ~30 s |

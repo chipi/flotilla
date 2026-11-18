@@ -7,8 +7,29 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 )
+
+// last is the request a stand-in server saw most recently. The server's goroutine writes it and the test reads it
+// after the command (a subprocess) has exited, which is no synchronisation the race detector can see.
+type last struct {
+	mu                       sync.Mutex
+	method, path, auth, body string
+}
+
+func (l *last) record(r *http.Request) {
+	b, _ := io.ReadAll(r.Body)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.method, l.path, l.auth, l.body = r.Method, r.URL.Path, r.Header.Get("Authorization"), string(b)
+}
+
+func (l *last) get() (method, path, auth, body string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.method, l.path, l.auth, l.body
+}
 
 // The tests run the real command: the test binary runs main when FLOTILLA_CLI_AS_MAIN is set.
 func TestMain(m *testing.M) {
@@ -37,10 +58,9 @@ func cli(t *testing.T, url string, args ...string) (string, string, int) {
 
 // `flotilla cancel RUN_ID --reason R` posts the reason to the run's cancel endpoint with the operator's token.
 func TestCancelCommand(t *testing.T) {
-	var method, path, auth, body string
+	var seen last
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		method, path, auth, body = r.Method, r.URL.Path, r.Header.Get("Authorization"), string(b)
+		seen.record(r)
 		w.Write([]byte(`{"cancelled":"triage-cycle-abc","by":"operator"}`))
 	}))
 	defer ts.Close()
@@ -48,6 +68,7 @@ func TestCancelCommand(t *testing.T) {
 	if code != 0 || !strings.Contains(out, `"cancelled":"triage-cycle-abc"`) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errs)
 	}
+	method, path, auth, body := seen.get()
 	if method != "POST" || path != "/v1/runs/triage-cycle-abc/cancel" || auth != "Bearer op-token" || body != `{"reason":"burning spend"}` {
 		t.Fatalf("sent %s %s auth=%q body=%q", method, path, auth, body)
 	}

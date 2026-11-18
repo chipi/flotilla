@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,10 +30,9 @@ func TestParsePromote(t *testing.T) {
 }
 
 func TestVersionCommandsPostWhatTheAPITakes(t *testing.T) {
-	var method, path, body string
+	var seen last
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		method, path, body = r.Method, r.URL.Path, string(b)
+		seen.record(r)
 		w.Write([]byte(`{"routine":"triage/cycle","acceptance":["pairs"],"live":1,"versions":[{"version":1,"state":"live","hash":"abcdef0123456789","deployed_at":"t","live_at":"t","state_by":"flotillad","state_why":"first","loaded":true,"pairs":0}]}`))
 	}))
 	defer ts.Close()
@@ -48,11 +46,13 @@ func TestVersionCommandsPostWhatTheAPITakes(t *testing.T) {
 		{[]string{"rollback", "triage/cycle", "--autonomy", "record", "--reason", "bad"}, "POST", "/v1/routines/triage/cycle/rollback", `{"autonomy":"record","reason":"bad"}`},
 		{[]string{"retire", "triage/cycle", "v3", "--reason", "not needed"}, "POST", "/v1/routines/triage/cycle/versions/3/retire", `{"reason":"not needed"}`},
 	} {
-		if _, errs, code := cli(t, ts.URL, c.args...); code != 0 || method != c.method || path != c.path || body != c.body {
+		_, errs, code := cli(t, ts.URL, c.args...)
+		if method, path, _, body := seen.get(); code != 0 || method != c.method || path != c.path || body != c.body {
 			t.Fatalf("%v: exit %d (%s), sent %s %s %s", c.args, code, errs, method, path, body)
 		}
 	}
 	out, errs, code := cli(t, ts.URL, "versions", "triage/cycle")
+	method, path, _, _ := seen.get()
 	if code != 0 || path != "/v1/routines/triage/cycle/versions" || method != "GET" || !strings.Contains(out, "live v1") || !strings.Contains(out, "abcdef0") || strings.Contains(out, "abcdef01") {
 		t.Fatalf("versions: exit %d (%s), %q", code, errs, out)
 	}
@@ -63,13 +63,14 @@ func TestVersionCommandsPostWhatTheAPITakes(t *testing.T) {
 
 // -json gives the API's answer as it is, for deploy_fleets.sh's before and after proof.
 func TestVersionsJSON(t *testing.T) {
-	var path string
+	var seen last
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path = r.URL.Path
+		seen.record(r)
 		w.Write([]byte(`{"routine":"triage/cycle","versions":[]}`))
 	}))
 	defer ts.Close()
 	out, errs, code := cli(t, ts.URL, "versions", "triage/cycle", "-json")
+	_, path, _, _ := seen.get()
 	if code != 0 || path != "/v1/routines/triage/cycle/versions" || out != `{"routine":"triage/cycle","versions":[]}` {
 		t.Fatalf("exit %d (%s), %s, %q", code, errs, path, out)
 	}
@@ -77,10 +78,9 @@ func TestVersionsJSON(t *testing.T) {
 
 // shadow, the old name of record, is sent as record, with a note on stderr, everywhere a level is given.
 func TestCLIReadsShadowAsRecord(t *testing.T) {
-	var path, body string
+	var seen last
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		path, body = r.URL.Path, string(b)
+		seen.record(r)
 		w.Write([]byte(`{}`))
 	}))
 	defer ts.Close()
@@ -95,6 +95,7 @@ func TestCLIReadsShadowAsRecord(t *testing.T) {
 		{[]string{"rollback", "triage/cycle", "--autonomy", "shadow", "--reason", "x"}, "/v1/routines/triage/cycle/rollback", `"autonomy":"record"`},
 	} {
 		_, errs, code := cli(t, ts.URL, c.args...)
+		_, path, _, body := seen.get()
 		if code != 0 || path != c.path || !strings.Contains(body, c.want) || strings.Contains(body, "shadow") || !strings.Contains(errs, "shadow is now called record") {
 			t.Fatalf("%v: exit %d (%s), sent %s %s", c.args, code, errs, path, body)
 		}

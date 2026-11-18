@@ -23,12 +23,17 @@ type fakeRunner struct {
 	res   *worker.Result
 	err   error
 	block chan struct{}
+	// reached, when set, gets one value per request as it arrives (buffer it): a test waits on it instead of polling.
+	reached chan struct{}
 }
 
 func (f *fakeRunner) Run(ctx context.Context, r worker.Request) (*worker.Result, error) {
 	f.mu.Lock()
 	f.got = append(f.got, r)
 	f.mu.Unlock()
+	if f.reached != nil {
+		f.reached <- struct{}{}
+	}
 	if f.block != nil {
 		<-f.block
 	}
