@@ -9,7 +9,7 @@ import (
 
 // The UI's read queries (ADR-0014): one page of a table at a time, and the counts its summaries need.
 
-const runCols = `id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail`
+const runCols = `id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version`
 
 func scanRuns(rows *sql.Rows) ([]Run, error) {
 	defer rows.Close()
@@ -17,7 +17,7 @@ func scanRuns(rows *sql.Rows) ([]Run, error) {
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
-			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail); err != nil {
+			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

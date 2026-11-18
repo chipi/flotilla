@@ -85,3 +85,21 @@ func TestCallLineShowsRoleAndTools(t *testing.T) {
 		t.Errorf("unreadable tools add nothing: %q", got)
 	}
 }
+
+// The run page's facts and the runs table say which version of the routine made the run.
+func TestRunPagesShowTheVersion(t *testing.T) {
+	f := setup(t)
+	if err := f.st.StartRun(context.Background(), store.Run{ID: "run-ver", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad",
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running", Version: 3}); err != nil {
+		t.Fatal(err)
+	}
+	ck := f.signin(f.vic)
+	_, page := f.do("GET", "/runs/run-ver", ck, nil, nil)
+	if !strings.Contains(page, "<dt>Version</dt><dd>v3</dd>") {
+		t.Errorf("the run page does not show v3")
+	}
+	_, list := f.do("GET", "/runs", ck, nil, nil)
+	if !strings.Contains(list, `<span class="meta">v3</span>`) {
+		t.Errorf("the runs table does not show v3")
+	}
+}

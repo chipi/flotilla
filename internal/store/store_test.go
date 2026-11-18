@@ -417,3 +417,30 @@ func TestMigrationAddsCallKind(t *testing.T) {
 		t.Fatalf("the old call reads as a call and keeps its tools: %+v", c)
 	}
 }
+
+// Every read of a run says which version of the routine made it: the single run, the list, and the runs page.
+func TestRunReadsCarryTheVersion(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	for id, v := range map[string]int{"r-v3": 3, "r-v1": 0} {
+		if err := s.StartRun(ctx, Run{ID: id, Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Autonomy: "record",
+			StartedAt: time.Now().UTC().Format(ts), Status: StatusRunning, Version: v}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, want := range map[string]int{"r-v3": 3, "r-v1": 1} {
+		r, err := s.Run(ctx, id)
+		if err != nil || r == nil || r.Version != want {
+			t.Fatalf("Run(%s): %+v %v, want version %d", id, r, err, want)
+		}
+	}
+	page, _, err := s.RunsPage(ctx, RunQuery{Limit: 10})
+	if err != nil || len(page) != 2 {
+		t.Fatalf("RunsPage: %+v %v", page, err)
+	}
+	for _, r := range page {
+		if want := map[string]int{"r-v3": 3, "r-v1": 1}[r.ID]; r.Version != want {
+			t.Errorf("RunsPage %s: version %d, want %d", r.ID, r.Version, want)
+		}
+	}
+}

@@ -13,9 +13,9 @@ import (
 func (s *Store) Run(ctx context.Context, id string) (*Run, error) {
 	var r Run
 	err := s.db.QueryRowContext(ctx, `SELECT id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status,
-		exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail FROM runs WHERE id = ?`, id).
+		exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version FROM runs WHERE id = ?`, id).
 		Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
-			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail)
+			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

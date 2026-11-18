@@ -34,3 +34,16 @@ func TestRunShowHasTheCallsStepAndFinishReason(t *testing.T) {
 		t.Fatalf("the call: %v", c)
 	}
 }
+
+// run_show says which version of the routine made the run.
+func TestRunShowHasTheVersion(t *testing.T) {
+	a, ts := world(t)
+	if err := a.Store.StartRun(context.Background(), store.Run{ID: "r-v", Routine: "ops/backup-monitor", SpecHash: "h", Trigger: "manual", Actor: "operator",
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: "running", Version: 3}); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := call(t, session(t, ts.URL, agentTok), "run_show", map[string]any{"id": "r-v"})
+	if r, _ := out["run"].(map[string]any); isErr || r["version"] != float64(3) {
+		t.Fatalf("run_show: %v", out)
+	}
+}
