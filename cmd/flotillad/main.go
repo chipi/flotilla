@@ -269,15 +269,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "specs:", err)
 		os.Exit(2)
 	}
-	// every version that loads can run (a shadow, the previous one after a rollback), so its skills and prompts are checked too
-	if err := skills.Check(cfg.SpecsDir, versions.Each(routines)); err != nil {
-		fmt.Fprintln(os.Stderr, "skills:", err)
-		os.Exit(2)
-	}
-	if err := prompts.Check(cfg.SpecsDir, versions.Each(routines)); err != nil {
-		fmt.Fprintln(os.Stderr, "prompts:", err)
-		os.Exit(2)
-	}
 	fleets, err := spec.LoadFleets(cfg.SpecsDir, routines)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fleets:", err)
@@ -444,6 +435,7 @@ func main() {
 	}
 	// The versions: refuse a live or previous version whose folder changed, record the new ones, and run each routine
 	// as its live version. Before anything can start a run.
+	src := routines
 	routines, plan, err := versions.Reconcile(ctx, st, routines)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -451,6 +443,15 @@ func main() {
 		os.Exit(2)
 	}
 	for _, n := range plan.Notes {
+		log.Warn("versions: tolerated", "note", n)
+	}
+	textNotes, err := checkTexts(cfg.SpecsDir, src, plan)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		log.Error("versions", "err", err)
+		os.Exit(2)
+	}
+	for _, n := range textNotes {
 		log.Warn("versions: tolerated", "note", n)
 	}
 	for _, j := range routines {
@@ -722,4 +723,28 @@ func slackNotices(ctx context.Context, a *api.Server, link *hostlink.Server, hos
 			}
 		}
 	}
+}
+
+// checkTexts checks the skills and prompts of every version that can run (live, previous, shadow): a missing
+// or refused one stops a start or a deploy. A retired version keeps history only, so what is wrong with its
+// texts is a note.
+func checkTexts(specsDir string, routines []*spec.Routine, plan versions.Plan) ([]string, error) {
+	run := plan.Runnable(routines)
+	var errs []error
+	if err := skills.Check(specsDir, run); err != nil {
+		errs = append(errs, fmt.Errorf("skills: %w", err))
+	}
+	if err := prompts.Check(specsDir, run); err != nil {
+		errs = append(errs, fmt.Errorf("prompts: %w", err))
+	}
+	var notes []string
+	for _, r := range plan.RetiredLoaded(routines) {
+		if err := skills.Check(specsDir, []*spec.Routine{r}); err != nil {
+			notes = append(notes, fmt.Sprintf("%s v%d is retired and its skills do not resolve: %v", r.ID(), r.Version, err))
+		}
+		if err := prompts.Check(specsDir, []*spec.Routine{r}); err != nil {
+			notes = append(notes, fmt.Sprintf("%s v%d is retired and its prompts do not resolve: %v", r.ID(), r.Version, err))
+		}
+	}
+	return notes, errors.Join(errs...)
 }

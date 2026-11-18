@@ -238,3 +238,27 @@ func Each(routines []*spec.Routine) []*spec.Routine {
 	}
 	return out
 }
+
+// Runnable are the loaded versions that can run, as their own bound copies: the live, previous and shadow
+// ones, as the plan has them. Retired versions only keep history and are not in it.
+func (p Plan) Runnable(routines []*spec.Routine) []*spec.Routine { return p.bound(routines, false) }
+
+// RetiredLoaded are the retired versions that still load, as bound copies: -check reports what is wrong
+// with their skills and prompts as a note, never as a refusal.
+func (p Plan) RetiredLoaded(routines []*spec.Routine) []*spec.Routine { return p.bound(routines, true) }
+
+func (p Plan) bound(routines []*spec.Routine, retired bool) []*spec.Routine {
+	var out []*spec.Routine
+	for _, j := range routines {
+		for _, v := range j.Versions {
+			st, ok := p.states[j.ID()][v.Number]
+			if !ok || (strings.TrimSuffix(st, "(new)") == store.VersionRetired) != retired {
+				continue
+			}
+			if b, err := j.WithVersion(v.Number); err == nil {
+				out = append(out, b)
+			}
+		}
+	}
+	return out
+}

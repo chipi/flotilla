@@ -108,3 +108,89 @@ func TestCheckVersions(t *testing.T) {
 		t.Fatal("-check wrote to the store")
 	}
 }
+
+func writeFile(t *testing.T, p, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Skills and prompts are checked for the versions that can run (live, previous, shadow) and only noted for a
+// retired one: a retired v1 whose prompt file is gone must not stop the start or the deploy of a live v2.
+func TestCheckTextsRefusesWhatCanRunAndNotesWhatIsRetired(t *testing.T) {
+	ctx := context.Background()
+	specs := fleetsDir(t)
+	withPrompt := "run: {command: \"python3 one.py\", timeout: 20m}\nprompts:\n  system: system.md\n"
+	writeFile(t, filepath.Join(specs, "triage/cycle/v1/spec.yaml"), withPrompt) // its system.md does not exist
+	routines, err := spec.LoadVersions(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	st, err := store.Open(filepath.Join(state, "flotilla.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := versions.Reconcile(ctx, st, routines); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	db, err := sql.Open("sqlite", filepath.Join(state, "flotilla.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE routine_versions SET state = CASE version WHEN 1 THEN 'retired' ELSE 'live' END WHERE routine = 'triage/cycle'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	plan, _, err := checkVersions(state, routines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err := checkTexts(specs, routines, plan)
+	if err != nil || len(notes) != 1 || !strings.Contains(notes[0], "triage/cycle v1 is retired and its prompts do not resolve") {
+		t.Fatalf("a retired version's missing prompt is a note: notes %v err %v", notes, err)
+	}
+
+	// the live version's own missing prompt refuses
+	writeFile(t, filepath.Join(specs, "triage/cycle/v2/spec.yaml"), "run: {command: \"python3 two.py\", timeout: 20m}\nprompts:\n  system: gone.md\n")
+	routines, _ = spec.LoadVersions(specs)
+	setHash(t, state, 2, routines[0].VersionNamed(2).Hash) // the freeze is not what this checks
+	plan, _, err = checkVersions(state, routines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkTexts(specs, routines, plan); err == nil || !strings.Contains(err.Error(), "prompts:") {
+		t.Fatalf("a live version's missing prompt: %v", err)
+	}
+
+	// so does a new shadow's missing skill
+	writeFile(t, filepath.Join(specs, "triage/cycle/v2/spec.yaml"), "run: {command: \"python3 two.py\", timeout: 20m}\n")
+	writeFile(t, filepath.Join(specs, "triage/cycle/v3/spec.yaml"), "run: {command: \"python3 three.py\", timeout: 20m}\nskills:\n  rule:\n    - when: {kind: code_bug}\n      load: [no-such-skill]\n")
+	routines, _ = spec.LoadVersions(specs)
+	setHash(t, state, 2, routines[0].VersionNamed(2).Hash)
+	plan, _, err = checkVersions(state, routines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkTexts(specs, routines, plan); err == nil || !strings.Contains(err.Error(), "skills:") {
+		t.Fatalf("a shadow's missing skill: %v", err)
+	}
+}
+
+func setHash(t *testing.T, state string, version int, hash string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(state, "flotilla.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE routine_versions SET hash = ? WHERE routine = 'triage/cycle' AND version = ?`, hash, version); err != nil {
+		t.Fatal(err)
+	}
+}
