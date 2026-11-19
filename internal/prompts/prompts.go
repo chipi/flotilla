@@ -27,6 +27,11 @@ func Check(specsDir string, routines []*spec.Routine) error {
 				errs = append(errs, fmt.Errorf("%s: %w", r.ID(), err))
 			}
 		}
+		for _, role := range r.StationTextRoles() {
+			if err := checkOne(specsDir, r.Fleet, role, r.StationTextPath(role)); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", r.ID(), err))
+			}
+		}
 	}
 	return errors.Join(errs...)
 }

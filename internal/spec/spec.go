@@ -167,6 +167,10 @@ type Routine struct {
 	// the sha256 of each declared prompt file when the spec was loaded ("" for a file that cannot be
 	// read: prompts.Check refuses it)
 	PromptSHA map[string]string `yaml:"-"`
+	// A version with stations (stations.go): its stations, their texts as loaded, and the version's own flow limits. Never read from a flat spec.
+	Stations      map[string]*Station               `yaml:"-"`
+	StationText   map[string]map[string]StationText `yaml:"-"`
+	VersionLimits map[string]any                    `yaml:"-"`
 }
 
 // RepoRef is the repository a routine works on and the branch whose head a run starts from.

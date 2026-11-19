@@ -394,6 +394,10 @@ func main() {
 				os.Exit(2)
 			}
 		}
+		if err := checkStationModels(j, cfg.Models); err != nil {
+			fmt.Fprintf(os.Stderr, "specs: %v\n", err)
+			os.Exit(2)
+		}
 	}
 	if *check {
 		if err := checkStore(cfg.StateDir); err != nil {

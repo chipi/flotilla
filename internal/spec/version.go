@@ -39,15 +39,18 @@ var versionDirRe = regexp.MustCompile(`^v([1-9][0-9]*)$`)
 // body is what a version owns: its run, its explanations and its model-driven step with the texts
 // and skills that step reads. The routine's own fields never move with the version.
 type body struct {
-	Run       Run
-	Explain   map[string]string
-	Steps     []Step
-	Skills    Skills
-	Harness   *Harness
-	Prompts   map[string]string
-	Models    []string
-	PromptSHA map[string]string
-	Limit     time.Duration
+	Run           Run
+	Explain       map[string]string
+	Steps         []Step
+	Skills        Skills
+	Harness       *Harness
+	Prompts       map[string]string
+	Models        []string
+	PromptSHA     map[string]string
+	Limit         time.Duration
+	Stations      map[string]*Station
+	StationText   map[string]map[string]StationText
+	VersionLimits map[string]any
 }
 
 // Version is one version of a routine. Hash is its frozen identity: the sha256 of its manifest, which
@@ -108,12 +111,14 @@ func ChangedFiles(recorded, found map[string]string) []string {
 
 func (j *Routine) bodyOf() body {
 	return body{Run: j.Run, Explain: j.Explain, Steps: j.Steps, Skills: j.Skills, Harness: j.Harness,
-		Prompts: j.Prompts, Models: j.Models, PromptSHA: j.PromptSHA, Limit: j.Limit}
+		Prompts: j.Prompts, Models: j.Models, PromptSHA: j.PromptSHA, Limit: j.Limit,
+		Stations: j.Stations, StationText: j.StationText, VersionLimits: j.VersionLimits}
 }
 
 func (j *Routine) applyVersion(v *Version) {
 	j.Run, j.Explain, j.Steps, j.Skills, j.Harness = v.Run, v.Explain, v.Steps, v.Skills, v.Harness
 	j.Prompts, j.Models, j.PromptSHA, j.Limit = v.Prompts, v.Models, v.PromptSHA, v.Limit
+	j.Stations, j.StationText, j.VersionLimits = v.Stations, v.StationText, v.VersionLimits
 	j.Hash, j.Version, j.VersionHash = v.RoutineHash, v.Number, v.Hash
 }
 
@@ -237,6 +242,9 @@ type versionFile struct {
 	Harness *Harness          `yaml:"harness"`
 	Prompts map[string]string `yaml:"prompts"` // each a file inside v<n>/
 	Models  []string          `yaml:"models"`
+	// stations.go: a version's model steps, and its flow limits (free names its code reads)
+	Stations map[string]*Station `yaml:"stations"`
+	Limits   map[string]any      `yaml:"limits"`
 }
 
 func strictDecode(raw []byte, into any) error {
@@ -356,7 +364,16 @@ func loadVersionDir(base *Routine, routineRaw []byte, vdir string, n int) (*Vers
 			}
 		}
 	}
-	if errs := a.validateErrs(); len(errs) > 0 {
+	var errs []error
+	if len(vf.Stations) > 0 {
+		a.Stations, a.VersionLimits = vf.Stations, vf.Limits
+		a.Models, a.Harness, a.Prompts, a.PromptSHA = nil, nil, nil, nil
+		a.validateStations(func(f string, args ...any) { errs = append(errs, fmt.Errorf(f, args...)) }, &vf, vdir, rel)
+	} else if len(vf.Limits) > 0 {
+		errs = append(errs, fmt.Errorf("limits: only a version with stations has flow limits"))
+	}
+	errs = append(errs, a.validateErrs()...)
+	if len(errs) > 0 {
 		return fail(errs...)
 	}
 	v.RoutineHash = shaHex(append(append([]byte{}, routineRaw...), fmt.Sprintf("\nversion %d=%s", n, v.Hash)...))[:12]

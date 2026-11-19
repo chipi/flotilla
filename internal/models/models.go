@@ -154,3 +154,12 @@ func (c *Config) Subset(names []string) (*Config, error) {
 	}
 	return out, nil
 }
+
+// AliasTools is the tool-calling capability of an alias (native, json or none), after the endpoint's defaults; "" when the alias is not defined.
+func (c *Config) AliasTools(alias string) string {
+	a, ok := c.Aliases[alias]
+	if !ok {
+		return ""
+	}
+	return or(a.Tools, or(c.Endpoints[a.Endpoint].Defaults.Tools, "none"))
+}

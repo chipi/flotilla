@@ -92,3 +92,26 @@ func TestRepoFleetsPrompts(t *testing.T) {
 		t.Fatal("fleets/bugfix/playbooks/rules.md differs from bugfix/fleet_rules.md")
 	}
 }
+
+// a version's station texts go through the same checks as a routine's prompts: size, UTF-8, empty, symlink, inside the fleet's folder
+func TestCheckCoversStationTexts(t *testing.T) {
+	root := t.TempDir()
+	specs := filepath.Join(root, "fleets")
+	write(t, filepath.Join(specs, "f", "r", "v1", "ok.md"), "text\n")
+	write(t, filepath.Join(specs, "f", "r", "v1", "empty.md"), " \n")
+	write(t, filepath.Join(root, "elsewhere", "secret.md"), "outside\n")
+	if err := os.Symlink(filepath.Join(root, "elsewhere", "secret.md"), filepath.Join(specs, "f", "r", "v1", "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(file string) *spec.Routine {
+		return &spec.Routine{Fleet: "f", Routine: "r", StationText: map[string]map[string]spec.StationText{"decide": {"task": {Path: "r/v1/" + file}}}}
+	}
+	if err := Check(specs, []*spec.Routine{mk("ok.md")}); err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]string{"empty.md": "is empty", "link.md": "symlink", "none.md": "no such file"} {
+		if err := Check(specs, []*spec.Routine{mk(file)}); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: want %q, got %v", file, want, err)
+		}
+	}
+}
