@@ -470,10 +470,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "workers:", err) // -check stops here too, before anything restarts
 		os.Exit(2)
 	}
-	// The ledger's callers (RFC-0002 §9 step 5): a worker's own token (never a shadow worker's), unless run tokens are required.
-	if cfg.RunTokens != RunTokensRequired {
-		callers = append(callers, api.WorkerCallers(callerTokens(cfg.Workers, workerTokens))...)
-	}
+	callers = listenerCallers(cfg, callers, workerTokens)
 	for _, id := range cfg.DisabledRoutines {
 		found := false
 		for _, j := range routines {

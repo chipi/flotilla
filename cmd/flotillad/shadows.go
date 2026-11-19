@@ -83,6 +83,15 @@ func callerTokens(workers map[string]WorkerConfig, tokens map[string]string) map
 	return out
 }
 
+// listenerCallers is the callers file's plus, unless run tokens are required, a worker's own token (never a shadow worker's) for the workers'
+// listener (RFC-0002 §9 step 5). Under required nothing is added: a worker's own token opens nothing there, and a run's token is no caller.
+func listenerCallers(cfg *Config, callers []api.Caller, workerTokens map[string]string) []api.Caller {
+	if cfg.RunTokens == RunTokensRequired {
+		return callers
+	}
+	return append(callers, api.WorkerCallers(callerTokens(cfg.Workers, workerTokens))...)
+}
+
 // sharedTokenError refuses two different workers that hold one token (the same file, or the same bytes in two): a token two workers
 // hold cannot say which is calling, and one a shadow worker shared with a live worker would give a candidate the live worker's
 // access. One worker listed under two names (the same url) is one worker and may share its token.

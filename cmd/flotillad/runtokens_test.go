@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/worker"
 )
 
@@ -44,5 +45,21 @@ func TestAWorkerWithoutRunTokensIsRefusedWhenRequired(t *testing.T) {
 	}
 	if lines := strings.Join(workerCapLines(context.Background(), cfg, clients), "\n"); !strings.Contains(lines, "WARNING run_tokens: accept") {
 		t.Errorf("no warning under accept:\n%s", lines)
+	}
+}
+
+// The listener's callers under required are the callers file's alone; under accept each live worker's own token is added, never a shadow
+// worker's.
+func TestTheListenersCallersCarryNoWorkerTokenWhenRequired(t *testing.T) {
+	cfg := &Config{RunTokens: RunTokensRequired, Workers: map[string]WorkerConfig{"live": {}, "shadow": {Shadow: true}}}
+	tokens := map[string]string{"live": strings.Repeat("l", 40), "shadow": strings.Repeat("s", 40)}
+	file := []api.Caller{{Name: "operator", Role: api.RoleOperator}}
+	if got := listenerCallers(cfg, file, tokens); len(got) != 1 || got[0].Name != "operator" {
+		t.Fatalf("required: %+v", got)
+	}
+	cfg.RunTokens = RunTokensAccept
+	got := listenerCallers(cfg, file, tokens)
+	if len(got) != 2 || got[1].Name != "worker:live" {
+		t.Fatalf("accept: %+v", got)
 	}
 }
