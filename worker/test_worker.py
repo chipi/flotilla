@@ -441,6 +441,7 @@ class TestHTTP(unittest.TestCase):
         self.assertEqual((code, body), (200, {"ok": True}), "livez is the healthcheck: no token, no detail")
         code, body = self.call("/healthz")
         self.assertEqual((code, body["ok"]), (200, True))
+        self.assertEqual(body["caps"], ["run_token"], "flotillad's run_tokens: required needs the worker to say it carries a run token")
 
     def test_bad_requests(self):
         self.assertEqual(self.call("/v1/runs", {"routine": "x"})[0], 400)

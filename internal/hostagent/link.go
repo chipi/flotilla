@@ -155,7 +155,7 @@ func (l *Link) session(ctx context.Context) error {
 	defer nc.Close()
 	stop := context.AfterFunc(ctx, func() { nc.Close() })
 	defer stop()
-	if err := s.write(hostwire.WorkerHello, hostwire.WorkerHelloBody{Version: l.Version, Worker: l.Worker}); err != nil {
+	if err := s.write(hostwire.WorkerHello, hostwire.WorkerHelloBody{Version: l.Version, Worker: l.Worker, Caps: []string{hostwire.CapRunToken}}); err != nil {
 		return err
 	}
 	nc.SetReadDeadline(time.Now().Add(15 * time.Second))

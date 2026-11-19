@@ -11,7 +11,7 @@ says what to run and when; the worker runs it and reports. Python stdlib only.
                   group, SIGKILL after KILL_GRACE_S); the run's own request then answers with status
                   "cancelled" and its spend as usual. A second cancel of a run still ending is 200 again;
                   a run id this worker is not running (never started, or already answered) is 404.
-  GET  /healthz   {ok, worker, version, running, mode}   (mode: live, or shadow)
+  GET  /healthz   {ok, worker, version, running, mode, caps}   (mode: live, or shadow; caps: ["run_token"], what flotillad's run_tokens: required needs)
   GET  /livez     {ok} without a token: the container healthcheck
 
 A live worker also keeps the state snapshots a shadow starts from (v2 step 2, docs/wip/v2-design.md section 4):
@@ -61,6 +61,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WORKER = os.environ.get("FLOTILLA_WORKER", "worker")
 VERSION = os.environ.get("FLOTILLA_VERSION", "dev")
+CAPS = ["run_token"]   # /healthz: this worker writes a run's own token (api_token of the request) for its routine; flotillad's run_tokens: required refuses a worker without it
 CODE_ROOT = os.environ.get("FLOTILLA_CODE_ROOT", "/opt/flotilla")
 KILL_GRACE_S = 10
 TAIL = 4000
@@ -684,7 +685,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         with _lock:
             running = sorted(_running)
-        self._send(200, {"ok": True, "worker": WORKER, "version": VERSION, "running": running, "mode": worker_mode()})
+        self._send(200, {"ok": True, "worker": WORKER, "version": VERSION, "running": running, "mode": worker_mode(), "caps": CAPS})
 
     def _snapshot_get(self, run_id):
         if worker_mode() != MODE_LIVE:

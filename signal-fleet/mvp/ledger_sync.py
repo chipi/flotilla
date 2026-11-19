@@ -5,6 +5,9 @@
   python3 ledger_sync.py pad        # rewrite filed.tsv with the current header and every column (no store
                                     # needed): before an import or a check after FILED_COLS gained a column
 
+import and check need an operator's token (run_tokens: required, the default, refuses a worker's own): --token-file FILE, or
+FLOTILLA_API_TOKEN_FILE. pad is local and needs none.
+
 Run inside a worker, as its routine runs: FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE and FLOTILLA_ROUTINE
 (the namespace) name the ledger; SF_FILED_LEDGER and SF_LEDGER name the files (filing.FILED, config.LEDGER).
 It prints counts only, never a row: the rows are production data and the held-out test side of the
@@ -55,9 +58,31 @@ def _file(path):
         return f.read()
 
 
+NEEDS_TOKEN = "operator token required (run_tokens: required): pass --token-file FILE (a mode-600 file holding an operator's token) or set FLOTILLA_API_TOKEN_FILE to one; a worker's own token is refused"
+
+
+def take_token_file(argv, environ=os.environ):
+    """argv without --token-file FILE, which is put in FLOTILLA_API_TOKEN_FILE. A usage error is returned as (None, message)."""
+    argv = list(argv)
+    if "--token-file" in argv:
+        i = argv.index("--token-file")
+        if i + 1 >= len(argv):
+            return None, "--token-file needs a file"
+        environ["FLOTILLA_API_TOKEN_FILE"] = argv[i + 1]
+        del argv[i:i + 2]
+    return argv, ""
+
+
 def main(argv):
+    argv, err = take_token_file(argv)
+    if argv is None:
+        print(err)
+        return 2
     if len(argv) != 1 or argv[0] not in ("import", "check", "pad"):
         print(__doc__)
+        return 2
+    if argv[0] != "pad" and not os.environ.get("FLOTILLA_API_TOKEN_FILE"):
+        print(NEEDS_TOKEN)
         return 2
     if argv[0] == "pad":   # a TSV maintenance step, like filing's: the rows unchanged, padded to FILED_COLS
         fh, before = tsv_filings()

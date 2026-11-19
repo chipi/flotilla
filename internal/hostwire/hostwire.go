@@ -198,6 +198,22 @@ type AllowedAction struct {
 type WorkerHelloBody struct {
 	Version string `json:"version"`
 	Worker  string `json:"worker"`
+	// Caps are what the agent can do beyond the first protocol: an added field, so an older agent sends none and a newer flotillad still reads it.
+	Caps []string `json:"caps,omitempty"`
+}
+
+// CapRunToken is the capability of carrying a run's own token to the routine it runs (v2 step 2): an agent without it runs a routine with the worker's token,
+// which flotillad refuses to accept when run_tokens is required.
+const CapRunToken = "run_token"
+
+// HasCap reports whether the hello lists the capability.
+func (h WorkerHelloBody) HasCap(c string) bool {
+	for _, x := range h.Caps {
+		if x == c {
+			return true
+		}
+	}
+	return false
 }
 
 // RunBody is one run for a remote worker: the request exactly as the worker's /v1/runs takes it.

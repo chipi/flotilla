@@ -92,7 +92,6 @@ services:
       ROUTINE_HTTPS_PROXY: http://egress:4750
       # the ledger on flotillad's workers' listener (RFC-0002 §9 step 5), not through the proxy
       ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
-      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
       ROUTINE_NO_PROXY: flotillad
       ROUTINE_SF_LEDGER_BACKEND: ${TRIAGE_LEDGER_BACKEND:-tsv}   # api once its namespace is imported (RFC-0002 §9 step 5)
     volumes:
@@ -125,7 +124,6 @@ services:
       ROUTINE_HTTPS_PROXY: http://egress:4750
       # the ledger on flotillad's workers' listener (RFC-0002 §9 step 5), not through the proxy
       ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
-      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
       ROUTINE_NO_PROXY: flotillad
       ROUTINE_SF_LEDGER_BACKEND: ${TRIAGE_CANDIDATE_LEDGER_BACKEND:-tsv}   # api once its namespace is imported
       # over worker-triage.env, which is the live fleet's: the candidate's series, inbox and traces carry
@@ -165,7 +163,6 @@ services:
       ROUTINE_HTTP_PROXY: http://egress-shadow:4750
       ROUTINE_HTTPS_PROXY: http://egress-shadow:4750
       ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
-      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
       ROUTINE_NO_PROXY: flotillad
       # over worker-triage.env, which is the live fleet's: the shadow's series, inbox and traces carry their own name, and it mirrors
       # nothing into GlitchTip
@@ -225,7 +222,6 @@ services:
       ROUTINE_NO_PROXY: flotillad
       # ops/case-review reads cases on flotillad's worker listener with this worker's token (ADR-0016)
       ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
-      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
     volumes:
       - worker-ops-read-secrets:/run/flotilla:ro
     healthcheck: &ops-health

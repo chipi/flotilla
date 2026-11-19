@@ -103,9 +103,9 @@ type Config struct {
 	ActionEnums map[string]map[string][]string `yaml:"action_enums"`
 	// Optional: the host agents' endpoint (ADR-0006). Unset: no host can enrol or connect.
 	Hosts HostsConfig `yaml:"hosts"`
-	// Optional: whether a worker's own token still reaches flotillad's workers' listener. "accept" (the default): it does, for the
-	// ledger and cases, as before; every run also has its own token (v2 step 2). "required": only a run's own token does, so the
-	// worker token a routine can read opens nothing.
+	// Optional: whether a worker's own token still reaches flotillad's workers' listener. "required" (the default, v2 step 5): only a run's own
+	// token does, so the worker token a routine can read opens nothing, and a worker or agent that cannot carry a run's token is refused at start
+	// or at link. "accept": the worker's token opens it too, as before; kept one release as the way back, and -check warns.
 	RunTokens string `yaml:"run_tokens"`
 	// Optional: shadow versions of routines run (v2 step 2). Off unless enabled: true. A shadow runs on its routine's shadow worker
 	// (a worker declared shadow: true below), with the read environment only; queue_max bounds the case inputs that wait per version
@@ -119,6 +119,58 @@ type Config struct {
 // RoutineActionsConfig is flotillad.yaml's routine_actions block.
 type RoutineActionsConfig struct {
 	MaxAutonomy string `yaml:"max_autonomy"`
+}
+
+// workerCapLines is -check's line per worker under run_tokens: whether it can carry a run's own token. An unreachable worker is not checked (it
+// may be down for the deploy); a reachable one without the capability is a failure line starting "FAIL", which the caller turns into an exit.
+func workerCapLines(ctx context.Context, cfg *Config, clients map[string]*worker.Client) []string {
+	var out []string
+	names := make([]string, 0, len(cfg.Workers))
+	for n := range cfg.Workers {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		c := clients[n]
+		switch {
+		case cfg.Workers[n].Remote != "":
+			out = append(out, fmt.Sprintf("worker %s: remote; its agent's run-token capability is checked when it connects", n))
+		case c == nil:
+		default:
+			h, err := c.Health(ctx)
+			switch {
+			case err != nil:
+				out = append(out, fmt.Sprintf("worker %s: not reachable, run-token capability not checked (%v)", n, err))
+			case h.RunTokenCapable():
+				out = append(out, fmt.Sprintf("worker %s: run-token capable", n))
+			default:
+				out = append(out, fmt.Sprintf("worker %s: NOT run-token capable (update it)", n))
+			}
+		}
+	}
+	if cfg.RunTokens == RunTokensAccept {
+		out = append(out, "WARNING run_tokens: accept: a worker's own token opens the workers' listener; the default is required, and accept goes in the next release")
+	}
+	return out
+}
+
+// requireRunTokenCaps refuses, under run_tokens: required, a reachable worker that does not say it carries run tokens: its routines would run with
+// the worker's own token, which the listener no longer accepts, so every ledger call of theirs would be a 401. Update the worker, or set accept.
+func requireRunTokenCaps(ctx context.Context, cfg *Config, clients map[string]*worker.Client) error {
+	if cfg.RunTokens != RunTokensRequired {
+		return nil
+	}
+	var bad []string
+	for n, c := range clients {
+		if h, err := c.Health(ctx); err == nil && !h.RunTokenCapable() {
+			bad = append(bad, n)
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return fmt.Errorf("run_tokens is required and worker %s does not carry run tokens: update it to this build (or set run_tokens: accept for one release)", strings.Join(bad, ", "))
 }
 
 // loadExamples reads the examples catalogue when examples_dir is set; nil when it is not.
@@ -273,10 +325,10 @@ func loadConfig(path string) (*Config, error) {
 	}
 	switch c.RunTokens {
 	case "":
-		c.RunTokens = RunTokensAccept
+		c.RunTokens = RunTokensRequired
 	case RunTokensAccept, RunTokensRequired:
 	default:
-		errs = append(errs, fmt.Errorf("run_tokens %q: accept (the default) or required", c.RunTokens))
+		errs = append(errs, fmt.Errorf("run_tokens %q: required (the default) or accept (the one-release way back)", c.RunTokens))
 	}
 	switch c.RoutineActions.MaxAutonomy {
 	case "":
@@ -434,6 +486,10 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	if err := requireRunTokenCaps(context.Background(), cfg, clients); err != nil {
+		fmt.Fprintln(os.Stderr, "workers:", err)
+		os.Exit(2)
+	}
 	if errs := checkShadows(cfg, routines); len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Fprintln(os.Stderr, "shadows:", e)
@@ -484,6 +540,9 @@ func main() {
 			fmt.Printf("action %s\n", a)
 		}
 		fmt.Println(examplesLine(cfg, examples))
+		for _, line := range workerCapLines(context.Background(), cfg, clients) {
+			fmt.Println(line)
+		}
 		fmt.Printf("run tokens: %s (every run has its own token for the workers' listener%s)\n", cfg.RunTokens,
 			map[bool]string{true: "; a worker's own token opens nothing there", false: "; a worker's own token still opens it"}[cfg.RunTokens == RunTokensRequired])
 		fmt.Println(routineActionsLine(cfg))
@@ -635,6 +694,7 @@ func main() {
 		sc := &serverCert{ca: inter, names: cfg.Hosts.ServerNames, now: time.Now}
 		link.Auth, link.Log, link.TLS, link.Heartbeat = apiSrv, log, &tls.Config{GetCertificate: sc.get}, cfg.Hosts.Heartbeat
 		link.OnContact, link.Workers, link.Version = recordContact(st, log), remotes, version
+		link.RequireRunToken = cfg.RunTokens == RunTokensRequired
 		for id, name := range remotes {
 			log.Info("remote worker expected", "worker", name, "identity", id)
 		}

@@ -115,7 +115,7 @@ func TestRoutineActionsConfig(t *testing.T) {
 
 // run_tokens: accept (the default) or required.
 func TestRunTokensConfig(t *testing.T) {
-	for extra, want := range map[string]string{"": RunTokensAccept, "run_tokens: accept\n": RunTokensAccept, "run_tokens: required\n": RunTokensRequired} {
+	for extra, want := range map[string]string{"": RunTokensRequired, "run_tokens: accept\n": RunTokensAccept, "run_tokens: required\n": RunTokensRequired} {
 		c, err := load(t, extra)
 		if err != nil || c.RunTokens != want {
 			t.Errorf("%q: run_tokens %q %v, want %q", extra, c.RunTokens, err, want)

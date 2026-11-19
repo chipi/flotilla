@@ -151,6 +151,18 @@ type Health struct {
 	// Mode is "live" or "shadow"; "" from a worker older than the field, which must never be sent a shadow run (it would drop the
 	// flag and run it as a live one).
 	Mode string `json:"mode,omitempty"`
+	// Caps are what the worker does beyond the first protocol ("run_token": it writes a run's own token for the routine); none from an older worker.
+	Caps []string `json:"caps,omitempty"`
+}
+
+// RunTokenCapable says the worker answered /healthz with the run_token capability.
+func (h *Health) RunTokenCapable() bool {
+	for _, c := range h.Caps {
+		if c == "run_token" {
+			return true
+		}
+	}
+	return false
 }
 
 // ShadowCapable says the worker answered /healthz as a shadow worker: only that is evidence it will refuse what is not a shadow

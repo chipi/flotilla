@@ -135,7 +135,13 @@ def main():
     ap.add_argument("filed", nargs="?")
     ap.add_argument("dispositions", nargs="?")
     ap.add_argument("--synthetic", type=int, default=0)
+    ap.add_argument("--token-file", help="a mode-600 file holding an operator's token (run_tokens: required refuses a worker's own)")
     a = ap.parse_args()
+    if a.token_file:
+        os.environ["FLOTILLA_API_TOKEN_FILE"] = a.token_file
+    if not os.environ.get("FLOTILLA_API_TOKEN_FILE"):
+        print("operator token required (run_tokens: required): pass --token-file FILE or set FLOTILLA_API_TOKEN_FILE; a worker's own token is refused")
+        return 2
     work = tempfile.mkdtemp(prefix="ledger-replay-")
     try:
         filed, disp = os.path.join(work, "filed.tsv"), os.path.join(work, "dispositions.tsv")

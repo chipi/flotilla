@@ -72,6 +72,9 @@ type Server struct {
 	Workers map[string]string
 	// Version is flotillad's: a remote worker at another version is refused, loudly.
 	Version string
+	// RequireRunToken refuses a remote worker whose hello does not list the run_token capability (run_tokens: required): an agent that cannot carry a
+	// run's token would run its routines with the worker's, which flotillad no longer accepts. Fail closed, with the way out in the message.
+	RequireRunToken bool
 
 	mu     sync.Mutex
 	conns  map[string]*conn

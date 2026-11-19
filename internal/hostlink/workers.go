@@ -82,6 +82,13 @@ func (s *Server) handleWorker(ctx context.Context, tc *tls.Conn, cert string, id
 		refuse(tc, "refused: version "+hello.Version+", flotillad runs "+s.Version)
 		return
 	}
+	if s.RequireRunToken && !hello.HasCap(hostwire.CapRunToken) {
+		st.Refused = "its agent does not carry run tokens (run_tokens: required): update the agent"
+		s.mu.Unlock()
+		s.Log.Error("remote worker refused: its agent does not carry run tokens", "worker", name, "identity", identity, "version", hello.Version)
+		refuse(tc, "refused: the agent does not carry run tokens (flotillad has run_tokens: required): update the agent to this build")
+		return
+	}
 	s.mu.Unlock()
 	c := &conn{host: identity, tc: tc, closed: make(chan struct{})}
 	if err := c.write(hostwire.Welcome, hostwire.WelcomeBody{Clock: s.now().UTC()}); err != nil {

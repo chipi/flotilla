@@ -317,15 +317,21 @@ To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
    `docker exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485
    -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad
    -e FLOTILLA_ROUTINE=<routine id> <worker container> python3 ledger_sync.py import`
-   With `run_tokens: required` in flotillad.yaml (every run has its own token, and a worker's own
-   token opens nothing on `worker_listen`), the import and the check are the operator's: put an
-   admin's (or the bootstrap operator's) token in a file in the worker's tmpfs for the duration, name
-   it in `FLOTILLA_API_TOKEN_FILE` instead of `/run/flotilla/worker.token`, and remove it after:
+   `run_tokens` is `required` unless flotillad.yaml says `accept` (the one-release way back; `-check` warns):
+   every run has its own token, and a worker's own token opens nothing on `worker_listen`. So the import
+   and the check are the operator's: put an admin's (or the bootstrap operator's) token in a file in the
+   worker's tmpfs for the duration, pass it as `--token-file` (or `FLOTILLA_API_TOKEN_FILE`) instead of
+   `/run/flotilla/worker.token`, and remove it after:
    `printf %s "$TOKEN" | docker exec -i <worker container> sh -c 'umask 077 && cat > /tmp/operator.token'`
-   … `-e FLOTILLA_API_TOKEN_FILE=/tmp/operator.token` … then
-   `docker exec <worker container> rm /tmp/operator.token`. flotillad serves the operator's import and
-   reads of a named ledger on `worker_listen` (and on the full API); it takes no row from an operator,
-   and the import is an event naming who. The e2e runs this against a flotillad in required mode.
+   … `python3 ledger_sync.py import --token-file /tmp/operator.token` … then
+   `docker exec <worker container> rm /tmp/operator.token`. Without a token file they say "operator token
+   required". flotillad serves the operator's import and reads of a named ledger on `worker_listen` (and
+   on the full API); it takes no row from an operator, and the import is an event naming who. `pad` is
+   local (it rewrites filed.tsv) and needs no token. The compose files no longer give the workers the
+   worker token as a fallback for a routine's ledger calls: a run uses its own.
+   Before this build is deployed, update every remote worker and agent to it: flotillad refuses, at link,
+   an agent whose hello lacks the `run_token` capability, and `flotillad -check` prints
+   `worker W: run-token capable` or `NOT run-token capable (update it)` for each worker it can reach.
 3. Check the store renders both TSVs byte for byte: the same with `check`.
 4. Set the service's backend to `api`, deploy (the live tag, unchanged), and resume the routine (the
    operator's token).
