@@ -639,3 +639,60 @@ func (s *Scheduler) ShadowKeysRunning(fleet string) []string {
 	}
 	return out
 }
+
+// ShadowRunOn runs a shadow version on an input a live run already recorded (the operator's "shadow-run on a given input": an eval's way in,
+// and the way to see a before and after of exactly one shadow run). It takes the same path as a shadow started by its live run: the same queue,
+// worker, token and records. It refuses what that path would skip silently: shadows off, an input of another routine, a version that is not a
+// shadow, a state snapshot that is not held, and a version that already has a shadow run on the input.
+func (s *Scheduler) ShadowRunOn(ctx context.Context, id string, version int, inputKey string) (store.ShadowRun, error) {
+	s.init()
+	if !s.Shadows.Enabled {
+		return store.ShadowRun{}, fmt.Errorf("%w: shadows are off (shadows.enabled in flotillad.yaml)", ErrShadowRunRefused)
+	}
+	j := s.Routine(id)
+	if j == nil {
+		return store.ShadowRun{}, fmt.Errorf("no routine %s", id)
+	}
+	in, err := s.Store.Input(ctx, inputKey)
+	if err != nil {
+		return store.ShadowRun{}, fmt.Errorf("%w: %v", ErrShadowRunRefused, err)
+	}
+	if in.Routine != id {
+		return store.ShadowRun{}, fmt.Errorf("%w: input %s belongs to %s, not %s", ErrShadowRunRefused, inputKey, in.Routine, id)
+	}
+	vs, err := s.shadowVersions(ctx, id)
+	if err != nil {
+		return store.ShadowRun{}, err
+	}
+	var v *store.RoutineVersion
+	for i := range vs {
+		if vs[i].Version == version {
+			v = &vs[i]
+		}
+	}
+	if v == nil {
+		return store.ShadowRun{}, fmt.Errorf("%w: %s v%d is not a shadow version", ErrShadowRunRefused, id, version)
+	}
+	if len(j.State) > 0 && in.SnapshotState != store.SnapshotHeld {
+		return store.ShadowRun{}, fmt.Errorf("%w: the input's state snapshot is %s: pin the input before its live run's shadows end, or use a newer input", ErrShadowRunRefused, in.SnapshotState)
+	}
+	if rows, err := s.Store.ShadowRuns(ctx, store.ShadowRunFilter{InputKey: inputKey, Routine: id, Version: version}); err != nil {
+		return store.ShadowRun{}, err
+	} else if len(rows) > 0 {
+		return rows[0], fmt.Errorf("%w: %s v%d already has a shadow run on %s (%s)", store.ErrShadowRunExists, id, version, inputKey, rows[0].Status)
+	}
+	done := make(chan struct{})
+	close(done)
+	s.enqueueOne(ctx, j, in, *v, done)
+	rows, err := s.Store.ShadowRuns(ctx, store.ShadowRunFilter{InputKey: inputKey, Routine: id, Version: version})
+	if err != nil || len(rows) == 0 {
+		return store.ShadowRun{}, fmt.Errorf("the shadow run was not queued: %v", err)
+	}
+	if rows[0].Status == store.ShadowNotRun {
+		return rows[0], fmt.Errorf("%w: %s", ErrShadowRunRefused, rows[0].Reason)
+	}
+	return rows[0], nil
+}
+
+// ErrShadowRunRefused is ShadowRunOn's refusal: the shadow run was not queued, and the message says why.
+var ErrShadowRunRefused = errors.New("shadow run refused")

@@ -45,11 +45,15 @@ func TestVersionCommandsPostWhatTheAPITakes(t *testing.T) {
 			`{"autonomy":"record","reason":"x","without_pairs":false,"gates":[{"name":"g","result":"pass"}],"evals":null}`},
 		{[]string{"rollback", "triage/cycle", "--autonomy", "record", "--reason", "bad"}, "POST", "/v1/routines/triage/cycle/rollback", `{"autonomy":"record","reason":"bad"}`},
 		{[]string{"retire", "triage/cycle", "v3", "--reason", "not needed"}, "POST", "/v1/routines/triage/cycle/versions/3/retire", `{"reason":"not needed"}`},
+		{[]string{"versions", "shadow-run", "triage/cycle", "v2", "--input", "triage-cycle-1"}, "POST", "/v1/routines/triage/cycle/versions/2/shadow-run", `{"input":"triage-cycle-1"}`},
 	} {
 		_, errs, code := cli(t, ts.URL, c.args...)
 		if method, path, _, body := seen.get(); code != 0 || method != c.method || path != c.path || body != c.body {
 			t.Fatalf("%v: exit %d (%s), sent %s %s %s", c.args, code, errs, method, path, body)
 		}
+	}
+	if _, errs, code := cli(t, ts.URL, "versions", "shadow-run", "triage/cycle", "v2"); code != 2 || !strings.Contains(errs, "--input") {
+		t.Fatalf("a shadow-run without its input: exit %d, %q", code, errs)
 	}
 	out, errs, code := cli(t, ts.URL, "versions", "triage/cycle")
 	method, path, _, _ := seen.get()

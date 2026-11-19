@@ -77,8 +77,8 @@ func fail(err error) {
 func versionCmd(cmd string, args []string, reason string) {
 	switch cmd {
 	case "versions":
-		if len(args) > 0 && args[0] == "rerecord" {
-			versionCmd("rerecord", args[1:], reason)
+		if len(args) > 0 && (args[0] == "rerecord" || args[0] == "shadow-run") {
+			versionCmd(args[0], args[1:], reason)
 			return
 		}
 		need(args, 1, "versions ROUTINE")
@@ -117,6 +117,14 @@ func versionCmd(cmd string, args []string, reason string) {
 			fail(err)
 		}
 		post("/v1/routines/"+args[0]+"/versions/"+strconv.Itoa(n)+"/retire", map[string]string{"reason": reason})
+	case "shadow-run":
+		input := flagValue(&args, "--input")
+		need(args, 2, "versions shadow-run ROUTINE vN --input KEY")
+		n, err := versionNumber(args[1])
+		if err != nil || input == "" {
+			fail(fmt.Errorf("usage: flotilla versions shadow-run ROUTINE vN --input KEY (a live run's id)"))
+		}
+		post("/v1/routines/"+args[0]+"/versions/"+strconv.Itoa(n)+"/shadow-run", api.ShadowRunRequest{Input: input})
 	case "rerecord":
 		need(args, 2, "versions rerecord ROUTINE vN --reason R")
 		n, err := versionNumber(args[1])

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -738,5 +739,53 @@ func TestSpecKeysOfAShadowRoutineReachTheScheduler(t *testing.T) {
 	}
 	if sj, err := j.WithVersion(2); err != nil || sj.State[0] != "a/b" || sj.Run.Command != "echo v2" {
 		t.Fatalf("a shadow version keeps the routine's keys: %+v %v", sj, err)
+	}
+}
+
+// The operator's shadow-run on a given input: a live run made while shadows were off has an input and no shadow run; the shadow-run gives
+// its shadow version exactly one, by the same path, and refuses what that path would skip silently.
+func TestShadowRunOnAGivenInput(t *testing.T) {
+	w := newWorld(t, "")
+	ctx := context.Background()
+	w.s.Shadows.Enabled = false
+	r := w.runLive("schedule", nil)
+	w.s.ShadowWait()
+	if len(w.shadowRuns()) != 0 || len(w.shadow.requests()) != 0 {
+		t.Fatal("shadows were off: nothing ran")
+	}
+	if _, err := w.s.ShadowRunOn(ctx, "ops/rerun", 2, r.ID); !errors.Is(err, sched.ErrShadowRunRefused) || !strings.Contains(err.Error(), "shadows are off") {
+		t.Fatalf("with shadows off: %v", err)
+	}
+	w.s.Shadows.Enabled = true
+	for name, c := range map[string]struct {
+		version int
+		input   string
+		want    string
+	}{
+		"an unknown input":            {2, "nope", "no such input"},
+		"the live version":            {1, r.ID, "is not a shadow version"},
+		"a version that is not there": {9, r.ID, "is not a shadow version"},
+	} {
+		if _, err := w.s.ShadowRunOn(ctx, "ops/rerun", c.version, c.input); !errors.Is(err, sched.ErrShadowRunRefused) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	row, err := w.s.ShadowRunOn(ctx, "ops/rerun", 2, r.ID)
+	if err != nil || row.Status != store.ShadowQueued && row.Status != store.ShadowRunning && row.Status != store.ShadowDone {
+		t.Fatalf("%+v %v", row, err)
+	}
+	w.s.ShadowWait()
+	rows := w.shadowRuns()
+	if len(rows) != 1 || rows[0].Status != store.ShadowDone || rows[0].InputKey != r.ID || rows[0].Version != 2 {
+		t.Fatalf("%+v", rows)
+	}
+	if reqs := w.shadow.requests(); len(reqs) != 1 || !reqs[0].Shadow || reqs[0].InputKey != r.ID || reqs[0].Routine != "ops/rerun@v2" {
+		t.Fatalf("the shadow worker got the live input's shadow run: %+v", reqs)
+	}
+	if live, _ := w.st.Runs(ctx, "ops/rerun", 10); len(live) != 1 {
+		t.Fatalf("the live runs are untouched: %+v", live)
+	}
+	if _, err := w.s.ShadowRunOn(ctx, "ops/rerun", 2, r.ID); !errors.Is(err, store.ErrShadowRunExists) {
+		t.Fatalf("a second shadow run of the same version on the input: %v", err)
 	}
 }

@@ -168,3 +168,52 @@ func TestUnpinningDeletesASnapshotNothingWaitsFor(t *testing.T) {
 		t.Fatalf("an unpin releases it: %v %s", live.deleted, in.SnapshotState)
 	}
 }
+
+// Q16: the operator's shadow-run on a given input, through the API call: an operator or admin only, refusals are 409, the run is the one a
+// live run's shadow would be.
+func TestShadowRunOnAGivenInputIsTheOperatorsOnly(t *testing.T) {
+	srv, _, shadow := hookWorld(t, "")
+	ctx := context.Background()
+	srv.Sched.Shadows.Enabled = false
+	r, err := srv.Sched.RunNow(ctx, "triage/cycle", "manual", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Sched.Shadows.Enabled = true
+	agent := Caller{Name: "agent", Role: RoleAgent}
+	if _, err := srv.ShadowRunOn(ctx, agent, "test", "triage/cycle", 2, r.ID); AsProblem(err) == nil || AsProblem(err).Code != 403 {
+		t.Fatalf("an agent: %v", err)
+	}
+	for name, c := range map[string]struct {
+		id, input string
+		n         int
+		code      int
+	}{
+		"no input":        {"triage/cycle", "", 2, 400},
+		"unknown routine": {"triage/nothing", r.ID, 2, 404},
+		"unknown input":   {"triage/cycle", "nope", 2, 409},
+		"the live one":    {"triage/cycle", r.ID, 1, 409},
+	} {
+		if _, err := srv.ShadowRunOn(ctx, operator, "test", c.id, c.n, c.input); AsProblem(err) == nil || AsProblem(err).Code != c.code {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	row, err := srv.ShadowRunOn(ctx, operator, "test", "triage/cycle", 2, r.ID)
+	if err != nil || row.InputKey != r.ID || row.Version != 2 {
+		t.Fatalf("%+v %v", row, err)
+	}
+	<-shadow.started
+	shadow.Cancel(ctx, "x")
+	srv.Sched.ShadowWait()
+	if _, err := srv.ShadowRunOn(ctx, operator, "test", "triage/cycle", 2, r.ID); AsProblem(err) == nil || AsProblem(err).Code != 409 {
+		t.Fatalf("the same shadow run twice: %v", err)
+	}
+	evs, _ := srv.Store.Events(ctx, 20)
+	found := false
+	for _, e := range evs {
+		found = found || (e.Kind == "version.shadow_run" && e.Actor == "operator" && e.Subject == "triage/cycle@v2")
+	}
+	if !found {
+		t.Fatalf("an event records who asked: %+v", evs)
+	}
+}

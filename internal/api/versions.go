@@ -25,6 +25,55 @@ func (s *Server) versionRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/routines/{fleet}/{routine}/versions/{n}/retire", s.auth(ActVersion, s.versionRetire))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/versions/{n}/rerecord", s.auth(ActVersion, s.versionRerecord))
 	m.Handle("POST /v1/routines/{fleet}/{routine}/rollback", s.auth(ActVersion, s.versionRollback))
+	m.Handle("POST /v1/routines/{fleet}/{routine}/versions/{n}/shadow-run", s.auth(ActVersion, s.versionShadowRun))
+}
+
+// ShadowRunRequest names the input a shadow version is run on.
+type ShadowRunRequest struct {
+	Input string `json:"input"`
+}
+
+// ShadowRunOn runs a shadow version on an input a live run recorded: operator or admin only (ActVersion), never an agent and never the MCP
+// server. It answers once the run is queued; the shadow's own records are what it did.
+func (s *Server) ShadowRunOn(ctx context.Context, c Caller, via, routineID string, n int, input string) (store.ShadowRun, error) {
+	if err := s.Check(ctx, c, ActVersion); err != nil {
+		return store.ShadowRun{}, err
+	}
+	if _, err := s.routineByID(routineID); err != nil {
+		return store.ShadowRun{}, err
+	}
+	if strings.TrimSpace(input) == "" {
+		return store.ShadowRun{}, problem(400, "a shadow run needs the input it runs on")
+	}
+	row, err := s.Sched.ShadowRunOn(ctx, routineID, n, input)
+	switch {
+	case errors.Is(err, sched.ErrShadowRunRefused), errors.Is(err, store.ErrShadowRunExists):
+		return row, problem(409, "%s", err)
+	case err != nil:
+		return row, err
+	}
+	_ = s.Store.Event(ctx, c.Name, via, "version.shadow_run", routineID+"@v"+strconv.Itoa(n), "on input "+input)
+	s.Log.Info("shadow run requested", "routine", routineID, "version", n, "input", input, "caller", c.Name, "via", via)
+	return row, nil
+}
+
+func (s *Server) versionShadowRun(w http.ResponseWriter, r *http.Request, c Caller) {
+	n, err := versionNumber(r)
+	if err != nil {
+		writeAction(w, err, 200, nil)
+		return
+	}
+	var body ShadowRunRequest
+	if err := strictJSON(http.MaxBytesReader(w, r.Body, 4096), &body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": `body: {"input": "<a live run's id>"}`})
+		return
+	}
+	row, err := s.ShadowRunOn(r.Context(), c, "api", routineID(r), n, body.Input)
+	if err != nil {
+		writeAction(w, err, 200, nil)
+		return
+	}
+	writeJSON(w, 200, row)
 }
 
 // VersionInfo is a recorded version with what the loaded fleets folder says about it.
