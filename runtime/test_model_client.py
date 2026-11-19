@@ -283,6 +283,31 @@ class Chat(unittest.TestCase):
         self.assertEqual(len(tools[1]["arg"]), 160)
         self.assertNotIn("ok", tools[2])
 
+    def test_calls_lines_are_golden(self):
+        """The calls file's lines, byte for byte, for the three shapes a run writes today (a plain call, a harness turn
+        with role, episode and tools, a failed call): runtime/testdata/calls_lines.golden.jsonl, captured before the
+        stations work. A line of a run that declares no station must stay exactly this (v2-design.md section 7, steps 3
+        and 4: a `station` and `texts` field appear only with stations). UPDATE_GOLDEN=1 rewrites it."""
+        path = os.path.join(tempfile.mkdtemp(), "calls.jsonl")
+        env = {"OPENROUTER_API_KEY": "sk-test", "FLOTILLA_CALLS_FILE": path}
+        c, _ = client(ok(usage={"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.0012}, headers={"x-litellm-model-id": "dep-1"},
+                         finish_reason="stop"),
+                      ok('{"action":"probe"}', finish_reason="tool_calls"), (500, {}, "upstream down"), environ=env)
+        with mock.patch.object(mc.time, "strftime", return_value="2026-01-01T00:00:00Z"):
+            c.chat("triage-default", [], step=1, decision_key="fp-1")
+            c.chat("triage-default", [], role="coder", episode="ep-1", episode_seq=2,
+                   tool_names=[{"name": "bash", "arg": "ls -la", "ok": True}, "read"])
+            with self.assertRaises(mc.Transient):
+                c.chat("triage-default", [])
+        with open(path) as f:
+            got = f.read()
+        golden = os.path.join(HERE, "testdata", "calls_lines.golden.jsonl")
+        if os.environ.get("UPDATE_GOLDEN"):
+            with open(golden, "w") as f:
+                f.write(got)
+        with open(golden) as f:
+            self.assertEqual(got, f.read())
+
     def test_no_calls_file_without_the_variable(self):
         c, _ = client(ok())
         c.chat("triage-default", [])   # nothing to assert but that it does not fail: no variable, no file

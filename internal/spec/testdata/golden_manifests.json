@@ -1,0 +1,495 @@
+{
+  "bugfix/fix@v1": {
+    "routine_hash": "46d3712fe491",
+    "version_hash": "b5d1680848cd7442eaeca6c85089f1677d3da59c846acb92e36b1e26276afc64",
+    "legacy": true,
+    "manifest": {
+      "explain": "9a14228f7d25eb02f2d4cd95662ce481ad42133c27d1e0f319bc1b03880a917e",
+      "models": "bbc2f67d14795208dd33ba3a1dc62903562e57e574f4ebf37eff2acb94652ba3",
+      "prompt-file:playbooks/rules.md": "e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856",
+      "prompts": "5f0a62dc190f6092f0c84050a269d64d89b608f33ceac0826285d25eeb108fbc",
+      "run": "578fcd121b8cd44f0f5feeab60f81f9e2d49f7b0be96a5ed80e861b07bb910df",
+      "steps": "6b1ca80aa0ce88ae7b7fa627939ab780fc9b3f0c2dc2fd52a3587c7e72718bb5"
+    }
+  },
+  "bugfix/intake@v1": {
+    "routine_hash": "ae384fc876dd",
+    "version_hash": "0098461da20e73df0277832c6e593a20a3f227cfaf035147b77da5e10cbfbb13",
+    "legacy": true,
+    "manifest": {
+      "explain": "3c354f8d78b04eca44c80acbd2cdb22ac70cf01f636e7ccda2c8ae17f9a8b1bf",
+      "run": "4c9164274d8ab19f40f540d716471883393881f5da46701333bfd502d14a6c0c"
+    }
+  },
+  "bugfix/open-pr@v1": {
+    "routine_hash": "8c49debaa9c7",
+    "version_hash": "9a93cff2ce679fb6cfd28df0a3b5d17a09e97a394355bac1a4f0e0c42bed5fa6",
+    "legacy": true,
+    "manifest": {
+      "explain": "b976d8748d72a924ba1b1bf2d9c3244b0ceca38d031feca2eedf151699c67f97",
+      "run": "36277c57dfc5df073421f41aa6825b4d0ab9be53e31a31f4fb7d0c964a747037"
+    }
+  },
+  "bugfix/pr-check@v1": {
+    "routine_hash": "b4f4e406264a",
+    "version_hash": "f373eaf42cef398bdb41de25d772732f972c29cdf1304771e54c2ab2c93a39a4",
+    "legacy": true,
+    "manifest": {
+      "explain": "5bde099d384a123b7442f9b0eef8c42c7e5abf40858b67cf3c539fe7d5916b5f",
+      "run": "cc2764ce57c5f8e698ed38c3e6a0c689daedfc7dc8e7ed81e9165e7194d83a33"
+    }
+  },
+  "campaigns/apply-hold@v1": {
+    "routine_hash": "69f398425b86",
+    "version_hash": "0f60f030674318cfcad6ccc68aae8a95b5eebf9e2027d1b1a9b7b368d679087e",
+    "legacy": true,
+    "manifest": {
+      "run": "d8399b4e39fbc85fcc42f6ec5d3a52f6c26680c55b9fdf981235f3ce5af98f1d"
+    }
+  },
+  "campaigns/apply-launch@v1": {
+    "routine_hash": "7be4373534a9",
+    "version_hash": "0f60f030674318cfcad6ccc68aae8a95b5eebf9e2027d1b1a9b7b368d679087e",
+    "legacy": true,
+    "manifest": {
+      "run": "d8399b4e39fbc85fcc42f6ec5d3a52f6c26680c55b9fdf981235f3ce5af98f1d"
+    }
+  },
+  "campaigns/check@v1": {
+    "routine_hash": "019d612a5349",
+    "version_hash": "891abe3f4d9de560f4230a9824fd9b9722092c91faa70706dbbce5af6a65af19",
+    "legacy": true,
+    "manifest": {
+      "run": "00ea09b9d728b1c37d26078ab29af4b9e4367b31711ef5136aed7345345d7704"
+    }
+  },
+  "campaigns/decide@v1": {
+    "routine_hash": "cdd7dff93632",
+    "version_hash": "c5527e1e4fb240589ba14a08423d230c14076e94569ed7a30edc9df4fbef04eb",
+    "legacy": true,
+    "manifest": {
+      "run": "e4e2e15ed3f335f5e11994a2a7283593b928ee7c3579972862d5a6984ced399e"
+    }
+  },
+  "campaigns/scan@v1": {
+    "routine_hash": "bec958f056b9",
+    "version_hash": "856c568768e4a20e234735e092d3be14f9d46a48ff976262267912d145f24128",
+    "legacy": true,
+    "manifest": {
+      "run": "b40b1aee768eaab4e333ccdd5af341cf9fed40de230bd94dcf6567ed5c08ddef"
+    }
+  },
+  "crm/apply-merge@v1": {
+    "routine_hash": "a3785ab8b796",
+    "version_hash": "b193c3752352ac6f9a51db45fc6e35841be0eb67804fc8c1ce59606c2f5fdbcd",
+    "legacy": true,
+    "manifest": {
+      "run": "51ca7a73f51624480c977e52e16634e24388d94bf4773324a757cefefc34471d"
+    }
+  },
+  "crm/apply-update@v1": {
+    "routine_hash": "e4f85be04fb6",
+    "version_hash": "b193c3752352ac6f9a51db45fc6e35841be0eb67804fc8c1ce59606c2f5fdbcd",
+    "legacy": true,
+    "manifest": {
+      "run": "51ca7a73f51624480c977e52e16634e24388d94bf4773324a757cefefc34471d"
+    }
+  },
+  "crm/check-field@v1": {
+    "routine_hash": "895e07ac32ab",
+    "version_hash": "28373115330b587ab695028bdb78eaf261bf543945e40f23ec144957d107af98",
+    "legacy": true,
+    "manifest": {
+      "run": "0eba603dbfce3906af21725b16de39c4f3a8dc57da2ba8800200e0dd188f7560"
+    }
+  },
+  "crm/check-merge@v1": {
+    "routine_hash": "9c347a322258",
+    "version_hash": "28373115330b587ab695028bdb78eaf261bf543945e40f23ec144957d107af98",
+    "legacy": true,
+    "manifest": {
+      "run": "0eba603dbfce3906af21725b16de39c4f3a8dc57da2ba8800200e0dd188f7560"
+    }
+  },
+  "crm/fix@v1": {
+    "routine_hash": "fc2b37dacb7a",
+    "version_hash": "e77f067dc9a4f90fc5f0495003c0bf7242e3a63b31f106ce830fe339bf7ae43e",
+    "legacy": true,
+    "manifest": {
+      "run": "72b0c10777c635926447bed4cf2f39d28aaaf1e381cdb2ac277d309f4e6021e4"
+    }
+  },
+  "crm/scan@v1": {
+    "routine_hash": "95e8f0979f4b",
+    "version_hash": "9bdc077cc8563d4a0334841386c3299d3a52e41d1018279bd2cdbe4801577b90",
+    "legacy": true,
+    "manifest": {
+      "run": "f8e263101aff4f78f95725d31c64758fe110c09535c69d420a306720790431fc"
+    }
+  },
+  "deps/scan@v1": {
+    "routine_hash": "9bebed27dd82",
+    "version_hash": "3990a5787f929f7feeb08a91a0e9e2d3a9d8a38ab890a14639dd4c9e7dd232ed",
+    "legacy": true,
+    "manifest": {
+      "run": "210fb89e98c8c0800a7ef16001f86678299954cc7640e6994908fb96a61de0b9"
+    }
+  },
+  "deps/upgrade@v1": {
+    "routine_hash": "3555db66003a",
+    "version_hash": "bbe7d5f52f59fc6357aa36972c2a6de8d907c9caf2e5783762160624f1c9fa5b",
+    "legacy": true,
+    "manifest": {
+      "run": "bcc96d42e169e88a784d6ba012fa2a714bcc804d6e199949fcfed49c10daad69"
+    }
+  },
+  "e2e/cpu@v1": {
+    "routine_hash": "eb879e1ee6cd",
+    "version_hash": "bd4eb12d06dc243d0011debc25b43a135a24d250c950adca238590048e773d87",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "b6939460585eaa02a1d8cf2949b30648650c689b956f64e9ee95a633ae2efb3d"
+    }
+  },
+  "e2e/cpu@v2": {
+    "routine_hash": "00d4baff3df3",
+    "version_hash": "bd4eb12d06dc243d0011debc25b43a135a24d250c950adca238590048e773d87",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "b6939460585eaa02a1d8cf2949b30648650c689b956f64e9ee95a633ae2efb3d"
+    }
+  },
+  "e2e/flat-playbook@v1": {
+    "routine_hash": "9f97c63e8038",
+    "version_hash": "433e5a8a47bb3fd3fd5e08fdd0a6ae7536299e0589d540c346171108f8a29224",
+    "legacy": true,
+    "manifest": {
+      "prompt-file:playbooks/flat.md": "691840a0a7be4c1c7d5d706dc7a4f71f4b580a72681d24b40bee295d2f1e0aa7",
+      "prompts": "9996911f57f5090f98af5c2e47ab38740832a3cb53cb93c765da901902d003f8",
+      "run": "6290b432dbeba98bf4e50cd22c3418425365ce60279dbb634f500ec91b4304a7"
+    }
+  },
+  "e2e/hang@v1": {
+    "routine_hash": "222e7afd703d",
+    "version_hash": "0cdfba91d5752ad74c4855053c0c6999f2cb812d38a7093cca26848c37f571b6",
+    "legacy": true,
+    "manifest": {
+      "run": "d86ec6673e91bd9e0c8e9ac61b84588e1bf224b2facf2a89e023e01e3d19ea41"
+    }
+  },
+  "e2e/host-absent-act@v1": {
+    "routine_hash": "d41775d7d1a4",
+    "version_hash": "2008afa6f57c45a1080cce84de618bfdc4b3e19a6ed741bfcd9b381a8cd490a5",
+    "legacy": true,
+    "manifest": {
+      "run": "fe77c09a9137ca13a4d63c6c04cfeb7998448706cb6d50dc361fe6348cf88598"
+    }
+  },
+  "e2e/host-absent-monitor@v1": {
+    "routine_hash": "9a4f49870131",
+    "version_hash": "b91653480d4bfe51f7bbefdbe725eb8ce5d8144c09d6554b837d7977d703d3d5",
+    "legacy": true,
+    "manifest": {
+      "run": "c62970f3c8e3da90fa9f5e8730e2b23b106346cbfb9b47fa6d56b843763c0421"
+    }
+  },
+  "e2e/host-true-act@v1": {
+    "routine_hash": "a7986e221cd6",
+    "version_hash": "2051dffa71448a3eff0285b1339eeacf1b9dfaa5e9b8b80e24933e269ddd26ef",
+    "legacy": true,
+    "manifest": {
+      "run": "08e8ea8835a0d892da3605580f97d12ae7d3f082f6e095e4dd6b7faac3746e5f"
+    }
+  },
+  "e2e/host-true-monitor@v1": {
+    "routine_hash": "0ca5c30fcf66",
+    "version_hash": "998c01aa8a9c9f1f97dfea0669b0dce099e53fd23de49b2c5e174380ac0bac54",
+    "legacy": true,
+    "manifest": {
+      "run": "e4de1300a90155bd4d2c540575060d19b3f4f7835f9c02eaad151330b274c2a6"
+    }
+  },
+  "e2e/host-true-verify@v1": {
+    "routine_hash": "bf2f8f61bee3",
+    "version_hash": "d969cc3922f9f52b90e02d17c332d3cf5d6b21d21cf651aa1265219b4faee2be",
+    "legacy": true,
+    "manifest": {
+      "run": "c90db1b469c2e605f17fd46fb1181858cf97cdaf52e209862b5e3a3e012c7111"
+    }
+  },
+  "e2e/hostile@v1": {
+    "routine_hash": "db1454577b24",
+    "version_hash": "06ca2e127e2d46fdf0b78af5778e51380167742b22b4dcff9a0a70dc5fed66cd",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "dc4ab9892ec29f9ba8922f3fb30fd3b07490c2db8483d85e8b4ade3a822ae14a"
+    }
+  },
+  "e2e/hostile@v2": {
+    "routine_hash": "9ddfb3a63c74",
+    "version_hash": "de955a428f3e14bfabbf8fca863df20dcec81a2e0757bfa45a2f9b0181e3d36d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "e0e25cf52618e198c617f1002422d8e60b8ad1903dc08d75126a0e3f74cb1853"
+    }
+  },
+  "e2e/remote-echo@v1": {
+    "routine_hash": "eb2856f2a6af",
+    "version_hash": "5234ba4f46daaed398aea494504c74c8c3f856026151d268a6cd3cf04518aed5",
+    "legacy": true,
+    "manifest": {
+      "run": "38934ae66bf1106175f13caec53c56ef5f874fd45e64c608a2d0aed5b671481a"
+    }
+  },
+  "e2e/shadow-monitor@v1": {
+    "routine_hash": "6c052371585d",
+    "version_hash": "b959478bf50d07c3cfd148b6f25dd8ff87ff79700ca95a1e49a54c591bfb42e2",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "11339cf3d78872f5631964e87b892e64473fc1987efad0ade52cb0dc59c4e067"
+    }
+  },
+  "e2e/shadow-monitor@v2": {
+    "routine_hash": "b8cd37958417",
+    "version_hash": "1eb70fce65cab90c5a81dcd5d7584a72a1afccd71924aed679c2eff3d06e4765",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "22bb44a8c4c1d34a8b112d0cb1dc6976c8a615388f80db740015340d4244f1f5"
+    }
+  },
+  "e2e/stage-probe@v1": {
+    "routine_hash": "d76887fb1d37",
+    "version_hash": "0d45b6b5becb1c036c333a0f82c4cbe37985f17177317a950ef943e734d4b3b8",
+    "legacy": true,
+    "manifest": {
+      "run": "12fbe23a501b8bbd7f8bb5f36c6009fa15664f5dc865262151bdf19731ab7443"
+    }
+  },
+  "e2e/token-probe@v1": {
+    "routine_hash": "68916df8610a",
+    "version_hash": "0f1eb6fb1947d66c442d942a683c86d216a3dbe4602df0d1d86a48fc2918f288",
+    "legacy": true,
+    "manifest": {
+      "run": "47d76043178e6fe02987590c27811f3c89ea339a82b0fab649640119f384367d"
+    }
+  },
+  "e2e/versioned-monitor@v1": {
+    "routine_hash": "f40ede417c18",
+    "version_hash": "ac1bff8a7be56496024b4c21e50c61c45d6f358745a13cf5efc5541acbd0c510",
+    "legacy": true,
+    "manifest": {
+      "run": "5b531a465fcfb2e7c9421eecf46daffc28f2a2b249c58893c9ab2dfbb39fc99e"
+    }
+  },
+  "e2e/versioned@v1": {
+    "routine_hash": "582a1bbd8ede",
+    "version_hash": "07d5b8765f7e5609638fe724d64df33b0ad1e52d228a8204d7c859cd372bb215",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "84d3fbe37fef5b4c4a719dde05e307aacf1944ba4bff463f57d2082f74f07b86"
+    }
+  },
+  "e2e/versioned@v2": {
+    "routine_hash": "884b0248b004",
+    "version_hash": "382786509b5996b69e34b4471799a4dffa180d4adebc503b2c34677ea412b31c",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "6971872289be4540deecc7c6dbacc3cc2c9802870a11fbce4f04e1a6fe1cb335"
+    }
+  },
+  "e2e/versioned@v3": {
+    "routine_hash": "8afe406054c3",
+    "version_hash": "b116aa20ecdcdb0c0241468b2e83064e9f0b69e2c48e6149af4561394c86db08",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "e21926ccd73093b6c634d8c96ce5480ee12a271cdb9125c070e3a39c672c0060"
+    }
+  },
+  "e2e/versioned@v4": {
+    "routine_hash": "2535a548397d",
+    "version_hash": "2c3668322b11f8548ba92eed7b3b8813a9c9dae90b360a727420b5e845bd2b94",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "de5ba02a3a5b1a390fa52b8315c6cd33f2a36c82eacc14bcb50e2f4c4d7ab42f"
+    }
+  },
+  "e2e/versioned@v5": {
+    "routine_hash": "8358285534d2",
+    "version_hash": "bbff8b3d4f5ae537bdb2558797c5fdf10a812094d7c855e1144883f19bdf6d14",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "ef7643eecc354e5daaf8b9010d05be9b41a8016611df41afd60be3cd67358829"
+    }
+  },
+  "e2e/versioned@v6": {
+    "routine_hash": "d6a1acd0e8cd",
+    "version_hash": "460eff3f8d195a16545445d281ffe1d800f618db1499581740a8e4e23aea76c0",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "35e610dd87c04d9b3a4de1e4930752d1be60ca630566300c0935c8821fa2cf04"
+    }
+  },
+  "jobs/backup-monitor@v1": {
+    "routine_hash": "e12f26c897d6",
+    "version_hash": "9f8c5cf54edfefd90c75b727d981ed8714dd8c608591a291d4763d86fb65a3ed",
+    "legacy": true,
+    "manifest": {
+      "run": "f19c5874b7217343c0f9bc7d064b4dca04c3b63e3ca4374f6774d5901bd083de"
+    }
+  },
+  "jobs/rerun-backup@v1": {
+    "routine_hash": "93677b7d697c",
+    "version_hash": "fd752e67ce0f5822c4febdd6ba20b989637c5441185f4736fc374aed8613ca9b",
+    "legacy": true,
+    "manifest": {
+      "run": "4dd41bf01e46152360bbb4f74b6f834b21d5f952cfa9c6dea26f22aade4d636d"
+    }
+  },
+  "jobs/verify-backup@v1": {
+    "routine_hash": "075b49567d43",
+    "version_hash": "53b0095da0c1896c3332e36c0b7b58ffda9404acd0575a7482ca1bd59de32383",
+    "legacy": true,
+    "manifest": {
+      "run": "d550942f0ee81dfd6ec1e6500c82aeef3ad7d7427331d14fa6ec97cf9655ead9"
+    }
+  },
+  "outbound/check@v1": {
+    "routine_hash": "4e98ee201bbe",
+    "version_hash": "93c138393bdaef296479ef17203a16ac5e4b46b6c066ff37639174781f4e60d7",
+    "legacy": true,
+    "manifest": {
+      "run": "4445f2c0681a6550bb5f757685c5d2c7b2b16d0ec6e26a5facc5e0c30f034ddd"
+    }
+  },
+  "outbound/draft@v1": {
+    "routine_hash": "7310edf39295",
+    "version_hash": "6d1a522eae094d17fed0a1fa4b504aa0440933d3067d785902ccd84299888088",
+    "legacy": true,
+    "manifest": {
+      "run": "7d719942c7258dcb1b9a7656775b3c5f952adb126296c94edc32cf3daf4eb5da"
+    }
+  },
+  "outbound/scan@v1": {
+    "routine_hash": "c11682522798",
+    "version_hash": "960dba267196794a792bf675b2cec32a4e6734cbc403fef03aa73ec10d2ed969",
+    "legacy": true,
+    "manifest": {
+      "run": "a02b8e757c6fd4f11915bf6fc9de0cbfe919abfa0dafa03aa2a2f695c03271e2"
+    }
+  },
+  "outbound/send@v1": {
+    "routine_hash": "f5f78e6fb7ea",
+    "version_hash": "48c01178234fb8dcafec79a3ad0f6d33cd3be3f93cdd91ddf9de15c071348ca2",
+    "legacy": true,
+    "manifest": {
+      "run": "66a8bb556a0efb99595abb1ad65bb21105a1a4ead1e1f3d00b44f8c393020682"
+    }
+  },
+  "platform/heartbeat@v1": {
+    "routine_hash": "865a23bba985",
+    "version_hash": "6de31acf271ac95346d5bf7c8833bdb0fb690dd593736d6168a06c6f425bfc8d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "00f402fb1dbea912a57018b7f2481eb7613301b148762ec5bbde807ef5edc4b7"
+    }
+  },
+  "platform/model-contract@v1": {
+    "routine_hash": "950c792fcb7d",
+    "version_hash": "737095a29ccb779a637a0b733db83a327b5658e99610c66b6192bb42561dc470",
+    "legacy": true,
+    "manifest": {
+      "models": "8d795e6e224201e8026e3107521439afe08b0d172d72105df0d353b13153ab83",
+      "run": "5e860729e7d704c2549252a5e8d94bf80b295f6165abfc57176f65c2b70b9076"
+    }
+  },
+  "renewals/apply-flag@v1": {
+    "routine_hash": "20cef6adc8ba",
+    "version_hash": "e201d3792c0c777d0d32b986a55b63172fa600b6adda2ccf8186f8e7cf42deb9",
+    "legacy": true,
+    "manifest": {
+      "run": "5ea9e960121f5fab9295db49578a63575b211d91b2b90c396f7e3f2ac8a92fcb"
+    }
+  },
+  "renewals/check@v1": {
+    "routine_hash": "3848f2e0f4ea",
+    "version_hash": "d63eb65d5b6a7c5ad8bced62bde9b6af7f529f18adfa2399144cd8a8744e17bb",
+    "legacy": true,
+    "manifest": {
+      "run": "b9ff76794fb795ba6ac48a00cf212f326a4fff8d32d7d301b8d5a58639f9e646"
+    }
+  },
+  "renewals/flag@v1": {
+    "routine_hash": "6d7088ee8331",
+    "version_hash": "fae3a3066258598796197c3b1f0a776438872d97cd5507cd4308cc305f4eda9a",
+    "legacy": true,
+    "manifest": {
+      "run": "8c1ae827df80aa74e0be214e6684be1baa2497f6057e9c2bf7a58fef42d1a3d2"
+    }
+  },
+  "renewals/scan@v1": {
+    "routine_hash": "034d6c2612a4",
+    "version_hash": "02a6a7694f2ea7cdea78c3d47d482ae88ac51743d83133f28d97a72c034b9d9c",
+    "legacy": true,
+    "manifest": {
+      "run": "ee918d62d8e5260e9b9ada334e11ea4612a522f96ea46697189f831ebb9656b8"
+    }
+  },
+  "review/case-review@v1": {
+    "routine_hash": "4cf951f30e47",
+    "version_hash": "682a66ecaab63709708a5fea4305aeacd1c14c2b858851d90c517cdb758356d8",
+    "legacy": true,
+    "manifest": {
+      "run": "d59a81e49b00ba568175542698e93559444f0994ca4a9696b72e648b69943d29"
+    }
+  },
+  "review/process-change@v1": {
+    "routine_hash": "f8db5dc5da67",
+    "version_hash": "6bac4c524b76106382b35099feb85380bb5e0eefa46de2922cda56b280be73db",
+    "legacy": true,
+    "manifest": {
+      "run": "651f8b822946896325f378ad60786ab46076989144f449a0fbf0ca645c2a233b"
+    }
+  },
+  "sites/site-check@v1": {
+    "routine_hash": "30f7b09ce368",
+    "version_hash": "38d07aa1d90093bdc5921dcc50fb2fe9ca4f993d4b1ab538ec32e33de8b93f9c",
+    "legacy": true,
+    "manifest": {
+      "run": "cb0ea44189496f76739fadc69c6dbb488a892c5c0b682537d5beaf3000d1e953"
+    }
+  },
+  "triage/cycle-shadow@v1": {
+    "routine_hash": "32fd2a7eaddf",
+    "version_hash": "6dba55d47e0d8a79fbc39d79d6c00b680b05b946aba97948730f4b6b98c5b80f",
+    "legacy": true,
+    "manifest": {
+      "harness": "6a83361e48faf33454064c4d5305fe20831297600fd8d12c2baed548f3206b52",
+      "prompt-file:playbooks/triage.md": "d0b7701471b7a599b826267df7c27cca1f69e136d61c58440b3d671103b5f997",
+      "prompts": "65478fb8a1a2ee1c3798724acaa78385759d24be7df04d47748a98ab3292128f",
+      "run": "89be07b438a5e0cf7b691fcde1b42f1864542fdfa952a70cc5f2dcc9232813e2",
+      "skill-file:hint-environment": "451de2a4fdef5d7e961ae0e857c66d1637c1a65a4eb7c743630feb3972d3d9b6",
+      "skill-file:hint-external": "e0dba5537aa5cfbb4c4764f6bf0c9b1011550e16c66407abaed340a6d81b0ffa",
+      "skill-file:hint-external-transient": "ba0a61d59ba4ae602adedf26dbcf5e6bcba95146bfa8b5b268aaf81ed876c9fd",
+      "skill-file:hint-recoverable": "1276cf3b09c1e243dd8ec3c7e9e075996b9695bbcf6aab7048f75e98e4a2d9bf",
+      "skills": "749a33fe92c3d6975a71163ec6d05a136310b7e5420ce9d5bd452fb4eeca5747"
+    }
+  },
+  "triage/cycle@v1": {
+    "routine_hash": "dd6a7bc96543",
+    "version_hash": "5a909b780252bfcf5c28b68e30357ddcb58648a37f5e416492e514086b728466",
+    "legacy": true,
+    "manifest": {
+      "explain": "e11c904cfdea0a0d2a578d63743d2568583a843b5652d78bf8a6b869e0bd5adb",
+      "harness": "6a83361e48faf33454064c4d5305fe20831297600fd8d12c2baed548f3206b52",
+      "prompt-file:playbooks/triage.md": "d0b7701471b7a599b826267df7c27cca1f69e136d61c58440b3d671103b5f997",
+      "prompts": "65478fb8a1a2ee1c3798724acaa78385759d24be7df04d47748a98ab3292128f",
+      "run": "15aa1b38fcefe48e2fb5eed37b19186bed616297c8fb8029977591abaf522e37",
+      "skill-file:hint-environment": "451de2a4fdef5d7e961ae0e857c66d1637c1a65a4eb7c743630feb3972d3d9b6",
+      "skill-file:hint-external": "e0dba5537aa5cfbb4c4764f6bf0c9b1011550e16c66407abaed340a6d81b0ffa",
+      "skill-file:hint-external-transient": "ba0a61d59ba4ae602adedf26dbcf5e6bcba95146bfa8b5b268aaf81ed876c9fd",
+      "skill-file:hint-recoverable": "1276cf3b09c1e243dd8ec3c7e9e075996b9695bbcf6aab7048f75e98e4a2d9bf",
+      "skills": "749a33fe92c3d6975a71163ec6d05a136310b7e5420ce9d5bd452fb4eeca5747",
+      "steps": "54e068a30185ce6936ae331623cb1fd3f3e259091b1e4dfe2e4b98ea1e5f38ee"
+    }
+  }
+}
