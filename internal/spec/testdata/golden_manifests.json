@@ -40,107 +40,107 @@
     }
   },
   "campaigns/apply-hold@v1": {
-    "routine_hash": "69f398425b86",
-    "version_hash": "0f60f030674318cfcad6ccc68aae8a95b5eebf9e2027d1b1a9b7b368d679087e",
-    "legacy": true,
+    "routine_hash": "fec5586e761e",
+    "version_hash": "ff5760517d07c92edc7ee41c10579b771decfae52c5ca37f03b3e3deb76ad5d0",
+    "legacy": false,
     "manifest": {
-      "run": "d8399b4e39fbc85fcc42f6ec5d3a52f6c26680c55b9fdf981235f3ce5af98f1d"
+      "spec.yaml": "1701e0da23dc4e738fb61b1fe7305b53e5a2e333d102cee165a9d12ed95d6a9e"
     }
   },
   "campaigns/apply-launch@v1": {
-    "routine_hash": "7be4373534a9",
-    "version_hash": "0f60f030674318cfcad6ccc68aae8a95b5eebf9e2027d1b1a9b7b368d679087e",
-    "legacy": true,
+    "routine_hash": "c2b9626d3df3",
+    "version_hash": "ff5760517d07c92edc7ee41c10579b771decfae52c5ca37f03b3e3deb76ad5d0",
+    "legacy": false,
     "manifest": {
-      "run": "d8399b4e39fbc85fcc42f6ec5d3a52f6c26680c55b9fdf981235f3ce5af98f1d"
+      "spec.yaml": "1701e0da23dc4e738fb61b1fe7305b53e5a2e333d102cee165a9d12ed95d6a9e"
     }
   },
   "campaigns/check@v1": {
-    "routine_hash": "019d612a5349",
-    "version_hash": "891abe3f4d9de560f4230a9824fd9b9722092c91faa70706dbbce5af6a65af19",
-    "legacy": true,
+    "routine_hash": "996aba2a4cc8",
+    "version_hash": "030b54e6494809a79fcb224820c2de7f8cd7f259b3bb471e7c9195dd505ea50a",
+    "legacy": false,
     "manifest": {
-      "run": "00ea09b9d728b1c37d26078ab29af4b9e4367b31711ef5136aed7345345d7704"
+      "spec.yaml": "98ebe0c15b30ddd097916a7ab568b184ab08b6c2e215c2542e1eccb1cfaf04fd"
     }
   },
   "campaigns/decide@v1": {
-    "routine_hash": "cdd7dff93632",
-    "version_hash": "c5527e1e4fb240589ba14a08423d230c14076e94569ed7a30edc9df4fbef04eb",
-    "legacy": true,
+    "routine_hash": "a32f68f3b7a7",
+    "version_hash": "64e98647283495a34aafd89b773c3cea3951b1fae3651a294f99311341deb65d",
+    "legacy": false,
     "manifest": {
-      "run": "e4e2e15ed3f335f5e11994a2a7283593b928ee7c3579972862d5a6984ced399e"
+      "spec.yaml": "0785e914fbd5104d375c85b9806a955ec7c78a938c65c3f463db772d909fcb27"
     }
   },
   "campaigns/scan@v1": {
-    "routine_hash": "bec958f056b9",
-    "version_hash": "856c568768e4a20e234735e092d3be14f9d46a48ff976262267912d145f24128",
-    "legacy": true,
+    "routine_hash": "75885a547530",
+    "version_hash": "008ea7a0eda63ff726ea5f48b027a6d1b711d05b110f2a7c65841efbf965a47b",
+    "legacy": false,
     "manifest": {
-      "run": "b40b1aee768eaab4e333ccdd5af341cf9fed40de230bd94dcf6567ed5c08ddef"
+      "spec.yaml": "50590e83913b3102375dfd9c7ea3a7d48ec6526a6bc3f05d46bb537d02275ffb"
     }
   },
   "crm/apply-merge@v1": {
-    "routine_hash": "a3785ab8b796",
-    "version_hash": "b193c3752352ac6f9a51db45fc6e35841be0eb67804fc8c1ce59606c2f5fdbcd",
-    "legacy": true,
+    "routine_hash": "f6c122643c90",
+    "version_hash": "ad39db081011efe793b3d0c3a6def5774664abbfed16529ec311e9a1e0ad0059",
+    "legacy": false,
     "manifest": {
-      "run": "51ca7a73f51624480c977e52e16634e24388d94bf4773324a757cefefc34471d"
+      "spec.yaml": "90c77ce9b0700b58a1f439246a8797cc2de6fb7a0de0d2f80cd100b9cba5c85d"
     }
   },
   "crm/apply-update@v1": {
-    "routine_hash": "e4f85be04fb6",
-    "version_hash": "b193c3752352ac6f9a51db45fc6e35841be0eb67804fc8c1ce59606c2f5fdbcd",
-    "legacy": true,
+    "routine_hash": "bbec3e88be33",
+    "version_hash": "ad39db081011efe793b3d0c3a6def5774664abbfed16529ec311e9a1e0ad0059",
+    "legacy": false,
     "manifest": {
-      "run": "51ca7a73f51624480c977e52e16634e24388d94bf4773324a757cefefc34471d"
+      "spec.yaml": "90c77ce9b0700b58a1f439246a8797cc2de6fb7a0de0d2f80cd100b9cba5c85d"
     }
   },
   "crm/check-field@v1": {
-    "routine_hash": "895e07ac32ab",
-    "version_hash": "28373115330b587ab695028bdb78eaf261bf543945e40f23ec144957d107af98",
-    "legacy": true,
+    "routine_hash": "6a93291e6639",
+    "version_hash": "719854a587c7a214d4c8f4b684ca96f3aaf2f346e3d4be87f4e687832927b91b",
+    "legacy": false,
     "manifest": {
-      "run": "0eba603dbfce3906af21725b16de39c4f3a8dc57da2ba8800200e0dd188f7560"
+      "spec.yaml": "d1b5645fd05b1cf0427179e1b879dd2c3342ac3f5c61e0294a884b68226e89b0"
     }
   },
   "crm/check-merge@v1": {
-    "routine_hash": "9c347a322258",
-    "version_hash": "28373115330b587ab695028bdb78eaf261bf543945e40f23ec144957d107af98",
-    "legacy": true,
+    "routine_hash": "14410db53f8b",
+    "version_hash": "719854a587c7a214d4c8f4b684ca96f3aaf2f346e3d4be87f4e687832927b91b",
+    "legacy": false,
     "manifest": {
-      "run": "0eba603dbfce3906af21725b16de39c4f3a8dc57da2ba8800200e0dd188f7560"
+      "spec.yaml": "d1b5645fd05b1cf0427179e1b879dd2c3342ac3f5c61e0294a884b68226e89b0"
     }
   },
   "crm/fix@v1": {
-    "routine_hash": "fc2b37dacb7a",
-    "version_hash": "e77f067dc9a4f90fc5f0495003c0bf7242e3a63b31f106ce830fe339bf7ae43e",
-    "legacy": true,
+    "routine_hash": "041895a3598e",
+    "version_hash": "2330dbf95a641d9028e27eccbc6d1cecd779604bc8ab1e627542f054c4f1459c",
+    "legacy": false,
     "manifest": {
-      "run": "72b0c10777c635926447bed4cf2f39d28aaaf1e381cdb2ac277d309f4e6021e4"
+      "spec.yaml": "17579013a64a5397c24686c8e048f5dfda8f76e7520885a975aa5b75a70468a4"
     }
   },
   "crm/scan@v1": {
-    "routine_hash": "95e8f0979f4b",
-    "version_hash": "9bdc077cc8563d4a0334841386c3299d3a52e41d1018279bd2cdbe4801577b90",
-    "legacy": true,
+    "routine_hash": "0c368d57519f",
+    "version_hash": "30a9fc58d505c39f057fcc0af5182412d60c2d42f1257f457a7b9aaab43a8ce9",
+    "legacy": false,
     "manifest": {
-      "run": "f8e263101aff4f78f95725d31c64758fe110c09535c69d420a306720790431fc"
+      "spec.yaml": "1f56e24aeb5c114c7587f7badd85b4e1a71e70462250a93fa5ea3b6ffe36a14f"
     }
   },
   "deps/scan@v1": {
-    "routine_hash": "9bebed27dd82",
-    "version_hash": "3990a5787f929f7feeb08a91a0e9e2d3a9d8a38ab890a14639dd4c9e7dd232ed",
-    "legacy": true,
+    "routine_hash": "b89a022e8319",
+    "version_hash": "d5dc873c6ef2649698c2d9e66df8cb83709eef07c42843559e1e167afa306a08",
+    "legacy": false,
     "manifest": {
-      "run": "210fb89e98c8c0800a7ef16001f86678299954cc7640e6994908fb96a61de0b9"
+      "spec.yaml": "a1124cfaaab11342c1dc60f38218a30ec3f0d003252a6a24c9f9516ebd6e47ea"
     }
   },
   "deps/upgrade@v1": {
-    "routine_hash": "3555db66003a",
-    "version_hash": "bbe7d5f52f59fc6357aa36972c2a6de8d907c9caf2e5783762160624f1c9fa5b",
-    "legacy": true,
+    "routine_hash": "a976872d73c9",
+    "version_hash": "37943a80590492ae64d3986288bd2a4c5bb08b6ae511056aa306df03115e4715",
+    "legacy": false,
     "manifest": {
-      "run": "bcc96d42e169e88a784d6ba012fa2a714bcc804d6e199949fcfed49c10daad69"
+      "spec.yaml": "d028e0d8a370a99ee0456f93e1ac63996ab349a89affbcf5de528e59b128d660"
     }
   },
   "e2e/cpu@v1": {
@@ -352,59 +352,59 @@
     }
   },
   "jobs/backup-monitor@v1": {
-    "routine_hash": "e12f26c897d6",
-    "version_hash": "9f8c5cf54edfefd90c75b727d981ed8714dd8c608591a291d4763d86fb65a3ed",
-    "legacy": true,
+    "routine_hash": "6e18f70e123a",
+    "version_hash": "118eaa684c9b5eeacc2d54e1e659c1a19c58975da312b77e8bf109211a1ad26f",
+    "legacy": false,
     "manifest": {
-      "run": "f19c5874b7217343c0f9bc7d064b4dca04c3b63e3ca4374f6774d5901bd083de"
+      "spec.yaml": "0732a65bc539ac22b4483071a251c7a614e24f187ce7ee04a03cc77c6e2c6873"
     }
   },
   "jobs/rerun-backup@v1": {
-    "routine_hash": "93677b7d697c",
-    "version_hash": "fd752e67ce0f5822c4febdd6ba20b989637c5441185f4736fc374aed8613ca9b",
-    "legacy": true,
+    "routine_hash": "52bee73a147b",
+    "version_hash": "4ce6d2da9b9aaf8b682b41dcd69e264e8c493958ef444aa27642b262bc4b7b12",
+    "legacy": false,
     "manifest": {
-      "run": "4dd41bf01e46152360bbb4f74b6f834b21d5f952cfa9c6dea26f22aade4d636d"
+      "spec.yaml": "3ece745f114a98c5478b1498144d3c63ec8f95b3c680835bea05a3ce5cb90c7a"
     }
   },
   "jobs/verify-backup@v1": {
-    "routine_hash": "075b49567d43",
-    "version_hash": "53b0095da0c1896c3332e36c0b7b58ffda9404acd0575a7482ca1bd59de32383",
-    "legacy": true,
+    "routine_hash": "a67f60b8b608",
+    "version_hash": "d2849480a37fc3f45c845b6d541acf6de068289aff7c9da033c5c42d02a609bf",
+    "legacy": false,
     "manifest": {
-      "run": "d550942f0ee81dfd6ec1e6500c82aeef3ad7d7427331d14fa6ec97cf9655ead9"
+      "spec.yaml": "4614d24e57237be0d291e14796f784da8e472e1933844ff0bb481b473608515b"
     }
   },
   "outbound/check@v1": {
-    "routine_hash": "4e98ee201bbe",
-    "version_hash": "93c138393bdaef296479ef17203a16ac5e4b46b6c066ff37639174781f4e60d7",
-    "legacy": true,
+    "routine_hash": "3077da07e773",
+    "version_hash": "2443b7610257883f4e7f5ce0a4a5797871f67c378c68c3c0f76115d3087e9c8c",
+    "legacy": false,
     "manifest": {
-      "run": "4445f2c0681a6550bb5f757685c5d2c7b2b16d0ec6e26a5facc5e0c30f034ddd"
+      "spec.yaml": "009870e6b6ec621577da1fa7721f8f66d613b3260c736f0d3970fce5b1218e26"
     }
   },
   "outbound/draft@v1": {
-    "routine_hash": "7310edf39295",
-    "version_hash": "6d1a522eae094d17fed0a1fa4b504aa0440933d3067d785902ccd84299888088",
-    "legacy": true,
+    "routine_hash": "4fb3f55bcb0b",
+    "version_hash": "2b253b8a22e7afcbd5e97765a6b00160884606183fbd66fc1d9e4991b9dee476",
+    "legacy": false,
     "manifest": {
-      "run": "7d719942c7258dcb1b9a7656775b3c5f952adb126296c94edc32cf3daf4eb5da"
+      "spec.yaml": "056701b125c6f9b506c52b46f13b5bb050e0373cff731ba710b17c01b39bf081"
     }
   },
   "outbound/scan@v1": {
-    "routine_hash": "c11682522798",
-    "version_hash": "960dba267196794a792bf675b2cec32a4e6734cbc403fef03aa73ec10d2ed969",
-    "legacy": true,
+    "routine_hash": "72f0c9da1ac7",
+    "version_hash": "2f63e00666e84c4c4f9aa2f554d3cf770b7fb7b9c17d91ca7facb163ce041410",
+    "legacy": false,
     "manifest": {
-      "run": "a02b8e757c6fd4f11915bf6fc9de0cbfe919abfa0dafa03aa2a2f695c03271e2"
+      "spec.yaml": "12df67d166f4390c026ea454d67810c870092e9ced06cde296a956737e50f995"
     }
   },
   "outbound/send@v1": {
-    "routine_hash": "f5f78e6fb7ea",
-    "version_hash": "48c01178234fb8dcafec79a3ad0f6d33cd3be3f93cdd91ddf9de15c071348ca2",
-    "legacy": true,
+    "routine_hash": "b1da4f1baa0f",
+    "version_hash": "3036d6fce2e9524b08f79b9268f9cb4e60472752bfaa3134f660e40d1c88236d",
+    "legacy": false,
     "manifest": {
-      "run": "66a8bb556a0efb99595abb1ad65bb21105a1a4ead1e1f3d00b44f8c393020682"
+      "spec.yaml": "18b07bf133bc740a92ec4b7ece9b533d0d19b4ae69fecaf27bfc11fc56a77282"
     }
   },
   "platform/heartbeat@v1": {
@@ -425,59 +425,59 @@
     }
   },
   "renewals/apply-flag@v1": {
-    "routine_hash": "20cef6adc8ba",
-    "version_hash": "e201d3792c0c777d0d32b986a55b63172fa600b6adda2ccf8186f8e7cf42deb9",
-    "legacy": true,
+    "routine_hash": "abc33bc13c1f",
+    "version_hash": "b50115d77c0f8d17414578f0785cf658a8fa58a999ba624bb1c94b27fa080064",
+    "legacy": false,
     "manifest": {
-      "run": "5ea9e960121f5fab9295db49578a63575b211d91b2b90c396f7e3f2ac8a92fcb"
+      "spec.yaml": "72778b0072c1ef18d5ea434a416815c0f3f87fa4d84681ea677ccc6f016c5735"
     }
   },
   "renewals/check@v1": {
-    "routine_hash": "3848f2e0f4ea",
-    "version_hash": "d63eb65d5b6a7c5ad8bced62bde9b6af7f529f18adfa2399144cd8a8744e17bb",
-    "legacy": true,
+    "routine_hash": "3d5d743c6376",
+    "version_hash": "401a171f91fc1f0adb8bd48aab1b5a48891c31175a66d4d145e6c7f04b72035f",
+    "legacy": false,
     "manifest": {
-      "run": "b9ff76794fb795ba6ac48a00cf212f326a4fff8d32d7d301b8d5a58639f9e646"
+      "spec.yaml": "efb976acaf567fbad85b16ff010d1fe54c3c256289cb5d52f84cb9e4f869fe0f"
     }
   },
   "renewals/flag@v1": {
-    "routine_hash": "6d7088ee8331",
-    "version_hash": "fae3a3066258598796197c3b1f0a776438872d97cd5507cd4308cc305f4eda9a",
-    "legacy": true,
+    "routine_hash": "67e03bae018b",
+    "version_hash": "6f0627b741b3e1b6d55ed09ff19513c6bd2926b7c724b6cbd8268add708703a0",
+    "legacy": false,
     "manifest": {
-      "run": "8c1ae827df80aa74e0be214e6684be1baa2497f6057e9c2bf7a58fef42d1a3d2"
+      "spec.yaml": "ff482f73a76cfe0fd1d0cb21a2e3902ac864f200a6cb6d68bb4687459f72883f"
     }
   },
   "renewals/scan@v1": {
-    "routine_hash": "034d6c2612a4",
-    "version_hash": "02a6a7694f2ea7cdea78c3d47d482ae88ac51743d83133f28d97a72c034b9d9c",
-    "legacy": true,
+    "routine_hash": "c586299684aa",
+    "version_hash": "cf44a21dd4711c96176ae724943dd4efce899bdb015b233b251e9a4f5eb4887a",
+    "legacy": false,
     "manifest": {
-      "run": "ee918d62d8e5260e9b9ada334e11ea4612a522f96ea46697189f831ebb9656b8"
+      "spec.yaml": "68c998c34d4545bfb82d7e87d912eac49189de32df9783dc5686fafe6bc239cc"
     }
   },
   "review/case-review@v1": {
-    "routine_hash": "4cf951f30e47",
-    "version_hash": "682a66ecaab63709708a5fea4305aeacd1c14c2b858851d90c517cdb758356d8",
-    "legacy": true,
+    "routine_hash": "46f62faf6055",
+    "version_hash": "d8c9ad1c1cedf4cbe0eb4a13f36ed25710a14c57576954092b22a27d92e7988f",
+    "legacy": false,
     "manifest": {
-      "run": "d59a81e49b00ba568175542698e93559444f0994ca4a9696b72e648b69943d29"
+      "spec.yaml": "00c87dd82dbc3a95d271d7308e9a38a36ba31fda88feadd9f305d72e68d6b337"
     }
   },
   "review/process-change@v1": {
-    "routine_hash": "f8db5dc5da67",
-    "version_hash": "6bac4c524b76106382b35099feb85380bb5e0eefa46de2922cda56b280be73db",
-    "legacy": true,
+    "routine_hash": "8a383b4f8512",
+    "version_hash": "a637ade84e65a813cd68bdfb7afc195188eb1e4f10693fd598031a00b6197471",
+    "legacy": false,
     "manifest": {
-      "run": "651f8b822946896325f378ad60786ab46076989144f449a0fbf0ca645c2a233b"
+      "spec.yaml": "98fb5ce844a7193a9c876e85ebffabbfb4ffc0829190ddc494c1fbc592224ff0"
     }
   },
   "sites/site-check@v1": {
-    "routine_hash": "30f7b09ce368",
-    "version_hash": "38d07aa1d90093bdc5921dcc50fb2fe9ca4f993d4b1ab538ec32e33de8b93f9c",
-    "legacy": true,
+    "routine_hash": "afe980a89b56",
+    "version_hash": "708690edf199dd99d9aafd9d90b983741b68a1d012fd118679574dcc4041dd89",
+    "legacy": false,
     "manifest": {
-      "run": "cb0ea44189496f76739fadc69c6dbb488a892c5c0b682537d5beaf3000d1e953"
+      "spec.yaml": "405866a9be18b341287058c158c1b4b1c3658e752754289c16c577d449c2916f"
     }
   },
   "triage/cycle-shadow@v1": {

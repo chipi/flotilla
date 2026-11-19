@@ -1,0 +1,5 @@
+run:
+  command: python3 /opt/flotilla/worker/heartbeat.py
+  workdir: .
+  timeout: 1m
+models: [triage-flash, triage-pro]   # the aliases its runs get (security T4)

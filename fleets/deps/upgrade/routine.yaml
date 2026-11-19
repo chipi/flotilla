@@ -1,0 +1,16 @@
+fleet: deps
+routine: upgrade
+description: >-
+  The acting routine for dependency_update cases: re-checks the pin on the repo's default branch now,
+  and plans github.open_pr with a one-line change of the pin to PyPI's latest release, based on the
+  commit it read; or closes the case when the pin moved meanwhile. Gates in code: one line only, a
+  released and unyanked version, a diff that applies. The PR's CI is the test; bugfix/pr-check watches
+  it, and bugfix/open-pr opens it only after a person approves the plan.
+enabled: true
+worker: bugfix
+trigger:
+  case: {kind: dependency_update}
+autonomy: record
+max_autonomy: propose
+budget:
+  day_usd: 0

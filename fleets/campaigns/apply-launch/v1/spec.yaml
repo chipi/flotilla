@@ -1,0 +1,4 @@
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/campaigns BIZ_SEED=/opt/flotilla/fleets/campaigns/seed python3 /opt/flotilla/business/apply.py execute
+  workdir: .
+  timeout: 2m

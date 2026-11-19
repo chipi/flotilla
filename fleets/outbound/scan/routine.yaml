@@ -1,0 +1,13 @@
+fleet: outbound
+routine: scan
+description: >-
+  Each prospect with no first touch yet is a prospect_new detection. Code only, read only.
+enabled: true
+worker: ops-read
+trigger:
+  every: 1h
+detects: [prospect_new]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 3h

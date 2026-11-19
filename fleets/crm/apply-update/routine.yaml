@@ -1,0 +1,13 @@
+fleet: crm
+routine: apply-update
+description: >-
+  Carries out an approved crm.update_field plan on the stand-in CRM (business/apply.py): checks the
+  plan's hash is the approved one, re-checks what the plan assumed, then does it once. An installation
+  points this at its own CRM.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: crm.update_field}
+autonomy: propose
+budget:
+  day_usd: 0

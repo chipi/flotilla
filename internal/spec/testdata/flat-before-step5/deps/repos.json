@@ -1,0 +1,4 @@
+[
+  {"repo": "example/shop", "manifest": "requirements.txt"},
+  {"repo": "example/api", "manifest": "requirements/base.txt", "outdated": true}
+]

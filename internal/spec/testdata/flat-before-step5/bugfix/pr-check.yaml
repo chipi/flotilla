@@ -1,0 +1,30 @@
+fleet: bugfix
+routine: pr-check
+description: >-
+  The check for github.open_pr (registry check pr_resolved, RFC-0010 §3): reads the PR from
+  flotilla/<case>, read only. Merged verifies the case, closed without merging escalates it, open is
+  not yet; the registry's 14-day window escalates a PR nobody decided on.
+enabled: true
+worker: bugfix
+trigger:
+  check: {verify: pr_resolved}
+run:
+  command: python3 /opt/flotilla/bugfix/pr_check.py
+  workdir: .
+  timeout: 2m
+autonomy: shadow
+budget:
+  day_usd: 0
+# What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/pr_check.py.
+explain:
+  trigger: >-
+    Runs while a case is in checking after its PR was opened: the registry's check pr_resolved.
+  worker: >-
+    Runs on the worker bugfix, read only.
+  run: >-
+    pr_check.py reads the PR from flotilla/<case>: merged verifies the case, closed without merging
+    escalates it, still open is not yet. A PR nobody decided on for 14 days escalates.
+  autonomy: >-
+    It only reads the PR; the case's next step is flotillad's.
+  budget: >-
+    No model: no spend.

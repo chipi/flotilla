@@ -1,0 +1,14 @@
+fleet: renewals
+routine: scan
+description: >-
+  Each account renewing within 60 days whose risk score reaches 50 is a renewal_risk detection, with
+  the score's reasons. Code only, read only.
+enabled: true
+worker: ops-read
+trigger:
+  every: 24h
+detects: [renewal_risk]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 26h

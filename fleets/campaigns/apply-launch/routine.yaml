@@ -1,0 +1,13 @@
+fleet: campaigns
+routine: apply-launch
+description: >-
+  Carries out an approved campaign.launch plan on the stand-in campaign tool (business/apply.py):
+  checks the plan's hash is the approved one, re-checks what the plan assumed, then does it once. An
+  installation points this at its own campaign tool.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: campaign.launch}
+autonomy: propose
+budget:
+  day_usd: 0

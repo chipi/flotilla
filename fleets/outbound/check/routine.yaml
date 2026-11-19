@@ -1,0 +1,12 @@
+fleet: outbound
+routine: check
+description: >-
+  Checks that the email is in the outbox after the action ran, reading the stand-in mail service;
+  flotillad escalates the case if it is not there within the check's window.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: email_in_outbox}
+autonomy: record
+budget:
+  day_usd: 0

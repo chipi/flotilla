@@ -1,0 +1,33 @@
+fleet: bugfix
+routine: open-pr
+description: >-
+  The executing routine for github.open_pr (RFC-0010 §3): once a person approved a plan, it checks
+  the plan's hash, applies the diff to its base commit and opens a draft PR from flotilla/<case>,
+  with a GitHub App token minted for this execution only. It runs no repo code and holds no model
+  key. The operator merges, always.
+enabled: true
+worker: bugfix-act
+trigger:
+  execute: {action: github.open_pr}
+run:
+  command: python3 /opt/flotilla/bugfix/open_pr.py
+  workdir: .
+  timeout: 15m
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0
+# What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/open_pr.py.
+explain:
+  trigger: >-
+    Runs when you approve a github.open_pr plan on a case. Nothing else starts it.
+  worker: >-
+    Runs on the worker bugfix-act: the only worker that can mint a GitHub App token, and only for this
+    run, narrowed to the plan's repo.
+  run: >-
+    open_pr.py checks the plan's hash, applies its diff to the base commit and opens a draft PR from the
+    branch flotilla/<case>. It runs no repo code and calls no model.
+  autonomy: >-
+    Capped at propose: it acts only on a plan a person approved.
+  budget: >-
+    No model: no spend.

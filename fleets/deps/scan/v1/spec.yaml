@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/deps/scan.py --repos /opt/flotilla/fleets/deps/repos.json
+  workdir: .
+  timeout: 10m

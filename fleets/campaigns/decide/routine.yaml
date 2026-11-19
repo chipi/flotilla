@@ -1,0 +1,14 @@
+fleet: campaigns
+routine: decide
+description: >-
+  The acting routine for campaign_ready cases: runs the launch checks and plans campaign.launch when
+  all pass, or campaign.hold with each failed check, or closes the case when the campaign is no longer
+  ready. No model decides whether a campaign is fine.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: campaign_ready}
+autonomy: record
+max_autonomy: auto
+budget:
+  day_usd: 0

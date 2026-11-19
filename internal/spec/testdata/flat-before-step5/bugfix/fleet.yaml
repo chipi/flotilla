@@ -1,0 +1,5 @@
+fleet: bugfix
+description: >-
+  The developers: fix bugs filed against the repos they cover. A case per open bug issue, a fix
+  whose tests reproduce the bug and whose related tests stay green, and a draft PR a person
+  approves and merges (RFC-0010). Its workers can run on another machine.

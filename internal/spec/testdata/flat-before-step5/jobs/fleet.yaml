@@ -1,0 +1,6 @@
+fleet: jobs
+description: >-
+  Job keeper: the jobs a business runs every night, kept running. The example chain: a monitor
+  notices a backup is older than it should be, an acting routine plans a rerun on its host, the
+  host agent runs it only as a signed, allowlisted execution, and a check confirms a new backup
+  landed. Each step earns its autonomy: shadow, then propose, then auto.

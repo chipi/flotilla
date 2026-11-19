@@ -1,0 +1,4 @@
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/outbound BIZ_SEED=/opt/flotilla/fleets/outbound/seed python3 /opt/flotilla/business/outbound.py draft
+  workdir: .
+  timeout: 2m

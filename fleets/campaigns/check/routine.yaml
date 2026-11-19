@@ -1,0 +1,12 @@
+fleet: campaigns
+routine: check
+description: >-
+  Checks that the campaign is launched or held as planned after the action ran, reading the stand-in
+  campaign tool; flotillad escalates the case if it is not there within the check's window.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: campaign_status}
+autonomy: record
+budget:
+  day_usd: 0

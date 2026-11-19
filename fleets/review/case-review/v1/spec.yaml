@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/ops/case_review.py
+  workdir: .
+  timeout: 2m

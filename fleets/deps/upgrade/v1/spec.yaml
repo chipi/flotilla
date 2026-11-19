@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/deps/upgrade.py
+  workdir: .
+  timeout: 5m

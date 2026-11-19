@@ -1,0 +1,10 @@
+[
+  {"id": "k-201", "slug": "spring-sale", "name": "Spring sale", "status": "ready", "audience": "customers",
+   "subject": "The spring sale starts today",
+   "body": "Hello,\n\nOur spring sale is on: https://www.example.com/sale?utm_source=newsletter&utm_medium=email&utm_campaign=spring-sale\n\nUnsubscribe: https://www.example.com/unsubscribe\nExample Shop, 1 Example Street, 10115 Example City"},
+  {"id": "k-202", "slug": "webinar", "name": "Product webinar", "status": "ready", "audience": "trials",
+   "subject": "{{first_name}}, join our webinar",
+   "body": "Hello,\n\nSign up here: https://www.example.com/webinar\n\nUnsubscribe: https://www.example.com/unsubscribe\nExample Shop, 1 Example Street, 10115 Example City"},
+  {"id": "k-203", "slug": "winter", "name": "Winter recap", "status": "launched", "audience": "customers",
+   "subject": "Winter recap", "body": "Sent last season."}
+]

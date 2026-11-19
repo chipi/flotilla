@@ -1,0 +1,13 @@
+fleet: crm
+routine: apply-merge
+description: >-
+  Carries out an approved crm.merge plan on the stand-in CRM (business/apply.py): checks the plan's
+  hash is the approved one, re-checks what the plan assumed, then does it once. An installation points
+  this at its own CRM.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: crm.merge}
+autonomy: propose
+budget:
+  day_usd: 0

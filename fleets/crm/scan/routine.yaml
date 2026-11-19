@@ -1,0 +1,14 @@
+fleet: crm
+routine: scan
+description: >-
+  Every contact in the CRM: a field to normalize (email case and spaces, a country name instead of its
+  code) or a duplicate (the same email) is a crm_fix detection. Code only, read only.
+enabled: true
+worker: ops-read
+trigger:
+  every: 1h
+detects: [crm_fix]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 3h

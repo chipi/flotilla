@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/seo/site_check.py --sites /opt/flotilla/fleets/sites/sites.json
+  workdir: .
+  timeout: 10m

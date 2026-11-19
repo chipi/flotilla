@@ -1,0 +1,16 @@
+fleet: jobs
+routine: backup-monitor
+description: >-
+  Reads when the backup last succeeded (BACKUP_METRIC, a metric of epoch seconds, for the instance
+  BACKUP_INSTANCE) and reports a failed_backup detection when its age is above the threshold that
+  backup.rerun's backup_age_above declares for the run's stage. flotillad opens the case. Code only:
+  no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  every: 10m
+detects: [failed_backup]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 25m

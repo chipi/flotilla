@@ -1,0 +1,19 @@
+fleet: sites
+routine: site-check
+description: >-
+  For each site in this fleet's sites.json: robots.txt lets the named crawlers in, every sitemap
+  answers and lists URLs, a fixed set of pages and one page per sampled prefix answer 200 on the
+  site's own host, indexable, with a title, a description and a self canonical, JSON-LD that parses
+  and hreflang alternates that answer where the site declares them, retired hosts answer 404 or
+  noindex, links on the pages answer (links), and the TLS certificate has the days the site asks
+  for (cert_days). Each failed check is one detection; flotillad opens the case. Code only, no model,
+  read only: it can find a problem, never change a site.
+enabled: true
+worker: ops-read
+trigger:
+  every: 24h
+detects: [seo_live_regression]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 26h

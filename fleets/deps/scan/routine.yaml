@@ -1,0 +1,16 @@
+fleet: deps
+routine: scan
+description: >-
+  For each repo in this fleet's repos.json: the pinned Python requirements on the default branch,
+  checked against OSV.dev's known vulnerabilities and PyPI's latest releases. Each vulnerable pin, and
+  each outdated one where the repo asks, is a dependency_update detection; flotillad opens one case per
+  pin and absorbs a known one. Code only, read only: no model, nothing outward.
+enabled: true
+worker: bugfix
+trigger:
+  every: 24h
+detects: [dependency_update]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 26h

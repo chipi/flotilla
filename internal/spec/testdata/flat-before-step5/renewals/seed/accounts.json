@@ -1,0 +1,8 @@
+[
+  {"id": "a-401", "name": "Harbor Logistics", "owner": "csm-1", "renewal_in_days": 30, "seats_90d_ago": 50, "seats_active": 31,
+   "escalated_tickets": 1, "invoice_overdue": false, "days_since_admin_login": 12},
+  {"id": "a-402", "name": "Maple Health", "owner": "csm-2", "renewal_in_days": 45, "seats_90d_ago": 20, "seats_active": 21,
+   "escalated_tickets": 0, "invoice_overdue": false, "days_since_admin_login": 3},
+  {"id": "a-403", "name": "Quarry Foods", "owner": "csm-1", "renewal_in_days": 120, "seats_90d_ago": 40, "seats_active": 18,
+   "escalated_tickets": 2, "invoice_overdue": true, "days_since_admin_login": 60}
+]

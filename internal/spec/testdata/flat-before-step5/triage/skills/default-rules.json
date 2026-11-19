@@ -1,0 +1,34 @@
+[
+  {
+    "when": {
+      "class": "external-transient"
+    },
+    "load": [
+      "hint-external-transient"
+    ]
+  },
+  {
+    "when": {
+      "class": "external"
+    },
+    "load": [
+      "hint-external"
+    ]
+  },
+  {
+    "when": {
+      "class": "environment"
+    },
+    "load": [
+      "hint-environment"
+    ]
+  },
+  {
+    "when": {
+      "class": "recoverable"
+    },
+    "load": [
+      "hint-recoverable"
+    ]
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {"id": "c-101", "name": "Ana Ruiz", "email": "Ana.Ruiz@Example.org ", "country": "Spain", "created": "2025-01-10"},
+  {"id": "c-102", "name": "Ben Ode", "email": "ben@example.net", "country": "DE", "created": "2025-02-03"},
+  {"id": "c-103", "name": "Ben Ode", "email": "BEN@example.net", "country": "", "phone": "+49 30 1234567", "created": "2025-06-01"},
+  {"id": "c-104", "name": "Chen Li", "email": "chen@example.com", "country": "germany", "locked": ["country"], "created": "2025-03-15"},
+  {"id": "c-105", "name": "Dana Wolf", "email": "dana@example.com", "country": "NL", "created": "2025-04-20"}
+]

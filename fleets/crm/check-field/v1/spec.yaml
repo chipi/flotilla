@@ -1,0 +1,4 @@
+run:
+  command: env BIZ_DATA=/tmp/flotilla-example/crm BIZ_SEED=/opt/flotilla/fleets/crm/seed python3 /opt/flotilla/business/apply.py check
+  workdir: .
+  timeout: 2m

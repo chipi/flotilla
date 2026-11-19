@@ -1,0 +1,5 @@
+fleet: sites
+description: >-
+  Site watch: what your websites serve live, checked every day and read only. Robots, sitemaps,
+  titles, descriptions, canonicals, structured data, broken links and certificate expiry; each
+  problem found is a case, and nothing goes out.

@@ -1,0 +1,57 @@
+fleet: triage
+routine: cycle-shadow
+description: >-
+  A candidate beside the live triage, compared in shadow: the same code on another model (the alias
+  triage-candidate), on its own worker and state, so its decisions can be set against the live
+  routine's before anyone switches. Capped at shadow: it never acts, whatever an autonomy control says.
+  Errors only and 2 triages a cycle, to keep the candidate's model load small. An installation without
+  a candidate worker lists it in disabled_routines. To compare another image instead, run the live
+  cycle's command here.
+enabled: true
+worker: triage-candidate
+trigger:
+  every: 10m
+run:
+  command: env SF_TRIAGE_MODEL=triage-candidate python3 orchestrator.py --glitchtip --limit 2
+  workdir: signal-fleet/mvp
+  timeout: 20m
+autonomy: shadow
+max_autonomy: shadow
+budget:
+  day_usd: 2.0
+freshness: 35m
+# The class hints (ADR-0012): triage's code classes the signal, a rule loads its hint, rendered after
+# the SIGNAL JSON. fleets/triage/skills/default-rules.json is the same list for runs without flotillad
+# (a Go test keeps them equal).
+skills:
+  rule:
+    - when: {class: external-transient}
+      load: [hint-external-transient]
+    - when: {class: external}
+      load: [hint-external]
+    - when: {class: environment}
+      load: [hint-environment]
+    - when: {class: recoverable}
+      load: [hint-recoverable]
+# The system prompt (ADR-0018): a file in the fleet's folder, its hash handed to the run (FLOTILLA_PROMPTS).
+# triage.py's default path is the same file for runs without flotillad (a test keeps them equal).
+prompts:
+  system: playbooks/triage.md
+# The model-driven step (RFC-0002 §4). fleets/triage/harness-default.json is the same for runs
+# without flotillad (a Go test keeps them equal). The quirks keep today's loop like for like; RFC-0002
+# §9 step 6 removes them one at a time, each by model replay.
+harness:
+  protocol: json
+  tools: [event_detail, occurrence_history, service_logs, metric, trace, source_state]
+  gates: [intent, cleanup, dismiss_corroborated, edge]
+  limits: {max_tool_calls: 3, max_steps: 4, tool_calls_per_turn: 1}
+  quirks:
+    bad_json_uses_turn: true
+    empty_retry: true
+    final_decision_call: true
+    reply_echo_chars: 600
+    decision_echo_chars: 400
+    result_chars: 1800
+  hooks:
+    after_tool:
+      - {name: redact_credentials, mode: observe}

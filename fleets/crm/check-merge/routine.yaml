@@ -1,0 +1,12 @@
+fleet: crm
+routine: check-merge
+description: >-
+  Checks that the kept contact is there and the dropped one gone after the action ran, reading the
+  stand-in CRM; flotillad escalates the case if it is not there within the check's window.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: crm_merged}
+autonomy: record
+budget:
+  day_usd: 0

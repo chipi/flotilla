@@ -1,0 +1,6 @@
+fleet: campaigns
+description: >-
+  Marketing: every campaign is checked before it goes out. Code runs the launch checks (approved
+  landing pages, UTM tags, no unfilled merge fields, the approved copy, an unsubscribe footer) and
+  they decide: a campaign that passes is planned for launch, one that fails is held with what failed.
+  A launch cannot be undone, so a person approves every one; a hold can earn auto.

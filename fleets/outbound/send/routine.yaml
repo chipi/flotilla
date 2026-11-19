@@ -1,0 +1,13 @@
+fleet: outbound
+routine: send
+description: >-
+  Carries out an approved email.send plan on the stand-in mail service (business/apply.py): checks the
+  plan's hash is the approved one, re-checks what the plan assumed, then does it once. An installation
+  points this at its own mail service.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: email.send}
+autonomy: propose
+budget:
+  day_usd: 0

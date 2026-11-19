@@ -36,8 +36,10 @@ fleets/<fleet>/<routine>/v<n>/spec.yaml     one version: run, steps, skills, pro
 fleets/<fleet>/<routine>/v<n>/<texts>       the files that version's spec names (paths stay inside v<n>/)
 ```
 
-Never both for one routine. `platform/heartbeat` is a folder (one version, identical to its former flat
-file); every other example is a flat file. The first version of a routine goes live when it is deployed;
+Never both for one routine. The routines of `jobs`, `review`, `deps`, `sites`, `crm`, `campaigns`,
+`outbound` and `renewals`, and `platform/heartbeat`, are folders with one version each, `v1`, identical to
+the flat file they were (`internal/spec/move_equiv_test.go` compares every field against a copy of the
+flat specs, `internal/spec/testdata/flat-before-step5/`); the other examples are still flat files. The first version of a routine goes live when it is deployed;
 a later `v<n>/` arrives as a shadow and goes live only when the operator promotes it (`flotilla versions`,
 `promote`, `rollback`, `retire`, or the routine page). The live and the previous version's folders are
 frozen: a changed one fails `flotillad -check` and its start, so change a live version by adding a new

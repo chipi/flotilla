@@ -1,0 +1,4 @@
+run:
+  command: env BACKUP_ACTION=backup.rerun BACKUP_METRIC=backup_last_success_timestamp python3 /opt/flotilla/ops/backup_monitor.py
+  workdir: .
+  timeout: 1m

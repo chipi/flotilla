@@ -1,0 +1,16 @@
+fleet: review
+routine: case-review
+description: >-
+  The post-incident review (ADR-0016): reads the cases closed in the last 7 days and proposes what to
+  learn, each proposal naming its evidence: a process_change (a threshold below its source's cycle, a
+  check that keeps clearing itself, a fix that does not hold), or a note from a wrong diagnosis or a
+  refused plan. It changes nothing; a person answers every proposal.
+enabled: true
+worker: ops-read
+trigger:
+  every: 30m
+detects: [process_change]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 75m

@@ -1,0 +1,7 @@
+[
+  {"id": "f-1", "prospect": "p-301", "kind": "hiring", "value": "two data engineers", "source": "the company's careers page", "seen": "2026-11-10"},
+  {"id": "f-2", "prospect": "p-301", "kind": "stack", "value": "dbt and Snowflake", "source": "a public job ad", "seen": "2026-11-10"},
+  {"id": "f-3", "prospect": "p-302", "kind": "launch", "value": "the Brightline 2 release", "source": "the company's blog", "seen": "2026-11-12"},
+  {"id": "f-4", "prospect": "p-304", "kind": "launch", "value": "Fjord Cloud", "source": "a press release", "seen": "2026-11-05"},
+  {"id": "f-5", "prospect": "p-304", "kind": "rumour", "value": "a funding round", "source": "a forum post", "seen": "2026-11-01"}
+]

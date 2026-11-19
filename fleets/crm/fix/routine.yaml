@@ -1,0 +1,14 @@
+fleet: crm
+routine: fix
+description: >-
+  The acting routine for crm_fix cases: re-checks the contact now and plans crm.update_field or
+  crm.merge, refusing a locked field or a merge of different emails, or closes the case when the
+  contact changed meanwhile. It starts in shadow; a person raises it.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: crm_fix}
+autonomy: record
+max_autonomy: auto
+budget:
+  day_usd: 0
