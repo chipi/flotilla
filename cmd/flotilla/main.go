@@ -119,6 +119,7 @@ func main() {
 			}
 			Routines []map[string]any
 			Workers  map[string]any
+			Examples []map[string]any
 		}
 		get("/v1/status", &out)
 		if out.Freeze.Frozen {
@@ -143,6 +144,7 @@ func main() {
 			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t$%.4f/$%.2f\t%s\n", j["id"], j["autonomy"], j["autonomy_set"], j["every"], orDash(j["last_success"]),
 				j["stale"], j["spend_today_usd"], j["budget_day_usd"], strings.Join(state, ","))
 		}
+		exampleRows(w, out.Examples)
 		w.Flush()
 		for name, h := range out.Workers {
 			b, _ := json.Marshal(h)
@@ -615,4 +617,12 @@ func level(s string) string {
 
 func post(path string, body any) {
 	fmt.Println(string(bytes.TrimSpace(do("POST", path, body))))
+}
+
+// exampleRows prints the examples catalogue (flotillad.yaml examples_dir) after the routines: listed and never run, so the state is
+// example and there is no autonomy, last run, stale flag or spend.
+func exampleRows(w io.Writer, examples []map[string]any) {
+	for _, e := range examples {
+		fmt.Fprintf(w, "%v\t-\t-\t%v\t-\t-\t-\texample\n", e["id"], e["trigger"])
+	}
 }

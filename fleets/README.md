@@ -54,6 +54,17 @@ evidence a promote needs. The lowest autonomy level is `record`; a spec that sti
 `autonomy: shadow` (or `max_autonomy: shadow`) is read as `record`, and `-check` says so. The value
 a run reads in `FLEETD_STAGE` is `shadow` for `record`, as before.
 
+## Seeing the examples on an installation
+
+The flotillad image carries these fleets a second time at `/opt/flotilla/examples`, where an installation's own fleets (mounted
+over `/opt/flotilla/fleets`) do not reach. With `examples_dir: /opt/flotilla/examples` in its flotillad.yaml, `flotilla status`
+lists every example (state `example`) and the UI has an Examples page (linked from Fleets): each example's description, trigger,
+worker, versions and flow. They are a catalogue, not routines: ids are `example-<fleet>/<routine>`, nothing in them is scheduled,
+reaches the store, a worker, a metric or the brief, and a request that names one (a run, a dry run, a version control) is refused
+with "an example". `-check` needs none of their workers or model aliases. To run one, copy its folder into the installation's own
+fleets repo under a name of your own and deploy it with `deploy_fleets.sh`: its first version goes live as any routine's does.
+Unset, the installation sees no examples.
+
 ## An installation's own fleets
 
 An installation keeps its fleets in a private repo of its own, in this same layout, and runs them

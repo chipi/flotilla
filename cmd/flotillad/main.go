@@ -85,6 +85,10 @@ type Config struct {
 	// routines this installation does not run, whatever their spec says (e.g. an e2e stack that has no
 	// real services for them). A listed id that no spec has is an error, so a typo cannot hide.
 	DisabledRoutines []string `yaml:"disabled_routines"`
+	// Optional: a folder of example fleets (the flotillad image carries flotilla's at /opt/flotilla/examples), read as a catalogue the
+	// status API, the CLI and the UI list as examples (v2 step 5). Unset: none. Nothing in it is a routine of this installation: it is
+	// never scheduled, never reaches the store, a worker or a metric, and needs no worker or model alias of this installation.
+	ExamplesDir string `yaml:"examples_dir"`
 	// the model aliases routines may name and their OpenAI-compatible endpoints (ADR-0004); every run gets
 	// it as JSON in FLOTILLA_MODELS. Optional: without it, a routine that needs a model fails its run.
 	Models *models.Config `yaml:"models"`
@@ -115,6 +119,23 @@ type Config struct {
 // RoutineActionsConfig is flotillad.yaml's routine_actions block.
 type RoutineActionsConfig struct {
 	MaxAutonomy string `yaml:"max_autonomy"`
+}
+
+// loadExamples reads the examples catalogue when examples_dir is set; nil when it is not.
+func loadExamples(cfg *Config) (*spec.Catalogue, error) {
+	if cfg.ExamplesDir == "" {
+		return nil, nil
+	}
+	return spec.LoadExamples(cfg.ExamplesDir)
+}
+
+// examplesLine is what -check says about the examples catalogue.
+func examplesLine(cfg *Config, c *spec.Catalogue) string {
+	if c == nil {
+		return "examples: none (examples_dir is not set)"
+	}
+	return fmt.Sprintf("examples: %d routines in %d fleets from %s, listed as examples and never run (no schedule, store row, worker call or metric)",
+		len(c.Examples()), len(c.Fleets()), cfg.ExamplesDir)
 }
 
 // routineActionsLine is what -check says about routine_actions.max_autonomy.
@@ -185,6 +206,9 @@ func loadConfig(path string) (*Config, error) {
 	var errs []error
 	if c.Listen == "" {
 		errs = append(errs, errors.New("listen is required"))
+	}
+	if c.ExamplesDir != "" && filepath.Clean(c.ExamplesDir) == filepath.Clean(c.SpecsDir) {
+		errs = append(errs, errors.New("examples_dir is the specs_dir: the catalogue is a copy of the examples beside the fleets the installation runs, not those fleets"))
 	}
 	if c.SpecsDir == "" || c.StateDir == "" || c.CallersFile == "" {
 		errs = append(errs, errors.New("specs_dir, state_dir and callers_file are required"))
@@ -337,6 +361,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fleets:", err)
 		os.Exit(2)
 	}
+	examples, err := loadExamples(cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "examples:", err)
+		os.Exit(2)
+	}
 	callers, err := api.LoadCallers(cfg.CallersFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "callers:", err)
@@ -397,7 +426,7 @@ func main() {
 		found := false
 		for _, j := range routines {
 			if j.ID() == id {
-				j.Enabled, found = false, true
+				j.Enabled, j.ConfigDisabled, found = false, true, true
 			}
 		}
 		if !found {
@@ -454,6 +483,7 @@ func main() {
 		for _, a := range reg.Actions() {
 			fmt.Printf("action %s\n", a)
 		}
+		fmt.Println(examplesLine(cfg, examples))
 		fmt.Printf("run tokens: %s (every run has its own token for the workers' listener%s)\n", cfg.RunTokens,
 			map[bool]string{true: "; a worker's own token opens nothing there", false: "; a worker's own token still opens it"}[cfg.RunTokens == RunTokensRequired])
 		fmt.Println(routineActionsLine(cfg))
@@ -564,7 +594,7 @@ func main() {
 	runTokens := runtoken.New()
 	s.RunTokens = runTokens
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir,
-		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy}
+		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy, Examples: examples}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
 	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}

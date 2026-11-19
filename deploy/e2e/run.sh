@@ -130,6 +130,7 @@ worker_listen: 0.0.0.0:8485
 ui_listen: 0.0.0.0:8486
 ui_host: $UI_HOST
 specs_dir: /etc/flotilla/specs          # the image's fleets plus the e2e fleet (deploy/e2e/fleets), staged below
+examples_dir: /opt/flotilla/examples    # the catalogue: listed as examples, never run
 registry_files: [/opt/flotilla/host/registry.json, /etc/flotilla/registry-e2e.json]   # plus the e2e's host.true
 state_dir: /var/lib/flotilla
 environment: e2e

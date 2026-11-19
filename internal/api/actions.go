@@ -128,6 +128,9 @@ func (s *Server) routineByID(id string) (*spec.Routine, error) {
 	if j := s.Sched.Routine(id); j != nil {
 		return j, nil
 	}
+	if s.Examples.Has(id) {
+		return nil, problem(409, "%s is an example, not a routine of this installation: it never runs. Copy its folder into your fleets repo under a name of your own and deploy it to run it", id)
+	}
 	return nil, problem(404, "no such routine")
 }
 
@@ -139,6 +142,9 @@ func (s *Server) RunNow(ctx context.Context, c Caller, via, routineID string) er
 	j, err := s.routineByID(routineID)
 	if err != nil {
 		return err
+	}
+	if j.ConfigDisabled {
+		return problem(409, "%s is disabled by this installation's configuration (disabled_routines): it does not run, by hand either", j.ID())
 	}
 	if busy := s.Sched.Running()[j.ID()]; busy != "" {
 		return problem(409, "already running (%s)", busy)

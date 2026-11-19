@@ -1,0 +1,38 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}
+  <section class="head">
+    <div>
+      <h1>Examples</h1>
+      <p class="sub">{{if .Present}}{{plural .Total "example routine" "example routines"}} in {{plural (len .Fleets) "fleet" "fleets"}}, <span class="chip chip--small">example, not running</span> Listed from the image's own copy: nothing here is scheduled, has a worker call, a store row, a metric or a cost. To run one, copy its folder into your fleets repo under a name of your own and deploy it. <a href="/fleets">Back to the fleets</a>.{{else}}This installation has no examples catalogue. Set <code>examples_dir</code> in flotillad.yaml to the image's <code>/opt/flotilla/examples</code> to list the example fleets here. <a href="/fleets">Back to the fleets</a>.{{end}}</p>
+    </div>
+  </section>
+  {{range .Fleets}}
+  <section class="casecards" aria-labelledby="ex-{{.ID}}">
+    <h2 id="ex-{{.ID}}">{{.Name}}</h2>
+    <p class="meta">{{.Purpose}}</p>
+    <div class="table-box">
+      <table class="data">
+        <thead><tr><th scope="col">Routine</th><th scope="col">What it does</th><th scope="col">Starts when</th><th scope="col">Worker</th><th scope="col">Versions</th></tr></thead>
+        <tbody>
+          {{range .Routines}}<tr>
+            <td data-label="Routine" class="stack"><strong class="exact">{{.ID}}</strong><span class="chip chip--small">example</span></td>
+            <td data-label="What it does" class="stack">{{.Short}}
+              {{if .Lanes}}<details><summary>Its flow</summary>
+                {{range .Lanes}}<p class="meta"><strong>{{.Title}}</strong></p><ul>{{range .Blocks}}<li><strong>{{.Name}}</strong>{{if .Sub}}: {{.Sub}}{{end}} <span class="meta">({{.Who}})</span></li>{{end}}</ul>{{end}}
+                {{if .Chain}}<p class="meta">Then: {{range $i, $c := .Chain}}{{if $i}}, {{end}}<span class="exact">{{$c}}</span>{{end}}</p>{{end}}
+              </details>{{end}}
+            </td>
+            <td data-label="Starts when">{{.Trigger}}</td>
+            <td data-label="Worker" class="exact">{{.Worker}}</td>
+            <td data-label="Versions">{{range $i, $v := .Versions}}{{if $i}}, {{end}}v{{$v.Number}}{{if $v.Stations}} (station {{range $j, $s := $v.Stations}}{{if $j}}, {{end}}{{$s}}{{end}}){{end}}{{end}}</td>
+          </tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{end}}
+  {{end}}
+</main>
+{{template "foot" .}}

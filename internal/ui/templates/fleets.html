@@ -62,6 +62,7 @@
       </span>
     </a>{{else}}<p class="card">No fleet matches these filters.</p>{{end}}
   </section>
+  {{if .Examples}}<p class="footnote"><a href="/examples">{{plural .Examples "example routine" "example routines"}}</a> from the image's catalogue, listed and never run: what a fleet of each kind looks like, to copy into your own.</p>{{end}}
   <p class="footnote">The pack is the hash of a fleet's routine specs: any change to their text changes it. Approving a pack is not a concept in flotilla yet; a spec change goes through review and deploy.</p>
   {{end}}
 </main>

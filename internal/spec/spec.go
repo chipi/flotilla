@@ -152,6 +152,10 @@ type Routine struct {
 	State        []string `yaml:"state"`
 	Repo         *RepoRef `yaml:"repo"`
 
+	// ConfigDisabled is set by flotillad for a routine its configuration lists in disabled_routines (not by a spec's enabled: false,
+	// which still allows a run by hand): no run starts, scheduled or by hand, whatever a caller asks.
+	ConfigDisabled bool `yaml:"-"`
+
 	// filled by Load
 	Path string `yaml:"-"`
 	Hash string `yaml:"-"`

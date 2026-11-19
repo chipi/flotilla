@@ -66,6 +66,9 @@ const (
 
 var ErrRunning = errors.New("already running")
 
+// ErrConfigDisabled is a run asked of a routine the installation's config lists in disabled_routines.
+var ErrConfigDisabled = errors.New("disabled by this installation's configuration (disabled_routines): it does not run, by hand either")
+
 // ErrNotRunning: Cancel found no run of that routine in flight.
 var ErrNotRunning = errors.New("not running")
 
@@ -298,6 +301,9 @@ func (f readyFunc) Ready(ctx context.Context) bool { return f(ctx) }
 // RunNow runs one routine now and waits for it. trigger says why ("schedule", "manual"), actor who.
 // A skipped run (STOP, paused, budget) is recorded with its reason and returned without error.
 func (s *Scheduler) RunNow(ctx context.Context, id, trigger, actor string) (*store.Run, error) {
+	if j := s.Routine(id); j != nil && j.ConfigDisabled {
+		return nil, fmt.Errorf("%s: %w", id, ErrConfigDisabled)
+	}
 	r, _, err := s.RunWith(ctx, id, trigger, actor, nil)
 	return r, err
 }

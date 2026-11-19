@@ -161,6 +161,8 @@ type Server struct {
 	RunTokens *runtoken.Registry
 	// RoutineActionMax is flotillad.yaml's routine_actions.max_autonomy: propose or auto; "" is propose (RoutineActionCeiling).
 	RoutineActionMax string
+	// Examples is the examples catalogue (flotillad.yaml examples_dir), or nil. Only the status and the UI read it; no routine is named by it.
+	Examples *spec.Catalogue
 }
 
 type ctxKey struct{}
@@ -349,7 +351,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ Caller) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"version": s.Version, "freeze": fr, "routines": routines, "workers": workers})
+	out := map[string]any{"version": s.Version, "freeze": fr, "routines": routines, "workers": workers}
+	if s.Examples != nil {
+		out["examples"] = s.Examples.Examples()
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request, _ Caller) {

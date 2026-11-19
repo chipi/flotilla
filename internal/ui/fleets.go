@@ -191,6 +191,7 @@ type fleetsData struct {
 	Total    int
 	Routines int
 	Stopped  bool // every fleet is STOPped
+	Examples int  // the examples catalogue's routines (0: no catalogue)
 }
 
 type pillLink struct {
@@ -214,7 +215,7 @@ func (u *Server) fleetsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 	}
 	t := readTable(r, "", false, func(string) bool { return false })
 	st, q := t.Get("status"), strings.ToLower(t.Get("q"))
-	d := fleetsData{T: t, Total: len(fs), Routines: len(routines), Stopped: len(fs) > 0}
+	d := fleetsData{T: t, Total: len(fs), Routines: len(routines), Stopped: len(fs) > 0, Examples: len(u.API.Examples.Examples())}
 	for _, f := range fs {
 		if !f.Stopped {
 			d.Stopped = false

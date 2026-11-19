@@ -21,6 +21,9 @@ COPY --from=build /out/flotillad /out/flotilla /usr/local/bin/
 COPY --from=build --chown=65532:65532 /out/state /var/lib/flotilla
 # the specs travel with the image: a spec change is a deploy (ADR-0002)
 COPY fleets /opt/flotilla/fleets
+# the examples again, where an installation's own fleets mounted over /opt/flotilla/fleets do not reach: flotillad lists them, read-only, as the
+# examples catalogue when its config sets examples_dir: /opt/flotilla/examples (v2 step 5). The same source as the line above (a test pins it)
+COPY fleets /opt/flotilla/examples
 COPY host/registry.json /opt/flotilla/host/registry.json
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/flotillad"]

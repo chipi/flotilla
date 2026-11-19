@@ -95,6 +95,7 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("GET /autonomy", u.session(u.autonomyPage))
 	m.Handle("GET /models", u.session(u.modelsPage))
 	m.Handle("GET /knowledge", u.session(u.knowledgePage))
+	m.Handle("GET /examples", u.session(u.examplesPage))
 	m.Handle("POST /notes/{id}/{action}", u.session(u.noteAction))
 	m.Handle("GET /brief", u.session(u.briefPage))
 	m.Handle("GET /brief/archive", u.session(u.briefPage))
