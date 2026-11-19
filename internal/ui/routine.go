@@ -238,6 +238,23 @@ func specBlocks(j *spec.Routine, c mixCounts, href func(string) string) []rLane 
 			add("gates", rBlock{ID: "gate." + g, Name: strings.ReplaceAll(g, "_", " "), Who: "code", Where: "spec", Key: "harness.gates", YAML: yamlOf(map[string]any{"harness": map[string]any{"gates": h.Gates}}), Nums: c.show("gate:" + g)})
 		}
 	}
+	for _, name := range j.StationNames() {
+		st := j.Stations[name]
+		add("agent", rBlock{ID: "station." + name, Name: fmt.Sprintf("station %s: %s on %s", name, st.Model, st.Harness), Who: "agent", Where: "spec", Key: "stations." + name,
+			YAML: yamlOf(map[string]any{"stations": map[string]any{name: st}}), Nums: c.show("probes")})
+	}
+	if len(j.StationText) > 0 && len(j.Prompts) == 0 {
+		var roles []string
+		for _, r := range j.StationTextRoles() {
+			roles = append(roles, r)
+		}
+		add("agent", rBlock{ID: "prompts", Name: "texts: " + strings.Join(roles, ", "), Who: "code", Where: "spec", Key: "stations.*.prompts", YAML: yamlOf(map[string]any{"texts": roles})})
+	}
+	if j.Harness == nil {
+		for _, g := range j.GateNames() {
+			add("gates", rBlock{ID: "gate." + g, Name: strings.ReplaceAll(g, "_", " "), Who: "code", Where: "spec", Key: "stations gates", Nums: c.show("gate:" + g)})
+		}
+	}
 	for _, s := range j.Steps {
 		b := rBlock{ID: s.ID, Name: s.Title, Sub: s.Short, Who: s.Who, Explain: s.Explain, Where: "code", Key: "steps: " + s.ID, Nums: c.show(s.Count)}
 		if s.Who == "you" {

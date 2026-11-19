@@ -490,19 +490,27 @@
     }
   },
   "triage/cycle@v1": {
-    "routine_hash": "d74cfde9fc6c",
-    "version_hash": "a60cac912e50398fbfad2759f909739d40b133e6024d5629bf5a4f6953424cc2",
+    "routine_hash": "35e8f394825f",
+    "version_hash": "46f1210a58c1d621a8b0168178ed5e04bb8bec0aeedd006ffc6a90371cd5717c",
     "legacy": false,
     "manifest": {
-      "spec.yaml": "ebf9438aae943b7bf31aa35be46d964235ad876c7a80c2eab31bbd0a81cf936d",
+      "skill-file:hint-environment": "451de2a4fdef5d7e961ae0e857c66d1637c1a65a4eb7c743630feb3972d3d9b6",
+      "skill-file:hint-external": "e0dba5537aa5cfbb4c4764f6bf0c9b1011550e16c66407abaed340a6d81b0ffa",
+      "skill-file:hint-external-transient": "ba0a61d59ba4ae602adedf26dbcf5e6bcba95146bfa8b5b268aaf81ed876c9fd",
+      "skill-file:hint-recoverable": "1276cf3b09c1e243dd8ec3c7e9e075996b9695bbcf6aab7048f75e98e4a2d9bf",
+      "spec.yaml": "7cf6dd203478f318b55fffa4299e4cd8167ca471adc19af3a0302ea16cfff25e",
       "system.md": "158a3cce38f6e58b73f47f9d43fa978933d1b8ecb5aed5089993bbcd7e30a2c9"
     }
   },
   "triage/cycle@v2": {
-    "routine_hash": "2829470a9154",
-    "version_hash": "e2773632498bea339ba996a6f37e96afac034bf55d3c9f4c9499e14441ee3cd5",
+    "routine_hash": "d744ba5b0c12",
+    "version_hash": "ed6ca7357c39f0eca92c425a32a07d5510d3f708775df6d67acd1c59ecd61777",
     "legacy": false,
     "manifest": {
+      "skill-file:hint-environment": "451de2a4fdef5d7e961ae0e857c66d1637c1a65a4eb7c743630feb3972d3d9b6",
+      "skill-file:hint-external": "e0dba5537aa5cfbb4c4764f6bf0c9b1011550e16c66407abaed340a6d81b0ffa",
+      "skill-file:hint-external-transient": "ba0a61d59ba4ae602adedf26dbcf5e6bcba95146bfa8b5b268aaf81ed876c9fd",
+      "skill-file:hint-recoverable": "1276cf3b09c1e243dd8ec3c7e9e075996b9695bbcf6aab7048f75e98e4a2d9bf",
       "spec.yaml": "ef8c1f85114683018613c19fb10a861521a063cb55ba6307ef5d3743cfba62da",
       "system.md": "158a3cce38f6e58b73f47f9d43fa978933d1b8ecb5aed5089993bbcd7e30a2c9"
     }

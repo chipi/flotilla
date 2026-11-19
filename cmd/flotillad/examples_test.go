@@ -1,14 +1,28 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
+	"github.com/chipi/flotilla/internal/telemetry"
 	"github.com/chipi/flotilla/internal/versions"
 )
 
@@ -103,5 +117,115 @@ func TestTheImageCarriesTheExamplesOutOfTheFleetsMountsReach(t *testing.T) {
 		if strings.Contains(string(w), "/opt/flotilla/examples") {
 			t.Errorf("%s carries the examples: an example never runs, so no worker image needs them", f)
 		}
+	}
+}
+
+// The heartbeat's metrics are the scheduler's routines' alone: with a catalogue loaded beside them, no sample names an example.
+func TestTheFreshnessLoopPushesNoSeriesForAnExample(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+	}))
+	defer ts.Close()
+	st, err := store.Open(filepath.Join(t.TempDir(), "m.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	own := &spec.Routine{Fleet: "triage", Routine: "cycle", Enabled: true, Worker: "w", Autonomy: "record", Every: time.Minute, Limit: time.Minute, Fresh: time.Hour}
+	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{}}
+	s.SetRoutines([]*spec.Routine{own})
+	cat, err := spec.LoadExamples(filepath.Join("..", "..", "fleets"))
+	if err != nil || len(cat.Examples()) == 0 {
+		t.Fatal(err)
+	}
+	push := &telemetry.Pusher{URL: ts.URL, Env: "test", Version: "t", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	pushRoutineMetrics(context.Background(), push, s, st)
+	mu.Lock()
+	all := strings.Join(bodies, "\n")
+	mu.Unlock()
+	if !strings.Contains(all, `routine="triage/cycle"`) || strings.Contains(all, "example") {
+		t.Fatalf("series: %s", all)
+	}
+}
+
+// A real flotillad, started with examples_dir set: it serves the catalogue in the status, runs none of it, and its store holds rows for the
+// installation's routine alone.
+func TestARealStartWithExamplesDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and starts the binary")
+	}
+	d := t.TempDir()
+	bin := filepath.Join(d, "flotillad")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	writeTree(t, d, map[string]string{"specs/triage/mine.yaml": "fleet: triage\nroutine: mine\ndescription: mine\nenabled: true\nworker: only\n" +
+		"trigger: {every: 8760h}\nrun: {command: \"true\", workdir: ., timeout: 1m}\nautonomy: record\nbudget: {day_usd: 1}\nfreshness: 9000h\n"})
+	tok := strings.Repeat("o", 40)
+	sum := sha256.Sum256([]byte(tok))
+	writeTree(t, d, map[string]string{"callers.yaml": "callers:\n  - {name: operator, role: operator, token_sha256: " + hex.EncodeToString(sum[:]) + "}\n", "w.token": strings.Repeat("w", 40)})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	cfgPath := filepath.Join(d, "flotillad.yaml")
+	cfg := "listen: " + addr + "\nspecs_dir: " + d + "/specs\nexamples_dir: " + filepath.Join("..", "..", "fleets") + "\nstate_dir: " + d + "/state\nenvironment: test\n" +
+		"callers_file: " + d + "/callers.yaml\nregistry_files: [" + filepath.Join("..", "..", "host", "registry.json") + "]\nworkers:\n  only: {url: \"http://127.0.0.1:1\", token_file: " + d + "/w.token}\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(d+"/state", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "-config", cfgPath)
+	var logs bytes.Buffer
+	cmd.Stderr, cmd.Stdout = &logs, &logs
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	var status struct {
+		Routines []struct{ ID string }
+		Examples []struct{ ID string }
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		req, _ := http.NewRequest("GET", "http://"+addr+"/v1/status", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			err = json.NewDecoder(resp.Body).Decode(&status)
+			resp.Body.Close()
+			if err == nil && resp.StatusCode == 200 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("flotillad did not serve its status:\n%s", logs.String())
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if len(status.Routines) != 1 || status.Routines[0].ID != "triage/mine" || len(status.Examples) < 30 {
+		t.Fatalf("routines %v, %d examples", status.Routines, len(status.Examples))
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	read, err := store.ReadVersions(filepath.Join(d, "state", "flotilla.db"))
+	if err != nil || !read.Exists {
+		t.Fatalf("store: %+v %v", read, err)
+	}
+	for _, r := range read.Rows {
+		if r.Routine != "triage/mine" {
+			t.Errorf("a store row for %s: only the installation's routine has rows", r.Routine)
+		}
+	}
+	if len(read.Rows) != 1 {
+		t.Errorf("%d version rows", len(read.Rows))
 	}
 }

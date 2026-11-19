@@ -109,7 +109,12 @@ func TestMovedRoutinesAreEquivalentToTheirFlatSpecs(t *testing.T) {
 			moved++
 		}
 		if stepFiveStations[id] != "" {
-			if diff := differingFields(routineFields(t, n), routineFields(t, o)); len(diff) > 0 {
+			if got := n.State; len(got) != 1 || got[0] != "signal-fleet/results" {
+				t.Errorf("%s: its state is %v: a shadow version starts from the cycle's results folder", id, got)
+			}
+			nr := routineFields(t, n)
+			nr.State = nil
+			if diff := differingFields(nr, routineFields(t, o)); len(diff) > 0 {
 				t.Errorf("%s: the routine's own fields differ from its flat spec: %s", id, strings.Join(diff, "; "))
 			}
 			continue

@@ -168,3 +168,35 @@ func TestNoRunningCodeTakesTheCatalogue(t *testing.T) {
 		t.Errorf("code outside the examples allow-list reads the catalogue: %v (an example is never a routine of this installation: add it to the list only if it only lists)", hits)
 	}
 }
+
+// A folder version's manifest carries the bytes of every skill file its rules and stations name (skill-file:<name>), as a flat v1's did: a
+// change to a fleet-level skill moves the version's hash and the freeze names the file.
+func TestAFolderVersionsManifestCoversItsSkillFiles(t *testing.T) {
+	v := strings.Replace(stationsGood, "    prompts: {task: task.md}\n    tools: all\n    tool_names: [probe]\n    gates: []\n",
+		"    prompts: {task: task.md}\n    tools: all\n    tool_names: [probe]\n    gates: []\n    skills: [hint-a]\n", 1) +
+		"skills:\n  rule:\n    - when: {class: x}\n      load: [hint-b]\n"
+	d := stationsTree(t, v)
+	skill := func(name, body string) {
+		write(t, d, "triage/skills/"+name+"/SKILL.md", "---\nname: "+name+"\ndescription: d\n---\n"+body+"\n")
+	}
+	skill("hint-a", "one")
+	skill("hint-b", "two")
+	load := func() *Version {
+		rs, err := Load(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rs[0].Versions[0]
+	}
+	before := load()
+	for _, k := range []string{"skill-file:hint-a", "skill-file:hint-b"} {
+		if len(before.Manifest[k]) != 64 {
+			t.Fatalf("manifest lacks %s: %v", k, before.Manifest)
+		}
+	}
+	skill("hint-a", "one, edited")
+	after := load()
+	if after.Hash == before.Hash || strings.Join(ChangedFiles(before.Manifest, after.Manifest), ",") != "skill-file:hint-a (changed)" {
+		t.Fatalf("hash %v, changed %v", after.Hash != before.Hash, ChangedFiles(before.Manifest, after.Manifest))
+	}
+}

@@ -15,6 +15,9 @@ autonomy: record
 budget:
   day_usd: 1.0
 freshness: 35m
+# What a shadow version starts from: the live worker snapshots these paths (under its HOME) when a live run starts. They are
+# the cycle's own state: the dispositions ledger, the deferral counts, the GlitchTip marks and the captures.
+state: [signal-fleet/results]
 chain:
   - routine: bugfix/intake
     via: a GitHub issue labelled bug, routed to bugfix

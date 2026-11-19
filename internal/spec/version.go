@@ -347,6 +347,11 @@ func loadVersionDir(base *Routine, routineRaw []byte, vdir string, n int) (*Vers
 	if v.Manifest, err = manifestOf(vdir); err != nil {
 		return fail(err)
 	}
+	// The skills a version may load are files of the fleet's skills/ folder, outside v<n>/: their bytes go into the manifest as a flat v1's
+	// did (skill-file:<name>), so a change to one fails the freeze of the live version that uses it.
+	for _, name := range folderSkillNames(&vf) {
+		v.Manifest["skill-file:"+name] = skillFileSHA(filepath.Dir(filepath.Dir(filepath.Dir(vdir))), base.Fleet, name)
+	}
 	v.Hash = manifestHash(v.Manifest)
 	a.Run, a.Explain, a.Steps, a.Skills, a.Harness, a.Models = vf.Run, vf.Explain, vf.Steps, vf.Skills, vf.Harness, vf.Models
 	// A prompt path is written relative to v<n>/ and kept relative to the fleet's folder, where
@@ -406,4 +411,22 @@ func manifestOf(dir string) (map[string]string, error) {
 		return nil
 	})
 	return m, err
+}
+
+// folderSkillNames are the skills a version names: its rules' and its stations', each once, sorted.
+func folderSkillNames(vf *versionFile) []string {
+	seen := map[string]bool{}
+	for _, r := range vf.Skills.Rule {
+		for _, n := range r.Load {
+			seen[n] = true
+		}
+	}
+	for _, st := range vf.Stations {
+		if st != nil {
+			for _, n := range st.Skills {
+				seen[n] = true
+			}
+		}
+	}
+	return sortedNames(seen)
 }

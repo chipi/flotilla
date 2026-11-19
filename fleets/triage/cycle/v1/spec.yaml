@@ -65,6 +65,25 @@ explain:
   models: >-
     The alias of the decide station: the only model the run can call, through the installation's model
     gateway.
+  station.decide: >-
+    A model reads the signal and its hint and answers in JSON: a decision (file, escalate, dismiss or cleanup) with its reason, or a
+    request for one probe. At most 4 turns, one probe a turn; the 4th must decide, or one more call asks only for the decision, and
+    without one the signal is escalated. Six read-only probes (event detail, history, logs, a metric, a trace, the source on main);
+    a redact_credentials hook records secrets in probe results.
+  prompts: >-
+    The system text the station starts from: the triage playbook with its probe count and probe menu filled in. A file of this
+    version; the run refuses one that is not the file flotillad hashed, and records which one it loaded.
+  gate.intent: >-
+    A file decision needs acceptance criteria, each citing an allowed source of intent (the issue, a doc, a test). Without them the
+    decision is downgraded.
+  gate.cleanup: >-
+    A cleanup (resolving the error) is allowed only for a signal marked test or dev; anything else is escalated to you.
+  gate.dismiss_corroborated: >-
+    A dismiss must cite corroborating evidence from a probe. Without it the dismiss becomes an escalation: the model cannot quietly
+    drop a signal.
+  gate.edge: >-
+    An edge 5xx burst that coincided with a container start or an out-of-memory kill cannot be dismissed: probes taken after the
+    restart look healthy because the container is back.
 steps:
   - id: sources
     lane: where
@@ -92,51 +111,6 @@ steps:
     explain: >-
       Issues never decided go first, oldest first seen first, then the re-triages that are due. At most
       10 a cycle; the rest wait for the next one.
-  - id: decide
-    lane: agent
-    who: agent
-    title: the decide station
-    short: reads the signal and its hint, probes, decides
-    count: probes
-    explain: >-
-      A model reads the signal and its hint and answers in JSON: a decision (file, escalate, dismiss or
-      cleanup) with its reason and certainty, or a request for one probe. At most 4 turns and one probe a
-      turn; the 4th must decide, or one more call asks only for the decision, and without one the signal is
-      escalated. Six read-only probes: the error's event detail, how often it occurred, the service's logs, a metric,
-      a trace, and the source code's state on main. A redact_credentials hook records where a probe result holds a
-      key, token or password (observe: it changes nothing yet).
-  - id: intent_gate
-    lane: gates
-    who: code
-    title: intent gate
-    short: a file decision cites its intent
-    explain: >-
-      A file decision needs acceptance criteria, each citing an allowed source of intent (the issue, a doc,
-      a test). Without them the decision is downgraded.
-  - id: cleanup_gate
-    lane: gates
-    who: code
-    title: cleanup gate
-    short: only a marked test or dev signal
-    explain: >-
-      A cleanup (resolving the error) is allowed only for a signal marked test or dev; anything else is
-      escalated to you.
-  - id: dismiss_gate
-    lane: gates
-    who: code
-    title: dismiss gate
-    short: a dismiss cites corroborating evidence
-    explain: >-
-      A dismiss must cite corroborating evidence from a probe. Without it the dismiss becomes an
-      escalation: the model cannot quietly drop a signal.
-  - id: edge_gate
-    lane: gates
-    who: code
-    title: edge gate
-    short: no dismiss of a burst near a restart
-    explain: >-
-      An edge 5xx burst that coincided with a container start or an out-of-memory kill cannot be
-      dismissed: probes taken after the restart look healthy because the container is back.
   - id: file
     lane: outcome
     who: code

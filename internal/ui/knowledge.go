@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -88,9 +89,33 @@ func (u *Server) sources() []sourceRow {
 			}
 		}
 	}
+	// the texts a routine's versions carry in their own folders (fleets/<fleet>/<routine>/v<n>/*.md): the bugfix rules, triage's system text
+	for _, f := range fleets {
+		if !f.IsDir() {
+			continue
+		}
+		routines, _ := os.ReadDir(filepath.Join(u.SpecsDir, f.Name()))
+		for _, r := range routines {
+			vs, _ := os.ReadDir(filepath.Join(u.SpecsDir, f.Name(), r.Name()))
+			for _, v := range vs {
+				if !r.IsDir() || !v.IsDir() || !versionDirName.MatchString(v.Name()) {
+					continue
+				}
+				files, _ := os.ReadDir(filepath.Join(u.SpecsDir, f.Name(), r.Name(), v.Name()))
+				for _, e := range files {
+					if ext := filepath.Ext(e.Name()); !e.IsDir() && (ext == ".md" || ext == ".txt") {
+						out = append(out, sourceRow{Fleet: title(f.Name()), Source: filepath.ToSlash(filepath.Join("fleets", f.Name(), r.Name(), v.Name(), e.Name())),
+							Kind: "text of " + r.Name() + " " + v.Name(), Version: u.API.Version})
+					}
+				}
+			}
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Source < out[j].Source })
 	return out
 }
+
+var versionDirName = regexp.MustCompile(`^v[1-9][0-9]*$`)
 
 // noteAction activates or drops a note.
 func (u *Server) noteAction(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {

@@ -69,6 +69,21 @@ func (j *Routine) ExplainKeys() []string {
 			keys = append(keys, "gate."+g)
 		}
 	}
+	// a station version: a text per station, per gate its stations run (each once) and for the texts its stations read
+	seen := map[string]bool{}
+	for _, n := range j.StationNames() {
+		keys = append(keys, "station."+n)
+		if g := j.Stations[n].Gates; g != nil {
+			for _, name := range *g {
+				if !seen[name] {
+					seen[name], keys = true, append(keys, "gate."+name)
+				}
+			}
+		}
+	}
+	if len(j.StationText) > 0 && len(j.Prompts) == 0 {
+		keys = append(keys, "prompts")
+	}
 	for _, s := range j.Steps {
 		keys = append(keys, s.ID)
 	}
@@ -111,7 +126,7 @@ func (j *Routine) validateExplain(bad func(string, ...any)) {
 		if s.Count != "" && !countRe.MatchString(s.Count) {
 			bad("steps[%s].count %q: runs, recurrences, decided, probes, disposition:<name> or gate:<name>", s.ID, s.Count)
 		}
-		if strings.HasPrefix(s.Count, "gate:") && (j.Harness == nil || !in(j.Harness.Gates, strings.TrimPrefix(s.Count, "gate:"))) {
+		if strings.HasPrefix(s.Count, "gate:") && !in(j.GateNames(), strings.TrimPrefix(s.Count, "gate:")) {
 			bad("steps[%s].count %q: not one of the harness's gates", s.ID, s.Count)
 		}
 	}
@@ -158,4 +173,22 @@ func checkChains(routines []*Routine) []error {
 		}
 	}
 	return errs
+}
+
+// GateNames are the gates the version runs: its harness block's, or its stations' (each once, station order).
+func (j *Routine) GateNames() []string {
+	var out []string
+	if j.Harness != nil {
+		out = append(out, j.Harness.Gates...)
+	}
+	for _, n := range j.StationNames() {
+		if g := j.Stations[n].Gates; g != nil {
+			for _, name := range *g {
+				if !in(out, name) {
+					out = append(out, name)
+				}
+			}
+		}
+	}
+	return out
 }

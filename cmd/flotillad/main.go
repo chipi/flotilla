@@ -755,19 +755,7 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 			watchHosts(ctx, st, hostWatch, s.Clock(), log)
 		}
 		push.Up()
-		for _, j := range s.Routines() {
-			if !j.Enabled {
-				continue
-			}
-			// a routine on cases has no freshness; a STOPped or paused one is not stale, it is held: no freshness
-			// pushed, so the stale alert (which needs it) stays quiet for it and a real stale routine stands out
-			if held, err := s.Held(ctx, j); j.Fresh > 0 && err == nil && !held {
-				push.Freshness(j.ID(), j.Fresh)
-			}
-			if at, err := st.LastSuccess(ctx, j.ID()); err == nil {
-				push.LastSuccess(j.ID(), at)
-			}
-		}
+		pushRoutineMetrics(ctx, push, s, st)
 		if err := casetimer.Run(ctx, st, s.Clock(), timers, log, s.CaseHold); err != nil {
 			log.Error("case timers", "err", err)
 		}
@@ -776,6 +764,24 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+	}
+}
+
+// pushRoutineMetrics pushes each enabled routine's freshness and last success: the routines the scheduler holds, and nothing else (the
+// examples catalogue is not the scheduler's, so an example never has a series).
+func pushRoutineMetrics(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store) {
+	for _, j := range s.Routines() {
+		if !j.Enabled {
+			continue
+		}
+		// a routine on cases has no freshness; a STOPped or paused one is not stale, it is held: no freshness
+		// pushed, so the stale alert (which needs it) stays quiet for it and a real stale routine stands out
+		if held, err := s.Held(ctx, j); j.Fresh > 0 && err == nil && !held {
+			push.Freshness(j.ID(), j.Fresh)
+		}
+		if at, err := st.LastSuccess(ctx, j.ID()); err == nil {
+			push.LastSuccess(j.ID(), at)
 		}
 	}
 }
