@@ -234,7 +234,9 @@ class Client:
             # LiteLLM's Langfuse logger adds its generation to the run's trace
             meta = {"existing_trace_id": trace_id, "generation_name": generation_name} if trace_id else {}
             if shadow:
-                # a shadow run's generations are tagged, so Langfuse views and the installation's trace readers can leave them out
+                # a shadow run's generations are tagged, so Langfuse views and the installation's trace readers can leave them out.
+                # LiteLLM only (this branch): Langfuse is LiteLLM's logger, so an endpoint that does not go through LiteLLM has no
+                # generation to tag, and a direct endpoint keeps its request without metadata
                 meta["tags"] = ["shadow"] + [f"routine_version:{v}"
                                              for v in [self.environ.get("FLOTILLA_ROUTINE_VERSION", "")] if v.isdigit()]
                 if generation_name and not trace_id:

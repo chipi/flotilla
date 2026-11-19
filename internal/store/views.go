@@ -86,6 +86,7 @@ func (s *Store) RunsPage(ctx context.Context, q RunQuery) ([]Run, int, error) {
 		args = append(args, like, like, like, like)
 	}
 	var total int
+	// shadow-ok: where starts with liveRuns unless q.IncludeShadow
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs`+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
@@ -101,6 +102,7 @@ func (s *Store) RunsPage(ctx context.Context, q RunQuery) ([]Run, int, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	// shadow-ok: where starts with liveRuns unless q.IncludeShadow
 	rows, err := s.db.QueryContext(ctx, `SELECT `+runCols+` FROM runs`+where+` ORDER BY `+col+dir+`, started_at DESC LIMIT ? OFFSET ?`,
 		append(args, limit, q.Offset)...)
 	if err != nil {

@@ -695,6 +695,18 @@ class TestShadowRun(unittest.TestCase):
         self.assertEqual(res["status"], "ok", res)
         self.assertIn("shadow=1 stage=shadow", res["output_tail"])
 
+    def test_a_shadow_is_started_by_nice_not_by_a_preexec_callback(self):
+        import inspect
+        src = inspect.getsource(fw._run_job)
+        self.assertNotIn("preexec_fn=", src, "a Python callback between fork and exec in a threaded server can deadlock the child")
+        self.assertIn('"-n", str(SHADOW_NICE)', src)
+
+    def test_a_worker_without_nice_refuses_a_shadow_run_before_it_starts(self):
+        env = dict(self.environ, PATH=tempfile.mkdtemp())   # an empty directory: no nice
+        with self.assertRaises(fw.Refused) as cm:
+            fw.prepare_env(self.req("true"), env)
+        self.assertIn("nice", str(cm.exception))
+
     def test_it_runs_at_a_lower_priority_than_a_live_run(self):
         cmd = 'python3 -c "import os; print(\'nice=%d\' % os.nice(0))"'
         shadow = fw.run_job(self.req(cmd), self.environ)
@@ -957,6 +969,7 @@ class TestSnapshotHTTP(unittest.TestCase):
         with mode("shadow"):
             self.assertEqual(self.call("POST", "/v1/snapshots", {"run_id": "x", "paths": ["state"]})[0], 409)
             self.assertEqual(self.call("POST", "/v1/snapshots/x/delete", {})[0], 409)
+            self.assertEqual(self.call("GET", "/v1/snapshots/x")[0], 409, "a shadow worker exports none either")
             code, body, _ = self.call("GET", "/healthz")
             self.assertEqual((code, body["mode"]), (200, "shadow"))
         code, body, _ = self.call("GET", "/healthz")

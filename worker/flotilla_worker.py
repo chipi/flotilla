@@ -64,7 +64,7 @@ MODE_LIVE, MODE_SHADOW = "live", "shadow"
 SNAPSHOT_DIR = os.environ.get("FLOTILLA_SNAPSHOT_DIR", "/snapshots")
 SNAPSHOT_MAX_BYTES = int(os.environ.get("FLOTILLA_SNAPSHOT_MAX_BYTES", 256 << 20))
 SNAPSHOT_MAX_FILES = int(os.environ.get("FLOTILLA_SNAPSHOT_MAX_FILES", 50000))
-SHADOW_NICE = 10   # a shadow run's priority: below the live run's, so it cannot slow it
+SHADOW_NICE = 10   # a shadow run's priority (`nice -n`): below the live run's, so it cannot slow it
 
 _running = {}
 _cancels = {}   # run id -> the Event a cancel sets; present from the run's acceptance to its answer
@@ -456,7 +456,9 @@ TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 
 
 def token_path(env, run_id):
-    """Where a run's own token file is: its temp directory (the calls file's), one per run."""
+    """Where a run's own token file is: its temp directory (the calls file's), one per run. The file is mode 0600 but the same uid
+    as every routine on this worker: another routine running at the same time can read it, as it can read the worker's own
+    secrets. That is why the token is the run's (it names the run's routine and version, and ends with the run) and not a master."""
     safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)[:120]
     return os.path.join(env.get("TMPDIR") or tempfile.gettempdir(), f".flotilla-token-{safe}")
 
@@ -482,6 +484,8 @@ def prepare_env(req, environ=None):
     if req.get("shadow"):
         check_no_write_credential(env, environ)
         env["FLOTILLA_SHADOW"], env["FLEETD_STAGE"] = "1", "shadow"
+        if not shutil.which("nice", path=env.get("PATH")):
+            raise Refused("nice is not on this worker's PATH: a shadow runs at a lower priority than the live run, or not at all")
         if req.get("state"):
             sid = req.get("snapshot_of")
             if not sid:
@@ -538,9 +542,11 @@ def _run_job(req, env, cancel, shadow=False):
     start = time.monotonic()
     # so a run that gets SIGTERM can tell its own timeout (kill at the deadline) from a cancel or a restart
     env["FLOTILLA_RUN_DEADLINE"] = repr(time.time() + timeout)
-    proc = subprocess.Popen(["sh", "-c", req["command"]], cwd=workdir, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, start_new_session=True,
-                            preexec_fn=(lambda: os.nice(SHADOW_NICE)) if shadow else None)
+    argv = ["sh", "-c", req["command"]]
+    if shadow:
+        # `nice` as a prefix, not a preexec_fn: a Python callback between fork and exec in a threaded server can deadlock the child
+        argv = [shutil.which("nice", path=env.get("PATH")) or "nice", "-n", str(SHADOW_NICE)] + argv
+    proc = subprocess.Popen(argv, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     chunks = []
 
     def pump():
@@ -638,6 +644,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, {"ok": True, "worker": WORKER, "version": VERSION, "running": running, "mode": worker_mode()})
 
     def _snapshot_get(self, run_id):
+        if worker_mode() != MODE_LIVE:
+            return self._send(409, {"error": "a shadow worker keeps no snapshots"})
         try:
             f = tar_snapshot(run_id) if run_id and "/" not in run_id else None
         except ValueError as e:

@@ -797,6 +797,7 @@ func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
 // Runs lists the newest runs, of one routine ("" for all). Live runs only: a shadow's runs are read by naming its
 // key ("<fleet>/<routine>@v<n>"), never by a live routine's.
 func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, error) {
+	// shadow-ok: liveRuns is added below unless the routine named is a shadow's key
 	q := `SELECT ` + runCols + ` FROM runs WHERE 1 = 1`
 	var args []any
 	if routine != "" {

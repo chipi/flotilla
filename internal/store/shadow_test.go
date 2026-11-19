@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -540,29 +544,61 @@ func TestShadowRowsStayOutOfLiveReaders(t *testing.T) {
 	}
 }
 
-// The reader guard: a function that reads runs, run_calls or spend must say what it does with shadow rows, so the next reader
-// written cannot leak them silently.
+// The reader guard: every statement that reads runs, run_calls or spend must say what it does with shadow rows, so the next reader
+// written cannot leak them silently. Per statement, not per function: a function with one guarded query and one unguarded one is
+// caught. A statement says it by naming liveRuns, liveCalls, `shadow = 0` or IncludeShadow in its own text, or by a
+// `// shadow-ok: why` comment on it or on the three lines above it.
 var shadowRead = regexp.MustCompile("(?i)\\b(?:FROM|JOIN)\\s+(runs|run_calls|spend)\\b")
 var shadowSaid = regexp.MustCompile(`liveRuns|liveCalls|shadow = 0|IncludeShadow|shadow-ok:`)
 
-// unguardedReaders returns "file:Func table" for each top-level declaration in src that reads a shadow-bearing table without
-// saying what it does with shadow rows.
+// unguardedReaders returns "file:line: the statement reads <table>" for each statement of src that reads a shadow-bearing table
+// without saying what it does with shadow rows.
 func unguardedReaders(file, src string) []string {
-	var out []string
-	decls := regexp.MustCompile(`(?m)^(func|const|var|type) `).FindAllStringIndex(src, -1)
-	for i, d := range decls {
-		end := len(src)
-		if i+1 < len(decls) {
-			end = decls[i+1][0]
-		}
-		body := src[d[0]:end]
-		m := shadowRead.FindStringSubmatch(body)
-		if m == nil || shadowSaid.MatchString(body) {
-			continue
-		}
-		head := strings.SplitN(body, "\n", 2)[0]
-		out = append(out, file+": "+strings.TrimSpace(head)+" reads "+m[1])
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, file, src, parser.ParseComments)
+	if err != nil {
+		return []string{file + ": does not parse: " + err.Error()}
 	}
+	var out []string
+	var stack []ast.Node
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
+		lit, ok := n.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		m := shadowRead.FindStringSubmatch(lit.Value)
+		if m == nil {
+			return true
+		}
+		var stmt ast.Node
+		for i := len(stack) - 2; i >= 0 && stmt == nil; i-- {
+			switch stack[i].(type) {
+			case ast.Stmt, *ast.GenDecl:
+				stmt = stack[i]
+			}
+		}
+		if stmt == nil {
+			out = append(out, fmt.Sprintf("%s: a literal reads %s outside any statement", file, m[1]))
+			return true
+		}
+		text := src[fset.Position(stmt.Pos()).Offset:fset.Position(stmt.End()).Offset]
+		line := fset.Position(stmt.Pos()).Line
+		said := shadowSaid.MatchString(text)
+		for _, c := range f.Comments {
+			if cl := fset.Position(c.End()).Line; cl >= line-3 && cl <= fset.Position(stmt.End()).Line && strings.Contains(c.Text(), "shadow-ok:") {
+				said = true
+			}
+		}
+		if !said {
+			out = append(out, fmt.Sprintf("%s:%d: the statement reads %s", file, fset.Position(lit.Pos()).Line, m[1]))
+		}
+		return true
+	})
 	return out
 }
 
@@ -585,10 +621,10 @@ func TestEveryReaderSaysWhatItDoesWithShadows(t *testing.T) {
 	}
 }
 
-// The guard itself is checked against a reader that leaks, and one that says what it does.
+// The guard itself is checked against a reader that leaks, one that is half guarded, and ones that say what they do.
 func TestTheReaderGuardCatchesALeak(t *testing.T) {
 	leak := "package x\n\nfunc (s *Store) Bad(ctx context.Context) {\n\ts.db.Query(`SELECT id FROM runs WHERE status = 'ok'`)\n}\n"
-	if got := unguardedReaders("x.go", leak); len(got) != 1 || !strings.Contains(got[0], "Bad") || !strings.Contains(got[0], "runs") {
+	if got := unguardedReaders("x.go", leak); len(got) != 1 || !strings.Contains(got[0], "runs") {
 		t.Fatalf("a reader of runs with no shadow filter: %v", got)
 	}
 	leakCalls := "package x\n\nfunc Bad2() {\n\tq := `SELECT a FROM run_calls`\n}\n"
@@ -599,12 +635,28 @@ func TestTheReaderGuardCatchesALeak(t *testing.T) {
 	if got := unguardedReaders("x.go", leakJoin); len(got) != 1 {
 		t.Fatalf("a join of runs: %v", got)
 	}
+	// one statement guarded does not cover the next: this is the leak the guard used to miss
+	half := "package x\n\nfunc Half() {\n\tq := `SELECT id FROM runs WHERE ` + liveRuns\n\tr := `SELECT id FROM runs WHERE id = ?`\n\t_, _ = q, r\n}\n"
+	if got := unguardedReaders("x.go", half); len(got) != 1 || !strings.Contains(got[0], ":5:") {
+		t.Fatalf("a function with a guarded and an unguarded read of runs: %v", got)
+	}
+	halfFlag := "package x\n\nfunc HalfFlag(q RunQuery) {\n\t_ = q.IncludeShadow\n\tx := `FROM runs`\n}\n"
+	if got := unguardedReaders("x.go", halfFlag); len(got) != 1 {
+		t.Fatalf("a mention of IncludeShadow elsewhere does not guard a statement: %v", got)
+	}
+	// a comment covers the statement under it only
+	commentFar := "package x\n\nfunc Far() {\n\t// shadow-ok: by id\n\tq := `SELECT id FROM runs WHERE id = ?`\n\t_ = q\n\n\n\n\n\tr := `SELECT id FROM run_calls`\n\t_ = r\n}\n"
+	if got := unguardedReaders("x.go", commentFar); len(got) != 1 || !strings.Contains(got[0], "run_calls") {
+		t.Fatalf("a comment far above does not cover a later statement: %v", got)
+	}
 	for _, ok := range []string{
 		"func A() {\n\tq := `SELECT id FROM runs WHERE ` + liveRuns\n}\n",
 		"func B() {\n\t// shadow-ok: by id\n\tq := `SELECT id FROM runs WHERE id = ?`\n}\n",
 		"func C() {\n\tq := `SELECT a FROM run_calls WHERE ` + liveCalls\n}\n",
-		"func D(q RunQuery) {\n\t_ = q.IncludeShadow\n\tx := `FROM runs`\n}\n",
+		"func D(q RunQuery) {\n\tx := `FROM runs WHERE ` + liveRuns + IncludeShadow\n}\n",
 		"func E() {\n\tx := `SELECT 1 FROM plans`\n}\n",
+		"const c = `SELECT 1 FROM runs` // shadow-ok: by id\n",
+		"func F() {\n\tif err := db.QueryRow(`SELECT 1 FROM spend WHERE x = ?`, 1); err != nil { // shadow-ok: keyed by subject\n\t}\n}\n",
 	} {
 		if got := unguardedReaders("x.go", "package x\n\n"+ok); len(got) != 0 {
 			t.Errorf("%q: %v", ok, got)
