@@ -175,11 +175,13 @@ SUBSTRATE_GLITCHTIP_PROJECTS = {"flotilla"}
 
 
 def _left_out(slug):
-    """Substrate, or a dev project (<name>-dev). A dev build runs a branch's unmerged code: its errors belong to
-    whoever works on that branch, never to triage, and never become a GitHub issue (operator 2026-11-16). Both
-    wrong plans of bugfix phase A (#651, #659) came from triage filing shop-dev errors as bugs on main."""
+    """Substrate, a dev project (<name>-dev), or a shadow project (<name>-shadow). A dev build runs a branch's unmerged
+    code: its errors belong to whoever works on that branch, never to triage, and never become a GitHub issue (operator
+    2026-11-16). Both wrong plans of bugfix phase A (#651, #659) came from triage filing shop-dev errors as bugs on main.
+    A shadow project holds the errors of shadow runs (flotillad's errors_shadow_dsn_file): a candidate version's errors
+    are never a live signal."""
     slug = str(slug or "")
-    return slug in SUBSTRATE_GLITCHTIP_PROJECTS or slug.lower().endswith("-dev")
+    return slug in SUBSTRATE_GLITCHTIP_PROJECTS or slug.lower().endswith(("-dev", "-shadow"))
 
 
 def _issue_query(limit):

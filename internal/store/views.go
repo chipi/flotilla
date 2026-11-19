@@ -9,7 +9,7 @@ import (
 
 // The UI's read queries (ADR-0014): one page of a table at a time, and the counts its summaries need.
 
-const runCols = `id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version`
+const runCols = `id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version, shadow, input_key`
 
 func scanRuns(rows *sql.Rows) ([]Run, error) {
 	defer rows.Close()
@@ -17,7 +17,7 @@ func scanRuns(rows *sql.Rows) ([]Run, error) {
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
-			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version); err != nil {
+			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version, &r.Shadow, &r.InputKey); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -28,17 +28,20 @@ func scanRuns(rows *sql.Rows) ([]Run, error) {
 // RunQuery is one page of the runs table. Sort is a column name from runSorts; Problems keeps runs
 // that did not end ok (skipped runs too: a skipped run did not do its work).
 type RunQuery struct {
-	Routine  string
-	Fleet    string
-	Status   string
-	Problems bool
-	Spend    bool // with model spend
-	Since    string
-	Q        string
-	Sort     string
-	Desc     bool
-	Offset   int
-	Limit    int
+	// IncludeShadow adds shadow runs (routine "<fleet>/<routine>@v<n>") to the page; without it a page is live runs only,
+	// so a shadow never shows in a fleet's counts, the failures list or a live routine's history.
+	IncludeShadow bool
+	Routine       string
+	Fleet         string
+	Status        string
+	Problems      bool
+	Spend         bool // with model spend
+	Since         string
+	Q             string
+	Sort          string
+	Desc          bool
+	Offset        int
+	Limit         int
 }
 
 var runSorts = map[string]string{"run": "id", "routine": "routine", "trigger": "trigger", "started": "started_at",
@@ -51,6 +54,9 @@ func RunSorts(col string) bool { _, ok := runSorts[col]; return ok }
 func (s *Store) RunsPage(ctx context.Context, q RunQuery) ([]Run, int, error) {
 	where := ` WHERE 1 = 1`
 	var args []any
+	if !q.IncludeShadow {
+		where += ` AND ` + liveRuns
+	}
 	if q.Routine != "" {
 		where += ` AND routine = ?`
 		args = append(args, q.Routine)
@@ -122,7 +128,7 @@ type RoutineDay struct {
 func (s *Store) RunDays(ctx context.Context, since string) ([]RoutineDay, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT routine, substr(started_at, 1, 10), COUNT(*),
 		SUM(CASE WHEN status IN (?, ?, ?) THEN 1 ELSE 0 END), COALESCE(SUM(spend_usd), 0), MAX(started_at)
-		FROM runs WHERE started_at >= ? GROUP BY routine, substr(started_at, 1, 10) ORDER BY 2`,
+		FROM runs WHERE started_at >= ? AND `+liveRuns+` GROUP BY routine, substr(started_at, 1, 10) ORDER BY 2`,
 		StatusError, StatusTimeout, StatusInterrupted, since)
 	if err != nil {
 		return nil, err

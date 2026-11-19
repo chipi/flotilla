@@ -742,7 +742,7 @@ func TestReadVersionsBeforeEvidenceColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`ALTER TABLE routine_versions DROP COLUMN promote_evidence; DELETE FROM schema_version WHERE n = 29`); err != nil {
+	if _, err := db.Exec(`ALTER TABLE routine_versions DROP COLUMN promote_evidence; DELETE FROM schema_version WHERE n >= 29`); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
@@ -990,11 +990,8 @@ func makeSchemaUpTo(t *testing.T, path string, n int) {
 }
 
 // Step 29 on its own: a store at schema 28 with recorded versions gains promote_evidence, empty on the rows it had,
-// and every row is as it was.
+// and every row is as it was (the later steps run too, and the final schema is the newest).
 func TestMigrateStep29Alone(t *testing.T) {
-	if len(schema) != EvidenceSchema {
-		t.Skipf("the newest step is %d, this test is for step %d being the last", len(schema), EvidenceSchema)
-	}
 	p := filepath.Join(t.TempDir(), "s28.db")
 	makeSchemaUpTo(t, p, EvidenceSchema-1)
 	db, err := sql.Open("sqlite", p)
@@ -1022,7 +1019,7 @@ func TestMigrateStep29Alone(t *testing.T) {
 		t.Fatalf("rows after: %+v %v", vs, err)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT MAX(n) FROM schema_version`).Scan(&n); err != nil || n != EvidenceSchema {
+	if err := s.db.QueryRow(`SELECT MAX(n) FROM schema_version`).Scan(&n); err != nil || n != len(schema) {
 		t.Fatalf("schema %d %v", n, err)
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM routine_versions WHERE promote_evidence = ''`).Scan(&n); err != nil || n != 2 {

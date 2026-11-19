@@ -2406,6 +2406,21 @@ class TestSubstrateGlitchTipProjects(unittest.TestCase):
                              {"id": 14, "slug": "site-b-web"}])
         self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6&project=9&project=14")
 
+    def test_shadow_projects_left_out_of_the_query(self):
+        _, seen = self._run([{"id": 6, "slug": "shop"}, {"id": 31, "slug": "shop-shadow"},
+                             {"id": 9, "slug": "api-pipeline"}, {"id": 13, "slug": "Api-Pipeline-SHADOW"},
+                             {"id": 14, "slug": "site-b-web"}])
+        self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6&project=9&project=14")
+
+    def test_a_slug_that_only_contains_shadow_is_still_polled(self):
+        _, seen = self._run([{"id": 6, "slug": "shop"}, {"id": 15, "slug": "shadowfax"}, {"id": 16, "slug": "shadow-box"}])
+        self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen")
+
+    def test_dev_and_shadow_and_substrate_together(self):
+        _, seen = self._run([{"id": 6, "slug": "shop"}, {"id": 30, "slug": "shop-dev"}, {"id": 31, "slug": "shop-shadow"},
+                             {"id": 40, "slug": "flotilla"}])
+        self.assertEqual(seen[-1], "/organizations/example/issues/?limit=10&sort=-last_seen&project=6")
+
     def test_project_list_error_is_loud(self):
         with self.assertRaises(RuntimeError):
             self._run({"detail": "Permission denied"})

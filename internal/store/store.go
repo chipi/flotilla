@@ -416,6 +416,64 @@ var schema = []string{
 	UPDATE hosts SET ceiling = 'record' WHERE ceiling = 'shadow';`,
 	// What a promote recorded (v2 step 1): the acceptance in force and the evidence given, as JSON, on the version it made live.
 	`ALTER TABLE routine_versions ADD COLUMN promote_evidence TEXT NOT NULL DEFAULT '';`,
+	// Shadows with no effect (v2 step 2). A run says whether it is a shadow and which live run's input it was given; the
+	// frozen input of a live run is kept under the live run's id (what flotillad handed it, the ledger's high-water mark,
+	// the live case keys, the commit, the state snapshot). All additive: runs gains two columns with constant defaults.
+	`ALTER TABLE runs ADD COLUMN shadow INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE runs ADD COLUMN input_key TEXT NOT NULL DEFAULT '';
+	CREATE INDEX runs_routine_shadow ON runs(routine, shadow);
+	CREATE TABLE run_inputs (
+		input_key TEXT PRIMARY KEY,
+		routine TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		trigger TEXT NOT NULL,
+		actor TEXT NOT NULL,
+		started_at TEXT NOT NULL,
+		handed TEXT NOT NULL DEFAULT '{}',
+		ledger_mark_filings INTEGER NOT NULL DEFAULT 0,
+		ledger_mark_entries INTEGER NOT NULL DEFAULT 0,
+		live_case_keys TEXT NOT NULL DEFAULT '[]',
+		commit_repo TEXT NOT NULL DEFAULT '',
+		commit_sha TEXT NOT NULL DEFAULT '',
+		snapshot_paths TEXT NOT NULL DEFAULT '[]',
+		snapshot_state TEXT NOT NULL DEFAULT 'none' CHECK (snapshot_state IN ('none', 'held', 'deleted')),
+		pinned INTEGER NOT NULL DEFAULT 0,
+		schema_version INTEGER NOT NULL DEFAULT 1
+	);
+	CREATE INDEX run_inputs_routine ON run_inputs(routine, started_at);`,
+	// What a shadow did, kept apart from everything a live run writes: the queue of shadow runs (one per input and
+	// version, with why one did not run) and the records of what a shadow would have written, each with its pairing key.
+	`CREATE TABLE shadow_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		input_key TEXT NOT NULL,
+		routine TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		version_hash TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'not_run', 'cancelled')),
+		reason TEXT NOT NULL DEFAULT '',
+		run_id TEXT NOT NULL DEFAULT '',
+		queued_at TEXT NOT NULL,
+		started_at TEXT NOT NULL DEFAULT '',
+		live_started_at TEXT NOT NULL DEFAULT '',
+		ended_at TEXT NOT NULL DEFAULT '',
+		UNIQUE (input_key, routine, version)
+	);
+	CREATE INDEX shadow_runs_status ON shadow_runs(status, queued_at);
+	CREATE TABLE shadow_records (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id TEXT NOT NULL,
+		routine TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		version_hash TEXT NOT NULL DEFAULT '',
+		input_key TEXT NOT NULL,
+		subject TEXT NOT NULL DEFAULT '',
+		kind TEXT NOT NULL,
+		payload TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL
+	);
+	CREATE INDEX shadow_records_input ON shadow_records(input_key, subject);
+	CREATE INDEX shadow_records_routine ON shadow_records(routine, version);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run
@@ -451,6 +509,10 @@ type Run struct {
 	TraceID   string   `json:"trace_id"`
 	Detail    string   `json:"detail"`
 	Version   int      `json:"version"` // the routine's version that made the run (1 when not set)
+	// A shadow run (v2 step 2): Routine is "<fleet>/<routine>@v<n>", Shadow is true, and InputKey is the live run whose
+	// input it was given. A live run has InputKey "" (it is its own input's key).
+	Shadow   bool   `json:"shadow,omitempty"`
+	InputKey string `json:"input_key,omitempty"`
 }
 
 type Event struct {
@@ -667,14 +729,15 @@ func (s *Store) Controls(ctx context.Context) ([]Control, error) {
 }
 
 func (s *Store) StartRun(ctx context.Context, r Run) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, status, trace_id, detail, version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.StartedAt, r.Status, r.TraceID, r.Detail, versionOrOne(r.Version))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, status, trace_id, detail, version, shadow, input_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, r.StartedAt, r.Status, r.TraceID, r.Detail, versionOrOne(r.Version), r.Shadow, r.InputKey)
 	return err
 }
 
 // FinishRun closes a running run. A run already closed is left alone and reported.
 func (s *Store) FinishRun(ctx context.Context, id, status string, exitCode *int, spend, durationS float64, detail string) error {
+	// shadow-ok: by run id; a shadow run ends the same way
 	res, err := s.db.ExecContext(ctx, `UPDATE runs SET ended_at = ?, status = ?, exit_code = ?, spend_usd = ?, duration_s = ?, detail = ?
 		WHERE id = ? AND status = ?`,
 		s.now().Format(ts), status, exitCode, spend, durationS, detail, id, StatusRunning)
@@ -691,9 +754,9 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, exitCode *int,
 func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 	now := s.now().Format(ts)
 	r.StartedAt, r.Status = now, StatusSkipped
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, trace_id, detail, version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, now, now, r.Status, r.TraceID, r.Detail, versionOrOne(r.Version))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, trace_id, detail, version, shadow, input_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Routine, r.SpecHash, r.Trigger, r.Actor, r.Autonomy, now, now, r.Status, r.TraceID, r.Detail, versionOrOne(r.Version), r.Shadow, r.InputKey)
 	return err
 }
 
@@ -701,8 +764,9 @@ func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 type RunRef struct{ ID, Routine, StartedAt string }
 
 // RunningRuns lists the runs recorded as running: at flotillad's start, the ones the previous flotillad
-// left in flight, read before MarkInterrupted closes them.
+// left in flight, read before MarkInterrupted closes them. Shadow runs are in it: a restart orphans them too.
 func (s *Store) RunningRuns(ctx context.Context) ([]RunRef, error) {
+	// shadow-ok: every orphaned run must be found and cancelled, a shadow's included
 	rows, err := s.db.QueryContext(ctx, `SELECT id, routine, started_at FROM runs WHERE status = ? ORDER BY started_at`, StatusRunning)
 	if err != nil {
 		return nil, err
@@ -721,6 +785,7 @@ func (s *Store) RunningRuns(ctx context.Context) ([]RunRef, error) {
 
 // MarkInterrupted closes runs left running by a previous flotillad and returns how many.
 func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
+	// shadow-ok: a restart interrupts every run in flight, a shadow's included
 	res, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ?, ended_at = ?, detail = 'flotillad restarted while it ran'
 		WHERE status = ?`, StatusInterrupted, s.now().Format(ts), StatusRunning)
 	if err != nil {
@@ -729,13 +794,17 @@ func (s *Store) MarkInterrupted(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
+// Runs lists the newest runs, of one routine ("" for all). Live runs only: a shadow's runs are read by naming its
+// key ("<fleet>/<routine>@v<n>"), never by a live routine's.
 func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, error) {
-	q := `SELECT id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status, exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version
-		FROM runs`
+	q := `SELECT ` + runCols + ` FROM runs WHERE 1 = 1`
 	var args []any
 	if routine != "" {
-		q += ` WHERE routine = ?`
+		q += ` AND routine = ?`
 		args = append(args, routine)
+	}
+	if !IsShadowKey(routine) {
+		q += ` AND ` + liveRuns
 	}
 	q += ` ORDER BY started_at DESC LIMIT ?`
 	args = append(args, limit)
@@ -743,23 +812,13 @@ func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Run
-	for rows.Next() {
-		var r Run
-		if err := rows.Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
-			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return scanRuns(rows)
 }
 
 // LastSuccess is the end time of the routine's newest ok run, zero when it has none.
 func (s *Store) LastSuccess(ctx context.Context, routine string) (time.Time, error) {
 	var at sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT MAX(ended_at) FROM runs WHERE routine = ? AND status = ?`, routine, StatusOK).Scan(&at); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(ended_at) FROM runs WHERE routine = ? AND status = ? AND `+liveRuns, routine, StatusOK).Scan(&at); err != nil {
 		return time.Time{}, err
 	}
 	if !at.Valid {
@@ -768,8 +827,10 @@ func (s *Store) LastSuccess(ctx context.Context, routine string) (time.Time, err
 	return time.Parse(ts, at.String)
 }
 
-// AddSpend adds to a subject's (a routine id's) spend for a local day ("2006-01-02") and returns the new total.
+// AddSpend adds to a subject's (a routine id's) spend for a local day ("2006-01-02") and returns the new total. A
+// shadow's subject is its own key ("<fleet>/<routine>@v<n>"), so its spend never lands on the live routine's day.
 func (s *Store) AddSpend(ctx context.Context, day, subject string, usd float64) (float64, error) {
+	// shadow-ok: keyed by subject; a shadow's subject carries @v and is never a live routine's
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO spend (day, subject, usd) VALUES (?, ?, ?)
 		ON CONFLICT(day, subject) DO UPDATE SET usd = usd + excluded.usd`, day, subject, usd); err != nil {
 		return 0, err
@@ -779,6 +840,7 @@ func (s *Store) AddSpend(ctx context.Context, day, subject string, usd float64) 
 
 func (s *Store) Spend(ctx context.Context, day, subject string) (float64, error) {
 	var v float64
+	// shadow-ok: keyed by subject; a live routine's key never matches a shadow's
 	err := s.db.QueryRowContext(ctx, `SELECT usd FROM spend WHERE day = ? AND subject = ?`, day, subject).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil

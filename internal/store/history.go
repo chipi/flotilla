@@ -12,10 +12,10 @@ import (
 // Run returns one run, or nil when there is none with that id.
 func (s *Store) Run(ctx context.Context, id string) (*Run, error) {
 	var r Run
-	err := s.db.QueryRowContext(ctx, `SELECT id, routine, spec_hash, trigger, actor, autonomy, started_at, ended_at, status,
-		exit_code, spend_usd, duration_s, COALESCE(trace_id, ''), detail, version FROM runs WHERE id = ?`, id).
+	// shadow-ok: one run by id, whichever kind it is (a run page, a token's run)
+	err := s.db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs WHERE id = ?`, id).
 		Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
-			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version)
+			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version, &r.Shadow, &r.InputKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -25,10 +25,11 @@ func (s *Store) Run(ctx context.Context, id string) (*Run, error) {
 	return &r, nil
 }
 
-// Namespaces lists the ledger's namespaces (a routine's: live and a candidate never share one).
+// Namespaces lists the ledger's live namespaces (a routine's: live and a candidate never share one). A shadow version's own
+// namespace ("<fleet>/<routine>@v<n>") is not one: it is read as a pair, never as a ledger of its own.
 func (s *Store) Namespaces(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT namespace FROM ledger_entries GROUP BY namespace
-		UNION SELECT namespace FROM ledger_filings GROUP BY namespace ORDER BY namespace`)
+	rows, err := s.db.QueryContext(ctx, `SELECT namespace FROM ledger_entries WHERE instr(namespace, '@v') = 0 GROUP BY namespace
+		UNION SELECT namespace FROM ledger_filings WHERE instr(namespace, '@v') = 0 GROUP BY namespace ORDER BY namespace`)
 	if err != nil {
 		return nil, err
 	}

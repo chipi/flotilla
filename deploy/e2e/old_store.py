@@ -7,7 +7,7 @@
   old_store.py make25 <path>        a store at schema step 25 (the last before routine versions), with the
                                     word shadow in every place step 28 renames it and in places it must not
                                     touch; make25 also writes <path>.counts.json (every table's row count)
-  old_store.py check28 <path>        one JSON line: every post-condition of steps 26 to 29 on a migrated
+  old_store.py check28 <path>        one JSON line: every post-condition of steps 26 to 31 on a migrated
                                     make25 store, "problems" empty when all hold; needs <path>.counts.json
   old_store.py check28 <path> started  the same on a store flotillad then STARTED on: its version records and the runs it made
                                      are there, the history is still version 1, every routine has one live version
@@ -142,7 +142,7 @@ def make25(path):
 
 
 def check28(path, started=False):
-    """Every post-condition of steps 26 to 29 on a migrated make25 store; one JSON line. started: flotillad ran on it
+    """Every post-condition of steps 26 to 31 on a migrated make25 store; one JSON line. started: flotillad ran on it
     after the migration, so the version table is filled, and tables that record what a running flotillad does may
     have grown; the migrated rows themselves are asserted all the same."""
     db = sqlite3.connect(path)
@@ -200,6 +200,15 @@ def check28(path, started=False):
     want("SELECT COUNT(*) FROM case_events WHERE actor NOT LIKE '%/%' AND version = 0", 3)
     want("SELECT COUNT(*) FROM plans WHERE rolled_back_at IS NOT NULL OR rolled_back_by IS NOT NULL", 0)
     want("SELECT COUNT(*) FROM pragma_index_list('routine_versions') WHERE \"unique\" = 1 AND partial = 1", 2)
+    # steps 30 and 31 (shadows): the old runs are live runs with no input key, the shadow tables exist and a migration
+    # filled none of them; a started flotillad may add live inputs, never a shadow run or record (shadows start off)
+    want("SELECT COUNT(*) FROM runs WHERE shadow <> 0 OR input_key <> ''", 0)
+    want("SELECT COUNT(*) FROM shadow_runs", 0)
+    want("SELECT COUNT(*) FROM shadow_records", 0)
+    want("SELECT COUNT(*) FROM pragma_index_list('runs') WHERE name = 'runs_routine_shadow'", 1)
+    want("SELECT COUNT(*) FROM pragma_table_info('shadow_records') WHERE name IN ('input_key', 'subject', 'kind', 'payload')", 4)
+    if not started:
+        want("SELECT COUNT(*) FROM run_inputs", 0)
     integrity = q("PRAGMA integrity_check")
     if integrity != "ok":
         problems.append(f"integrity_check: {integrity}")

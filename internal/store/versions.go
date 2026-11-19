@@ -43,7 +43,7 @@ var (
 
 // runVersion is the version of the run an INSERT is for, as a sub-select over the run id it is bound to:
 // 1 for a row with no run (imported, or from before versions).
-const runVersion = `COALESCE((SELECT version FROM runs WHERE id = ?), 1)`
+const runVersion = `COALESCE((SELECT version FROM runs WHERE id = ?), 1)` // shadow-ok: by run id; a shadow's row takes its own run's version
 
 func versionOrOne(v int) int {
 	if v < 1 {
@@ -145,12 +145,6 @@ func (s *Store) LiveVersion(ctx context.Context, routine string) (RoutineVersion
 		return RoutineVersion{}, false, err
 	}
 	return vs[0], true, nil
-}
-
-// PairsFor is how many compared pairs a version has (decisions it and the live version both made on one
-// input). Shadows record nothing until build step 2, so it is 0.
-func (s *Store) PairsFor(ctx context.Context, routine string, version int) (int, error) {
-	return 0, nil
 }
 
 func addVersionEvent(ctx context.Context, tx *sql.Tx, at, actor, via, kind, routine string, version int, detail string) error {
@@ -563,6 +557,7 @@ func (s *Store) Rollback(ctx context.Context, a RollbackArgs) (RollbackResult, e
 		WHERE routine = ? AND version = ?`, at, a.Actor, at, fmt.Sprintf("v%d was rolled back: %s", live.Version, a.Reason), a.Autonomy, a.Routine, prev.Version); err != nil {
 		return res, err
 	}
+	// shadow-ok: a plan's run, joined by id; a shadow's plans are never written (they are shadow_records)
 	rows, err := tx.QueryContext(ctx, `SELECT p.id, p.case_id FROM plans p JOIN runs r ON r.id = p.run_id JOIN cases c ON c.id = p.case_id
 		WHERE r.routine = ? AND p.version = ? AND c.status = 'awaiting_approval' AND p.rolled_back_at IS NULL
 		AND p.id = (SELECT MAX(id) FROM plans WHERE case_id = p.case_id) ORDER BY p.id`, a.Routine, live.Version)
@@ -593,6 +588,7 @@ func (s *Store) Rollback(ctx context.Context, a RollbackArgs) (RollbackResult, e
 			return res, err
 		}
 	}
+	// shadow-ok: the exact live routine key; a shadow's runs are keyed with @v and are cancelled by retire
 	runs, err := tx.QueryContext(ctx, `SELECT id FROM runs WHERE routine = ? AND version = ? AND status = ? ORDER BY started_at`, a.Routine, live.Version, StatusRunning)
 	if err != nil {
 		return res, err
@@ -701,6 +697,7 @@ const EvidenceSchema = 29
 // a plan the run files after the rollback marked the plans that existed is still that version's (the run can end
 // ok before its cancel lands).
 func (s *Store) RunVersionRolledBack(ctx context.Context, runID string) (at, by string, rolledBack bool, err error) {
+	// shadow-ok: joined on the exact routine key and version; a run by id
 	err = s.db.QueryRowContext(ctx, `SELECT rv.state_at, rv.state_by FROM routine_versions rv JOIN runs r ON r.routine = rv.routine AND r.version = rv.version
 		WHERE r.id = ? AND rv.state = 'retired' AND rv.retired_kind = ?`, runID, RetiredRolledBack).Scan(&at, &by)
 	if errors.Is(err, sql.ErrNoRows) {
