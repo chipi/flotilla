@@ -21,7 +21,7 @@ func shippedPlatform(t *testing.T) string {
 	return d
 }
 
-// platform/heartbeat moved from a flat spec to the folder layout with its v1 identical: testdata/heartbeat_flat.yaml
+// platform/heartbeat moved from a flat spec to the folder layout with its v1 identical (step 5 added a v2 beside it): testdata/heartbeat_flat.yaml
 // is the flat file as it was, and every field of the routine, version-owned or not, is the same through both.
 func TestHeartbeatV1IsIdenticalInTheFolderLayout(t *testing.T) {
 	flatDir := t.TempDir()
@@ -44,8 +44,8 @@ func TestHeartbeatV1IsIdenticalInTheFolderLayout(t *testing.T) {
 			hb = j
 		}
 	}
-	if hb == nil || hb.Versions[0].Legacy || len(hb.Versions) != 1 || hb.Version != 1 {
-		t.Fatalf("the shipped heartbeat is not a one-version folder routine: %+v", hb)
+	if hb == nil || hb.Versions[0].Legacy || len(hb.Versions) != 2 || hb.Version != 1 || hb.Versions[1].Number != 2 {
+		t.Fatalf("the shipped heartbeat is not a folder routine with v1 and the v2 step 5 added: %+v", hb)
 	}
 	a, b := *flat[0], *hb
 	for _, c := range []*spec.Routine{&a, &b} { // what the loader fills about where and how it was read, not what the spec says

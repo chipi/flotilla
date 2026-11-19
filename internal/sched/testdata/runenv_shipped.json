@@ -188,6 +188,17 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "e2e/candidate@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/candidate",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "e2e/cpu@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",
@@ -559,6 +570,19 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "platform/heartbeat@v2": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"triage-flash\":{\"endpoint\":\"gw\",\"model\":\"m-triage-flash\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "platform/heartbeat",
+    "FLOTILLA_ROUTINE_VERSION": "2",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{},\"stations\":{\"probe\":{\"harness\":\"flotilla\",\"model\":\"triage-flash\",\"tools\":\"none\",\"limits\":{\"max_turns\":1,\"timeout\":\"30s\",\"max_output_tokens\":256},\"texts\":{\"task\":{\"path\":\"heartbeat/v2/probe.md\",\"sha256\":\"ed69dabbf13076fdda637bd14e72ffdad2c0290115cff9e93f7de73d111d3707\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "platform/model-contract@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",
@@ -648,32 +672,32 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
-  "triage/cycle-shadow@v1": {
-    "FLEETD_BUDGET_LEFT": "1.5000",
-    "FLEETD_CYCLE_ID": "run-1",
-    "FLEETD_STAGE": "shadow",
-    "FLOTILLA_ENVIRONMENT": "test",
-    "FLOTILLA_HARNESS": "{\"protocol\":\"json\",\"tools\":[\"event_detail\",\"occurrence_history\",\"service_logs\",\"metric\",\"trace\",\"source_state\"],\"gates\":[\"intent\",\"cleanup\",\"dismiss_corroborated\",\"edge\"],\"limits\":{\"max_tool_calls\":3,\"max_steps\":4,\"tool_calls_per_turn\":1},\"quirks\":{\"bad_json_uses_turn\":true,\"empty_retry\":true,\"final_decision_call\":true,\"reply_echo_chars\":600,\"decision_echo_chars\":400,\"result_chars\":1800},\"hooks\":{\"after_tool\":[{\"name\":\"redact_credentials\",\"mode\":\"observe\"}]}}",
-    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
-    "FLOTILLA_PROMPTS": "{\"system\":{\"path\":\"playbooks/triage.md\",\"sha256\":\"d0b7701471b7a599b826267df7c27cca1f69e136d61c58440b3d671103b5f997\"}}",
-    "FLOTILLA_ROUTINE": "triage/cycle-shadow",
-    "FLOTILLA_ROUTINE_VERSION": "1",
-    "FLOTILLA_RUN_ID": "run-1",
-    "FLOTILLA_SKILLS": "{\"rule\":[{\"when\":{\"class\":\"external-transient\"},\"load\":[\"hint-external-transient\"]},{\"when\":{\"class\":\"external\"},\"load\":[\"hint-external\"]},{\"when\":{\"class\":\"environment\"},\"load\":[\"hint-environment\"]},{\"when\":{\"class\":\"recoverable\"},\"load\":[\"hint-recoverable\"]}]}",
-    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-  },
   "triage/cycle@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",
     "FLEETD_STAGE": "shadow",
     "FLOTILLA_ENVIRONMENT": "test",
-    "FLOTILLA_HARNESS": "{\"protocol\":\"json\",\"tools\":[\"event_detail\",\"occurrence_history\",\"service_logs\",\"metric\",\"trace\",\"source_state\"],\"gates\":[\"intent\",\"cleanup\",\"dismiss_corroborated\",\"edge\"],\"limits\":{\"max_tool_calls\":3,\"max_steps\":4,\"tool_calls_per_turn\":1},\"quirks\":{\"bad_json_uses_turn\":true,\"empty_retry\":true,\"final_decision_call\":true,\"reply_echo_chars\":600,\"decision_echo_chars\":400,\"result_chars\":1800},\"hooks\":{\"after_tool\":[{\"name\":\"redact_credentials\",\"mode\":\"observe\"}]}}",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"triage-flash\":{\"endpoint\":\"gw\",\"model\":\"m-triage-flash\"}}}",
     "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
-    "FLOTILLA_PROMPTS": "{\"system\":{\"path\":\"playbooks/triage.md\",\"sha256\":\"d0b7701471b7a599b826267df7c27cca1f69e136d61c58440b3d671103b5f997\"}}",
     "FLOTILLA_ROUTINE": "triage/cycle",
     "FLOTILLA_ROUTINE_VERSION": "1",
     "FLOTILLA_RUN_ID": "run-1",
     "FLOTILLA_SKILLS": "{\"rule\":[{\"when\":{\"class\":\"external-transient\"},\"load\":[\"hint-external-transient\"]},{\"when\":{\"class\":\"external\"},\"load\":[\"hint-external\"]},{\"when\":{\"class\":\"environment\"},\"load\":[\"hint-environment\"]},{\"when\":{\"class\":\"recoverable\"},\"load\":[\"hint-recoverable\"]}]}",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"call_timeout_s\":90,\"decision_echo_chars\":400,\"reply_echo_chars\":600,\"result_chars\":1800},\"stations\":{\"decide\":{\"harness\":\"flotilla\",\"model\":\"triage-flash\",\"tools\":\"all\",\"limits\":{\"max_turns\":4,\"timeout\":\"6m\",\"max_output_tokens\":8192},\"texts\":{\"system\":{\"path\":\"cycle/v1/system.md\",\"sha256\":\"158a3cce38f6e58b73f47f9d43fa978933d1b8ecb5aed5089993bbcd7e30a2c9\"}},\"tool_names\":[\"event_detail\",\"occurrence_history\",\"service_logs\",\"metric\",\"trace\",\"source_state\"],\"gates\":[\"intent\",\"cleanup\",\"dismiss_corroborated\",\"edge\"],\"hooks\":{\"after_tool\":[{\"name\":\"redact_credentials\",\"mode\":\"observe\"}]},\"skills\":[\"hint-external-transient\",\"hint-external\",\"hint-environment\",\"hint-recoverable\"]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
+  "triage/cycle@v2": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"triage-pro\":{\"endpoint\":\"gw\",\"model\":\"m-triage-pro\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "triage/cycle",
+    "FLOTILLA_ROUTINE_VERSION": "2",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_SKILLS": "{\"rule\":[{\"when\":{\"class\":\"external-transient\"},\"load\":[\"hint-external-transient\"]},{\"when\":{\"class\":\"external\"},\"load\":[\"hint-external\"]},{\"when\":{\"class\":\"environment\"},\"load\":[\"hint-environment\"]},{\"when\":{\"class\":\"recoverable\"},\"load\":[\"hint-recoverable\"]}]}",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"call_timeout_s\":90,\"decision_echo_chars\":400,\"reply_echo_chars\":600,\"result_chars\":1800},\"stations\":{\"decide\":{\"harness\":\"flotilla\",\"model\":\"triage-pro\",\"tools\":\"all\",\"limits\":{\"max_turns\":4,\"timeout\":\"6m\",\"max_output_tokens\":8192},\"texts\":{\"system\":{\"path\":\"cycle/v2/system.md\",\"sha256\":\"158a3cce38f6e58b73f47f9d43fa978933d1b8ecb5aed5089993bbcd7e30a2c9\"}},\"tool_names\":[\"event_detail\",\"occurrence_history\",\"service_logs\",\"metric\",\"trace\",\"source_state\"],\"gates\":[\"intent\",\"cleanup\",\"dismiss_corroborated\",\"edge\"],\"hooks\":{\"after_tool\":[{\"name\":\"redact_credentials\",\"mode\":\"observe\"}]},\"skills\":[\"hint-external-transient\",\"hint-external\",\"hint-environment\",\"hint-recoverable\"]}}}",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   }
 }

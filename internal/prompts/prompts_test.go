@@ -81,7 +81,11 @@ func TestRepoFleetsPrompts(t *testing.T) {
 	}
 	declared := 0
 	for _, r := range routines {
-		declared += len(r.Prompts)
+		for _, v := range r.Versions {
+			if vj, err := r.WithVersion(v.Number); err == nil {
+				declared += len(vj.Prompts) + len(vj.StationTextRoles())
+			}
+		}
 	}
 	if declared < 3 {
 		t.Fatalf("the example triage and bugfix routines declare prompts, found %d", declared)

@@ -94,15 +94,21 @@ func TestRepoSkills(t *testing.T) {
 	}
 	n := 0
 	for _, r := range routines {
-		if r.Fleet != "triage" || r.Routine == "" || len(r.Skills.Rule) == 0 {
+		if r.Fleet != "triage" || r.Routine == "" {
 			continue
 		}
-		n++
-		if !reflect.DeepEqual(r.Skills.Rule, def) {
-			t.Errorf("%s: skills.rule differs from default-rules.json", r.ID())
+		for _, v := range r.Versions {
+			vj, err := r.WithVersion(v.Number)
+			if err != nil || len(vj.Skills.Rule) == 0 {
+				continue
+			}
+			n++
+			if !reflect.DeepEqual(vj.Skills.Rule, def) {
+				t.Errorf("%s v%d: skills.rule differs from default-rules.json", r.ID(), v.Number)
+			}
 		}
 	}
 	if n < 2 {
-		t.Errorf("want triage/cycle and triage/cycle-shadow with rules, found %d", n)
+		t.Errorf("want triage/cycle's v1 and its candidate v2 with rules, found %d", n)
 	}
 }

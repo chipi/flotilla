@@ -136,6 +136,14 @@
       "spec.yaml": "d028e0d8a370a99ee0456f93e1ac63996ab349a89affbcf5de528e59b128d660"
     }
   },
+  "e2e/candidate@v1": {
+    "routine_hash": "98a9d31be1a3",
+    "version_hash": "ee30b9bd5d6e2eae14441465bd7a96196b5968d21082b7a3ba819bbb5e356f19",
+    "legacy": true,
+    "manifest": {
+      "run": "6290b432dbeba98bf4e50cd22c3418425365ce60279dbb634f500ec91b4304a7"
+    }
+  },
   "e2e/cpu@v1": {
     "routine_hash": "eb879e1ee6cd",
     "version_hash": "bd4eb12d06dc243d0011debc25b43a135a24d250c950adca238590048e773d87",
@@ -408,6 +416,15 @@
       "spec.yaml": "00f402fb1dbea912a57018b7f2481eb7613301b148762ec5bbde807ef5edc4b7"
     }
   },
+  "platform/heartbeat@v2": {
+    "routine_hash": "a45ba0d8448c",
+    "version_hash": "bc34062c09af788c948ce83f1fc55dfe8d406df1fe0212521f4601cca3fe84c6",
+    "legacy": false,
+    "manifest": {
+      "probe.md": "ed69dabbf13076fdda637bd14e72ffdad2c0290115cff9e93f7de73d111d3707",
+      "spec.yaml": "119178d6bc54ac93771ed43c8327edb62664e8e42c2d07d4e0154499363ba78e"
+    }
+  },
   "platform/model-contract@v1": {
     "routine_hash": "57345104bec7",
     "version_hash": "232b658d1c09d1a55c6a48efa67ea516a7b5624140dabcd9a43713942ab7c3a3",
@@ -472,38 +489,22 @@
       "spec.yaml": "405866a9be18b341287058c158c1b4b1c3658e752754289c16c577d449c2916f"
     }
   },
-  "triage/cycle-shadow@v1": {
-    "routine_hash": "32fd2a7eaddf",
-    "version_hash": "6dba55d47e0d8a79fbc39d79d6c00b680b05b946aba97948730f4b6b98c5b80f",
-    "legacy": true,
+  "triage/cycle@v1": {
+    "routine_hash": "d74cfde9fc6c",
+    "version_hash": "a60cac912e50398fbfad2759f909739d40b133e6024d5629bf5a4f6953424cc2",
+    "legacy": false,
     "manifest": {
-      "harness": "6a83361e48faf33454064c4d5305fe20831297600fd8d12c2baed548f3206b52",
-      "prompt-file:playbooks/triage.md": "d0b7701471b7a599b826267df7c27cca1f69e136d61c58440b3d671103b5f997",
-      "prompts": "65478fb8a1a2ee1c3798724acaa78385759d24be7df04d47748a98ab3292128f",
-      "run": "89be07b438a5e0cf7b691fcde1b42f1864542fdfa952a70cc5f2dcc9232813e2",
-      "skill-file:hint-environment": "451de2a4fdef5d7e961ae0e857c66d1637c1a65a4eb7c743630feb3972d3d9b6",
-      "skill-file:hint-external": "e0dba5537aa5cfbb4c4764f6bf0c9b1011550e16c66407abaed340a6d81b0ffa",
-      "skill-file:hint-external-transient": "ba0a61d59ba4ae602adedf26dbcf5e6bcba95146bfa8b5b268aaf81ed876c9fd",
-      "skill-file:hint-recoverable": "1276cf3b09c1e243dd8ec3c7e9e075996b9695bbcf6aab7048f75e98e4a2d9bf",
-      "skills": "749a33fe92c3d6975a71163ec6d05a136310b7e5420ce9d5bd452fb4eeca5747"
+      "spec.yaml": "ebf9438aae943b7bf31aa35be46d964235ad876c7a80c2eab31bbd0a81cf936d",
+      "system.md": "158a3cce38f6e58b73f47f9d43fa978933d1b8ecb5aed5089993bbcd7e30a2c9"
     }
   },
-  "triage/cycle@v1": {
-    "routine_hash": "dd6a7bc96543",
-    "version_hash": "5a909b780252bfcf5c28b68e30357ddcb58648a37f5e416492e514086b728466",
-    "legacy": true,
+  "triage/cycle@v2": {
+    "routine_hash": "2829470a9154",
+    "version_hash": "e2773632498bea339ba996a6f37e96afac034bf55d3c9f4c9499e14441ee3cd5",
+    "legacy": false,
     "manifest": {
-      "explain": "e11c904cfdea0a0d2a578d63743d2568583a843b5652d78bf8a6b869e0bd5adb",
-      "harness": "6a83361e48faf33454064c4d5305fe20831297600fd8d12c2baed548f3206b52",
-      "prompt-file:playbooks/triage.md": "d0b7701471b7a599b826267df7c27cca1f69e136d61c58440b3d671103b5f997",
-      "prompts": "65478fb8a1a2ee1c3798724acaa78385759d24be7df04d47748a98ab3292128f",
-      "run": "15aa1b38fcefe48e2fb5eed37b19186bed616297c8fb8029977591abaf522e37",
-      "skill-file:hint-environment": "451de2a4fdef5d7e961ae0e857c66d1637c1a65a4eb7c743630feb3972d3d9b6",
-      "skill-file:hint-external": "e0dba5537aa5cfbb4c4764f6bf0c9b1011550e16c66407abaed340a6d81b0ffa",
-      "skill-file:hint-external-transient": "ba0a61d59ba4ae602adedf26dbcf5e6bcba95146bfa8b5b268aaf81ed876c9fd",
-      "skill-file:hint-recoverable": "1276cf3b09c1e243dd8ec3c7e9e075996b9695bbcf6aab7048f75e98e4a2d9bf",
-      "skills": "749a33fe92c3d6975a71163ec6d05a136310b7e5420ce9d5bd452fb4eeca5747",
-      "steps": "54e068a30185ce6936ae331623cb1fd3f3e259091b1e4dfe2e4b98ea1e5f38ee"
+      "spec.yaml": "ef8c1f85114683018613c19fb10a861521a063cb55ba6307ef5d3743cfba62da",
+      "system.md": "158a3cce38f6e58b73f47f9d43fa978933d1b8ecb5aed5089993bbcd7e30a2c9"
     }
   }
 }

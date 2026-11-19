@@ -33,7 +33,7 @@ func TestMovedRoutinesGetTheSameRunEnvironment(t *testing.T) {
 			cfg.Aliases[m] = models.Alias{Endpoint: "gw", Model: "m-" + m}
 		}
 	}
-	compared, moved := 0, 0
+	compared, moved, stationVersions := 0, 0, 0
 	for _, o := range old {
 		n := byID[o.ID()]
 		if n == nil {
@@ -59,6 +59,18 @@ func TestMovedRoutinesGetTheSameRunEnvironment(t *testing.T) {
 				if (werr == nil) != (gerr == nil) {
 					t.Errorf("%s v%d: models error %v, was %v", o.ID(), ov.Number, gerr, werr)
 				}
+				if len(nj.Stations) > 0 && len(oj.Stations) == 0 {
+					// a version that became a station version (triage/cycle v1): its model step is declared in FLOTILLA_STATIONS instead of
+					// FLOTILLA_HARNESS and FLOTILLA_PROMPTS, and its model alias is the station's. Every other variable is what it was.
+					if got["FLOTILLA_STATIONS"] == "" || got["FLOTILLA_HARNESS"] != "" || got["FLOTILLA_PROMPTS"] != "" {
+						t.Errorf("%s v%d: a station version has FLOTILLA_STATIONS and neither FLOTILLA_HARNESS nor FLOTILLA_PROMPTS", o.ID(), ov.Number)
+					}
+					for _, k := range []string{"FLOTILLA_STATIONS", "FLOTILLA_HARNESS", "FLOTILLA_PROMPTS", "FLOTILLA_MODELS"} {
+						delete(got, k)
+						delete(want, k)
+					}
+					stationVersions++
+				}
 				if !reflect.DeepEqual(promptsRead(t, got), promptsRead(t, want)) {
 					t.Errorf("%s v%d: FLOTILLA_PROMPTS %s, was %s", o.ID(), ov.Number, got["FLOTILLA_PROMPTS"], want["FLOTILLA_PROMPTS"])
 				}
@@ -70,6 +82,9 @@ func TestMovedRoutinesGetTheSameRunEnvironment(t *testing.T) {
 				compared++
 			}
 		}
+	}
+	if stationVersions != 2 { // triage/cycle v1, live and shadow
+		t.Errorf("%d station environments compared, want triage/cycle v1's two", stationVersions)
 	}
 	if moved == 0 || compared == 0 {
 		t.Fatalf("compared %d environments of %d moved routines: nothing proven", compared, moved)

@@ -7,13 +7,13 @@ documentation addresses.
 
 | Fleet | Routines | What it shows |
 | --- | --- | --- |
-| `triage` | `cycle`, `cycle-shadow` | alerts and errors triaged by a model, filed or dismissed by code gates; a candidate model compared in shadow before any switch |
+| `triage` | `cycle` (`v1`, and `v2` a candidate) | alerts and errors triaged by a model on one station, filed or dismissed by code gates; a candidate model compared as a shadow version before any switch |
 | `bugfix` | `intake`, `fix`, `open-pr`, `pr-check` | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan and always merges |
 | `jobs` | `backup-monitor`, `rerun-backup`, `verify-backup` | a monitor opens a case, an acting routine plans a rerun on a host, the host agent runs only what its own config allows, a check verifies it; shadow, propose, then auto |
 | `review` | `case-review`, `process-change` | closed cases become proposed lessons and process changes with their evidence; a person approves every change |
 | `deps` | `scan`, `upgrade` | vulnerable or outdated pins become cases and one-line upgrade PRs; no model: code finds and plans, the repo's CI tests, a person approves and merges |
 | `sites` | `site-check` | what a site serves live (robots, sitemaps, head tags, broken links, certificate expiry), read only; findings are cases |
-| `platform` | `heartbeat`, `model-contract` | the platform's own canary and the model aliases' contract checks |
+| `platform` | `heartbeat` (`v1`, and `v2` with its model call as a station), `model-contract` | the platform's own canary and the model aliases' contract checks |
 | `crm` | `scan`, `fix`, `apply-update`, `apply-merge`, `check-field`, `check-merge` | sales ops: CRM fields normalized and duplicates merged; allowed fields only, never a field a person edited; a field fix can earn auto, a merge is always approved |
 | `campaigns` | `scan`, `decide`, `apply-launch`, `apply-hold`, `check` | marketing: launch checks in code decide; a launch is always approved, a hold can earn auto |
 | `outbound` | `scan`, `draft`, `send`, `check` | a first email per prospect, every personal sentence citing a fact; do-not-contact, consent and a daily cap in code; every send approved |
@@ -36,11 +36,16 @@ fleets/<fleet>/<routine>/v<n>/spec.yaml     one version: run, steps, skills, pro
 fleets/<fleet>/<routine>/v<n>/<texts>       the files that version's spec names (paths stay inside v<n>/)
 ```
 
-Never both for one routine. Every example is a folder with one version, `v1`, identical to the flat file it was
+Never both for one routine. Every example is a folder. Each has one version, `v1`, identical to the flat file it was
 (`internal/spec/move_equiv_test.go` compares every field and the run environment against a copy of the flat
-specs, `internal/spec/testdata/flat-before-step5/`), except `triage/cycle` and `triage/cycle-shadow`, still flat
-files. A prompt a version declares is a file inside its `v<n>/` (bugfix's `fix/v1/rules.md` is a copy of
-`bugfix/fleet_rules.md`, kept equal by a test). The first version of a routine goes live when it is deployed;
+specs, `internal/spec/testdata/flat-before-step5/`), with two exceptions that gained something on purpose:
+`triage/cycle`'s `v1` declares its model step as a station (the harness block, the prompt and `SF_TRIAGE_MODEL`
+became the `decide` station, run by `signal-fleet/mvp/orchestrator_station.py`, the same requests to the model),
+and it has a `v2`, the candidate that was the routine `triage/cycle-shadow`; `platform/heartbeat` has a `v2` whose
+model call is the `probe` station. A prompt a version declares is a file inside its `v<n>/` (bugfix's `fix/v1/rules.md`
+is a copy of `bugfix/fleet_rules.md`, kept equal by a test; triage's `v1/system.md` is `playbooks/triage.md` with its
+two placeholders written as slots, which triage.py still reads when it runs without flotillad). The class-hint skills
+stay files of the fleet's `skills/` folder, which a version's frozen folder does not cover. The first version of a routine goes live when it is deployed;
 a later `v<n>/` arrives as a shadow and goes live only when the operator promotes it (`flotilla versions`,
 `promote`, `rollback`, `retire`, or the routine page). The live and the previous version's folders are
 frozen: a changed one fails `flotillad -check` and its start, so change a live version by adding a new

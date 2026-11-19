@@ -1,0 +1,23 @@
+fleet: triage
+routine: cycle
+description: >-
+  On-call triage: one pass over the firing alerts (Grafana) and the unresolved errors (GlitchTip).
+  Code sorts out what was decided before; a model decides each new one (file, escalate, dismiss or
+  cleanup) with read-only probes; gates in code check the decision before anything leaves. Filing a
+  GitHub issue needs propose; resolving an error needs auto.
+enabled: true
+worker: triage
+trigger:
+  every: 10m
+# record takes no outward action (orchestrator_station.py forces a dry run). The installation raises it to
+# propose with `flotilla autonomy triage/cycle propose` at the switch; the spec stays the safe default.
+autonomy: record
+budget:
+  day_usd: 1.0
+freshness: 35m
+chain:
+  - routine: bugfix/intake
+    via: a GitHub issue labelled bug, routed to bugfix
+  - routine: bugfix/fix
+  - routine: bugfix/open-pr
+  - routine: bugfix/pr-check

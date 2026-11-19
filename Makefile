@@ -77,6 +77,7 @@ test-unit-run: ## go test -race (root module) and go test (fleetd), the worker's
 	@$(GO) test -race ./...   # -race: version state changes and the scheduler's Bind are concurrent by design (+30 s on 36 s)
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) test ./...
 	@python3 worker/test_worker.py >/tmp/flotilla-test_worker.log 2>&1 && echo "PASS worker/test_worker.py" || { echo "FAIL worker/test_worker.py"; tail -30 /tmp/flotilla-test_worker.log; exit 1; }
+	@python3 worker/test_heartbeat_station.py >/tmp/flotilla-test_heartbeat_station.log 2>&1 && echo "PASS worker/test_heartbeat_station.py" || { echo "FAIL worker/test_heartbeat_station.py"; tail -30 /tmp/flotilla-test_heartbeat_station.log; exit 1; }
 	@python3 ops/test_ops.py >/tmp/flotilla-test_ops.log 2>&1 && echo "PASS ops/test_ops.py" || { echo "FAIL ops/test_ops.py"; tail -30 /tmp/flotilla-test_ops.log; exit 1; }
 	@python3 ops/test_case_review.py >/tmp/flotilla-test_case_review.log 2>&1 && echo "PASS ops/test_case_review.py" || { echo "FAIL ops/test_case_review.py"; tail -30 /tmp/flotilla-test_case_review.log; exit 1; }
 	@python3 bugfix/test_bugfix.py >/tmp/flotilla-test_bugfix.log 2>&1 && echo "PASS bugfix/test_bugfix.py" || { echo "FAIL bugfix/test_bugfix.py"; tail -30 /tmp/flotilla-test_bugfix.log; exit 1; }
@@ -116,7 +117,7 @@ test-unit-run: ## go test -race (root module) and go test (fleetd), the worker's
 	@timeout 280 python3 runtime/test_seam_pi.py >/tmp/flotilla-test_seam_pi_runtime.log 2>&1 && { if grep -q "skipped" /tmp/flotilla-test_seam_pi_runtime.log; then echo "PASS runtime/test_seam_pi.py (SKIPPED: the real pi is not on PATH)"; else echo "PASS runtime/test_seam_pi.py"; fi; } || { echo "FAIL runtime/test_seam_pi.py"; tail -30 /tmp/flotilla-test_seam_pi_runtime.log; exit 1; }
 	@python3 runtime/test_ledger.py >/tmp/flotilla-test_ledger.log 2>&1 && echo "PASS runtime/test_ledger.py" || { echo "FAIL runtime/test_ledger.py"; tail -30 /tmp/flotilla-test_ledger.log; exit 1; }
 	@python3 runtime/test_schemacheck.py >/tmp/flotilla-test_schemacheck.log 2>&1 && echo "PASS runtime/test_schemacheck.py" || { echo "FAIL runtime/test_schemacheck.py"; tail -30 /tmp/flotilla-test_schemacheck.log; exit 1; }
-	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py test_replay_api.py test_dev_filter.py test_shadow_filter.py test_probes.py; do \
+	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py test_replay_api.py test_dev_filter.py test_shadow_filter.py test_probes.py test_orchestrator_station.py; do \
 	  HOME=$$h SF_OBSERV_DISABLED=1 python3 $$t >/tmp/flotilla-$$t.log 2>&1 && echo "PASS $$t" || { echo "FAIL $$t"; tail -20 /tmp/flotilla-$$t.log; rm -rf $$h; exit 1; }; \
 	done; rm -rf $$h
 	@echo "test-unit PASS"

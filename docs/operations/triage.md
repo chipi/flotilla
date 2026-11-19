@@ -45,8 +45,8 @@ Two more limits hold by construction:
 
 ```text
 flotillad (Go, one binary: scheduler, ledger store, API, UI, CLI)
-  └─ every 10 min: routine triage/cycle (fleets/triage/cycle.yaml) on worker-triage
-       runs: python3 orchestrator.py --cycle --limit 10 --no-dry-run
+  └─ every 10 min: routine triage/cycle (fleets/triage/cycle/) on worker-triage
+       runs: python3 orchestrator.py --cycle --limit 10 --no-dry-run   (the example's v1: orchestrator_station.py, below)
        cwd:  signal-fleet/mvp (/opt/flotilla/signal-fleet/mvp in the worker image)
        env:  the worker's secrets file + FLEETD_STAGE (the routine's autonomy) + FLEETD_CYCLE_ID
        │
@@ -65,7 +65,7 @@ flotillad (Go, one binary: scheduler, ledger store, API, UI, CLI)
 | --- | --- | --- |
 | `flotillad` | [`cmd/flotillad`](https://github.com/chipi/flotilla/tree/main/cmd/flotillad), a container | runs the routine on its interval. Owns the autonomy level, the timeout, the budget, pause and STOP, the ledger store, and the metrics. |
 | `worker-triage` | [`deploy/docker/worker-triage.Dockerfile`](https://github.com/chipi/flotilla/blob/main/deploy/docker/worker-triage.Dockerfile), a container | holds the fleet's secrets and egress; runs the cycle as a process. No other routine uses its access. |
-| the routine | [`fleets/triage/cycle.yaml`](https://github.com/chipi/flotilla/blob/main/fleets/triage/cycle.yaml) | the schedule, timeout, autonomy, daily budget, freshness, class-hint rules and harness settings |
+| the routine | [`fleets/triage/cycle/`](https://github.com/chipi/flotilla/tree/main/fleets/triage/cycle) | `routine.yaml`: the schedule, autonomy, daily budget, freshness; `v1/spec.yaml`: the command, the class-hint rules and the decide station (its system text, model alias, probes, gates, hooks and turns) |
 | cycle code | [`signal-fleet/mvp/`](https://github.com/chipi/flotilla/tree/main/signal-fleet/mvp), baked into the worker image | `orchestrator.py` (cycle), `sources.py` (read Grafana/GlitchTip), `correlate.py` and `probes.py` (probe evidence: logs, metrics, traces), `triage.py` (decide), `guards.py`, `actions.py` (dispositions ledger), `filing.py` (GitHub + filed ledger), `glitchtip_sync.py` (GitHub → GlitchTip), `stale.py`, `inbox.py`, `observ.py` (metrics, Langfuse), `scrub.py`, `installation.py` |
 | runtime | [`runtime/`](https://github.com/chipi/flotilla/tree/main/runtime) | the model client, the harness (the probe loop), skills, the ledger client |
 | playbook and hints | [`fleets/triage/playbooks/triage.md`](https://github.com/chipi/flotilla/blob/main/fleets/triage/playbooks/triage.md), [`fleets/triage/skills/`](https://github.com/chipi/flotilla/tree/main/fleets/triage/skills), [`harness-default.json`](https://github.com/chipi/flotilla/blob/main/fleets/triage/harness-default.json) | the triager's brief, the class hints, the harness settings for a run outside flotillad |
@@ -78,11 +78,19 @@ flotillad (Go, one binary: scheduler, ledger store, API, UI, CLI)
 The code is stateless between cycles. Everything the fleet "remembers" is in the two ledgers and the
 GitHub issues themselves.
 
-A candidate routine, `triage/cycle-shadow`
-([`cycle-shadow.yaml`](https://github.com/chipi/flotilla/blob/main/fleets/triage/cycle-shadow.yaml)),
-runs beside the live one on `worker-triage-candidate` with a state volume of its own. Its autonomy
-is capped at record: it never files, whatever a control says. It exists to compare another model
-or image against the live fleet (ADR-0004).
+The example fleet's `triage/cycle` is a station version: `v1` declares the decide station and runs
+`orchestrator_station.py`, which is `orchestrator.py` and `triage.py` fed by the station (the system
+text, the model alias, the probes, the gates, the hooks, the turns and the reply cap come from the
+version, not from the code or from `SF_TRIAGE_MODEL`); the requests the model receives are the same
+bytes (`signal-fleet/mvp/test_orchestrator_station.py`; `gate_stations_replay.py` on a corpus). Its
+`v2` is a candidate beside it, the same texts on another model alias: a shadow version, live only when
+the operator promotes it. An installation's own flat `triage/cycle` keeps running `orchestrator.py`
+until it moves to stations (v2 step 6).
+
+A candidate routine, `triage/cycle-shadow`, was the way to compare another model or image before
+versions: it runs beside the live one on `worker-triage-candidate` with a state volume of its own. Its
+autonomy is capped at record: it never files, whatever a control says (ADR-0004). An installation that
+still runs it keeps it in its own fleets repo until step 6.
 
 ## One signal's path
 

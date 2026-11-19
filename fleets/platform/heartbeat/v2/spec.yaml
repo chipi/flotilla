@@ -1,0 +1,16 @@
+run:
+  command: python3 /opt/flotilla/worker/heartbeat_station.py
+  workdir: .
+  timeout: 1m
+# The canary's one model call as a station: the probe text is a file of this version, its alias and limits are the version's,
+# and the call is recorded with its station and text. v1 (the same checks and an optional call named by an environment
+# variable) stays as it was.
+stations:
+  probe:
+    harness: flotilla
+    model: triage-flash
+    prompts: {task: probe.md}
+    tools: none
+    tool_names: []
+    gates: []
+    limits: {max_turns: 1, timeout: 30s, max_output_tokens: 256}

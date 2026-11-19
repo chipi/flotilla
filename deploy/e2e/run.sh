@@ -152,7 +152,7 @@ workers:
 # the candidate triage needs a candidate model; bugfix/fix clones the repo, installs its toolchain and runs a
 # coding agent on a real model through many tool calls: a stand-in for that would show the stand-in, not
 # flotilla. Its unit tests cover it on local repos (bugfix/test_fix.py); here its intake opens the case.
-disabled_routines: [triage/cycle-shadow, bugfix/fix$DEMO_DISABLED$SHADOW_HELD]
+disabled_routines: [bugfix/fix$DEMO_DISABLED$SHADOW_HELD]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -735,10 +735,10 @@ CS="$($D inspect flotilla-worker-triage-candidate --format '{{range .Mounts}}{{i
 CE="$($D inspect flotilla-worker-triage-candidate --format '{{range .Config.Env}}{{println .}}{{end}}' 2>&1 | grep -E '^ROUTINE_SF_(SERVICE|GLITCHTIP_SYNC)=' | sort | tr '\n' ' ')"
 [ "$CE" = "ROUTINE_SF_GLITCHTIP_SYNC=0 ROUTINE_SF_SERVICE=triage-fleet-candidate " ] \
   && ok "the candidate keeps its own name and no GlitchTip sync over the live fleet's env file" || bad "candidate env: '$CE'"
-OUT="$(cli autonomy triage/cycle-shadow propose 2>&1)"
-echo "$OUT" | grep >/dev/null "capped at record" && ok "triage/cycle-shadow cannot leave record, even for the operator ($OUT)" \
+OUT="$(cli autonomy e2e/candidate propose 2>&1)"
+echo "$OUT" | grep >/dev/null "capped at record" && ok "e2e/candidate (on the candidate worker) cannot leave record, even for the operator ($OUT)" \
   || bad "autonomy on the capped routine: $OUT"
-OUT="$(cli autonomy triage/cycle-shadow shadow 2>&1)"
+OUT="$(cli autonomy e2e/candidate shadow 2>&1)"
 echo "$OUT" | grep >/dev/null '"autonomy":"record"' && echo "$OUT" | grep >/dev/null "shadow is now called record" \
   && ok "the old level word shadow is stored as record ($OUT)" || bad "autonomy shadow: $OUT"
 OUT="$(cli status 2>&1)"

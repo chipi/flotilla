@@ -1,0 +1,19 @@
+fleet: e2e
+routine: candidate
+description: >-
+  The e2e's stand-in for a routine on the candidate worker, never shipped: capped at record, so the check that no control (not
+  even the operator's) lifts it has a subject. It was triage/cycle-shadow's role before the examples' candidate became a version of
+  triage/cycle. Disabled, so it never runs on a timer.
+enabled: false
+worker: triage-candidate
+trigger:
+  every: 60m
+run:
+  command: "true"
+  workdir: .
+  timeout: 1m
+autonomy: record
+max_autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

@@ -3,10 +3,8 @@ package spec
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -262,23 +260,8 @@ func TestRepoSpecs(t *testing.T) {
 	if j := ids["sites/site-check"]; j == nil || j.Autonomy != AutonomyRecord {
 		t.Error("sites/site-check: the example site watch, read only, at record")
 	}
-	// harness-default.json is what triage applies without flotillad (eval runs): the specs' harness
-	raw, err := os.ReadFile(filepath.Join("..", "..", "fleets", "triage", "harness-default.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var def, got map[string]any
-	if err := json.Unmarshal(raw, &def); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"triage/cycle", "triage/cycle-shadow"} {
-		if err := json.Unmarshal([]byte(ids[id].HarnessJSON()), &got); err != nil {
-			t.Fatalf("%s: %v", id, err)
-		}
-		if !reflect.DeepEqual(got, def) {
-			t.Errorf("%s: harness differs from harness-default.json:\n spec    %v\n default %v", id, got, def)
-		}
-	}
+	// what harness-default.json (triage's settings without flotillad) says is kept equal to the decide station by
+	// TestTriageCycleIsAStationVersionOfTheSameRoutine
 }
 
 func TestHarness(t *testing.T) {

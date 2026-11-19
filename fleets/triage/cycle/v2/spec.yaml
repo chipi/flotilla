@@ -1,0 +1,33 @@
+run:
+  command: python3 orchestrator_station.py --glitchtip --limit 2
+  workdir: signal-fleet/mvp
+  timeout: 20m
+  spend_file: signal-fleet/results/.last_cycle_spend
+skills:
+  rule:
+    - when: {class: external-transient}
+      load: [hint-external-transient]
+    - when: {class: external}
+      load: [hint-external]
+    - when: {class: environment}
+      load: [hint-environment]
+    - when: {class: recoverable}
+      load: [hint-recoverable]
+# A candidate beside the live version, the example of what the former triage/cycle-shadow routine was: the same code and
+# texts on another model (the alias triage-pro), errors only and 2 triages a cycle, to keep the candidate's model load
+# small. It arrives as a shadow: it reads what the live run read, writes only its shadow record, and goes live only when
+# the operator promotes it.
+stations:
+  decide:
+    harness: flotilla
+    model: triage-pro
+    prompts: {system: system.md}
+    tools: all
+    tool_names: [event_detail, occurrence_history, service_logs, metric, trace, source_state]
+    gates: [intent, cleanup, dismiss_corroborated, edge]
+    hooks:
+      after_tool:
+        - {name: redact_credentials, mode: observe}
+    skills: [hint-external-transient, hint-external, hint-environment, hint-recoverable]
+    limits: {max_turns: 4, timeout: 6m, max_output_tokens: 8192}
+limits: {call_timeout_s: 90, reply_echo_chars: 600, decision_echo_chars: 400, result_chars: 1800}

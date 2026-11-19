@@ -1,3 +1,4 @@
+e2e/candidate 98a9d31be1a3
 e2e/flat-playbook 9f97c63e8038
 e2e/hang 222e7afd703d
 e2e/host-absent-act d41775d7d1a4
@@ -9,5 +10,3 @@ e2e/remote-echo eb2856f2a6af
 e2e/stage-probe d76887fb1d37
 e2e/token-probe 68916df8610a
 e2e/versioned-monitor f40ede417c18
-triage/cycle dd6a7bc96543
-triage/cycle-shadow 32fd2a7eaddf

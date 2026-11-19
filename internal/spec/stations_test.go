@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -134,17 +135,46 @@ func TestTheEmbeddedHarnessTableIsTheFileOnDisk(t *testing.T) {
 	}
 }
 
-func TestNoShippedRoutineDeclaresStations(t *testing.T) {
-	// the example fleets only: the e2e's own routine (e2e/station-monitor) declares stations on purpose
+// The example fleets declare stations in the new format (step 5): each is valid against the harness table the binary carries, names
+// a model alias, and for harness flotilla says its tool names and gates (a version with none says []).
+func TestEveryExampleStationIsValidAgainstTheHarnessTable(t *testing.T) {
 	rs, err := Load(filepath.Join("..", "..", "fleets"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	tab, err := Harnesses()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
 	for _, j := range rs {
 		for _, v := range j.Versions {
-			if len(v.Stations) > 0 {
-				t.Errorf("%s v%d declares stations: step 5 moves the examples, not step 3", j.ID(), v.Number)
+			vj, err := j.WithVersion(v.Number)
+			if err != nil {
+				t.Errorf("%s v%d: %v", j.ID(), v.Number, err)
+				continue
 			}
+			for _, name := range vj.StationNames() {
+				s := vj.Stations[name]
+				found[j.ID()+"@v"+strconv.Itoa(v.Number)+"/"+name] = true
+				caps, ok := tab[s.Harness]
+				if !ok || !caps.serves(s.Tools) || s.Model == "" {
+					t.Errorf("%s v%d station %s: harness %q tools %q model %q", j.ID(), v.Number, name, s.Harness, s.Tools, s.Model)
+				}
+				if s.Harness == "flotilla" && (s.ToolNames == nil || s.Gates == nil) {
+					t.Errorf("%s v%d station %s: harness flotilla without tool_names or gates", j.ID(), v.Number, name)
+				}
+				for text, ref := range vj.StationText[name] {
+					if ref.SHA256 == "" {
+						t.Errorf("%s v%d station %s text %s: no hash (the file is missing)", j.ID(), v.Number, name, text)
+					}
+				}
+			}
+		}
+	}
+	for _, want := range []string{"triage/cycle@v1/decide", "triage/cycle@v2/decide", "platform/heartbeat@v2/probe"} {
+		if !found[want] {
+			t.Errorf("the examples no longer declare %s", want)
 		}
 	}
 }

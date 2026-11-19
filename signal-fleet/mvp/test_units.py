@@ -1156,13 +1156,17 @@ class TestSystemPromptIsADeclaredPart(unittest.TestCase):
 
     ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
-    def test_the_spec_and_the_default_name_the_same_file(self):
+    def test_the_default_playbook_and_the_stations_system_text_are_one_text(self):
+        # without flotillad triage.py reads fleets/triage/playbooks/triage.md; the version's decide station declares system.md, the
+        # same text with its two %-placeholders written as the slots the station fills (orchestrator_station.py): rendered, one text
         import re
         import triage as t
-        for spec in ("cycle.yaml", "cycle-shadow.yaml"):
-            with open(os.path.join(self.ROOT, "fleets", "triage", spec), encoding="utf-8") as f:
-                m = re.search(r"^prompts:\n  system: (\S+)$", f.read(), re.M)
-            self.assertEqual(m and m.group(1), t._PLAYBOOK, spec)
+        slots = {"max_probes": str(t.MAX_PROBES), "probe_menu": t.probes.menu()}
+        for v in ("v1", "v2"):
+            with open(os.path.join(self.ROOT, "fleets", "triage", "cycle", v, "system.md"), encoding="utf-8") as f:
+                text = f.read()
+            rendered = re.sub(r"\{\{\s*(\w+)\s*\}\}", lambda m: slots[m.group(1)], text)
+            self.assertEqual(rendered[:-1] if rendered.endswith("\n") else rendered, t._sys(), v)
 
     def _import(self, declared):
         import subprocess

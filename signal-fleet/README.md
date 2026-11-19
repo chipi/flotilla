@@ -11,10 +11,10 @@ the ledgers, the reasoning behind each rule) and the [runbook](../docs/operation
 
 ## Where it runs
 
-flotillad runs the routine `triage/cycle` ([fleets/triage/cycle.yaml](../fleets/triage/cycle.yaml))
+flotillad runs the routine `triage/cycle` ([fleets/triage/cycle/](../fleets/triage/cycle/))
 every 10 minutes on the triage worker, a container built from this directory's `mvp/` and flotilla's
 `runtime/` ([deploy/docker/worker-triage.Dockerfile](../deploy/docker/worker-triage.Dockerfile)). A
-candidate, `triage/cycle-shadow`, runs beside it at shadow and never files. Its state is a Docker
+candidate (in the examples `v2` of `triage/cycle`, an installation's own `triage/cycle-shadow` until step 6) runs beside it at shadow and never files. Its state is a Docker
 volume; its credentials come from the worker's secrets volume.
 
 The code holds no installation facts. Which repo each project files into, the probes' labels, the

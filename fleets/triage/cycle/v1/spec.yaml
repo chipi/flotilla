@@ -1,0 +1,182 @@
+run:
+  command: python3 orchestrator_station.py --cycle --limit 10 --no-dry-run
+  workdir: signal-fleet/mvp
+  timeout: 20m
+  spend_file: signal-fleet/results/.last_cycle_spend
+# The class hints (ADR-0012): triage's code classes the signal, a rule loads its hint, rendered after
+# the SIGNAL JSON. fleets/triage/skills/default-rules.json is the same list for runs without flotillad
+# (a Go test keeps them equal). The skills are files in the fleet's skills/ folder: the station names the ones
+# it may load, and a rule naming another is refused at the start.
+skills:
+  rule:
+    - when: {class: external-transient}
+      load: [hint-external-transient]
+    - when: {class: external}
+      load: [hint-external]
+    - when: {class: environment}
+      load: [hint-environment]
+    - when: {class: recoverable}
+      load: [hint-recoverable]
+# The one model step (RFC-0002 §4, v2-design.md section 8): the system text, its model alias, the probes the model may
+# call (the harness's tool names), the gates that run on its decision, the hooks around each probe, and the turns it
+# has. fleets/triage/harness-default.json is the same list for runs without flotillad (a Go test keeps them equal); the
+# system text is the same text as fleets/triage/playbooks/triage.md with its two placeholders written as slots (a test
+# renders both and compares them).
+stations:
+  decide:
+    harness: flotilla
+    model: triage-flash
+    prompts: {system: system.md}
+    tools: all
+    tool_names: [event_detail, occurrence_history, service_logs, metric, trace, source_state]
+    gates: [intent, cleanup, dismiss_corroborated, edge]
+    hooks:
+      after_tool:
+        - {name: redact_credentials, mode: observe}
+    skills: [hint-external-transient, hint-external, hint-environment, hint-recoverable]
+    limits: {max_turns: 4, timeout: 6m, max_output_tokens: 8192}
+# What the loop keeps from the first fleet's behaviour, like for like (RFC-0002 §9 step 6 removes each by model replay): the
+# characters of an earlier reply and of a tool result that go back to the model, and the seconds one call may take.
+limits: {call_timeout_s: 90, reply_echo_chars: 600, decision_echo_chars: 400, result_chars: 1800}
+# What the routine page draws (internal/spec/explain.go): a text per block, and the steps the code takes that
+# no field above shows. Keep each text true to the code it describes.
+explain:
+  trigger: >-
+    flotillad starts a run every 10 minutes, counted from the last run that was not skipped. A run due
+    while a deploy pauses the routine is skipped, not queued.
+  freshness: >-
+    With no run ending ok for 35 minutes the routine is stale: its block turns red and the brief says
+    so. That is three missed cycles and a half.
+  worker: >-
+    Runs on the worker triage: a container with the triage fleet's secrets and its egress through the
+    proxy's allowlist. No other routine uses its access.
+  run: >-
+    The worker runs this command in signal-fleet/mvp. --limit 10 caps the triages a cycle makes;
+    --no-dry-run lets it act, and its autonomy decides what it may do. It reads its station, its model and
+    its limits from the version, not from its own settings.
+  autonomy: >-
+    record keeps everything inside flotilla; propose files and escalates as GitHub issues; cleanup in
+    GlitchTip needs auto.
+  budget: >-
+    The day's model spend; once it is reached, the routine's runs are skipped for the rest of the day.
+  skills: >-
+    The code classes each signal, and a rule loads that class's hint into the model's prompt:
+    external-transient, external, environment or recoverable. A signal with no class gets no hint.
+  models: >-
+    The alias of the decide station: the only model the run can call, through the installation's model
+    gateway.
+steps:
+  - id: sources
+    lane: where
+    who: tool
+    title: GlitchTip and Grafana
+    short: what it reads each cycle
+    explain: >-
+      Up to 100 unresolved GlitchTip issues and Grafana's firing alerts. Dev projects and flotilla's own
+      project are left out: a dev error never becomes an issue.
+  - id: dedup
+    lane: sort
+    who: code
+    title: already decided
+    short: comes back as a recurrence, no model
+    count: recurrences
+    explain: >-
+      An issue decided before is written to the ledger as a recurrence and not sent to the model. It
+      goes back to the model when a re-triage is due: after 24 hours, or when its decision was overturned.
+  - id: queue
+    lane: sort
+    who: code
+    title: new, or due again
+    short: never decided first, oldest first
+    count: decided
+    explain: >-
+      Issues never decided go first, oldest first seen first, then the re-triages that are due. At most
+      10 a cycle; the rest wait for the next one.
+  - id: decide
+    lane: agent
+    who: agent
+    title: the decide station
+    short: reads the signal and its hint, probes, decides
+    count: probes
+    explain: >-
+      A model reads the signal and its hint and answers in JSON: a decision (file, escalate, dismiss or
+      cleanup) with its reason and certainty, or a request for one probe. At most 4 turns and one probe a
+      turn; the 4th must decide, or one more call asks only for the decision, and without one the signal is
+      escalated. Six read-only probes: the error's event detail, how often it occurred, the service's logs, a metric,
+      a trace, and the source code's state on main. A redact_credentials hook records where a probe result holds a
+      key, token or password (observe: it changes nothing yet).
+  - id: intent_gate
+    lane: gates
+    who: code
+    title: intent gate
+    short: a file decision cites its intent
+    explain: >-
+      A file decision needs acceptance criteria, each citing an allowed source of intent (the issue, a doc,
+      a test). Without them the decision is downgraded.
+  - id: cleanup_gate
+    lane: gates
+    who: code
+    title: cleanup gate
+    short: only a marked test or dev signal
+    explain: >-
+      A cleanup (resolving the error) is allowed only for a signal marked test or dev; anything else is
+      escalated to you.
+  - id: dismiss_gate
+    lane: gates
+    who: code
+    title: dismiss gate
+    short: a dismiss cites corroborating evidence
+    explain: >-
+      A dismiss must cite corroborating evidence from a probe. Without it the dismiss becomes an
+      escalation: the model cannot quietly drop a signal.
+  - id: edge_gate
+    lane: gates
+    who: code
+    title: edge gate
+    short: no dismiss of a burst near a restart
+    explain: >-
+      An edge 5xx burst that coincided with a container start or an out-of-memory kill cannot be
+      dismissed: probes taken after the restart look healthy because the container is back.
+  - id: file
+    lane: outcome
+    who: code
+    title: file
+    short: a GitHub issue, labelled bug
+    count: disposition:file
+    explain: >-
+      At autonomy propose and above, a GitHub issue in the project's repo, labelled bug; for the repos the
+      installation names as the bugfix fleet's, also routed to it. At record nothing leaves flotilla.
+  - id: escalate
+    lane: outcome
+    who: you
+    title: escalate
+    short: a GitHub issue for you to decide
+    count: disposition:escalate
+    explain: >-
+      The model, or a gate, could not decide safely. The issue asks you; the brief lists it under what
+      needs you.
+  - id: dismiss
+    lane: outcome
+    who: code
+    title: dismiss
+    short: the ledger only
+    count: disposition:dismiss
+    explain: >-
+      Noise, or a known transient. Only the ledger records it; it comes back as a recurrence if it
+      happens again.
+  - id: cleanup
+    lane: outcome
+    who: code
+    title: cleanup
+    short: resolve the error in GlitchTip
+    count: disposition:cleanup
+    explain: >-
+      Resolves the error in GlitchTip. Only at autonomy auto, and only past the cleanup gate.
+  - id: record
+    lane: outcome
+    who: code
+    title: every decision
+    short: the ledger, a trace, its calls
+    explain: >-
+      Each decision is a ledger row (the fleet's Decisions tab counts them), an LLM trace, and its model
+      calls and spans on the run's page.

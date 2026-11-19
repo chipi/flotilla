@@ -309,12 +309,17 @@ func TestRepoFleetsReconcile(t *testing.T) {
 		t.Fatal(err)
 	}
 	vs, _ := s.AllVersions(context.Background())
-	if len(vs) != len(rs) || len(bound) != len(rs) {
-		t.Fatalf("%d rows, %d bound, %d routines", len(vs), len(bound), len(rs))
+	versions := 0
+	for _, j := range rs {
+		versions += len(j.Versions)
+	}
+	if len(vs) != versions || len(bound) != len(rs) {
+		t.Fatalf("%d rows, want %d versions; %d bound, %d routines", len(vs), versions, len(bound), len(rs))
 	}
 	for _, v := range vs {
-		if v.State != store.VersionLive || v.Version != 1 || v.Hash == "" || len(v.Manifest) == 0 {
-			t.Fatalf("row %+v", v)
+		// every routine's v1 goes live; a later version an example ships (a candidate) arrives as a shadow
+		if want := map[bool]string{true: store.VersionLive, false: store.VersionShadow}[v.Version == 1]; v.State != want || v.Hash == "" || len(v.Manifest) == 0 {
+			t.Fatalf("row %+v, want state %s", v, want)
 		}
 	}
 	for i := range rs {
