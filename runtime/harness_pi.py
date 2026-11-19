@@ -17,7 +17,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adapter  # noqa: E402
-import toolrec  # noqa: E402
 
 # SR-0001 H8: the steps that only read (verdict, advisor, review) get pi's read tools, no shell and no
 # writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
@@ -103,19 +102,27 @@ def _events(stream):
             yield e
 
 
-def _turn(n, m, failed):
+def _result_text(m):
+    """The text of a toolResult message: its text parts, joined."""
+    c = m.get("content")
+    if isinstance(c, str):
+        return c
+    return "".join(p.get("text") or "" for p in c or [] if isinstance(p, dict) and p.get("type") == "text")
+
+
+def _turn(n, m, results):
     u = m.get("usage") if isinstance(m.get("usage"), dict) else None
     cost = (u.get("cost") or {}).get("total") if u and isinstance(u.get("cost"), dict) else None
     tools = []
     for p in m.get("content") or []:
         if isinstance(p, dict) and p.get("type") == "toolCall" and isinstance(p.get("name"), str):
-            t = {"name": p["name"], "arg": toolrec.clean_arg(toolrec.primary_arg(p.get("arguments")))}
-            if p.get("id") in failed:
-                t["ok"] = not failed[p["id"]]
-            tools.append(t)
+            got = results.get(p.get("id"))
+            # pi's stream has no duration for a tool call: none is recorded
+            tools.append(adapter.action(p["name"], p.get("arguments") if isinstance(p.get("arguments"), dict) else None,
+                                        got["result"] if got else None, ok=got["ok"] if got else None))
     stop = m.get("stopReason")
     return adapter.Turn(
-        n=n, model=m.get("model"),
+        n=n, model=m.get("model"), time=adapter.iso_utc(m.get("timestamp")),
         text="".join(p.get("text") or "" for p in m.get("content") or [] if isinstance(p, dict) and p.get("type") == "text"),
         tools=tools,
         usage=adapter.usage_dict(u.get("input"), u.get("output"), u.get("cacheRead"), u.get("cacheWrite")) if u else None,
@@ -202,17 +209,17 @@ class Pi(adapter.Harness):
         return turn_ended(line)
 
     def parse(self, stream_text, files):
-        turns, failed, sid, n = [], {}, None, 0
+        turns, results, sid, n = [], {}, None, 0
         for e in _events(stream_text):
             m = e.get("message") if isinstance(e.get("message"), dict) else {}
             if e.get("type") == "session" and sid is None and isinstance(e.get("id"), str):
                 sid = e["id"]
             elif e.get("type") == "message_end" and m.get("role") == "toolResult" and isinstance(m.get("toolCallId"), str):
-                failed[m["toolCallId"]] = m.get("isError") is True
+                results[m["toolCallId"]] = {"ok": m.get("isError") is not True, "result": _result_text(m)}
             elif e.get("type") == "message_end" and m.get("role") == "assistant":
                 n += 1
                 turns.append((n, m))
-        built = [_turn(i, m, failed) for i, m in turns]
+        built = [_turn(i, m, results) for i, m in turns]
         err = stream_error(stream_text)
         return adapter.Episode(harness="pi", session_id=sid, turns=built, answer=assistant_text(stream_text),
                                error=err, exit_reason="error" if err else "completed",

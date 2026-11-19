@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "harness": "fakeh",
+  "station": "check",
+  "seq": 2,
+  "version": 3,
+  "spec_hash": "3f9a1c0be2d4",
+  "session_id": "fakeh-sess-1",
+  "exit_reason": "turn_cap",
+  "error": "no final event",
+  "notes": ["fakeh: rules not delivered"],
+  "raw_path": "episodes/002-check.stream",
+  "cost": {"usd": null, "source": "unknown"},
+  "turns": [
+    {"n": 1, "model": "fakeh-m", "stop": "tool_calls", "text": "ok", "actions": [{"name": "read", "arg": "src/a.js", "ok": true}]},
+    {"n": 2, "model": "fakeh-m", "stop": "error", "error": "429"}
+  ]
+}

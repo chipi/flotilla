@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flotilla.invalid/schemas/episode.schema.json",
+  "title": "One station's run as the harness layer records it (flotilla episode schema, version 1)",
+  "description": "A station's run on a harness: its name and sequence, the version and spec hash it ran under, per turn its time, model, rendered texts and usage, per action its name, arguments and result (after redaction; above a size cap, as a hash and a length) with its duration and success, the cost with its source always set, the session id, how it ended, the notes and the raw stream's path (never the stream). Embedded verbatim in the evaluation harness's transcripts. It is meant to be a superset of the generic episode that eval-harness's transcript schema defines; that schema does not exist yet, so the relation is not checked (runtime/test_episode_schema.py takes a list of schemas: adding its file is one entry). Open on purpose at the episode, the turn and the action: unknown fields pass, so a field the generic episode has that this one does not name is not refused. Written by adapter.episode_record from an Episode; an adapter that cannot supply a field leaves it out. Only what every adapter can give is required.",
+  "type": "object",
+  "required": ["schema_version", "harness", "station", "exit_reason", "cost", "turns"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "harness": {"description": "The adapter's name.", "type": "string", "pattern": "^[a-z][a-z0-9]{0,15}$"},
+    "station": {"description": "The station's own name in the version's spec, a free label to the harness layer. May be empty for a run no station asked for.", "type": "string", "maxLength": 64},
+    "seq": {"description": "The episode's order in its run, from 1.", "type": "integer", "minimum": 1},
+    "version": {"description": "The routine version the run was.", "type": "integer", "minimum": 1},
+    "spec_hash": {"description": "The version's frozen hash (its Version.Hash), hex.", "type": "string", "pattern": "^[0-9a-f]{12,64}$"},
+    "session_id": {"description": "The harness's own session id, what a resume continues.", "type": "string", "minLength": 1, "maxLength": 200},
+    "exit_reason": {"description": "How the episode ended.", "enum": ["completed", "turn_cap", "timeout", "error"]},
+    "error": {"type": "string", "maxLength": 2000},
+    "answer": {"description": "The last non-empty assistant text, credentials masked.", "type": "string"},
+    "notes": {"description": "What the adapter had to do differently from the caller's text (a prompt prefix, a submit protocol).", "type": "array", "items": {"type": "string"}},
+    "raw_path": {"description": "The harness's own stream, relative to the run's folder. The path only, never the stream.", "type": "string", "minLength": 1, "maxLength": 500},
+    "cost": {
+      "description": "What the episode cost. `source` is always set, so an unknown cost is the explicit value unknown, never a missing field: gateway (the gateway's figure for the station), gateway-share (the gateway's figure for a run shared by tokens), harness-estimate (the harness's own list-price estimate, never the bill), unknown.",
+      "type": "object", "required": ["usd", "source"],
+      "properties": {
+        "usd": {"description": "Null when the source is unknown.", "type": ["number", "null"], "minimum": 0},
+        "source": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "usage": {
+      "description": "The episode's tokens, summed over the turns that report any.",
+      "type": "object", "required": ["input", "output", "cache_read", "cache_write", "reasoning"],
+      "properties": {
+        "input": {"type": "integer", "minimum": 0}, "output": {"type": "integer", "minimum": 0},
+        "cache_read": {"type": "integer", "minimum": 0}, "cache_write": {"type": "integer", "minimum": 0},
+        "reasoning": {"type": "integer", "minimum": 0}
+      }
+    },
+    "turns": {
+      "description": "One entry per model call, in order.",
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["n"],
+        "properties": {
+          "n": {"type": "integer", "minimum": 1},
+          "time": {"description": "When the model call ended (UTC, RFC 3339).", "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},
+          "model": {"type": ["string", "null"]},
+          "text": {"description": "What the model answered, credentials masked.", "type": "string"},
+          "texts": {
+            "description": "The rendered texts the model read in this call, by name: the hash and length of each (the text itself is kept once per hash, by the call record).",
+            "type": "array",
+            "items": {
+              "type": "object", "required": ["name", "sha256", "bytes"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 64},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "bytes": {"type": "integer", "minimum": 0},
+                "text": {"description": "The rendered text, redacted, when the record carries it.", "type": "string"}
+              }
+            }
+          },
+          "usage": {
+            "type": "object", "required": ["input", "output", "cache_read", "cache_write", "reasoning"],
+            "properties": {
+              "input": {"type": "integer", "minimum": 0}, "output": {"type": "integer", "minimum": 0},
+              "cache_read": {"type": "integer", "minimum": 0}, "cache_write": {"type": "integer", "minimum": 0},
+              "reasoning": {"type": "integer", "minimum": 0}
+            }
+          },
+          "cost_est": {"description": "The harness's own estimate for this call, never the bill.", "type": "number", "minimum": 0},
+          "stop": {"description": "OpenAI's finish reasons: stop, tool_calls, length, error.", "type": "string"},
+          "error": {"type": ["string", "null"]},
+          "actions": {
+            "description": "The tool calls of this model call.",
+            "type": "array",
+            "items": {
+              "type": "object", "required": ["name"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "arg": {"description": "The main argument on one line, redacted and cut at 160 characters.", "type": "string"},
+                "args": {"description": "The call's arguments, redacted. Over the size cap they are left out and args_sha256 and args_bytes say what they were.", "type": "object"},
+                "args_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "args_bytes": {"type": "integer", "minimum": 0},
+                "result": {"description": "The tool's result, redacted. Over the size cap it is left out and result_sha256 and result_bytes say what it was: a record never holds a cut result.", "type": "string"},
+                "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "result_bytes": {"type": "integer", "minimum": 0},
+                "duration_s": {"type": "number", "minimum": 0},
+                "ok": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

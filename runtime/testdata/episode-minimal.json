@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "harness": "pi",
+  "station": "decide",
+  "exit_reason": "completed",
+  "cost": {"usd": null, "source": "unknown"},
+  "turns": []
+}

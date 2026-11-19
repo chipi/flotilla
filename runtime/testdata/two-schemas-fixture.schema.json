@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A second schema, only to test that the validation helper takes a list (it stands for no real schema)",
+  "type": "object",
+  "required": ["transcript_id"],
+  "properties": {"transcript_id": {"type": "string", "minLength": 1}}
+}

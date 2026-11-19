@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "harness": "pi",
+  "station": "fix",
+  "seq": 1,
+  "exit_reason": "completed",
+  "session_id": "s-1",
+  "answer": "Changed src/a.js.",
+  "cost": {"usd": 0.0123, "source": "gateway-share"},
+  "usage": {"input": 1200, "output": 300, "cache_read": 800, "cache_write": 0, "reasoning": 40},
+  "turns": [
+    {
+      "n": 1,
+      "time": "2026-11-19T10:00:00.250Z",
+      "model": "fleet-fix-pro",
+      "texts": [
+        {"name": "system", "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "bytes": 120},
+        {"name": "task", "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", "bytes": 480, "text": "Fix the bug in <redacted>."}
+      ],
+      "usage": {"input": 1200, "output": 300, "cache_read": 800, "cache_write": 0, "reasoning": 40},
+      "cost_est": 0.01,
+      "stop": "tool_calls",
+      "actions": [
+        {"name": "read", "arg": "src/big.js", "args": {"path": "src/big.js"}, "result_sha256": "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9", "result_bytes": 91234, "duration_s": 0.02, "ok": true},
+        {"name": "write", "arg": "src/a.js", "args_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "args_bytes": 20000, "result": "Successfully wrote to src/a.js", "ok": true}
+      ]
+    }
+  ]
+}

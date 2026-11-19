@@ -82,7 +82,9 @@ class PiStreams(unittest.TestCase):
         ep = harness_pi.PI.parse(self.stream("stream_ok.jsonl"), {})
         t = ep.turns[0]
         self.assertEqual((t.n, t.text, t.stop, t.cost_est), (1, "Looking at the code.", "tool_calls", 0.001))
-        self.assertEqual(t.tools, [{"name": "read", "arg": "src/a.js", "ok": True}])
+        self.assertEqual(t.tools, [{"name": "read", "arg": "src/a.js", "args": {"path": "src/a.js"}, "result": "module.exports = () => 1;", "ok": True}])
+        self.assertEqual([{k: x[k] for k in ("name", "arg", "ok")} for x in t.tools], [{"name": "read", "arg": "src/a.js", "ok": True}],
+                         "what the chain's calls file reads of a tool is unchanged")
         self.assertEqual(t.usage, adapter.usage_dict(100, 12))
         self.assertEqual(ep.session_id, "s-ok")
         self.assertEqual(ep.answer, "Fixed: value() now returns 2.")

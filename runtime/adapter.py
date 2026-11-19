@@ -79,17 +79,22 @@ order (episode_doc, schema "version": EPISODE_VERSION), and <stem>.stream, the h
 it. A version 1 file (the bugfix chain's, which says `role` where a version 2 says `station`) reads back by
 read_episode and is still what the chain writes: bugfix/fix.py's episode_file.
 """
+import hashlib
 import importlib
 import json
 import os
 import re
 import signal
 import subprocess
+import sys
 import threading
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import toolrec  # noqa: E402
 
 TURN_CAPPED = 125   # the exit code of a run the chain's turn cap killed
 TIMED_OUT = 124     # and of one its timeout killed
@@ -158,11 +163,13 @@ class Turn:
     n: int
     model: Optional[str] = None
     text: str = ""
-    tools: list = field(default_factory=list)      # [{"name", "arg", "ok"}]
+    tools: list = field(default_factory=list)      # [{"name", "arg", "ok"}] and, when the stream has them, "args", "result", "duration_s" (action())
     usage: Optional[dict] = None                   # usage_dict(); None when the harness reports none
     cost_est: Optional[float] = None               # the harness's own estimate, never authoritative
     stop: str = ""                                 # stop, tool_calls, length, error (OpenAI's finish reasons)
     error: Optional[str] = None
+    time: Optional[str] = None                     # when the call ended (UTC, RFC 3339), when the stream says
+    texts: list = field(default_factory=list)      # [{"name", "sha256", "bytes"}]: the rendered texts it read, set by the caller
 
 
 @dataclass
@@ -180,7 +187,13 @@ class Episode:
     notes: list = field(default_factory=list)
 
     def to_dict(self):
-        return asdict(self)
+        d = asdict(self)
+        for t in d["turns"]:   # a turn that has no time or texts says nothing of them: the bugfix chain's files stay as they were
+            if t.get("time") is None:
+                t.pop("time", None)
+            if not t.get("texts"):
+                t.pop("texts", None)
+        return d
 
     @classmethod
     def from_dict(cls, d):
@@ -281,6 +294,97 @@ def capability_row(h):
     """The harness's row of HARNESS_SEAMS.md's capability table, as markdown."""
     return "| " + h.name + " | " + ", ".join(t for t in TOOLS if t in h.tools_served) + " | " + " | ".join(
         "yes" if getattr(h, k, False) else "no" for k in CAPABILITIES) + " |"
+
+
+# the episode record: runtime/episode.schema.json
+
+SCHEMA_VERSION = 1
+RESULT_CAP = 8192   # characters of a tool's arguments or result a record keeps; above it, a hash and a length, never a cut text
+# The schemas every episode is validated against: (name, file). eval-harness's generic episode schema is pending; when its file
+# exists, add one entry here (and its copy under testdata/), and flotilla's stays a superset of it.
+SCHEMAS = [("flotilla", os.path.join(HERE, "episode.schema.json"))]
+
+
+def _redact_tree(x):
+    if isinstance(x, str):
+        return toolrec.redact(x)
+    if isinstance(x, dict):
+        return {k: _redact_tree(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_redact_tree(v) for v in x]
+    return x
+
+
+def bounded(key, value, cap=RESULT_CAP):
+    """{key: value} with credentials, e-mail and IPv4 addresses masked, or, when its text is over `cap` characters,
+    {key_sha256, key_bytes} of the masked text: a record holds a masked text or a hash and a length, never a cut text and
+    never a long one."""
+    masked = _redact_tree(value)
+    text = masked if isinstance(masked, str) else json.dumps(masked, sort_keys=True, separators=(",", ":"))
+    if len(text) <= cap:
+        return {key: masked}
+    raw = text.encode("utf-8")
+    return {key + "_sha256": hashlib.sha256(raw).hexdigest(), key + "_bytes": len(raw)}
+
+
+def action(name, args=None, result=None, duration_s=None, ok=None):
+    """One tool call as a Turn.tools entry: `arg` is the main argument cleaned for a line, `args` the whole call and `result`
+    the tool's answer, both masked and bounded. What the harness does not report stays out (an `ok` or a `duration_s` the
+    stream has no word for is not made up)."""
+    out = {"name": str(name), "arg": toolrec.clean_arg(toolrec.primary_arg(args)) if args else ""}
+    if isinstance(args, dict) and args:
+        out.update(bounded("args", args))
+    if isinstance(result, str):
+        out.update(bounded("result", result))
+    if isinstance(duration_s, (int, float)) and not isinstance(duration_s, bool) and duration_s >= 0:
+        out["duration_s"] = duration_s
+    if isinstance(ok, bool):
+        out["ok"] = ok
+    return out
+
+
+def episode_record(ep, seq=None, version=None, spec_hash=None, cost=None):
+    """The Episode as the episode schema's document. `cost` is {usd, source} from the caller when it has the gateway's figure;
+    else the harness's own estimate labelled as one, else the explicit unknown. What an adapter cannot supply is left out."""
+    if cost is None:
+        cost = {"usd": ep.cost_est, "source": "harness-estimate"} if ep.cost_est is not None else {"usd": None, "source": "unknown"}
+    rec = {"schema_version": SCHEMA_VERSION, "harness": ep.harness, "station": ep.station, "exit_reason": ep.exit_reason,
+           "cost": dict(cost), "turns": []}
+    for k, v in (("seq", seq), ("version", version), ("spec_hash", spec_hash), ("session_id", ep.session_id or None),
+                 ("error", ep.error or None), ("answer", toolrec.redact_credentials(ep.answer) if ep.answer else None),
+                 ("notes", list(ep.notes) if ep.notes else None), ("raw_path", ep.raw_path or None),
+                 ("usage", dict(ep.usage_total) if ep.usage_total else None)):
+        if v is not None:
+            rec[k] = v
+    for t in ep.turns:
+        r = {"n": t.n}
+        for k, v in (("time", t.time), ("model", t.model), ("text", toolrec.redact_credentials(t.text) if t.text else None),
+                     ("texts", [dict(x) for x in t.texts] if t.texts else None), ("usage", dict(t.usage) if t.usage else None),
+                     ("cost_est", t.cost_est), ("stop", t.stop or None), ("error", t.error)):
+            if v is not None:
+                r[k] = v
+        if t.tools:
+            r["actions"] = [dict(x) for x in t.tools]
+        rec["turns"].append(r)
+    return rec
+
+
+def validate_episode(record):
+    """The errors of an episode record against every schema in SCHEMAS ([] when it is valid against all)."""
+    import schemacheck
+    errors = []
+    for name, path in SCHEMAS:
+        with open(path) as f:
+            schema = json.load(f)
+        errors += [f"{name}: {e}" for e in schemacheck.validate(record, schema)]
+    return errors
+
+
+def iso_utc(ms):
+    """An epoch in milliseconds as RFC 3339 UTC, None for anything that is not one."""
+    if isinstance(ms, bool) or not isinstance(ms, (int, float)) or ms <= 0:
+        return None
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ms / 1000)) + ".%03dZ" % (int(ms) % 1000)
 
 
 # the registry
@@ -611,7 +715,5 @@ def _cli(argv):
 
 
 if __name__ == "__main__":
-    import sys
-
     import adapter as _adapter   # not __main__: harness_<name>.py imports `adapter` and registers into that module's registry
     sys.exit(_adapter._cli(sys.argv[1:]))

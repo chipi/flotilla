@@ -41,6 +41,16 @@ def check_contract(tc, ep, h=None):
             tc.assertTrue("ok" not in tool or isinstance(tool["ok"], bool))
     tc.assertEqual(ep.usage_total, adapter.sum_usage(ep.turns))
     tc.assertEqual(adapter.Episode.from_dict(json.loads(json.dumps(ep.to_dict()))), ep, "an episode survives its JSON")
+    rec = adapter.episode_record(ep)
+    tc.assertEqual(adapter.validate_episode(rec), [], "the episode record validates against every schema")
+    tc.assertTrue(rec["cost"]["source"], "the cost's source is always set: unknown is a value, not a gap")
+    for t in rec["turns"]:
+        for a in t.get("actions", []):
+            for k in ("args", "result"):
+                tc.assertFalse(k in a and k + "_sha256" in a, "a record holds a text or its hash, not both")
+                tc.assertEqual(k + "_sha256" in a, k + "_bytes" in a, "a hash comes with its length")
+            if "result" in a:
+                tc.assertLessEqual(len(a["result"]), adapter.RESULT_CAP)
 
 
 FAKE_CLI = textwrap.dedent('''\

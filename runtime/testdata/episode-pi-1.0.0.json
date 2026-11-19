@@ -1,0 +1,66 @@
+{
+  "answer": "done",
+  "cost": {
+    "source": "harness-estimate",
+    "usd": 0.0
+  },
+  "exit_reason": "completed",
+  "harness": "pi",
+  "schema_version": 1,
+  "seq": 1,
+  "session_id": "01a1f485-f713-75bf-a08e-b00a0c3ced9e",
+  "spec_hash": "0123456789ab",
+  "station": "decide",
+  "turns": [
+    {
+      "actions": [
+        {
+          "arg": "out.txt",
+          "args": {
+            "content": "hello",
+            "path": "out.txt"
+          },
+          "name": "write",
+          "ok": true,
+          "result": "Successfully wrote to out.txt"
+        }
+      ],
+      "cost_est": 0.0,
+      "model": "m-test",
+      "n": 1,
+      "stop": "tool_calls",
+      "text": "Looking.",
+      "time": "2026-11-19T15:56:22.739Z",
+      "usage": {
+        "cache_read": 0,
+        "cache_write": 0,
+        "input": 100,
+        "output": 20,
+        "reasoning": 0
+      }
+    },
+    {
+      "cost_est": 0.0,
+      "model": "m-test",
+      "n": 2,
+      "stop": "stop",
+      "text": "done",
+      "time": "2026-11-19T15:56:22.758Z",
+      "usage": {
+        "cache_read": 0,
+        "cache_write": 0,
+        "input": 100,
+        "output": 20,
+        "reasoning": 0
+      }
+    }
+  ],
+  "usage": {
+    "cache_read": 0,
+    "cache_write": 0,
+    "input": 200,
+    "output": 40,
+    "reasoning": 0
+  },
+  "version": 2
+}
