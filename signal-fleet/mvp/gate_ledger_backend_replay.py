@@ -4,7 +4,10 @@
   python3 gate_ledger_backend_replay.py --synthetic N                    # N random filings
 
 Run inside a worker, as a routine runs (FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE): it works in fresh
-namespaces of its own (replay-<random>), never the routine's.
+namespaces of its own (replay-<random>), never the routine's. It writes rows in those namespaces, so its token
+must be one that may: a worker's own, which only flotillad's run_tokens: accept (the one-release way back)
+honours. Under required (the default) the operator's token is import and read only and a run's is confined to
+its routine's namespace, so no token can: point it at a flotillad in accept mode (the e2e starts one).
 
 1. Lookup: the ledger is imported, then for every row's keys, and for crossed variants (a row's fingerprint
    with another's norm key, unknown fingerprints, single keys), filing.ledger_lookup runs with each backend
@@ -135,12 +138,12 @@ def main():
     ap.add_argument("filed", nargs="?")
     ap.add_argument("dispositions", nargs="?")
     ap.add_argument("--synthetic", type=int, default=0)
-    ap.add_argument("--token-file", help="a mode-600 file holding an operator's token (run_tokens: required refuses a worker's own)")
+    ap.add_argument("--token-file", help="a mode-600 file holding a worker's own token (honoured by a flotillad in run_tokens: accept only)")
     a = ap.parse_args()
     if a.token_file:
         os.environ["FLOTILLA_API_TOKEN_FILE"] = a.token_file
     if not os.environ.get("FLOTILLA_API_TOKEN_FILE"):
-        print("operator token required (run_tokens: required): pass --token-file FILE or set FLOTILLA_API_TOKEN_FILE; a worker's own token is refused")
+        print("a token file is required: pass --token-file FILE or set FLOTILLA_API_TOKEN_FILE (a worker's own token, honoured only under run_tokens: accept; the replay writes rows, which run_tokens: required allows no token outside a run to do)")
         return 2
     work = tempfile.mkdtemp(prefix="ledger-replay-")
     try:

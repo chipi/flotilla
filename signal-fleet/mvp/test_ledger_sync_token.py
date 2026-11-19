@@ -1,4 +1,4 @@
-"""python3 test_ledger_sync_token.py: ledger_sync and the ledger backend replay need an operator's token under run_tokens: required."""
+"""python3 test_ledger_sync_token.py: ledger_sync needs an operator's token under run_tokens: required."""
 import io
 import os
 import sys

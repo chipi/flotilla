@@ -64,8 +64,8 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
+  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link e2e-required e2e-accept; do $D rm -f "$c" >/dev/null 2>&1; done
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -580,13 +580,58 @@ SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OB
 [ "$SK" = "96a4218f 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 96a4218f with the example facts, the hint loads)" \
   || bad "triage in the worker image: '$SK'"
 
+# A second, idle flotillad on the stack's network (its one routine runs `true` once a year, and flotillad ends when no timed routine is
+# enabled, so it has to be), in the run_tokens mode asked for: e2e-<mode>, its workers' listener on e2e-<mode>:8485.
+idle_flotillad() {
+  local mode="$1" name="e2e-$1" dir="$WORK/config/specs-$1"
+  mkdir -p "$dir/e2e"
+  cat > "$dir/e2e/idle.yaml" <<EOF2
+fleet: e2e
+routine: idle
+description: The e2e's second flotillad (run_tokens: $mode) has one routine, which only keeps it running (flotillad ends with no timed routine).
+enabled: true
+worker: triage
+trigger: {every: 8760h}
+run: {command: "true", workdir: ., timeout: 1m}
+autonomy: record
+budget: {day_usd: 0}
+freshness: 9000h
+EOF2
+  cat > "$WORK/config/flotillad-$name-live.yaml" <<EOF2
+listen: 127.0.0.1:8484
+worker_listen: 0.0.0.0:8485
+specs_dir: /etc/flotilla/specs
+state_dir: /var/lib/flotilla
+environment: e2e
+callers_file: /etc/flotilla/callers.yaml
+run_tokens: $mode
+registry_files: [/opt/flotilla/host/registry.json]
+workers:
+  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
+EOF2
+  $D volume create --label $LABEL "flotilla-$name" >/dev/null
+  $D run --rm --user 0 -v "flotilla-$name:/v" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'chown -R 65532:65532 /v' >/dev/null
+  $D run -d --label $LABEL --name "$name" --network "${P}_flotilla" --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --memory 256m \
+    -v "flotilla-$name:/var/lib/flotilla" -v "$WORK/config/flotillad-$name-live.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+    -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$dir:/etc/flotilla/specs:ro" \
+    "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad in run_tokens: $mode"
+  for _ in $(seq 1 60); do $D logs "$name" 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
+}
+stop_idle_flotillad() { $D rm -f "e2e-$1" >/dev/null 2>&1; $D volume rm "flotilla-e2e-$1" >/dev/null 2>&1; }
+
 echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's workers' listener"
-LR="$($D exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485 \
-  -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad -e SF_OBSERV_DISABLED=1 \
+# The replay writes rows through the API as a routine's own worker would, which only run_tokens: accept lets a worker's own token do (a run's token
+# is confined to the run's own namespace, the operator's is import and read only): it runs against a flotillad in the one-release way back.
+if [ "${DEMO:-}" != 1 ]; then
+idle_flotillad accept
+LR="$($D exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://e2e-accept:8485 \
+  -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=e2e-accept -e HTTP_PROXY= -e HTTPS_PROXY= -e SF_OBSERV_DISABLED=1 \
   flotilla-worker-triage python3 gate_ledger_backend_replay.py --synthetic 300 2>&1)"
 echo "$LR" | grep >/dev/null "LEDGER BACKEND REPLAY: PASS" \
-  && ok "dedup through the ledger equals filed.tsv: $(echo "$LR" | grep '^lookup:' | cut -c1-90)" \
+  && ok "dedup through the ledger equals filed.tsv (on a flotillad in run_tokens: accept): $(echo "$LR" | grep '^lookup:' | cut -c1-90)" \
   || bad "ledger replay: $(echo "$LR" | tail -4 | tr '\n' ' ')"
+stop_idle_flotillad accept
+fi
 WL="$($D exec flotilla-worker-triage python3 -c 'import urllib.request,urllib.error
 try:
     urllib.request.urlopen("http://flotillad:8485/v1/status", timeout=5); print("served")
@@ -602,24 +647,27 @@ for i in $(seq 1 30); do cli runs e2e/token-probe -n 1 | grep >/dev/null -E " (o
 [ "$(cli runs e2e/token-probe -json -n 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["runs"][0]["status"])')" = ok ] \
   && ok "a run was given its own token file (mode 600, not the worker's) and its ledger write named another namespace" \
   || bad "token-probe: $(cli runs e2e/token-probe -n 1) $($D logs flotilla-worker-triage 2>&1 | grep -E 'token_file|own |worker.s token file|namespace the run' | tail -3)"
+printf %s "$OP" | $D exec -i flotilla-worker-triage sh -c 'umask 077 && cat > /tmp/op.token'
 NSC="$($D exec flotilla-worker-triage python3 -c 'import json,urllib.request
 def n(ns):
-    r = urllib.request.Request("http://flotillad:8485/v1/ledger/filings?ns=" + ns, headers={"Authorization": "Bearer " + open("/run/flotilla/worker.token").read().strip()})
+    r = urllib.request.Request("http://flotillad:8485/v1/ledger/filings?ns=" + ns, headers={"Authorization": "Bearer " + open("/tmp/op.token").read().strip()})
     return len(json.load(urllib.request.urlopen(r, timeout=10))["filings"])
 print(n("e2e/token-probe"), n("bugfix/fix"))' 2>&1 | tail -1)"
 [ "$NSC" = "1 0" ] && ok "the filing landed in the run's own namespace (e2e/token-probe: 1 row, the namespace it named: 0)" || bad "ledger rows by namespace: '$NSC'"
 TL="$($D exec flotilla-worker-triage sh -c 'ls -A /tmp | grep -c "^.flotilla-token-" || true' 2>&1 | tail -1)"
 [ "$TL" = 0 ] && ok "no run's token file is left on the worker after the run" || bad "token files left in the worker's /tmp: $TL"
-# run_tokens: required, read by the real binary (-check, read-only): a worker's own token is not a caller then
-sed 's|^state_dir: .*|state_dir: /tmp/required-check|; /^worker_listen:/a run_tokens: required' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-required.yaml"
-ACC="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-REQ="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-required.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+# run_tokens: required is the default (the stack's own config says nothing), read by the real binary (-check, read-only): a worker's own
+# token is not a caller then; accept is the one-release way back, which -check warns about
+sed 's|^state_dir: .*|state_dir: /tmp/accept-check|; /^worker_listen:/a run_tokens: accept' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-accept.yaml"
+REQ="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
+ACC="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-accept.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
   -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
   "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 NTOK="$(grep -v "shadow: true" "$WORK/config/flotillad.yaml" | grep -c "token_file:")"   # a shadow worker's token is no caller (S1), so it is not among those required drops
 CA="$(echo "$ACC" | grep -o '[0-9]* callers' | cut -d' ' -f1)"; CR="$(echo "$REQ" | grep -o '[0-9]* callers' | cut -d' ' -f1)"
-echo "$ACC" | grep >/dev/null "^run tokens: accept " && echo "$REQ" | grep >/dev/null "^run tokens: required .*opens nothing" && [ -n "$CA" ] && [ "$((CA - CR))" = "$NTOK" ] \
-  && ok "-check: run_tokens accept by default; required drops the $NTOK workers' own tokens from the callers ($CA to $CR)" || bad "-check run tokens: accept '$(echo "$ACC" | grep '^run tokens')' required '$(echo "$REQ" | grep -E '^run tokens|callers' | tr '\n' ' ')'"
+echo "$ACC" | grep >/dev/null "^run tokens: accept " && echo "$ACC" | grep >/dev/null "^WARNING run_tokens: accept" && echo "$REQ" | grep >/dev/null "^run tokens: required .*opens nothing" \
+  && ! echo "$REQ" | grep >/dev/null "WARNING run_tokens" && [ -n "$CA" ] && [ "$((CA - CR))" = "$NTOK" ] \
+  && ok "-check: run_tokens is required by default; accept warns and keeps the $NTOK workers' own tokens among the callers (required $CR, accept $CA)" || bad "-check run tokens: accept '$(echo "$ACC" | grep -E '^(WARNING )?run tokens|^WARNING run_tokens')' required '$(echo "$REQ" | grep -E '^run tokens|callers' | tr '\n' ' ')'"
 # two workers that share a token are refused, by name, by -check (so a deploy's check stops it before anything restarts)
 sed 's|worker-triage-candidate.token|worker-triage.token|' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-shared.yaml"
 SHR="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-shared.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
@@ -627,43 +675,11 @@ SHR="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/
   "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?")"
 echo "$SHR" | grep >/dev/null "workers triage and triage-candidate share a token file" && echo "$SHR" | grep >/dev/null "^rc=2" \
   && ok "-check refuses workers that share a token file, naming them (exit 2, before anything restarts)" || bad "-check on shared worker tokens: $(echo "$SHR" | tail -3)"
-echo "$ACC" | grep >/dev/null "share a token file" && bad "the stack's own workers share a token file" || ok "no two of the stack's workers share a token file"
-# run_tokens: required on a running flotillad (a second one, idle: its one routine runs `true` once a year, and flotillad ends when no
-# timed routine is enabled, so it has to be): a worker's own token opens nothing, the operator's token loads and checks a ledger (what ledger_sync does)
-mkdir -p "$WORK/config/specs-required/e2e"
-cat > "$WORK/config/specs-required/e2e/idle.yaml" <<EOF2
-fleet: e2e
-routine: idle
-description: The e2e's required-mode flotillad has one routine, which only keeps it running (flotillad ends with no timed routine).
-enabled: true
-worker: triage
-trigger: {every: 8760h}
-run: {command: "true", workdir: ., timeout: 1m}
-autonomy: record
-budget: {day_usd: 0}
-freshness: 9000h
-EOF2
-cat > "$WORK/config/flotillad-required-live.yaml" <<EOF2
-listen: 127.0.0.1:8484
-worker_listen: 0.0.0.0:8485
-specs_dir: /etc/flotilla/specs
-state_dir: /var/lib/flotilla
-environment: e2e
-callers_file: /etc/flotilla/callers.yaml
-run_tokens: required
-registry_files: [/opt/flotilla/host/registry.json]
-workers:
-  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
-EOF2
-$D volume create --label $LABEL flotilla-e2e-required >/dev/null
-$D run --rm --user 0 -v flotilla-e2e-required:/v --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'chown -R 65532:65532 /v' >/dev/null
-$D run -d --label $LABEL --name e2e-required --network "${P}_flotilla" --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --memory 256m \
-  -v flotilla-e2e-required:/var/lib/flotilla -v "$WORK/config/flotillad-required-live.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
-  -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs-required:/etc/flotilla/specs:ro" \
-  "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad in run_tokens: required"
-for _ in $(seq 1 60); do $D logs e2e-required 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
+echo "$REQ" | grep >/dev/null "share a token file" && bad "the stack's own workers share a token file" || ok "no two of the stack's workers share a token file"
+# run_tokens: required on a running flotillad (a second one, idle): a worker's own token opens nothing, the operator's token loads and checks a
+# ledger (what ledger_sync does)
+idle_flotillad required
 REQ_LOG="$($D logs e2e-required 2>&1 | tail -4 | cut -c1-300)"
-printf %s "$OP" | $D exec -i flotilla-worker-triage sh -c 'umask 077 && cat > /tmp/op.token'
 REQ_OUT="$($D exec -e NO_PROXY=e2e-required -e HTTP_PROXY= -e HTTPS_PROXY= flotilla-worker-triage python3 -c '
 import json, sys, urllib.error, urllib.request
 base = "http://e2e-required:8485"
@@ -691,7 +707,7 @@ echo "$REQ_OUT" | grep >/dev/null "^worker-count 401" && echo "$REQ_OUT" | grep 
 echo "$REQ_OUT" | grep >/dev/null "^op-import 200 1 1" && echo "$REQ_OUT" | grep >/dev/null "^op-count 200 1 1" && echo "$REQ_OUT" | grep >/dev/null "^op-filings 200 op-write 403" \
   && ok "the operator's token imports a ledger and reads it back in required mode; it writes no row" || bad "required mode, the operator's import: $(echo "$REQ_OUT" | tail -2) / flotillad: $REQ_LOG"
 $D exec flotilla-worker-triage rm -f /tmp/op.token
-$D rm -f e2e-required >/dev/null 2>&1; $D volume rm flotilla-e2e-required >/dev/null 2>&1
+stop_idle_flotillad required
 fi
 
 echo "== frozen inputs (v2 step 2): the input a live run was handed, exported"
@@ -1398,7 +1414,7 @@ db = sqlite3.connect(sys.argv[1])
 shadow = db.execute("SELECT COUNT(*) FROM run_calls WHERE routine = 'e2e/station-monitor@v2' AND station = 'decide' AND texts <> ''").fetchone()[0]
 live = db.execute("SELECT COUNT(*) FROM run_calls WHERE routine = 'e2e/station-monitor' AND station = 'decide' AND texts <> ''").fetchone()[0]
 leaked = db.execute("SELECT COUNT(*) FROM run_calls c JOIN runs r ON r.id = c.run_id WHERE r.shadow = 1 AND instr(c.routine, '@v') = 0").fetchone()[0]
-texts = db.execute("SELECT COUNT(*) FROM call_texts").fetchone()[0]
+texts = db.execute("SELECT COUNT(DISTINCT json_extract(j.value, '$.sha256')) FROM run_calls c, json_each(c.texts) j WHERE c.routine LIKE 'e2e/station-monitor%' AND c.texts <> ''").fetchone()[0]
 print("shadow", shadow, "live", live, "leaked", leaked, "texts", texts)
 sys.exit(0 if shadow >= 1 and live >= 1 and leaked == 0 and texts == 3 else 1)
 PY

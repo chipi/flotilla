@@ -329,6 +329,9 @@ To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
    on the full API); it takes no row from an operator, and the import is an event naming who. `pad` is
    local (it rewrites filed.tsv) and needs no token. The compose files no longer give the workers the
    worker token as a fallback for a routine's ledger calls: a run uses its own.
+   `gate_ledger_backend_replay.py` also writes rows, which no token outside a run may do under `required`
+   (the operator's is import and read only, a run's is confined to its routine's namespace): run it against
+   a flotillad in `run_tokens: accept`, with the worker's own token, before the switch (the e2e does).
    Before this build is deployed, update every remote worker and agent to it: flotillad refuses, at link,
    an agent whose hello lacks the `run_token` capability, and `flotillad -check` prints
    `worker W: run-token capable` or `NOT run-token capable (update it)` for each worker it can reach.
