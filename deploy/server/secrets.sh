@@ -12,7 +12,7 @@
 # (flotillad 65532, the worker 10001). Nothing secret passes through an environment variable, a
 # command line or the VM's sshfs mount: the bytes go over the docker CLI's stdin.
 #
-# Reads FLOTILLA_HOME/.env (FLOTILLA_CONFIG, TRIAGE_ENV_FILE). In FLOTILLA_CONFIG: cli.token and
+# Reads FLOTILLA_HOME/.env (FLOTILLA_CONFIG, TRIAGE_ENV_FILE, and for the shadow worker TRIAGE_READ_ENV_FILE). In FLOTILLA_CONFIG: cli.token and
 # worker-triage.token.
 set -euo pipefail
 export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
@@ -57,6 +57,18 @@ if [ -s "$FLOTILLA_CONFIG/worker-triage-candidate.token" ]; then
   put $V-flotillad-secrets worker-triage-candidate.token 65532 "$FLOTILLA_CONFIG/worker-triage-candidate.token"
   put $V-worker-triage-candidate-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage-candidate.token"
   put $V-worker-triage-candidate-secrets fleet.env 10001 "$TRIAGE_ENV_FILE"
+fi
+# the triage shadow worker (compose profile shadow), where its token exists: its own worker token (never the live worker's) and the READ
+# environment only: TRIAGE_READ_ENV_FILE in .env, a file of the credentials that can read. Without it the shadow worker has no credentials,
+# and its runs fail at their first call, which is safe; the live worker's fleet.env (which holds the write credentials) never goes in.
+if [ -s "$FLOTILLA_CONFIG/worker-triage-shadow.token" ]; then
+  put $V-flotillad-secrets worker-triage-shadow.token 65532 "$FLOTILLA_CONFIG/worker-triage-shadow.token"
+  put $V-worker-triage-shadow-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage-shadow.token"
+  if [ -n "${TRIAGE_READ_ENV_FILE:-}" ]; then
+    put $V-worker-triage-shadow-secrets read.env 10001 "$TRIAGE_READ_ENV_FILE"
+  else
+    echo "  $V-worker-triage-shadow-secrets: no TRIAGE_READ_ENV_FILE in .env, the shadow worker gets no credentials"
+  fi
 fi
 # the deploy stand-down's caller (deploy/server/standdown.sh), where its token exists
 if [ -s "$FLOTILLA_CONFIG/deploy.token" ]; then

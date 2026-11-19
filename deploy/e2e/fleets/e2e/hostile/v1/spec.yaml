@@ -1,0 +1,4 @@
+run:
+  command: echo hostile-v1-live
+  workdir: .
+  timeout: 1m

@@ -3,7 +3,7 @@
 <main class="page">
   {{with .Data}}
   <nav class="crumb" aria-label="Breadcrumb"><a href="/fleets/{{.Routine}}">{{.Routine}}</a> / <a href="{{.Back}}">pairs of v{{.N}}</a> / <span class="exact">{{.Subject}}</span></nav>
-  <section class="head">
+  <section class="head head--pair">
     <div>
       <h1>{{.Subject}}</h1>
       <p class="meta"><span class="chip chip--small pairmark pairmark--{{.Kind}}">{{.Label}}</span> · live v{{.Live}} against v{{.N}} · the live run's input <span class="exact">{{.InputKey}}</span> · {{.At}}</p>

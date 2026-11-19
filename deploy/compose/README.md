@@ -35,6 +35,7 @@ the host only, by that script.
 ```sh
 FLOTILLA_CONFIG=<home>/flotilla/config
 TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's secrets volume
+TRIAGE_READ_ENV_FILE=<the read-only credentials, for the shadow worker>  # optional: see "The shadow worker"
 TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (the live state volume)
 FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
 TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (the triage fleet's own)
@@ -241,6 +242,38 @@ makes no outward change (orchestrator.py forces a dry run), and the cap keeps it
 live worker's `worker-triage.env`, but the compose file sets `ROUTINE_SF_SERVICE=triage-fleet-candidate`
 and `ROUTINE_SF_GLITCHTIP_SYNC=0` over it, so its metrics, inbox and traces never count as the live
 fleet's.
+
+## The shadow worker: shadow versions of a routine (docs/wip/v2-design.md section 4)
+
+A routine folder with more than one version (`routine.yaml`, `v1/`, `v2/`) runs its live version as always. With `shadows.enabled: true` in
+`flotillad.yaml`, every live run of it also gives each shadow version a run on the same frozen input, on a worker of its own, and the
+two versions' decisions are paired per subject (`flotilla pairs ROUTINE vN`, the routine page's Pairs section). A shadow has no effect:
+what it records is "would run X (blocked: shadow)", never sent, filed or posted. Shadows start off.
+
+The compose service is `worker-triage-shadow` (profile `shadow`), with its own proxy, `egress-shadow`:
+
+1. `.env`: add `shadow` to `COMPOSE_PROFILES`; `TRIAGE_READ_ENV_FILE`: a host file of the credentials that can only read (a token that
+   can write must not be in it). `secrets.sh` puts it in the shadow worker's own volume as `read.env`; without it the shadow worker has no
+   credentials. The live worker's `fleet.env` is never in that volume, and the compose file gives the shadow worker no
+   `FLOTILLA_ENV_FILES` and no write file (a shadow worker with either refuses to start).
+2. Its own worker token, never the live worker's: `FLOTILLA_CONFIG/worker-triage-shadow.token`, 32+ random characters. `secrets.sh` puts
+   it in flotillad's volume and in the shadow worker's. `flotillad.yaml`: under `workers`, `triage-shadow: {url:
+   "http://worker-triage-shadow:8081", token_file: /run/flotilla/worker-triage-shadow.token, shadow: true}`; flotillad calls the worker
+   with that token and never accepts it on its workers' listener.
+3. Its proxy's allowlist: `FLOTILLA_CONFIG/egress-shadow-acl.yaml`, the same form as `egress-acl.yaml` (a shadow reads what the live fleet
+   reads; start from a copy). Every request a shadow makes is in `docker logs flotilla-egress-shadow`, apart from the live proxy's.
+4. `flotillad.yaml`: `shadows: {enabled: true}`. `flotillad -check` then lists each routine's shadow versions and the worker they run on, and
+   refuses a routine with several versions whose shadow worker (`shadow_worker:` in `routine.yaml`, default `<worker>-shadow`) is not a
+   worker declared `shadow: true`.
+5. A routine that keeps state (`state:` in `routine.yaml`, paths under the worker's HOME) is snapshotted by the live worker when a live run
+   starts, into the `triage-snapshots` volume; the shadow worker mounts it read-only and starts from a copy in its own HOME.
+
+The shadow worker has less than the live one (512m and 0.5 CPU against 1g and 1.0, and a low CPU weight), so a shadow cannot take a live
+run's room; it sits on the internal network only, mounts none of the live worker's volumes but the snapshots, read-only, and its state is
+its own volume (`triage-shadow-state`). A test on the compose file (`cmd/flotillad/compose_test.go`) holds each of these.
+
+To end shadows: `shadows.enabled: false` (a shadow version is then listed and promotable, and does not run), drop `shadow` from
+`COMPOSE_PROFILES`, deploy. The shadow volumes stay until removed by hand.
 
 ## The ledger in flotillad (RFC-0002 §9 step 5)
 

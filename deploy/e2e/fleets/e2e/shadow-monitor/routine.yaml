@@ -1,0 +1,17 @@
+fleet: e2e
+routine: shadow-monitor
+description: >-
+  The e2e's shadow check (see versioned and versioned-monitor), never shipped: disabled in the e2e's config until the shadow section, then run by hand, it reports one e2e_versioned
+  detection on host:e2e-shadowed, the e2e's stand-in host, so a case reaches the routine's live version. Its
+  v2 is a shadow that reports the same detection and one more, so the shadow check has a pair and an
+  unpaired subject to count.
+enabled: true
+worker: ops-read
+shadow_worker: triage-shadow
+trigger:
+  every: 8760h
+detects: [e2e_versioned]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 9000h

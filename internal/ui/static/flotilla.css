@@ -1237,6 +1237,8 @@ table.data td.n { font-family: var(--font-exact); font-variant-numeric: tabular-
 .pairmark--differ { background: var(--stop-wash); color: var(--stop-ink); }
 .pairmark--same { background: var(--ok-wash); color: var(--ok-ink); }
 .pairmark--unpaired { background: var(--chip-neutral); color: var(--slate); }
+.head--pair > div { min-width: 0; }
+.head--pair h1, .head--pair .meta, .crumb { overflow-wrap: anywhere; }
 .sides { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); margin: var(--space-lg) 0; }
 .side { min-width: 0; }
 .side__text { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }

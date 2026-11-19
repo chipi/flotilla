@@ -92,14 +92,14 @@ with sync_playwright() as pw:
         return out
 
     page.goto(VER)
-    live, shadows = numbers("live"), numbers("shadow", "shadow: not run yet")
+    live, shadows = numbers("live"), numbers("shadow", "shadow: runs beside")
     check(len(live) == 1 and len(shadows) >= 2,
           f"e2e/versioned offers one live version and two shadows to work with (live {live}, shadows {shadows})")
     if len(live) != 1 or len(shadows) < 2:
         browser.close()
         sys.exit(1)
     cur, first, second = live[0], shadows[0], shadows[1]
-    check("shadow: not run yet" in vrow(first).inner_text(), f"the page shows v{cur} live and v{first} a shadow that has not run")
+    check("shadow: runs beside" in vrow(first).inner_text(), f"the page shows v{cur} live and v{first} a shadow beside it")
     vrow(first).locator("summary", has_text="Promote").click()
     pbtn = vrow(first).locator(f"form[action$='/versions/{first}/promote'] button[type=submit]")
     check(pbtn.is_disabled(), "Promote waits for a reason (flotilla.js runs under the CSP)")
@@ -127,9 +127,30 @@ with sync_playwright() as pw:
     submit(page, xbtn.click)
     check(page.locator(".flash--ok").count() == 1 and vrow(second).locator(".chip", has_text="retired").count() == 1,
           "retire a shadow from its form")
-    left = numbers("shadow", "shadow: not run yet")
+    left = numbers("shadow", "shadow: runs beside")
     check(left == shadows[2:] and (bool(left) or page.locator("#versions summary").count() == 0),
           f"the shadows left are the ones not touched ({left}); with none left and no previous version, no form is offered")
+
+    # A shadow version's pairs (docs/wip/v2-design.md section 4, step 2), on e2e/shadow-monitor's page: the list and one pair opened from it,
+    # at phone widths (360 to 430 px: no sideways scroll), and a tap on a row leads to the two sides.
+    PAIRS = BASE + "/fleets/e2e/shadow-monitor?pairs=2#pairs"
+    for width in (360, 390, 430):
+        page.set_viewport_size({"width": width, "height": 844})
+        page.goto(PAIRS)
+        page.evaluate("document.fonts.ready.then(() => 1)")
+        rows = page.locator("#pairs .pair")
+        wide = page.evaluate("document.documentElement.scrollWidth")
+        check(rows.count() >= 2 and wide <= width, f"the pairs list at {width}px: {rows.count()} rows, no sideways scroll ({wide})")
+    check("shadow vs" in page.locator("#pairs h2").inner_text() and "pairs" in page.locator(".pairs__count").inner_text()
+          and page.locator(".pairs__filter a").count() >= 3, "the pairs header carries the counts and the filter (all, differ, unpaired)")
+    with page.expect_navigation():
+        page.locator("#pairs .pair").first.click()
+    for width in (360, 430):
+        page.set_viewport_size({"width": width, "height": 844})
+        page.evaluate("document.fonts.ready.then(() => 1)")
+        wide = page.evaluate("document.documentElement.scrollWidth")
+        check(page.locator(".sides .side").count() == 2 and wide <= width, f"a tapped pair opens its two sides at {width}px, no sideways scroll ({wide})")
+    page.set_viewport_size({"width": 390, "height": 844})
 
     # the routine's block on its fleet's workflow: pause, then resume with a reason (the Resume… details;
     # flotilla.js keeps its button disabled until the reason has text)

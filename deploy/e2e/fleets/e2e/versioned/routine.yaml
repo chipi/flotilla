@@ -7,6 +7,7 @@ description: >-
   write does. A version's plan says which version made it.
 enabled: true
 worker: ops-act-host
+shadow_worker: triage-shadow
 trigger:
   case: {kind: e2e_versioned}
 autonomy: propose

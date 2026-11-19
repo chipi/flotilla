@@ -37,6 +37,9 @@ PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
 # the model contract check measures real models; against the stand-in gateway it can only fail: off in the demo
 if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEMO_DISABLED=""; fi
+# the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
+# the shadow section frees them
+if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/hostile, e2e/shadow-monitor"; fi
 if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
 # The browser check's TLS front, standing in for the installation's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
@@ -47,7 +50,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
-  COMPOSE_PROFILES=candidate,ops,bugfix TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state
+  COMPOSE_PROFILES=candidate,ops,bugfix,shadow TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" -f "$ROOT/deploy/e2e/docker-compose.e2e.yml" "$@"; }
@@ -56,7 +59,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-required flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -89,6 +92,7 @@ tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 OP=$(tok); AGENT=$(tok); WT=$(tok)
 hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
 printf %s "$WT" > "$WORK/config/worker-triage.token"
+printf %s "$(tok)" > "$WORK/config/worker-triage-shadow.token"      # the shadow worker's own, and flotillad never takes it for a caller
 printf %s "$(tok)" > "$WORK/config/worker-triage-candidate.token"   # its own: flotillad refuses two workers that share one
 tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"
 tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"
@@ -118,6 +122,7 @@ callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
   triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage-candidate.token}
+  triage-shadow: {url: "http://worker-triage-shadow:8081", token_file: /run/flotilla/worker-triage-shadow.token, shadow: true}
   ops-read: {url: "http://worker-ops-read:8081", token_file: /run/flotilla/worker-ops-read.token}
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
@@ -129,7 +134,7 @@ workers:
 # the candidate triage needs a candidate model; bugfix/fix clones the repo, installs its toolchain and runs a
 # coding agent on a real model through many tool calls: a stand-in for that would show the stand-in, not
 # flotilla. Its unit tests cover it on local repos (bugfix/test_fix.py); here its intake opens the case.
-disabled_routines: [triage/cycle-shadow, bugfix/fix$DEMO_DISABLED]
+disabled_routines: [triage/cycle-shadow, bugfix/fix$DEMO_DISABLED$SHADOW_HELD]
 models:
   endpoints:
     gateway: {base_url: "http://litellm:8080/v1", kind: litellm, key_env: E2E_LLM_KEY, defaults: {tools: native, json: object, cost: reported}}
@@ -145,6 +150,7 @@ models:
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
+printf 'SHADOW_READ_ONLY=%s\n' "$(tok)" > "$WORK/config/fleet-read.env"   # what a shadow worker may read: no write credential in it
 [ "${DEMO:-}" != 1 ] || sed -i "/^  remote-e2e: /d" "$WORK/config/flotillad.yaml"   # the e2e fleet's remote worker: not in the demo
 cat > "$WORK/config/worker-triage.env" <<EOF
 ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
@@ -193,6 +199,14 @@ services: []
 default:
   project: flotilla
   action: ${E2E_ACL_ACTION:-enforce}   # E2E_ACL_ACTION=open is the mutation check: the run must FAIL
+  allowed_domains: [victoriametrics, victoriatraces, litellm, $WORLD_HOSTS_ACL]
+EOF
+cat > "$WORK/config/egress-shadow-acl.yaml" <<EOF
+version: v1
+services: []
+default:
+  project: flotilla-shadow
+  action: enforce
   allowed_domains: [victoriametrics, victoriatraces, litellm, $WORLD_HOSTS_ACL]
 EOF
 cat > "$WORK/config/egress-bugfix-acl.yaml" <<EOF
@@ -578,7 +592,7 @@ ACC="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotilla
 REQ="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-required.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
   -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
   "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-NTOK="$(grep -c 'token_file:' "$WORK/config/flotillad.yaml")"
+NTOK="$(grep -v "shadow: true" "$WORK/config/flotillad.yaml" | grep -c "token_file:")"   # a shadow worker's token is no caller (S1), so it is not among those required drops
 CA="$(echo "$ACC" | grep -o '[0-9]* callers' | cut -d' ' -f1)"; CR="$(echo "$REQ" | grep -o '[0-9]* callers' | cut -d' ' -f1)"
 echo "$ACC" | grep >/dev/null "^run tokens: accept " && echo "$REQ" | grep >/dev/null "^run tokens: required .*opens nothing" && [ -n "$CA" ] && [ "$((CA - CR))" = "$NTOK" ] \
   && ok "-check: run_tokens accept by default; required drops the $NTOK workers' own tokens from the callers ($CA to $CR)" || bad "-check run tokens: accept '$(echo "$ACC" | grep '^run tokens')' required '$(echo "$REQ" | grep -E '^run tokens|callers' | tr '\n' ' ')'"
@@ -590,20 +604,20 @@ SHR="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/
 echo "$SHR" | grep >/dev/null "workers triage and triage-candidate share a token file" && echo "$SHR" | grep >/dev/null "^rc=2" \
   && ok "-check refuses workers that share a token file, naming them (exit 2, before anything restarts)" || bad "-check on shared worker tokens: $(echo "$SHR" | tail -3)"
 echo "$ACC" | grep >/dev/null "share a token file" && bad "the stack's own workers share a token file" || ok "no two of the stack's workers share a token file"
-# run_tokens: required on a running flotillad (a second one, idle: its one routine is disabled, so it starts no run on the stack's
-# workers): a worker's own token opens nothing, the operator's token loads and checks a ledger (what ledger_sync does)
+# run_tokens: required on a running flotillad (a second one, idle: its one routine runs `true` once a year, and flotillad ends when no
+# timed routine is enabled, so it has to be): a worker's own token opens nothing, the operator's token loads and checks a ledger (what ledger_sync does)
 mkdir -p "$WORK/config/specs-required/e2e"
 cat > "$WORK/config/specs-required/e2e/idle.yaml" <<EOF2
 fleet: e2e
 routine: idle
-description: The e2e's required-mode flotillad has one routine and never runs it.
-enabled: false
+description: The e2e's required-mode flotillad has one routine, which only keeps it running (flotillad ends with no timed routine).
+enabled: true
 worker: triage
-trigger: {every: 60m}
+trigger: {every: 8760h}
 run: {command: "true", workdir: ., timeout: 1m}
 autonomy: record
 budget: {day_usd: 0}
-freshness: 120m
+freshness: 9000h
 EOF2
 cat > "$WORK/config/flotillad-required-live.yaml" <<EOF2
 listen: 127.0.0.1:8484
@@ -624,6 +638,7 @@ $D run -d --label $LABEL --name e2e-required --network "${P}_flotilla" --read-on
   -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs-required:/etc/flotilla/specs:ro" \
   "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad in run_tokens: required"
 for _ in $(seq 1 60); do $D logs e2e-required 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
+REQ_LOG="$($D logs e2e-required 2>&1 | tail -4 | cut -c1-300)"
 printf %s "$OP" | $D exec -i flotilla-worker-triage sh -c 'umask 077 && cat > /tmp/op.token'
 REQ_OUT="$($D exec -e NO_PROXY=e2e-required -e HTTP_PROXY= -e HTTPS_PROXY= flotilla-worker-triage python3 -c '
 import json, sys, urllib.error, urllib.request
@@ -648,9 +663,9 @@ print("op-count", st, c.get("filings"), c.get("decisions"))
 print("op-filings", call("GET", "/v1/ledger/filings?ns=e2e/required", op)[0], "op-write", call("POST", "/v1/ledger/filings?ns=e2e/required", op, {"row": {"fingerprint": "z"}})[0])
 ' 2>&1)"
 echo "$REQ_OUT" | grep >/dev/null "^worker-count 401" && echo "$REQ_OUT" | grep >/dev/null "^worker-import 401" \
-  && ok "run_tokens: required on a running flotillad: the worker's own token opens nothing (401 on the ledger)" || bad "required mode, the worker's token: $REQ_OUT"
+  && ok "run_tokens: required on a running flotillad: the worker's own token opens nothing (401 on the ledger)" || bad "required mode, the worker's token: $(echo "$REQ_OUT" | tail -2) / flotillad: $REQ_LOG"
 echo "$REQ_OUT" | grep >/dev/null "^op-import 200 1 1" && echo "$REQ_OUT" | grep >/dev/null "^op-count 200 1 1" && echo "$REQ_OUT" | grep >/dev/null "^op-filings 200 op-write 403" \
-  && ok "the operator's token imports a ledger and reads it back in required mode; it writes no row" || bad "required mode, the operator's import: $REQ_OUT"
+  && ok "the operator's token imports a ledger and reads it back in required mode; it writes no row" || bad "required mode, the operator's import: $(echo "$REQ_OUT" | tail -2) / flotillad: $REQ_LOG"
 $D exec flotilla-worker-triage rm -f /tmp/op.token
 $D rm -f e2e-required >/dev/null 2>&1; $D volume rm flotilla-e2e-required >/dev/null 2>&1
 fi
@@ -1122,6 +1137,125 @@ echo "$OUT" | grep >/dev/null "^REMOVE PASS" && [ "$R" = "/var/log/flotilla-host
   && ok "remove: binary, config, state and sudoers gone; the audit log stays" || bad "remove: $OUT / left: $R"
 $D rm -f flotilla-e2e-host >/dev/null
 
+echo "== shadow versions (v2 step 2): a shadow runs beside the live version on its own worker, its decisions are paired, and it can do no harm"
+# shadows are off until now; turn them on in flotillad's config and restart
+printf 'shadows: {enabled: true}\n' >> "$WORK/config/flotillad.yaml"   # appended in place: the bind mount keeps its file
+free_routine() {  # take a routine off disabled_routines and restart flotillad: its first run is at start, and starts its shadows
+  sed "s|, $1||" "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-free.yaml" && cat "$WORK/config/flotillad-free.yaml" > "$WORK/config/flotillad.yaml"
+  $D restart flotillad >/dev/null
+  for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
+}
+SHCHK="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+  -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
+  "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?")"
+echo "$SHCHK" | grep >/dev/null "^shadows: on " && echo "$SHCHK" | grep >/dev/null "shadows: e2e/versioned v2,v3,v4,v5,v6 on worker triage-shadow" && echo "$SHCHK" | grep >/dev/null "^rc=0" \
+  && ok "-check with shadows on names each routine's shadow versions and their worker (rc 0)" || bad "-check with shadows: $(echo "$SHCHK" | grep -E 'shadows|rc=' | head -5)"
+$D restart flotillad >/dev/null
+for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
+for i in $(seq 1 20); do cli status 2>&1 | grep >/dev/null 'worker triage-shadow: .*"ok":true' && break; sleep 2; done
+cli status 2>&1 | grep >/dev/null 'worker triage-shadow: .*"ok":true' && ok "flotillad reaches the shadow worker" || bad "status: $(cli status 2>&1 | grep worker)"
+for i in $(seq 1 20); do [ "$($D inspect flotilla-worker-triage-shadow --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2; done
+[ "$($D inspect flotilla-worker-triage-shadow --format '{{.State.Health.Status}}' 2>&1)" = healthy ] && ok "the shadow worker is healthy" || bad "shadow worker health: $($D logs flotilla-worker-triage-shadow 2>&1 | tail -3)"
+NW="$($D inspect flotilla-worker-triage-shadow --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+[ "$NW" = "${P}_flotilla " ] && ok "the shadow worker is on the internal network only" || bad "shadow worker networks: '$NW'"
+NW="$($D inspect flotilla-egress-shadow --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+echo "$NW" | grep >/dev/null "${P}_flotilla " && ! echo "$NW" | grep >/dev/null "e2e-langfuse" && ok "the shadow worker has its own egress proxy (flotilla-egress-shadow), on the networks the live proxy reaches except Langfuse" || bad "shadow proxy networks: '$NW'"
+MEMS="$($D inspect flotilla-worker-triage-shadow flotilla-worker-triage --format '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}} {{.HostConfig.CpuShares}}' 2>&1 | tr '\n' ' ')"
+echo "$MEMS" | python3 -c '
+import sys
+s = sys.stdin.read().split()
+m1, c1, s1, m2, c2, s2 = map(int, s)
+sys.exit(0 if 0 < m1 < m2 and 0 < c1 < c2 and 0 < s1 < 1024 else 1)' \
+  && ok "the shadow worker has less memory and CPU than the live worker and a low CPU weight ($MEMS)" || bad "shadow worker limits: $MEMS"
+SHM="$($D exec flotilla-worker-triage-shadow sh -c 'ls /run/flotilla | tr "\n" " "; stat -c "%a %u" /run/flotilla/worker.token /run/flotilla/read.env | tr "\n" " "; env | grep -c "^FLOTILLA_ENV_FILES=\|^FLOTILLA_WRITE_ENV_FILES=\|^GITHUB_TOKEN=\|^OPENROUTER_API_KEY=" ; touch /snapshots/x 2>&1 | head -1' 2>&1)"
+echo "$SHM" | grep >/dev/null "^read.env worker.token 600 10001 600 10001 0" && echo "$SHM" | grep >/dev/null "Read-only file system" \
+  && ok "the shadow worker holds its own token and the read environment only (no fleet.env), names no write file, and cannot write the snapshots" || bad "shadow worker secrets: $SHM"
+LIVEM="$($D inspect flotilla-worker-triage-shadow --format '{{range .Mounts}}{{.Name}} {{end}}' 2>&1)"
+echo "$LIVEM" | grep >/dev/null "flotilla-e2e-worker-triage-secrets" && bad "the shadow worker mounts the live worker's secrets volume: $LIVEM" || ok "the shadow worker mounts none of the live worker's volumes but the snapshots (read-only): $LIVEM"
+# the run: every call counted at the live side first, so a change can be seen
+OPT="$(cat "$WORK/config/cli.token")"
+live_view() {  # a fingerprint of everything on the live side a shadow could touch: the ledgers' counts, the cases, the live runs, the plans
+  { for ns in triage/cycle e2e/hostile e2e/shadow-monitor bugfix/fix; do
+      $D exec -i -e NO_PROXY=flotillad -e HTTP_PROXY= -e HTTPS_PROXY= flotilla-worker-triage python3 -c '
+import json, sys, urllib.request
+ns, tok = sys.argv[1], sys.stdin.read().strip()
+r = urllib.request.Request("http://flotillad:8485/v1/ledger/counts?ns=" + ns, headers={"Authorization": "Bearer " + tok})
+print(ns, json.load(urllib.request.urlopen(r, timeout=10)))' "$ns" <<<"$OPT" 2>&1
+    done
+    cli case list --all 2>&1 | awk '{print $1, $2, $3}'
+    cli action list 2>&1
+  } | sha256sum | cut -c1-16
+}
+echo "-- the hostile version"
+cli versions e2e/hostile -json | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if [(x["version"], x["state"]) for x in v["versions"]] == [(1, "live"), (2, "shadow")] else 1)' \
+  && ok "e2e/hostile: v1 live, v2 a shadow that tries everything" || bad "hostile versions: $(cli versions e2e/hostile 2>&1)"
+LV0="$(live_view)"
+free_routine e2e/hostile   # enabled in its spec, never run: it runs once at the restart, on shadows' terms
+for i in $(seq 1 30); do cli runs e2e/hostile 2>&1 | grep >/dev/null " ok " && break; sleep 2; done
+for i in $(seq 1 60); do $D logs flotilla-worker-triage-shadow 2>&1 | grep -F "HOSTILE END" >/dev/null && break; sleep 2; done
+HL="$($D logs flotilla-worker-triage-shadow 2>&1 | grep -o 'HOSTILE [^"]*' | sed 's/\\n.*//')"
+echo "$HL" | grep >/dev/null "^HOSTILE END PASS" && ! echo "$HL" | grep >/dev/null "BROKEN" \
+  && ok "the hostile shadow tried a live secret, the snapshots, its worker token, its run token on the live namespace, a plan and an off-list host: every one held ($(echo "$HL" | grep -c ' held ') held)" \
+  || bad "hostile shadow: $HL"
+echo "$HL" | grep >/dev/null "HOSTILE allowlisted-host reached through http://egress-shadow:4750" \
+  && ok "its allowed request went out through its own proxy" || bad "the shadow's proxy: $(echo "$HL" | grep allowlisted)"
+$D logs flotilla-egress-shadow 2>&1 | grep >/dev/null "litellm" && ok "that request is in flotilla-egress-shadow's log, not mixed into the live proxy's" || bad "the shadow proxy's log: $($D logs flotilla-egress-shadow 2>&1 | tail -3)"
+$D logs flotilla-egress-shadow 2>&1 | grep >/dev/null "forbidden" && ok "the host off the allowlist was refused by the shadow's proxy and logged there" || bad "the refusal in the shadow proxy's log"
+for i in $(seq 1 30); do [ "$(cli runs e2e/hostile 2>&1 | grep -c ' ok ')" -ge 1 ] && break; sleep 1; done
+LV1="$(live_view)"
+[ "$LV0" = "$LV1" ] && ok "after the hostile shadow nothing on the live side changed: the ledgers' counts, the cases, the actions' levels ($LV1)" || bad "the live side changed under a hostile shadow: $LV0 -> $LV1"
+LVD="$(cli runs e2e/hostile -json -n 100 | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["runs"] or []))')"
+[ "$LVD" = 1 ] && ok "the routine has the one live run (v1's); the shadow's run is not in its runs" || bad "hostile live runs: $LVD"
+cli runs e2e/hostile -json -n 100 | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; sys.exit(0 if all(not x.get("shadow") and x["version"] == 1 for x in r) else 1)' \
+  && ok "the runs list holds no shadow run" || bad "the runs list shows a shadow: $(cli runs e2e/hostile -json -n 5 | head -c 300)"
+cli pairs e2e/hostile v2 --json | python3 -c 'import json,sys; p=json.load(sys.stdin); sys.exit(0 if p["version"] == 2 and p["live_version"] == 1 else 1)' \
+  && ok "flotilla pairs answers for the hostile version (no subject: nothing decided to pair)" || bad "pairs: $(cli pairs e2e/hostile v2 2>&1 | head -3)"
+
+echo "-- a monitor's shadow: paired and unpaired detections"
+free_routine e2e/shadow-monitor   # its first run is at the restart; the live v1 opens a case, v2 is shadowed on the same input
+for i in $(seq 1 30); do cli runs e2e/shadow-monitor 2>&1 | grep >/dev/null " ok " && break; sleep 2; done
+PJ=""
+for i in $(seq 1 45); do
+  PJ="$(cli pairs e2e/shadow-monitor v2 --json 2>/dev/null)"
+  echo "$PJ" | python3 -c 'import json,sys; p=json.load(sys.stdin); sys.exit(0 if p["paired"] + p["unpaired"] >= 2 else 1)' 2>/dev/null && break; sleep 2
+done
+echo "$PJ" | python3 -c '
+import json, sys
+p = json.load(sys.stdin)
+subj = {x["subject"]: x for x in p["pairs"]}
+a, b = [v for k, v in subj.items() if "e2e-shadowed" in k], [v for k, v in subj.items() if "e2e-other" in k]
+c = [v for k, v in subj.items() if "e2e-host" in k]   # the case left open by the versions section: the live monitor does not report it, and the shadow says it would clear it
+sys.exit(0 if p["paired"] == 1 and p["unpaired"] == 2 and a and a[0]["live"] and a[0]["shadow"] and a[0]["same"] and b and not b[0].get("live") and b[0]["shadow"] and c and not c[0].get("live") and c[0]["shadow"] else 1)' \
+  && ok "v2 of the monitor: the detection both versions made is a pair and the same; the one only the shadow reported and the old case only the shadow would clear are unpaired, each on its side" || bad "monitor pairs: $(echo "$PJ" | python3 -c '
+import json, sys
+p = json.load(sys.stdin)
+print({k: p[k] for k in ("paired", "differ", "unpaired")})
+for x in p["pairs"]:
+    print(x["subject"], "| live:", (x.get("live") or {}).get("text"), "| shadow:", (x.get("shadow") or {}).get("text"), "| same", x["same"])' 2>&1)"
+cli pairs e2e/shadow-monitor v2 | grep >/dev/null "e2e/shadow-monitor · v2 shadow vs v1 live: 1 pairs" && ok "the CLI prints them, header with the counts" || bad "pairs table: $(cli pairs e2e/shadow-monitor v2 2>&1 | head -3)"
+cli versions e2e/shadow-monitor -json | python3 -c 'import json,sys; v=json.load(sys.stdin); x=next(y for y in v["versions"] if y["version"] == 2); sys.exit(0 if x["pairs"] == 1 else 1)' \
+  && ok "the versions view counts the pair (what a promote reads)" || bad "pairs count in versions: $(cli versions e2e/shadow-monitor 2>&1 | head -4)"
+rm -rf "$WORK/pairs-export"
+cli pairs export e2e/shadow-monitor v2 --to /var/lib/flotilla/pairs-export >/dev/null 2>&1 && $D cp flotillad:/var/lib/flotilla/pairs-export "$WORK/pairs-export" >/dev/null 2>&1 \
+  && [ "$(stat -c %a "$WORK/pairs-export" "$WORK/pairs-export/pairs.json" "$WORK/pairs-export/README.txt" | tr '\n' ' ')" = "700 600 600 " ] && grep -q PRODUCTION "$WORK/pairs-export/README.txt" \
+  && ok "pairs export wrote a folder (0700, files 0600) with a production-data README" || bad "pairs export: $(ls -la "$WORK/pairs-export" 2>&1 | head -4)"
+# the monitor's live case (opened by the live v1) belongs to the acting routine: the shadows of e2e/versioned plan on it and send nothing
+VCS=""
+for i in $(seq 1 45); do VCS="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && $3 == "host:e2e-shadowed" && $4 != "detected" {print $1; exit}')"; [ -n "$VCS" ] && break; sleep 2; done
+[ -n "$VCS" ] && ok "the live version took the monitor's case ($VCS)" || bad "the acting routine did not take the case: $(cli case list --all 2>&1 | grep e2e_versioned)"
+SHP=""
+for i in $(seq 1 45); do
+  SHP="$(for v in 3 5 6; do cli pairs e2e/versioned v$v --json 2>/dev/null; echo; done)"
+  echo "$SHP" | grep >/dev/null "would run host.vtrue (blocked: shadow)" && break; sleep 2
+done
+echo "$SHP" | grep >/dev/null "would run host.vtrue (blocked: shadow)" \
+  && ok "a shadow of an acting routine recorded \"would run host.vtrue (blocked: shadow)\"" || bad "shadow plan: $(echo "$SHP" | head -c 400)"
+SHOW="$(cli case show "$VCS" 2>&1)"
+echo "$SHOW" | grep >/dev/null "@v" && bad "a shadow run is in the live case's timeline: $(echo "$SHOW" | grep '@v' | head -2)" \
+  || ok "the live case's timeline holds no shadow run: the shadows' plans are not in it"
+cli case close "$VCS" --reason "e2e: the shadow check is done" >/dev/null 2>&1
+rm -rf "$WORK/pairs-export"
+
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"
 ADMIN="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
@@ -1187,7 +1321,7 @@ for w in flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-b
   NW="$($D inspect $w --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
   [ "$NW" = "${P}_flotilla " ] && ok "$w is on the internal network only" || bad "$w networks: '$NW'"
 done
-for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act flotilla-egress flotilla-egress-bugfix; do
+for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-triage-shadow flotilla-egress-shadow flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act flotilla-egress flotilla-egress-bugfix; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
   case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
 done

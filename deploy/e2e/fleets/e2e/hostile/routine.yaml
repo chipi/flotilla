@@ -1,0 +1,15 @@
+fleet: e2e
+routine: hostile
+description: >-
+  The e2e's check that a shadow can do no harm, never shipped: v1 is live and harmless, v2 is a shadow
+  that tries everything a hostile version could (read a live secret, write the snapshots, use its worker
+  token and its run token on the ledger, name the live namespace, reach a host off the allowlist). Run by
+  hand; the e2e reads what v2 printed and checks that no live row changed.
+enabled: true
+worker: triage
+trigger:
+  every: 8760h
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 9000h

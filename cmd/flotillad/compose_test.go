@@ -1,0 +1,139 @@
+package main
+
+import (
+	"os"
+	"strconv"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+// The compose file's promises about the shadow worker (docs/wip/v2-design.md section 4), checked on the file itself: a shadow cannot starve
+// a live run, reads no live secret, writes no live state, and reaches the network through a proxy of its own.
+
+type composeService struct {
+	Image       string            `yaml:"image"`
+	Profiles    []string          `yaml:"profiles"`
+	MemLimit    string            `yaml:"mem_limit"`
+	CPUs        float64           `yaml:"cpus"`
+	CPUShares   int               `yaml:"cpu_shares"`
+	Environment map[string]string `yaml:"environment"`
+	Volumes     []string          `yaml:"volumes"`
+	Networks    []string          `yaml:"networks"`
+}
+
+func loadCompose(t *testing.T) map[string]composeService {
+	t.Helper()
+	raw, err := os.ReadFile("../../deploy/compose/docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Services map[string]composeService `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	return f.Services
+}
+
+func memBytes(t *testing.T, s string) int {
+	t.Helper()
+	mult := map[byte]int{'m': 1 << 20, 'g': 1 << 30}[s[len(s)-1]]
+	n, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil || mult == 0 {
+		t.Fatalf("mem_limit %q", s)
+	}
+	return n * mult
+}
+
+func volumeNames(s composeService) (names []string, mode map[string]string) {
+	mode = map[string]string{}
+	for _, v := range s.Volumes {
+		parts := strings.Split(v, ":")
+		if len(parts) < 2 {
+			continue
+		}
+		names = append(names, parts[0])
+		if len(parts) > 2 {
+			mode[parts[0]] = parts[len(parts)-1]
+		}
+	}
+	return
+}
+
+func TestTheShadowWorkerCannotStarveOrReachTheLiveWorker(t *testing.T) {
+	svc := loadCompose(t)
+	live, shadow, egress, egressShadow := svc["worker-triage"], svc["worker-triage-shadow"], svc["egress"], svc["egress-shadow"]
+	if shadow.Image == "" || egressShadow.Image == "" {
+		t.Fatal("the compose file has no worker-triage-shadow or egress-shadow")
+	}
+	if len(shadow.Profiles) != 1 || shadow.Profiles[0] != "shadow" || len(egressShadow.Profiles) != 1 || egressShadow.Profiles[0] != "shadow" {
+		t.Errorf("the shadow worker and its proxy are off unless the shadow profile is on: %v %v", shadow.Profiles, egressShadow.Profiles)
+	}
+	if memBytes(t, shadow.MemLimit) >= memBytes(t, live.MemLimit) || shadow.CPUs >= live.CPUs {
+		t.Errorf("the shadow worker's limits (%s, %v cpus) are not below the live worker's (%s, %v)", shadow.MemLimit, shadow.CPUs, live.MemLimit, live.CPUs)
+	}
+	if shadow.CPUShares == 0 || shadow.CPUShares >= 1024 {
+		t.Errorf("cpu_shares %d: below the default 1024, so a busy host serves the live worker first", shadow.CPUShares)
+	}
+	if shadow.Environment["FLOTILLA_WORKER_MODE"] != "shadow" {
+		t.Error("the shadow worker does not run in shadow mode")
+	}
+	for _, k := range []string{"FLOTILLA_ENV_FILES", "FLOTILLA_WRITE_ENV_FILES"} {
+		if _, ok := shadow.Environment[k]; ok {
+			t.Errorf("the shadow worker names %s: it may read credentials that read, never one that writes", k)
+		}
+	}
+	if shadow.Environment["FLOTILLA_READ_ENV_FILES"] == "" {
+		t.Error("the shadow worker names no read environment")
+	}
+	if !strings.Contains(shadow.Environment["ROUTINE_HTTPS_PROXY"], "egress-shadow") || !strings.Contains(shadow.Environment["ROUTINE_HTTP_PROXY"], "egress-shadow") {
+		t.Errorf("the shadow worker reaches the network through its own proxy: %v", shadow.Environment)
+	}
+	liveVols, _ := volumeNames(live)
+	shadowVols, mode := volumeNames(shadow)
+	for _, v := range shadowVols {
+		for _, l := range liveVols {
+			if v == l && v != "triage-snapshots" {
+				t.Errorf("the shadow worker mounts %s, which the live worker mounts too", v)
+			}
+		}
+	}
+	for _, v := range shadowVols {
+		if strings.HasSuffix(v, "-secrets") && v != "worker-triage-shadow-secrets" {
+			t.Errorf("the shadow worker mounts the secrets volume %s", v)
+		}
+	}
+	if mode["triage-snapshots"] != "ro" {
+		t.Errorf("the shadow worker mounts the live snapshots %q: read-only", mode["triage-snapshots"])
+	}
+	if m := map[string]bool{}; true {
+		liveV, liveMode := volumeNames(live)
+		for _, v := range liveV {
+			m[v] = true
+		}
+		if !m["triage-snapshots"] || liveMode["triage-snapshots"] == "ro" {
+			t.Error("the live worker writes the snapshots volume")
+		}
+	}
+	if len(shadow.Networks) != 1 || shadow.Networks[0] != "flotilla" {
+		t.Errorf("the shadow worker is on the internal network only: %v", shadow.Networks)
+	}
+	if memBytes(t, egressShadow.MemLimit) > memBytes(t, egress.MemLimit) {
+		t.Errorf("the shadow proxy is larger than the live one")
+	}
+	acl := ""
+	for _, v := range egressShadow.Volumes {
+		if strings.Contains(v, "acl.yaml") {
+			acl = v
+		}
+	}
+	if !strings.Contains(acl, "egress-shadow-acl.yaml") {
+		t.Errorf("the shadow proxy has its own allowlist: %q", acl)
+	}
+	if !strings.Contains(svc["flotillad"].Environment["NO_PROXY"], "worker-triage-shadow") {
+		t.Error("flotillad reaches the shadow worker directly, not through its proxy")
+	}
+}

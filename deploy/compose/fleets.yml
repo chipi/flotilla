@@ -15,6 +15,9 @@ services:
   worker-triage-candidate:
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
+  worker-triage-shadow:   # a shadow version runs the installation's own playbooks and skills, as the live worker does
+    volumes:
+      - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro
   worker-marketing:
     volumes:
       - ${FLOTILLA_FLEETS_DIR:?set FLOTILLA_FLEETS_DIR}:/opt/flotilla/fleets:ro

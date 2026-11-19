@@ -22,6 +22,12 @@
 # The candidate worker (profile `candidate`, off unless COMPOSE_PROFILES=candidate): a second triage
 # worker running the image tag under test (FLOTILLA_CANDIDATE_TAG) with its own state volume, for the
 # routine triage/cycle-shadow, which its spec caps at shadow (ADR-0004: shadow comparison).
+#
+# The shadow worker (profile shadow, off unless COMPOSE_PROFILES=shadow; docs/wip/v2-design.md section 4): where the shadow versions of
+# the triage routines run, beside the live worker. It is not the candidate: the candidate is a second image of a whole fleet, this runs a
+# version of one routine on the live image. It holds its own worker token (flotillad refuses to share one), the READ environment only
+# (credentials that can read; never a write credential), the live worker's snapshots read-only, its own state volume and its own egress
+# proxy, with less CPU and memory than the live worker, so a shadow cannot starve a live run and its proxy log never mixes with the live one.
 name: flotilla
 
 x-hardening: &hardening
@@ -44,7 +50,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,worker-triage-candidate,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
@@ -92,6 +98,7 @@ services:
     volumes:
       - worker-triage-secrets:/run/flotilla:ro
       - triage-state:/home/worker/signal-fleet
+      - triage-snapshots:/snapshots   # the live run's state, frozen when it starts: a shadow starts from it (the shadow worker reads it)
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -136,6 +143,61 @@ services:
       start_period: 20s
       start_interval: 1s
     networks: [flotilla]
+
+  worker-triage-shadow:
+    <<: *hardening
+    profiles: [shadow]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-triage:${FLOTILLA_TAG}
+    container_name: flotilla-worker-triage-shadow
+    mem_limit: 512m          # below the live worker's 1g
+    cpus: 0.5                # below the live worker's 1.0
+    cpu_shares: 128          # and, when the host is busy, last in line (the default is 1024)
+    tmpfs: ["/tmp:size=64m", "/home/worker:size=64m,uid=10001,gid=10001,mode=0700"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-triage.env"]   # ROUTINE_* overrides only; no secrets in it
+    environment:
+      FLOTILLA_WORKER_MODE: shadow
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_READ_ENV_FILES: /run/flotilla/read.env   # the credentials that can read; there is no FLOTILLA_ENV_FILES and no write file
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress-shadow:4750
+      ROUTINE_HTTPS_PROXY: http://egress-shadow:4750
+      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
+      ROUTINE_FLOTILLA_API_TOKEN_FILE: /run/flotilla/worker.token
+      ROUTINE_NO_PROXY: flotillad
+      # over worker-triage.env, which is the live fleet's: the shadow's series, inbox and traces carry their own name, and it mirrors
+      # nothing into GlitchTip
+      ROUTINE_SF_SERVICE: triage-fleet-shadow
+      ROUTINE_SF_GLITCHTIP_SYNC: "0"
+    volumes:
+      - worker-triage-shadow-secrets:/run/flotilla:ro   # its own worker token and the read environment; no live secrets volume
+      - triage-snapshots:/snapshots:ro                  # a shadow starts from the live run's frozen state and never writes it
+      - triage-shadow-state:/home/worker/signal-fleet   # never the live state
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 1s
+    networks: [flotilla]
+
+  # The shadow worker's own egress proxy (profile shadow): the same image and settings as egress, its own allowlist
+  # (FLOTILLA_CONFIG/egress-shadow-acl.yaml), so what a shadow reaches is decided apart from the live worker and every proxy log line of a
+  # shadow carries this container's name.
+  egress-shadow:
+    <<: *hardening
+    profiles: [shadow]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-egress-shadow
+    mem_limit: 128m
+    cpus: 0.5
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    environment:
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS_SHADOW:-}
+    volumes:
+      - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/egress-shadow-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [flotilla, out, backend, litellm, glitchtip]
 
   # The ops workers (pipeline v1, ADR-0005 decision 5: workers per role), profile ops: one image, two
   # roles. ops-read runs the monitors, ops-act-host the acting routines (it holds no host key: flotillad
@@ -342,6 +404,15 @@ volumes:
   triage-state:
     name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}
     external: true
+  # the live triage worker's frozen run states (written by it, read by the shadow worker); named so a compose rename cannot strand them
+  triage-snapshots:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-triage-snapshots
+  # the shadow worker's token and read environment (secrets.sh), and its own state
+  worker-triage-shadow-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-shadow-secrets
+    external: true
+  triage-shadow-state:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-triage-shadow-state
   # the ops workers' tokens (profile ops); secrets.sh fills them when the tokens exist
   worker-ops-read-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-ops-read-secrets

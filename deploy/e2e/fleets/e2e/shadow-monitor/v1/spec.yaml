@@ -1,0 +1,6 @@
+run:
+  command: >-
+    printf '{"outcome": "detections", "detections": [{"kind": "e2e_versioned", "target": "host:e2e-shadowed", "detail": "e2e"}]}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m

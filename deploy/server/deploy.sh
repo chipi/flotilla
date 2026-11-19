@@ -281,12 +281,13 @@ cfghash() { for f in "$@"; do printf '%s\n' "$f"; cat "$f" 2>/dev/null; done | {
 CFG="$(envget FLOTILLA_CONFIG)"
 # host-ca/: flotillad reads the intermediate and the signing key only at start, so a rotated one
 # (docs/operations/host-keys.md) must recreate it too
-FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-triage-candidate.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$CFG/worker-bugfix.token" "$CFG/worker-bugfix-act.token" "$CFG/worker-marketing.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)" \
+FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-triage-candidate.token" "$CFG/worker-triage-shadow.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$CFG/worker-bugfix.token" "$CFG/worker-bugfix-act.token" "$CFG/worker-marketing.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)" \
   "$CFG/host-ca/intermediate.crt" "$CFG/host-ca/root.crt" "$CFG/host-ca/signing.key")"
 FLOTILLA_CONFIG_HASH_EGRESS="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-acl.yaml")"
 FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-bugfix-acl.yaml")"
 FLOTILLA_CONFIG_HASH_EGRESS_SEO="$(cfghash "$CFG/smokescreen-seo.yaml" "$CFG/egress-seo-acl.yaml")"
-export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO
+FLOTILLA_CONFIG_HASH_EGRESS_SHADOW="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-shadow-acl.yaml")"
+export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO FLOTILLA_CONFIG_HASH_EGRESS_SHADOW
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
 if has deploy_log; then deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; fi
 if ! wait_healthy; then

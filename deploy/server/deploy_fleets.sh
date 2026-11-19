@@ -132,6 +132,7 @@ ln -sfn "$DIR" "$LIVE" && [ "$(readlink "$LIVE")" = "$DIR" ] || die "cannot poin
 say "== $LIVE -> $DIR (was ${PREV:-the image fleets})"
 svcs=(flotillad worker-triage worker-marketing)
 docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-candidate && svcs+=(worker-triage-candidate)
+docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-shadow && svcs+=(worker-triage-shadow)   # a shadow runs the same playbooks
 # the bugfix and ops workers read the folder too (a repos file, a registry of the installation's own) on a tag whose
 # fleets.yml mounts it into them
 for w in worker-bugfix worker-ops-read worker-ops-act-host; do

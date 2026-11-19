@@ -1,0 +1,68 @@
+run:
+  command: |
+    python3 - <<'PY'
+    import json, os, sys, urllib.error, urllib.request
+    bad = []
+    def say(name, result):
+        print("HOSTILE", name, result, flush=True)
+    def expect(name, ok, result):
+        say(name, ("held " if ok else "BROKEN ") + str(result))
+        if not ok:
+            bad.append(name)
+    # a live secret: the live worker's fleet env is not in this container, and no write credential is in this run's environment
+    try:
+        open("/run/flotilla/fleet.env").read()
+        expect("live-secret-file", False, "read")
+    except OSError as e:
+        expect("live-secret-file", True, type(e).__name__)
+    leaked = [k for k in ("GITHUB_TOKEN", "OPENROUTER_API_KEY", "GLITCHTIP_TOKEN", "GRAFANA_TOKEN", "E2E_LLM_KEY") if k in os.environ]
+    expect("write-credentials-in-env", not leaked, leaked or "none")
+    expect("read-credential-in-env", "SHADOW_READ_ONLY" in os.environ, "present" if "SHADOW_READ_ONLY" in os.environ else "absent")
+    # the live worker's snapshots: read-only here
+    try:
+        open("/snapshots/hostile", "w").write("x")
+        expect("write-snapshots", False, "written")
+    except OSError as e:
+        expect("write-snapshots", True, type(e).__name__)
+    base = os.environ["FLOTILLA_API_URL"]
+    def call(method, path, tok, body=None):
+        r = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                   headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(r, timeout=10) as x:
+                return x.status, json.load(x)
+        except urllib.error.HTTPError as e:
+            return e.code, {}
+    # the shadow worker's own token (in its secrets volume) opens nothing on flotillad's workers' listener
+    wt = open("/run/flotilla/worker.token").read().strip()
+    st, _ = call("GET", "/v1/ledger/filings?ns=triage/cycle", wt)
+    expect("worker-token-on-ledger", st in (401, 403), st)
+    st, _ = call("POST", "/v1/ledger/filings?ns=triage/cycle", wt, {"row": {"fingerprint": "hostile", "repo": "o/r", "issue": "1"}})
+    expect("worker-token-write", st in (401, 403), st)
+    # the run's own token, naming the live namespace and another run: flotillad files it under this run's own
+    rt = open(os.environ["FLOTILLA_API_TOKEN_FILE"]).read().strip()
+    st, _ = call("POST", "/v1/ledger/filings?ns=triage/cycle", rt, {"row": {"fingerprint": "hostile", "repo": "o/r", "issue": "1"}, "run_id": "someone-elses"})
+    say("run-token-named-live-namespace", st)
+    st, own = call("GET", "/v1/ledger/filings", rt)
+    expect("run-token-reads-its-own-namespace", st == 200, st)
+    # an approved action: a note and a plan would be the outward way out; the run token cannot decide a plan
+    st, _ = call("POST", "/v1/plans/anything/decide", rt, {"decision": "approve"})
+    expect("run-token-decides-a-plan", st in (401, 403, 404, 405), st)
+    # the network: the allowlisted host is reached through this worker's own proxy; a host off the allowlist is refused
+    px = urllib.request.ProxyHandler({"https": os.environ["HTTPS_PROXY"], "http": os.environ["HTTP_PROXY"]})
+    op = urllib.request.build_opener(px)
+    try:
+        op.open("http://forbidden:8080/", timeout=10)
+        expect("off-allowlist-host", False, "reached")
+    except Exception as e:
+        expect("off-allowlist-host", True, type(e).__name__)
+    try:
+        op.open("http://litellm:8080/health/liveliness", timeout=10)
+        say("allowlisted-host", "reached through " + os.environ["HTTP_PROXY"])
+    except Exception as e:
+        expect("allowlisted-host", False, type(e).__name__ + str(e)[:80])
+    print("HOSTILE END", "FAIL " + ",".join(bad) if bad else "PASS", flush=True)
+    sys.exit(1 if bad else 0)
+    PY
+  workdir: .
+  timeout: 2m
