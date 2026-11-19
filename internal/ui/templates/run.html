@@ -5,7 +5,7 @@
   <nav class="crumb" aria-label="Breadcrumb"><a href="/runs">Runs</a> / <span class="exact">{{$r.ID}}</span></nav>
   <section class="head">
     <div>
-      <h1>run · <a class="exact" href="/fleets/{{$r.Fleet}}?sel={{$r.Routine}}">{{$r.Routine}}</a></h1>
+      <h1>run · <a class="exact" href="{{$r.RoutineHref}}">{{$r.Routine}}</a></h1>
       <p class="meta">{{$r.Start}} · {{$r.Took}} · <span class="{{$r.Chip}}">{{$r.Status}}</span>{{range $r.Cases}} · case <a class="exact" href="/cases/{{.}}">{{.}}</a>{{end}} · autonomy {{$r.Autonomy}} · {{$r.Cost}} · {{$r.Trigger}} by {{$r.Actor}}</p>
     </div>
   </section>

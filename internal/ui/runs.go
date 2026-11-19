@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/chipi/flotilla/internal/store"
@@ -15,6 +16,17 @@ type runRow struct {
 	Cases                          []string
 	Model, Tokens                  string // "triage-pro ×2", "1.8k"; "" when the run made no recorded call
 	Calls                          []store.ModelCall
+}
+
+// RoutineHref is where a run's routine link goes: the routine's block on its fleet's page, and for a shadow run (whose routine is
+// "<fleet>/<routine>@v<n>", a key no page has) the live routine's page at that version's pairs.
+func (r runRow) RoutineHref() string {
+	if r.Shadow {
+		if base, _, ok := strings.Cut(r.Routine, "@v"); ok {
+			return "/fleets/" + base + "?pairs=" + strconv.Itoa(r.Version) + "#pairs"
+		}
+	}
+	return "/fleets/" + r.Fleet + "?sel=" + r.Routine
 }
 
 // modelText is a run's calls for its table cell: each alias with its count, failed calls named.

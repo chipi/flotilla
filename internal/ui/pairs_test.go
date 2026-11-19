@@ -188,3 +188,24 @@ func TestABriefHoldsNoShadowRow(t *testing.T) {
 		t.Fatalf("a shadow moved the brief:\n%s\n%s", a, b)
 	}
 }
+
+// A shadow run's page opens, and its routine link goes to a page that exists: the live routine's pairs of that version, not a key no page has.
+func TestAShadowRunPageLinksToItsRoutinesPairs(t *testing.T) {
+	f, key := pairsFixture(t)
+	ck, _ := f.csrfOf(f.addOperator())
+	if err := f.st.StartRun(context.Background(), store.Run{ID: "triage-cycle-v2-page", Routine: "triage/cycle@v2", SpecHash: "h", Trigger: "shadow", Actor: "flotillad", Autonomy: "record",
+		StartedAt: time.Now().UTC().Format(store.TimeFormat), Status: store.StatusOK, Version: 2, Shadow: true, InputKey: key}); err != nil {
+		t.Fatal(err)
+	}
+	resp, page := f.do("GET", "/runs/triage-cycle-v2-page", ck, nil, nil)
+	if resp.StatusCode != 200 || !strings.Contains(page, `href="/fleets/triage/cycle?pairs=2#pairs"`) || strings.Contains(page, "?sel=triage/cycle@v2") {
+		t.Fatalf("%d: the routine link of a shadow run: %s", resp.StatusCode, page[:min(len(page), 600)])
+	}
+	if resp, rp := f.do("GET", "/fleets/triage/cycle?pairs=2", ck, nil, nil); resp.StatusCode != 200 || !strings.Contains(rp, `id="pairs"`) {
+		t.Fatalf("the link's target: %d", resp.StatusCode)
+	}
+	resp, page = f.do("GET", "/runs/"+key, ck, nil, nil)
+	if resp.StatusCode != 200 || !strings.Contains(page, `href="/fleets/triage?sel=triage/cycle"`) {
+		t.Fatalf("a live run's link is unchanged: %d", resp.StatusCode)
+	}
+}
