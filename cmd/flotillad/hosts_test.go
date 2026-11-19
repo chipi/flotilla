@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/chipi/flotilla/internal/hostalert"
 	"github.com/chipi/flotilla/internal/hostca"
+	"github.com/chipi/flotilla/internal/hostlink"
+	"github.com/chipi/flotilla/internal/store"
 )
 
 // writeCA puts a CA's files where flotillad reads them, as `flotilla ca intermediate` leaves them.
@@ -77,5 +83,38 @@ func TestHostsConfig(t *testing.T) {
 	}
 	if (HostsConfig{}).validate() != nil || (HostsConfig{Listen: ":8486", CADir: "/ca", ServerNames: []string{"x"}}).validate() != nil {
 		t.Error("a good or an absent hosts section refused")
+	}
+}
+
+// A worker link's contact, recorded through recordContact, keeps it out of the not_connected alert; with
+// no contact recorded the same enrolled identity alerts (the 2026-11-19 false alert on every start).
+func TestWorkerLinkContactClearsNotConnected(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "flotilla.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	id := "w-bugfix-node"
+	if _, err := st.AddEnrolment(ctx, id, "tok", "test", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Enrol(ctx, id, "tok", func() (string, time.Time, error) { return "cert", time.Now().Add(90 * 24 * time.Hour), nil }); err != nil {
+		t.Fatal(err)
+	}
+	check := func(now time.Time) []hostalert.Alert {
+		hs, err := st.Hosts(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return hostalert.Check(hs, now, hostalert.Defaults)
+	}
+	if a := check(time.Now().Add(time.Hour)); len(a) != 1 || a[0].Kind != hostalert.NotConnected {
+		t.Fatalf("no contact recorded: %+v", a)
+	}
+	at := time.Now().Add(time.Hour)
+	recordContact(st, slog.New(slog.NewTextHandler(io.Discard, nil)))(hostlink.HostState{Host: id, Connected: true, Version: "v1", ConnectedAt: at, LastContact: at})
+	if a := check(at.Add(time.Minute)); len(a) != 0 {
+		t.Fatalf("contact recorded: %+v", a)
 	}
 }

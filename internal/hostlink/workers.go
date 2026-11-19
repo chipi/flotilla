@@ -98,6 +98,7 @@ func (s *Server) handleWorker(ctx context.Context, tc *tls.Conn, cert string, id
 	delete(s.orphans, name)
 	s.mu.Unlock()
 	s.Log.Info("remote worker connected", "worker", name, "identity", identity, "version", hello.Version)
+	s.reportWorker(name)
 	defer s.dropWorker(name, c)
 	s.cancelOrphans(name, c, orphans)
 	logBudget := budget{}
@@ -111,6 +112,7 @@ func (s *Server) handleWorker(ctx context.Context, tc *tls.Conn, cert string, id
 		s.mu.Lock()
 		st.LastContact = s.now()
 		s.mu.Unlock()
+		s.reportWorker(name)
 		switch f.Type {
 		case hostwire.Heartbeat:
 			var hb hostwire.HeartbeatBody
@@ -178,6 +180,19 @@ func (s *Server) dropWorker(name string, c *conn) {
 		s.wstate[name].Connected = false
 	}
 	s.mu.Unlock()
+	s.reportWorker(name)
+}
+
+// reportWorker hands the link's state to OnContact under its identity: the link is an enrolled host in
+// the store, listed by `host list` and watched by hostalert, so its contact is recorded like an agent's.
+func (s *Server) reportWorker(name string) {
+	if s.OnContact == nil {
+		return
+	}
+	s.mu.Lock()
+	w := *s.wstate[name]
+	s.mu.Unlock()
+	s.OnContact(HostState{Host: w.Identity, Connected: w.Connected, Version: w.Version, ConnectedAt: w.ConnectedAt, LastContact: w.LastContact})
 }
 
 // WorkerConnected is whether the remote worker has a live connection.

@@ -1526,6 +1526,11 @@ $D run -d --name flotilla-e2e-remote-link "${RW[@]}" --entrypoint /usr/local/bin
   -state /remote/state -root /remote/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s >/dev/null || bad "the link did not start"
 seen flotillad '"msg":"remote worker connected".*"worker":"remote-e2e"' \
   && ok "flotillad authenticated the link as remote-e2e's (identity w-remote-e2e, version $TAG)" || bad "link connect: $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
+for _ in $(seq 1 10); do acli host list 2>&1 | grep >/dev/null "^w-remote-e2e  *yes  *$TAG " && break; sleep 1; done
+acli host list 2>&1 | grep >/dev/null "^w-remote-e2e  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z" \
+  && ok "host list shows the link connected, its version and last contact" || bad "host list for the link: $(acli host list 2>&1)"
+! $D logs flotillad 2>&1 | grep '"msg":"host alert".*w-remote-e2e' >/dev/null && ok "no not_connected alert for the connected link" \
+  || bad "a host alert for the link: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
 acli run e2e/remote-echo >/dev/null
 for _ in $(seq 1 20); do acli runs e2e/remote-echo 2>&1 | grep >/dev/null " ok " && break; sleep 1; done
 acli runs e2e/remote-echo 2>&1 | grep >/dev/null " ok " && $D logs flotilla-e2e-remote-link 2>&1 | grep '"msg":"run ended"' >/dev/null \
