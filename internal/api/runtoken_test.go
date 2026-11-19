@@ -165,7 +165,7 @@ func TestARunTokenReachesOnlyWhatAWorkerDoes(t *testing.T) {
 	}
 }
 
-func TestAShadowRunProposesNoNotes(t *testing.T) {
+func TestAShadowRunsNoteIsARecordNotANote(t *testing.T) {
 	ts, srv, reg := runServer(t)
 	ctx := context.Background()
 	id, _, err := srv.Store.OpenCase(ctx, store.NewCase{Kind: "backup", Target: "t", Keys: []store.Key{{Kind: "alert", Value: "a"}}, Canonical: store.Key{Kind: "alert", Value: "a"}}, "ops/m", "d")
@@ -174,11 +174,18 @@ func TestAShadowRunProposesNoNotes(t *testing.T) {
 	}
 	live := issue(t, reg, runtoken.Run{ID: "run-1", Routine: "ops/case-review"})
 	shadow := issue(t, reg, runtoken.Run{ID: "shadow-1", Routine: "ops/case-review", Version: 2, Shadow: true, InputKey: "run-1"})
-	if c, out := call(t, ts, "POST", "/v1/cases/"+id+"/notes", shadow, `{"text":"remember this"}`); c != 403 {
-		t.Fatalf("a shadow's note: %d %v, want 403", c, out)
+	if c, out := call(t, ts, "POST", "/v1/cases/"+id+"/notes", shadow, `{"text":"remember this"}`); c != 200 {
+		t.Fatalf("a shadow's note is taken, as a record: %d %v", c, out)
 	}
 	if n, _ := srv.Store.Notes(ctx, ""); len(n) != 0 {
 		t.Fatalf("a shadow left a note: %+v", n)
+	}
+	if evs, _ := srv.Store.CaseEvents(ctx, id); len(evs) != 1 {
+		t.Fatalf("a shadow's note is not on the case's timeline: %+v", evs)
+	}
+	recs, _ := srv.Store.ShadowRecords(ctx, store.ShadowRecordFilter{InputKey: "run-1", Kind: "note"})
+	if len(recs) != 1 || recs[0].Subject != id || recs[0].Routine != "ops/case-review@v2" || !strings.Contains(string(recs[0].Payload), "remember this") {
+		t.Fatalf("the note as a shadow record: %+v", recs)
 	}
 	if c, out := call(t, ts, "POST", "/v1/cases/"+id+"/notes", live, `{"text":"remember this"}`); c != 200 {
 		t.Fatalf("a live run still proposes notes: %d %v", c, out)

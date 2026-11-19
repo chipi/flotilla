@@ -611,3 +611,48 @@ func TestTheReaderGuardCatchesALeak(t *testing.T) {
 		}
 	}
 }
+
+// Q7: a shadow run's action is never enqueued. A plan of a shadow run that somehow exists cannot become a host execution, and a plan
+// of a live run still can.
+func TestAShadowRunsPlanNeverBecomesAHostExecution(t *testing.T) {
+	s, ctx := openTest(t), context.Background()
+	seedRun(t, s, "live-run", "ops/rerun-backup", false, StatusOK)
+	seedRun(t, s, "shadow-run", "ops/rerun-backup@v2", true, StatusOK)
+	mk := func(key, runID string) int64 {
+		t.Helper()
+		id, _, err := s.OpenCase(ctx, NewCase{Kind: "backup", Target: "host:b", Keys: []Key{{"target", key}}, Canonical: Key{"target", key}}, "ops/m", "d")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.db.Exec(`UPDATE cases SET status = 'planned' WHERE id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+		pid, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: runID, Action: "backup.rerun", Outcome: "propose", Autonomy: "propose"}, "awaiting_approval", "", "", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pid
+	}
+	shadowPlan, livePlan := mk("a", "shadow-run"), mk("b", "live-run")
+	err := s.StartHostExecution(ctx, HostExecution{ID: "x1", CaseID: "c", PlanID: shadowPlan, Host: "h", Action: "backup.rerun", Approved: "a"})
+	if !errors.Is(err, ErrShadowRun) {
+		t.Fatalf("a shadow's plan was sent: %v", err)
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM host_executions`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d host executions for a shadow's plan", n)
+	}
+	if err := s.StartHostExecution(ctx, HostExecution{ID: "x2", CaseID: "c", PlanID: livePlan, Host: "h", Action: "backup.rerun", Approved: "a", Envelope: []byte("{}")}); err != nil {
+		t.Fatalf("a live plan is sent as before: %v", err)
+	}
+	if yes, err := s.RunIsShadow(ctx, "shadow-run"); err != nil || !yes {
+		t.Fatalf("%v %v", yes, err)
+	}
+	if yes, _ := s.RunIsShadow(ctx, "live-run"); yes {
+		t.Fatal("a live run is not a shadow")
+	}
+	if yes, _ := s.RunIsShadow(ctx, "nope"); yes {
+		t.Fatal("an unknown run is not a shadow")
+	}
+}

@@ -533,3 +533,23 @@ func (s *Store) PairsFor(ctx context.Context, routine string, version int) (int,
 		    AND instr(e.namespace, '@v') = 0 AND `+entrySubject+` = sr.subject)))`, ShadowKey(routine, version), version).Scan(&n)
 	return n, err
 }
+
+// ErrShadowRun: a shadow run's plan is never decided and its action never sent. The shadow path does not reach either (it only
+// records), and this is the refusal under it: a plan of a shadow run that somehow exists cannot become a host execution.
+var ErrShadowRun = errors.New("a shadow run never decides a plan or sends an action: what it would run is a shadow record")
+
+// RunIsShadow says whether a run is a shadow run; an unknown run is not.
+func (s *Store) RunIsShadow(ctx context.Context, runID string) (bool, error) {
+	var n int
+	// shadow-ok: this is the check itself, by run id
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(shadow), 0) FROM runs WHERE id = ?`, runID).Scan(&n)
+	return n != 0, err
+}
+
+// planIsShadows says whether the plan was made by a shadow run.
+func (s *Store) planIsShadows(ctx context.Context, planID int64) (bool, error) {
+	var n int
+	// shadow-ok: this is the check itself, by plan id
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(r.shadow), 0) FROM plans p JOIN runs r ON r.id = p.run_id WHERE p.id = ?`, planID).Scan(&n)
+	return n != 0, err
+}

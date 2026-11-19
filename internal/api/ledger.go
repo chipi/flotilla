@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 
+	"github.com/chipi/flotilla/internal/runtoken"
 	"github.com/chipi/flotilla/internal/store"
 )
 
@@ -66,7 +68,15 @@ func (s *Server) ledgerFilings(w http.ResponseWriter, r *http.Request, who Calle
 			keys[k] = v[0]
 		}
 	}
-	fs, err := s.Store.Filings(r.Context(), ns, keys)
+	var fs []store.Filing
+	var err error
+	if in, shadow, ok := s.shadowInput(w, r, who); !ok {
+		return
+	} else if shadow {
+		fs, err = s.Store.FilingsAsOf(r.Context(), who.Run.Routine, ns, in.MarkFilings, keys)
+	} else {
+		fs, err = s.Store.Filings(r.Context(), ns, keys)
+	}
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -107,7 +117,15 @@ func (s *Server) ledgerEntries(w http.ResponseWriter, r *http.Request, who Calle
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 5000 {
 		limit = v
 	}
-	es, err := s.Store.Entries(r.Context(), ns, after, limit)
+	var es []store.Entry
+	var err error
+	if in, shadow, ok := s.shadowInput(w, r, who); !ok {
+		return
+	} else if shadow {
+		es, err = s.Store.EntriesAsOf(r.Context(), who.Run.Routine, ns, in.MarkEntries, after, limit)
+	} else {
+		es, err = s.Store.Entries(r.Context(), ns, after, limit)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -136,12 +154,30 @@ func (s *Server) ledgerAppendEntry(w http.ResponseWriter, r *http.Request, who C
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
+	if who.Run != nil && who.Run.Shadow && body.Kind == "decision" {
+		if err := s.recordShadowDecision(r.Context(), who.Run, body.Row); err != nil {
+			s.Log.Error("a shadow's decision was not recorded as a pair record", "run_id", who.Run.ID, "err", err)
+			writeErr(w, err)
+			return
+		}
+	}
 	writeJSON(w, 200, map[string]any{"seq": seq})
 }
 
 func (s *Server) ledgerCounts(w http.ResponseWriter, r *http.Request, who Caller) {
 	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
+		return
+	}
+	if in, shadow, ok := s.shadowInput(w, r, who); !ok {
+		return
+	} else if shadow {
+		c, err := s.shadowCounts(r.Context(), who.Run, ns, in)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, c)
 		return
 	}
 	c, err := s.Store.LedgerCounts(r.Context(), ns)
@@ -180,4 +216,62 @@ func (s *Server) ledgerImport(w http.ResponseWriter, r *http.Request, who Caller
 	_ = s.Store.Event(r.Context(), who.Name, "api", "ledger.import", ns,
 		strconv.Itoa(c.Filings)+" filings, "+strconv.Itoa(c.Decisions)+" decisions, "+strconv.Itoa(c.Recurrences)+" recurrences")
 	writeJSON(w, 200, c)
+}
+
+// shadowInput is the input a shadow caller reads its ledger as of: the live run's recorded marks. shadow is false for every
+// other caller; ok is false (and the answer written) when a shadow's input is gone.
+func (s *Server) shadowInput(w http.ResponseWriter, r *http.Request, who Caller) (store.Input, bool, bool) {
+	if who.Run == nil || !who.Run.Shadow {
+		return store.Input{}, false, true
+	}
+	in, err := s.Store.Input(r.Context(), who.Run.InputKey)
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": "the shadow's input is not recorded: " + err.Error()})
+		return in, true, false
+	}
+	return in, true, true
+}
+
+// shadowCounts are the counts of the ledger a shadow sees: the live rows as of its input's marks plus its own.
+func (s *Server) shadowCounts(ctx context.Context, run *runtoken.Run, own string, in store.Input) (store.LedgerCounts, error) {
+	var c store.LedgerCounts
+	fs, err := s.Store.FilingsAsOf(ctx, run.Routine, own, in.MarkFilings, nil)
+	if err != nil {
+		return c, err
+	}
+	c.Filings = len(fs)
+	es, err := s.Store.EntriesAsOf(ctx, run.Routine, own, in.MarkEntries, 0, 0)
+	if err != nil {
+		return c, err
+	}
+	for _, e := range es {
+		if e.Kind == "recurrence" {
+			c.Recurrences++
+		} else {
+			c.Decisions++
+		}
+	}
+	return c, nil
+}
+
+// recordShadowDecision is a shadow's ledger decision as a pair record: the input's key and the decision's subject.
+func (s *Server) recordShadowDecision(ctx context.Context, run *runtoken.Run, row map[string]string) error {
+	payload, _ := json.Marshal(row)
+	_, err := s.Store.RecordShadow(ctx, store.ShadowRecord{RunID: run.ID, Routine: run.Key(), Version: run.Version, VersionHash: s.versionHash(ctx, run),
+		InputKey: run.InputKey, Subject: store.DecisionSubject(row, row["occurrence_id"], row["fingerprint"]), Kind: "decision", Payload: payload})
+	return err
+}
+
+// versionHash is the recorded hash of the version a run is, "" when it cannot be read.
+func (s *Server) versionHash(ctx context.Context, run *runtoken.Run) string {
+	vs, err := s.Store.Versions(ctx, run.Routine)
+	if err != nil {
+		return ""
+	}
+	for _, v := range vs {
+		if v.Version == run.Version {
+			return v.Hash
+		}
+	}
+	return ""
 }

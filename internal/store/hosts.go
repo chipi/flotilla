@@ -238,6 +238,11 @@ type HostExecution struct {
 // StartHostExecution records an execution as sent, before it goes. An id seen before is refused unless
 // its last attempt reached no one (not_sent): then this attempt, with its new envelope, replaces it.
 func (s *Store) StartHostExecution(ctx context.Context, x HostExecution) error {
+	if shadow, err := s.planIsShadows(ctx, x.PlanID); err != nil {
+		return err
+	} else if shadow {
+		return ErrShadowRun
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO host_executions (id, case_id, plan_id, host, action, approved, envelope, status, sent_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET envelope = excluded.envelope, status = excluded.status, sent_at = excluded.sent_at, detail = ''

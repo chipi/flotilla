@@ -190,3 +190,25 @@ func TestOnlyAPlannedCaseIsDecided(t *testing.T) {
 		t.Fatalf("a closed case decided again: %v", err)
 	}
 }
+
+// A shadow run's plan is never decided: what it would run is a shadow record. The shadow path does not call DecidePlan, and this is
+// the refusal under it (Q7: the action is blocked by construction).
+func TestAShadowRunsPlanIsNeverDecided(t *testing.T) {
+	ctx := context.Background()
+	s := newServer(t, func(*spec.Routine) {})
+	id := plannedCase(t, s, "", "")
+	if err := s.Store.StartRun(ctx, store.Run{ID: "shadow-run", Routine: "triage/cycle@v2", SpecHash: "x", Trigger: "shadow", Actor: "flotillad", Autonomy: "record",
+		StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning, Version: 2, Shadow: true, InputKey: "live-1"}); err != nil {
+		t.Fatal(err)
+	}
+	_, pid, err := s.DecidePlan(ctx, planFor(id, "shadow-run", "backup-01"))
+	if !errors.Is(err, store.ErrShadowRun) || pid != 0 {
+		t.Fatalf("a shadow's plan: %v %d", err, pid)
+	}
+	if c := caseStatus(t, s, id); c.Status != cases.Planned {
+		t.Fatalf("the case moved: %+v", c)
+	}
+	if ps, _ := s.Store.Plans(ctx, id); len(ps) != 0 {
+		t.Fatalf("a plan was recorded: %+v", ps)
+	}
+}

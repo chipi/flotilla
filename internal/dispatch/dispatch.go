@@ -958,51 +958,101 @@ const maxDetections = 50
 
 var targetRe = regexp.MustCompile(`^[a-z][a-z0-9_]*:[A-Za-z0-9._/-]{1,120}$`)
 
-// Detected opens a case for each detection a monitor's run reported, or attaches it to the open case
-// with the same key; a case it opens is handed over at once (detected -> handed_over by the detector: a
-// code detector with a known kind). A kind the routine does not declare in `detects` is refused, as is a
-// malformed report; the refusals are logged as errors, so they reach GlitchTip.
-func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run, out *sched.CaseOutcome) {
+// ReportPlan is what a monitor's report says, checked and with nothing done: the detections that stand, the ones refused and why,
+// the keys the run reports (an incident whose key is absent has cleared) and its summary lines. Detected acts on it; a shadow
+// version's report is only compared with it (ShadowDone), so both read the report the same way.
+type ReportPlan struct {
+	Items   []PlannedDetection
+	Refused []RefusedDetection
+	Present map[string]bool
+	Summary []string
+}
+
+// PlannedDetection is a detection that stands, with the case key it would open or attach to.
+type PlannedDetection struct {
+	Detection
+	Key  store.Key
+	Data string // the detection's data as stored; "" when it had none or dropped
+	// DataDropped: its data was not a JSON object within maxData (logged by the live path)
+	DataDropped bool
+}
+
+// RefusedDetection is a detection the routine may not make: a kind it does not declare, or a malformed target.
+type RefusedDetection struct{ Kind, Target string }
+
+// ReportRefusal is why a monitor's report as a whole is refused ("" when it is read): a run that failed has no findings, and a
+// report that is missing, malformed, not a detections report or over maxDetections is refused. silent is a failed run, which the
+// live path does not even log.
+func ReportRefusal(status string, out *sched.CaseOutcome) (why string, silent bool) {
+	switch {
+	case status != store.StatusOK:
+		return "", true
+	case out == nil || len(out.Plan) == 0 && out.PlanError == "":
+		return "no plan file", false
+	case out.PlanError != "":
+		return out.PlanError, false
+	}
+	return "", false
+}
+
+// PlanReport reads a monitor's report against the kinds the routine detects. why is the refusal of the report as a whole.
+func PlanReport(detects []string, plan json.RawMessage) (rp ReportPlan, why string) {
 	var rep struct {
 		Outcome    string      `json:"outcome"`
 		Detections []Detection `json:"detections"`
 		Summary    []string    `json:"summary"`
 	}
-	switch {
-	case r.Status != store.StatusOK:
-		return // its run is recorded as failed; a failed monitor's findings are not findings
-	case out.PlanError != "":
-		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", out.PlanError)
-		return
-	case len(out.Plan) == 0:
-		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", "no plan file")
-		return
-	}
-	if err := json.Unmarshal(out.Plan, &rep); err != nil || rep.Outcome != "detections" {
-		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", `not {"outcome": "detections", ...}`)
-		return
+	if err := json.Unmarshal(plan, &rep); err != nil || rep.Outcome != "detections" {
+		return rp, `not {"outcome": "detections", ...}`
 	}
 	if len(rep.Detections) > maxDetections {
-		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", fmt.Sprintf("%d detections, more than %d", len(rep.Detections), maxDetections))
-		return
+		return rp, fmt.Sprintf("%d detections, more than %d", len(rep.Detections), maxDetections)
 	}
-	present := map[string]bool{} // the keys this run reports: an incident whose key is absent has cleared
+	rp.Present = map[string]bool{}
+	rp.Summary = rep.Summary
 	for _, x := range rep.Detections {
-		if !contains(j.Detects, x.Kind) || !targetRe.MatchString(x.Target) {
-			d.Log.Error("detection refused", "routine", j.ID(), "run_id", r.ID, "kind", x.Kind, "target", x.Target,
-				"why", "a kind the routine does not declare in detects, or a malformed target")
+		if !contains(detects, x.Kind) || !targetRe.MatchString(x.Target) {
+			rp.Refused = append(rp.Refused, RefusedDetection{Kind: x.Kind, Target: x.Target})
 			continue
 		}
 		k := store.Key{Kind: "target", Value: x.Kind + "/" + x.Target}
-		present[k.String()] = true
-		detail := strings.TrimSpace("run " + r.ID + ": " + x.Detail)
+		rp.Present[k.String()] = true
 		data, ok := detectionData(x.Data)
-		if !ok {
+		rp.Items = append(rp.Items, PlannedDetection{Detection: x, Key: k, Data: data, DataDropped: !ok})
+	}
+	return rp, ""
+}
+
+// Detected opens a case for each detection a monitor's run reported, or attaches it to the open case
+// with the same key; a case it opens is handed over at once (detected -> handed_over by the detector: a
+// code detector with a known kind). A kind the routine does not declare in `detects` is refused, as is a
+// malformed report; the refusals are logged as errors, so they reach GlitchTip.
+func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run, out *sched.CaseOutcome) {
+	if why, silent := ReportRefusal(r.Status, out); silent {
+		return // its run is recorded as failed; a failed monitor's findings are not findings
+	} else if why != "" {
+		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", why)
+		return
+	}
+	rp, why := PlanReport(j.Detects, out.Plan)
+	if why != "" {
+		d.Log.Error("monitor report refused", "routine", j.ID(), "run_id", r.ID, "why", why)
+		return
+	}
+	for _, x := range rp.Refused {
+		d.Log.Error("detection refused", "routine", j.ID(), "run_id", r.ID, "kind", x.Kind, "target", x.Target,
+			"why", "a kind the routine does not declare in detects, or a malformed target")
+	}
+	present := rp.Present // the keys this run reports: an incident whose key is absent has cleared
+	for _, x := range rp.Items {
+		k := x.Key
+		detail := strings.TrimSpace("run " + r.ID + ": " + x.Detail)
+		if x.DataDropped {
 			d.Log.Error("detection data dropped", "routine", j.ID(), "run_id", r.ID, "kind", x.Kind,
 				"why", fmt.Sprintf("not a JSON object of at most %d bytes", maxData))
 		}
 		id, how, err := d.API.Store.DetectIncident(ctx, store.NewCase{Title: oneLine(x.Title), Kind: x.Kind, Target: x.Target, Project: j.Fleet,
-			Keys: []store.Key{k}, Canonical: k, Data: data}, j.ID(), detail)
+			Keys: []store.Key{k}, Canonical: k, Data: x.Data}, j.ID(), detail)
 		if err != nil {
 			d.Log.Error("open case", "routine", j.ID(), "kind", x.Kind, "target", x.Target, "err", err)
 			continue
@@ -1016,7 +1066,7 @@ func (d *Dispatcher) Detected(ctx context.Context, j *spec.Routine, r *store.Run
 		}
 		d.Log.Info("case opened", "case", id, "kind", x.Kind, "target", x.Target, "routine", j.ID(), "run_id", r.ID)
 	}
-	d.summary(ctx, j, r, rep.Summary)
+	d.summary(ctx, j, r, rp.Summary)
 	d.vanished(ctx, j, r, present)
 	cleared, err := d.API.Store.ClearIncidents(ctx, j.ID(), present)
 	if err != nil {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -40,7 +41,11 @@ func (s *Server) ProposeNote(ctx context.Context, c Caller, via, caseID, text st
 		return 0, err
 	}
 	if c.Run != nil && c.Run.Shadow {
-		return 0, problem(403, "a shadow run proposes no notes: what it would propose is a shadow record, never a note on a live case")
+		// what a shadow would propose is a shadow record, never a note on a live case
+		payload, _ := json.Marshal(map[string]string{"text": strings.TrimSpace(text)})
+		_, err := s.Store.RecordShadow(ctx, store.ShadowRecord{RunID: c.Run.ID, Routine: c.Run.Key(), Version: c.Run.Version,
+			VersionHash: s.versionHash(ctx, c.Run), InputKey: c.Run.InputKey, Subject: caseID, Kind: "note", Payload: payload})
+		return 0, err
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {

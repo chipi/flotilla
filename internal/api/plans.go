@@ -32,6 +32,11 @@ const incidentWindow = 15 * time.Minute
 // transaction (ADR-0005 decision 4): refuse escalates, defer hands the case back, record closes it with
 // the plan recorded, propose awaits approval and auto executes, those two holding the target's lock.
 func (s *Server) DecidePlan(ctx context.Context, p policy.Plan) (policy.Decision, int64, error) {
+	if shadow, err := s.Store.RunIsShadow(ctx, p.RunID); err != nil {
+		return policy.Decision{}, 0, err
+	} else if shadow {
+		return policy.Decision{}, 0, store.ErrShadowRun
+	}
 	c, err := s.Store.Case(ctx, p.CaseID)
 	if err != nil {
 		return policy.Decision{}, 0, err
