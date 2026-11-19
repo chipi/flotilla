@@ -15,9 +15,16 @@ run:
         expect("live-secret-file", False, "read")
     except OSError as e:
         expect("live-secret-file", True, type(e).__name__)
-    leaked = [k for k in ("GITHUB_TOKEN", "OPENROUTER_API_KEY", "GLITCHTIP_TOKEN", "GRAFANA_TOKEN", "E2E_LLM_KEY") if k in os.environ]
+    leaked = [k for k in ("GITHUB_TOKEN", "OPENROUTER_API_KEY", "GLITCHTIP_TOKEN", "GRAFANA_TOKEN") if k in os.environ]
     expect("write-credentials-in-env", not leaked, leaked or "none")
     expect("read-credential-in-env", "SHADOW_READ_ONLY" in os.environ, "present" if "SHADOW_READ_ONLY" in os.environ else "absent")
+    # git and gh credentials: neither tool's config is in this container
+    home = os.environ.get("HOME", "/home/worker")
+    found = [p for p in (home + "/.gitconfig", home + "/.git-credentials", home + "/.config/gh/hosts.yml", home + "/.config/git/credentials",
+                         "/etc/gitconfig") if os.path.exists(p)]
+    expect("git-and-gh-config", not found, found or "none")
+    # the live fleet's state: this container has its own, empty; the live worker's seeded results are not in it
+    expect("live-state-path", not os.path.exists(home + "/signal-fleet/results/dispositions.tsv"), "the live state's file is not here")
     # the live worker's snapshots: read-only here
     try:
         open("/snapshots/hostile", "w").write("x")
@@ -35,13 +42,13 @@ run:
             return e.code, {}
     # the shadow worker's own token (in its secrets volume) opens nothing on flotillad's workers' listener
     wt = open("/run/flotilla/worker.token").read().strip()
-    st, _ = call("GET", "/v1/ledger/filings?ns=triage/cycle", wt)
+    st, _ = call("GET", "/v1/ledger/filings?ns=e2e/hostile", wt)
     expect("worker-token-on-ledger", st in (401, 403), st)
-    st, _ = call("POST", "/v1/ledger/filings?ns=triage/cycle", wt, {"row": {"fingerprint": "hostile", "repo": "o/r", "issue": "1"}})
+    st, _ = call("POST", "/v1/ledger/filings?ns=e2e/hostile", wt, {"row": {"fingerprint": "hostile", "repo": "o/r", "issue": "1"}})
     expect("worker-token-write", st in (401, 403), st)
     # the run's own token, naming the live namespace and another run: flotillad files it under this run's own
     rt = open(os.environ["FLOTILLA_API_TOKEN_FILE"]).read().strip()
-    st, _ = call("POST", "/v1/ledger/filings?ns=triage/cycle", rt, {"row": {"fingerprint": "hostile", "repo": "o/r", "issue": "1"}, "run_id": "someone-elses"})
+    st, _ = call("POST", "/v1/ledger/filings?ns=e2e/hostile", rt, {"row": {"fingerprint": "hostile", "repo": "o/r", "issue": "1"}, "run_id": "someone-elses"})
     say("run-token-named-live-namespace", st)
     st, own = call("GET", "/v1/ledger/filings", rt)
     expect("run-token-reads-its-own-namespace", st == 200, st)
@@ -61,8 +68,27 @@ run:
         say("allowlisted-host", "reached through " + os.environ["HTTP_PROXY"])
     except Exception as e:
         expect("allowlisted-host", False, type(e).__name__ + str(e)[:80])
+    # outward writes: GitHub (a comment on an issue) is off this proxy's allowlist and is refused; Grafana (a silence) is on it, as a read
+    # host, and carries no credential from here, so a real Grafana would refuse it. The stand-in records both for the e2e to count.
+    def write(url):
+        r = urllib.request.Request(url, method="POST", data=b"{}", headers={"Content-Type": "application/json"})
+        try:
+            with op.open(r, timeout=10) as x:
+                return x.status
+        except urllib.error.HTTPError as e:
+            return e.code
+        except Exception as e:
+            return type(e).__name__
+    say("write-github", write("https://api.github.com/repos/example/shop/issues/1/comments"))
+    say("write-grafana", write("https://grafana.example.com/api/alertmanager/grafana/api/v2/silences"))
+    # a model call: it carries its tag and version (the e2e reads them at the model stand-in)
+    sys.path.insert(0, os.path.join(os.environ.get("FLOTILLA_CODE_ROOT", "/opt/flotilla"), "runtime"))
+    import model_client
+    r = model_client.from_env().chat("triage-flash", [{"role": "user", "content": "E2E-CALL-V2 reply with the JSON {\"ok\": true}"}], max_tokens=256, timeout=30)
+    say("model-call", r.get("model"))
     print("HOSTILE END", "FAIL " + ",".join(bad) if bad else "PASS", flush=True)
     sys.exit(1 if bad else 0)
     PY
   workdir: .
   timeout: 2m
+models: [triage-flash]

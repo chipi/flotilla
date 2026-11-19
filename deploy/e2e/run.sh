@@ -41,7 +41,7 @@ if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEM
 # check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
 # the shadow section frees them
-if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/hostile, e2e/shadow-monitor, e2e/cpu"; fi
+if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/shadow-monitor, e2e/cpu"; fi
 if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
 # The browser check's TLS front, standing in for the installation's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
@@ -153,7 +153,8 @@ hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad]
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 printf 'SHADOW_READ_ONLY=%s\n' "$(tok)" > "$WORK/config/fleet-read.env"   # what a shadow worker may read: no write credential in it
-[ "${E2E_MUTANT:-}" = shadow-write-cred ] && printf 'GITHUB_TOKEN=%s\n' "$(tok)" >> "$WORK/config/fleet-read.env"
+printf 'E2E_LLM_KEY=%s\n' "$(tok)" >> "$WORK/config/fleet-read.env"   # a model key: the shadow's own, never a write credential
+[[ ",${E2E_MUTANT:-}," == *,shadow-write-cred,* ]] && printf 'GITHUB_TOKEN=%s\n' "$(tok)" >> "$WORK/config/fleet-read.env"
 [ "${DEMO:-}" != 1 ] || sed -i "/^  remote-e2e: /d" "$WORK/config/flotillad.yaml"   # the e2e fleet's remote worker: not in the demo
 cat > "$WORK/config/worker-triage.env" <<EOF
 ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
@@ -204,13 +205,16 @@ default:
   action: ${E2E_ACL_ACTION:-enforce}   # E2E_ACL_ACTION=open is the mutation check: the run must FAIL
   allowed_domains: [victoriametrics, victoriatraces, litellm, $WORLD_HOSTS_ACL]
 EOF
+# a shadow's proxy has no route to the write host (api.github.com: issues, comments, PRs); E2E_MUTANT=shadow-egress-open puts it back
+SHADOW_HOSTS_ACL="$(echo "$WORLD_HOSTS_ACL" | sed 's/api\.github\.com, //; s/, api\.github\.com//')"
+[[ ",${E2E_MUTANT:-}," != *,shadow-egress-open,* ]] || SHADOW_HOSTS_ACL="$WORLD_HOSTS_ACL"
 cat > "$WORK/config/egress-shadow-acl.yaml" <<EOF
 version: v1
 services: []
 default:
   project: flotilla-shadow
   action: enforce
-  allowed_domains: [victoriametrics, victoriatraces, litellm, $WORLD_HOSTS_ACL]
+  allowed_domains: [victoriametrics, victoriatraces, litellm, $SHADOW_HOSTS_ACL]
 EOF
 cat > "$WORK/config/egress-bugfix-acl.yaml" <<EOF
 version: v1
@@ -1192,27 +1196,63 @@ print(ns, json.load(urllib.request.urlopen(r, timeout=10)))' "$ns" <<<"$OPT" 2>&
 echo "-- the hostile version"
 cli versions e2e/hostile -json | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if [(x["version"], x["state"]) for x in v["versions"]] == [(1, "live"), (2, "shadow")] else 1)' \
   && ok "e2e/hostile: v1 live, v2 a shadow that tries everything" || bad "hostile versions: $(cli versions e2e/hostile 2>&1)"
-LV0="$(live_view)"
-free_routine e2e/hostile   # enabled in its spec, never run: it runs once at the restart, on shadows' terms
-for i in $(seq 1 30); do cli runs e2e/hostile 2>&1 | grep >/dev/null " ok " && break; sleep 2; done
+HID="$(cli runs e2e/hostile -json -n 1 | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"] or []; print(r[0]["id"] if r and r[0]["status"] == "ok" else "")')"
+[ -n "$HID" ] && ok "e2e/hostile has the live run made at the start, before shadows were on ($HID): an input and no shadow run" || bad "hostile has no live run: $(cli runs e2e/hostile 2>&1 | head -3)"
+store_dump() {  # a consistent copy of flotillad's store (the deploy's own snapshot tool), dumped by deploy/e2e/storediff.py: what a shadow must leave alone
+  $D run --rm --network none --user 65532:65532 -e STORE_DIR=/v -v flotilla-e2e-state:/v -v "$ROOT/deploy/server/store_snapshot.py:/s.py:ro" \
+    "local/flotilla-worker-triage:$TAG" python3 /s.py backup > "$WORK/store.db" 2> "$WORK/store.err" && python3 "$ROOT/deploy/e2e/storediff.py" "$WORK/store.db" e2e/hostile
+}
+vol_hash() {  # every file of the live triage worker's state volume
+  $D run --rm --network none --user 10001:10001 -v flotilla-e2e-triage-state:/v:ro --entrypoint sh "local/flotilla-worker-triage:$TAG" \
+    -c 'cd /v && find . -type f | sort | xargs -r sha256sum' | sha256sum | cut -c1-16
+}
+LV0="$(live_view)"; SD0="$(store_dump)"; VH0="$(vol_hash)"
+echo "$SD0" | grep >/dev/null "^SHADOW 0 0$" && [ "$(echo "$SD0" | sed -n 's/^ROWS //p')" -ge 5 ] \
+  && ok "before: the live rows of e2e/hostile are dumped ($(echo "$SD0" | sed -n 's/^ROWS //p') rows over every store table) and no shadow row exists" || bad "store dump before: $(echo "$SD0" | tail -3) $(cat "$WORK/store.err" 2>/dev/null | head -2)"
+OUT="$(cli versions shadow-run e2e/hostile v2 --input "$HID" 2>&1)"
+echo "$OUT" | grep >/dev/null '"status":"\(queued\|running\|done\)"' && ok "the operator's shadow-run on the live input ($HID) queued v2's run" || bad "shadow-run: $OUT"
+OUT2="$(cli versions shadow-run e2e/hostile v2 --input "$HID" 2>&1)"
+echo "$OUT2" | grep >/dev/null "HTTP 409.*already has a shadow run" && ok "a second shadow-run of the same version on the input is refused (409)" || bad "second shadow-run: $OUT2"
+OUT3="$(agent versions shadow-run e2e/hostile v2 --input "$HID" 2>&1)"
+echo "$OUT3" | grep >/dev/null "HTTP 403" && ok "an agent cannot ask for a shadow run (403)" || bad "agent shadow-run: $OUT3"
 for i in $(seq 1 60); do $D logs flotilla-worker-triage-shadow 2>&1 | grep -F "HOSTILE END" >/dev/null && break; sleep 2; done
+for i in $(seq 1 30); do $D logs flotillad 2>&1 | grep '"msg":"shadow run end"' | grep -q '"routine":"e2e/hostile@v2"' && break; sleep 1; done
 HL="$($D logs flotilla-worker-triage-shadow 2>&1 | grep -o 'HOSTILE [^"]*' | sed 's/\\n.*//')"
 echo "$HL" | grep >/dev/null "^HOSTILE END PASS" && ! echo "$HL" | grep >/dev/null "BROKEN" \
-  && ok "the hostile shadow tried a live secret, the snapshots, its worker token, its run token on the live namespace, a plan and an off-list host: every one held ($(echo "$HL" | grep -c ' held ') held)" \
+  && ok "the hostile shadow tried a live secret, git and gh config, the live state, the snapshots, its worker token, its run token on the live namespace, a plan and an off-list host: every one held ($(echo "$HL" | grep -c ' held ') held)" \
   || bad "hostile shadow: $HL"
 echo "$HL" | grep >/dev/null "HOSTILE allowlisted-host reached through http://egress-shadow:4750" \
   && ok "its allowed request went out through its own proxy" || bad "the shadow's proxy: $(echo "$HL" | grep allowlisted)"
 $D logs flotilla-egress-shadow 2>&1 | grep >/dev/null "litellm" && ok "that request is in flotilla-egress-shadow's log, not mixed into the live proxy's" || bad "the shadow proxy's log: $($D logs flotilla-egress-shadow 2>&1 | tail -3)"
 $D logs flotilla-egress-shadow 2>&1 | grep >/dev/null "forbidden" && ok "the host off the allowlist was refused by the shadow's proxy and logged there" || bad "the refusal in the shadow proxy's log"
-for i in $(seq 1 30); do [ "$(cli runs e2e/hostile 2>&1 | grep -c ' ok ')" -ge 1 ] && break; sleep 1; done
-LV1="$(live_view)"
+LV1="$(live_view)"; SD1="$(store_dump)"; VH1="$(vol_hash)"
 [ "$LV0" = "$LV1" ] && ok "after the hostile shadow nothing on the live side changed: the ledgers' counts, the cases, the actions' levels ($LV1)" || bad "the live side changed under a hostile shadow: $LV0 -> $LV1"
+DIFF="$(diff <(echo "$SD0" | grep -v '^SHADOW') <(echo "$SD1" | grep -v '^SHADOW'))"
+[ -z "$DIFF" ] && ok "every live store table is byte-identical before and after the shadow run (rows not keyed @v, hashed per table: $(echo "$SD1" | sed -n 's/^ROWS //p') rows)" || bad "the store changed under a shadow: $DIFF"
+echo "$SD1" | grep -E '^SHADOW [1-9][0-9]* [1-9]' >/dev/null && ok "and the shadow did leave its own rows ($(echo "$SD1" | grep '^SHADOW' | sed 's/SHADOW //') shadow-table rows, shadow runs), so the equality is not the shadow doing nothing" || bad "the shadow left no rows of its own: $(echo "$SD1" | grep '^SHADOW')"
+[ "$VH0" = "$VH1" ] && ok "the live worker's state volume has the same files and bytes before and after ($VH1)" || bad "the live state volume changed: $VH0 -> $VH1"
 LVD="$(cli runs e2e/hostile -json -n 100 | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["runs"] or []))')"
 [ "$LVD" = 1 ] && ok "the routine has the one live run (v1's); the shadow's run is not in its runs" || bad "hostile live runs: $LVD"
 cli runs e2e/hostile -json -n 100 | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; sys.exit(0 if all(not x.get("shadow") and x["version"] == 1 for x in r) else 1)' \
   && ok "the runs list holds no shadow run" || bad "the runs list shows a shadow: $(cli runs e2e/hostile -json -n 5 | head -c 300)"
 cli pairs e2e/hostile v2 --json | python3 -c 'import json,sys; p=json.load(sys.stdin); sys.exit(0 if p["version"] == 2 and p["live_version"] == 1 else 1)' \
   && ok "flotilla pairs answers for the hostile version (no subject: nothing decided to pair)" || bad "pairs: $(cli pairs e2e/hostile v2 2>&1 | head -3)"
+echo "-- the model stand-in's record: every shadow call is tagged, no live call is"
+CM="$($D logs e2e-litellm 2>&1 | grep 'CHAT_META')"
+V2L="$(echo "$CM" | grep "E2E-CALL-V2")"; V1L="$(echo "$CM" | grep "E2E-CALL-V1")"
+[ -n "$V2L" ] && [ "$(echo "$V2L" | grep -vc 'tags=shadow,routine_version:2')" = 0 ] \
+  && ok "LLM calls: every call the shadow made ($(echo "$V2L" | wc -l)) carries the tags shadow and routine_version:2" || bad "LLM calls: shadow call without its tags: $(echo "$V2L" | head -2)"
+[ -n "$V1L" ] && [ "$(echo "$V1L" | grep -vc 'tags=-')" = 0 ] \
+  && ok "LLM calls: the live version's call ($(echo "$V1L" | wc -l)) carries no shadow tag" || bad "LLM calls: live call missing or tagged: $(echo "$V1L" | head -2)"
+echo "-- the outward stand-ins' record: no write reached them from a shadow"
+SHIP="$($D inspect flotilla-egress-shadow --format '{{(index .NetworkSettings.Networks "e2e-backend").IPAddress}}' 2>&1)"
+WRL="$($D logs e2e-world 2>&1 | grep 'world WRITE')"
+SHW="$(echo "$WRL" | grep "client=$SHIP ")"
+[ -n "$SHIP" ] && [ "$(echo "$SHW" | grep -c api.github.com)" = 0 ] && ok "GitHub's stand-in recorded no request from the shadow's proxy ($SHIP): its allowlist has no route to the write host" || bad "a shadow reached GitHub: $(echo "$SHW" | grep api.github.com | head -2)"
+$D logs flotilla-egress-shadow 2>&1 | grep >/dev/null "api.github.com" && ok "the shadow's proxy log holds the refused attempt on api.github.com (the hostile version did try)" || bad "no refused GitHub attempt in the shadow proxy's log"
+echo "$SHW" | grep >/dev/null "grafana.example.com.*auth=no" && [ "$(echo "$SHW" | grep -c 'auth=yes')" = 0 ] \
+  && ok "Grafana's stand-in recorded the shadow's write attempt with no credential, and no write from the shadow carried one ($(echo "$SHW" | wc -l) attempts)" || bad "writes from the shadow: $SHW"
+echo "(the live side's own writes at the stand-ins, for the record: $(echo "$WRL" | grep -vc "client=$SHIP ") from the live proxy)"
 
 echo "-- wall time: a live run beside a running shadow, against the same run with none"
 # e2e/cpu starts held (a held routine does not run at all): freed, each live run has a shadow doing the same work beside it, on the shadow

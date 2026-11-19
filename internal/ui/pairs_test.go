@@ -157,3 +157,34 @@ func TestAShadowRunHasAPageButIsNotInTheRunList(t *testing.T) {
 		t.Error("a shadow run is in the run list")
 	}
 }
+
+// The brief is the operator's morning page: a shadow's failed run, its cost and its records must not move any line of it.
+func TestABriefHoldsNoShadowRow(t *testing.T) {
+	f := versionedFixture(t, "")
+	ctx := context.Background()
+	now := time.Now()
+	before, err := f.ui.composeBrief(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := now.UTC().Format(store.TimeFormat)
+	if err := f.st.StartRun(ctx, store.Run{ID: "triage-cycle-v2-bad", Routine: "triage/cycle@v2", SpecHash: "h", Trigger: "shadow", Actor: "flotillad", Autonomy: "record",
+		StartedAt: at, Status: store.StatusError, Detail: "boom", Version: 2, Shadow: true, InputKey: "triage-cycle-live-9"}); err != nil {
+		t.Fatal(err)
+	}
+	in, cost := int64(1000), 9.5
+	f.st.RecordCalls(ctx, []store.ModelCall{{RunID: "triage-cycle-v2-bad", Routine: "triage/cycle@v2", Alias: "a", Role: "triage", TokensIn: &in, CostUSD: &cost}})
+	if _, err := f.st.RecordShadow(ctx, store.ShadowRecord{RunID: "triage-cycle-v2-bad", Routine: "triage/cycle@v2", Version: 2, InputKey: "triage-cycle-live-9", Subject: "s", Kind: "decision",
+		Payload: json.RawMessage(`{"disposition":"file"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := f.ui.composeBrief(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := json.Marshal([]any{before.Summary, before.Sections})
+	b, _ := json.Marshal([]any{after.Summary, after.Sections})
+	if string(a) != string(b) || strings.Contains(string(b), "@v") || strings.Contains(string(b), "9.5") {
+		t.Fatalf("a shadow moved the brief:\n%s\n%s", a, b)
+	}
+}

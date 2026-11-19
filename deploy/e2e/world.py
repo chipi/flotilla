@@ -152,10 +152,30 @@ class H(BaseHTTPRequestHandler):
             return self.json({"message": "Not Found"}, 404)
         self.send(404, "no such host here")
 
+    def record_write(self, method, host, body):
+        """Every write is one structured line: who sent it (the proxy's address: the live proxy and a shadow's have their own), to what, and
+        whether it carried a credential. The e2e's no-effect test counts them per proxy."""
+        auth = "yes" if self.headers.get("Authorization") else "no"
+        print(f"world WRITE {method} {host}{self.path} client={self.client_address[0]} auth={auth} body_bytes={len(body)}", flush=True)
+
+    def do_PUT(self):
+        self.record_write("PUT", self.host(), self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+        self.send(404, "no such endpoint here")
+
+    def do_PATCH(self):
+        self.record_write("PATCH", self.host(), self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+        self.send(404, "no such endpoint here")
+
+    def do_DELETE(self):
+        self.record_write("DELETE", self.host(), b"")
+        self.send(404, "no such endpoint here")
+
     def do_POST(self):
         host = self.host()
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         print(f"world POST {host}{self.path}", flush=True)
+        if not (host == "api.github.com" and self.path == "/graphql") and not (host == "api.osv.dev" and self.path == "/v1/querybatch"):
+            self.record_write("POST", host, body)   # a read made as a POST (GraphQL queries, OSV's batch) is not a write
         if host == "api.github.com" and self.path == "/graphql":   # triage's sync and stale reads: nothing open
             return self.json({"data": {"repository": None, "search": {"nodes": []}}})
         if host == "api.osv.dev" and self.path == "/v1/querybatch":

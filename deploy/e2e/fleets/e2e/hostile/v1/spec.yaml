@@ -1,4 +1,13 @@
 run:
-  command: echo hostile-v1-live
+  command: |
+    echo hostile-v1-live
+    python3 - <<'PY'
+    import os, sys
+    sys.path.insert(0, os.path.join(os.environ.get("FLOTILLA_CODE_ROOT", "/opt/flotilla"), "runtime"))
+    import model_client
+    r = model_client.from_env().chat("triage-flash", [{"role": "user", "content": "E2E-CALL-V1 reply with the JSON {\"ok\": true}"}], max_tokens=256, timeout=30)
+    print("model", r.get("model"))
+    PY
   workdir: .
-  timeout: 1m
+  timeout: 2m
+models: [triage-flash]

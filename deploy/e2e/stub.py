@@ -63,6 +63,11 @@ class H(BaseHTTPRequestHandler):
             auth = self.headers.get("Authorization", "")
             print(f"{NAME} CHAT auth={'bearer' if auth.startswith('Bearer ') and len(auth) > 7 else 'none'} "
                   f"model={json.loads(body).get('model')}", flush=True)
+            # the request's metadata, as LiteLLM's logger would read it: which call this was (the first words of its prompt) and its tags
+            req = json.loads(body)
+            meta = req.get("metadata") or {}
+            prompt = " ".join(str(m.get("content") or "") for m in (req.get("messages") or [])[:1])[:24]
+            print(f"{NAME} CHAT_META prompt={prompt!r} tags={','.join(meta.get('tags') or []) or '-'}", flush=True)
             out = json.dumps({"choices": [{"message": {"content": scripted(json.loads(body))}, "finish_reason": "stop"}],
                               "model": json.loads(body).get("model"),
                               "usage": {"prompt_tokens": 12, "completion_tokens": 4, "cost": 0.0000021}}).encode()
