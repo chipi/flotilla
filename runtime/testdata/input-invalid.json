@@ -427,5 +427,97 @@
   },
   "error": "want object",
   "go": true
+ },
+ {
+  "name": "recorded tool results of a station that are not a list",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "recorded_tool_results": {
+    "decide": {}
+   }
+  },
+  "error": "want array",
+  "go": true
+ },
+ {
+  "name": "a recorded result without its tool",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "recorded_tool_results": {
+    "decide": [
+     {
+      "args": {},
+      "result": 1
+     }
+    ]
+   }
+  },
+  "error": "tool is required",
+  "go": true
+ },
+ {
+  "name": "a recorded result without its arguments",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "recorded_tool_results": {
+    "decide": [
+     {
+      "tool": "probe",
+      "result": 1
+     }
+    ]
+   }
+  },
+  "error": "args is required",
+  "go": true
+ },
+ {
+  "name": "a recorded result without its result",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "recorded_tool_results": {
+    "decide": [
+     {
+      "tool": "probe",
+      "args": {}
+     }
+    ]
+   }
+  },
+  "error": "result is required",
+  "go": true
+ },
+ {
+  "name": "a recorded result whose ok is not a boolean",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "recorded_tool_results": {
+    "decide": [
+     {
+      "tool": "probe",
+      "args": {},
+      "result": 1,
+      "ok": "yes"
+     }
+    ]
+   }
+  },
+  "error": "want boolean",
+  "go": true
  }
 ]

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "input_key": "triage-cycle-20261119T100000-000009",
+  "routine": "triage/cycle",
+  "kind": "tick",
+  "version": 2,
+  "started_at": "2026-11-19T10:00:00Z",
+  "recorded_tool_results": {
+    "decide": [
+      {
+        "tool": "probe",
+        "args": {
+          "fingerprint": "glitchtip:SHOP-1"
+        },
+        "result": {
+          "count": 3
+        },
+        "ok": true
+      },
+      {
+        "tool": "probe",
+        "args": {
+          "fingerprint": "glitchtip:SHOP-2"
+        },
+        "result": "no such issue",
+        "ok": false
+      }
+    ]
+  }
+}

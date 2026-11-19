@@ -66,7 +66,11 @@ def trim(v, n):
     return s if len(s) <= n else s[:n] + f"\n…[truncated {len(s)-n} of {len(s)} chars]"
 
 
-def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print):
+def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print, station=None):
+    # FLOTILLA_RECORDED_TOOLS (an offline run, runtime/recorded.py): the tools answer from the recordings, never live. Unset: this line is all.
+    if os.environ.get("FLOTILLA_RECORDED_TOOLS"):
+        import recorded
+        tool = recorded.from_env().wrap(station, tool)
     lim, q = cfg["limits"], cfg["quirks"]
     n, steps = lim["max_tool_calls"], lim["max_steps"]
     if steps != n + 1:

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://flotilla.invalid/schemas/input.schema.json",
   "title": "A frozen input (flotilla input schema, version 1)",
-  "description": "What flotillad handed a live run when it started, so a shadow version of the routine, a replay or an eval can be given exactly that. The same envelope is a scenario's start: a captured live input exports as this envelope, with the ledger rows as of its mark and the state snapshot (a file beside it), written to a folder outside any repository, and is production data until the installation scrubs it. The fields only a live capture has (the ledger marks, the live case keys, the state snapshot, the commit) are optional, so an input built from a dataset item validates too. recorded_tool_results is reserved for build step 3 and not produced before it: per station, the calls and results of a captured run or a scenario's fixtures, matched by station, tool name and normalised arguments, never by sequence.",
+  "description": "What flotillad handed a live run when it started, so a shadow version of the routine, a replay or an eval can be given exactly that. The same envelope is a scenario's start: a captured live input exports as this envelope, with the ledger rows as of its mark and the state snapshot (a file beside it), written to a folder outside any repository, and is production data until the installation scrubs it. The fields only a live capture has (the ledger marks, the live case keys, the state snapshot, the commit) are optional, so an input built from a dataset item validates too. recorded_tool_results: per station name, the calls and results of a captured run or a scenario's fixtures, matched by station, tool name and normalised arguments, never by sequence (runtime/recorded.py: the normalisation; a key recorded once answers every repeat of it, a key recorded several times answers in order and the last repeats, a key never recorded fails the run and is never sent live).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "input_key", "routine", "kind"],
@@ -56,6 +56,21 @@
         "tar": {"description": "The archive's file name, in the folder the envelope was exported to.", "type": "string", "pattern": "^[A-Za-z0-9._-]+$"}
       }
     },
-    "recorded_tool_results": {"description": "Reserved (build step 3): per station name, the recorded calls and results.", "type": "object"}
+    "recorded_tool_results": {
+      "description": "Per station name, the recorded calls and results of the tools the runtime serves (harness flotilla's tool names).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object", "required": ["tool", "args", "result"],
+          "properties": {
+            "tool": {"type": "string", "minLength": 1, "maxLength": 100},
+            "args": {"type": "object"},
+            "result": {"description": "What the tool returned, any JSON value."},
+            "ok": {"type": "boolean"}
+          }
+        }
+      }
+    }
   }
 }

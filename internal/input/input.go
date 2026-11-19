@@ -66,7 +66,7 @@ type Envelope struct {
 	Ledger        *Ledger         `json:"ledger,omitempty"`
 	LiveCaseKeys  *[]string       `json:"live_case_keys,omitempty"`
 	StateSnapshot *StateSnapshot  `json:"state_snapshot,omitempty"`
-	// RecordedToolResults is reserved for build step 3 and not produced before it.
+	// RecordedToolResults: per station name, the recorded calls and results (runtime/recorded.py answers the tools from them).
 	RecordedToolResults json.RawMessage `json:"recorded_tool_results,omitempty"`
 }
 
@@ -199,6 +199,29 @@ func (e Envelope) Validate() error {
 		var obj map[string]json.RawMessage
 		if json.Unmarshal(raw, &obj) != nil || obj == nil {
 			bad("%s must be an object", name)
+		}
+	}
+	if len(e.RecordedToolResults) > 0 {
+		var per map[string][]struct {
+			Tool   *string          `json:"tool"`
+			Args   *json.RawMessage `json:"args"`
+			Result *json.RawMessage `json:"result"`
+			OK     *bool            `json:"ok"`
+		}
+		if err := json.Unmarshal(e.RecordedToolResults, &per); err != nil {
+			bad("recorded_tool_results: each station's value is a list of {tool, args, result, ok}: %v", err)
+		}
+		for station, calls := range per {
+			for i, c := range calls {
+				switch {
+				case c.Tool == nil || *c.Tool == "" || len(*c.Tool) > 100:
+					bad("recorded_tool_results.%s[%d]: tool is 1 to 100 characters", station, i)
+				case c.Args == nil || len(*c.Args) == 0 || (*c.Args)[0] != '{':
+					bad("recorded_tool_results.%s[%d]: args is an object", station, i)
+				case c.Result == nil:
+					bad("recorded_tool_results.%s[%d]: result is required", station, i)
+				}
+			}
 		}
 	}
 	if c := e.Commit; c != nil {
