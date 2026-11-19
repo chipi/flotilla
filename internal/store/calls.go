@@ -102,6 +102,46 @@ type ModelCall struct {
 	Tools        string   `json:"tools,omitempty"`        // JSON array of the tools the model called in this turn, [{"name","arg","ok"}] (old rows: ["name", ...]; ParseTools reads both); "" when none
 	Kind         string   `json:"kind"`                   // KindCall or KindStep; rows from before schema 25 are calls
 	Version      int      `json:"version,omitempty"`      // the routine's version of the run that made the call; set when read
+	Station      string   `json:"station,omitempty"`      // the version's station that made the call (a free name); "" for a call of a routine without stations
+	Texts        string   `json:"texts,omitempty"`        // JSON [{"name","sha256","bytes"}]: the rendered texts the call read; their bodies are in call_texts
+	// TextBodies are the bodies of those texts as the run reported them: kept once by hash, not part of the row.
+	TextBodies []CallText `json:"-"`
+}
+
+// CallText is a rendered text's body as a run reported it (runtime/stations.py Rendered.record): masked by the run, with only its hash and
+// length when it is over the cap.
+type CallText struct {
+	Name     string  `json:"name"`
+	SHA256   string  `json:"sha256"`
+	Bytes    int64   `json:"bytes"`
+	Text     *string `json:"text,omitempty"`
+	Redacted bool    `json:"redacted,omitempty"`
+	OverCap  bool    `json:"over_cap,omitempty"`
+}
+
+// Per text and per run budgets for the bodies kept in call_texts: a text over MaxTextBytes, or one past MaxRunTextBytes of new bodies in one
+// run's calls, keeps its hash and length and no body (over_cap), never a cut one.
+const (
+	MaxTextBytes    = 64 * 1024
+	MaxRunTextBytes = 512 * 1024
+)
+
+// TextRefs is what the row keeps of a call's texts: name, hash and length, as JSON ("" for none).
+func TextRefs(texts []CallText) string {
+	if len(texts) == 0 {
+		return ""
+	}
+	type ref struct {
+		Name   string `json:"name"`
+		SHA256 string `json:"sha256"`
+		Bytes  int64  `json:"bytes"`
+	}
+	refs := make([]ref, len(texts))
+	for i, t := range texts {
+		refs[i] = ref{t.Name, t.SHA256, t.Bytes}
+	}
+	b, _ := json.Marshal(refs)
+	return string(b)
 }
 
 // RecordCalls keeps a run's model calls, in one transaction.
@@ -114,7 +154,23 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 		return err
 	}
 	defer tx.Rollback()
+	budget := int64(MaxRunTextBytes)
 	for _, c := range calls {
+		for _, t := range c.TextBodies {
+			var body any
+			over := t.OverCap || t.Text == nil
+			if !over && (int64(len(*t.Text)) > MaxTextBytes || int64(len(*t.Text)) > budget) {
+				over = true
+			}
+			if !over {
+				body = *t.Text
+				budget -= int64(len(*t.Text))
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO call_texts (sha256, bytes, text, redacted, over_cap) VALUES (?, ?, ?, ?, ?)`,
+				t.SHA256, t.Bytes, body, t.Redacted, over); err != nil {
+				return err
+			}
+		}
 		at := c.At
 		if at == "" {
 			at = s.now().Format(ts)
@@ -124,11 +180,11 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 			kind = KindCall
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_calls (run_id, routine, at, alias, endpoint, model, deployment,
-			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind, version)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+runVersion+`)`,
+			tokens_in, tokens_out, cost_usd, cost_source, latency_s, error, check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind, station, texts, version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+runVersion+`)`,
 			c.RunID, c.Routine, at, c.Alias, c.Endpoint, c.Model, c.Deployment, c.TokensIn, c.TokensOut, c.CostUSD,
 			c.CostSource, c.LatencyS, c.Error, c.Check, c.CheckOK, c.Detail, c.FinishReason, c.Step, nullIfEmpty(c.DecisionKey),
-			c.Role, c.Episode, c.EpisodeSeq, c.Tools, kind, c.RunID); err != nil {
+			c.Role, c.Episode, c.EpisodeSeq, c.Tools, kind, c.Station, TextRefs(c.TextBodies), c.RunID); err != nil {
 			return err
 		}
 	}
@@ -136,7 +192,7 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 }
 
 const callCols = `run_id, routine, at, alias, endpoint, model, deployment, tokens_in, tokens_out, cost_usd, cost_source, latency_s, error,
-	check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind, version`
+	check_name, check_ok, detail, finish_reason, step, decision_key, role, episode, episode_seq, tools, kind, station, texts, version`
 
 func nullIfEmpty(s string) any {
 	if s == "" {
@@ -157,7 +213,7 @@ func scanCalls(rows *sql.Rows) ([]ModelCall, error) {
 		var key sql.NullString
 		var eseq sql.NullInt64
 		if err := rows.Scan(&c.RunID, &c.Routine, &c.At, &c.Alias, &c.Endpoint, &c.Model, &c.Deployment, &tin, &tout,
-			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail, &c.FinishReason, &step, &key, &c.Role, &c.Episode, &eseq, &c.Tools, &c.Kind, &c.Version); err != nil {
+			&cost, &c.CostSource, &lat, &c.Error, &c.Check, &ok, &c.Detail, &c.FinishReason, &step, &key, &c.Role, &c.Episode, &eseq, &c.Tools, &c.Kind, &c.Station, &c.Texts, &c.Version); err != nil {
 			return nil, err
 		}
 		if ok.Valid {

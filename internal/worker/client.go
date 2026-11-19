@@ -128,6 +128,19 @@ type Call struct {
 	Tools json.RawMessage `json:"tools,omitempty"`
 	// "call" (a model call, and what a line without it is) or "step" (a harness step: no model, tokens or cost)
 	Kind string `json:"kind,omitempty"`
+	// the version's station that made the call, and the rendered texts it read with their bodies (runtime/stations.py); empty for a routine without stations
+	Station string     `json:"station,omitempty"`
+	Texts   []CallText `json:"texts,omitempty"`
+}
+
+// CallText is one rendered text a call read: its name, hash and length, and the body the run kept of it (masked; absent over the cap).
+type CallText struct {
+	Name     string  `json:"name"`
+	SHA256   string  `json:"sha256"`
+	Bytes    int64   `json:"bytes"`
+	Text     *string `json:"text,omitempty"`
+	Redacted bool    `json:"redacted,omitempty"`
+	OverCap  bool    `json:"over_cap,omitempty"`
 }
 
 type Health struct {

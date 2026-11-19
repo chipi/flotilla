@@ -1,6 +1,8 @@
 package sched
 
 import (
+	"context"
+	"github.com/chipi/flotilla/internal/worker"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,5 +112,24 @@ func TestOnlyAVersionWithStationsGetsFlotillaStations(t *testing.T) {
 	env, _ := RunContract(j, nil, EnvParams{})
 	if _, ok := env["FLOTILLA_STATIONS"]; ok {
 		t.Fatal("a routine with no stations gets none")
+	}
+}
+
+// The calls a run reports with a station and rendered texts are kept with them: the station on the row, each text once by its hash.
+func TestARunsStationAndTextsAreRecorded(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	body := "Decide it."
+	fr.res.Calls = []worker.Call{{Alias: "a", Station: "decide", Texts: []worker.CallText{{Name: "task", SHA256: strings.Repeat("a", 64), Bytes: int64(len(body)), Text: &body, Redacted: true}}}}
+	r, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, err := s.Store.RunCalls(context.Background(), []string{r.ID})
+	if err != nil || len(calls[r.ID]) != 1 {
+		t.Fatalf("%v %v", calls, err)
+	}
+	c := calls[r.ID][0]
+	if c.Station != "decide" || !strings.Contains(c.Texts, strings.Repeat("a", 64)) || strings.Contains(c.Texts, body) {
+		t.Fatalf("the row keeps the station and the texts' refs, not their bodies: %+v", c)
 	}
 }

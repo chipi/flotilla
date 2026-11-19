@@ -478,7 +478,7 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 			calls[i] = store.ModelCall{RunID: runID, Routine: key, At: at.Format(store.TimeFormat), Alias: c.Alias, Endpoint: c.Endpoint, Model: c.Model,
 				Deployment: c.Deployment, TokensIn: c.TokensIn, TokensOut: c.TokensOut, CostUSD: c.CostUSD, CostSource: c.CostSource, LatencyS: c.LatencyS,
 				Error: c.Error, Check: c.Check, CheckOK: c.CheckOK, Detail: c.Detail, FinishReason: c.FinishReason, Step: c.Step, DecisionKey: c.DecisionKey,
-				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: store.NormalizeTools(c.Tools), Kind: c.Kind}
+				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: store.NormalizeTools(c.Tools), Kind: c.Kind, Station: c.Station, TextBodies: callTexts(c.Texts)}
 		}
 		if err := s.Store.RecordCalls(fctx, calls); err != nil {
 			log.Error("recording the shadow run's model calls", "run_id", runID, "err", err)

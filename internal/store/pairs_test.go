@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -69,7 +71,7 @@ func TestPairsOfLedgerDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ps.Paired != 2 || ps.Differ != 1 || ps.Unpaired != 2 || len(ps.Pairs) != 4 || ps.StationsNote == "" {
+	if ps.Paired != 2 || ps.Differ != 1 || ps.Unpaired != 2 || len(ps.Pairs) != 4 {
 		t.Fatalf("%+v", ps)
 	}
 	m := byKey(ps)
@@ -222,5 +224,86 @@ func TestPairsCarryEachSidesUsagePerRole(t *testing.T) {
 	}
 	if len(p.Shadow.Stations) != 1 || p.Shadow.Stations[0].Calls != 1 || p.Shadow.Stations[0].CostUSD != 0.01 {
 		t.Fatalf("%+v", p.Shadow.Stations)
+	}
+}
+
+func TestPairsCarryTheRenderedTextsOfEachStationAndOldRowsStillRead(t *testing.T) {
+	s, ctx := pairWorld(t)
+	shadowRec(t, s, "live-1", "s-1", "fp-1", "decision", `{"disposition":"file"}`)
+	s.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"fingerprint": "fp-1", "disposition": "file"}, "live-1")
+	s.StartRun(ctx, Run{ID: "live-1", Routine: "triage/cycle", SpecHash: "h", Trigger: "schedule", Actor: "flotillad", Autonomy: "record", StartedAt: "2026-11-19T10:00:00.000000000Z", Status: StatusRunning})
+	body := "Decide it."
+	sha := strings.Repeat("a", 64)
+	call := func(run, routine, station, role string, texts ...CallText) ModelCall {
+		return ModelCall{RunID: run, Routine: routine, At: "2026-11-19T10:00:01.000000000Z", Alias: "a", Station: station, Role: role, TextBodies: texts}
+	}
+	t1 := CallText{Name: "task", SHA256: sha, Bytes: int64(len(body)), Text: &body, Redacted: true}
+	// the same text read by two calls is one entry; a row from before stations (a role, no station) groups under its role
+	if err := s.RecordCalls(ctx, []ModelCall{call("live-1", "triage/cycle", "decide", "", t1), call("live-1", "triage/cycle", "decide", "", t1), call("live-1", "triage/cycle", "", "verdict"),
+		call("s-1", "triage/cycle@v2", "decide", "", t1)}); err != nil {
+		t.Fatal(err)
+	}
+	ps, _ := s.Pairs(ctx, PairQuery{Routine: "triage/cycle", Version: 2})
+	live := ps.Pairs[0].Live.Stations
+	if len(live) != 2 || live[0].Role != "decide" || live[0].Calls != 2 || len(live[0].Texts) != 1 || *live[0].Texts[0].Text != body || live[1].Role != "verdict" || len(live[1].Texts) != 0 {
+		t.Fatalf("%+v", live)
+	}
+	if sh := ps.Pairs[0].Shadow.Stations; len(sh) != 1 || sh[0].Texts[0].SHA256 != sha {
+		t.Fatalf("%+v", sh)
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM call_texts`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("a text is kept once by its hash: %d rows", n)
+	}
+}
+
+func TestATextOverTheCapOrTheRunsBudgetKeepsItsHashAndLengthAndNoBody(t *testing.T) {
+	s, ctx := pairWorld(t)
+	big := strings.Repeat("x", MaxTextBytes+1)
+	ok := "fine"
+	nobody := CallText{Name: "n", SHA256: strings.Repeat("b", 64), Bytes: 99, OverCap: true}
+	over := CallText{Name: "big", SHA256: strings.Repeat("c", 64), Bytes: int64(len(big)), Text: &big}
+	fine := CallText{Name: "ok", SHA256: strings.Repeat("d", 64), Bytes: 4, Text: &ok, Redacted: true}
+	if err := s.RecordCalls(ctx, []ModelCall{{RunID: "r", Routine: "triage/cycle", Alias: "a", Station: "s", TextBodies: []CallText{nobody, over, fine}}}); err != nil {
+		t.Fatal(err)
+	}
+	for sha, want := range map[string]bool{nobody.SHA256: false, over.SHA256: false, fine.SHA256: true} {
+		var body sql.NullString
+		var capped bool
+		if err := s.db.QueryRow(`SELECT text, over_cap FROM call_texts WHERE sha256 = ?`, sha).Scan(&body, &capped); err != nil {
+			t.Fatal(err)
+		}
+		if body.Valid != want || capped == want {
+			t.Errorf("%s: body kept %v, over_cap %v", sha[:4], body.Valid, capped)
+		}
+	}
+	// past the run's budget the next new body is dropped too, and the call still records
+	var cs []ModelCall
+	for i := 0; i < 10; i++ {
+		b := strings.Repeat("y", MaxTextBytes)
+		cs = append(cs, ModelCall{RunID: "r2", Routine: "triage/cycle", Alias: "a", Station: "s", TextBodies: []CallText{{Name: "t", SHA256: strings.Repeat(string(rune('e'+i)), 64), Bytes: int64(len(b)), Text: &b}}})
+	}
+	if err := s.RecordCalls(ctx, cs); err != nil {
+		t.Fatal(err)
+	}
+	var kept int
+	s.db.QueryRow(`SELECT COUNT(*) FROM call_texts WHERE text IS NOT NULL AND length(text) = ?`, MaxTextBytes).Scan(&kept)
+	if kept != MaxRunTextBytes/MaxTextBytes {
+		t.Fatalf("the run's budget keeps %d bodies, kept %d", MaxRunTextBytes/MaxTextBytes, kept)
+	}
+}
+
+func TestAStoreAtTheLatestSchemaReadsOldCallsWithNoStation(t *testing.T) {
+	if len(schema) != 32 {
+		t.Fatalf("step 32 is the stations': the schema has %d steps", len(schema))
+	}
+	s, ctx := pairWorld(t)
+	if err := s.RecordCalls(ctx, []ModelCall{{RunID: "old", Routine: "triage/cycle", Alias: "a", Role: "triage"}}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.RunCalls(ctx, []string{"old"})
+	if c := m["old"][0]; c.Station != "" || c.Texts != "" || c.Role != "triage" {
+		t.Fatalf("%+v", c)
 	}
 }

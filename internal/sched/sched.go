@@ -472,7 +472,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 				Model: c.Model, Deployment: c.Deployment, TokensIn: c.TokensIn, TokensOut: c.TokensOut, CostUSD: c.CostUSD,
 				CostSource: c.CostSource, LatencyS: c.LatencyS, Error: c.Error, Check: c.Check, CheckOK: c.CheckOK, Detail: c.Detail,
 				FinishReason: c.FinishReason, Step: c.Step, DecisionKey: c.DecisionKey,
-				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: store.NormalizeTools(c.Tools), Kind: c.Kind}
+				Role: c.Role, Episode: c.Episode, EpisodeSeq: c.EpisodeSeq, Tools: store.NormalizeTools(c.Tools), Kind: c.Kind, Station: c.Station, TextBodies: callTexts(c.Texts)}
 		}
 		if res.CallsDropped > 0 {
 			// the worker keeps the first lines of a run's calls file; say how many it did not, in the run's own rows
@@ -891,4 +891,13 @@ func tail(s string, n int) string {
 		return s[len(s)-n:]
 	}
 	return s
+}
+
+// callTexts is the bodies a call's rendered texts carry, as the store keeps them.
+func callTexts(in []worker.CallText) []store.CallText {
+	out := make([]store.CallText, len(in))
+	for i, t := range in {
+		out[i] = store.CallText{Name: t.Name, SHA256: t.SHA256, Bytes: t.Bytes, Text: t.Text, Redacted: t.Redacted, OverCap: t.OverCap}
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -28,7 +29,8 @@ type PairSide struct {
 	Plan    *PairPlan `json:"plan,omitempty"`
 	RunID   string    `json:"run_id,omitempty"`
 	At      string    `json:"at,omitempty"`
-	// Per station (the harness role that made the call): turns, tokens and the gateway's cost of the run that decided. Texts arrive with step 3.
+	// Per station (the version's station that made the call; the harness role for a call from before stations): turns, tokens, the gateway's cost
+	// and the rendered texts of the run that decided.
 	Stations []PairStation `json:"stations,omitempty"`
 }
 
@@ -40,13 +42,23 @@ type PairPlan struct {
 	Ran     bool              `json:"ran,omitempty"`     // the live side: it was sent to a host
 }
 
-// PairStation is what one role of a run used.
+// PairText is one rendered text a station read: its name, hash and length, and its body (masked) unless it was over the cap.
+type PairText struct {
+	Name    string  `json:"name"`
+	SHA256  string  `json:"sha256"`
+	Bytes   int64   `json:"bytes"`
+	Text    *string `json:"text,omitempty"`
+	OverCap bool    `json:"over_cap,omitempty"`
+}
+
+// PairStation is what one station of a run used; Role is the station's name, or the harness role for rows from before stations.
 type PairStation struct {
-	Role      string  `json:"role"`
-	Calls     int     `json:"calls"`
-	TokensIn  int64   `json:"tokens_in"`
-	TokensOut int64   `json:"tokens_out"`
-	CostUSD   float64 `json:"cost_usd"`
+	Texts     []PairText `json:"texts,omitempty"`
+	Role      string     `json:"role"`
+	Calls     int        `json:"calls"`
+	TokensIn  int64      `json:"tokens_in"`
+	TokensOut int64      `json:"tokens_out"`
+	CostUSD   float64    `json:"cost_usd"`
 }
 
 // Pair is one subject of one input, with each side's decision; a side that did not decide it is nil.
@@ -69,9 +81,7 @@ type PairSet struct {
 	Paired      int    `json:"paired"`
 	Differ      int    `json:"differ"`
 	Unpaired    int    `json:"unpaired"`
-	// StationsNote says the rendered texts are not here: stations arrive with build step 3.
-	StationsNote string `json:"texts"`
-	Pairs        []Pair `json:"pairs"`
+	Pairs       []Pair `json:"pairs"`
 }
 
 // PairQuery picks the pairs: a routine's version, in a window of the live runs' starts.
@@ -81,12 +91,10 @@ type PairQuery struct {
 	Since, Until string // the live run's start, as stored (UTC)
 }
 
-const stationsNote = "the rendered texts of each station are recorded from build step 3; until then a pair has the decisions and the usage"
-
 // Pairs reads a version's pairs. The shadow side is its shadow records of the input; the live side is what the live run of the input did
 // on the same subject: a ledger decision, a plan (and whether it was sent to a host), or a change to the case or incident the subject names.
 func (s *Store) Pairs(ctx context.Context, q PairQuery) (PairSet, error) {
-	out := PairSet{Routine: q.Routine, Version: q.Version, Since: q.Since, Until: q.Until, StationsNote: stationsNote, Pairs: []Pair{}}
+	out := PairSet{Routine: q.Routine, Version: q.Version, Since: q.Since, Until: q.Until, Pairs: []Pair{}}
 	if lv, ok, err := s.LiveVersion(ctx, q.Routine); err != nil {
 		return out, err
 	} else if ok {
@@ -361,8 +369,8 @@ func (s *Store) liveSides(ctx context.Context, inputKey, routine string, version
 // stations is what each role of a run used (the gateway's cost), for one run id. Steps are not calls.
 func (s *Store) stations(ctx context.Context, runID string) ([]PairStation, error) {
 	// shadow-ok: the calls of one run by id, whichever kind it is
-	rows, err := s.db.QueryContext(ctx, `SELECT role, COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0), COALESCE(SUM(cost_usd), 0)
-		FROM run_calls WHERE run_id = ? AND kind <> 'step' GROUP BY role ORDER BY role`, runID)
+	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(station, ''), role), COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0), COALESCE(SUM(cost_usd), 0)
+		FROM run_calls WHERE run_id = ? AND kind <> 'step' GROUP BY 1 ORDER BY 1`, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,5 +386,62 @@ func (s *Store) stations(ctx context.Context, runID string) ([]PairStation, erro
 		}
 		out = append(out, p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, s.stationTexts(ctx, runID, out)
+}
+
+// stationTexts fills each station's rendered texts: each distinct (name, hash) once, in the order the station first read it, with the body
+// kept for its hash (nil when it was over the cap).
+func (s *Store) stationTexts(ctx context.Context, runID string, sts []PairStation) error {
+	// shadow-ok: the calls of one run by id, whichever kind it is
+	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(station, ''), role), texts FROM run_calls WHERE run_id = ? AND kind <> 'step' AND texts <> '' ORDER BY id`, runID)
+	if err != nil {
+		return err
+	}
+	type seenKey struct{ label, name, sha string }
+	seen := map[seenKey]bool{}
+	byLabel := map[string][]PairText{}
+	for rows.Next() {
+		var label, raw string
+		if err := rows.Scan(&label, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		var refs []PairText
+		if json.Unmarshal([]byte(raw), &refs) != nil {
+			continue
+		}
+		for _, r := range refs {
+			k := seenKey{label, r.Name, r.SHA256}
+			if !seen[k] {
+				seen[k] = true
+				byLabel[label] = append(byLabel[label], r)
+			}
+		}
+	}
+	rows.Close()
+	for i := range sts {
+		label := sts[i].Role
+		if label == "(no role)" {
+			label = ""
+		}
+		for _, t := range byLabel[label] {
+			var body sql.NullString
+			var over bool
+			// reached only through a run's calls above, which are read by run id: the shadow rule is theirs
+			err := s.db.QueryRowContext(ctx, `SELECT text, over_cap FROM call_texts WHERE sha256 = ?`, t.SHA256).Scan(&body, &over)
+			if err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			if body.Valid {
+				b := body.String
+				t.Text = &b
+			}
+			t.OverCap = over || (err == nil && !body.Valid)
+			sts[i].Texts = append(sts[i].Texts, t)
+		}
+	}
+	return nil
 }

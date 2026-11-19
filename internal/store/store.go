@@ -474,6 +474,17 @@ var schema = []string{
 	);
 	CREATE INDEX shadow_records_input ON shadow_records(input_key, subject);
 	CREATE INDEX shadow_records_routine ON shadow_records(routine, version);`,
+	// Stations (v2 build step 3): the station that made a call, the rendered texts it read (name, hash, length: JSON), and each distinct text once,
+	// by its hash. A text's body is masked and capped when it is written; one over the cap, or past a run's budget, has its hash and length only.
+	`ALTER TABLE run_calls ADD COLUMN station TEXT NOT NULL DEFAULT '';
+	ALTER TABLE run_calls ADD COLUMN texts TEXT NOT NULL DEFAULT '';
+	CREATE TABLE call_texts (
+		sha256 TEXT PRIMARY KEY,
+		bytes INTEGER NOT NULL,
+		text TEXT,
+		redacted INTEGER NOT NULL DEFAULT 0,
+		over_cap INTEGER NOT NULL DEFAULT 0
+	);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

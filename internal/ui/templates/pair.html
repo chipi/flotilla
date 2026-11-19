@@ -23,10 +23,13 @@
         <thead><tr><th scope="col">Station</th><th scope="col">Turns</th><th scope="col">In</th><th scope="col">Out</th><th scope="col">Cost</th></tr></thead>
         <tbody>{{range .Stations}}<tr><td data-label="Station">{{.Role}}</td><td data-label="Turns">{{.Calls}}</td><td data-label="In">{{.In}}</td><td data-label="Out">{{.Out}}</td><td data-label="Cost">{{.Cost}}</td></tr>{{end}}</tbody>
       </table></div>{{end}}
+      {{range .Texts}}<details class="stext">
+        <summary><span class="exact">{{.Label}}.{{.Name}}</span> <span class="chip chip--small pairmark pairmark--{{.MarkKind}}">{{.Mark}}</span> <span class="meta">{{.Bytes}} bytes · <span class="exact" title="{{.FullHash}}">{{.Short}}</span></span></summary>
+        {{if .HasBody}}<pre class="stext__body">{{.Body}}</pre>{{else}}<p class="meta">Over the size cap: only the hash and the length are kept.</p>{{end}}
+      </details>{{end}}
       {{else}}<p class="side__text side__text--none">{{.Note}}</p>{{end}}
     </section>{{end}}
   </div>
-  <p class="meta">{{.TextsNote}}.</p>
   {{end}}
 </main>
 {{template "foot" .}}

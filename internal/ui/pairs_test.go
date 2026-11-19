@@ -2,8 +2,11 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +58,21 @@ func pairsFixture(t *testing.T) (*fixture, string) {
 	rec("grafana:only-shadow", `{"disposition":"escalate"}`)
 	in, cost := int64(120), 0.002
 	st.RecordCalls(ctx, []store.ModelCall{{RunID: key, Routine: "triage/cycle", Alias: "a", Role: "triage", TokensIn: &in, CostUSD: &cost}, {RunID: "triage-cycle-v2-run", Routine: "triage/cycle@v2", Alias: "a", Role: "triage", TokensIn: &in, CostUSD: &cost}})
+	// a station on each side, reading two texts: its task is the same text on both, its system text differs
+	txt := func(s string) *string { return &s }
+	same, live1, shadow1 := "the same task", "the live system text", "the shadow system text"
+	mk := func(run, routine, sys string) store.ModelCall {
+		return store.ModelCall{RunID: run, Routine: routine, Alias: "a", Station: "decide", TokensIn: &in, CostUSD: &cost, TextBodies: []store.CallText{
+			{Name: "task", SHA256: shaOf(same), Bytes: int64(len(same)), Text: txt(same), Redacted: true},
+			{Name: "system", SHA256: shaOf(sys), Bytes: int64(len(sys)), Text: txt(sys), Redacted: true}}}
+	}
+	st.RecordCalls(ctx, []store.ModelCall{mk(key, "triage/cycle", live1), mk("triage-cycle-v2-run", "triage/cycle@v2", shadow1)})
 	return f, key
+}
+
+func shaOf(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }
 
 func pairsSection(t *testing.T, page string) string {
@@ -131,7 +148,7 @@ func TestAPairOpensItsTwoSides(t *testing.T) {
 		t.Fatalf("%d", resp.StatusCode)
 	}
 	for _, want := range []string{"glitchtip:api-500", "pairmark--differ", "live v1", ">v2<", "a real error", "it is case #812", "abcdef0", "Turns", "triage",
-		`href="/runs/` + key + `"`, `href="/runs/triage-cycle-v2-run"`, "$0.002", "the rendered texts of each station are recorded from build step 3"} {
+		`href="/runs/` + key + `"`, `href="/runs/triage-cycle-v2-run"`, "$0.002"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the pair page lacks %q", want)
 		}
@@ -207,5 +224,29 @@ func TestAShadowRunPageLinksToItsRoutinesPairs(t *testing.T) {
 	resp, page = f.do("GET", "/runs/"+key, ck, nil, nil)
 	if resp.StatusCode != 200 || !strings.Contains(page, `href="/fleets/triage?sel=triage/cycle"`) {
 		t.Fatalf("a live run's link is unchanged: %d", resp.StatusCode)
+	}
+}
+
+// The rendered texts of each station show on both sides, each marked equal, differs or only here, and wrap inside the card (no sideways scroll).
+func TestThePairPageShowsEachStationsTextsAndWhetherTheyAreEqual(t *testing.T) {
+	f, key := pairsFixture(t)
+	ck, _ := f.csrfOf(f.addOperator())
+	_, page := f.do("GET", "/fleets/triage/cycle/pairs/2/"+key+"?subject="+url.QueryEscape("glitchtip:api-500"), ck, nil, nil)
+	for _, want := range []string{"decide.task", "decide.system", "the same task", "the live system text", "the shadow system text", `class="stext"`, `class="stext__body"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the pair page lacks %q", want)
+		}
+	}
+	if strings.Count(page, "pairmark--same\">equal") != 2 || strings.Count(page, "pairmark--differ\">differs") != 2 {
+		t.Errorf("the task is equal on both sides and the system text differs on both:\n%s", page)
+	}
+	if strings.Contains(page, "recorded from build step 3") {
+		t.Error("the stale note about texts is gone")
+	}
+	css, _ := os.ReadFile("static/flotilla.css")
+	for _, want := range []string{".stext__body", "white-space: pre-wrap", "overflow-wrap: anywhere", "max-width: 100%"} {
+		if !strings.Contains(string(css), want) {
+			t.Errorf("a text is wrapped inside the card at 360 px: the stylesheet lacks %q", want)
+		}
 	}
 }

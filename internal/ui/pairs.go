@@ -141,7 +141,6 @@ type pairPage struct {
 	InputKey             string
 	Sides                [2]pairSideView
 	Back                 string
-	TextsNote            string
 }
 
 type pairSideView struct {
@@ -155,10 +154,48 @@ type pairSideView struct {
 	Note            string
 	Stations        []stationRow
 	NoStations      bool
+	Texts           []textRow // every rendered text of every station of this side, with whether the other side read the same
 }
 
 type stationRow struct {
 	Role, Calls, In, Out, Cost string
+}
+
+// textRow is one rendered text a side's station read. Mark says how it compares with the other side's text of the same station and name:
+// equal (same hash), differs (another hash), or only here.
+type textRow struct {
+	Label, Name, Short, FullHash, Bytes string
+	Body                                string
+	HasBody                             bool
+	Mark, MarkKind                      string
+}
+
+// markTexts sets each side's texts' marks against the other side.
+func markTexts(a, b *pairSideView) {
+	key := func(t textRow) string { return t.Label + "\x00" + t.Name }
+	other := func(rows []textRow) map[string]string {
+		m := map[string]string{}
+		for _, t := range rows {
+			m[key(t)] = t.FullHash
+		}
+		return m
+	}
+	oa, ob := other(a.Texts), other(b.Texts)
+	set := func(rows []textRow, against map[string]string, bothSides bool) {
+		for i := range rows {
+			h, ok := against[key(rows[i])]
+			switch {
+			case !bothSides || !ok:
+				rows[i].Mark, rows[i].MarkKind = "only here", "unpaired"
+			case h == rows[i].FullHash:
+				rows[i].Mark, rows[i].MarkKind = "equal", "same"
+			default:
+				rows[i].Mark, rows[i].MarkKind = "differs", "differ"
+			}
+		}
+	}
+	set(a.Texts, ob, a.Present && b.Present)
+	set(b.Texts, oa, a.Present && b.Present)
 }
 
 func (u *Server) pairPage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -178,7 +215,7 @@ func (u *Server) pairPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		if p.InputKey != key || p.Subject != subject {
 			continue
 		}
-		pp := pairPage{Routine: id, Subject: p.Subject, At: u.clock(p.At), N: n, Live: all.LiveVersion, InputKey: p.InputKey, TextsNote: all.StationsNote,
+		pp := pairPage{Routine: id, Subject: p.Subject, At: u.clock(p.At), N: n, Live: all.LiveVersion, InputKey: p.InputKey,
 			Back: "/fleets/" + id + "?pairs=" + strconv.Itoa(n) + "#pairs"}
 		switch {
 		case p.Live == nil || p.Shadow == nil:
@@ -190,6 +227,7 @@ func (u *Server) pairPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		}
 		pp.Sides[0] = u.sideView(fmt.Sprintf("live v%d", all.LiveVersion), "live", p.Live)
 		pp.Sides[1] = u.sideView(fmt.Sprintf("v%d", n), "shadow", p.Shadow)
+		markTexts(&pp.Sides[0], &pp.Sides[1])
 		u.render(w, "pair.html", 200, u.pageFor(s, "Pair "+p.Subject, "Fleets", r, pp))
 		return
 	}
@@ -221,6 +259,17 @@ func (u *Server) sideView(who, role string, p *store.PairSide) pairSideView {
 	for _, st := range p.Stations {
 		v.Stations = append(v.Stations, stationRow{Role: st.Role, Calls: strconv.Itoa(st.Calls), In: strconv.FormatInt(st.TokensIn, 10), Out: strconv.FormatInt(st.TokensOut, 10),
 			Cost: "$" + strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.4f", st.CostUSD), "0"), ".")})
+		for _, t := range st.Texts {
+			short := t.SHA256
+			if len(short) > 7 {
+				short = short[:7]
+			}
+			row := textRow{Label: st.Role, Name: t.Name, Short: short, FullHash: t.SHA256, Bytes: strconv.FormatInt(t.Bytes, 10)}
+			if t.Text != nil {
+				row.Body, row.HasBody = *t.Text, true
+			}
+			v.Texts = append(v.Texts, row)
+		}
 	}
 	v.NoStations = len(v.Stations) == 0
 	return v
