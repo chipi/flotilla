@@ -24,14 +24,6 @@ class PiSeams(se.SeamSuite):
         with open(files[-1]) as f:
             return json.loads(f.readline())["id"]
 
-    # KNOWN HOLE (HARNESS_SEAMS.md, S5): a process pi's bash tool starts and detaches (found 2026-11-19: `nohup sleep 300 &` after the turn
-    # cap's kill is alone, ppid 1, in a session of its own, outside the group the runner kills) outlives the episode. Everything else
-    # of S5 holds. This stays an expected failure until the runner stops such a process too; a pass then fails the suite, so the
-    # marker cannot be forgotten.
-    @unittest.expectedFailure
-    def test_s5_a_process_a_tool_detaches_is_not_left_either(self):
-        super().test_s5_a_process_a_tool_detaches_is_not_left_either()
-
 
 if __name__ == "__main__":
     unittest.main()

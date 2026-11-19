@@ -465,15 +465,68 @@ def _tail(s, n):
     return s if len(s) <= n else "…" + s[-(n - 1):]
 
 
+RUN_TAG = "FLOTILLA_RUN_TAG"   # in the environment of every process run_process starts: what a detached descendant still carries
+
+
+def have_proc():
+    """Whether this system has /proc (Linux): the sweep of a killed run's detached processes reads it. Without it only the process
+    group is killed, and a process a tool put in a session of its own outlives the run."""
+    return os.path.isdir("/proc/self")
+
+
+def _proc_scan(tag, root_pid):
+    """The pids that belong to the run `tag`: every process whose environment carries it (a descendant that detached, even
+    one reparented to init, keeps the environment it was started with), and every descendant of `root_pid` still in the tree."""
+    found, kids = set(), {}
+    needle = f"{RUN_TAG}={tag}".encode()
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) == os.getpid():
+            continue
+        pid = int(d)
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as f:
+                ppid = int(f.read().rsplit(b")", 1)[1].split()[1])
+            kids.setdefault(ppid, []).append(pid)
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                if needle in f.read().split(b"\0"):
+                    found.add(pid)
+        except (OSError, ValueError, IndexError):
+            continue
+    todo = [root_pid]
+    while todo:
+        for k in kids.get(todo.pop(), []):
+            if k not in found:
+                found.add(k)
+                todo.append(k)
+    return found
+
+
 def _kill(p):
+    """Kill the run: its process group at once (a turn cap must not wait on a scan), then what a tool detached from it, found
+    by the run's tag in the environment it kept and by descent, repeated while any is left as a process may fork while it dies."""
+    tag = getattr(p, "flotilla_tag", None)
+    sweep = tag and have_proc()
+    victims = set()
     try:
         os.killpg(p.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    if sweep:
+        for _ in range(3):
+            victims |= _proc_scan(tag, p.pid)
+            for pid in victims:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            time.sleep(0.05)
+            if not _proc_scan(tag, p.pid) - {p.pid}:
+                break
 
 
 def run_process(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, turn_ended=None, tee_path=None, stdin=None):
-    """Run a command in its own process group; (exit code, combined output). A timeout kills the whole group and is
+    """Run a command in its own process group; (exit code, combined output). A kill (timeout, turn cap, the caller's exit) also sweeps
+    what a tool detached into a session of its own (see _kill; Linux). A timeout kills the whole group and is
     exit 124: subprocess.run's timeout kills only the direct child, and a timed-out pi or vitest under `bash pi.sh` or
     `sh -c npx` kept running (holding the CPUs, editing the worktree the next round resets) until the worker's own run
     limit (the advisor's review, 2026-11-15). With max_turns the output is read as it comes, and the group is killed
@@ -483,9 +536,11 @@ def run_process(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, t
     ProcessFailed (not with max_turns or tee_path, which read as they go)."""
     if max_turns and turn_ended is None:
         raise ValueError("max_turns needs turn_ended")
-    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                         shell=isinstance(cmd, str), start_new_session=True,
+    tag = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+    p = subprocess.Popen(cmd, cwd=cwd, env=dict(os.environ if env is None else env, **{RUN_TAG: tag}), stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, shell=isinstance(cmd, str), start_new_session=True,
                          **({"stdin": subprocess.PIPE} if stdin is not None else {}))
+    p.flotilla_tag = tag
     if max_turns or tee_path:
         return _sh_capped(p, timeout, max_turns, turn_ended, tee_path, stdin)
     try:

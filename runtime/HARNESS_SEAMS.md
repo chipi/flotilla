@@ -11,7 +11,7 @@ contract, who owns it, how pi satisfies it, and the test that proves it.
 
 Harnesses are adopted **one at a time**, and the seams may change with each adoption. A change to a
 seam is made here first, in the same commit as the code and the tests that carry it, and goes in the
-amendment log at the end. pi is the reference: it passes every seam but one known hole (S5), and the
+amendment log at the end. pi is the reference: it passes every seam, and the
 next harness must pass the same end-to-end (see "The minimum seam end-to-end").
 
 Code: `runtime/adapter.py` (the types, the registry, the shared runner, and the "how to add a
@@ -136,18 +136,19 @@ Field names are the code's: `Request`, `Invocation`, `Turn`, `Episode`, `ModelRo
   (the tee). A harness's own cap is set one above the runner's. Declared: `supports_turn_cap`.
 - **Owner.** The runner (`adapter.run_process`); the adapter says which line ends a turn.
 - **pi.** A `message_end` line of an assistant message; no cap of pi's own.
-- **KNOWN HOLE, found 2026-11-19 by the seam end-to-end.** A process pi's bash tool starts and
-  detaches (`nohup sleep 300 &`) is alone after the cap's kill: parent 1, a process group and
-  session of its own, outside the group the runner kills. With the fake harness, whose tool runs in
-  the CLI's group, the same scenario leaves nothing. What the runner would have to do to reach
-  such a process (a child subreaper and a walk of descendants) is a decision for the operator, not
-  part of the seam end-to-end: `test_s5_a_process_a_tool_detaches_is_not_left_either` stays an expected
-  failure in `test_seam_pi.py` until it is made, and a pass fails the suite so the marker is not
-  forgotten. The container's limits bound what such a process may use; they do not end it.
+- **Detached processes.** The group kill alone missed a process pi's bash tool starts and detaches
+  (`nohup sleep 300 &`, found 2026-11-19 by this end-to-end: parent 1, a group and session of its
+  own). `adapter.run_process` now tags every process it starts (`FLOTILLA_RUN_TAG` in the
+  environment) and, after the group kill, kills every process that carries the tag or descends from
+  the run, repeating while any is left. The tag is read from `/proc/<pid>/environ`, which a detached
+  or reparented descendant keeps; a process that clears its environment escapes it (a child
+  subreaper would catch that, and is not used). **Linux only:** where there is no `/proc` (macOS)
+  only the group is killed, a detached process outlives the run, and the tests skip with that
+  reason; nothing is claimed there.
 - **Proof.** Unit: `test_adapter.py` (`Runner`, `Execute`), the chain's `test_fix.py` cases.
   End-to-end: `test_s5` (a grinding station is stopped at its cap long before the timeout, a held
   request is stopped by the timeout, nothing of the harness is left in either, and `turn_ended`
-  counts the model calls of the real stream), and the hole's test.
+  counts the model calls of the real stream), and the detached-process test.
 
 ### S6 Tools and read-only
 
@@ -308,7 +309,7 @@ Not covered by it: that a real model behaves; the verdict and advisor roles of t
 
 ## Not done, and not verified
 
-- The runner's reach for a process a tool detaches (S5's hole).
+- Detached processes on a system without `/proc` (S5).
 - Declaring and hashing the bugfix chain's texts other than `rules` (above).
 - The verdict and advisor roles through adapters; `triage_run.sh` and `advisor_run.sh` run pi as
   before. The bugfix chain's fix and repro keep their leaves; its review keeps its call
@@ -325,7 +326,8 @@ Not covered by it: that a real model behaves; the verdict and advisor roles of t
   is a free label and an adapter serves a `tools` value (`tools_served`); `Request` replaces
   `RoleRequest` (`system_path`, no `readonly`). S1 and S3: pi's generic adapter (prompt on stdin, its
   own models.json). S4: the episode record and its schema; a tool's arguments and result. S5:
-  the known hole. S6: the runner's check of the workspace is built. S7: resume by the reference,
+  the sweep of detached processes (same day, after the suite found them). S6: the runner's check
+  of the workspace is built. S7: resume by the reference,
   after a kill. S8: `station` and `texts` in a calls line. S9: the driver's meter. The seam
   end-to-end runs through the station driver, with the chain out of the loop and a fake harness in
   CI.

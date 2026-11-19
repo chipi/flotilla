@@ -255,7 +255,7 @@ REPO_MARKER = "REPO-AGENTS-MD-MARKER"   # in the workspace's AGENTS.md: must nev
 
 class Script:
     """script(view) for the fixture workspace. The last user message says what to do:
-      GRIND      never stops calling a tool (GRIND DETACH: and its first call starts a background process that detaches);
+      GRIND      never stops calling a tool (GRIND DETACH: and its first call starts two background processes, one of them in a session of its own);
       HOLD       the first request is not answered;
       KILLME     writes the file, and the second request is not answered while `hold_second` is set;
       WRITE and FOLLOWUP   write the file (FOLLOWUP: a variant), then say done;
@@ -268,7 +268,7 @@ class Script:
         last = (view.users or [""])[-1]
         fresh = len(view.new_tool_results)
         if "GRIND" in last:
-            started = [("bash", {"command": "nohup sleep 300 >/dev/null 2>&1 &"})] if "DETACH" in last and not view.new_tool_results else []
+            started = [("bash", {"command": "nohup sleep 300 >/dev/null 2>&1 &"}), ("bash", {"command": "setsid nohup sleep 300 >/dev/null 2>&1 &"})] if "DETACH" in last and not view.new_tool_results else []
             return Reply(tools=started + [("read", {"path": "src/a.js"})])
         if "HOLD" in last and "KILLME" not in last:
             return Reply(hold=120)
@@ -630,7 +630,7 @@ station_run.run_station(st, {}, run_dir=spec["run_dir"], workdir=spec["workdir"]
     def test_s5_a_process_a_tool_detaches_is_not_left_either(self):
         """The capped station's tool started `nohup sleep 300 &`: after the cap's kill of the harness's group nothing of this run may
         still be running in its folder. The group kill does not reach a process a harness puts in a session of its own: that harness's
-        test marks this method an expected failure (KNOWN HOLE, HARNESS_SEAMS.md S5), and an unexpected pass fails the suite."""
+        runner sweeps what a tool detached into a session of its own (adapter._kill, Linux only: the test skips without /proc)."""
         w = self.worlds["detach"]
         self.assertGreaterEqual(len(w.requests[1].new_tool_results), 2, "the first turn's tools ran: the background process was started")
         self.assertEqual(self.left_under(w.dir), [], "a process the tool detached outlived the cap")

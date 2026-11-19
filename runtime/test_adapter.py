@@ -250,6 +250,34 @@ class Runner(unittest.TestCase):
         time.sleep(3.5)
         self.assertFalse(os.path.exists(marker), "the grandchild outlived the timeout")
 
+    def _sleepers(self, secs):
+        out = []
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                try:
+                    with open(f"/proc/{d}/cmdline", "rb") as f:
+                        if f.read().split(b"\0")[:2] == [b"sleep", secs.encode()]:
+                            out.append(int(d))
+                except OSError:
+                    pass
+        return out
+
+    def test_a_kill_also_sweeps_what_a_tool_detached_into_a_session_of_its_own(self):
+        if not adapter.have_proc():
+            self.skipTest("the sweep reads /proc: this system has none, so a process put in a session of its own outlives the run here")
+        cmd = "setsid nohup sleep 311 >/dev/null 2>&1 & nohup sleep 312 >/dev/null 2>&1 & sleep 30"
+        for secs in ("311", "312"):
+            self.assertEqual(self._sleepers(secs), [], "a leftover of an earlier run")
+        code, _ = adapter.run_process(cmd, self.d, timeout=2)
+        self.assertEqual(code, adapter.TIMED_OUT)
+        deadline = time.time() + 5
+        while time.time() < deadline and (self._sleepers("311") or self._sleepers("312")):
+            time.sleep(0.1)
+        left = self._sleepers("311") + self._sleepers("312")
+        for pid in left:
+            os.kill(pid, 9)
+        self.assertEqual(left, [], "a process the run detached outlived its kill")
+
     def test_check_raises_on_a_timeout_and_on_a_failure(self):
         with self.assertRaisesRegex(adapter.ProcessFailed, "no result in 1s"):
             adapter.run_process("sleep 5", self.d, timeout=1, check=True)
