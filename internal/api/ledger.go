@@ -15,13 +15,36 @@ import (
 const maxLedgerBody = 1 << 20     // one row, with room
 const maxLedgerImport = 256 << 20 // a namespace's whole history, once
 
-func ledgerNS(w http.ResponseWriter, r *http.Request) (string, bool) {
+// ledgerNS is the namespace of a request. A run's own token names it: the routine key recorded on the run when it started, and
+// whatever ?ns= says is ignored (and logged when it differs), so no run can read or write under another routine's or version's
+// name. Any other caller names it in ?ns=.
+func (s *Server) ledgerNS(w http.ResponseWriter, r *http.Request, who Caller) (string, bool) {
 	ns := r.URL.Query().Get("ns")
+	if who.Run != nil {
+		if own := who.Run.Key(); ns != own {
+			if ns != "" {
+				s.Log.Warn("a run named another ledger namespace; its own is used", "run_id", who.Run.ID, "own", own, "named", ns)
+			}
+			ns = own
+		}
+		return ns, true
+	}
 	if ns == "" || len(ns) > 200 {
 		writeJSON(w, 400, map[string]string{"error": "ns (the ledger's namespace) is required"})
 		return "", false
 	}
 	return ns, true
+}
+
+// ledgerRunID is the run id a ledger write is recorded under: a run's own token fixes it, so a row never carries another run's id.
+func (s *Server) ledgerRunID(who Caller, claimed string) string {
+	if who.Run == nil {
+		return claimed
+	}
+	if claimed != "" && claimed != who.Run.ID {
+		s.Log.Warn("a run wrote under another run's id; its own is used", "run_id", who.Run.ID, "claimed", claimed)
+	}
+	return who.Run.ID
 }
 
 func readBody(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
@@ -32,8 +55,8 @@ func readBody(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
 	return true
 }
 
-func (s *Server) ledgerFilings(w http.ResponseWriter, r *http.Request, _ Caller) {
-	ns, ok := ledgerNS(w, r)
+func (s *Server) ledgerFilings(w http.ResponseWriter, r *http.Request, who Caller) {
+	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
 		return
 	}
@@ -54,8 +77,8 @@ func (s *Server) ledgerFilings(w http.ResponseWriter, r *http.Request, _ Caller)
 	writeJSON(w, 200, map[string]any{"filings": fs})
 }
 
-func (s *Server) ledgerWriteFiling(w http.ResponseWriter, r *http.Request, _ Caller) {
-	ns, ok := ledgerNS(w, r)
+func (s *Server) ledgerWriteFiling(w http.ResponseWriter, r *http.Request, who Caller) {
+	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
 		return
 	}
@@ -66,7 +89,7 @@ func (s *Server) ledgerWriteFiling(w http.ResponseWriter, r *http.Request, _ Cal
 	if !readBody(w, r, maxLedgerBody, &body) {
 		return
 	}
-	seq, err := s.Store.WriteFiling(r.Context(), ns, body.Row, body.RunID)
+	seq, err := s.Store.WriteFiling(r.Context(), ns, body.Row, s.ledgerRunID(who, body.RunID))
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -74,8 +97,8 @@ func (s *Server) ledgerWriteFiling(w http.ResponseWriter, r *http.Request, _ Cal
 	writeJSON(w, 200, map[string]any{"seq": seq})
 }
 
-func (s *Server) ledgerEntries(w http.ResponseWriter, r *http.Request, _ Caller) {
-	ns, ok := ledgerNS(w, r)
+func (s *Server) ledgerEntries(w http.ResponseWriter, r *http.Request, who Caller) {
+	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
 		return
 	}
@@ -95,8 +118,8 @@ func (s *Server) ledgerEntries(w http.ResponseWriter, r *http.Request, _ Caller)
 	writeJSON(w, 200, map[string]any{"entries": es})
 }
 
-func (s *Server) ledgerAppendEntry(w http.ResponseWriter, r *http.Request, _ Caller) {
-	ns, ok := ledgerNS(w, r)
+func (s *Server) ledgerAppendEntry(w http.ResponseWriter, r *http.Request, who Caller) {
+	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
 		return
 	}
@@ -108,7 +131,7 @@ func (s *Server) ledgerAppendEntry(w http.ResponseWriter, r *http.Request, _ Cal
 	if !readBody(w, r, maxLedgerBody, &body) {
 		return
 	}
-	seq, err := s.Store.AppendEntry(r.Context(), ns, body.Kind, body.Row, body.RunID)
+	seq, err := s.Store.AppendEntry(r.Context(), ns, body.Kind, body.Row, s.ledgerRunID(who, body.RunID))
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -116,8 +139,8 @@ func (s *Server) ledgerAppendEntry(w http.ResponseWriter, r *http.Request, _ Cal
 	writeJSON(w, 200, map[string]any{"seq": seq})
 }
 
-func (s *Server) ledgerCounts(w http.ResponseWriter, r *http.Request, _ Caller) {
-	ns, ok := ledgerNS(w, r)
+func (s *Server) ledgerCounts(w http.ResponseWriter, r *http.Request, who Caller) {
+	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
 		return
 	}
@@ -130,7 +153,11 @@ func (s *Server) ledgerCounts(w http.ResponseWriter, r *http.Request, _ Caller) 
 }
 
 func (s *Server) ledgerImport(w http.ResponseWriter, r *http.Request, who Caller) {
-	ns, ok := ledgerNS(w, r)
+	if who.Run != nil {
+		writeJSON(w, 403, map[string]string{"error": "a run does not import a ledger"})
+		return
+	}
+	ns, ok := s.ledgerNS(w, r, who)
 	if !ok {
 		return
 	}

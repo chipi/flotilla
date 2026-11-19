@@ -554,6 +554,37 @@ try:
 except urllib.error.HTTPError as e: print(e.code)' 2>&1 | tail -1)"
 [ "$WL" = 404 ] && ok "the workers' listener does not serve the full API (/v1/status: 404)" || bad "workers' listener /v1/status: $WL"
 
+echo "== run tokens (v2 step 2): every run has its own token for the workers' listener"
+# e2e/token-probe (fleets/e2e/token-probe.yaml) reads FLOTILLA_API_TOKEN_FILE, which must be its own file and not the worker's,
+# and files a ledger row naming another routine's namespace and another run's id: flotillad files it under the probe's own.
+if [ "${DEMO:-}" != 1 ]; then
+cli run e2e/token-probe >/dev/null
+for i in $(seq 1 30); do cli runs e2e/token-probe -n 1 | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 1; done
+[ "$(cli runs e2e/token-probe -json -n 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["runs"][0]["status"])')" = ok ] \
+  && ok "a run was given its own token file (mode 600, not the worker's) and its ledger write named another namespace" \
+  || bad "token-probe: $(cli runs e2e/token-probe -n 1) $($D logs flotilla-worker-triage 2>&1 | grep -E 'token_file|own |worker.s token file|namespace the run' | tail -3)"
+NSC="$($D exec flotilla-worker-triage python3 -c 'import json,urllib.request
+def n(ns):
+    r = urllib.request.Request("http://flotillad:8485/v1/ledger/filings?ns=" + ns, headers={"Authorization": "Bearer " + open("/run/flotilla/worker.token").read().strip()})
+    return len(json.load(urllib.request.urlopen(r, timeout=10))["filings"])
+print(n("e2e/token-probe"), n("bugfix/fix"))' 2>&1 | tail -1)"
+[ "$NSC" = "1 0" ] && ok "the filing landed in the run's own namespace (e2e/token-probe: 1 row, the namespace it named: 0)" || bad "ledger rows by namespace: '$NSC'"
+TL="$($D exec flotilla-worker-triage sh -c 'ls -A /tmp | grep -c "^.flotilla-token-" || true' 2>&1 | tail -1)"
+[ "$TL" = 0 ] && ok "no run's token file is left on the worker after the run" || bad "token files left in the worker's /tmp: $TL"
+# run_tokens: required, read by the real binary (-check, read-only): a worker's own token is not a caller then
+sed 's|^state_dir: .*|state_dir: /tmp/required-check|; /^worker_listen:/a run_tokens: required' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-required.yaml"
+ACC="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
+REQ="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-required.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+  -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
+  "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1)"
+NTOK="$(grep -c 'token_file:' "$WORK/config/flotillad.yaml")"
+CA="$(echo "$ACC" | grep -o '[0-9]* callers' | cut -d' ' -f1)"; CR="$(echo "$REQ" | grep -o '[0-9]* callers' | cut -d' ' -f1)"
+echo "$ACC" | grep >/dev/null "^run tokens: accept " && echo "$REQ" | grep >/dev/null "^run tokens: required .*opens nothing" && [ -n "$CA" ] && [ "$((CA - CR))" = "$NTOK" ] \
+  && ok "-check: run_tokens accept by default; required drops the $NTOK workers' own tokens from the callers ($CA to $CR)" || bad "-check run tokens: accept '$(echo "$ACC" | grep '^run tokens')' required '$(echo "$REQ" | grep -E '^run tokens|callers' | tr '\n' ' ')'"
+echo "$ACC" | grep >/dev/null "^run tokens: workers triage and triage-candidate share one token file" \
+  && ok "-check names the workers that share one token file (the candidate shares the live worker's)" || bad "-check on shared worker tokens: $(echo "$ACC" | grep '^run tokens')"
+fi
+
 echo "== the candidate worker (shadow comparison of a candidate image)"
 for i in $(seq 1 30); do
   [ "$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2

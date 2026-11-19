@@ -91,3 +91,18 @@ func TestRemoteWorkersConfig(t *testing.T) {
 		}
 	}
 }
+
+// run_tokens: accept (the default) or required.
+func TestRunTokensConfig(t *testing.T) {
+	for extra, want := range map[string]string{"": RunTokensAccept, "run_tokens: accept\n": RunTokensAccept, "run_tokens: required\n": RunTokensRequired} {
+		c, err := load(t, extra)
+		if err != nil || c.RunTokens != want {
+			t.Errorf("%q: run_tokens %q %v, want %q", extra, c.RunTokens, err, want)
+		}
+	}
+	for _, bad := range []string{"run_tokens: optional\n", "run_tokens: true\n", "run_tokens: Required\n"} {
+		if _, err := load(t, bad); err == nil || !strings.Contains(err.Error(), "run_tokens") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}

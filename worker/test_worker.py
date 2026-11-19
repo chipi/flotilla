@@ -229,6 +229,99 @@ class TestRunJob(unittest.TestCase):
             self.planned("true", plan_file="../../etc/x")
 
 
+class TestRunToken(unittest.TestCase):
+    """A run's own token for flotillad: a 0600 file in the run's temp directory, named by FLOTILLA_API_TOKEN_FILE, removed after."""
+
+    TOKEN = "run-token-" + "0123456789abcdef" * 4
+
+    def setUp(self):
+        self.code = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        fw.CODE_ROOT = self.code
+        self.environ = {"PATH": os.environ["PATH"], "HOME": self.home,
+                        "ROUTINE_FLOTILLA_API_TOKEN_FILE": "/run/flotilla/worker.token"}
+
+    def req(self, command, token=TOKEN, run_id="r-tok", timeout=10):
+        r = {"run_id": run_id, "routine": "t/j", "command": command, "workdir": ".", "timeout_s": timeout, "env": {}}
+        if token is not None:
+            r["api_token"] = token
+        return r
+
+    def path(self, run_id="r-tok"):
+        return fw.token_path({}, run_id)
+
+    def test_the_run_reads_its_own_token_from_a_0600_file(self):
+        res = fw.run_job(self.req('stat -c "mode=%a" "$FLOTILLA_API_TOKEN_FILE"; printf "got=%s\n" "$(cat "$FLOTILLA_API_TOKEN_FILE")"'), self.environ)
+        self.assertEqual(res["status"], "ok", res)
+        self.assertIn("mode=600", res["output_tail"])
+        self.assertIn("got=" + self.TOKEN, res["output_tail"])
+
+    def test_it_replaces_the_worker_token_the_installation_names(self):
+        res = fw.run_job(self.req('echo file=$FLOTILLA_API_TOKEN_FILE'), self.environ)
+        self.assertIn("file=" + self.path(), res["output_tail"])
+        self.assertNotIn("/run/flotilla/worker.token", res["output_tail"])
+
+    def test_without_a_token_the_installations_file_stays(self):
+        res = fw.run_job(self.req('echo file=$FLOTILLA_API_TOKEN_FILE', token=None), self.environ)
+        self.assertIn("file=/run/flotilla/worker.token", res["output_tail"])
+        self.assertFalse(os.path.exists(self.path()))
+
+    def test_the_token_is_not_in_the_environment(self):
+        res = fw.run_job(self.req("env"), self.environ)
+        self.assertNotIn(self.TOKEN, res["output_tail"], "only the file holds it")
+
+    def test_the_file_is_removed_after_every_ending(self):
+        for name, cmd, status in [("ok", "true", "ok"), ("error", "exit 3", "error")]:
+            with self.subTest(name):
+                res = fw.run_job(self.req(cmd), self.environ)
+                self.assertEqual(res["status"], status)
+                self.assertFalse(os.path.exists(self.path()), "the token file outlives the run")
+
+    def test_the_file_is_removed_after_a_timeout(self):
+        res = fw.run_job(self.req("sleep 30", timeout=0.5), self.environ)
+        self.assertEqual(res["status"], "timeout")
+        self.assertFalse(os.path.exists(self.path()))
+
+    def test_the_file_is_removed_when_the_run_cannot_start(self):
+        r = self.req("true")
+        r["workdir"] = "../../escape"
+        with self.assertRaises(ValueError):
+            fw.run_job(r, self.environ)
+        self.assertFalse(os.path.exists(self.path()), "a request refused after the token was written leaves no file")
+
+    def test_a_stale_file_is_replaced(self):
+        with open(self.path(), "w") as f:
+            f.write("an earlier run's token")
+        os.chmod(self.path(), 0o644)
+        res = fw.run_job(self.req('stat -c "%a" "$FLOTILLA_API_TOKEN_FILE"; cat "$FLOTILLA_API_TOKEN_FILE"'), self.environ)
+        self.assertIn("600", res["output_tail"])
+        self.assertIn(self.TOKEN, res["output_tail"])
+        self.assertNotIn("earlier", res["output_tail"])
+
+    def test_a_symlink_in_its_place_is_not_followed(self):
+        victim = os.path.join(self.home, "victim")
+        with open(victim, "w") as f:
+            f.write("keep me")
+        os.symlink(victim, self.path())
+        try:
+            res = fw.run_job(self.req("true"), self.environ)
+            self.assertEqual(res["status"], "ok")
+            with open(victim) as f:
+                self.assertEqual(f.read(), "keep me", "the token was written through a symlink")
+        finally:
+            if os.path.islink(self.path()):
+                os.remove(self.path())
+
+    def test_two_runs_have_two_files(self):
+        self.assertNotEqual(self.path("r-a"), self.path("r-b"))
+
+    def test_the_run_id_cannot_steer_the_path(self):
+        p = fw.token_path({"TMPDIR": self.home}, "../../etc/passwd")
+        self.assertEqual(os.path.dirname(p), self.home)
+        self.assertTrue(os.path.basename(p).startswith(".flotilla-token-"))
+        self.assertNotIn(os.sep, os.path.basename(p))
+
+
 class TestHTTP(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -267,6 +360,26 @@ class TestHTTP(unittest.TestCase):
         self.assertEqual(self.call("/v1/runs", {"run_id": "r", "routine": "x", "command": "true", "timeout_s": 0})[0], 400)
         self.assertEqual(self.call("/v1/runs", {"run_id": "r", "routine": "x", "command": "true", "timeout_s": 5,
                                                 "workdir": "../.."})[0], 400)
+
+    def test_a_bad_api_token_or_shadow_flag_is_refused(self):
+        base = {"run_id": "r", "routine": "x", "command": "true", "timeout_s": 5}
+        for name, extra in [("short", {"api_token": "abc"}), ("not a string", {"api_token": 12345678901234567890}),
+                            ("a path", {"api_token": "../../etc/passwd/../../xxxxxxxx"}), ("empty", {"api_token": ""}),
+                            ("shadow not a bool", {"shadow": "yes"})]:
+            with self.subTest(name):
+                self.assertEqual(self.call("/v1/runs", dict(base, **extra))[0], 400)
+
+    def test_a_run_with_a_token_gets_the_file_and_the_token_is_not_logged(self):
+        import contextlib
+        import io
+        tok = "f" * 64
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code, body = self.call("/v1/runs", {"run_id": "tk1", "routine": "t/tok", "command": 'test -s "$FLOTILLA_API_TOKEN_FILE"',
+                                               "timeout_s": 10, "api_token": tok})
+        self.assertEqual((code, body["status"]), (200, "ok"), body)
+        self.assertNotIn(tok, buf.getvalue(), "the worker's log must never hold a run's token")
+        self.assertFalse(os.path.exists(fw.token_path({}, "tk1")))
 
     def test_run_and_one_at_a_time(self):
         out = {}

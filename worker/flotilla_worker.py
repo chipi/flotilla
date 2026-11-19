@@ -3,7 +3,10 @@
 The worker holds the fleet's secrets (its env files) and its code; flotillad holds neither. flotillad
 says what to run and when; the worker runs it and reports. Python stdlib only.
 
-  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, plan_file, env}  -> the result, when done
+  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, plan_file, env, api_token, shadow}  -> the
+                  result, when done. api_token is this run's own token for flotillad's workers' listener: the worker writes it
+                  to a file in the run's temp directory (mode 0600), names the file in FLOTILLA_API_TOKEN_FILE (over any
+                  ROUTINE_ value) and removes it when the run ends; it is never in the run's environment or the worker's log.
   POST /v1/runs/<run_id>/cancel   {ok, run_id}: stops that run as its timeout does (SIGTERM to its process
                   group, SIGKILL after KILL_GRACE_S); the run's own request then answers with status
                   "cancelled" and its spend as usual. A second cancel of a run still ending is 200 again;
@@ -21,11 +24,13 @@ does not reach the routine.
      rotated secret is picked up without a restart);
   3. every ROUTINE_<KEY> of the worker's environment, as <KEY> (this installation's overrides, e.g. the
      service URLs inside the container network);
-  4. the request's env (FLEETD_STAGE, FLEETD_CYCLE_ID, FLEETD_BUDGET_LEFT, TRACEPARENT).
+  4. the request's env (FLEETD_STAGE, FLEETD_CYCLE_ID, FLEETD_BUDGET_LEFT, TRACEPARENT);
+  5. FLOTILLA_API_TOKEN_FILE, when the request has an api_token: the run's own token file.
 """
 import hmac
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -199,10 +204,47 @@ def cancel_run(run_id):
     return True
 
 
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
+
+
+def token_path(env, run_id):
+    """Where a run's own token file is: its temp directory (the calls file's), one per run."""
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)[:120]
+    return os.path.join(env.get("TMPDIR") or tempfile.gettempdir(), f".flotilla-token-{safe}")
+
+
+def write_run_token(path, token):
+    """The token file, mode 0600, made fresh: a stale file (a crashed run's) is removed first and a symlink in its place is
+    never followed."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token)
+
+
 def run_job(req, environ=None, cancel=None):
-    cancel = cancel or threading.Event()
     environ = os.environ if environ is None else environ
     env = build_env(req.get("env"), environ)
+    token_file = ""
+    if req.get("api_token"):
+        token_file = token_path(env, req["run_id"])
+        write_run_token(token_file, req["api_token"])
+        env["FLOTILLA_API_TOKEN_FILE"] = token_file   # over a ROUTINE_ value: the run's own token, not the worker's
+    try:
+        return _run_job(req, env, cancel)
+    finally:
+        if token_file:
+            try:
+                os.remove(token_file)
+            except OSError:
+                pass
+
+
+def _run_job(req, env, cancel):
+    cancel = cancel or threading.Event()
     workdir = resolve(CODE_ROOT, req.get("workdir"))
     spend_path = resolve(env.get("HOME", "/"), req["spend_file"]) if req.get("spend_file") else ""
     plan_path = resolve(env.get("HOME", "/"), req["plan_file"]) if req.get("plan_file") else ""
@@ -340,6 +382,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError(f"{k} missing or wrong type")
             if req["timeout_s"] <= 0:
                 raise ValueError("timeout_s must be positive")
+            if "api_token" in req and not (isinstance(req["api_token"], str) and TOKEN_RE.match(req["api_token"])):
+                raise ValueError("api_token must be 16 to 256 characters of A-Z a-z 0-9 _ -")
+            if "shadow" in req and not isinstance(req["shadow"], bool):
+                raise ValueError("shadow must be true or false")
             resolve(CODE_ROOT, req.get("workdir"))
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": str(e)})

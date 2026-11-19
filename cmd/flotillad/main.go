@@ -36,6 +36,7 @@ import (
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/prompts"
 	"github.com/chipi/flotilla/internal/registry"
+	"github.com/chipi/flotilla/internal/runtoken"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/skills"
 	"github.com/chipi/flotilla/internal/spec"
@@ -94,7 +95,17 @@ type Config struct {
 	ActionEnums map[string]map[string][]string `yaml:"action_enums"`
 	// Optional: the host agents' endpoint (ADR-0006). Unset: no host can enrol or connect.
 	Hosts HostsConfig `yaml:"hosts"`
+	// Optional: whether a worker's own token still reaches flotillad's workers' listener. "accept" (the default): it does, for the
+	// ledger and cases, as before; every run also has its own token (v2 step 2). "required": only a run's own token does, so the
+	// worker token a routine can read opens nothing.
+	RunTokens string `yaml:"run_tokens"`
 }
+
+// The values of run_tokens.
+const (
+	RunTokensAccept   = "accept"
+	RunTokensRequired = "required"
+)
 
 // defaultRegistry is the declaration flotillad's image carries for its own tag.
 var defaultRegistry = []string{"/opt/flotilla/host/registry.json"}
@@ -207,6 +218,13 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if err := c.Hosts.validate(); err != nil {
 		errs = append(errs, err)
+	}
+	switch c.RunTokens {
+	case "":
+		c.RunTokens = RunTokensAccept
+	case RunTokensAccept, RunTokensRequired:
+	default:
+		errs = append(errs, fmt.Errorf("run_tokens %q: accept (the default) or required", c.RunTokens))
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
@@ -323,7 +341,14 @@ func main() {
 		runners[name] = clients[name]
 		workerTokens[name] = tok
 	}
-	callers = append(callers, api.WorkerCallers(workerTokens)...) // the ledger's callers (RFC-0002 §9 step 5)
+	// The ledger's callers (RFC-0002 §9 step 5): a worker's own token, unless run tokens are required. Workers that share one token
+	// cannot be told apart by it; it resolves to the first by name, and each run's own token says which run is calling.
+	if cfg.RunTokens != RunTokensRequired {
+		callers = append(callers, api.WorkerCallers(workerTokens)...)
+	}
+	for _, shared := range api.SharedWorkerTokens(workerTokens) {
+		log.Warn("workers share one token", "workers", shared, "note", "a run's own token tells them apart; give each worker its own token file")
+	}
 	for _, id := range cfg.DisabledRoutines {
 		found := false
 		for _, j := range routines {
@@ -374,6 +399,11 @@ func main() {
 		}
 		for _, a := range reg.Actions() {
 			fmt.Printf("action %s\n", a)
+		}
+		fmt.Printf("run tokens: %s (every run has its own token for the workers' listener%s)\n", cfg.RunTokens,
+			map[bool]string{true: "; a worker's own token opens nothing there", false: "; a worker's own token still opens it"}[cfg.RunTokens == RunTokensRequired])
+		for _, shared := range api.SharedWorkerTokens(workerTokens) {
+			fmt.Printf("run tokens: workers %s share one token file\n", shared)
 		}
 		fmt.Printf("CHECK PASS: %d routines, %d callers, %d workers, %d model aliases, %d actions\n", len(routines), len(callers), len(clients), n, len(reg.Actions()))
 		return
@@ -475,7 +505,10 @@ func main() {
 	s := &sched.Scheduler{Store: st, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	s.SetRoutines(routines)
-	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir}
+	runTokens := runtoken.New()
+	s.RunTokens = runTokens
+	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir,
+		RunTokens: runTokens}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
 	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}

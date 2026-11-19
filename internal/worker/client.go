@@ -37,6 +37,13 @@ type Request struct {
 	SpendFile string            `json:"spend_file,omitempty"`
 	PlanFile  string            `json:"plan_file,omitempty"` // a routine on a case writes its decision here
 	Env       map[string]string `json:"env"`
+	// APIToken is this run's own token for flotillad's workers' listener (internal/runtoken): the worker writes it to a file in the
+	// run's temp directory, names that file in FLOTILLA_API_TOKEN_FILE and removes it when the run ends. It is never in Env, so no
+	// log of the environment holds it.
+	APIToken string `json:"api_token,omitempty"`
+	// Shadow marks a shadow run (v2 step 2): a worker that is not a shadow worker refuses it, and a shadow worker refuses
+	// anything else.
+	Shadow bool `json:"shadow,omitempty"`
 }
 
 // Result is what the worker reports. Status is ok, error, timeout or cancelled (a cancel stopped it); anything that keeps the

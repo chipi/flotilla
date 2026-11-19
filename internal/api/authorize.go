@@ -9,7 +9,7 @@ type Action string
 const (
 	ActRead        Action = "read"         // status, runs, events
 	ActLedgerRead  Action = "ledger-read"  // a person reading the ledger (History)
-	ActLedger      Action = "ledger"       // a worker's own ledger (read and write)
+	ActLedger      Action = "ledger"       // a worker's own ledger (read and write), or a run's: its own routine's
 	ActRun         Action = "run"          // start a run now
 	ActPause       Action = "pause"        // pause a routine
 	ActStop        Action = "stop"         // STOP a fleet (and cancel its runs in flight)
@@ -44,7 +44,7 @@ const (
 var may = map[Action]map[string]bool{
 	ActRead:        {RoleAgent: true, RoleViewer: true, RoleOperator: true, RoleAdmin: true},
 	ActLedgerRead:  {RoleAgent: true, RoleViewer: true, RoleOperator: true, RoleAdmin: true}, // agents read it (RFC-0008 Q3)
-	ActLedger:      {RoleWorker: true},
+	ActLedger:      {RoleWorker: true, RoleRun: true},
 	ActRun:         {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActPause:       {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActStop:        {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
@@ -61,8 +61,8 @@ var may = map[Action]map[string]bool{
 	ActApprove:     {RoleOperator: true, RoleAdmin: true},
 	ActFeedback:    {RoleOperator: true, RoleAdmin: true},
 	ActNotes:       {RoleOperator: true, RoleAdmin: true},
-	ActNotePropose: {RoleAgent: true, RoleWorker: true, RoleOperator: true, RoleAdmin: true},
-	ActCaseRead:    {RoleWorker: true},
+	ActNotePropose: {RoleAgent: true, RoleWorker: true, RoleRun: true, RoleOperator: true, RoleAdmin: true},
+	ActCaseRead:    {RoleWorker: true, RoleRun: true},
 	ActVersion:     {RoleOperator: true, RoleAdmin: true},
 	ActEval:        {RoleOperator: true, RoleAdmin: true},
 }

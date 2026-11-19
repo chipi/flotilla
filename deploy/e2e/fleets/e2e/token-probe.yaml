@@ -1,0 +1,37 @@
+fleet: e2e
+routine: token-probe
+description: >-
+  The e2e's check of the per-run token, never shipped: the run reads FLOTILLA_API_TOKEN_FILE, which must be its own
+  token file (not the worker's), and writes a ledger filing naming another routine's namespace and another run's id;
+  flotillad must file it under this routine's own. It fails unless both hold. Disabled, so it never runs on a timer;
+  the e2e runs it by hand.
+enabled: false
+worker: triage
+trigger:
+  every: 60m
+run:
+  command: |
+    python3 - <<'PY'
+    import json, os, stat, sys, urllib.request
+    path = os.environ["FLOTILLA_API_TOKEN_FILE"]
+    tok = open(path).read().strip()
+    print("token_file", path, oct(stat.S_IMODE(os.stat(path).st_mode)))
+    if path == "/run/flotilla/worker.token" or not os.path.basename(path).startswith(".flotilla-token-"):
+        sys.exit("the run was given the worker's token file")
+    base = os.environ["FLOTILLA_API_URL"]
+    def call(method, url, body=None):
+        r = urllib.request.Request(base + url, method=method, data=json.dumps(body).encode() if body else None,
+                                   headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(r, timeout=10))
+    call("POST", "/v1/ledger/filings?ns=bugfix/fix", {"row": {"fingerprint": "token-probe", "repo": "o/r", "issue": "1"}, "run_id": "someone-elses"})
+    own = call("GET", "/v1/ledger/filings")["filings"]
+    other = call("GET", "/v1/ledger/filings?ns=bugfix/fix")["filings"]
+    print("own", len(own), "named", len(other))
+    sys.exit(0 if len(own) == 1 and len(other) == 1 else "the namespace the run named was used")
+    PY
+  workdir: .
+  timeout: 1m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

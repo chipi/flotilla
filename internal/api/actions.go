@@ -46,7 +46,7 @@ func (s *Server) Check(ctx context.Context, c Caller, a Action) error {
 		s.Log.Warn("refused", "caller", c.Name, "role", role, "action", a)
 		msg := "your role may not do this"
 		switch {
-		case role == RoleWorker:
+		case role == RoleWorker || role == RoleRun:
 			msg = "the ledger is a worker's; a worker reaches nothing else"
 		case a == ActLedger:
 			msg = "the ledger is a worker's"

@@ -39,6 +39,9 @@ func (s *Server) ProposeNote(ctx context.Context, c Caller, via, caseID, text st
 	if err := s.Check(ctx, c, ActNotePropose); err != nil {
 		return 0, err
 	}
+	if c.Run != nil && c.Run.Shadow {
+		return 0, problem(403, "a shadow run proposes no notes: what it would propose is a shadow record, never a note on a live case")
+	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return 0, problem(400, "a note needs its text")

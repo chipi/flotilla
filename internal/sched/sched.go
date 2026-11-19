@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/chipi/flotilla/internal/models"
+	"github.com/chipi/flotilla/internal/runtoken"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
@@ -91,6 +92,9 @@ type Scheduler struct {
 	OTLPTracesURL string
 	Environment   string
 	AfterRun      AfterRun
+	// RunTokens gives each run its own token for flotillad's workers' listener (internal/runtoken), issued before the worker is
+	// asked to start the run and revoked when it ends; nil: runs get none and use their worker's token, as before.
+	RunTokens *runtoken.Registry
 
 	rmu      sync.RWMutex
 	routines []*spec.Routine // each bound to the version that is live (Bind); read through Routines
@@ -360,6 +364,15 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	rec.StartedAt = s.Now().UTC().Format(store.TimeFormat)
 	rec.Status = store.StatusRunning
 	rec.TraceID = span.SpanContext().TraceID().String()
+	apiToken := ""
+	if s.RunTokens != nil {
+		// before the run row, so a refusal leaves no run "running"; revoked on every way out of this function, the run's end included.
+		// A routine with no recorded versions runs as its one, v1 (as store.StartRun reads it).
+		if apiToken, err = s.RunTokens.Issue(runtoken.Run{ID: runID, Routine: id, Version: max(j.Version, 1), Worker: j.Worker}); err != nil {
+			return nil, nil, fmt.Errorf("run token: %w", err)
+		}
+		defer s.RunTokens.Revoke(runID)
+	}
 	if err := s.Store.StartRun(ctx, rec); err != nil {
 		return nil, nil, err
 	}
@@ -416,7 +429,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	}
 	s.Log.Info("run start", "routine", id, "run_id", runID, "autonomy", autonomy, "trigger", trigger, "actor", actor, "trace_id", rec.TraceID)
 	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Routine: id, Command: j.Run.Command, Workdir: j.Run.Workdir,
-		TimeoutS: timeout.Seconds(), SpendFile: j.Run.SpendFile, PlanFile: planFile, Env: env})
+		TimeoutS: timeout.Seconds(), SpendFile: j.Run.SpendFile, PlanFile: planFile, Env: env, APIToken: apiToken})
 
 	status, detail, spend, dur := store.StatusError, "", 0.0, 0.0
 	var exit *int

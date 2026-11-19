@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/policy"
 	"github.com/chipi/flotilla/internal/registry"
+	"github.com/chipi/flotilla/internal/runtoken"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
@@ -44,14 +46,42 @@ const (
 	// nothing else. Its callers are not in the callers file: flotillad makes one per worker from the token
 	// it already holds for that worker (WorkerCallers).
 	RoleWorker = "worker"
+	// RoleRun is one run's own token (internal/runtoken): what RoleWorker may do, as that run only. The namespace and run id of what it
+	// writes are the run's own, whatever the request says.
+	RoleRun = "run"
 )
 
-// WorkerCallers are the ledger's callers: one per worker, by the token flotillad shares with it.
+// WorkerCallers are the ledger's callers: one per worker, by the token flotillad shares with it, in name order (so a token two
+// workers share always resolves to the same one).
 func WorkerCallers(tokens map[string]string) []Caller {
-	var out []Caller
-	for name, tok := range tokens {
-		out = append(out, Caller{Name: "worker:" + name, Role: RoleWorker, TokenSHA256: HashToken(tok)})
+	names := make([]string, 0, len(tokens))
+	for name := range tokens {
+		names = append(names, name)
 	}
+	sort.Strings(names)
+	out := make([]Caller, 0, len(names))
+	for _, name := range names {
+		out = append(out, Caller{Name: "worker:" + name, Role: RoleWorker, TokenSHA256: HashToken(tokens[name])})
+	}
+	return out
+}
+
+// SharedWorkerTokens names the workers that hold one token between them, as "a and b" pairs. A shared token cannot say which
+// of them is calling; the run tokens do.
+func SharedWorkerTokens(tokens map[string]string) []string {
+	byHash := map[string][]string{}
+	for name, tok := range tokens {
+		h := HashToken(tok)
+		byHash[h] = append(byHash[h], name)
+	}
+	var out []string
+	for _, names := range byHash {
+		if len(names) > 1 {
+			sort.Strings(names)
+			out = append(out, strings.Join(names, " and "))
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -61,6 +91,8 @@ type Caller struct {
 	TokenSHA256 string `yaml:"token_sha256"`
 	// User is a person from the store (ADR-0014), not a callers-file entry.
 	User bool `yaml:"-"`
+	// Run is the run a RoleRun caller's token was issued for (internal/runtoken); nil for every other caller.
+	Run *runtoken.Run `yaml:"-"`
 }
 
 type Callers struct {
@@ -125,6 +157,8 @@ type Server struct {
 	// SpecsDir is the fleets folder flotillad loaded its routines from. A version re-record reads the folder as it is
 	// now (the running copy is the one whose hash no longer matches); empty: the routines as loaded.
 	SpecsDir string
+	// RunTokens resolves a run's own token (internal/runtoken); nil: no run tokens, as before.
+	RunTokens *runtoken.Registry
 }
 
 type ctxKey struct{}
@@ -187,18 +221,20 @@ func (s *Server) ledgerRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/ledger/import", s.auth(ActLedger, s.ledgerImport))
 }
 
-// WhoIs resolves a bearer token: the callers file first, then the store's users. nil when unknown.
+// WhoIs resolves a bearer token: the callers file first (the first match, in the order of the list), then a run's own token,
+// then the store's users. nil when unknown.
 func (s *Server) WhoIs(ctx context.Context, tok string) (*Caller, error) {
 	got := HashToken(tok)
-	var who *Caller
 	for i := range s.Callers {
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.Callers[i].TokenSHA256)) == 1 {
 			c := s.Callers[i]
-			who = &c
+			return &c, nil
 		}
 	}
-	if who != nil {
-		return who, nil
+	if s.RunTokens != nil {
+		if run, ok := s.RunTokens.Resolve(tok); ok {
+			return &Caller{Name: "worker:" + run.Worker, Role: RoleRun, Run: &run}, nil
+		}
 	}
 	u, err := s.Store.UserByToken(ctx, got)
 	if err != nil || u == nil {

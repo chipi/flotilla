@@ -24,6 +24,7 @@ e2e/host-true-monitor 0ca5c30fcf66
 e2e/host-true-verify bf2f8f61bee3
 e2e/remote-echo eb2856f2a6af
 e2e/stage-probe d76887fb1d37
+e2e/token-probe 68916df8610a
 e2e/versioned-monitor f40ede417c18
 jobs/backup-monitor e12f26c897d6
 jobs/rerun-backup 93677b7d697c
