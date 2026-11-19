@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "input_key": "dataset-item-0042",
+  "routine": "triage/cycle",
+  "kind": "case",
+  "case": {"id": "scenario-42", "kind": "alert"}
+}

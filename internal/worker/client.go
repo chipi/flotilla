@@ -180,6 +180,46 @@ func (c *Client) TakeSnapshot(ctx context.Context, runID string, paths []string)
 	return nil, fmt.Errorf("worker %s: HTTP %d: %s", c.URL, status, bytes.TrimSpace(raw))
 }
 
+// ErrNoSuchSnapshot: the worker has no snapshot of that run (never taken, deleted, or on another host).
+var ErrNoSuchSnapshot = errors.New("the worker has no such snapshot")
+
+// FetchSnapshot streams a run's snapshot, a tar.gz, into w, at most max bytes (ErrTooBig past it: w then holds a cut archive and
+// the caller discards it).
+func (c *Client) FetchSnapshot(ctx context.Context, runID string, w io.Writer, max int64) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+"/v1/snapshots/"+url.PathEscape(runID), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return 0, fmt.Errorf("worker %s: %w: %w", c.URL, ErrUnreachable, err)
+		}
+		return 0, fmt.Errorf("worker %s: %w", c.URL, err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return 0, fmt.Errorf("worker %s: %w (%s)", c.URL, ErrNoSuchSnapshot, runID)
+	default:
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+		return 0, fmt.Errorf("worker %s: HTTP %d: %s", c.URL, resp.StatusCode, bytes.TrimSpace(raw))
+	}
+	n, err := io.Copy(w, io.LimitReader(resp.Body, max+1))
+	if err != nil {
+		return n, fmt.Errorf("worker %s: %w", c.URL, err)
+	}
+	if n > max {
+		return n, fmt.Errorf("worker %s: %w: more than %d bytes", c.URL, ErrTooBig, max)
+	}
+	return n, nil
+}
+
 // DeleteSnapshot removes a run's snapshot; existed says whether there was one (a second delete is fine).
 func (c *Client) DeleteSnapshot(ctx context.Context, runID string) (existed bool, err error) {
 	raw, status, err := c.do(ctx, http.MethodPost, "/v1/snapshots/"+url.PathEscape(runID)+"/delete", []byte("{}"), 30*time.Second)

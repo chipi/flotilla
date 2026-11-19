@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "input_key": "ops-rerun-backup-20261119T101500-9d8c7b",
+  "routine": "ops/rerun-backup",
+  "kind": "case",
+  "version": 1,
+  "trigger": "case",
+  "started_at": "2026-11-19T10:15:00.000000000Z",
+  "case": {"id": "case-20261119-5fe0157670", "kind": "backup", "target": "host:backup-01", "status": "handed_over", "keys": [{"kind": "alert", "value": "backup-a"}]},
+  "live_case_keys": ["alert=backup-a"]
+}

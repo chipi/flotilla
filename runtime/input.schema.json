@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flotilla.invalid/schemas/input.schema.json",
+  "title": "A frozen input (flotilla input schema, version 1)",
+  "description": "What flotillad handed a live run when it started, so a shadow version of the routine, a replay or an eval can be given exactly that. The same envelope is a scenario's start: a captured live input exports as this envelope, with the ledger rows as of its mark and the state snapshot (a file beside it), written to a folder outside any repository, and is production data until the installation scrubs it. The fields only a live capture has (the ledger marks, the live case keys, the state snapshot, the commit) are optional, so an input built from a dataset item validates too. recorded_tool_results is reserved for build step 3 and not produced before it: per station, the calls and results of a captured run or a scenario's fixtures, matched by station, tool name and normalised arguments, never by sequence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "input_key", "routine", "kind"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "input_key": {
+      "description": "The live run's id, which every shadow record of this input carries as its pairing key.",
+      "type": "string", "minLength": 1, "maxLength": 200
+    },
+    "routine": {"type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"},
+    "kind": {"description": "How the live run was started: on its schedule or by hand (tick), on a case, to check a case's outcome, or to execute its decided plan.", "enum": ["tick", "case", "check", "execute"]},
+    "version": {"description": "The routine's version the live run was.", "type": "integer", "minimum": 1},
+    "trigger": {"description": "schedule, manual, case, check or execute.", "type": "string", "maxLength": 64},
+    "started_at": {"description": "When the live run started (UTC, RFC 3339).", "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},
+    "tick_time": {"description": "The moment a scheduled run was for.", "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},
+    "case": {"description": "The case the run was handed (its FLOTILLA_CASE).", "type": "object"},
+    "plan": {"description": "The plan an execute run was handed (its FLOTILLA_PLAN).", "type": "object"},
+    "check": {"description": "What a check run was asked to verify (its FLOTILLA_CHECK).", "type": "object"},
+    "resume": {"description": "The earlier run of the case this one may continue (its FLOTILLA_RESUME).", "type": "object"},
+    "commit": {
+      "description": "For a routine that works on a repository: the commit flotillad resolved at dispatch and handed to the live run and to its shadows.",
+      "type": "object", "additionalProperties": false, "required": ["repo", "sha"],
+      "properties": {
+        "repo": {"type": "string", "minLength": 1, "maxLength": 200},
+        "sha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"}
+      }
+    },
+    "ledger": {
+      "description": "The routine's ledger as of the run's start: the high-water marks (the newest sequence numbers of its filings and decisions then) and, in an export that asked for them, the rows up to them.",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "mark_filings": {"type": "integer", "minimum": 0},
+        "mark_entries": {"type": "integer", "minimum": 0},
+        "filings": {"description": "The current filed rows as of the mark, in ledger order.", "type": "array", "items": {"type": "object", "additionalProperties": {"type": "string"}}},
+        "entries": {
+          "description": "The decisions and recurrences as of the mark, in ledger order.",
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "row"],
+            "properties": {"kind": {"enum": ["decision", "recurrence"]}, "row": {"type": "object", "additionalProperties": {"type": "string"}}}
+          }
+        }
+      }
+    },
+    "live_case_keys": {"description": "The canonical keys of the open cases of the kinds the routine detects, when the run started: what a monitor's detections are compared with.", "type": "array", "items": {"type": "string", "minLength": 1}},
+    "state_snapshot": {
+      "description": "The routine's own state (files it keeps, such as a ledger file) as the live worker snapshotted it when the run started: the paths, relative to the worker's HOME, and, in an export that asked for it, the tar.gz beside the envelope.",
+      "type": "object", "additionalProperties": false, "required": ["paths"],
+      "properties": {
+        "paths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "tar": {"description": "The archive's file name, in the folder the envelope was exported to.", "type": "string", "pattern": "^[A-Za-z0-9._-]+$"}
+      }
+    },
+    "recorded_tool_results": {"description": "Reserved (build step 3): per station name, the recorded calls and results.", "type": "object"}
+  }
+}

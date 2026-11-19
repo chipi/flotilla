@@ -103,6 +103,7 @@ test-unit: ## go test -race (root module) and go test (fleetd), the worker's tes
 	@python3 runtime/test_hooks.py >/tmp/flotilla-test_hooks.log 2>&1 && echo "PASS runtime/test_hooks.py" || { echo "FAIL runtime/test_hooks.py"; tail -30 /tmp/flotilla-test_hooks.log; exit 1; }
 	@python3 runtime/test_harness.py >/tmp/flotilla-test_harness.log 2>&1 && echo "PASS runtime/test_harness.py" || { echo "FAIL runtime/test_harness.py"; tail -30 /tmp/flotilla-test_harness.log; exit 1; }
 	@python3 runtime/test_ledger.py >/tmp/flotilla-test_ledger.log 2>&1 && echo "PASS runtime/test_ledger.py" || { echo "FAIL runtime/test_ledger.py"; tail -30 /tmp/flotilla-test_ledger.log; exit 1; }
+	@python3 runtime/test_schemacheck.py >/tmp/flotilla-test_schemacheck.log 2>&1 && echo "PASS runtime/test_schemacheck.py" || { echo "FAIL runtime/test_schemacheck.py"; tail -30 /tmp/flotilla-test_schemacheck.log; exit 1; }
 	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py test_replay_api.py test_dev_filter.py test_shadow_filter.py test_probes.py; do \
 	  HOME=$$h SF_OBSERV_DISABLED=1 python3 $$t >/tmp/flotilla-$$t.log 2>&1 && echo "PASS $$t" || { echo "FAIL $$t"; tail -20 /tmp/flotilla-$$t.log; rm -rf $$h; exit 1; }; \
 	done; rm -rf $$h

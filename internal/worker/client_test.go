@@ -279,3 +279,45 @@ func TestSnapshotUnreachable(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestFetchSnapshot(t *testing.T) {
+	var auth, path string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth, path = r.Header.Get("Authorization"), r.URL.Path
+		switch r.URL.Path {
+		case "/v1/snapshots/live-1":
+			w.Write([]byte("0123456789"))
+		case "/v1/snapshots/gone":
+			w.WriteHeader(404)
+			w.Write([]byte(`{"error":"no such snapshot here"}`))
+		default:
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":"disk"}`))
+		}
+	}))
+	defer ts.Close()
+	c := New(ts.URL, "sek")
+	var buf strings.Builder
+	n, err := c.FetchSnapshot(context.Background(), "live-1", &buf, 100)
+	if err != nil || n != 10 || buf.String() != "0123456789" || auth != "Bearer sek" || path != "/v1/snapshots/live-1" {
+		t.Fatalf("%d %q %v (%q %q)", n, buf.String(), err, auth, path)
+	}
+	buf.Reset()
+	if n, err := c.FetchSnapshot(context.Background(), "live-1", &buf, 10); err != nil || n != 10 {
+		t.Fatalf("exactly the cap is fine: %d %v", n, err)
+	}
+	buf.Reset()
+	if _, err := c.FetchSnapshot(context.Background(), "live-1", &buf, 9); !errors.Is(err, ErrTooBig) {
+		t.Fatalf("over the cap: %v", err)
+	}
+	if _, err := c.FetchSnapshot(context.Background(), "gone", &buf, 100); !errors.Is(err, ErrNoSuchSnapshot) {
+		t.Fatalf("a snapshot the worker lost: %v", err)
+	}
+	if _, err := c.FetchSnapshot(context.Background(), "other", &buf, 100); err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Fatalf("%v", err)
+	}
+	dead := &Client{URL: "http://127.0.0.1:1", Token: "t", HTTP: http.DefaultClient}
+	if _, err := dead.FetchSnapshot(context.Background(), "x", &buf, 1); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("%v", err)
+	}
+}

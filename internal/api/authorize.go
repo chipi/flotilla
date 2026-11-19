@@ -30,6 +30,7 @@ const (
 	ActCaseRead    Action = "case-read"    // a worker's routine reads cases (ops/case-review, ADR-0016)
 	ActVersion     Action = "version"      // promote, roll back or retire a routine's version; never an agent's
 	ActEval        Action = "eval"         // record an eval result (what a prompt measured on a model); never an agent's
+	ActInput       Action = "input"        // read a frozen input (case contents, ledger rows, a routine's state: production data), pin or export it; never an agent's, never MCP
 )
 
 // Roles of people (ADR-0014); callers keep RoleAgent, RoleOperator (the callers file's) and RoleWorker.
@@ -65,6 +66,7 @@ var may = map[Action]map[string]bool{
 	ActCaseRead:    {RoleWorker: true, RoleRun: true},
 	ActVersion:     {RoleOperator: true, RoleAdmin: true},
 	ActEval:        {RoleOperator: true, RoleAdmin: true},
+	ActInput:       {RoleOperator: true, RoleAdmin: true},
 }
 
 // Authorize reports whether a caller holding role may do action.

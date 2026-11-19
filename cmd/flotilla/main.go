@@ -191,6 +191,8 @@ func main() {
 		post("/v1/routines/"+args[0]+"/autonomy", map[string]string{"autonomy": level(args[1]), "reason": reason})
 	case "versions", "promote", "rollback", "retire":
 		versionCmd(cmd, args, reason)
+	case "input":
+		inputCmd(args)
 	case "stop":
 		need(args, 1, "stop fleet")
 		post("/v1/fleets/"+args[0]+"/stop", nil)
@@ -528,7 +530,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | versions ROUTINE | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | versions ROUTINE | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R | input show|pin|unpin KEY | input export KEY --to DIR [--with-ledger] [--with-state] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

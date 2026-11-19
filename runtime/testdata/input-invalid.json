@@ -1,0 +1,431 @@
+[
+ {
+  "name": "no input_key",
+  "doc": {
+   "schema_version": 1,
+   "routine": "triage/cycle",
+   "kind": "tick"
+  },
+  "error": "input_key is required",
+  "go": true
+ },
+ {
+  "name": "no kind",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle"
+  },
+  "error": "kind is required",
+  "go": true
+ },
+ {
+  "name": "no routine",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "kind": "tick"
+  },
+  "error": "routine is required",
+  "go": true
+ },
+ {
+  "name": "no schema_version",
+  "doc": {
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick"
+  },
+  "error": "schema_version is required",
+  "go": true
+ },
+ {
+  "name": "a schema version from the future",
+  "doc": {
+   "schema_version": 2,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick"
+  },
+  "error": "must be 1",
+  "go": true
+ },
+ {
+  "name": "an unknown kind",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "weekly"
+  },
+  "error": "must be one of",
+  "go": true
+ },
+ {
+  "name": "a routine that is not fleet/routine",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "Triage Cycle",
+   "kind": "tick"
+  },
+  "error": "does not match",
+  "go": true
+ },
+ {
+  "name": "a shadow key as the routine",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle@v2",
+   "kind": "tick"
+  },
+  "error": "does not match",
+  "go": true
+ },
+ {
+  "name": "an unknown top-level field",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "extra": 1
+  },
+  "error": "extra is not allowed",
+  "go": true
+ },
+ {
+  "name": "an input key of 201 characters",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "routine": "triage/cycle",
+   "kind": "tick"
+  },
+  "error": "longer than 200",
+  "go": true
+ },
+ {
+  "name": "an empty input key",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "",
+   "routine": "triage/cycle",
+   "kind": "tick"
+  },
+  "error": "shorter than 1",
+  "go": true
+ },
+ {
+  "name": "a trigger that is a number",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "trigger": 5
+  },
+  "error": "want string",
+  "go": true
+ },
+ {
+  "name": "a start time that is not a time",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "started_at": "yesterday"
+  },
+  "error": "does not match",
+  "go": true
+ },
+ {
+  "name": "a tick time that is not a time",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "tick_time": "10:00"
+  },
+  "error": "does not match",
+  "go": true
+ },
+ {
+  "name": "a version of 0",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "version": 0
+  },
+  "error": "below 1",
+  "go": false
+ },
+ {
+  "name": "a version that is a string",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "version": "2"
+  },
+  "error": "want integer",
+  "go": true
+ },
+ {
+  "name": "a case that is a string",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "case": "case-1"
+  },
+  "error": "want object",
+  "go": true
+ },
+ {
+  "name": "a plan that is an array",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "plan": [
+    1
+   ]
+  },
+  "error": "want object",
+  "go": true
+ },
+ {
+  "name": "a commit with a bad sha",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "commit": {
+    "repo": "o/r",
+    "sha": "XYZ"
+   }
+  },
+  "error": "does not match",
+  "go": true
+ },
+ {
+  "name": "a commit with no repo",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "commit": {
+    "sha": "0123456"
+   }
+  },
+  "error": "repo is required",
+  "go": true
+ },
+ {
+  "name": "a commit with an extra field",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "commit": {
+    "repo": "o/r",
+    "sha": "0123456",
+    "branch": "main"
+   }
+  },
+  "error": "branch is not allowed",
+  "go": true
+ },
+ {
+  "name": "a negative ledger mark",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "ledger": {
+    "mark_filings": -1
+   }
+  },
+  "error": "below 0",
+  "go": true
+ },
+ {
+  "name": "a ledger mark that is a float",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "ledger": {
+    "mark_entries": 1.5
+   }
+  },
+  "error": "want integer",
+  "go": true
+ },
+ {
+  "name": "a ledger entry of an unknown kind",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "ledger": {
+    "entries": [
+     {
+      "kind": "opinion",
+      "row": {}
+     }
+    ]
+   }
+  },
+  "error": "must be one of",
+  "go": true
+ },
+ {
+  "name": "a ledger entry with no row",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "ledger": {
+    "entries": [
+     {
+      "kind": "decision"
+     }
+    ]
+   }
+  },
+  "error": "row is required",
+  "go": true
+ },
+ {
+  "name": "a ledger filing with a number in it",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "ledger": {
+    "filings": [
+     {
+      "issue": 11
+     }
+    ]
+   }
+  },
+  "error": "want string",
+  "go": true
+ },
+ {
+  "name": "a ledger with an extra field",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "ledger": {
+    "rows": []
+   }
+  },
+  "error": "rows is not allowed",
+  "go": true
+ },
+ {
+  "name": "a live case key that is empty",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "live_case_keys": [
+    ""
+   ]
+  },
+  "error": "shorter than 1",
+  "go": true
+ },
+ {
+  "name": "live case keys that are not a list",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "live_case_keys": "alert=a"
+  },
+  "error": "want array",
+  "go": true
+ },
+ {
+  "name": "a state snapshot with no paths",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "state_snapshot": {
+    "paths": []
+   }
+  },
+  "error": "fewer than 1",
+  "go": true
+ },
+ {
+  "name": "a state snapshot archive that leaves the folder",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "state_snapshot": {
+    "paths": [
+     "state"
+    ],
+    "tar": "../x.tar"
+   }
+  },
+  "error": "does not match",
+  "go": true
+ },
+ {
+  "name": "a state snapshot with no paths field",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "state_snapshot": {
+    "tar": "state.tar.gz"
+   }
+  },
+  "error": "paths is required",
+  "go": true
+ },
+ {
+  "name": "recorded tool results that are a list",
+  "doc": {
+   "schema_version": 1,
+   "input_key": "k-1",
+   "routine": "triage/cycle",
+   "kind": "tick",
+   "recorded_tool_results": []
+  },
+  "error": "want object",
+  "go": true
+ }
+]

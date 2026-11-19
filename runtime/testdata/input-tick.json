@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "input_key": "triage-cycle-20261119T100000-000001",
+  "routine": "triage/cycle",
+  "kind": "tick",
+  "version": 1,
+  "trigger": "schedule",
+  "started_at": "2026-11-19T10:00:00.123456789Z",
+  "tick_time": "2026-11-19T10:00:00.123456789Z",
+  "ledger": {"mark_filings": 412, "mark_entries": 5530},
+  "state_snapshot": {"paths": ["signal-fleet/results"]}
+}

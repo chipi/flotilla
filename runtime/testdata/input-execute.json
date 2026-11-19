@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "input_key": "bugfix-fix-20261119T102000-31415e",
+  "routine": "bugfix/fix",
+  "kind": "execute",
+  "version": 3,
+  "trigger": "execute",
+  "started_at": "2026-11-19T10:20:00.500000000Z",
+  "case": {"id": "case-20261119-aa11bb22cc", "kind": "bug", "target": "example/shop"},
+  "plan": {"action": "github.open_pr", "params": {"repo": "example/shop", "branch": "fix-1"}},
+  "resume": {"run_id": "bugfix-fix-20261119T093000-000abc", "status": "interrupted", "spend_usd": 0.12},
+  "commit": {"repo": "example/shop", "sha": "0123456789abcdef0123456789abcdef01234567"}
+}

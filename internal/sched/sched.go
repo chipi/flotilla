@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/chipi/flotilla/internal/input"
 	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/runtoken"
 	"github.com/chipi/flotilla/internal/spec"
@@ -377,6 +378,7 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	if err := s.Store.StartRun(ctx, rec); err != nil {
 		return nil, nil, err
 	}
+	s.recordInput(ctx, j, runID, trigger, actor, caseEnv, rec.StartedAt)
 	env := map[string]string{
 		"FLEETD_STAGE":       spec.FleetdStage(autonomy),
 		"FLEETD_CYCLE_ID":    runID,
@@ -540,6 +542,26 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		s.AfterRun(fctx, j, &out, outcome)
 	}
 	return &out, outcome, nil
+}
+
+// recordInput freezes what the run was handed (v2 step 2): the case, plan and tick time, the routine's ledger marks, the keys of
+// the open cases of the kinds it detects, all as they are now, before the run can write. A shadow version of the routine is given
+// exactly this. A failure to write it is logged and counted, never the run's: the live fleet does not stop for its shadows.
+func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runID, trigger, actor string, caseEnv map[string]string, startedAt string) {
+	id := j.ID()
+	in := store.Input{Key: runID, Routine: id, Kind: input.Kind(trigger, caseEnv != nil), Version: max(j.Version, 1), Trigger: trigger, Actor: actor,
+		StartedAt: startedAt, Handed: input.Handed(caseEnv)}
+	var err error
+	if in.MarkFilings, in.MarkEntries, err = s.Store.LedgerMark(ctx, id); err == nil && len(j.Detects) > 0 {
+		in.LiveCaseKeys, err = s.Store.OpenCaseKeys(ctx, j.Detects)
+	}
+	if err == nil {
+		err = s.Store.NewInput(ctx, in)
+	}
+	if err != nil {
+		s.Log.Warn("the run's input was not recorded; its shadows will not run", "routine", id, "run_id", runID, "err", err)
+		s.StoreError("run_input")
+	}
 }
 
 // The case events of a routine that may resume (ADR-0019), and the env key its run reads. The store has no

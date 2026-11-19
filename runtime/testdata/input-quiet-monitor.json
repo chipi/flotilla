@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "input_key": "ops-backup-monitor-20261119T101000-00ff11",
+  "routine": "ops/backup-monitor",
+  "kind": "tick",
+  "version": 2,
+  "trigger": "schedule",
+  "started_at": "2026-11-19T10:10:00.000000000Z",
+  "tick_time": "2026-11-19T10:10:00.000000000Z",
+  "ledger": {"mark_filings": 0, "mark_entries": 0},
+  "live_case_keys": []
+}

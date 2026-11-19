@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "input_key": "triage-cycle-20261119T100000-000001",
+  "routine": "triage/cycle",
+  "kind": "tick",
+  "version": 1,
+  "trigger": "schedule",
+  "started_at": "2026-11-19T10:00:00.123456789Z",
+  "tick_time": "2026-11-19T10:00:00.123456789Z",
+  "ledger": {
+    "mark_filings": 2,
+    "mark_entries": 3,
+    "filings": [
+      {"fingerprint": "glitchtip:SHOP-1", "repo": "example/shop", "issue": "11", "norm_key": "n1"},
+      {"fingerprint": "glitchtip:SHOP-2", "repo": "example/shop", "issue": "12", "norm_key": "n2"}
+    ],
+    "entries": [
+      {"kind": "decision", "row": {"fingerprint": "glitchtip:SHOP-1", "disposition": "file", "occurrence_id": "glitchtip:SHOP-1@t0"}},
+      {"kind": "recurrence", "row": {"fingerprint": "glitchtip:SHOP-1", "disposition": "recurrence"}},
+      {"kind": "decision", "row": {"fingerprint": "glitchtip:SHOP-2", "disposition": "dismiss"}}
+    ]
+  },
+  "state_snapshot": {"paths": ["signal-fleet/results"], "tar": "state.tar.gz"}
+}

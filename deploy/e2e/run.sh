@@ -585,6 +585,37 @@ echo "$ACC" | grep >/dev/null "^run tokens: workers triage and triage-candidate 
   && ok "-check names the workers that share one token file (the candidate shares the live worker's)" || bad "-check on shared worker tokens: $(echo "$ACC" | grep '^run tokens')"
 fi
 
+echo "== frozen inputs (v2 step 2): the input a live run was handed, exported"
+# every live run's input is recorded when it starts (what it was handed, the ledger's marks, the open case keys of what it detects);
+# `flotilla input export` writes it to a folder outside any repo (here flotillad's state volume), which is checked by the repo's own
+# stdlib schema checker against runtime/input.schema.json
+if [ "${DEMO:-}" != 1 ]; then
+IKEY="$(cli runs e2e/token-probe -json -n 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["runs"][0]["id"])')"
+IVIEW="$(cli input show "$IKEY" 2>&1)"
+echo "$IVIEW" | python3 -c '
+import json, sys
+v = json.load(sys.stdin); e = v["envelope"]
+sys.exit(0 if e["routine"] == "e2e/token-probe" and e["kind"] == "tick" and e["trigger"] == "manual" and e["input_key"] == sys.argv[1]
+         and e["ledger"]["mark_filings"] >= 0 and e["ledger"]["mark_entries"] >= 0 and e["live_case_keys"] == [] and v["pinned"] is False
+         and v["snapshot_state"] == "none" and v["shadow_runs"] == [] else 1)' "$IKEY" \
+  && ok "the run's input is recorded under its id: a manual tick of e2e/token-probe with the ledger's marks, nothing pinned" || bad "input show: $IVIEW"
+rm -rf "$WORK/export"; mkdir -p "$WORK/export"
+cli input export "$IKEY" --to "/var/lib/flotilla/exports/$IKEY" --with-ledger >/dev/null 2>&1 \
+  && $D cp "flotillad:/var/lib/flotilla/exports/$IKEY" "$WORK/export/" >/dev/null 2>&1 \
+  && [ "$(python3 "$ROOT/runtime/schemacheck.py" "$ROOT/runtime/input.schema.json" "$WORK/export/$IKEY/input.json" | head -1)" = "PASS $WORK/export/$IKEY/input.json" ] \
+  && ok "an exported input validates against runtime/input.schema.json (the repo's own checker)" || bad "input export: $(python3 "$ROOT/runtime/schemacheck.py" "$ROOT/runtime/input.schema.json" "$WORK/export/$IKEY/input.json" 2>&1 | head -3)"
+EM="$(stat -c '%a' "$WORK/export/$IKEY" "$WORK/export/$IKEY/input.json" "$WORK/export/$IKEY/README.txt" 2>&1 | tr '\n' ' ')"
+[ "$EM" = "700 600 600 " ] && grep >/dev/null "PRODUCTION DATA" "$WORK/export/$IKEY/README.txt" \
+  && ok "the export folder is 0700, its files 0600, and its README says it is production data" || bad "export modes: $EM"
+cli input export "$IKEY" --to "/var/lib/flotilla/exports/$IKEY" >/dev/null 2>&1 \
+  && bad "an export over a folder that already holds one was accepted" || ok "an export never writes into a folder that holds something"
+cli input pin "$IKEY" >/dev/null 2>&1 && cli input unpin "$IKEY" >/dev/null 2>&1 \
+  && cli events -n 20 | grep >/dev/null "input.pin " && cli events -n 20 | grep >/dev/null "input.unpin " && cli events -n 20 | grep >/dev/null "input.export .*$IKEY" \
+  && ok "pin, unpin and the export are in the event log with who made them" || bad "input events: $(cli events -n 8)"
+AG="$($D exec -e FLOTILLA_TOKEN="$(cat "$WORK/agent.token")" flotillad /usr/local/bin/flotilla input show "$IKEY" 2>&1)"
+echo "$AG" | grep >/dev/null "HTTP 403" && ok "an agent's token cannot read an input (production data)" || bad "an agent reading an input: $AG"
+fi
+
 echo "== the candidate worker (shadow comparison of a candidate image)"
 for i in $(seq 1 30); do
   [ "$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2
