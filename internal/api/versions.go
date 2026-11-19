@@ -143,6 +143,7 @@ func (s *Server) PromoteVersion(ctx context.Context, c Caller, via, routineID st
 	if err := s.Sched.Bind(routineID, n); err != nil {
 		return err
 	}
+	s.Sched.VersionPromoted(ctx, routineID, n) // a shadow run in flight finishes as a shadow; what waits does not run
 	s.Log.Info("version promoted", "routine", routineID, "version", n, "autonomy", req.Autonomy, "caller", c.Name, "via", via, "reason", reason)
 	return nil
 }
@@ -243,6 +244,7 @@ func (s *Server) RetireVersion(ctx context.Context, c Caller, via, routineID str
 	if err := s.Store.Retire(ctx, routineID, n, c.Name, via, strings.TrimSpace(why)); err != nil {
 		return storeProblem(err)
 	}
+	s.Sched.VersionRetired(ctx, routineID, n) // its shadow run in flight is cancelled, what waits is not run
 	s.Log.Info("version retired", "routine", routineID, "version", n, "caller", c.Name, "via", via, "reason", why)
 	return nil
 }

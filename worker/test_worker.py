@@ -995,5 +995,123 @@ class TestSnapshotHTTP(unittest.TestCase):
         self.assertNotIn("t/mode", fw._running, "a refused run never registered")
 
 
+class TestResolveCommit(unittest.TestCase):
+    SHA = "0123456789abcdef0123456789abcdef01234567"
+
+    def opener(self, body, seen=None):
+        import io
+
+        class R(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def open_(req, timeout=None):
+            if seen is not None:
+                seen.append((req.full_url, dict(req.header_items()), timeout))
+            return R(json.dumps(body).encode())
+        return open_
+
+    def test_the_head_of_a_branch(self):
+        seen = []
+        sha = fw.resolve_commit("example/shop", "release/1.0", {"ROUTINE_GITHUB_API": "http://api.local/", "PATH": "/usr/bin"}, self.opener({"sha": self.SHA}, seen))
+        self.assertEqual(sha, self.SHA)
+        self.assertEqual(seen[0][0], "http://api.local/repos/example/shop/commits/release/1.0")
+        self.assertEqual(seen[0][2], 15)
+
+    def test_the_default_api(self):
+        seen = []
+        fw.resolve_commit("o/r", "main", {"PATH": "/usr/bin"}, self.opener({"sha": self.SHA}, seen))
+        self.assertTrue(seen[0][0].startswith("https://api.github.com/repos/o/r/commits/main"))
+
+    def test_the_api_url_is_read_from_the_workers_env_files(self):
+        d = tempfile.mkdtemp()
+        f = os.path.join(d, "fleet.env")
+        write_file(f, "GITHUB_API=http://from-env-file.local\n")
+        seen = []
+        fw.resolve_commit("o/r", "main", {"PATH": "/usr/bin", "FLOTILLA_ENV_FILES": f}, self.opener({"sha": self.SHA}, seen))
+        self.assertTrue(seen[0][0].startswith("http://from-env-file.local/"))
+
+    def test_bad_names_are_refused_before_any_request(self):
+        for repo, branch in [("shop", "main"), ("a/b/c", "main"), ("o/r", ""), ("o/r", "../x"), ("o/r", "a b"), (5, "main"), ("o/r", None), ("o/r;x", "main")]:
+            with self.subTest((repo, branch)):
+                with self.assertRaises(ValueError):
+                    fw.resolve_commit(repo, branch, {"PATH": "/usr/bin"}, self.opener({"sha": self.SHA}))
+
+    def test_an_answer_that_is_not_a_commit_id_is_an_error(self):
+        for body in ({}, {"sha": "main"}, {"sha": "XYZ" * 14}, {"sha": 5}, {"sha": self.SHA.upper()}):
+            with self.subTest(str(body)):
+                with self.assertRaises(OSError):
+                    fw.resolve_commit("o/r", "main", {"PATH": "/usr/bin"}, self.opener(body))
+
+    def test_a_shadow_worker_resolves_none(self):
+        with self.assertRaises(fw.Refused):
+            fw.resolve_commit("o/r", "main", {"PATH": "/usr/bin", "FLOTILLA_WORKER_MODE": "shadow"}, self.opener({"sha": self.SHA}))
+
+
+class TestCommitHTTP(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["FLOTILLA_WORKER_TOKEN"] = "t" * 40
+
+        class API(fw.BaseHTTPRequestHandler):
+            def do_GET(self):
+                code, body = 200, {"sha": "0123456789abcdef0123456789abcdef01234567"}
+                if self.path.endswith("/commits/gone"):
+                    code, body = 404, {"message": "Not Found"}
+                raw = json.dumps(body).encode()
+                self.send_response(code)
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def log_message(self, *a):
+                pass
+        cls.api = fw.ThreadingHTTPServer(("127.0.0.1", 0), API)
+        threading.Thread(target=cls.api.serve_forever, daemon=True).start()
+        cls.srv = fw.ThreadingHTTPServer(("127.0.0.1", 0), fw.Handler)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.port = cls.srv.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.api.shutdown()
+
+    def setUp(self):
+        self.old = os.environ.get("GITHUB_API"), os.environ.get("ROUTINE_GITHUB_API")
+        os.environ["ROUTINE_GITHUB_API"] = f"http://127.0.0.1:{self.api.server_address[1]}"
+
+    def tearDown(self):
+        for k, v in zip(("GITHUB_API", "ROUTINE_GITHUB_API"), self.old):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def call(self, body, token="t" * 40):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/v1/commit", data=json.dumps(body).encode(), method="POST",
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_the_endpoint_answers_the_head_the_api_gives(self):
+        self.assertEqual(self.call({"repo": "example/shop", "branch": "main"}), (200, {"sha": "0123456789abcdef0123456789abcdef01234567"}))
+
+    def test_refusals(self):
+        self.assertEqual(self.call({"repo": "example/shop", "branch": "main"}, token="wrong")[0], 401)
+        self.assertEqual(self.call({"repo": "shop", "branch": "main"})[0], 400)
+        self.assertEqual(self.call({"repo": "example/shop"})[0], 400)
+        code, body = self.call({"repo": "example/shop", "branch": "gone"})
+        self.assertEqual(code, 502, body)
+        with mode("shadow"):
+            self.assertEqual(self.call({"repo": "example/shop", "branch": "main"})[0], 409)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

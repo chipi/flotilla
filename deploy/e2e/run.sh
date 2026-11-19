@@ -56,7 +56,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -89,6 +89,7 @@ tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 OP=$(tok); AGENT=$(tok); WT=$(tok)
 hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
 printf %s "$WT" > "$WORK/config/worker-triage.token"
+printf %s "$(tok)" > "$WORK/config/worker-triage-candidate.token"   # its own: flotillad refuses two workers that share one
 tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"
 tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"
 tok > "$WORK/config/bugfix-model.key"   # a stand-in: the e2e's bugfix routines that would use it are disabled
@@ -116,7 +117,7 @@ otlp_traces_url: http://victoriatraces:8080/insert/opentelemetry/v1/traces
 callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
-  triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage.token}
+  triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage-candidate.token}
   ops-read: {url: "http://worker-ops-read:8081", token_file: /run/flotilla/worker-ops-read.token}
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
@@ -581,8 +582,14 @@ NTOK="$(grep -c 'token_file:' "$WORK/config/flotillad.yaml")"
 CA="$(echo "$ACC" | grep -o '[0-9]* callers' | cut -d' ' -f1)"; CR="$(echo "$REQ" | grep -o '[0-9]* callers' | cut -d' ' -f1)"
 echo "$ACC" | grep >/dev/null "^run tokens: accept " && echo "$REQ" | grep >/dev/null "^run tokens: required .*opens nothing" && [ -n "$CA" ] && [ "$((CA - CR))" = "$NTOK" ] \
   && ok "-check: run_tokens accept by default; required drops the $NTOK workers' own tokens from the callers ($CA to $CR)" || bad "-check run tokens: accept '$(echo "$ACC" | grep '^run tokens')' required '$(echo "$REQ" | grep -E '^run tokens|callers' | tr '\n' ' ')'"
-echo "$ACC" | grep >/dev/null "^run tokens: workers triage and triage-candidate share one token file" \
-  && ok "-check names the workers that share one token file (the candidate shares the live worker's)" || bad "-check on shared worker tokens: $(echo "$ACC" | grep '^run tokens')"
+# two workers that share a token are refused, by name, by -check (so a deploy's check stops it before anything restarts)
+sed 's|worker-triage-candidate.token|worker-triage.token|' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-shared.yaml"
+SHR="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-shared.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+  -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
+  "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?")"
+echo "$SHR" | grep >/dev/null "workers triage and triage-candidate share a token file" && echo "$SHR" | grep >/dev/null "^rc=2" \
+  && ok "-check refuses workers that share a token file, naming them (exit 2, before anything restarts)" || bad "-check on shared worker tokens: $(echo "$SHR" | tail -3)"
+echo "$ACC" | grep >/dev/null "share a token file" && bad "the stack's own workers share a token file" || ok "no two of the stack's workers share a token file"
 fi
 
 echo "== frozen inputs (v2 step 2): the input a live run was handed, exported"

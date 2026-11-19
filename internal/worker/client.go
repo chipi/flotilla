@@ -368,3 +368,25 @@ func (c *Client) Health(ctx context.Context) (*Health, error) {
 	var h Health
 	return &h, json.NewDecoder(resp.Body).Decode(&h)
 }
+
+// ResolveCommit asks a live worker for the commit a repository's branch points at, read as a routine would read it.
+func (c *Client) ResolveCommit(ctx context.Context, repo, branch string) (string, error) {
+	body, err := json.Marshal(map[string]string{"repo": repo, "branch": branch})
+	if err != nil {
+		return "", err
+	}
+	raw, status, err := c.do(ctx, http.MethodPost, "/v1/commit", body, 30*time.Second)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("worker %s: HTTP %d: %s", c.URL, status, bytes.TrimSpace(raw))
+	}
+	var out struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil || out.SHA == "" {
+		return "", fmt.Errorf("worker %s: bad commit answer", c.URL)
+	}
+	return out.SHA, nil
+}

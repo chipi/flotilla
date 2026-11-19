@@ -553,3 +553,54 @@ func (s *Store) planIsShadows(ctx context.Context, planID int64) (bool, error) {
 	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(r.shadow), 0) FROM plans p JOIN runs r ON r.id = p.run_id WHERE p.id = ?`, planID).Scan(&n)
 	return n != 0, err
 }
+
+// ShadowRunsActive is how many of an input's shadow runs are still queued or running.
+func (s *Store) ShadowRunsActive(ctx context.Context, inputKey string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM shadow_runs WHERE input_key = ? AND status IN ('queued', 'running')`, inputKey).Scan(&n)
+	return n, err
+}
+
+// ExpireShadowRuns ends every shadow run left queued or running by a flotillad that stopped: a queued one did not run (the reason),
+// a running one is cancelled (its worker's run was cancelled with the rest by RecoverInterrupted). It returns how many.
+func (s *Store) ExpireShadowRuns(ctx context.Context, reason string) (int64, error) {
+	now := s.now().Format(ts)
+	a, err := s.db.ExecContext(ctx, `UPDATE shadow_runs SET status = 'not_run', reason = ?, ended_at = ? WHERE status = 'queued'`, reason, now)
+	if err != nil {
+		return 0, err
+	}
+	b, err := s.db.ExecContext(ctx, `UPDATE shadow_runs SET status = 'cancelled', reason = ?, ended_at = ? WHERE status = 'running'`, reason, now)
+	if err != nil {
+		return 0, err
+	}
+	na, _ := a.RowsAffected()
+	nb, _ := b.RowsAffected()
+	return na + nb, nil
+}
+
+// HeldSnapshots lists the inputs whose state snapshot is still on a live worker, oldest first.
+func (s *Store) HeldSnapshots(ctx context.Context) ([]Input, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT input_key FROM run_inputs WHERE snapshot_state = ? ORDER BY started_at`, SnapshotHeld)
+	if err != nil {
+		return nil, err
+	}
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	rows.Close()
+	var out []Input
+	for _, k := range keys {
+		in, err := s.Input(ctx, k)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, in)
+	}
+	return out, nil
+}

@@ -160,3 +160,16 @@ func monitorRecords(sj *spec.Routine, run store.Run, hash string, in store.Input
 	}
 	return recs
 }
+
+// ShadowRecords is the scheduler's recorder of shadow runs (sched.ShadowRecorder): ShadowStarted and ShadowDone over a store.
+type ShadowRecords struct{ Store *store.Store }
+
+func (r ShadowRecords) ShadowStarted(ctx context.Context, run store.Run, hash string, in store.Input) error {
+	return ShadowStarted(ctx, r.Store, run, hash, in)
+}
+
+func (r ShadowRecords) ShadowDone(ctx context.Context, sj *spec.Routine, run store.Run, hash string, in store.Input, out *sched.CaseOutcome) error {
+	return ShadowDone(ctx, r.Store, sj, run, hash, in, out)
+}
+
+var _ sched.ShadowRecorder = ShadowRecords{}

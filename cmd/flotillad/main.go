@@ -103,6 +103,10 @@ type Config struct {
 	// ledger and cases, as before; every run also has its own token (v2 step 2). "required": only a run's own token does, so the
 	// worker token a routine can read opens nothing.
 	RunTokens string `yaml:"run_tokens"`
+	// Optional: shadow versions of routines run (v2 step 2). Off unless enabled: true. A shadow runs on its routine's shadow worker
+	// (a worker declared shadow: true below), with the read environment only; queue_max bounds the case inputs that wait per version
+	// (default 20); after_live starts a shadow only when its live run has ended.
+	Shadows sched.ShadowConfig `yaml:"shadows"`
 }
 
 // The values of run_tokens.
@@ -140,6 +144,10 @@ func applyActionEnums(reg *registry.Registry, enums map[string]map[string][]stri
 type WorkerConfig struct {
 	URL       string `yaml:"url"`
 	TokenFile string `yaml:"token_file"`
+	// Shadow declares a shadow worker (FLOTILLA_WORKER_MODE=shadow): it runs shadow versions only, no routine names it as its worker,
+	// and its token is flotillad's to call it and is never a caller of flotillad's workers' listener, so a shadow routine that reads
+	// the token file it is given can do nothing with it.
+	Shadow bool `yaml:"shadow"`
 	// Remote is a remote worker's identity (RFC-0011): the certificate name its link connects under,
 	// w-<worker>-<node>. A remote worker has no url or token: it dials the host endpoint.
 	Remote string `yaml:"remote"`
@@ -324,8 +332,8 @@ func main() {
 	}
 	clients := map[string]*worker.Client{}
 	runners := map[string]sched.Runner{}
-	workerTokens := map[string]string{}
-	var link *hostlink.Server // the host endpoint, made here so remote workers can be its runners
+	workerTokens := map[string]string{} // every worker's token: what flotillad calls it with
+	var link *hostlink.Server           // the host endpoint, made here so remote workers can be its runners
 	remotes := map[string]string{}
 	if cfg.Hosts.Listen != "" {
 		link = &hostlink.Server{}
@@ -345,13 +353,13 @@ func main() {
 		runners[name] = clients[name]
 		workerTokens[name] = tok
 	}
-	// The ledger's callers (RFC-0002 §9 step 5): a worker's own token, unless run tokens are required. Workers that share one token
-	// cannot be told apart by it; it resolves to the first by name, and each run's own token says which run is calling.
-	if cfg.RunTokens != RunTokensRequired {
-		callers = append(callers, api.WorkerCallers(workerTokens)...)
+	if err := sharedTokenError(cfg.Workers, workerTokens); err != nil {
+		fmt.Fprintln(os.Stderr, "workers:", err) // -check stops here too, before anything restarts
+		os.Exit(2)
 	}
-	for _, shared := range api.SharedWorkerTokens(workerTokens) {
-		log.Warn("workers share one token", "workers", shared, "note", "a run's own token tells them apart; give each worker its own token file")
+	// The ledger's callers (RFC-0002 §9 step 5): a worker's own token (never a shadow worker's), unless run tokens are required.
+	if cfg.RunTokens != RunTokensRequired {
+		callers = append(callers, api.WorkerCallers(callerTokens(cfg.Workers, workerTokens))...)
 	}
 	for _, id := range cfg.DisabledRoutines {
 		found := false
@@ -364,6 +372,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "config: disabled_routines names %s, which no spec defines\n", id)
 			os.Exit(2)
 		}
+	}
+	if errs := checkShadows(cfg, routines); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, "shadows:", e)
+		}
+		os.Exit(2)
 	}
 	for _, j := range routines {
 		if _, ok := runners[j.Worker]; j.Enabled && !ok {
@@ -406,8 +420,8 @@ func main() {
 		}
 		fmt.Printf("run tokens: %s (every run has its own token for the workers' listener%s)\n", cfg.RunTokens,
 			map[bool]string{true: "; a worker's own token opens nothing there", false: "; a worker's own token still opens it"}[cfg.RunTokens == RunTokensRequired])
-		for _, shared := range api.SharedWorkerTokens(workerTokens) {
-			fmt.Printf("run tokens: workers %s share one token file\n", shared)
+		for _, line := range shadowCheckLines(cfg, routines) {
+			fmt.Println(line)
 		}
 		fmt.Printf("CHECK PASS: %d routines, %d callers, %d workers, %d model aliases, %d actions\n", len(routines), len(callers), len(clients), n, len(reg.Actions()))
 		return
@@ -509,6 +523,7 @@ func main() {
 	s := &sched.Scheduler{Store: st, Workers: runners, Metrics: push, Location: loc, Log: log, ModelsJSON: modelsJSON, Models: cfg.Models,
 		OTLPTracesURL: cfg.OTLPTracesURL, Environment: cfg.Environment}
 	s.SetRoutines(routines)
+	s.Shadows, s.Recorder = cfg.Shadows, dispatch.ShadowRecords{Store: st}
 	runTokens := runtoken.New()
 	s.RunTokens = runTokens
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir,
@@ -626,6 +641,9 @@ func main() {
 	}
 	// The workers and the links are set up: stop what the previous flotillad left running and free its
 	// cases, before anything can dispatch.
+	if err := s.SweepShadows(ctx); err != nil {
+		log.Error("shadow sweep", "err", err)
+	}
 	if err := s.RecoverInterrupted(ctx, orphans); err != nil {
 		log.Error("recovering the interrupted runs", "err", err)
 		os.Exit(1)

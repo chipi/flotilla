@@ -264,3 +264,20 @@ func Decode(raw []byte) (Envelope, error) {
 	}
 	return e, e.Validate()
 }
+
+// EnvOf is the environment a run is handed for an input: the FLOTILLA_CASE, FLOTILLA_PLAN and FLOTILLA_CHECK of the live run, never its
+// FLOTILLA_RESUME (a shadow's run is its own: it continues nothing of the live run's).
+func EnvOf(handed json.RawMessage) map[string]string {
+	var m map[string]json.RawMessage
+	_ = json.Unmarshal(handed, &m)
+	out := map[string]string{}
+	for k, field := range handedKeys {
+		if k == "FLOTILLA_RESUME" {
+			continue
+		}
+		if raw, ok := m[field]; ok {
+			out[k] = string(raw)
+		}
+	}
+	return out
+}

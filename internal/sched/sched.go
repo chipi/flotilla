@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -97,6 +98,9 @@ type Scheduler struct {
 	// RunTokens gives each run its own token for flotillad's workers' listener (internal/runtoken), issued before the worker is
 	// asked to start the run and revoked when it ends; nil: runs get none and use their worker's token, as before.
 	RunTokens *runtoken.Registry
+	// Shadows are off unless flotillad.yaml turns them on; Recorder keeps what a shadow run did (see shadow.go).
+	Shadows  ShadowConfig
+	Recorder ShadowRecorder
 
 	rmu      sync.RWMutex
 	routines []*spec.Routine // each bound to the version that is live (Bind); read through Routines
@@ -104,6 +108,10 @@ type Scheduler struct {
 	mu      sync.Mutex
 	running map[string]string // routine id -> run id
 	cancels map[string]string // run id -> "cancelled: <who>, <why>", while a cancel of it is pending
+
+	shadowQ      *shadowQueues
+	shadowCtx    context.Context   // what shadow runs run under: flotillad's, set by Loop
+	shadowRunner map[string]Runner // shadow run id -> the shadow worker running it
 }
 
 func (s *Scheduler) init() {
@@ -112,6 +120,7 @@ func (s *Scheduler) init() {
 	if s.running == nil {
 		s.running = map[string]string{}
 		s.cancels = map[string]string{}
+		s.shadowRunner = map[string]Runner{}
 	}
 	if s.Now == nil {
 		s.Now = time.Now
@@ -177,6 +186,10 @@ func (s *Scheduler) Bind(id string, n int) error {
 // to answer (ReadyWait).
 func (s *Scheduler) Loop(ctx context.Context) {
 	s.init()
+	s.mu.Lock()
+	s.shadowCtx = ctx
+	s.mu.Unlock()
+	defer s.ShadowWait()
 	var wg sync.WaitGroup
 	for _, j := range s.Routines() {
 		if !j.Enabled {
@@ -378,49 +391,21 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	if err := s.Store.StartRun(ctx, rec); err != nil {
 		return nil, nil, err
 	}
-	s.recordInput(ctx, j, runID, trigger, actor, caseEnv, rec.StartedAt)
-	env := map[string]string{
-		"FLEETD_STAGE":       spec.FleetdStage(autonomy),
-		"FLEETD_CYCLE_ID":    runID,
-		"FLEETD_BUDGET_LEFT": fmt.Sprintf("%.4f", j.Budget.DayUSD-spent),
-		"FLOTILLA_RUN_ID":    runID,
-		"FLOTILLA_ROUTINE":   id,
-		// the routine's version the run is: the worker's logs and the routine's own spans and traces carry it (a shadow run also
-		// gets FLOTILLA_SHADOW=1)
-		"FLOTILLA_ROUTINE_VERSION": strconv.Itoa(max(j.Version, 1)),
+	liveDone := make(chan struct{})
+	defer close(liveDone)
+	commit := s.resolveCommit(ctx, j, runner)
+	in, recorded := s.recordInput(ctx, j, runner, runID, trigger, actor, caseEnv, rec.StartedAt, commit)
+	if recorded {
+		s.enqueueShadows(ctx, j, in, liveDone)
 	}
-	if tp := carrier.Get("traceparent"); tp != "" {
-		env["TRACEPARENT"] = tp
-	}
-	if s.Models != nil && len(j.Models) > 0 {
-		sub, err := s.Models.Subset(j.Models)
-		if err == nil {
-			var js string
-			if js, err = sub.JSON(); err == nil {
-				env["FLOTILLA_MODELS"] = js
-			}
-		}
-		if err != nil {
-			s.Log.Error("the routine's models", "routine", id, "err", err) // -check refuses this config
-		}
-	}
-	if sk := j.SkillsJSON(); sk != "" {
-		env["FLOTILLA_SKILLS"] = sk // the spec's skills.rule (ADR-0012), matched by the routine's code
-	}
-	if pr := j.PromptsJSON(); pr != "" {
-		env["FLOTILLA_PROMPTS"] = pr // the spec's prompts: with the hashes their files had at load; a run refuses any other
+	env := s.runEnv(j, runID, id, spec.FleetdStage(autonomy), j.Budget.DayUSD-spent, carrier.Get("traceparent"))
+	if pr := env["FLOTILLA_PROMPTS"]; pr != "" {
 		if err := s.Store.Event(ctx, "flotillad", "flotillad", "run.prompts", runID, pr); err != nil {
 			s.Log.Warn("the run's prompts event", "routine", id, "run_id", runID, "err", err)
 		}
 	}
-	if h := j.HarnessJSON(); h != "" {
-		env["FLOTILLA_HARNESS"] = h // the spec's harness: (RFC-0002 §4)
-	}
-	if s.OTLPTracesURL != "" {
-		env["FLOTILLA_OTLP_TRACES_URL"] = s.OTLPTracesURL
-	}
-	if s.Environment != "" {
-		env["FLOTILLA_ENVIRONMENT"] = s.Environment
+	if commit.SHA != "" {
+		env["FLOTILLA_COMMIT"], env["FLOTILLA_REPO"] = commit.SHA, commit.Repo
 	}
 	planFile := ""
 	for k, v := range caseEnv {
@@ -545,15 +530,20 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 }
 
 // recordInput freezes what the run was handed (v2 step 2): the case, plan and tick time, the routine's ledger marks, the keys of
-// the open cases of the kinds it detects, all as they are now, before the run can write. A shadow version of the routine is given
-// exactly this. A failure to write it is logged and counted, never the run's: the live fleet does not stop for its shadows.
-func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runID, trigger, actor string, caseEnv map[string]string, startedAt string) {
+// the open cases of the kinds it detects, the commit it works from and, when a shadow version waits to be run, a snapshot of the
+// routine's state, all as they are now, before the run can write. A shadow version of the routine is given exactly this. A failure
+// to write it is logged and counted, never the run's: the live fleet does not stop for its shadows. ok is false then.
+func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runner Runner, runID, trigger, actor string, caseEnv map[string]string, startedAt string, commit input.Commit) (store.Input, bool) {
 	id := j.ID()
 	in := store.Input{Key: runID, Routine: id, Kind: input.Kind(trigger, caseEnv != nil), Version: max(j.Version, 1), Trigger: trigger, Actor: actor,
-		StartedAt: startedAt, Handed: input.Handed(caseEnv)}
+		StartedAt: startedAt, Handed: input.Handed(caseEnv), CommitRepo: commit.Repo, CommitSHA: commit.SHA}
 	var err error
 	if in.MarkFilings, in.MarkEntries, err = s.Store.LedgerMark(ctx, id); err == nil && len(j.Detects) > 0 {
 		in.LiveCaseKeys, err = s.Store.OpenCaseKeys(ctx, j.Detects)
+	}
+	if err == nil && s.snapshotWanted(ctx, j) {
+		in.SnapshotPaths = j.State
+		in.SnapshotState = s.takeSnapshot(ctx, j, runner, runID)
 	}
 	if err == nil {
 		err = s.Store.NewInput(ctx, in)
@@ -561,7 +551,56 @@ func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runID, tri
 	if err != nil {
 		s.Log.Warn("the run's input was not recorded; its shadows will not run", "routine", id, "run_id", runID, "err", err)
 		s.StoreError("run_input")
+		return in, false
 	}
+	return in, true
+}
+
+// runEnv is the environment every run of a routine version gets from flotillad, live or shadow: the cycle contract, the run's
+// identity (routineKey is the routine's id, or a shadow's "<id>@v<n>"), the models, skills, prompts and harness its spec names, and
+// where its spans go. The case it was handed is added by the caller.
+func (s *Scheduler) runEnv(j *spec.Routine, runID, routineKey, stage string, budgetLeft float64, traceparent string) map[string]string {
+	env := map[string]string{
+		"FLEETD_STAGE":       stage,
+		"FLEETD_CYCLE_ID":    runID,
+		"FLEETD_BUDGET_LEFT": fmt.Sprintf("%.4f", budgetLeft),
+		"FLOTILLA_RUN_ID":    runID,
+		"FLOTILLA_ROUTINE":   routineKey,
+		// the routine's version the run is: the worker's logs and the routine's own spans and traces carry it (a shadow run also
+		// gets FLOTILLA_SHADOW=1)
+		"FLOTILLA_ROUTINE_VERSION": strconv.Itoa(max(j.Version, 1)),
+	}
+	if traceparent != "" {
+		env["TRACEPARENT"] = traceparent
+	}
+	if s.Models != nil && len(j.Models) > 0 {
+		sub, err := s.Models.Subset(j.Models)
+		if err == nil {
+			var js string
+			if js, err = sub.JSON(); err == nil {
+				env["FLOTILLA_MODELS"] = js
+			}
+		}
+		if err != nil {
+			s.Log.Error("the routine's models", "routine", routineKey, "err", err) // -check refuses this config
+		}
+	}
+	if sk := j.SkillsJSON(); sk != "" {
+		env["FLOTILLA_SKILLS"] = sk // the spec's skills.rule (ADR-0012), matched by the routine's code
+	}
+	if pr := j.PromptsJSON(); pr != "" {
+		env["FLOTILLA_PROMPTS"] = pr // the spec's prompts: with the hashes their files had at load; a run refuses any other
+	}
+	if h := j.HarnessJSON(); h != "" {
+		env["FLOTILLA_HARNESS"] = h // the spec's harness: (RFC-0002 §4)
+	}
+	if s.OTLPTracesURL != "" {
+		env["FLOTILLA_OTLP_TRACES_URL"] = s.OTLPTracesURL
+	}
+	if s.Environment != "" {
+		env["FLOTILLA_ENVIRONMENT"] = s.Environment
+	}
+	return env
 }
 
 // The case events of a routine that may resume (ADR-0019), and the env key its run reads. The store has no
@@ -628,9 +667,17 @@ func (s *Scheduler) cancelNote(runID, output string) string {
 // still on its way) is asked again in the background for a few seconds.
 func (s *Scheduler) Cancel(ctx context.Context, id, who, why string) (string, error) {
 	s.init()
-	j := s.Routine(id)
+	base, workerName := id, ""
+	if store.IsShadowKey(id) {
+		base = id[:strings.Index(id, "@v")] // a shadow version's run: the same cancel, on the shadow worker
+	}
+	j := s.Routine(base)
 	if j == nil {
 		return "", fmt.Errorf("no routine %s", id)
+	}
+	workerName = j.Worker
+	if base != id {
+		workerName = j.ShadowWorkerName()
 	}
 	s.mu.Lock()
 	runID, busy := s.running[id]
@@ -641,9 +688,9 @@ func (s *Scheduler) Cancel(ctx context.Context, id, who, why string) (string, er
 	if !busy {
 		return "", fmt.Errorf("%s: %w", id, ErrNotRunning)
 	}
-	c, ok := s.Workers[j.Worker].(Canceller)
+	c, ok := s.Workers[workerName].(Canceller)
 	if !ok {
-		return runID, fmt.Errorf("worker %s cannot cancel a run", j.Worker)
+		return runID, fmt.Errorf("worker %s cannot cancel a run", workerName)
 	}
 	err := c.Cancel(ctx, runID)
 	if errors.Is(err, worker.ErrNoSuchRun) {
@@ -796,6 +843,13 @@ func (s *Scheduler) Running() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// newShadowRunID is a shadow run's id: the live shape with the version, so it never equals a live run's.
+func newShadowRunID(j *spec.Routine, version int, now time.Time) string {
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%s-%s-v%d-%s-%s", j.Fleet, j.Routine, version, now.UTC().Format("20060102T150405"), hex.EncodeToString(b))
 }
 
 func newRunID(j *spec.Routine, now time.Time) string {

@@ -97,7 +97,13 @@ func (s *Server) PinInput(ctx context.Context, c Caller, via, key string, pin bo
 	if pin {
 		kind = "input.pin"
 	}
-	return s.Store.Event(ctx, c.Name, via, kind, key, "")
+	if err := s.Store.Event(ctx, c.Name, via, kind, key, ""); err != nil {
+		return err
+	}
+	if !pin {
+		s.Sched.ReleaseSnapshot(ctx, key) // nothing waits for it and nothing pins it: the snapshot goes
+	}
+	return nil
 }
 
 func (s *Server) inputPin(w http.ResponseWriter, r *http.Request, c Caller) {

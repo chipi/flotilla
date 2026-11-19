@@ -321,3 +321,32 @@ func TestFetchSnapshot(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestResolveCommit(t *testing.T) {
+	var got map[string]string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		switch got["branch"] {
+		case "gone":
+			w.WriteHeader(502)
+			w.Write([]byte(`{"error":"the repository's API: HTTP 404"}`))
+		case "live-only":
+			w.WriteHeader(409)
+			w.Write([]byte(`{"error":"a shadow worker resolves no commits"}`))
+		default:
+			w.Write([]byte(`{"sha":"0123456789abcdef0123456789abcdef01234567"}`))
+		}
+	}))
+	defer ts.Close()
+	c := New(ts.URL, "s")
+	sha, err := c.ResolveCommit(context.Background(), "example/shop", "main")
+	if err != nil || sha != "0123456789abcdef0123456789abcdef01234567" || got["repo"] != "example/shop" || got["branch"] != "main" {
+		t.Fatalf("%q %v %v", sha, err, got)
+	}
+	if _, err := c.ResolveCommit(context.Background(), "example/shop", "gone"); err == nil || !strings.Contains(err.Error(), "HTTP 502") {
+		t.Fatalf("%v", err)
+	}
+	if _, err := c.ResolveCommit(context.Background(), "example/shop", "live-only"); err == nil || !strings.Contains(err.Error(), "HTTP 409") {
+		t.Fatalf("%v", err)
+	}
+}

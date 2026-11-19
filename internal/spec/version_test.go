@@ -626,3 +626,57 @@ func TestFolderLoaderEdges(t *testing.T) {
 		}
 	})
 }
+
+// A routine may name its shadow worker, the state its shadows start from and the repository it works on; each is checked, and a
+// version's spec.yaml may not carry them (they are the routine's).
+func TestShadowKeysOfAFolderRoutine(t *testing.T) {
+	d := t.TempDir()
+	write(t, d, "triage/cycle/routine.yaml", folderRoutine+"shadow_worker: triage-shadow\nstate: [signal-fleet/results, notes]\nrepo: {name: example/shop, branch: main}\n")
+	write(t, d, "triage/cycle/v1/spec.yaml", folderVersion)
+	write(t, d, "triage/cycle/v1/system.md", "x\n")
+	rs, err := Load(d)
+	if err != nil || len(rs) != 1 {
+		t.Fatalf("%v %v", rs, err)
+	}
+	j := rs[0]
+	if j.ShadowWorkerName() != "triage-shadow" || len(j.State) != 2 || j.State[0] != "signal-fleet/results" || j.Repo.Name != "example/shop" || j.Repo.Branch != "main" {
+		t.Fatalf("%+v", j)
+	}
+	if got := (&Routine{Worker: "triage"}).ShadowWorkerName(); got != "triage-shadow" {
+		t.Fatalf("the default shadow worker is <worker>-shadow: %q", got)
+	}
+}
+
+func TestShadowKeysAreChecked(t *testing.T) {
+	for name, c := range map[string]struct{ extra, want string }{
+		"a shadow worker name":      {"shadow_worker: Bad_Name\n", "shadow_worker"},
+		"a state path out of HOME":  {"state: [../x]\n", "state"},
+		"an absolute state path":    {"state: [/etc]\n", "state"},
+		"a trailing slash":          {"state: [a/]\n", "state"},
+		"an empty state path":       {"state: ['']\n", "state"},
+		"a state path twice":        {"state: [a, a]\n", "listed twice"},
+		"a repo that is not o/n":    {"repo: {name: shop, branch: main}\n", "repo.name"},
+		"a repo with no branch":     {"repo: {name: example/shop}\n", "repo.branch"},
+		"a branch that climbs":      {"repo: {name: example/shop, branch: a/../b}\n", "repo.branch"},
+		"an unknown key under repo": {"repo: {name: example/shop, branch: main, ref: x}\n", "ref"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := t.TempDir()
+			write(t, d, "triage/cycle/routine.yaml", folderRoutine+c.extra)
+			write(t, d, "triage/cycle/v1/spec.yaml", folderVersion)
+			write(t, d, "triage/cycle/v1/system.md", "x\n")
+			if _, err := Load(d); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want an error with %q, got %v", c.want, err)
+			}
+		})
+	}
+	// a version's spec.yaml cannot carry them
+	d := t.TempDir()
+	write(t, d, "triage/cycle/routine.yaml", folderRoutine)
+	write(t, d, "triage/cycle/v1/spec.yaml", folderVersion+"state: [a]\n")
+	write(t, d, "triage/cycle/v1/system.md", "x\n")
+	rs, err := Load(d)
+	if err == nil && (len(rs) == 0 || rs[0].Versions[0].Err == nil) {
+		t.Fatal("a version's spec.yaml took a routine's key")
+	}
+}

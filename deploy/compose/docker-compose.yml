@@ -126,7 +126,7 @@ services:
       ROUTINE_SF_SERVICE: triage-fleet-candidate
       ROUTINE_SF_GLITCHTIP_SYNC: "0"
     volumes:
-      - worker-triage-secrets:/run/flotilla:ro           # the same fleet secrets; shadow never writes outward
+      - worker-triage-candidate-secrets:/run/flotilla:ro # its own worker token, and the fleet's env; shadow never writes outward
       - triage-candidate-state:/home/worker/signal-fleet  # never the live state
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
@@ -336,6 +336,8 @@ volumes:
     external: true
   worker-triage-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-secrets
+  worker-triage-candidate-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-candidate-secrets
     external: true
   triage-state:
     name: ${TRIAGE_STATE_VOLUME:-flotilla-triage-state-shadow}

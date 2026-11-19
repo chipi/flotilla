@@ -51,6 +51,13 @@ put $V-flotillad-secrets cli.token 65532 "$FLOTILLA_CONFIG/cli.token"
 put $V-flotillad-secrets worker-triage.token 65532 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage.token"
 put $V-worker-triage-secrets fleet.env 10001 "$TRIAGE_ENV_FILE"
+# the triage candidate worker (compose profile candidate), where its token exists: its own worker token (flotillad's workers' listener
+# names a caller by its token, and flotillad refuses two workers that share one), and the same fleet env as the live worker
+if [ -s "$FLOTILLA_CONFIG/worker-triage-candidate.token" ]; then
+  put $V-flotillad-secrets worker-triage-candidate.token 65532 "$FLOTILLA_CONFIG/worker-triage-candidate.token"
+  put $V-worker-triage-candidate-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-triage-candidate.token"
+  put $V-worker-triage-candidate-secrets fleet.env 10001 "$TRIAGE_ENV_FILE"
+fi
 # the deploy stand-down's caller (deploy/server/standdown.sh), where its token exists
 if [ -s "$FLOTILLA_CONFIG/deploy.token" ]; then
   put $V-flotillad-secrets deploy.token 65532 "$FLOTILLA_CONFIG/deploy.token"

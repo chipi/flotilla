@@ -20,6 +20,9 @@ A live worker also keeps the state snapshots a shadow starts from (v2 step 2, do
                   {run_id, bytes, files, skipped, missing}; made whole before it is visible, 409 when one exists
   POST /v1/snapshots/<run_id>/delete       removes it ({ok, existed}); a second delete is fine
   GET  /v1/snapshots/<run_id>              the snapshot as a tar.gz (an export of a pinned input)
+  POST /v1/commit {repo, branch}           the head of the branch as the repository's API says it ({sha}), read as a routine would
+                  read it (GITHUB_API from the worker's own env files, through the same proxy); a live worker only. flotillad
+                  asks it at dispatch for a routine that names a repo, and hands that one commit to the live run and its shadows
 A shadow worker (FLOTILLA_WORKER_MODE=shadow) runs shadow runs only and a live worker runs none (409 on a mismatch); it reads
 the snapshot directory and copies the run's snapshot_of into its own HOME before the command starts.
 
@@ -50,6 +53,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.parse
+import urllib.request
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -421,6 +426,35 @@ def tar_snapshot(run_id, snapshot_dir=None):
     return out
 
 
+REPO_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]{1,100}$")
+SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+
+
+def resolve_commit(repo, branch, environ=None, opener=None):
+    """The commit a branch points at, from the repository's API (GITHUB_API, default https://api.github.com), read with the
+    environment and proxy a live routine has. Names only a plain repository and branch; the answer must be a commit id."""
+    environ = os.environ if environ is None else environ
+    if worker_mode(environ) != MODE_LIVE:
+        raise Refused("a shadow worker resolves no commits: flotillad asks the live worker")
+    if not isinstance(repo, str) or not REPO_RE.match(repo):
+        raise ValueError("repo is owner/name")
+    if not isinstance(branch, str) or not BRANCH_RE.match(branch) or ".." in branch:
+        raise ValueError("branch is a plain branch name")
+    env = build_env({}, environ)
+    api = (env.get("GITHUB_API") or "https://api.github.com").rstrip("/")
+    url = f"{api}/repos/{repo}/commits/{urllib.parse.quote(branch, safe='/')}"
+    if opener is None:
+        proxies = {k.lower().split("_")[0]: env[k] for k in ("HTTP_PROXY", "HTTPS_PROXY") if env.get(k)}
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies)).open
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "flotilla-worker"})
+    with opener(req, timeout=15) as r:
+        sha = json.load(r).get("sha")
+    if not isinstance(sha, str) or not SHA_RE.match(sha):
+        raise OSError("the repository's API gave no commit id")
+    return sha
+
+
 def restore_state(req, env, environ=None, snapshot_dir=None):
     """A shadow run's state: for each of the routine's state paths, remove what is in this worker's own HOME and copy the
     live run's snapshot of it (req snapshot_of) in. Bounded by the snapshot caps, never through a symlink, never outside HOME."""
@@ -662,6 +696,24 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             shutil.copyfileobj(f, self.wfile)
 
+    def _commit_post(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            if n <= 0 or n > MAX_BODY:
+                raise ValueError("body required, at most 1 MiB")
+            body = json.loads(self.rfile.read(n))
+            if not isinstance(body, dict):
+                raise ValueError("a JSON object: {repo, branch}")
+            sha = resolve_commit(body.get("repo"), body.get("branch"))
+            return self._send(200, {"sha": sha})
+        except Refused as e:
+            return self._send(409, {"error": str(e)})
+        except (ValueError, json.JSONDecodeError) as e:
+            return self._send(400, {"error": str(e)})
+        except OSError as e:
+            log("commit not resolved", level="warning", error=str(e))
+            return self._send(502, {"error": f"the repository's API: {e}"})
+
     def _snapshots_post(self, path):
         n = int(self.headers.get("Content-Length") or 0)
         try:
@@ -700,6 +752,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "unauthorized"})
         if self.path.startswith("/v1/snapshots"):
             return self._snapshots_post(self.path)
+        if self.path == "/v1/commit":
+            return self._commit_post()
         if self.path.startswith("/v1/runs/") and self.path.endswith("/cancel"):
             run_id = self.path[len("/v1/runs/"):-len("/cancel")]
             if not run_id or "/" in run_id or not cancel_run(run_id):

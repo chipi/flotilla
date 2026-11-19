@@ -196,6 +196,12 @@ func (s *Server) SetStopped(ctx context.Context, c Caller, via, fleet string, st
 				}
 			}
 		}
+		// the fleet's shadow runs are cancelled with its live ones
+		for _, key := range s.Sched.ShadowKeysRunning(fleet) {
+			if err := s.cancelRun(ctx, c, via, key, "fleet "+fleet+" STOPped"); err != nil && !errors.Is(err, sched.ErrNotRunning) {
+				s.Log.Error("STOP: a shadow run in flight was not cancelled", "routine", key, "caller", c.Name, "err", err)
+			}
+		}
 	}
 	return nil
 }

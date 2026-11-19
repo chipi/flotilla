@@ -145,6 +145,12 @@ type Routine struct {
 	// What a promote of one of this routine's versions needs as evidence (docs/wip/v2-design.md section 6): a
 	// list from pairs, replay and scenario_eval; Accepts says [pairs] when it is empty.
 	Acceptance []string `yaml:"acceptance"`
+	// Shadows (v2 step 2, design section 4). ShadowWorker is the worker a shadow version of this routine runs on (default
+	// "<worker>-shadow"); State is the routine's own state, paths under its worker's HOME that the live worker snapshots when a
+	// live run starts and a shadow starts from; Repo is the repository it works on, whose branch head flotillad resolves at dispatch.
+	ShadowWorker string   `yaml:"shadow_worker"`
+	State        []string `yaml:"state"`
+	Repo         *RepoRef `yaml:"repo"`
 
 	// filled by Load
 	Path string `yaml:"-"`
@@ -161,6 +167,26 @@ type Routine struct {
 	// the sha256 of each declared prompt file when the spec was loaded ("" for a file that cannot be
 	// read: prompts.Check refuses it)
 	PromptSHA map[string]string `yaml:"-"`
+}
+
+// RepoRef is the repository a routine works on and the branch whose head a run starts from.
+type RepoRef struct {
+	Name   string `yaml:"name"`
+	Branch string `yaml:"branch"`
+}
+
+var (
+	repoNameRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
+	branchRe    = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,100}$`)
+	statePathRe = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]{0,199}$`)
+)
+
+// ShadowWorkerName is the worker a shadow version of the routine runs on.
+func (j *Routine) ShadowWorkerName() string {
+	if j.ShadowWorker != "" {
+		return j.ShadowWorker
+	}
+	return j.Worker + "-shadow"
 }
 
 // Trigger is what starts the routine (ADR-0007): time (every) or an event on a case (RFC-0004 §3.7):
@@ -683,6 +709,27 @@ func (j *Routine) validateRoutine(bad func(string, ...any)) {
 	}
 	if j.Budget.DayUSD < 0 {
 		bad("budget.day_usd %.2f: must not be negative", j.Budget.DayUSD)
+	}
+	if j.ShadowWorker != "" && !nameRe.MatchString(j.ShadowWorker) {
+		bad("shadow_worker %q: lower-case letters, digits and dashes", j.ShadowWorker)
+	}
+	seenState := map[string]bool{}
+	for _, p := range j.State {
+		switch {
+		case !statePathRe.MatchString(p) || strings.Contains(p, "..") || strings.Contains(p, "//") || strings.HasSuffix(p, "/"):
+			bad("state %q: a path under the worker's HOME, no .., no leading or trailing slash", p)
+		case seenState[p]:
+			bad("state %q is listed twice", p)
+		}
+		seenState[p] = true
+	}
+	if j.Repo != nil {
+		if !repoNameRe.MatchString(j.Repo.Name) {
+			bad("repo.name %q: owner/name", j.Repo.Name)
+		}
+		if !branchRe.MatchString(j.Repo.Branch) || strings.Contains(j.Repo.Branch, "..") {
+			bad("repo.branch %q: a branch name", j.Repo.Branch)
+		}
 	}
 	j.validateResume(bad)
 	n := 0

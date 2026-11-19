@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/chipi/flotilla/internal/store"
@@ -68,14 +69,25 @@ func (s *Scheduler) cancelOrphan(ctx context.Context, r store.RunRef) {
 	why := "flotillad restarted while it ran"
 	outcome := "sent"
 	var err error
-	j := s.Routine(r.Routine)
+	base, shadow := r.Routine, store.IsShadowKey(r.Routine)
+	if shadow {
+		base = r.Routine[:strings.Index(r.Routine, "@v")]
+	}
+	j := s.Routine(base)
+	workerName := ""
+	if j != nil {
+		workerName = j.Worker
+		if shadow {
+			workerName = j.ShadowWorkerName()
+		}
+	}
 	switch {
 	case j == nil:
 		err = fmt.Errorf("no routine %s in the specs", r.Routine)
-	case s.Workers[j.Worker] == nil:
-		err = fmt.Errorf("no worker %s", j.Worker)
+	case s.Workers[workerName] == nil:
+		err = fmt.Errorf("no worker %s", workerName)
 	default:
-		switch c := s.Workers[j.Worker].(type) {
+		switch c := s.Workers[workerName].(type) {
 		case OrphanCanceller:
 			var queued bool
 			if queued, err = c.CancelOrphan(ctx, r.ID); queued {
@@ -87,7 +99,7 @@ func (s *Scheduler) cancelOrphan(ctx context.Context, r store.RunRef) {
 				err, outcome = nil, "the worker no longer has it"
 			}
 		default:
-			err = fmt.Errorf("worker %s cannot cancel a run", j.Worker)
+			err = fmt.Errorf("worker %s cannot cancel a run", workerName)
 		}
 	}
 	detail := "run " + r.ID + ": " + why

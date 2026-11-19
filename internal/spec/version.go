@@ -223,6 +223,9 @@ type routineFile struct {
 	BriefSection string      `yaml:"brief_section"`
 	Chain        []ChainLink `yaml:"chain"`
 	Acceptance   []string    `yaml:"acceptance"`
+	ShadowWorker string      `yaml:"shadow_worker"`
+	State        []string    `yaml:"state"`
+	Repo         *RepoRef    `yaml:"repo"`
 }
 
 // versionFile is v<n>/spec.yaml: what one version does.
@@ -295,7 +298,8 @@ func loadFolder(p string) (*Routine, error) {
 
 	base := &Routine{Fleet: rf.Fleet, Routine: rf.Routine, Description: rf.Description, Enabled: rf.Enabled, Worker: rf.Worker,
 		Trigger: rf.Trigger, Detects: rf.Detects, Autonomy: rf.Autonomy, MaxAutonomy: rf.MaxAutonomy, Budget: rf.Budget,
-		Freshness: rf.Freshness, Resume: rf.Resume, BriefSection: rf.BriefSection, Chain: rf.Chain, Acceptance: rf.Acceptance, Path: p}
+		Freshness: rf.Freshness, Resume: rf.Resume, BriefSection: rf.BriefSection, Chain: rf.Chain, Acceptance: rf.Acceptance,
+		ShadowWorker: rf.ShadowWorker, State: rf.State, Repo: rf.Repo, Path: p}
 	base.normalizeLevels()
 	// the routine's own fields are checked once, here: Every and Fresh are the same for every version, broken or retired ones included
 	if errs := base.validateRoutineErrs(); len(errs) > 0 {
