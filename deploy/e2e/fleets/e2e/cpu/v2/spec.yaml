@@ -1,0 +1,4 @@
+run:
+  command: python3 -c "print(sum(i * i for i in range(12000000)))"
+  workdir: .
+  timeout: 2m

@@ -37,9 +37,11 @@ PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
 # the model contract check measures real models; against the stand-in gateway it can only fail: off in the demo
 if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEMO_DISABLED=""; fi
+# E2E_MUTANT=shadow-write-cred is a mutation check: it puts a write credential into the shadow worker's read environment, and the hostile shadow's
+# check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
 # the shadow section frees them
-if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/hostile, e2e/shadow-monitor"; fi
+if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/hostile, e2e/shadow-monitor, e2e/cpu"; fi
 if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
 # The browser check's TLS front, standing in for the installation's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
@@ -151,6 +153,7 @@ hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad]
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 printf 'SHADOW_READ_ONLY=%s\n' "$(tok)" > "$WORK/config/fleet-read.env"   # what a shadow worker may read: no write credential in it
+[ "${E2E_MUTANT:-}" = shadow-write-cred ] && printf 'GITHUB_TOKEN=%s\n' "$(tok)" >> "$WORK/config/fleet-read.env"
 [ "${DEMO:-}" != 1 ] || sed -i "/^  remote-e2e: /d" "$WORK/config/flotillad.yaml"   # the e2e fleet's remote worker: not in the demo
 cat > "$WORK/config/worker-triage.env" <<EOF
 ROUTINE_HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness
@@ -1211,6 +1214,37 @@ cli runs e2e/hostile -json -n 100 | python3 -c 'import json,sys; r=json.load(sys
 cli pairs e2e/hostile v2 --json | python3 -c 'import json,sys; p=json.load(sys.stdin); sys.exit(0 if p["version"] == 2 and p["live_version"] == 1 else 1)' \
   && ok "flotilla pairs answers for the hostile version (no subject: nothing decided to pair)" || bad "pairs: $(cli pairs e2e/hostile v2 2>&1 | head -3)"
 
+echo "-- wall time: a live run beside a running shadow, against the same run with none"
+# e2e/cpu starts held (a held routine does not run at all): freed, each live run has a shadow doing the same work beside it, on the shadow
+# worker (less CPU, low weight); then v2 is retired, so the same live runs have none, and the two sets of three are compared.
+cpu_runs() { cli runs e2e/cpu -json -n 20 | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"] or []; print(len(r), r[0]["status"] if r else "-")'; }
+run_cpu() {  # one run, waited for: a second `run` while one is in flight is refused, and two would be measured together
+  local n0; n0="$(cpu_runs | cut -d' ' -f1)"
+  cli run e2e/cpu >/dev/null 2>&1
+  for _ in $(seq 1 60); do set -- $(cpu_runs); [ "$1" -gt "$n0" ] && [ "$2" != running ] && return 0; sleep 1; done
+  return 1
+}
+free_routine e2e/cpu
+for i in $(seq 1 30); do cpu_runs | grep >/dev/null " ok$" && break; sleep 2; done   # the run at the restart
+for i in 1 2; do run_cpu; done
+SHDONE=0
+for i in $(seq 1 60); do SHDONE="$($D logs flotillad 2>&1 | grep -c '"msg":"shadow run end".*"routine":"e2e/cpu@v2"')"; [ "$SHDONE" -ge 3 ] && break; sleep 2; done
+[ "$SHDONE" -ge 3 ] && ok "the shadow did its work too ($SHDONE shadow runs of e2e/cpu@v2 ended), so the live runs were measured beside a real load" || bad "shadow runs of e2e/cpu: $SHDONE"
+cli retire e2e/cpu v2 --reason "e2e: the baseline runs have no shadow" >/dev/null 2>&1
+for i in 1 2 3; do run_cpu; done
+WT="$(cli runs e2e/cpu -json -n 20 | WALL_RATIO="${WALL_RATIO:-1.5}" WALL_SECS="${WALL_SECS:-0}" python3 -c '
+import json, os, statistics, sys
+r = [x for x in json.load(sys.stdin)["runs"] if not x.get("shadow")]
+ok = [x for x in r if x["status"] == "ok"]   # newest first: the three without a shadow, then the three with one
+if len(ok) != 6 or len(r) != 6:
+    print("runs", len(r), "ok", len(ok), [x["status"] for x in r]); sys.exit(1)
+base, with_ = [x["duration_s"] for x in ok[:3]], [x["duration_s"] for x in ok[3:]]
+mb, mw = statistics.median(base), statistics.median(with_)
+print("base", " ".join("%.2f" % d for d in base), "with", " ".join("%.2f" % d for d in with_), "medians %.2f %.2f" % (mb, mw))
+sys.exit(0 if mw <= max(mb * float(os.environ["WALL_RATIO"]), mb + float(os.environ["WALL_SECS"])) else 1)' 2>&1)"; WTRC=$?
+echo "MEASURED wall time: $WT"
+[ "$WTRC" = 0 ] && echo "$WT" | grep >/dev/null "medians" && ok "the live run's wall time with a shadow beside it is within the tolerance of the same run without one, and every live run exited ok ($WT)" || bad "wall time: $WT"
+
 echo "-- a monitor's shadow: paired and unpaired detections"
 free_routine e2e/shadow-monitor   # its first run is at the restart; the live v1 opens a case, v2 is shadowed on the same input
 for i in $(seq 1 30); do cli runs e2e/shadow-monitor 2>&1 | grep >/dev/null " ok " && break; sleep 2; done
@@ -1255,6 +1289,23 @@ echo "$SHOW" | grep >/dev/null "@v" && bad "a shadow run is in the live case's t
   || ok "the live case's timeline holds no shadow run: the shadows' plans are not in it"
 cli case close "$VCS" --reason "e2e: the shadow check is done" >/dev/null 2>&1
 rm -rf "$WORK/pairs-export"
+
+echo "-- every signal a shadow run emits is marked and separable: metrics, logs, traces"
+VMLOG="$($D logs e2e-victoriametrics 2>&1)"
+SHS="$(echo "$VMLOG" | grep 'SAMPLE' | grep '@v')"
+[ -n "$SHS" ] && [ "$(echo "$SHS" | grep -vc 'shadow="1"')" = 0 ] \
+  && ok "metrics: every sample with a shadow's routine key carries shadow=\"1\" ($(echo "$SHS" | wc -l) samples, none unmarked)" || bad "metrics: unmarked or no shadow samples: $(echo "$SHS" | grep -v 'shadow="1"' | head -2)"
+[ -n "$SHS" ] && [ "$(echo "$SHS" | grep -cE 'last_success|freshness')" = 0 ] \
+  && ok "metrics: a shadow emits no freshness or last-success series, so nothing it does can make a stale alert fire or clear" || bad "metrics: a shadow emitted freshness: $(echo "$SHS" | grep -E 'last_success|freshness' | head -2)"
+[ "$(echo "$VMLOG" | grep 'SAMPLE' | grep -v '@v' | grep -c 'shadow="1"')" = 0 ] && ok "metrics: no live-keyed sample carries a shadow mark" || bad "metrics: a live sample is marked shadow"
+echo "$VMLOG" | grep 'SAMPLE flotilla_run{' | grep 'routine="e2e/hostile"' | grep -c . | grep -qv '^0$' && ok "metrics: the live run of the same routine still pushed its own series under the live key" || bad "metrics: no live-key series for e2e/hostile"
+FLOG="$($D logs flotillad 2>&1 | grep '"routine":"[^"]*@v')"
+[ -n "$FLOG" ] && [ "$(echo "$FLOG" | grep -vc '"shadow":true')" = 0 ] \
+  && ok "logs: every flotillad log line about a shadow's routine key has shadow=true ($(echo "$FLOG" | wc -l) lines, none unmarked)" || bad "logs: unmarked shadow line: $(echo "$FLOG" | grep -v '"shadow":true' | head -2 | cut -c1-300)"
+[ "$(echo "$FLOG" | grep -c '"level":"ERROR"')" = 0 ] || echo "note: $(echo "$FLOG" | grep -c '"level":"ERROR"') shadow error lines (level stays truthful)"
+TRLOG="$($D logs e2e-victoriatraces 2>&1)"
+echo "$TRLOG" | grep >/dev/null "SHADOW_SPAN" && ! echo "$TRLOG" | grep >/dev/null "UNMARKED_SHADOW_SPAN" \
+  && ok "traces: a shadow run's span reached VictoriaTraces carrying flotilla.shadow, and none arrived without it" || bad "traces: $(echo "$TRLOG" | grep -c SHADOW_SPAN) marked, $(echo "$TRLOG" | grep -c UNMARKED_SHADOW_SPAN) unmarked"
 
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"

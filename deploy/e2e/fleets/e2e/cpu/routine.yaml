@@ -1,0 +1,13 @@
+fleet: e2e
+routine: cpu
+description: >-
+  The e2e's wall-time check, never shipped: a CPU-bound live version and a shadow that does the same work beside it, on the same host. The
+  e2e times the live run without a shadow (held in the config, so its shadows are skipped) and with one, and compares the medians.
+enabled: true
+worker: triage
+trigger:
+  every: 8760h
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 9000h

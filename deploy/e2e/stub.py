@@ -77,6 +77,9 @@ class H(BaseHTTPRequestHandler):
             for name in (b"model.chat", b"flotilla-platform"):
                 if name in body:
                     print(f"{NAME} SPAN {name.decode()}", flush=True)
+            # a shadow run's span is named "shadow run <key>" and carries flotilla.shadow; one without it is a mark that went missing
+            if b"shadow run " in body:
+                print(f"{NAME} {'SHADOW_SPAN' if b'flotilla.shadow' in body else 'UNMARKED_SHADOW_SPAN'}", flush=True)
         if self.path.startswith("/api/v1/import/prometheus"):
             for line in body.decode("utf-8", "replace").splitlines():
                 print(f"{NAME} SAMPLE {line}", flush=True)
