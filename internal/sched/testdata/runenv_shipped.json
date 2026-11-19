@@ -356,6 +356,32 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "e2e/station-monitor@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"triage-flash\":{\"endpoint\":\"gw\",\"model\":\"m-triage-flash\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/station-monitor",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"e2e\":1},\"stations\":{\"decide\":{\"harness\":\"flotilla\",\"model\":\"triage-flash\",\"tools\":\"none\",\"limits\":{\"max_turns\":1,\"timeout\":\"1m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"station-monitor/v1/system.md\",\"sha256\":\"f40aeb6179600990f79e7348bca85117041f8e941843b4f93de4c394458d3627\"},\"task\":{\"path\":\"station-monitor/v1/task.md\",\"sha256\":\"3c57fbe569f82a72f39c59b8a4a973d79864c8acc6308c2734cb22b7f04f4ef3\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
+  "e2e/station-monitor@v2": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"triage-flash\":{\"endpoint\":\"gw\",\"model\":\"m-triage-flash\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/station-monitor",
+    "FLOTILLA_ROUTINE_VERSION": "2",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"e2e\":1},\"stations\":{\"decide\":{\"harness\":\"flotilla\",\"model\":\"triage-flash\",\"tools\":\"none\",\"limits\":{\"max_turns\":1,\"timeout\":\"1m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"station-monitor/v2/system.md\",\"sha256\":\"4d161c1fc761c87a423ca281fdf86ace7c5181930a7176ad1a8bc25faa1ce4ae\"},\"task\":{\"path\":\"station-monitor/v2/task.md\",\"sha256\":\"3c57fbe569f82a72f39c59b8a4a973d79864c8acc6308c2734cb22b7f04f4ef3\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "e2e/token-probe@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",

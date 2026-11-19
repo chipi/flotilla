@@ -1,0 +1,17 @@
+fleet: e2e
+routine: station-monitor
+description: >-
+  The e2e's check of stations (v2 steps 3 and 4), never shipped: a monitor whose versions declare one station each, on harness flotilla, that
+  render their texts (a system text and a task text) and call the model through the client with the station and the rendered texts. v1 is
+  live, v2 is a shadow whose system text differs and whose task text is the same, so a pair shows one text equal and one differing. Held in
+  the e2e's config until the stations section, then run by hand. It reports one e2e_stations detection, which no routine acts on.
+enabled: true
+worker: triage
+shadow_worker: triage-shadow
+trigger:
+  every: 8760h
+detects: [e2e_stations]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 9000h

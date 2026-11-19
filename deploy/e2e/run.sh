@@ -41,7 +41,11 @@ if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEM
 # check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
 # the shadow section frees them
-if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/shadow-monitor, e2e/cpu"; fi
+if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/shadow-monitor, e2e/cpu, e2e/station-monitor"; fi
+# E2E_MUTANT=station-live-key puts a shadow run's calls (their station and texts with them) under the live routine's key, and station-span-mark drops the
+# shadow mark from every span of a shadow run: the stations section's checks (and the older ones the same fault breaks) must go red. Each builds the
+# images from a patched copy of the tree (the checks themselves are never patched).
+BUILD_CTX="$ROOT"
 if [ "${DEMO:-}" = 1 ]; then UI_HOST="localhost:$DEMO_PORT"; else UI_HOST=flotilla.e2e; fi
 # The browser check's TLS front, standing in for the installation's caddy-tailscale (Caddy 2.11.9).
 CADDY_IMAGE=caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
@@ -71,8 +75,20 @@ if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
 down
 
 echo "== build"
+case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*)
+  BUILD_CTX="$WORK/mutated-src"; mkdir -p "$BUILD_CTX"
+  (cd "$ROOT" && tar --exclude=./.git --exclude=./.e2e --exclude=./.venv --exclude=./site --exclude=./node_modules --exclude=./.claude -cf - .) | tar -xf - -C "$BUILD_CTX"
+  if [[ ",${E2E_MUTANT}," == *,station-live-key,* ]]; then
+    sed -i 's/calls\[i\] = store.ModelCall{RunID: runID, Routine: key,/calls[i] = store.ModelCall{RunID: runID, Routine: t.routineID,/' "$BUILD_CTX/internal/sched/shadow.go"
+    cmp -s "$ROOT/internal/sched/shadow.go" "$BUILD_CTX/internal/sched/shadow.go" && { echo "MUTANT station-live-key did not change shadow.go"; exit 1; }
+  fi
+  if [[ ",${E2E_MUTANT}," == *,station-span-mark,* ]]; then
+    sed -i 's/        out\["flotilla.shadow"\] = True/        pass/' "$BUILD_CTX/runtime/telemetry.py"
+    cmp -s "$ROOT/runtime/telemetry.py" "$BUILD_CTX/runtime/telemetry.py" && { echo "MUTANT station-span-mark did not change telemetry.py"; exit 1; }
+  fi ;;
+esac
 for i in flotillad worker-triage worker-ops worker-bugfix smokescreen; do
-  $D build -q -f "$ROOT/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$ROOT" >/dev/null \
+  $D build -q -f "$BUILD_CTX/deploy/docker/$i.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-$i:$TAG "$BUILD_CTX" >/dev/null \
     || { echo "BUILD FAIL $i"; exit 1; }
 done
 HOST_AGENT_IMAGE=local/flotilla-e2e-host-agent:$TAG
@@ -1346,6 +1362,124 @@ FLOG="$($D logs flotillad 2>&1 | grep '"routine":"[^"]*@v')"
 TRLOG="$($D logs e2e-victoriatraces 2>&1)"
 echo "$TRLOG" | grep >/dev/null "SHADOW_SPAN" && ! echo "$TRLOG" | grep >/dev/null "UNMARKED_SHADOW_SPAN" \
   && ok "traces: a shadow run's span reached VictoriaTraces carrying flotilla.shadow, and none arrived without it" || bad "traces: $(echo "$TRLOG" | grep -c SHADOW_SPAN) marked, $(echo "$TRLOG" | grep -c UNMARKED_SHADOW_SPAN) unmarked"
+
+echo "== stations (v2 steps 3 and 4): a station version's texts, recorded per call, shadowed, marked, and run offline"
+# e2e/station-monitor: v1 live and v2 a shadow, each with one station on harness flotilla that renders a system text and a task text and calls the model
+# through the client. v2's system text differs and its task text is the same, so the pair has one text equal and one differing.
+free_routine e2e/station-monitor
+for i in $(seq 1 30); do cli runs e2e/station-monitor 2>&1 | grep >/dev/null " ok " && break; sleep 2; done
+cli runs e2e/station-monitor 2>&1 | grep >/dev/null " ok " && ok "the live run of e2e/station-monitor v1 ended ok (FLOTILLA_STATIONS read, both texts rendered and verified, the model called)" || bad "station-monitor live run: $(cli runs e2e/station-monitor 2>&1 | head -3) $($D logs flotilla-worker-triage 2>&1 | grep -E 'STATION|Traceback|StationsError' | tail -3)"
+PJS=""
+for i in $(seq 1 45); do
+  PJS="$(cli pairs e2e/station-monitor v2 --json 2>/dev/null)"
+  echo "$PJS" | python3 -c 'import json,sys; p=json.load(sys.stdin); sys.exit(0 if p["paired"] >= 1 else 1)' 2>/dev/null && break; sleep 2
+done
+echo "$PJS" | python3 -c '
+import json, sys
+p = json.load(sys.stdin)
+pair = next((x for x in p["pairs"] if "e2e-stations" in x["subject"]), None)
+def texts(side):
+    return {t["name"]: t for s in (side or {}).get("stations") or [] if s["role"] == "decide" for t in s.get("texts") or []}
+if not pair or not pair.get("live") or not pair.get("shadow"):
+    sys.exit(1)
+lt, sh = texts(pair["live"]), texts(pair["shadow"])
+good = (set(lt) == {"system", "task"} == set(sh) and lt["task"]["sha256"] == sh["task"]["sha256"] and lt["system"]["sha256"] != sh["system"]["sha256"]
+        and "live version (v1)" in lt["system"]["text"] and "shadow version (v2)" in sh["system"]["text"] and "host:e2e-stations" in lt["task"]["text"]
+        and "host:e2e-stations" in sh["task"]["text"] and pair["live"]["stations"][0]["role"] == "decide" == pair["shadow"]["stations"][0]["role"])
+sys.exit(0 if good else 1)' \
+  && ok "the pair carries each side's station (decide) and its two rendered texts: the task text equal, the system text differing, each body present and the slot filled" \
+  || bad "station pair: $(echo "$PJS" | head -c 600)"
+# the store: the shadow's station rows are under its own key, none under the live key, and each text is kept once by its hash
+store_dump >/dev/null 2>&1
+cat > "$WORK/stationq.py" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+shadow = db.execute("SELECT COUNT(*) FROM run_calls WHERE routine = 'e2e/station-monitor@v2' AND station = 'decide' AND texts <> ''").fetchone()[0]
+live = db.execute("SELECT COUNT(*) FROM run_calls WHERE routine = 'e2e/station-monitor' AND station = 'decide' AND texts <> ''").fetchone()[0]
+leaked = db.execute("SELECT COUNT(*) FROM run_calls c JOIN runs r ON r.id = c.run_id WHERE r.shadow = 1 AND instr(c.routine, '@v') = 0").fetchone()[0]
+texts = db.execute("SELECT COUNT(*) FROM call_texts").fetchone()[0]
+print("shadow", shadow, "live", live, "leaked", leaked, "texts", texts)
+sys.exit(0 if shadow >= 1 and live >= 1 and leaked == 0 and texts == 3 else 1)
+PY
+SQ="$(python3 "$WORK/stationq.py" "$WORK/store.db" 2>&1)"; SQRC=$?
+[ "$SQRC" = 0 ] && ok "store: the shadow's station calls are keyed e2e/station-monitor@v2 with their texts' hashes, no call of a shadow run is under a live key, and the three distinct texts are kept once each ($SQ)" || bad "store rows of the station routine: $SQ"
+rm -f "$WORK/stationq.py"
+# no effect: the live case list holds the one case the live version opened; the shadow's run is in no runs list
+[ "$(cli case list --all 2>&1 | awk '$2 == "e2e_stations"' | wc -l)" = 1 ] && ok "the shadow opened no case: one e2e_stations case, the live version's" || bad "e2e_stations cases: $(cli case list --all 2>&1 | grep e2e_stations)"
+cli runs e2e/station-monitor -json -n 50 | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"] or []; sys.exit(0 if r and all(not x.get("shadow") and x["version"] == 1 for x in r) else 1)' \
+  && ok "the routine's runs list holds only the live version's run" || bad "station-monitor runs: $(cli runs e2e/station-monitor -json -n 5 | head -c 300)"
+# signals: the station's model span carries flotilla.station, and the shadow's carries the shadow mark as well
+for i in $(seq 1 15); do $D logs e2e-victoriatraces 2>&1 | grep >/dev/null "STATION_SHADOW_SPAN" && break; sleep 2; done
+STR="$($D logs e2e-victoriatraces 2>&1)"
+echo "$STR" | grep >/dev/null "STATION_LIVE_SPAN" && echo "$STR" | grep >/dev/null "STATION_SHADOW_SPAN" && ! echo "$STR" | grep >/dev/null "UNMARKED_STATION_SHADOW_SPAN" \
+  && ok "traces: the live station's model span and the shadow's reached the trace store with flotilla.station, and none of the shadow's lacked flotilla.shadow" \
+  || bad "station spans: $(echo "$STR" | grep -c STATION_LIVE_SPAN) live, $(echo "$STR" | grep -c STATION_SHADOW_SPAN) shadow, $(echo "$STR" | grep -c UNMARKED_STATION_SHADOW_SPAN) unmarked shadow"
+cli case close "$(cli case list --all 2>&1 | awk '$2 == "e2e_stations" {print $1; exit}')" --reason "e2e: the stations check is done" >/dev/null 2>&1
+echo "-- the offline run of the same version, on an authored input (flotillad -stations, then runtime/offline_run.py in the worker image)"
+OFF="$WORK/offline"
+off_clean() {  # the offline runs' folders hold files owned by the worker's uid (and 0700 homes): removed by that uid, then the folder by us
+  [ -d "$OFF" ] && $D run --rm --user 10001:10001 -v "$OFF:/x" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'rm -rf /x/out /x/out-known /x/out-unknown' >/dev/null 2>&1
+  rm -rf "$OFF"
+}
+off_clean; mkdir -p "$OFF"; chmod 777 "$OFF"
+printf 'e2e-eval-key' > "$OFF/eval.key"
+cat > "$OFF/models.json" <<EOF
+{"endpoints": {"gw": {"base_url": "http://litellm:8080/v1", "kind": "litellm", "key_file": "/work/eval.key", "defaults": {"tools": "native", "json": "object", "cost": "reported"}}},
+ "aliases": {"triage-flash": {"endpoint": "gw", "model": "fleet-triage-flash"}}}
+EOF
+cat > "$OFF/input.json" <<EOF
+{"schema_version": 1, "input_key": "e2e-offline-1", "routine": "e2e/station-monitor", "kind": "tick", "version": 1}
+EOF
+$D run --rm --network none --user 65532:65532 -v "$OFF:/work" -v "$WORK/config/specs:/etc/flotilla/specs:ro" "local/flotilla-flotillad:$TAG" \
+  -stations /etc/flotilla/specs/e2e/station-monitor/v1 -models /work/models.json > "$OFF/contract.json" 2> "$OFF/contract.err"
+python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))
+e = c["env"]
+st = json.loads(e["FLOTILLA_STATIONS"])
+sys.exit(0 if c["routine"] == "e2e/station-monitor" and "decide" in st["stations"] and e["FLOTILLA_SHADOW"] == "1" and "triage-flash" in e["FLOTILLA_MODELS"] and not any("TOKEN" in k or "API_URL" in k for k in e) else 1)' "$OFF/contract.json" \
+  && ok "flotillad -stations (no config, no network) printed the contract: the version's command, FLOTILLA_STATIONS, the models cut to its alias, no address or token" || bad "-stations: $(head -c 300 "$OFF/contract.json") $(cat "$OFF/contract.err")"
+$D run --rm --network e2e-litellm --user 10001:10001 -v "$OFF:/work" -v "$WORK/config/specs/e2e:/opt/flotilla/fleets/e2e:ro" "local/flotilla-worker-triage:$TAG" \
+  python3 /opt/flotilla/runtime/offline_run.py --contract /work/contract.json --input /work/input.json --models /work/models.json --out /work/out --forbid /opt/flotilla/fleets > "$OFF/offline.out" 2>&1; OFFRC=$?
+python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1] + "/result.json"))
+calls = [json.loads(x) for x in open(sys.argv[1] + "/calls.jsonl")]
+sys.exit(0 if r["exit_code"] == 0 and any(c.get("station") == "decide" and [t["name"] for t in c.get("texts") or []] == ["system", "task"] for c in calls) else 1)' "$OFF/out" \
+  && [ "$OFFRC" = 0 ] && ok "the offline run of v1 on an authored input: its own command ran in the worker image, rendered both texts, called the model on the eval's own key and wrote its calls with the station and texts" || bad "offline run rc=$OFFRC: $(tail -c 400 "$OFF/offline.out") out: $(tail -c 300 "$OFF/out/output.txt" 2>/dev/null) calls: $(head -c 700 "$OFF/out/calls.jsonl" 2>/dev/null)"
+$D logs e2e-litellm 2>&1 | grep "CHAT auth=bearer model=fleet-triage-flash" | grep >/dev/null "e2e-eval-key" && ok "the model stand-in saw the eval's own key, not a live or shadow key" || echo "(the stand-in does not print the key it was given; checked by the contract's FLOTILLA_MODELS instead)"
+# recorded tool results: a station of the in-process harness answers its probe from the input; a probe with no recorded result fails the run and is never sent live
+cat > "$OFF/probe.py" <<'PY'
+import os, sys
+sys.path.insert(0, "/opt/flotilla/runtime")
+import harness
+cfg = {"tools": ["probe"], "limits": {"max_tool_calls": 1, "max_steps": 2},
+       "quirks": {"bad_json_uses_turn": True, "empty_retry": True, "final_decision_call": True, "reply_echo_chars": 9, "decision_echo_chars": 9, "result_chars": 99}}
+fp = sys.argv[1]
+replies = iter(['{"action":"probe","probe":"probe","probe_args":{"fp":"%s"}}' % fp, '{"action":"decide","disposition":"file"}'])
+live = lambda name, args: sys.exit(77)   # the live tool: reaching it ends the run with 77
+r = harness.run_json_step([], lambda m, s: (next(replies), {}), live, cfg, {"fatal": (OSError,), "defer": RuntimeError, "defer_prefix": ""}, station="decide", log=lambda *a: None)
+print("RESULT", r.trace[0]["result"])
+PY
+cat > "$OFF/rec-input.json" <<EOF
+{"schema_version": 1, "input_key": "e2e-offline-2", "routine": "e2e/station-monitor", "kind": "tick", "recorded_tool_results": {"decide": [{"tool": "probe", "args": {"fp": "known"}, "result": "the recorded answer"}]}}
+EOF
+for fp in known unknown; do
+  printf '{"routine": "e2e/station-monitor", "version": 1, "workdir": ".", "timeout": "1m", "command": "python3 /work/probe.py %s", "env": {}}' "$fp" > "$OFF/contract-$fp.json"
+  $D run --rm --network none --user 10001:10001 -v "$OFF:/work" "local/flotilla-worker-triage:$TAG" python3 /opt/flotilla/runtime/offline_run.py \
+    --contract /work/contract-$fp.json --input /work/rec-input.json --models /work/models.json --out /work/out-$fp --forbid /opt/flotilla/fleets > "$OFF/rec-$fp.out" 2>&1
+done
+grep >/dev/null "RESULT the recorded answer" "$OFF/out-known/output.txt" && ok "a probe with a recorded result is answered from the input, the live tool not reached" || bad "recorded probe: $(cat "$OFF/out-known/output.txt" 2>&1 | tail -3)"
+python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1] + "/result.json"))
+out = open(sys.argv[1] + "/output.txt").read()
+sys.exit(0 if r["exit_code"] not in (0, 77) and "RecordedMiss" in out else 1)' "$OFF/out-unknown" \
+  && ok "a probe with no recorded result fails the run (RecordedMiss) and the live tool is never reached" || bad "unrecorded probe: $(cat "$OFF/out-unknown/result.json" 2>&1) $(tail -3 "$OFF/out-unknown/output.txt" 2>&1)"
+$D run --rm --network none --user 10001:10001 -v "$OFF:/work" "local/flotilla-worker-triage:$TAG" python3 /opt/flotilla/runtime/offline_run.py \
+  --contract /work/contract-known.json --input /work/rec-input.json --models /work/models.json --out /opt/flotilla/fleets/e2e/out --forbid /opt/flotilla/fleets > "$OFF/forbid.out" 2>&1; FRC=$?
+[ "$FRC" = 2 ] && grep >/dev/null "offline_run: --out" "$OFF/forbid.out" && ok "--out inside the fleets tree is refused" || bad "--out in the fleets tree: rc=$FRC $(cat "$OFF/forbid.out" | tail -2)"
+off_clean
 
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"

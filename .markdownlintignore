@@ -9,5 +9,8 @@ node_modules/
 # Playbooks and skills are prompt text: the bytes are the contract (a wrapped line is a behaviour change)
 fleets/*/playbooks/
 fleets/*/skills/
+# A version's station texts are prompt text too (fleets/<fleet>/<routine>/v<n>/*.md; the e2e's own)
+fleets/*/*/v*/
+deploy/e2e/fleets/
 # The installation's earlier fleet docs, moved 2026-11-17 and kept as the record as they were written (docs/fleets/README.md)
 docs/history/origin/

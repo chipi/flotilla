@@ -63,6 +63,14 @@ class Images(unittest.TestCase):
         self.assertIn("COPY runtime /opt/flotilla/runtime", lines)
         self.assertIn("COPY bugfix /opt/flotilla/bugfix", lines)
 
+    def test_the_flotillad_image_builds_with_the_embedded_capability_table(self):
+        """internal/spec embeds fleets/harnesses.json (package fleets): the image's Go build stage must have both files, or flotillad does not build
+        (found by the e2e: the unit tests build in the repo, where they are)."""
+        with open(os.path.join(HERE, "..", "deploy", "docker", "flotillad.Dockerfile")) as f:
+            text = f.read()
+        self.assertIn("COPY fleets/harnesses.go fleets/harnesses.json fleets/", text)
+        self.assertLess(text.index("COPY fleets/harnesses.go"), text.index("go build"))
+
 
 class Types(unittest.TestCase):
     def test_an_episode_survives_its_json(self):

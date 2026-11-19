@@ -1,0 +1,14 @@
+run:
+  command: python3 /opt/flotilla/fleets/e2e/station-monitor/v2/run.py
+  workdir: .
+  timeout: 2m
+stations:
+  decide:
+    harness: flotilla
+    model: triage-flash
+    prompts: {system: system.md, task: task.md}
+    tools: none
+    tool_names: []
+    gates: []
+    limits: {max_turns: 1, timeout: 1m}
+limits: {e2e: 1}

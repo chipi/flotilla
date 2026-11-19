@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -169,6 +170,27 @@ class Calls(unittest.TestCase):
         mc.Client(mc.load(cfg), transport=T(), environ={"K": "sk-test"}, tracer=None).chat("flash", [], station="decide", texts=[{"name": "t"}])
         self.assertNotIn(b"station", sent[0])
         self.assertNotIn(b"texts", sent[0])
+
+
+class Span(unittest.TestCase):
+    def test_a_stations_model_call_span_carries_its_name_and_only_then(self):
+        seen = []
+
+        class Tracer:
+            def start_as_current_span(self, name, attributes=None):
+                import contextlib
+                seen.append(dict(attributes))
+                return contextlib.nullcontext(mock.Mock())
+
+        class T:
+            def __call__(self, url, data, headers, timeout):
+                return 200, {}, json.dumps({"choices": [{"message": {"content": "{}"}}], "model": "m", "usage": {}})
+        cfg = {"endpoints": {"gw": {"base_url": "http://gw/v1", "key_env": "K"}}, "aliases": {"flash": {"endpoint": "gw", "model": "m"}}}
+        c = mc.Client(mc.load(cfg), transport=T(), environ={"K": "sk-test"}, tracer=Tracer())
+        c.chat("flash", [], station="decide")
+        c.chat("flash", [])
+        self.assertEqual(seen[0]["flotilla.station"], "decide")
+        self.assertNotIn("flotilla.station", seen[1])
 
 
 class WorkerProcess(unittest.TestCase):

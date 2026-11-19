@@ -265,6 +265,28 @@
       "run": "12fbe23a501b8bbd7f8bb5f36c6009fa15664f5dc865262151bdf19731ab7443"
     }
   },
+  "e2e/station-monitor@v1": {
+    "routine_hash": "ff9bd8844eb6",
+    "version_hash": "327263066bbfd1b1e0673f371320631a2762d8a92bd11f3b03f0587ad8f34b8c",
+    "legacy": false,
+    "manifest": {
+      "run.py": "24816b03e0c13ddd02b3a7fdd61309acd361a39da4abf1db4bc99edfc6070486",
+      "spec.yaml": "84e227f7bdbbbac074467f60379999ba0242d5aa8608d10cacf6af38cce92e00",
+      "system.md": "f40aeb6179600990f79e7348bca85117041f8e941843b4f93de4c394458d3627",
+      "task.md": "3c57fbe569f82a72f39c59b8a4a973d79864c8acc6308c2734cb22b7f04f4ef3"
+    }
+  },
+  "e2e/station-monitor@v2": {
+    "routine_hash": "08aee1505876",
+    "version_hash": "52c5069543966e7d94babdde557f793fc087c2ff142516cbb6b02f087d1643ec",
+    "legacy": false,
+    "manifest": {
+      "run.py": "24816b03e0c13ddd02b3a7fdd61309acd361a39da4abf1db4bc99edfc6070486",
+      "spec.yaml": "45fdd59001bb8bcc727211307e37578d3ccb63fb801815da053af10348d829da",
+      "system.md": "4d161c1fc761c87a423ca281fdf86ace7c5181930a7176ad1a8bc25faa1ce4ae",
+      "task.md": "3c57fbe569f82a72f39c59b8a4a973d79864c8acc6308c2734cb22b7f04f4ef3"
+    }
+  },
   "e2e/token-probe@v1": {
     "routine_hash": "68916df8610a",
     "version_hash": "0f1eb6fb1947d66c442d942a683c86d216a3dbe4602df0d1d86a48fc2918f288",

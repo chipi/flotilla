@@ -152,6 +152,28 @@ with sync_playwright() as pw:
         check(page.locator(".sides .side").count() == 2 and wide <= width, f"a tapped pair opens its two sides at {width}px, no sideways scroll ({wide})")
     page.set_viewport_size({"width": 390, "height": 844})
 
+    # A station version's pair (v2 steps 3 and 4): e2e/station-monitor's pair page shows each side's rendered texts, marked equal or differs, each opened
+    # to its body, at phone widths with no sideways scroll (360 and 430 px: the body wraps inside the card).
+    page.goto(BASE + "/fleets/e2e/station-monitor?pairs=2#pairs")
+    check(page.locator("#pairs .pair").count() >= 1, "e2e/station-monitor's pairs list has its pair")
+    with page.expect_navigation():
+        page.locator("#pairs .pair").first.click()
+    for width in (360, 430):
+        page.set_viewport_size({"width": width, "height": 844})
+        page.evaluate("document.fonts.ready.then(() => 1)")
+        details = page.locator("details.stext")
+        check(details.count() == 4, f"the pair page lists each side's two station texts at {width}px ({details.count()})")
+        for i in range(details.count()):
+            details.nth(i).evaluate("e => { e.open = true }")
+        wide = page.evaluate("document.documentElement.scrollWidth")
+        body_wide = page.evaluate("Math.max(...Array.from(document.querySelectorAll('.stext__body')).map(e => e.getBoundingClientRect().right))")
+        marks = page.locator("details.stext .pairmark").all_inner_texts()
+        check(marks.count("equal") == 2 and marks.count("differs") == 2, f"at {width}px the task text is marked equal and the system text differs on both sides ({marks})")
+        check(wide <= width and body_wide <= width and page.locator(".stext__body").first.is_visible(),
+              f"at {width}px the opened texts wrap inside the card, no sideways scroll (page {wide}, text right edge {body_wide:.0f})")
+        check(page.locator(".stext summary").first.bounding_box()["height"] >= 40, f"at {width}px a text's summary is a tap target of 40 px or more")
+    page.set_viewport_size({"width": 390, "height": 844})
+
     # the routine's block on its fleet's workflow: pause, then resume with a reason (the Resume… details;
     # flotilla.js keeps its button disabled until the reason has text)
     page.goto(BASE + "/fleets/platform?sel=" + ROUTINE)

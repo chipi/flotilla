@@ -85,6 +85,12 @@ class H(BaseHTTPRequestHandler):
             # a shadow run's span is named "shadow run <key>" and carries flotilla.shadow; one without it is a mark that went missing
             if b"shadow run " in body:
                 print(f"{NAME} {'SHADOW_SPAN' if b'flotilla.shadow' in body else 'UNMARKED_SHADOW_SPAN'}", flush=True)
+            # a model call made by a station carries flotilla.station; one of e2e/station-monitor's shadow (its routine key has @v) must carry the shadow mark too
+            if b"flotilla.station" in body:
+                if b"e2e/station-monitor@v" in body:
+                    print(f"{NAME} {'STATION_SHADOW_SPAN' if b'flotilla.shadow' in body else 'UNMARKED_STATION_SHADOW_SPAN'}", flush=True)
+                else:
+                    print(f"{NAME} STATION_LIVE_SPAN", flush=True)
         if self.path.startswith("/api/v1/import/prometheus"):
             for line in body.decode("utf-8", "replace").splitlines():
                 print(f"{NAME} SAMPLE {line}", flush=True)

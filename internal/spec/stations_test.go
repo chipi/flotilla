@@ -135,16 +135,15 @@ func TestTheEmbeddedHarnessTableIsTheFileOnDisk(t *testing.T) {
 }
 
 func TestNoShippedRoutineDeclaresStations(t *testing.T) {
-	for _, d := range []string{filepath.Join("..", "..", "fleets"), filepath.Join("..", "..", "deploy", "e2e", "fleets")} {
-		rs, err := Load(d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, j := range rs {
-			for _, v := range j.Versions {
-				if len(v.Stations) > 0 {
-					t.Errorf("%s v%d declares stations: step 5 moves the examples, not step 3", j.ID(), v.Number)
-				}
+	// the example fleets only: the e2e's own routine (e2e/station-monitor) declares stations on purpose
+	rs, err := Load(filepath.Join("..", "..", "fleets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range rs {
+		for _, v := range j.Versions {
+			if len(v.Stations) > 0 {
+				t.Errorf("%s v%d declares stations: step 5 moves the examples, not step 3", j.ID(), v.Number)
 			}
 		}
 	}

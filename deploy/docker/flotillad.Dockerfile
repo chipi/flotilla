@@ -6,6 +6,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd cmd
 COPY internal internal
+# the capability table internal/spec embeds (package fleets): only its two files, so a change to a fleet spec does not rebuild the binary
+COPY fleets/harnesses.go fleets/harnesses.json fleets/
 ARG VERSION=dev
 # timetzdata: the store's local day (the budget day) does not depend on the image's zoneinfo
 RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags "-s -w -X main.version=${VERSION}" -o /out/flotillad ./cmd/flotillad \

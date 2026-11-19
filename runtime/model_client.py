@@ -259,7 +259,7 @@ class Client:
         meta = {"step": step, "decision_key": decision_key, "role": role, "episode": episode,
                 "episode_seq": episode_seq, "tools": tool_names, "station": station, "texts": texts}
         body = self.body(alias, messages, **kw)
-        with self._span(a) as span:
+        with self._span(a, station) as span:
             try:
                 rec = self._call(a, body, timeout)
             except ModelError as e:
@@ -391,13 +391,13 @@ class Client:
         return None, "unknown"
 
     @contextlib.contextmanager
-    def _span(self, a):
+    def _span(self, a, station=None):
         if self.tracer is None:
             yield None
             return
         with self.tracer.start_as_current_span("model.chat", attributes={
                 "gen_ai.operation.name": "chat", "gen_ai.system": a.kind, "gen_ai.request.model": a.model,
-                "flotilla.model.alias": a.name, "flotilla.model.endpoint": a.endpoint}) as span:
+                "flotilla.model.alias": a.name, "flotilla.model.endpoint": a.endpoint, **({"flotilla.station": station} if station else {})}) as span:
             yield span
 
     @staticmethod
