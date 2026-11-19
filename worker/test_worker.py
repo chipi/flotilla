@@ -619,13 +619,19 @@ class TestEnvSplit(unittest.TestCase):
                 self.assertIn("write credentials", msg)
                 self.assertIn(key, msg)
                 self.assertNotIn("-value", msg, "names, never values")
-        # nothing named, nothing to refuse: the check is only as good as the names it is given
-        fw.prepare_env(dict(base, env={"GH_TOKEN": "x"}), self.shadow)
+        # with nothing configured the built-in names still refuse: the refusal does not depend on FLOTILLA_WRITE_KEYS being set
+        for key in ("GH_TOKEN", "GITHUB_TOKEN", "GLITCHTIP_WRITE_TOKEN", "GRAFANA_ADMIN_PASSWORD", "SLACK_BOT_TOKEN"):
+            with self.subTest("built in " + key):
+                with self.assertRaises(fw.Refused) as cm:
+                    fw.prepare_env(dict(base, env={key: "smuggled-value"}), self.shadow)
+                self.assertIn(key, str(cm.exception))
+        # a name that is neither built in nor configured is not refused: the check is only as good as its names
+        fw.prepare_env(dict(base, env={"SOMETHING_ELSE": "x"}), self.shadow)
 
     def test_the_write_keys_are_names_only(self):
-        self.assertEqual(fw.write_keys(self.live), {"GH_TOKEN", "PUSH_KEY"})
-        self.assertEqual(fw.write_keys(dict(self.shadow, FLOTILLA_WRITE_KEYS="A,B")), {"A", "B"})
-        self.assertEqual(fw.write_keys({}), set())
+        self.assertEqual(fw.write_keys(self.live), set(fw.DEFAULT_WRITE_KEYS) | {"GH_TOKEN", "PUSH_KEY"})
+        self.assertEqual(fw.write_keys(dict(self.shadow, FLOTILLA_WRITE_KEYS="A,B")), set(fw.DEFAULT_WRITE_KEYS) | {"A", "B"})
+        self.assertEqual(fw.write_keys({}), set(fw.DEFAULT_WRITE_KEYS))
 
     def test_a_clean_shadow_run_is_prepared(self):
         req = {"run_id": "s1", "routine": "t/j", "command": "true", "workdir": ".", "timeout_s": 5, "shadow": True,

@@ -1164,9 +1164,9 @@ cli status 2>&1 | grep >/dev/null 'worker triage-shadow: .*"ok":true' && ok "flo
 for i in $(seq 1 20); do [ "$($D inspect flotilla-worker-triage-shadow --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2; done
 [ "$($D inspect flotilla-worker-triage-shadow --format '{{.State.Health.Status}}' 2>&1)" = healthy ] && ok "the shadow worker is healthy" || bad "shadow worker health: $($D logs flotilla-worker-triage-shadow 2>&1 | tail -3)"
 NW="$($D inspect flotilla-worker-triage-shadow --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
-[ "$NW" = "${P}_flotilla " ] && ok "the shadow worker is on the internal network only" || bad "shadow worker networks: '$NW'"
+[ "$NW" = "${P}_shadow " ] && ok "the shadow worker is on its own internal network only, not the live one" || bad "shadow worker networks: '$NW'"
 NW="$($D inspect flotilla-egress-shadow --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
-echo "$NW" | grep >/dev/null "${P}_flotilla " && ! echo "$NW" | grep >/dev/null "e2e-langfuse" && ok "the shadow worker has its own egress proxy (flotilla-egress-shadow), on the networks the live proxy reaches except Langfuse" || bad "shadow proxy networks: '$NW'"
+echo "$NW" | grep >/dev/null "${P}_shadow " && ! echo "$NW" | grep >/dev/null "${P}_flotilla " && ! echo "$NW" | grep >/dev/null "e2e-langfuse" && ok "the shadow worker has its own egress proxy (flotilla-egress-shadow), on the networks the live proxy reaches except Langfuse" || bad "shadow proxy networks: '$NW'"
 MEMS="$($D inspect flotilla-worker-triage-shadow flotilla-worker-triage --format '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}} {{.HostConfig.CpuShares}}' 2>&1 | tr '\n' ' ')"
 echo "$MEMS" | python3 -c '
 import sys
@@ -1419,11 +1419,13 @@ done
 NW="$($D inspect flotilla-worker-triage --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
 [ "$NW" = "${P}_flotilla " ] && ok "flotilla-worker-triage is on the internal network only" || bad "flotilla-worker-triage networks: '$NW'"
 NW="$($D inspect flotillad --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
-[ "$NW" = "e2e-ui ${P}_flotilla " ] && ok "flotillad is on the internal flotilla network and the UI network only" || bad "flotillad networks: '$NW'"
+[ "$NW" = "e2e-ui ${P}_flotilla ${P}_shadow " ] && ok "flotillad is on the internal flotilla and shadow networks and the UI network only" || bad "flotillad networks: '$NW'"
 NW="$($D network inspect e2e-ui --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the UI network is internal (no route out)" || bad "ui network internal=$NW"
 NW="$($D network inspect ${P}_flotilla --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the flotilla network is internal (no route out)" || bad "flotilla network internal=$NW"
+NW="$($D network inspect ${P}_shadow --format '{{.Internal}}' 2>&1)"
+[ "$NW" = true ] && ok "the shadow network is internal (no route out)" || bad "shadow network internal=$NW"
 
 if [ "${KEEP:-}" != 1 ]; then down; fi
 if [ "$fails" -eq 0 ]; then echo "E2E PASS"; else echo "E2E FAIL ($fails)"; exit 1; fi

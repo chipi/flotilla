@@ -23,7 +23,12 @@ type composeService struct {
 	Networks    []string          `yaml:"networks"`
 }
 
-func loadCompose(t *testing.T) map[string]composeService {
+type composeVolume struct {
+	Name     string `yaml:"name"`
+	External bool   `yaml:"external"`
+}
+
+func loadComposeFile(t *testing.T) (map[string]composeService, map[string]composeVolume) {
 	t.Helper()
 	raw, err := os.ReadFile("../../deploy/compose/docker-compose.yml")
 	if err != nil {
@@ -31,11 +36,35 @@ func loadCompose(t *testing.T) map[string]composeService {
 	}
 	var f struct {
 		Services map[string]composeService `yaml:"services"`
+		Volumes  map[string]composeVolume  `yaml:"volumes"`
 	}
 	if err := yaml.Unmarshal(raw, &f); err != nil {
 		t.Fatal(err)
 	}
-	return f.Services
+	return f.Services, f.Volumes
+}
+
+func loadCompose(t *testing.T) map[string]composeService {
+	s, _ := loadComposeFile(t)
+	return s
+}
+
+// A secrets volume is filled by deploy/server/secrets.sh before compose runs and is never created by compose: an unmarked one would be made
+// empty by compose, owned by root, and a worker would start without its token (worker-triage-secrets lost the mark once, between two commits).
+func TestEverySecretsVolumeIsExternal(t *testing.T) {
+	_, vols := loadComposeFile(t)
+	n := 0
+	for name, v := range vols {
+		if strings.HasSuffix(name, "-secrets") {
+			n++
+			if !v.External {
+				t.Errorf("volume %s is not external: true", name)
+			}
+		}
+	}
+	if n < 8 {
+		t.Fatalf("only %d secrets volumes found", n)
+	}
 }
 
 func memBytes(t *testing.T, s string) int {
@@ -118,8 +147,28 @@ func TestTheShadowWorkerCannotStarveOrReachTheLiveWorker(t *testing.T) {
 			t.Error("the live worker writes the snapshots volume")
 		}
 	}
-	if len(shadow.Networks) != 1 || shadow.Networks[0] != "flotilla" {
-		t.Errorf("the shadow worker is on the internal network only: %v", shadow.Networks)
+	if len(shadow.Networks) != 1 || shadow.Networks[0] != "shadow" {
+		t.Errorf("the shadow worker is on its own internal network only, not the live one: %v", shadow.Networks)
+	}
+	for _, n := range egressShadow.Networks {
+		if n == "flotilla" {
+			t.Errorf("the shadow proxy is on the live network: %v", egressShadow.Networks)
+		}
+	}
+	for name, s := range svc {
+		on := false
+		for _, n := range s.Networks {
+			on = on || n == "shadow"
+		}
+		if on && name != "worker-triage-shadow" && name != "egress-shadow" && name != "flotillad" {
+			t.Errorf("%s is on the shadow network: only flotillad (to call the worker and serve its ledger), the shadow worker and its proxy are", name)
+		}
+	}
+	if !strings.Contains(strings.Join(svc["flotillad"].Networks, " "), "shadow") {
+		t.Error("flotillad is not on the shadow network, so it cannot call the shadow worker")
+	}
+	if shadow.Environment["FLOTILLA_WRITE_KEYS"] == "" {
+		t.Error("the shadow worker names no write keys: the worker's refusal rests on a built-in list alone")
 	}
 	if memBytes(t, egressShadow.MemLimit) > memBytes(t, egress.MemLimit) {
 		t.Errorf("the shadow proxy is larger than the live one")

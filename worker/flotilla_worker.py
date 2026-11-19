@@ -274,11 +274,20 @@ def cancel_run(run_id):
     return True
 
 
+# The names of the credentials that write which this repo's routines use (GitHub, GlitchTip's event write, Grafana's admin login, Slack, the
+# bugfix pusher's keys). A shadow run's environment is refused if it holds any of them, with no configuration: a refusal that needed
+# FLOTILLA_WRITE_KEYS to be set would be inert on an install that never set it.
+DEFAULT_WRITE_KEYS = frozenset({
+    "GH_TOKEN", "GITHUB_TOKEN", "GITHUB_APP_KEY_FILE", "GLITCHTIP_WRITE_TOKEN", "GRAFANA_ADMIN_PASSWORD", "GRAFANA_PASSWORD",
+    "SLACK_BOT_TOKEN", "SLACK_TOKEN", "SLACK_WEBHOOK_URL", "PUSH_KEY", "DEPLOY_KEY",
+})
+
+
 def write_keys(environ=None):
-    """The names of the credentials that can write: the keys of FLOTILLA_WRITE_ENV_FILES (files that are there) and the keys
-    FLOTILLA_WRITE_KEYS lists, comma-separated. Names only, never values."""
+    """The names of the credentials that can write: the built-in DEFAULT_WRITE_KEYS, the keys FLOTILLA_WRITE_KEYS adds (comma-separated) and
+    the keys of FLOTILLA_WRITE_ENV_FILES (files that are there). Names only, never values."""
     environ = os.environ if environ is None else environ
-    keys = {k.strip() for k in environ.get("FLOTILLA_WRITE_KEYS", "").split(",") if k.strip()}
+    keys = set(DEFAULT_WRITE_KEYS) | {k.strip() for k in environ.get("FLOTILLA_WRITE_KEYS", "").split(",") if k.strip()}
     for path in env_paths(environ, "FLOTILLA_WRITE_ENV_FILES"):
         if os.path.exists(path):
             keys |= set(read_env_file(path))

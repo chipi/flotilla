@@ -59,7 +59,7 @@ services:
       - ${FLOTILLA_CONFIG}/callers.yaml:/etc/flotilla/callers.yaml:ro
       - flotillad-secrets:/run/flotilla:ro
       - state:/var/lib/flotilla
-    networks: [flotilla, ui]
+    networks: [flotilla, ui, shadow]
     depends_on:
       egress: {condition: service_started}
       worker-triage: {condition: service_healthy}   # the first run starts at boot: the worker must be listening
@@ -158,6 +158,9 @@ services:
       FLOTILLA_WORKER_MODE: shadow
       FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
       FLOTILLA_READ_ENV_FILES: /run/flotilla/read.env   # the credentials that can read; there is no FLOTILLA_ENV_FILES and no write file
+      # the names of credentials that write, which the worker refuses in a shadow run's environment whatever file or override they came
+      # in by (it also has a built-in list of the names this repo's routines use; this adds to it)
+      FLOTILLA_WRITE_KEYS: GH_TOKEN,GITHUB_TOKEN,GLITCHTIP_WRITE_TOKEN,GRAFANA_ADMIN_PASSWORD,GRAFANA_PASSWORD,SLACK_BOT_TOKEN,SLACK_TOKEN,SLACK_WEBHOOK_URL,PUSH_KEY,DEPLOY_KEY,GITHUB_APP_KEY_FILE
       FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
       ROUTINE_HTTP_PROXY: http://egress-shadow:4750
       ROUTINE_HTTPS_PROXY: http://egress-shadow:4750
@@ -179,7 +182,7 @@ services:
       retries: 3
       start_period: 20s
       start_interval: 1s
-    networks: [flotilla]
+    networks: [shadow]   # not `flotilla`: it cannot reach the live proxy or any live worker; flotillad is on both
 
   # The shadow worker's own egress proxy (profile shadow): the same image and settings as egress, its own allowlist
   # (FLOTILLA_CONFIG/egress-shadow-acl.yaml), so what a shadow reaches is decided apart from the live worker and every proxy log line of a
@@ -197,7 +200,7 @@ services:
     volumes:
       - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-shadow-acl.yaml:/etc/smokescreen/acl.yaml:ro
-    networks: [flotilla, out, backend, litellm, glitchtip]
+    networks: [shadow, out, backend, litellm, glitchtip]
 
   # The ops workers (pipeline v1, ADR-0005 decision 5: workers per role), profile ops: one image, two
   # roles. ops-read runs the monitors, ops-act-host the acting routines (it holds no host key: flotillad
@@ -398,6 +401,7 @@ volumes:
     external: true
   worker-triage-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-secrets
+    external: true
   worker-triage-candidate-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-triage-candidate-secrets
     external: true
@@ -440,6 +444,9 @@ volumes:
 
 networks:
   flotilla:
+    internal: true
+  # the shadow worker and its proxy: flotillad joins it to call the worker and to serve its ledger; nothing live does
+  shadow:
     internal: true
   # ADR-0014: the UI's network. Only flotillad (its ui_listen) and the installation's caddy-tailscale proxy are
   # on it; internal, so it gives flotillad no route out. The proxy joins it as an external network.

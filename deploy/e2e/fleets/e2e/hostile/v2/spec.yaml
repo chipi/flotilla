@@ -15,8 +15,7 @@ run:
         expect("live-secret-file", False, "read")
     except OSError as e:
         expect("live-secret-file", True, type(e).__name__)
-    leaked = [k for k in ("GITHUB_TOKEN", "OPENROUTER_API_KEY", "GLITCHTIP_TOKEN", "GRAFANA_TOKEN") if k in os.environ]
-    expect("write-credentials-in-env", not leaked, leaked or "none")
+    # (no check of its own environment for a write credential: that refusal is the worker's, and it must hold without this routine's help)
     expect("read-credential-in-env", "SHADOW_READ_ONLY" in os.environ, "present" if "SHADOW_READ_ONLY" in os.environ else "absent")
     # git and gh credentials: neither tool's config is in this container
     home = os.environ.get("HOME", "/home/worker")
@@ -68,6 +67,14 @@ run:
         say("allowlisted-host", "reached through " + os.environ["HTTP_PROXY"])
     except Exception as e:
         expect("allowlisted-host", False, type(e).__name__ + str(e)[:80])
+    # the live side's network: the live proxy and the live worker are on a network this container is not on
+    import socket
+    for host, port in (("egress", 4750), ("worker-triage", 8081)):
+        try:
+            socket.create_connection((host, port), timeout=5).close()
+            expect("reach-" + host, False, "connected")
+        except OSError as e:
+            expect("reach-" + host, True, type(e).__name__)
     # outward writes: GitHub (a comment on an issue) is off this proxy's allowlist and is refused; Grafana (a silence) is on it, as a read
     # host, and carries no credential from here, so a real Grafana would refuse it. The stand-in records both for the e2e to count.
     def write(url):

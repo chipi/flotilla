@@ -278,10 +278,22 @@ The compose service is `worker-triage-shadow` (profile `shadow`), with its own p
    shadow worker mounts it read-only and starts from a copy in its own HOME.
 
 The shadow worker has less than the live one (512m and 0.5 CPU against 1g and 1.0, and a low CPU
-weight), so a shadow cannot take a live run's room; it sits on the internal network only, mounts
-none of the live worker's volumes but the snapshots, read-only, and its state is its own volume
-(`triage-shadow-state`). A test on the compose file (`cmd/flotillad/compose_test.go`) holds each
-of these.
+weight), so a shadow cannot take a live run's room. It mounts none of the live worker's volumes
+but the snapshots, read-only, and its state is its own volume (`triage-shadow-state`).
+
+It is on a network of its own, `shadow` (internal: no route out), with its proxy and flotillad;
+flotillad joins it to call the worker and to serve its ledger, and nothing else live does. So a
+shadow routine cannot point its proxy setting at the live proxy (`egress`) or reach a live worker:
+they are not on its network. The proxy it has is `egress-shadow`, whose allowlist is its own.
+
+The worker refuses a shadow run whose environment holds a credential that writes, by name, with
+no configuration: a built-in list (`DEFAULT_WRITE_KEYS` in `worker/flotilla_worker.py`: the GitHub,
+GlitchTip event-write, Grafana admin, Slack and bugfix-pusher names this repo's routines use),
+extended by `FLOTILLA_WRITE_KEYS` (comma-separated; the compose file sets it on the shadow worker)
+and by the keys of any `FLOTILLA_WRITE_ENV_FILES` it can read. A write credential whose name is on
+neither list is not caught by name; keep it out of `TRIAGE_READ_ENV_FILE`, which is the one file
+the shadow worker reads. A test on the compose file (`cmd/flotillad/compose_test.go`) holds the
+limits, the volumes, the network and that every `*-secrets` volume is external.
 
 To end shadows: `shadows.enabled: false` (a shadow version is then listed and promotable, and does
 not run), drop `shadow` from `COMPOSE_PROFILES`, deploy. The shadow volumes stay until removed by
