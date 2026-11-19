@@ -138,6 +138,7 @@ nav:
     - 0001 — Genesis: history/0001-genesis.md
     - 0002 — From a design to a running platform: history/0002-design-to-running-platform.md
     - "0003 — Six finished wip plans closed": history/0003-wip-notes-closed.md
+    - "0004 — v2 step 2, shadows with no effect": history/0004-v2-step-2-shadows.md
     - From the origin (moved 2026-11-17):
       - Fleet architecture: history/origin/fleet-architecture.md
       - fleetd deploy: history/origin/fleetd-deploy.md
