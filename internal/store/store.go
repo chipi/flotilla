@@ -474,6 +474,8 @@ var schema = []string{
 	);
 	CREATE INDEX shadow_records_input ON shadow_records(input_key, subject);
 	CREATE INDEX shadow_records_routine ON shadow_records(routine, version);`,
+	// call_texts holds bodies only: it has no run or routine key, and a body is reached only through a run's calls (their texts column names the
+	// hash), so every reader of it is already guarded by the shadow rule on run_calls.
 	// Stations (v2 build step 3): the station that made a call, the rendered texts it read (name, hash, length: JSON), and each distinct text once,
 	// by its hash. A text's body is masked and capped when it is written; one over the cap, or past a run's budget, has its hash and length only.
 	`ALTER TABLE run_calls ADD COLUMN station TEXT NOT NULL DEFAULT '';

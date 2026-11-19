@@ -495,7 +495,7 @@ func TestShadowRowsStayOutOfLiveReaders(t *testing.T) {
 // written cannot leak them silently. Per statement, not per function: a function with one guarded query and one unguarded one is
 // caught. A statement says it by naming liveRuns, liveCalls, `shadow = 0` or IncludeShadow in its own text, or by a
 // `// shadow-ok: why` comment on it or on the three lines above it.
-var shadowRead = regexp.MustCompile("(?i)\\b(?:FROM|JOIN)\\s+(runs|run_calls|spend)\\b")
+var shadowRead = regexp.MustCompile("(?i)\\b(?:FROM|JOIN)\\s+(runs|run_calls|spend|call_texts)\\b")
 var shadowSaid = regexp.MustCompile(`liveRuns|liveCalls|shadow = 0|IncludeShadow|shadow-ok:`)
 
 // unguardedReaders returns "file:line: the statement reads <table>" for each statement of src that reads a shadow-bearing table

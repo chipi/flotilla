@@ -430,7 +430,7 @@ func (s *Store) stationTexts(ctx context.Context, runID string, sts []PairStatio
 		for _, t := range byLabel[label] {
 			var body sql.NullString
 			var over bool
-			// reached only through a run's calls above, which are read by run id: the shadow rule is theirs
+			// shadow-ok: a text body is reached only through a run's calls (its hash comes from them, read by run id): the shadow rule is theirs
 			err := s.db.QueryRowContext(ctx, `SELECT text, over_cap FROM call_texts WHERE sha256 = ?`, t.SHA256).Scan(&body, &over)
 			if err != nil && err != sql.ErrNoRows {
 				return err

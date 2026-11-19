@@ -155,8 +155,14 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 	}
 	defer tx.Rollback()
 	budget := int64(MaxRunTextBytes)
+	seen := map[string]bool{}
 	for _, c := range calls {
 		for _, t := range c.TextBodies {
+			// a reference with no body and no over-cap flag is a repeat of a text whose body came with an earlier call: nothing to keep
+			if seen[t.SHA256] || (t.Text == nil && !t.OverCap) {
+				continue
+			}
+			seen[t.SHA256] = true
 			var body any
 			over := t.OverCap || t.Text == nil
 			if !over && (int64(len(*t.Text)) > MaxTextBytes || int64(len(*t.Text)) > budget) {
@@ -164,11 +170,17 @@ func (s *Store) RecordCalls(ctx context.Context, calls []ModelCall) error {
 			}
 			if !over {
 				body = *t.Text
-				budget -= int64(len(*t.Text))
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO call_texts (sha256, bytes, text, redacted, over_cap) VALUES (?, ?, ?, ?, ?)`,
-				t.SHA256, t.Bytes, body, t.Redacted, over); err != nil {
+			// A text already kept with its body is left alone; one kept without (over its cap, or past an earlier run's budget) gains the body
+			// when this run has it. Only a row this statement wrote or upgraded is charged to the run's budget.
+			res, err := tx.ExecContext(ctx, `INSERT INTO call_texts (sha256, bytes, text, redacted, over_cap) VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT(sha256) DO UPDATE SET bytes = excluded.bytes, text = excluded.text, redacted = excluded.redacted, over_cap = 0
+				WHERE call_texts.over_cap = 1 AND excluded.over_cap = 0`, t.SHA256, t.Bytes, body, t.Redacted, over)
+			if err != nil {
 				return err
+			}
+			if n, _ := res.RowsAffected(); n == 1 && !over {
+				budget -= int64(len(*t.Text))
 			}
 		}
 		at := c.At
