@@ -1,7 +1,7 @@
 """bugfix/harness_prompts.py: the chain's fix and reproducer prompts as Python, for the harnesses that are not pi.
 
 pi gets them from bash: harnesses/pi.sh renders the fix prompt (a heredoc around the task) and harnesses/repro.sh the
-reproducer's (agents/repro.md's body, then the issue). A harness reached through bugfix/harness.py is given the prompt
+reproducer's (agents/repro.md's body, then the issue). A harness reached through runtime/adapter.py is given the prompt
 in the request, so the same text is built here. bugfix/test_harness_prompts.py renders the shell versions with bash and
 compares, as test_declared_prompts.py keeps declared_prompts.py in agreement with runtime/prompts.py: change one side,
 change the other.

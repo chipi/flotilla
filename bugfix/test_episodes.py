@@ -12,9 +12,10 @@ import unittest
 import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime"))   # the harness layer: adapter, harness_pi
+import adapter  # noqa: E402
 import callrec_pi  # noqa: E402
 import fix  # noqa: E402
-import harness  # noqa: E402
 import spend  # noqa: E402
 import test_fix as tf  # noqa: E402
 import test_harness as th  # noqa: E402
@@ -288,7 +289,7 @@ class Plumbing(unittest.TestCase):
 
     def test_a_pi_episode_is_not_kept_as_an_episode_file(self):
         def body(chain):
-            with self.assertRaises(harness.HarnessError):
+            with self.assertRaises(adapter.HarnessError):
                 chain.run_harness("fix", "pi", "bugfix-flash", "p", "all", False, 60)
             return {"outcome": "escalate", "detail": "x"}
         self.assertEqual(self.run_chain(body)[0]["outcome"], "escalate")
@@ -341,11 +342,11 @@ class Names(unittest.TestCase):
     def test_the_episode_counter_goes_on_from_the_files_there(self):
         d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, d, True)
-        self.assertEqual(harness.last_episode(d), 0)
+        self.assertEqual(adapter.last_episode(d), 0)
         os.makedirs(os.path.join(d, "episodes"))
         for n in ("001-fix.json", "002-review.json", "002-review.json.recorded", "007-repro.json", "007-repro.stream", "notes.json"):
             open(os.path.join(d, "episodes", n), "w").close()
-        self.assertEqual(harness.last_episode(d), 7)
+        self.assertEqual(adapter.last_episode(d), 7)
 
 
 if __name__ == "__main__":

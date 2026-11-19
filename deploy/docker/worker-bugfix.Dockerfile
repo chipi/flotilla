@@ -28,6 +28,7 @@ RUN npm install -g --ignore-scripts --no-fund --no-audit @earendil-works/pi-codi
 COPY --from=link /out/flotilla-host /usr/local/bin/flotilla-host
 COPY worker /opt/flotilla/worker
 COPY bugfix /opt/flotilla/bugfix
+COPY runtime /opt/flotilla/runtime
 COPY deps /opt/flotilla/deps
 COPY fleets /opt/flotilla/fleets
 COPY bugfix-fleet/bakeoff/triage_run.sh bugfix-fleet/bakeoff/advisor_run.sh bugfix-fleet/bakeoff/langfuse_push.py /opt/flotilla/bugfix-fleet/bakeoff/

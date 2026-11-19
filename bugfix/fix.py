@@ -52,9 +52,10 @@ import time
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime"))   # the harness layer: adapter, harness_pi
+import adapter  # noqa: E402
 import callrec_pi  # noqa: E402
 import declared_prompts  # noqa: E402
-import harness  # noqa: E402
 import harness_pi  # noqa: E402
 import pi_config  # noqa: E402
 import spend  # noqa: E402
@@ -302,19 +303,19 @@ def tail(s, n):
     return s if len(s) <= n else "…" + s[-(n - 1):]
 
 
-TURN_CAPPED = harness.TURN_CAPPED
+TURN_CAPPED = adapter.TURN_CAPPED
 
 
 def sh(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, turn_ended=None, tee_path=None, stdin=None):
     """Run a command in its own process group; (exit code, combined output). A timeout kills the whole
-    group and is exit 124 (harness.run_process, which holds the runner every harness shares). With max_turns the output
+    group and is exit 124 (adapter.run_process, which holds the runner every harness shares). With max_turns the output
     is read as it comes, and the group is killed once that many turns have ended: exit TURN_CAPPED. A turn is a line
     turn_ended(line) accepts; the default is pi's, an assistant message_end of its JSON stream, as usage() counts them.
     tee_path: every line is also written there as it arrives. stdin: written to the command, None leaves it inherited."""
     try:
-        return harness.run_process(cmd, cwd, env, timeout, check=check, max_turns=max_turns,
+        return adapter.run_process(cmd, cwd, env, timeout, check=check, max_turns=max_turns,
                                    turn_ended=turn_ended or harness_pi.turn_ended, tee_path=tee_path, stdin=stdin)
-    except harness.ProcessFailed as e:
+    except adapter.ProcessFailed as e:
         raise Stop(str(e)) from None
 
 
@@ -837,7 +838,7 @@ class Chain:
             self.in_flight = max(grown, key=os.path.getmtime) if grown else None
         self.calls.skip_existing(keep=set(grown))
         self.calls.record_pending_episodes()
-        self.episode_n = harness.last_episode(self.run_dir)
+        self.episode_n = adapter.last_episode(self.run_dir)
         self.resumed_from = f"phase {ck['phase']}, round {ck['state']['round']}, saved {ck.get('saved_at', '?')}"
 
     def save(self, phase, state, **extra):
@@ -993,23 +994,23 @@ class Chain:
         sh(["git", "-C", self.wt, "apply", "--index", "--binary", pf], self.run_dir, self.env, 60, check=True)
 
     def run_harness(self, role, name, alias, prompt, tools, readonly, timeout, resume=None, max_turns=0):
-        """One episode of a role through a harness other than pi (harness.execute), kept as <run>/episodes/<n>-<role>.json
+        """One episode of a role through a harness other than pi (adapter.execute), kept as <run>/episodes/<n>-<role>.json
         with its native stream beside it, and its turns put in the calls file with the episode's gateway bill. `resume` is
         the resume_ref of an earlier episode. Returns (Episode, exit code, native stream, the episode file relative to the
         run directory); what the harness did to the worktree is the caller's to read. The chain's own text only: the prompt
         is passed as it is, and a delta the harness had to make is on the episode's notes and the calls file."""
         if name == "pi":
-            raise harness.HarnessError("pi's episodes are its session files: they are recorded by calls.record")
-        h = harness.get(name)
+            raise adapter.HarnessError("pi's episodes are its session files: they are recorded by calls.record")
+        h = adapter.get(name)
         self.episode_n += 1
         stem = f"{self.episode_n:03d}-{role}"
-        req = harness.RoleRequest(role=role, prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None,
-                                  model=harness.route(self.cfg, alias), tools=tools, readonly=readonly, resume=resume,
+        req = adapter.RoleRequest(role=role, prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None,
+                                  model=adapter.route(self.cfg, alias), tools=tools, readonly=readonly, resume=resume,
                                   max_turns=max_turns, workdir=self.wt, run_dir=self.run_dir, timeout=timeout, episode=stem)
-        ep, code, stream = harness.execute(h, req, self.env, run=sh)
-        doc = harness.episode_doc(ep, alias, self.episode_n, code, h.resume_ref(ep))
+        ep, code, stream = adapter.execute(h, req, self.env, run=sh)
+        doc = adapter.episode_doc(ep, alias, self.episode_n, code, h.resume_ref(ep))
         doc["calls_role"] = CALLS_ROLE.get(role, role)
-        rel = harness.write_episode(self.run_dir, stem, doc)
+        rel = adapter.write_episode(self.run_dir, stem, doc)
         for note in ep.notes:
             self.calls.step("harness", f"{name} {role}: {note}")
         self.calls.record_episode(doc["calls_role"], alias, doc, os.path.join(self.run_dir, rel))
@@ -1537,11 +1538,11 @@ class Chain:
     def review(self, diff, task="", summary=""):
         prompt = self.review_prompt(diff, task, summary)
         # the review has always been sent with the worker's provider (self.provider), not the reviewer alias's own
-        route = harness.route(self.cfg, self.a.reviewer_model, {"pi_provider": self.provider})
-        req = harness.RoleRequest(role="review", prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None, model=route,
+        route = adapter.route(self.cfg, self.a.reviewer_model, {"pi_provider": self.provider})
+        req = adapter.RoleRequest(role="review", prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None, model=route,
                                   tools="none" if self.a.review_tools == "none" else "read", readonly=True, resume=None,
                                   max_turns=0, workdir=self.wt, run_dir=self.run_dir, timeout=self.a.review_timeout)
-        ep, code, _ = harness.execute(harness.get("pi"), req, self.env, run=sh)
+        ep, code, _ = adapter.execute(adapter.get("pi"), req, self.env, run=sh)
         self.calls.record("reviewer", self.a.reviewer_model)
         if ep.answer:
             return ep.answer

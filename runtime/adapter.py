@@ -1,4 +1,4 @@
-"""bugfix/harness: the chain's coding harnesses behind one interface (ADR-0020).
+"""runtime/adapter: the chain's coding harnesses behind one interface (ADR-0020).
 
 The bugfix chain runs its roles (repro, fix, verdict, advisor, review) through a coding harness: pi, or another
 CLI that reads a prompt, edits the worktree and calls the routine's own LiteLLM endpoint. This module holds what is
@@ -11,8 +11,8 @@ seam end-to-end every harness must pass are in bugfix/HARNESS_SEAMS.md: the sour
 
 HOW TO ADD A HARNESS
 
-  1. One file, bugfix/harness_<name>.py (lower case letters and digits, at most 16; stdlib only: the worker image has
-     nothing else). It subclasses Harness, and ends with `harness.register(<Class>())`. harness.get("<name>")
+  1. One file, runtime/harness_<name>.py (lower case letters and digits, at most 16; stdlib only: the worker image has
+     nothing else). It subclasses Harness, and ends with `adapter.register(<Class>())`. adapter.get("<name>")
      imports the file by its name; nothing else is edited. harness_prompts, harness_cli and harness_probe are not
      adapters.
   2. Class attributes: `name`; `roles`, the roles it can serve (a subset of ROLES; mini serves repro and fix only);
@@ -301,7 +301,7 @@ def unregister(name):
 
 
 def get(name):
-    """The registered harness `name`, importing bugfix/harness_<name>.py first when it is not loaded yet."""
+    """The registered harness `name`, importing runtime/harness_<name>.py first when it is not loaded yet."""
     if name not in _REGISTRY and NAME_RE.fullmatch(name or "") and name not in NOT_ADAPTERS \
             and os.path.exists(os.path.join(HERE, f"harness_{name}.py")):
         importlib.import_module(f"harness_{name}")

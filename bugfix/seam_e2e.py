@@ -35,6 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.append(os.path.join(HERE, "..", "runtime"))
 
 # built, not written: a literal that looks like a key is what the secrets scan looks for
 KEY = "sk-" + "seam-" + "test-" + "key-0001"
@@ -361,8 +362,8 @@ class SeamSuite(unittest.TestCase):
 
     @classmethod
     def parse(cls, stream_text):
-        import harness
-        return harness.get(cls.NAME).parse(stream_text, {})
+        import adapter
+        return adapter.get(cls.NAME).parse(stream_text, {})
 
     # ---- the runs
 

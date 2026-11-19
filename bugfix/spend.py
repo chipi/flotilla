@@ -71,7 +71,7 @@ def pi_cost(agent_dir, baseline=0.0):
 
 def episode_cost(run_dir, baseline=0.0):
     """The harness's own estimate (cost_est) summed over the episode files of the run's non-pi harnesses
-    (<run_dir>/episodes/*.json, bugfix/harness.py), less `baseline`: what a run resumed from a checkpoint found there
+    (<run_dir>/episodes/*.json, runtime/adapter.py), less `baseline`: what a run resumed from a checkpoint found there
     from its earlier run. An estimate, used only where the gateway's bill could not be read; an episode with none counts 0."""
     total = 0.0
     for f in glob.glob(os.path.join(run_dir, "episodes", "*.json")):

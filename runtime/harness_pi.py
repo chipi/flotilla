@@ -1,4 +1,4 @@
-"""bugfix/harness_pi: pi (pi -p --mode json) as a harness (ADR-0020).
+"""runtime/harness_pi: pi (pi -p --mode json) as a harness (ADR-0020).
 
 pi is the chain's own harness and keeps its command paths: the fix and the reproducer run through harnesses/pi.sh and
 repro.sh, the verdict and the advisor through their leaves, and the review is built here, to the same argv Chain.review
@@ -11,8 +11,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callrec_pi  # noqa: E402
-import harness  # noqa: E402
+import adapter  # noqa: E402
+import toolrec  # noqa: E402
 
 # SR-0001 H8: the steps that only read (verdict, advisor, review) get pi's read tools, no shell and no
 # writes; "read only" in a prompt did not stop the advisor starting a dev server. The fix step keeps pi's own.
@@ -104,24 +104,24 @@ def _turn(n, m, failed):
     tools = []
     for p in m.get("content") or []:
         if isinstance(p, dict) and p.get("type") == "toolCall" and isinstance(p.get("name"), str):
-            t = {"name": p["name"], "arg": callrec_pi.clean_arg(callrec_pi.primary_arg(p.get("arguments")))}
+            t = {"name": p["name"], "arg": toolrec.clean_arg(toolrec.primary_arg(p.get("arguments")))}
             if p.get("id") in failed:
                 t["ok"] = not failed[p["id"]]
             tools.append(t)
     stop = m.get("stopReason")
-    return harness.Turn(
+    return adapter.Turn(
         n=n, model=m.get("model"),
         text="".join(p.get("text") or "" for p in m.get("content") or [] if isinstance(p, dict) and p.get("type") == "text"),
         tools=tools,
-        usage=harness.usage_dict(u.get("input"), u.get("output"), u.get("cacheRead"), u.get("cacheWrite")) if u else None,
+        usage=adapter.usage_dict(u.get("input"), u.get("output"), u.get("cacheRead"), u.get("cacheWrite")) if u else None,
         cost_est=float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None,
         stop=STOP.get(stop, stop) if isinstance(stop, str) else "",
         error=(str(m.get("errorMessage") or "error")[:200]) if stop == "error" else None)
 
 
-class Pi(harness.Harness):
+class Pi(adapter.Harness):
     name = "pi"
-    roles = frozenset(harness.ROLES)
+    roles = frozenset(adapter.ROLES)
     can_resume = True
     resume_after_kill = True      # trim_session drops the line a kill cut short (ADR-0019)
     enforces_readonly = True      # --tools read,grep,find,ls and --no-tools: the harness does not offer the rest
@@ -137,13 +137,13 @@ class Pi(harness.Harness):
         """The review's command, as Chain.review always built it. The other roles run through pi's leaf scripts, which
         read their settings from the environment (PI_*, BUGFIX_PI_RULES), not from a request."""
         if req.role != "review":
-            raise harness.HarnessError(f"pi serves the {req.role} role through its leaf script, not through build()")
+            raise adapter.HarnessError(f"pi serves the {req.role} role through its leaf script, not through build()")
         provider = req.model.meta.get("pi_provider") or "flotilla-" + req.model.endpoint
         rules = ["--no-context-files", "--append-system-prompt", req.rules_path] if req.rules_path else []
         if req.tools == "none" and rules:   # the rules are about using tools; a review without them has none
             rules = ["--no-context-files"]
         tools = {"none": ["--no-tools"], "read": ["--tools", READ_ONLY_TOOLS]}.get(req.tools, [])
-        return harness.Invocation(argv=["pi", "-p", "--mode", "json", "--provider", provider, "--model", req.model.model,
+        return adapter.Invocation(argv=["pi", "-p", "--mode", "json", "--provider", provider, "--model", req.model.model,
                                         *tools, *rules, req.prompt], cwd=req.workdir)
 
     def turn_ended(self, line):
@@ -162,9 +162,9 @@ class Pi(harness.Harness):
                 turns.append((n, m))
         built = [_turn(i, m, failed) for i, m in turns]
         err = stream_error(stream_text)
-        return harness.Episode(harness="pi", role="", session_id=sid, turns=built, answer=assistant_text(stream_text),
+        return adapter.Episode(harness="pi", role="", session_id=sid, turns=built, answer=assistant_text(stream_text),
                                error=err, exit_reason="error" if err else "completed",
-                               usage_total=harness.sum_usage(built), cost_est=harness.sum_cost(built))
+                               usage_total=adapter.sum_usage(built), cost_est=adapter.sum_cost(built))
 
 
-PI = harness.register(Pi())
+PI = adapter.register(Pi())

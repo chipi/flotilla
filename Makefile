@@ -59,7 +59,7 @@ lint: ## gofmt check + go vet (both modules), byte-compile every Python file, ll
 	@out="$$($(GOFMT) -l cmd internal fleetd)"; test -z "$$out" || { echo "lint FAIL: gofmt would change:"; echo "$$out"; exit 1; }
 	@$(GO) vet ./...
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
-	@python3 -m compileall -q signal-fleet worker deploy runtime >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+	@python3 -m compileall -q signal-fleet worker deploy runtime bugfix >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@python3 scripts/llms_txt.py --check >/dev/null || { echo "lint FAIL: llms.txt"; python3 scripts/llms_txt.py --check; exit 1; }
 	@python3 scripts/installation_facts.py >/tmp/flotilla-installation-facts.log 2>&1 || { echo "lint FAIL: installation facts in the code (vision plan step 7):"; cat /tmp/flotilla-installation-facts.log; exit 1; }
 	@echo "lint PASS"
@@ -102,6 +102,7 @@ test-unit: ## go test -race (root module) and go test (fleetd), the worker's tes
 	@python3 runtime/test_toolrec.py >/tmp/flotilla-test_toolrec.log 2>&1 && echo "PASS runtime/test_toolrec.py" || { echo "FAIL runtime/test_toolrec.py"; tail -30 /tmp/flotilla-test_toolrec.log; exit 1; }
 	@python3 runtime/test_hooks.py >/tmp/flotilla-test_hooks.log 2>&1 && echo "PASS runtime/test_hooks.py" || { echo "FAIL runtime/test_hooks.py"; tail -30 /tmp/flotilla-test_hooks.log; exit 1; }
 	@python3 runtime/test_harness.py >/tmp/flotilla-test_harness.log 2>&1 && echo "PASS runtime/test_harness.py" || { echo "FAIL runtime/test_harness.py"; tail -30 /tmp/flotilla-test_harness.log; exit 1; }
+	@python3 runtime/test_adapter.py >/tmp/flotilla-test_adapter.log 2>&1 && echo "PASS runtime/test_adapter.py" || { echo "FAIL runtime/test_adapter.py"; tail -30 /tmp/flotilla-test_adapter.log; exit 1; }
 	@python3 runtime/test_ledger.py >/tmp/flotilla-test_ledger.log 2>&1 && echo "PASS runtime/test_ledger.py" || { echo "FAIL runtime/test_ledger.py"; tail -30 /tmp/flotilla-test_ledger.log; exit 1; }
 	@python3 runtime/test_schemacheck.py >/tmp/flotilla-test_schemacheck.log 2>&1 && echo "PASS runtime/test_schemacheck.py" || { echo "FAIL runtime/test_schemacheck.py"; tail -30 /tmp/flotilla-test_schemacheck.log; exit 1; }
 	@h=$$(mktemp -d); cd $(SF_MVP) && for t in test_units.py test_capture.py test_scrub.py test_replay_api.py test_dev_filter.py test_shadow_filter.py test_probes.py; do \

@@ -18,7 +18,7 @@ cost null and cost_source "".
 A turn's tools are [{"name", "arg", "ok"}]: the call's main argument, redacted and cut at 160 characters, and
 `ok` from the matching toolResult message's isError (left out when the session has no result for the call).
 
-A harness other than pi (bugfix/harness.py) leaves its episode as <run>/episodes/<stem>.json, already normalized into
+A harness other than pi (runtime/adapter.py) leaves its episode as <run>/episodes/<stem>.json, already normalized into
 turns; Recorder.record_episode writes one line per turn in the same format plus `harness`, which pi's lines do not
 carry (an absent field means pi). A turn's finish reason and tools come from the harness's normalization; its tool
 arguments are redacted here, as pi's are. Codex and dsh report per exec or per step, not per model call, so their
@@ -158,7 +158,7 @@ def session_lines(path, role, alias, episode_seq=None, decision_key=None, start=
 
 
 def episode_lines(doc, role, alias, episode_id="", episode_seq=None, decision_key=None, now=None):
-    """The calls-file lines of one normalized episode (bugfix/harness.py's episode file, read as JSON): one per turn, in
+    """The calls-file lines of one normalized episode (runtime/adapter.py's episode file, read as JSON): one per turn, in
     pi's line format plus `harness`. The episode is the harness's session id, else the file's stem. Cost is not set here."""
     now = now or _now()
     out = []

@@ -11,8 +11,8 @@ seam is made here first, in the same commit as the code and the tests that carry
 amendment log at the end. pi is the reference: it passes every seam today, and the next harness must
 pass the same end-to-end (see "The minimum seam end-to-end").
 
-Code: `bugfix/harness.py` (the types, the registry, the shared runner, and the "how to add a
-harness" contract at its top), `bugfix/harness_pi.py`, `bugfix/harness_prompts.py`,
+Code: `runtime/adapter.py` (the types, the registry, the shared runner, and the "how to add a
+harness" contract at its top), `runtime/harness_pi.py`, `bugfix/harness_prompts.py`,
 `bugfix/seam_e2e.py`. Words used: a **role** is repro, fix, verdict, advisor or review; an
 **episode** is one run of a role through a harness; the **gateway** is the routine's LiteLLM
 endpoint.
@@ -41,7 +41,7 @@ the chain's text is a hash over what the model reads.
 ## The seams
 
 Field names are the code's: `RoleRequest`, `Invocation`, `Turn`, `Episode`, `ModelRoute` in
-`bugfix/harness.py`.
+`runtime/adapter.py`.
 
 ### S1 Prompt in
 
