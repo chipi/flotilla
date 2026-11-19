@@ -173,8 +173,11 @@ matched per decision subject. An e2e proves it before and after a shadow run, an
 
 ### 9. Evaluation is first-class (steps 2 and 3)
 
-flotilla owns the recording, the entry point and the formats; eval-harness owns datasets, scoring
-and decisions. `runtime/episode.schema.json` is one station's recorded run;
+flotilla owns the recording, the entry point and the input format; eval-harness owns datasets,
+scoring and decisions. The episode format is shared: eval-harness's transcript schema defines the
+generic episode, and `runtime/episode.schema.json` (one station's recorded run) is a compatible
+superset of it. flotilla vendors a pinned copy of the generic schema under `runtime/testdata/` and a
+test validates every episode against both (agreed with eval-harness and its owner, 2026-11-18);
 `runtime/input.schema.json` is the frozen input, also a scenario's start, optionally with recorded
 tool results; `flotillad -stations` and one command run a version's own `run:` on a given input in
 the shadow worker, with a models config of its own and recorded tool results standing in for tools

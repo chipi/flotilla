@@ -264,7 +264,9 @@ the test cannot pass because the shadow did nothing.
 ## 6. Evaluation is first-class
 
 Agreed with eval-harness and its owner (2026-11-18). Evaluation itself (datasets, scoring, decisions)
-stays in eval-harness (RFC-0002 item 9); flotilla owns the recording, the entry point and the formats.
+stays in eval-harness (RFC-0002 item 9); flotilla owns the recording, the entry point and the input
+format. The episode format is shared: eval-harness's transcript schema defines the generic episode,
+and flotilla's episode schema is a compatible superset of it.
 
 - **The episode schema** (`runtime/episode.schema.json`, versioned): one station's run as the
   harness layer records it, embedded verbatim in eval-harness's transcripts. It holds the station
@@ -272,7 +274,9 @@ stays in eval-harness (RFC-0002 item 9); flotilla owns the recording, the entry 
   (input, output, cache and reasoning tokens), per action its name, arguments and result (after
   redaction; above a size cap as a hash and a length) with its duration and success, the gateway's
   cost with its source always set, the session id, how it ended, the notes, and the raw stream's
-  path. Every adapter's episode is validated against it.
+  path. Every adapter's episode is validated against it. It is a superset of the generic episode
+  that eval-harness's transcript schema defines: flotilla vendors a pinned copy of that schema under
+  `runtime/testdata/`, and the same test validates every episode against the pinned copy too.
 - **The input schema** (`runtime/input.schema.json`, versioned): the frozen input of section 4. The
   same envelope is a scenario's start: a captured live input exports as the envelope with the ledger
   rows as of its mark and the state snapshot, scrubbed by the installation into its private data. An
