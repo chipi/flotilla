@@ -79,31 +79,34 @@ func TestPermissionTable(t *testing.T) {
 	reqs := []struct {
 		a                  Action
 		method, path, body string
+		or                 Action // a route that more than one kind of caller may use (the ledger: a worker's, and the operator's sync)
 	}{
-		{ActRead, "GET", "/v1/status", ""},
-		{ActRead, "GET", "/v1/runs", ""},
-		{ActRead, "GET", "/v1/events", ""},
-		{ActRead, "GET", "/v1/cases", ""},
-		{ActPause, "POST", "/v1/routines/triage/cycle/pause", ""},
-		{ActResume, "POST", "/v1/routines/triage/cycle/resume", `{"reason":"t"}`},
-		{ActAutonomy, "POST", "/v1/routines/triage/cycle/autonomy", `{"autonomy":"record"}`},
-		{ActStop, "POST", "/v1/fleets/triage/stop", ""},
-		{ActCancel, "POST", "/v1/runs/none/cancel", `{"reason":"t"}`},
-		{ActStart, "POST", "/v1/fleets/triage/start", `{"reason":"t"}`},
-		{ActUsers, "GET", "/v1/users", ""},
-		{ActLedger, "GET", "/v1/ledger/counts?ns=triage/cycle", ""},
-		{ActFreeze, "POST", "/v1/freeze", ""},
-		{ActUnfreeze, "POST", "/v1/unfreeze", `{"reason":"t"}`},
-		{ActRead, "GET", "/v1/holds", ""},
-		{ActHold, "POST", "/v1/holds", `{"scope":"host:backup-01","for":"1h","reason":"t"}`},
-		{ActUnhold, "POST", "/v1/holds/1/lift", `{"reason":"t"}`},
-		{ActRead, "GET", "/v1/actions", ""},
-		{ActAutonomy, "POST", "/v1/actions/backup.rerun/autonomy", `{"autonomy":"record"}`},
+		{ActRead, "GET", "/v1/status", "", ""},
+		{ActRead, "GET", "/v1/runs", "", ""},
+		{ActRead, "GET", "/v1/events", "", ""},
+		{ActRead, "GET", "/v1/cases", "", ""},
+		{ActPause, "POST", "/v1/routines/triage/cycle/pause", "", ""},
+		{ActResume, "POST", "/v1/routines/triage/cycle/resume", `{"reason":"t"}`, ""},
+		{ActAutonomy, "POST", "/v1/routines/triage/cycle/autonomy", `{"autonomy":"record"}`, ""},
+		{ActStop, "POST", "/v1/fleets/triage/stop", "", ""},
+		{ActCancel, "POST", "/v1/runs/none/cancel", `{"reason":"t"}`, ""},
+		{ActStart, "POST", "/v1/fleets/triage/start", `{"reason":"t"}`, ""},
+		{ActUsers, "GET", "/v1/users", "", ""},
+		{a: ActLedger, method: "GET", path: "/v1/ledger/counts?ns=triage/cycle", or: ActLedgerSync},
+		{a: ActLedger, method: "POST", path: "/v1/ledger/filings?ns=triage/cycle", body: `{"row":{"fingerprint":"a"}}`},
+		{a: ActLedger, method: "POST", path: "/v1/ledger/import?ns=triage/cycle", body: `{"filings":[{"fingerprint":"a"}]}`, or: ActLedgerSync},
+		{ActFreeze, "POST", "/v1/freeze", "", ""},
+		{ActUnfreeze, "POST", "/v1/unfreeze", `{"reason":"t"}`, ""},
+		{ActRead, "GET", "/v1/holds", "", ""},
+		{ActHold, "POST", "/v1/holds", `{"scope":"host:backup-01","for":"1h","reason":"t"}`, ""},
+		{ActUnhold, "POST", "/v1/holds/1/lift", `{"reason":"t"}`, ""},
+		{ActRead, "GET", "/v1/actions", "", ""},
+		{ActAutonomy, "POST", "/v1/actions/backup.rerun/autonomy", `{"autonomy":"record"}`, ""},
 	}
 	for _, role := range []string{RoleWorker, RoleAgent, RoleViewer, RoleOperator, RoleAdmin} {
 		for _, q := range reqs {
 			c, out := call(t, ts, q.method, q.path, tok[role], q.body)
-			if got, want := c != 403 && c != 401, Authorize(role, q.a); got != want {
+			if got, want := c != 403 && c != 401, Authorize(role, q.a) || (q.or != "" && Authorize(role, q.or)); got != want {
 				t.Errorf("%s %s %s: HTTP %d %v; the table says allowed=%v", role, q.method, q.path, c, out, want)
 			}
 		}

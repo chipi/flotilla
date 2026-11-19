@@ -224,14 +224,19 @@ a control says.
    flotilla-triage-state-candidate-<date> ~/signal-fleet`
 2. `.env`: `COMPOSE_PROFILES=candidate`, `FLOTILLA_CANDIDATE_TAG=sha-<candidate>`,
    `TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-triage-state-candidate-<date>`.
-3. `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081", token_file:
-   /run/flotilla/worker-triage.token}` under `workers`, and take `triage/cycle-shadow` out of `disabled_routines`.
+3. Its own worker token, never the live worker's (flotillad refuses to start, and `-check` says
+   "workers triage and triage-candidate share a token file", when two different workers share one):
+   `FLOTILLA_CONFIG/worker-triage-candidate.token`, 32+ random characters. `secrets.sh` puts it in
+   flotillad's secrets volume and in the candidate's own (`worker-triage-candidate-secrets`, with the
+   fleet env). `config/flotillad.yaml`: add `triage-candidate: {url: "http://worker-triage-candidate:8081",
+   token_file: /run/flotilla/worker-triage-candidate.token}` under `workers`, and take
+   `triage/cycle-shadow` out of `disabled_routines`.
 4. Deploy (the live tag, unchanged). Compare the two routines' decisions with the installation's own
    tool (the ledgers are each worker's state volume).
 5. To end it: put `triage/cycle-shadow` back in `disabled_routines`, drop `COMPOSE_PROFILES`,
    deploy. The candidate's volume stays until removed by hand.
 
-The candidate shares the triage worker's secrets volume and the proxy's allowlist: at record the fleet
+The candidate has its own secrets volume (its worker token and a copy of the fleet env) and shares the proxy's allowlist: at record the fleet
 makes no outward change (orchestrator.py forces a dry run), and the cap keeps it there. It reads the
 live worker's `worker-triage.env`, but the compose file sets `ROUTINE_SF_SERVICE=triage-fleet-candidate`
 and `ROUTINE_SF_GLITCHTIP_SYNC=0` over it, so its metrics, inbox and traces never count as the live
@@ -254,6 +259,15 @@ To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
    `docker exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485
    -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad
    -e FLOTILLA_ROUTINE=<routine id> <worker container> python3 ledger_sync.py import`
+   With `run_tokens: required` in flotillad.yaml (every run has its own token, and a worker's own
+   token opens nothing on `worker_listen`), the import and the check are the operator's: put an
+   admin's (or the bootstrap operator's) token in a file in the worker's tmpfs for the duration, name
+   it in `FLOTILLA_API_TOKEN_FILE` instead of `/run/flotilla/worker.token`, and remove it after:
+   `printf %s "$TOKEN" | docker exec -i <worker container> sh -c 'umask 077 && cat > /tmp/operator.token'`
+   … `-e FLOTILLA_API_TOKEN_FILE=/tmp/operator.token` … then
+   `docker exec <worker container> rm /tmp/operator.token`. flotillad serves the operator's import and
+   reads of a named ledger on `worker_listen` (and on the full API); it takes no row from an operator,
+   and the import is an event naming who. The e2e runs this against a flotillad in required mode.
 3. Check the store renders both TSVs byte for byte: the same with `check`.
 4. Set the service's backend to `api`, deploy (the live tag, unchanged), and resume the routine (the
    operator's token).

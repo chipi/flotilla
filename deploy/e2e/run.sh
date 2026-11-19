@@ -56,7 +56,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-required flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -590,6 +590,69 @@ SHR="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/
 echo "$SHR" | grep >/dev/null "workers triage and triage-candidate share a token file" && echo "$SHR" | grep >/dev/null "^rc=2" \
   && ok "-check refuses workers that share a token file, naming them (exit 2, before anything restarts)" || bad "-check on shared worker tokens: $(echo "$SHR" | tail -3)"
 echo "$ACC" | grep >/dev/null "share a token file" && bad "the stack's own workers share a token file" || ok "no two of the stack's workers share a token file"
+# run_tokens: required on a running flotillad (a second one, idle: its one routine is disabled, so it starts no run on the stack's
+# workers): a worker's own token opens nothing, the operator's token loads and checks a ledger (what ledger_sync does)
+mkdir -p "$WORK/config/specs-required/e2e"
+cat > "$WORK/config/specs-required/e2e/idle.yaml" <<EOF2
+fleet: e2e
+routine: idle
+description: The e2e's required-mode flotillad has one routine and never runs it.
+enabled: false
+worker: triage
+trigger: {every: 60m}
+run: {command: "true", workdir: ., timeout: 1m}
+autonomy: record
+budget: {day_usd: 0}
+freshness: 120m
+EOF2
+cat > "$WORK/config/flotillad-required-live.yaml" <<EOF2
+listen: 127.0.0.1:8484
+worker_listen: 0.0.0.0:8485
+specs_dir: /etc/flotilla/specs
+state_dir: /var/lib/flotilla
+environment: e2e
+callers_file: /etc/flotilla/callers.yaml
+run_tokens: required
+registry_files: [/opt/flotilla/host/registry.json]
+workers:
+  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
+EOF2
+$D volume create --label $LABEL flotilla-e2e-required >/dev/null
+$D run --rm --user 0 -v flotilla-e2e-required:/v --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'chown -R 65532:65532 /v' >/dev/null
+$D run -d --label $LABEL --name e2e-required --network "${P}_flotilla" --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --memory 256m \
+  -v flotilla-e2e-required:/var/lib/flotilla -v "$WORK/config/flotillad-required-live.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+  -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs-required:/etc/flotilla/specs:ro" \
+  "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad in run_tokens: required"
+for _ in $(seq 1 60); do $D logs e2e-required 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
+printf %s "$OP" | $D exec -i flotilla-worker-triage sh -c 'umask 077 && cat > /tmp/op.token'
+REQ_OUT="$($D exec -e NO_PROXY=e2e-required -e HTTP_PROXY= -e HTTPS_PROXY= flotilla-worker-triage python3 -c '
+import json, sys, urllib.error, urllib.request
+base = "http://e2e-required:8485"
+worker = open("/run/flotilla/worker.token").read().strip()
+op = open("/tmp/op.token").read().strip()
+def call(method, path, tok, body=None):
+    r = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                               headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(r, timeout=10) as x:
+            return x.status, json.load(x)
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+rows = {"filings": [{"fingerprint": "a", "repo": "o/r", "issue": "1"}], "entries": [{"kind": "decision", "row": {"fingerprint": "a", "disposition": "file"}}]}
+print("worker-count", call("GET", "/v1/ledger/counts?ns=e2e/required", worker)[0])
+print("worker-import", call("POST", "/v1/ledger/import?ns=e2e/required", worker, rows)[0])
+st, c = call("POST", "/v1/ledger/import?ns=e2e/required", op, rows)
+print("op-import", st, c.get("filings"), c.get("decisions"))
+st, c = call("GET", "/v1/ledger/counts?ns=e2e/required", op)
+print("op-count", st, c.get("filings"), c.get("decisions"))
+print("op-filings", call("GET", "/v1/ledger/filings?ns=e2e/required", op)[0], "op-write", call("POST", "/v1/ledger/filings?ns=e2e/required", op, {"row": {"fingerprint": "z"}})[0])
+' 2>&1)"
+echo "$REQ_OUT" | grep >/dev/null "^worker-count 401" && echo "$REQ_OUT" | grep >/dev/null "^worker-import 401" \
+  && ok "run_tokens: required on a running flotillad: the worker's own token opens nothing (401 on the ledger)" || bad "required mode, the worker's token: $REQ_OUT"
+echo "$REQ_OUT" | grep >/dev/null "^op-import 200 1 1" && echo "$REQ_OUT" | grep >/dev/null "^op-count 200 1 1" && echo "$REQ_OUT" | grep >/dev/null "^op-filings 200 op-write 403" \
+  && ok "the operator's token imports a ledger and reads it back in required mode; it writes no row" || bad "required mode, the operator's import: $REQ_OUT"
+$D exec flotilla-worker-triage rm -f /tmp/op.token
+$D rm -f e2e-required >/dev/null 2>&1; $D volume rm flotilla-e2e-required >/dev/null 2>&1
 fi
 
 echo "== frozen inputs (v2 step 2): the input a live run was handed, exported"

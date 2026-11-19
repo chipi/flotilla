@@ -9,9 +9,16 @@ import (
 
 func TestLedgerRoles(t *testing.T) {
 	ts, _ := server(t)
-	for _, tok := range []string{agentTok, opTok} {
-		if c, _ := call(t, ts, "GET", "/v1/ledger/filings?ns=triage/cycle", tok, ""); c != 403 {
-			t.Errorf("the ledger is a worker's: an agent or the operator got %d", c)
+	if c, _ := call(t, ts, "GET", "/v1/ledger/filings?ns=triage/cycle", agentTok, ""); c != 403 {
+		t.Errorf("the ledger is a worker's: an agent got %d", c)
+	}
+	// the operator reads a named ledger and imports one (S3), and writes no row of it
+	if c, _ := call(t, ts, "GET", "/v1/ledger/filings?ns=triage/cycle", opTok, ""); c != 200 {
+		t.Errorf("the operator reads a ledger: %d", c)
+	}
+	for _, p := range []string{"/v1/ledger/filings", "/v1/ledger/entries"} {
+		if c, _ := call(t, ts, "POST", p+"?ns=triage/cycle", opTok, `{"row":{"fingerprint":"a"},"kind":"decision"}`); c != 403 {
+			t.Errorf("a row of the ledger is a routine's to write: the operator got %d on %s", c, p)
 		}
 	}
 	for _, path := range []string{"/v1/status", "/v1/runs", "/v1/events"} {

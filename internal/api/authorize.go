@@ -10,6 +10,7 @@ const (
 	ActRead        Action = "read"         // status, runs, events
 	ActLedgerRead  Action = "ledger-read"  // a person reading the ledger (History)
 	ActLedger      Action = "ledger"       // a worker's own ledger (read and write), or a run's: its own routine's
+	ActLedgerSync  Action = "ledger-sync"  // an operator's import, and read of a named ledger, to load and check a fleet's ledger (ledger_sync.py); never a write of one row
 	ActRun         Action = "run"          // start a run now
 	ActPause       Action = "pause"        // pause a routine
 	ActStop        Action = "stop"         // STOP a fleet (and cancel its runs in flight)
@@ -46,6 +47,7 @@ var may = map[Action]map[string]bool{
 	ActRead:        {RoleAgent: true, RoleViewer: true, RoleOperator: true, RoleAdmin: true},
 	ActLedgerRead:  {RoleAgent: true, RoleViewer: true, RoleOperator: true, RoleAdmin: true}, // agents read it (RFC-0008 Q3)
 	ActLedger:      {RoleWorker: true, RoleRun: true},
+	ActLedgerSync:  {RoleOperator: true, RoleAdmin: true},
 	ActRun:         {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActPause:       {RoleAgent: true, RoleOperator: true, RoleAdmin: true},
 	ActStop:        {RoleAgent: true, RoleOperator: true, RoleAdmin: true},

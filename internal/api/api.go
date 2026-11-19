@@ -213,13 +213,51 @@ func (s *Server) WorkerHandler() http.Handler {
 	return m
 }
 
+// ledgerRoutes: a worker's or a run's ledger calls, and the operator's (ActLedgerSync) import and reads, which is how a fleet's ledger is
+// loaded and checked (signal-fleet/mvp/ledger_sync.py) when run_tokens is required and a worker's own token opens nothing. The
+// operator reads and imports; the rows a routine writes stay the routine's (ActLedger only).
 func (s *Server) ledgerRoutes(m *http.ServeMux) {
-	m.Handle("GET /v1/ledger/filings", s.auth(ActLedger, s.ledgerFilings))
+	m.Handle("GET /v1/ledger/filings", s.authAny(s.ledgerFilings, ActLedger, ActLedgerSync))
 	m.Handle("POST /v1/ledger/filings", s.auth(ActLedger, s.ledgerWriteFiling))
-	m.Handle("GET /v1/ledger/entries", s.auth(ActLedger, s.ledgerEntries))
+	m.Handle("GET /v1/ledger/entries", s.authAny(s.ledgerEntries, ActLedger, ActLedgerSync))
 	m.Handle("POST /v1/ledger/entries", s.auth(ActLedger, s.ledgerAppendEntry))
-	m.Handle("GET /v1/ledger/counts", s.auth(ActLedger, s.ledgerCounts))
-	m.Handle("POST /v1/ledger/import", s.auth(ActLedger, s.ledgerImport))
+	m.Handle("GET /v1/ledger/counts", s.authAny(s.ledgerCounts, ActLedger, ActLedgerSync))
+	m.Handle("POST /v1/ledger/import", s.authAny(s.ledgerImport, ActLedger, ActLedgerSync))
+}
+
+// authAny is auth for a route more than one kind of caller may use: it passes a caller any of the actions allows, and refuses with the
+// first action's message.
+func (s *Server) authAny(h func(http.ResponseWriter, *http.Request, Caller), first Action, more ...Action) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || tok == "" {
+			writeJSON(w, 401, map[string]string{"error": "a bearer token is required"})
+			return
+		}
+		who, err := s.WhoIs(r.Context(), tok)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		if who == nil {
+			writeJSON(w, 401, map[string]string{"error": "unknown token"})
+			return
+		}
+		role, err := s.EffectiveRole(r.Context(), *who)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		allowed := Authorize(role, first)
+		for _, a := range more {
+			allowed = allowed || Authorize(role, a)
+		}
+		if !allowed { // refused: Check says why, and logs it
+			writeAction(w, s.Check(r.Context(), *who, first), 0, nil)
+			return
+		}
+		h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, *who)), *who)
+	})
 }
 
 // WhoIs resolves a bearer token: the callers file first (the first match, in the order of the list), then a run's own token,
