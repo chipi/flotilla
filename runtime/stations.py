@@ -27,6 +27,14 @@ SLOT = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 TEXT_CAP = prompts.MAX_BYTES   # a rendered text above this is kept as its hash and length only, never cut
 
 
+_SENT = set()   # the hashes whose body this process has already put in a calls line
+
+
+def forget_sent():
+    """Start a new run's bookkeeping (a test; a process is one run)."""
+    _SENT.clear()
+
+
 class StationsError(Exception):
     """A station, text or slot the version does not declare or the caller did not fill: the run stops before a model call."""
 
@@ -44,9 +52,13 @@ class Rendered:
         return {"name": self.name, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
 
     def record(self):
-        """What is stored of the text, once per hash: the ref and the text with credentials masked, or the ref alone when the text
-        is over TEXT_CAP (flagged, never cut)."""
+        """What a calls line carries of the text. The first time a hash is recorded in this process (one run): the ref and the text with
+        credentials masked, or the ref and over_cap when the text is over TEXT_CAP (flagged, never cut). After that the ref alone: the body
+        is already in the run's calls, and a run of many calls must not carry it in each (the worker's result has a size limit)."""
         r = self.ref()
+        if r["sha256"] in _SENT:
+            return r
+        _SENT.add(r["sha256"])
         if r["bytes"] > TEXT_CAP:
             return dict(r, text=None, redacted=False, over_cap=True)
         return dict(r, text=toolrec.redact_credentials(self.text), redacted=True, over_cap=False)

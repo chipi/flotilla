@@ -117,6 +117,9 @@ def prompts_error():
 
 
 class Records(unittest.TestCase):
+    def setUp(self):
+        stations.forget_sent()
+
     def test_the_ref_is_the_hash_and_the_length_of_what_the_model_read(self):
         r = World(self, "Résumé {{case}}\n".encode()).render()
         raw = r.text.encode()
@@ -128,6 +131,21 @@ class Records(unittest.TestCase):
         self.assertNotIn(TOKEN, json.dumps(rec))
         self.assertTrue(rec["redacted"] and "<redacted>" in rec["text"])
         self.assertEqual(rec["sha256"], r.ref()["sha256"], "the hash is of what the model read")
+
+    def test_a_body_is_sent_once_per_hash_and_a_reference_after(self):
+        """A run of many calls must not carry the same body on each (the worker's result has a size limit)."""
+        r = World(self).render()
+        first, again, third = r.record(), r.record(), r.record()
+        self.assertEqual(first["text"], r.text)
+        self.assertEqual(again, r.ref())
+        self.assertEqual(third, r.ref())
+        self.assertNotIn("text", again)
+        other = stations.Rendered("decide", "task", "another text", "h").record()
+        self.assertIn("text", other, "a different hash is sent in full once")
+        stations.forget_sent()
+        self.assertIn("text", r.record(), "a new run starts again")
+        size = sum(len(json.dumps(r.record())) for _ in range(5000))
+        self.assertLess(size, 5000 * 200, "5000 calls carry references, not bodies")
 
     def test_a_text_over_the_cap_is_a_hash_and_a_length_never_a_cut_text(self):
         r = stations.Rendered("s", "t", "x" * (stations.TEXT_CAP + 1), "h")
