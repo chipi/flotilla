@@ -45,6 +45,19 @@ pushed. Design: [v2 design](../wip/v2-design.md) section 4, decided in
 - A pair page scrolled sideways at 360 px for a long subject.
 - The compose README's new sections were over the lint length; `make docs-validate` is green.
 
+## Not a strict no-op with shadows off
+
+Shadows start off, but a live run is not byte for byte what it was before step 2, with shadows on
+or off:
+
+- it gets a run token for the workers' listener, and `FLOTILLA_ROUTINE_VERSION` in its environment;
+- one `run_inputs` row is written per run (its frozen input), so the store grows by a row a run;
+- every plan decision makes one more read (`RunIsShadow`), to refuse a shadow's plan.
+
+A live run on a remote worker whose host agent is older than step 2 does not carry its run token
+and falls back to the worker's own token, which `run_tokens: required` refuses. Update the remote
+agents before flipping that setting.
+
 ## Open
 
 - Remote shadows (the link has no snapshot or commit read).

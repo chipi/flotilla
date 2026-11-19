@@ -9,7 +9,11 @@ A new version runs in shadow beside the live one without any effect on the syste
 and goes live on the operator's word; if it turns out wrong, the operator rolls back. Every routine
 moves to this format; a routine that calls no model has versions and no stations.
 
-**Status: the spec is done (2026-11-18); steps 1 and 2 built.** Reviewed in five rounds by an
+**Status: the spec is done (2026-11-18); steps 1 and 2 built.** (Step 2 with shadows off is not a
+strict no-op for a live run: a run token, `FLOTILLA_ROUTINE_VERSION`, one `run_inputs` row per run
+and one `RunIsShadow` read per plan decision; a live run on a remote worker older than step 2 falls
+back to the worker token, which `run_tokens: required` refuses. See
+[history 0004](../history/0004-v2-step-2-shadows.md).) Reviewed in five rounds by an
 advisor and by
 the installation's fleet session; both gave GO on this text, and on section 6 (evaluation), agreed
 with eval-harness. It is [ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md); step 1
