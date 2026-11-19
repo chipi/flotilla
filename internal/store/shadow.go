@@ -521,19 +521,6 @@ func DecisionSubject(row map[string]string, occurrenceID, fingerprint string) st
 	return fingerprint
 }
 
-// PairsFor is how many compared pairs a version has: the (input, subject) decisions the shadow version recorded that the live
-// version also made on the same input. A live decision is a plan of the input's run (subject: the case) or a decision entry of
-// the input's run in a live ledger namespace (subject: entrySubject). A subject only one side decided is not a pair.
-func (s *Store) PairsFor(ctx context.Context, routine string, version int) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (SELECT DISTINCT sr.input_key, sr.subject FROM shadow_records sr
-		WHERE sr.routine = ? AND sr.version = ? AND sr.kind IN ('plan', 'decision') AND sr.subject <> ''
-		AND (EXISTS (SELECT 1 FROM plans p WHERE p.run_id = sr.input_key AND p.case_id = sr.subject)
-		  OR EXISTS (SELECT 1 FROM ledger_entries e WHERE e.run_id = sr.input_key AND e.kind = 'decision'
-		    AND instr(e.namespace, '@v') = 0 AND `+entrySubject+` = sr.subject)))`, ShadowKey(routine, version), version).Scan(&n)
-	return n, err
-}
-
 // ErrShadowRun: a shadow run's plan is never decided and its action never sent. The shadow path does not reach either (it only
 // records), and this is the refusal under it: a plan of a shadow run that somehow exists cannot become a host execution.
 var ErrShadowRun = errors.New("a shadow run never decides a plan or sends an action: what it would run is a shadow record")

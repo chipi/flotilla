@@ -1,0 +1,32 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/fleets/{{.Routine}}">{{.Routine}}</a> / <a href="{{.Back}}">pairs of v{{.N}}</a> / <span class="exact">{{.Subject}}</span></nav>
+  <section class="head">
+    <div>
+      <h1>{{.Subject}}</h1>
+      <p class="meta"><span class="chip chip--small pairmark pairmark--{{.Kind}}">{{.Label}}</span> · live v{{.Live}} against v{{.N}} · the live run's input <span class="exact">{{.InputKey}}</span> · {{.At}}</p>
+    </div>
+  </section>
+  <div class="sides">
+    {{range .Sides}}<section class="card side" aria-labelledby="side-{{.Role}}-h">
+      <h2 id="side-{{.Role}}-h"><span class="chip chip--small {{.Chip}}">{{.Who}}</span></h2>
+      {{if .Present}}
+      <p class="side__text">{{.Text}}</p>
+      {{if .Detail}}<p class="side__detail">{{.Detail}}</p>{{end}}
+      {{if .Action}}<p class="meta">action <span class="exact">{{.Action}}</span>{{range .Params}} · <span class="exact">{{.}}</span>{{end}}</p>{{end}}
+      {{if .Note}}<p class="side__note">{{.Note}}</p>{{end}}
+      <p class="meta">version hash <span class="exact" title="{{.FullHash}}">{{.Hash}}</span> · <a class="exact" href="{{.RunHref}}">its run</a></p>
+      {{if .NoStations}}<p class="meta">No model calls recorded for this run.</p>{{else}}
+      <div class="table-box"><table class="data data--small">
+        <thead><tr><th scope="col">Station</th><th scope="col">Turns</th><th scope="col">In</th><th scope="col">Out</th><th scope="col">Cost</th></tr></thead>
+        <tbody>{{range .Stations}}<tr><td data-label="Station">{{.Role}}</td><td data-label="Turns">{{.Calls}}</td><td data-label="In">{{.In}}</td><td data-label="Out">{{.Out}}</td><td data-label="Cost">{{.Cost}}</td></tr>{{end}}</tbody>
+      </table></div>{{end}}
+      {{else}}<p class="side__text side__text--none">{{.Note}}</p>{{end}}
+    </section>{{end}}
+  </div>
+  <p class="meta">{{.TextsNote}}.</p>
+  {{end}}
+</main>
+{{template "foot" .}}

@@ -413,3 +413,35 @@ func TestAFailedExportLeavesNothingBehind(t *testing.T) {
 		t.Fatal("the caller's envelope was changed")
 	}
 }
+
+func TestWriteJSONFollowsTheSameFolderRules(t *testing.T) {
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	dir := filepath.Join(t.TempDir(), "p")
+	if err := WriteJSON(dir, "pairs.json", []byte(`{"a":1}`), "the pairs of x v2", now); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]os.FileMode{"": 0o700, "pairs.json": 0o600, ReadmeFile: 0o600} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil || info.Mode().Perm() != want {
+			t.Fatalf("%q: %v %v", name, info, err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, ReadmeFile)); !strings.Contains(string(b), "PRODUCTION DATA") || !strings.Contains(string(b), "the pairs of x v2") {
+		t.Fatalf("%s", b)
+	}
+	if err := WriteJSON(dir, "pairs.json", []byte(`{}`), "x", now); err == nil || !strings.Contains(err.Error(), "not empty") {
+		t.Fatalf("a folder that holds something: %v", err)
+	}
+	repo := t.TempDir()
+	os.Mkdir(filepath.Join(repo, ".git"), 0o700)
+	if err := WriteJSON(filepath.Join(repo, "x"), "pairs.json", []byte(`{}`), "x", now); err == nil || !strings.Contains(err.Error(), "inside a git work tree") {
+		t.Fatalf("%v", err)
+	}
+	bad := filepath.Join(t.TempDir(), "q")
+	if err := WriteJSON(bad, "pairs.json", []byte(`nope`), "x", now); err == nil {
+		t.Fatal("not JSON")
+	}
+	if _, err := os.Stat(bad); err == nil {
+		t.Fatal("a refused document made a folder")
+	}
+}

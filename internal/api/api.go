@@ -194,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	s.evalRoutes(m)
 	s.ledgerRoutes(m)
 	s.inputRoutes(m)
+	s.pairRoutes(m)
 	return m
 }
 

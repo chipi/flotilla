@@ -91,14 +91,14 @@
         <td data-label="Deployed">{{.Deployed}}</td>
         <td data-label="Live since">{{if .Live}}{{.Live}}{{else}}–{{end}}</td>
         <td data-label="By and why" class="stack">{{if .By}}<span>{{.By}}{{if .Why}}: {{.Why}}{{end}}</span>{{else}}–{{end}}{{range .Detail}}<span class="soft">{{.}}</span>{{end}}</td>
-        <td data-label="Pairs and results" class="soft">{{.Pairs}}</td>
+        <td data-label="Pairs and results" class="soft">{{if .HasPairs}}<a href="/fleets/{{$.Data.ID}}?pairs={{.N}}#pairs">{{.Pairs}}</a>{{else}}{{.Pairs}}{{end}}</td>
         {{if $act}}<td data-label="Change" class="stack r">
           {{if .CanPromote}}<details class="decision__rejectwrap">
             <summary class="btn btn--small">Promote…</summary>
             <form class="confirm" method="post" action="/routines/{{$.Data.ID}}/versions/{{.N}}/promote">
               {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$.Data.Back}}">
               <strong>Make v{{.N}} live?</strong>
-              <p>v{{$.Data.Versions.Live}}, the live one, becomes the previous version. No compared pairs exist yet: shadow runs arrive with step 2, so a promote needs your reason until then.</p>
+              <p>v{{$.Data.Versions.Live}}, the live one, becomes the previous version. Compared pairs so far: {{.Pairs}}.{{if $.Data.Versions.NeedsReason}} A promote that lacks the evidence its routine declares needs your reason.{{end}}</p>
               <label class="field">The routine's autonomy for v{{.N}} (never inherited in silence)
                 <select name="autonomy" class="btn btn--small">{{$cur := $.Data.Versions.Autonomy}}
                   <option value="record"{{if eq $cur "record"}} selected{{end}}>record</option>
@@ -139,6 +139,23 @@
         </td>{{end}}
       </tr>{{else}}<tr><td colspan="8">No version is recorded yet.</td></tr>{{end}}</tbody>
     </table></div>
+  </section>{{end}}
+
+  {{with .Pairs}}<section class="card pairs" id="pairs" aria-labelledby="pairs-h">
+    <div class="pairs__head">
+      <h2 id="pairs-h">{{.Routine}} · v{{.N}} shadow vs v{{.Live}} live</h2>
+      <span class="pairs__count">{{.Paired}} pairs · {{.Differ}} differ</span>
+    </div>
+    <nav class="pairs__filter" aria-label="Show pairs">{{range .Choices}}<a class="chip chip--small {{if .On}}chip--info{{else}}chip--neutral{{end}}" href="{{.Href}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}{{range .Versions}}<a class="chip chip--small {{if .On}}chip--info{{else}}chip--neutral{{end}} pairs__ver" href="{{.Href}}">{{.Label}}</a>{{end}}</nav>
+    <ul class="pairs__list">{{range .Rows}}
+      <li><a class="pair pair--{{.Kind}}" href="{{.Href}}">
+        <span class="pair__head"><span class="pair__mark">● {{.Label}}</span><span class="pair__subject">{{.Subject}}</span><span class="pair__at">{{.At}}</span></span>
+        <span class="pair__line"><span class="pair__who">live v{{$.Data.Pairs.Live}}</span><span class="pair__text">{{.LiveText}}</span></span>
+        <span class="pair__line"><span class="pair__who">v{{$.Data.Pairs.N}}</span><span class="pair__text">{{.ShadowText}}</span></span>
+      </a></li>{{else}}
+      <li class="pairs__none">{{if eq .Show "all"}}No pair yet: a shadow's decision lands here beside the live version's on the same input.{{else}}Nothing under "{{.Show}}".{{end}}</li>{{end}}
+    </ul>
+    {{if .More}}<p class="meta">{{.More}} more: narrow the list, or read them all as JSON (<span class="exact">flotilla pairs {{.Routine}} v{{.N}} --json</span>).</p>{{end}}
   </section>{{end}}
 
   <section class="card" aria-labelledby="runs-h">

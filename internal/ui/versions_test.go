@@ -112,8 +112,8 @@ func TestRoutineVersions(t *testing.T) {
 		ck, _ := f.csrfOf(f.addOperator())
 		_, page := f.do("GET", "/fleets/triage/cycle", ck, nil, nil)
 		sec := versionsSection(t, page)
-		for _, want := range []string{"v1", "v2", "v3", "chip--ok", "chip--neutral", "shadow: not run yet (arrives with step 2)",
-			"none yet: shadow runs arrive with step 2", "the first version, live at deploy", "Promote…", "Retire…", "No compared pairs exist yet",
+		for _, want := range []string{"v1", "v2", "v3", "chip--ok", "chip--neutral", "shadow: runs beside v1 when shadows are on",
+			"none yet", "the first version, live at deploy", "Promote…", "Retire…", "Compared pairs so far: none yet",
 			`action="/routines/triage/cycle/versions/2/promote"`, `action="/routines/triage/cycle/versions/3/retire"`, `name="without_pairs"`,
 			"A promote needs: <span class=\"exact\">pairs</span>"} {
 			if !strings.Contains(sec, want) {
@@ -141,7 +141,7 @@ func TestRoutineVersions(t *testing.T) {
 		vck, _ := f.csrfOf(f.vic)
 		_, page := f.do("GET", "/fleets/triage/cycle", vck, nil, nil)
 		sec := versionsSection(t, page)
-		if !strings.Contains(sec, "v3") || !strings.Contains(sec, "shadow: not run yet") {
+		if !strings.Contains(sec, "v3") || !strings.Contains(sec, "shadow: runs beside v") {
 			t.Error("a viewer does not see the versions table")
 		}
 		for _, not := range []string{"/versions/", "/rollback", "Promote…", "Retire…", "Roll back…"} {

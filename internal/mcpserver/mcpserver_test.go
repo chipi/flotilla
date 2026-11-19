@@ -161,6 +161,13 @@ func TestAgentCalls(t *testing.T) {
 	if out, isErr := call(t, cs, "routine_run", map[string]any{"routine": "ops/backup-monitor"}); isErr {
 		t.Fatalf("run: %v", out)
 	}
+	// the run is asynchronous, and a running routine is reported before a paused one; the question below is about paused
+	for i := 0; len(a.Sched.Running()) > 0; i++ {
+		if i > 500 {
+			t.Fatal("the run did not end")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if out, isErr := call(t, cs, "routine_pause", map[string]any{"routine": "ops/backup-monitor"}); isErr {
 		t.Fatalf("pause: %v", out)
 	}

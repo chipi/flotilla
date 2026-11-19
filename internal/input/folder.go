@@ -141,3 +141,38 @@ func writeNew(path string, b []byte) error {
 	}
 	return f.Close()
 }
+
+// WriteJSON writes one JSON document (a pairs export) to a new folder under the same rules as an input's: never inside a git work tree, never
+// a folder that holds something, 0700 and 0600, a README that says it is production data; a failure leaves nothing behind.
+func WriteJSON(dir, name string, raw []byte, what string, now time.Time) (err error) {
+	real, err := CheckFolder(dir)
+	if err != nil {
+		return err
+	}
+	if !json.Valid(raw) {
+		return errors.New("not JSON")
+	}
+	_, statErr := os.Stat(real)
+	created := os.IsNotExist(statErr)
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(filepath.Join(real, name))
+			os.Remove(filepath.Join(real, ReadmeFile))
+			if created {
+				os.Remove(real)
+			}
+		}
+	}()
+	if err := os.Chmod(real, 0o700); err != nil {
+		return err
+	}
+	if err := writeNew(filepath.Join(real, name), append(append([]byte(nil), raw...), '\n')); err != nil {
+		return err
+	}
+	readme := fmt.Sprintf("This folder is PRODUCTION DATA exported from flotilla on %s: %s (%s). Keep it outside any repository and scrub it before it joins any dataset.\n",
+		now.UTC().Format(time.RFC3339), what, name)
+	return writeNew(filepath.Join(real, ReadmeFile), []byte(readme))
+}

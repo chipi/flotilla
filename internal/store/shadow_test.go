@@ -401,59 +401,6 @@ func TestShadowRecords(t *testing.T) {
 	}
 }
 
-// A pair is a subject both sides decided on one input: the live side is a plan of the input's run or a decision entry of it.
-func TestPairsFor(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
-	if n, err := s.PairsFor(ctx, "triage/cycle", 2); err != nil || n != 0 {
-		t.Fatalf("no records, no pairs: %d %v", n, err)
-	}
-	shadow := func(input, subject, kind string, version int) {
-		t.Helper()
-		if _, err := s.RecordShadow(ctx, ShadowRecord{RunID: "s", Routine: ShadowKey("triage/cycle", version), Version: version, InputKey: input, Subject: subject, Kind: kind}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// live decisions on input live-1: fp-1 (subject by fingerprint), occ-2 (by occurrence id), sub-3 (the row's own subject)
-	s.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"fingerprint": "fp-1"}, "live-1")
-	s.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"fingerprint": "fpx", "occurrence_id": "occ-2"}, "live-1")
-	s.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"fingerprint": "fpy", "occurrence_id": "occ-y", "subject": "sub-3"}, "live-1")
-	s.AppendEntry(ctx, "triage/cycle", "recurrence", map[string]string{"fingerprint": "fp-4"}, "live-1") // a recurrence is not a decision
-	// a live plan on input live-9 for case c-1
-	id, _, err := s.OpenCase(ctx, NewCase{Kind: "backup", Target: "t", Keys: []Key{{"alert", "a"}}, Canonical: Key{"alert", "a"}}, "ops/m", "d")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE cases SET status = 'planned' WHERE id = ?`, id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.ApplyPlan(ctx, PlanRecord{CaseID: id, RunID: "live-9", Action: "a.b", Outcome: "record", Autonomy: "record"}, "closed", "plan_recorded", "", false); err != nil {
-		t.Fatal(err)
-	}
-	for _, x := range [][3]string{
-		{"live-1", "fp-1", "decision"}, {"live-1", "occ-2", "decision"}, {"live-1", "sub-3", "decision"},
-		{"live-1", "fp-4", "decision"}, // live only recurred it: no pair
-		{"live-1", "fp-5", "decision"}, // live did not decide it: unpaired
-		{"live-1", "fp-1", "decision"}, // recorded twice: one pair
-		{"live-1", "fp-1", "note"},     // not a decision kind
-		{"live-2", "fp-1", "decision"}, // another input: the live side did not decide it there
-		{"live-9", id, "plan"},
-	} {
-		shadow(x[0], x[1], x[2], 2)
-	}
-	shadow("live-1", "fp-1", "decision", 3) // another version's
-	if n, err := s.PairsFor(ctx, "triage/cycle", 2); err != nil || n != 4 {
-		t.Fatalf("pairs of v2: %d %v, want 4 (fp-1, occ-2, sub-3, and the plan's case)", n, err)
-	}
-	if n, _ := s.PairsFor(ctx, "triage/cycle", 3); n != 1 {
-		t.Fatalf("pairs of v3: %d, want 1", n)
-	}
-	// a decision in a shadow's own namespace is not the live side
-	s.AppendEntry(ctx, "triage/cycle@v2", "decision", map[string]string{"fingerprint": "fp-5"}, "live-1")
-	if n, _ := s.PairsFor(ctx, "triage/cycle", 2); n != 4 {
-		t.Fatalf("a shadow's own ledger rows are not the live side: %d", n)
-	}
-}
-
 // Shadow rows never reach a reader of the live system, and each reader that can show them does so only when asked.
 func TestShadowRowsStayOutOfLiveReaders(t *testing.T) {
 	s, ctx := openTest(t), context.Background()

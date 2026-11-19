@@ -55,6 +55,7 @@ type routineData struct {
 	Panel                             *modelPanel
 	Paths                             *pathSummary
 	Versions                          *versionsData
+	Pairs                             *pairsData // a shadow version's pairs beside the live version's (pairs.go)
 	SpecText                          string
 }
 
@@ -360,6 +361,13 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 	d.SpecURL, d.SpecText = specLink(j)
 	if d.Versions, err = u.versionsFor(ctx, id, st); err != nil {
 		http.Error(w, "versions failed", 500)
+		return
+	}
+	if vv, err := u.API.RoutineVersions(ctx, id); err != nil {
+		http.Error(w, "versions failed", 500)
+		return
+	} else if d.Pairs, err = u.pairsFor(r, id, &vv); err != nil {
+		http.Error(w, "pairs failed", 500)
 		return
 	}
 	lamp := lampOf(*st, f.LastFailed[id])

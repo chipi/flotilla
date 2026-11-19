@@ -22,6 +22,7 @@ type rVersion struct {
 	Hash, FullHash          string
 	Deployed, Live, By, Why string
 	Pairs                   string
+	HasPairs                bool // it has compared pairs: its Pairs cell links to them
 	Detail                  []string
 	CanPromote, CanRetire   bool
 	Current                 bool // the live one: the rollback form is its
@@ -38,7 +39,13 @@ type versionsData struct {
 	Live        int
 }
 
-const pairsNone = "none yet: shadow runs arrive with step 2"
+// pairsText is a version's compared pairs, linked to its list when it has any.
+func pairsText(n int) string {
+	if n == 0 {
+		return "none yet"
+	}
+	return fmt.Sprintf("%d compared pairs", n)
+}
 
 var versionChip = map[string]string{store.VersionLive: "chip--ok", store.VersionShadow: "chip--neutral", store.VersionPrevious: "chip--wait", store.VersionRetired: "chip--neutral"}
 
@@ -54,7 +61,7 @@ func (u *Server) versionsFor(ctx context.Context, id string, st *api.RoutineStat
 		}
 	}
 	for _, x := range v.Versions {
-		r := rVersion{N: x.Version, State: x.State, Chip: versionChip[x.State], FullHash: x.Hash, Hash: x.Hash, Pairs: pairsNone,
+		r := rVersion{N: x.Version, State: x.State, Chip: versionChip[x.State], FullHash: x.Hash, Hash: x.Hash, Pairs: pairsText(x.Pairs), HasPairs: x.Pairs > 0,
 			Deployed: u.clock(x.DeployedAt), By: strings.TrimPrefix(x.StateBy, "user:"), Why: x.StateWhy}
 		if len(r.Hash) > 7 {
 			r.Hash = r.Hash[:7]
@@ -64,7 +71,7 @@ func (u *Server) versionsFor(ctx context.Context, id string, st *api.RoutineStat
 		}
 		switch x.State {
 		case store.VersionShadow:
-			r.Label = "shadow: not run yet (arrives with step 2)"
+			r.Label = fmt.Sprintf("shadow: runs beside v%d when shadows are on", v.Live)
 			r.CanPromote, r.CanRetire = x.Loaded && x.Error == "", true
 		case store.VersionPrevious:
 			d.Previous, d.CanRollBack = x.Version, true
@@ -91,7 +98,7 @@ func (u *Server) versionsFor(ctx context.Context, id string, st *api.RoutineStat
 				line += " · failed: " + strings.Join(p.Failed, ", ")
 			}
 			r.Detail = append(r.Detail, line)
-			r.Pairs = fmt.Sprintf("%d compared pairs", p.Pairs)
+			r.Pairs = fmt.Sprintf("%d compared pairs at the promote", p.Pairs)
 		}
 		if !x.Loaded && x.State != store.VersionRetired {
 			r.Note = "its folder is not in the fleets folder"
