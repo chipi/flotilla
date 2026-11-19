@@ -58,6 +58,7 @@ import callrec_pi  # noqa: E402
 import declared_prompts  # noqa: E402
 import harness_pi  # noqa: E402
 import pi_config  # noqa: E402
+import pi_review  # noqa: E402
 import spend  # noqa: E402
 import stepone  # noqa: E402
 
@@ -757,6 +758,14 @@ def trim_session(path):
         pass
 
 
+def episode_file(ep, alias, seq, code, resume_ref=""):
+    """The chain's episode document: version 1 and `role`, as every episode file of the chain has always been (a run
+    checkpointed before a deploy is read after it, ADR-0019; spend.py and the calls file read these). The platform's own
+    document (adapter.episode_doc) is version 2 and says `station`."""
+    doc = adapter.episode_doc(ep, alias, seq, code, resume_ref)
+    return {("role" if k == "station" else k): (1 if k == "version" else v) for k, v in doc.items()}
+
+
 # the role names of the run's calls file (callrec_pi): pi's sessions are recorded as these, and so are the other harnesses'
 CALLS_ROLE = {"fix": "coder", "review": "reviewer", "repro": "reproducer", "verdict": "verdict", "advisor": "advisor"}
 
@@ -1004,11 +1013,11 @@ class Chain:
         h = adapter.get(name)
         self.episode_n += 1
         stem = f"{self.episode_n:03d}-{role}"
-        req = adapter.RoleRequest(role=role, prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None,
-                                  model=adapter.route(self.cfg, alias), tools=tools, readonly=readonly, resume=resume,
-                                  max_turns=max_turns, workdir=self.wt, run_dir=self.run_dir, timeout=timeout, episode=stem)
+        req = adapter.Request(station=role, prompt=prompt, system_path=self.env.get("BUGFIX_PI_RULES") or None,
+                              model=adapter.route(self.cfg, alias), tools=tools, resume=resume,
+                              max_turns=max_turns, workdir=self.wt, run_dir=self.run_dir, timeout=timeout, episode=stem)
         ep, code, stream = adapter.execute(h, req, self.env, run=sh)
-        doc = adapter.episode_doc(ep, alias, self.episode_n, code, h.resume_ref(ep))
+        doc = episode_file(ep, alias, self.episode_n, code, h.resume_ref(ep))
         doc["calls_role"] = CALLS_ROLE.get(role, role)
         rel = adapter.write_episode(self.run_dir, stem, doc)
         for note in ep.notes:
@@ -1539,10 +1548,10 @@ class Chain:
         prompt = self.review_prompt(diff, task, summary)
         # the review has always been sent with the worker's provider (self.provider), not the reviewer alias's own
         route = adapter.route(self.cfg, self.a.reviewer_model, {"pi_provider": self.provider})
-        req = adapter.RoleRequest(role="review", prompt=prompt, rules_path=self.env.get("BUGFIX_PI_RULES") or None, model=route,
-                                  tools="none" if self.a.review_tools == "none" else "read", readonly=True, resume=None,
-                                  max_turns=0, workdir=self.wt, run_dir=self.run_dir, timeout=self.a.review_timeout)
-        ep, code, _ = adapter.execute(adapter.get("pi"), req, self.env, run=sh)
+        req = adapter.Request(station="review", prompt=prompt, system_path=self.env.get("BUGFIX_PI_RULES") or None, model=route,
+                              tools="none" if self.a.review_tools == "none" else "read", resume=None,
+                              max_turns=0, workdir=self.wt, run_dir=self.run_dir, timeout=self.a.review_timeout)
+        ep, code, _ = adapter.execute(pi_review.ChainReview(), req, self.env, run=sh)
         self.calls.record("reviewer", self.a.reviewer_model)
         if ep.answer:
             return ep.answer

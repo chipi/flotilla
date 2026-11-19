@@ -1,11 +1,16 @@
-"""runtime/harness_pi: pi (pi -p --mode json) as a harness (ADR-0020).
+"""runtime/harness_pi: pi (pi -p --mode json) as a harness (ADR-0020, v2-design.md section 3).
 
-pi is the chain's own harness and keeps its command paths: the fix and the reproducer run through harnesses/pi.sh and
-repro.sh, the verdict and the advisor through their leaves, and the review is built here, to the same argv Chain.review
-always sent (bugfix/test_pi_golden.py pins it). What this module adds is the pi stream's reading in one place:
-assistant_text, stream_error and usage (fix.py keeps the names as wrappers) and parse(), which turns a stream into the
-normalized Episode.
+pi is the reference adapter. build() serves any station and any `tools` value: the prompt on stdin, the system text
+with --append-system-prompt, the model route as a provider of its own models.json under <run_dir>/pi (the key is named
+there as `!cat <file>` or `$VAR`, never written), the session store under <run_dir>/pi, and a resume by the session
+reference. The pi stream's reading is here too: assistant_text, stream_error and usage (bugfix/fix.py keeps the names as
+wrappers) and parse(), which turns a stream into the normalized Episode.
+
+The bugfix chain's own calls (its fix and reproducer through harnesses/pi.sh and repro.sh, its review through
+bugfix/pi_review.py) keep their command paths: bugfix/test_pi_golden.py pins them byte for byte, and switching a routine
+onto this adapter is that routine's own change, replayed.
 """
+import glob
 import json
 import os
 import sys
@@ -119,9 +124,47 @@ def _turn(n, m, failed):
         error=(str(m.get("errorMessage") or "error")[:200]) if stop == "error" else None)
 
 
+def models_json(route, provider):
+    """pi's models.json for one route: a provider speaking OpenAI completions at the route's base URL. The key is named,
+    never written: `$VAR` for the endpoint's key_env, `!cat <file>` for its key_file (pi reads it at call time), "none"
+    for an endpoint that takes no Authorization (pi wants a value). `route.meta["pi_model"]`, when the caller has it, is
+    what pi's catalog knows about the model (context window, output limit, prices)."""
+    if route.key_env:
+        key = "$" + route.key_env
+    elif route.key_file:
+        key = "!cat " + route.key_file
+    else:
+        key = "none"
+    entry = dict({"id": route.model}, **(route.meta.get("pi_model") or {}))
+    return {"providers": {provider: {"baseUrl": route.base_url, "api": "openai-completions", "apiKey": key, "models": [entry]}}}
+
+
+def trim_session(path):
+    """Drop a last line a kill cut short, so pi finds a session of whole JSON lines (ADR-0019)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        if not data or data.endswith(b"\n"):
+            return
+        with open(path, "wb") as f:
+            f.write(data[:data.rfind(b"\n") + 1])
+    except OSError:
+        pass
+
+
+def session_file(run_dir, ref):
+    """The saved session file of `ref` (a session id, or a path inside the run directory) under <run_dir>/pi/sessions,
+    "" when there is none or the path leaves the run directory."""
+    if os.path.isabs(ref) or os.sep in ref:
+        real, root = os.path.realpath(ref), os.path.realpath(run_dir) + os.sep
+        return real if real.startswith(root) and os.path.isfile(real) else ""
+    found = sorted(glob.glob(os.path.join(run_dir, "pi", "sessions", "*", "*" + glob.escape(ref) + "*.jsonl")))
+    return found[-1] if found else ""
+
+
 class Pi(adapter.Harness):
     name = "pi"
-    roles = frozenset(adapter.ROLES)
+    tools_served = frozenset(adapter.TOOLS)
     can_resume = True
     resume_after_kill = True      # trim_session drops the line a kill cut short (ADR-0019)
     enforces_readonly = True      # --tools read,grep,find,ls and --no-tools: the harness does not offer the rest
@@ -130,21 +173,30 @@ class Pi(adapter.Harness):
     reports_usage = True
     supports_turn_cap = True      # a message_end line per assistant message
     native_system_prompt = True   # --append-system-prompt <file>
-    prompt_via_stdin = False      # the prompt is one argv string (REVIEW_PROMPT_MAX keeps it under Linux's 128 KiB)
+    prompt_via_stdin = True       # `pi -p` with no message argument reads its prompt from stdin
     tees = False   # pi keeps its own session files; its stream is not written beside them
 
     def build(self, req):
-        """The review's command, as Chain.review always built it. The other roles run through pi's leaf scripts, which
-        read their settings from the environment (PI_*, BUGFIX_PI_RULES), not from a request."""
-        if req.role != "review":
-            raise adapter.HarnessError(f"pi serves the {req.role} role through its leaf script, not through build()")
-        provider = req.model.meta.get("pi_provider") or "flotilla-" + req.model.endpoint
-        rules = ["--no-context-files", "--append-system-prompt", req.rules_path] if req.rules_path else []
-        if req.tools == "none" and rules:   # the rules are about using tools; a review without them has none
-            rules = ["--no-context-files"]
+        agent = os.path.join(req.run_dir, "pi")
+        provider = "flotilla-" + (req.model.endpoint or "gateway")
         tools = {"none": ["--no-tools"], "read": ["--tools", READ_ONLY_TOOLS]}.get(req.tools, [])
-        return adapter.Invocation(argv=["pi", "-p", "--mode", "json", "--provider", provider, "--model", req.model.model,
-                                        *tools, *rules, req.prompt], cwd=req.workdir)
+        # --no-context-files always: the workspace's own AGENTS.md or CLAUDE.md is never read (S2)
+        system = ["--append-system-prompt", req.system_path] if req.system_path else []
+        resume = []
+        if req.resume:
+            f = session_file(req.run_dir, req.resume)
+            if not f:
+                raise adapter.HarnessError(f"pi has no saved session {req.resume!r} under the run directory to resume")
+            trim_session(f)
+            resume = ["--session", f]
+        return adapter.Invocation(
+            argv=["pi", "-p", "--mode", "json", "--provider", provider, "--model", req.model.model, *tools, "--no-context-files",
+                  *system, *resume],
+            env={"PI_CODING_AGENT_DIR": agent}, stdin=req.prompt, cwd=req.workdir,
+            files={"pi/models.json": json.dumps(models_json(req.model, provider), indent=2)})
+
+    def phone_home_env(self):
+        return {"PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1"}
 
     def turn_ended(self, line):
         return turn_ended(line)
@@ -162,7 +214,7 @@ class Pi(adapter.Harness):
                 turns.append((n, m))
         built = [_turn(i, m, failed) for i, m in turns]
         err = stream_error(stream_text)
-        return adapter.Episode(harness="pi", role="", session_id=sid, turns=built, answer=assistant_text(stream_text),
+        return adapter.Episode(harness="pi", session_id=sid, turns=built, answer=assistant_text(stream_text),
                                error=err, exit_reason="error" if err else "completed",
                                usage_total=adapter.sum_usage(built), cost_est=adapter.sum_cost(built))
 

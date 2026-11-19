@@ -1,4 +1,4 @@
-"""python3 bugfix/test_seam_pi.py: pi's seam end-to-end (bugfix/HARNESS_SEAMS.md): the real pi, run by the chain against a
+"""python3 bugfix/test_seam_pi.py: pi's seam end-to-end (runtime/HARNESS_SEAMS.md): the real pi, run by the chain against a
 scripted model endpoint, for the roles fix, repro and review. The reference every next harness's test_seam_<name>.py follows.
 Skipped, with the reason, when pi is not on PATH."""
 import json

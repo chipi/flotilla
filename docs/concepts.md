@@ -104,5 +104,5 @@ A routine declares which of these its promote requires.
 
 - The design: [the v2 design](wip/v2-design.md) and
   [ADR-0020](adr/ADR-0020-routine-versions-stations-harnesses.md).
-- The harness contract: `bugfix/HARNESS_SEAMS.md` (moving to `runtime/`).
+- The harness contract: `runtime/HARNESS_SEAMS.md`.
 - Trying it: [Developing flotilla](development.md) and `make demo`.

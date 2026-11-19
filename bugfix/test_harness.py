@@ -1,337 +1,42 @@
-"""python3 bugfix/test_harness.py: the harness interface (runtime/adapter.py), pi's adapter (harness_pi.py) and the chain's
-handling of an episode, with a fake harness ("fakeh") that exists only here.
-
-An adapter's own tests live in test_harness_<name>.py and use check_contract() below on every sample stream.
+"""python3 bugfix/test_harness.py: the bugfix chain's use of the platform's harness layer (runtime/adapter.py, runtime/harness_pi.py):
+the review's call as the chain has always sent it (pi_review.py), the chain's reading of pi's streams, fix.sh as the shared
+runner, and the chain's episode file. The layer's own tests are runtime/test_adapter.py; the fake harness and the contract
+check every adapter's samples pass are runtime/fakeh.py (re-exported here: test_episodes.py uses them).
 """
 import json
 import os
-import shutil
 import sys
-import tempfile
-import textwrap
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime"))   # the harness layer: adapter, harness_pi
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime"))
 import adapter  # noqa: E402
 import fix  # noqa: E402
 import harness_pi  # noqa: E402
+import pi_review  # noqa: E402
+from fakeh import FAKE_CLI, FakeH, check_contract, install_fake, request  # noqa: E402,F401
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PI_STREAMS = os.path.join(HERE, "testdata", "pi")
 
 
-def check_contract(tc, ep, h=None):
-    """What every adapter's parse() promises (the top of harness.py, point 5): used on each sample stream by every
-    adapter's tests."""
-    tc.assertIsInstance(ep, adapter.Episode)
-    if h is not None:
-        tc.assertEqual(ep.harness, h.name)
-    tc.assertIn(ep.exit_reason, adapter.EXIT_REASONS)
-    tc.assertIsInstance(ep.answer, str)
-    tc.assertEqual(ep.answer, ep.answer.strip(), "the answer is stripped")
-    tc.assertIsInstance(ep.error, str)
-    tc.assertEqual([t.n for t in ep.turns], list(range(1, len(ep.turns) + 1)), "turns are numbered from 1")
-    for t in ep.turns:
-        tc.assertIsInstance(t.text, str)
-        tc.assertIsInstance(t.stop, str)
-        tc.assertTrue(t.cost_est is None or t.cost_est >= 0)
-        if t.usage is not None:
-            tc.assertEqual(sorted(t.usage), sorted(adapter.USAGE_KEYS))
-            tc.assertTrue(all(isinstance(v, int) and v >= 0 for v in t.usage.values()), t.usage)
-        for tool in t.tools:
-            tc.assertIsInstance(tool["name"], str)
-            tc.assertIsInstance(tool["arg"], str)
-            tc.assertTrue("ok" not in tool or isinstance(tool["ok"], bool))
-    tc.assertEqual(ep.usage_total, adapter.sum_usage(ep.turns))
-    tc.assertEqual(adapter.Episode.from_dict(json.loads(json.dumps(ep.to_dict()))), ep, "an episode survives its JSON")
-
-
-# the fake harness: the native format is the normalized events as JSON lines, one {"event": "turn", ...} per model call
-# and a closing {"event": "final", ...}. Its CLI (a script) takes the prompt on stdin, takes `--resume <session>`, and
-# does what FAKE_STATE/fakeh_script says for the call: a JSON line {"turns": [...], "files": {path: text}, "answer",
-# "error", "sleep", "exit"}; without a line, one turn that says ok.
-FAKE_CLI = textwrap.dedent('''\
-    import json, os, sys, time
-    state = os.environ["FAKE_STATE"]
-    args = sys.argv[1:]
-    prompt = sys.stdin.read()
-    resume = args[args.index("--resume") + 1] if "--resume" in args else ""
-    path = os.path.join(state, "fakeh_script")
-    step = {}
-    if os.path.exists(path):
-        lines = open(path).read().splitlines()
-        if lines:
-            step = json.loads(lines[0])
-            open(path, "w").write("".join(x + "\\n" for x in lines[1:]))
-    with open(os.path.join(state, "fakeh_calls"), "a") as f:
-        f.write(json.dumps({"argv": args, "stdin": prompt, "cwd": os.getcwd(), "key": os.environ.get("FAKEH_KEY", ""),
-                            "home": os.environ.get("HOME", "")}) + "\\n")
-    n = len([x for x in os.listdir(state) if x.startswith("fakeh_sess_")])
-    sid = resume or f"fakeh-sess-{n + 1}"
-    open(os.path.join(state, "fakeh_sess_" + sid), "a").write("episode\\n")
-    for p, text in (step.get("files") or {}).items():
-        os.makedirs(os.path.dirname(os.path.join(os.getcwd(), p)) or ".", exist_ok=True)
-        open(os.path.join(os.getcwd(), p), "w").write(text)
-    turns = step.get("turns")
-    turns = [{"text": "ok"}] if turns is None else turns
-    for i, t in enumerate(turns, 1):
-        print(json.dumps(dict({"event": "turn", "stop": "tool_calls", "model": "fakeh-m"}, **t)), flush=True)
-    time.sleep(step.get("sleep", 0))
-    if step.get("exit", 0) != 0:
-        sys.exit(step["exit"])
-    print(json.dumps({"event": "final", "session": sid, "answer": step.get("answer", "done"), "error": step.get("error", "")}), flush=True)
-    ''')
-
-
-class FakeH(adapter.Harness):
-    name = "fakeh"
-    roles = frozenset(adapter.ROLES)
-    can_resume = True
-    enforces_readonly = False
-
-    def __init__(self, cli):
-        self.cli = cli
-
-    def build(self, req):
-        argv = [sys.executable, self.cli, "--model", req.model.model, "--tools", req.tools]
-        if req.resume:
-            argv += ["--resume", req.resume]
-        return adapter.Invocation(argv=argv, env={"FAKEH_KEY": adapter.read_key(req.model, os.environ)}, stdin=req.prompt,
-                                  files={"fakeh/config.json": json.dumps({"alias": req.model.alias})},
-                                  notes=["fakeh: rules not delivered"] if req.rules_path else [])
-
-    def turn_ended(self, line):
-        return '"event": "turn"' in line
-
-    def parse(self, stream_text, files):
-        turns, final = [], {}
-        for line in (stream_text or "").splitlines():
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(e, dict):
-                continue
-            if e.get("event") == "turn":
-                u = e.get("usage")
-                turns.append(adapter.Turn(n=len(turns) + 1, model=e.get("model"), text=e.get("text", ""), tools=e.get("tools") or [],
-                                          usage=adapter.usage_dict(**u) if u else None, cost_est=e.get("cost"), stop=e.get("stop", "")))
-            elif e.get("event") == "final":
-                final = e
-        answer = (final.get("answer") or next((t.text for t in reversed(turns) if t.text.strip()), "")).strip()
-        err = final.get("error") or ("" if final else "no final event")
-        return adapter.Episode(harness="fakeh", role="", session_id=final.get("session"), turns=turns, answer=answer, error=err,
-                               exit_reason="error" if err else "completed", usage_total=adapter.sum_usage(turns),
-                               cost_est=adapter.sum_cost(turns))
-
-
-def install_fake(tc):
-    """Register the fake harness for this test (and take it away again); returns (harness, its CLI's path)."""
-    d = tempfile.mkdtemp()
-    tc.addCleanup(shutil.rmtree, d, True)
-    cli = os.path.join(d, "fakeh_cli.py")
-    with open(cli, "w") as f:
-        f.write(FAKE_CLI)
-    h = FakeH(cli)
-    adapter.register(h)
-    tc.addCleanup(adapter.unregister, "fakeh")
-    return h, cli
-
-
-def request(role="fix", **kw):
-    route = adapter.ModelRoute(alias="bugfix-flash", model="fleet-bugfix-flash", base_url="http://127.0.0.1:9/v1",
-                               endpoint="gateway-bugfix", key_file="/dev/null", meta=kw.pop("meta", {}))
-    base = dict(role=role, prompt="fix the bug", rules_path=None, model=route, tools="all", readonly=False, resume=None,
-                max_turns=0, workdir=".", run_dir=".", timeout=60)
-    base.update(kw)
-    return adapter.RoleRequest(**base)
-
-
-class Types(unittest.TestCase):
-    def test_an_episode_survives_its_json(self):
-        ep = adapter.Episode(harness="x", role="fix", session_id="s", answer="done", cost_est=0.5, notes=["n"],
-                             turns=[adapter.Turn(n=1, model="m", text="t", tools=[{"name": "read", "arg": "a", "ok": True}],
-                                                 usage=adapter.usage_dict(1, 2), cost_est=0.5, stop="stop")],
-                             usage_total=adapter.usage_dict(1, 2))
-        self.assertEqual(adapter.Episode.from_dict(json.loads(json.dumps(ep.to_dict()))), ep)
-
-    def test_usage_is_summed_over_the_turns_that_report_it(self):
-        t = [adapter.Turn(n=1, usage=adapter.usage_dict(1, 2, 3, 4, 5)), adapter.Turn(n=2), adapter.Turn(n=3, usage=adapter.usage_dict(10, 20))]
-        self.assertEqual(adapter.sum_usage(t), {"input": 11, "output": 22, "cache_read": 3, "cache_write": 4, "reasoning": 5})
-        self.assertIsNone(adapter.sum_usage([adapter.Turn(n=1)]))
-        self.assertIsNone(adapter.sum_cost([adapter.Turn(n=1)]))
-        self.assertEqual(adapter.sum_cost([adapter.Turn(n=1, cost_est=0.25), adapter.Turn(n=2, cost_est=0.5)]), 0.75)
-
-    def test_a_route_is_read_from_the_models_section(self):
-        cfg = {"endpoints": {"gw": {"base_url": "http://h/v1", "key_file": "/k"}},
-               "aliases": {"a": {"endpoint": "gw", "model": "m1"}}}
-        r = adapter.route(cfg, "a", {"x": 1})
-        self.assertEqual((r.alias, r.model, r.base_url, r.endpoint, r.key_file, r.key_env, r.meta),
-                         ("a", "m1", "http://h/v1", "gw", "/k", "", {"x": 1}))
-        with self.assertRaises(adapter.HarnessError):
-            adapter.route(cfg, "nope")
-        with self.assertRaises(adapter.HarnessError):
-            adapter.route({"aliases": {"a": {"endpoint": "gone", "model": "m"}}}, "a")
-
-    def test_the_key_comes_from_the_environment_or_the_file_never_elsewhere(self):
-        d = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, d, True)
-        kf = os.path.join(d, "key")
-        with open(kf, "w") as f:
-            f.write("sk-file\n")
-        self.assertEqual(adapter.read_key(adapter.ModelRoute("a", "m", "u", key_file=kf), {}), "sk-file")
-        self.assertEqual(adapter.read_key(adapter.ModelRoute("a", "m", "u", key_file=kf, key_env="K"), {"K": "sk-env"}), "sk-env")
-        self.assertEqual(adapter.read_key(adapter.ModelRoute("a", "m", "u", key_file=kf, key_env="K"), {}), "sk-file")
-        self.assertEqual(adapter.read_key(adapter.ModelRoute("a", "m", "u", key_file=os.path.join(d, "none")), {}), "")
-        self.assertEqual(adapter.read_key(adapter.ModelRoute("a", "m", "u"), {}), "")
-
-
-class Registry(unittest.TestCase):
-    def test_pi_is_registered_and_an_unknown_name_is_refused(self):
-        self.assertIs(adapter.get("pi"), harness_pi.PI)
-        self.assertIn("pi", adapter.names())
-        for bad in ("nope", "", "Pi", "../pi", "prompts", "cli"):
-            with self.assertRaises(adapter.HarnessError, msg=bad):
-                adapter.get(bad)
-
-    def test_a_name_and_roles_are_checked_at_registration(self):
-        class Bad(adapter.Harness):
-            name, roles = "Bad Name", frozenset({"fix"})
-        with self.assertRaises(adapter.HarnessError):
-            adapter.register(Bad())
-
-        class Odd(adapter.Harness):
-            name, roles = "odd", frozenset({"fix", "dream"})
-        with self.assertRaises(adapter.HarnessError):
-            adapter.register(Odd())
-
-    def test_the_fake_is_there_only_while_a_test_installs_it(self):
-        self.assertNotIn("fakeh", adapter.names())
-        install_fake(self)
-        self.assertIs(adapter.get("fakeh").name, "fakeh")
-
-
-class Capabilities(unittest.TestCase):
-    DOC = os.path.join(HERE, "HARNESS_SEAMS.md")
-
-    def table(self):
-        with open(self.DOC) as f:
-            text = f.read()
-        body = text.split("<!-- capabilities:begin -->")[1].split("<!-- capabilities:end -->")[0]
-        return [ln for ln in body.strip().splitlines() if ln.startswith("|")]
-
-    def test_pi_declares_each_capability_and_a_new_one_defaults_to_no(self):
-        got = adapter.capabilities(harness_pi.PI)
-        self.assertEqual(sorted(got), sorted(adapter.CAPABILITIES))
-        self.assertEqual(got, {"can_resume": True, "resume_after_kill": True, "enforces_readonly": True, "supports_hooks": False,
-                               "reports_cost": True, "reports_usage": True, "supports_turn_cap": True, "native_system_prompt": True,
-                               "prompt_via_stdin": False})
-        self.assertFalse(any(adapter.capabilities(adapter.Harness()).values()), "nothing is claimed by default")
-
-    def test_a_step_that_asks_for_what_the_harness_lacks_is_refused_with_the_reason(self):
-        pi = harness_pi.PI
-        self.assertEqual(adapter.missing(pi, {"can_resume": True, "enforces_readonly": True, "roles": ["fix", "review"]}), [])
-        self.assertEqual(adapter.missing(pi, {"supports_hooks": True}),
-                         [f"harness pi does not declare supports_hooks: {adapter.CAPABILITIES['supports_hooks']}"])
-        self.assertEqual(adapter.missing(pi, {"supports_hooks": False}), [], "not asking is not a need")
-        self.assertEqual(len(adapter.missing(pi, {"prompt_via_stdin": True, "supports_hooks": True})), 2)
-        self.assertIn("is not a capability", adapter.missing(pi, {"telepathy": True})[0])
-
-        class Mini(adapter.Harness):
-            name, roles = "mini", frozenset({"fix", "repro"})
-        self.assertEqual(adapter.missing(Mini(), {"roles": ["fix", "review", "advisor"]}),
-                         ["harness mini does not serve the review role", "harness mini does not serve the advisor role"])
-
-    def test_the_seams_doc_table_is_the_adapters(self):
-        rows = self.table()
-        self.assertEqual([c.strip() for c in rows[0].strip("|").split("|")], ["harness", "roles"] + list(adapter.CAPABILITIES))
-        self.assertEqual(set(rows[1].strip("|").split("|")), {" --- "}, "a markdown separator row")
-        documented = {r.strip("|").split("|")[0].strip(): r for r in rows[2:]}
-        for name in adapter.names():
-            if name in ("pi",):
-                self.assertEqual(documented[name], adapter.capability_row(adapter.get(name)), name)
-        self.assertEqual(set(documented) - set(adapter.names()), set(), "a row for a harness that is not there")
-
-    def test_the_seams_doc_names_every_seam_and_every_capability(self):
-        with open(self.DOC) as f:
-            text = f.read()
-        for n in range(1, 12):
-            self.assertRegex(text, rf"(?m)^### S{n} ")
-        for k in adapter.CAPABILITIES:
-            self.assertIn(k, text)
-
-
 class Runner(unittest.TestCase):
-    def setUp(self):
-        self.d = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.d, True)
-
-    def test_a_timeout_kills_the_whole_group_and_keeps_what_came_out(self):
-        marker = os.path.join(self.d, "alive")
-        code, out = adapter.run_process(f"echo first; (sleep 3; touch {marker}) & wait", self.d, timeout=1)
-        self.assertEqual((code, out), (adapter.TIMED_OUT, "first\n"))
-        time.sleep(3.5)
-        self.assertFalse(os.path.exists(marker), "the grandchild outlived the timeout")
-
-    def test_check_raises_on_a_timeout_and_on_a_failure(self):
-        with self.assertRaisesRegex(adapter.ProcessFailed, "no result in 1s"):
-            adapter.run_process("sleep 5", self.d, timeout=1, check=True)
-        with self.assertRaisesRegex(adapter.ProcessFailed, "exit 3: boom"):
-            adapter.run_process("echo boom; exit 3", self.d, timeout=5, check=True)
-
-    def test_the_prompt_goes_to_stdin_and_stdin_is_closed(self):
-        cmd = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
-        for kw in ({}, {"tee_path": os.path.join(self.d, "s")}):
-            self.assertEqual(adapter.run_process(cmd, self.d, timeout=10, stdin="hello " * 40000, **kw)[1].strip(), ("HELLO " * 40000).strip())
-
-    def test_the_turn_cap_kills_the_group_and_the_tee_holds_the_stream(self):
-        tee = os.path.join(self.d, "episodes", "s.stream")
-        script = "for i in 1 2 3 4 5; do echo \"turn $i\"; done; sleep 30; echo late"
-        t0 = time.time()
-        code, out = adapter.run_process(["sh", "-c", script], self.d, timeout=60, max_turns=3,
-                                        turn_ended=lambda line: line.startswith("turn"), tee_path=tee)
-        self.assertEqual(code, adapter.TURN_CAPPED)
-        self.assertLess(time.time() - t0, 15)
-        self.assertNotIn("late", out)
-        with open(tee) as f:
-            self.assertEqual(f.read(), out, "what the run printed is what the file holds")
-        self.assertGreaterEqual(out.count("turn"), 3)
-
-    def test_a_killed_run_leaves_its_stream(self):
-        tee = os.path.join(self.d, "s")
-        code, out = adapter.run_process(["sh", "-c", "echo a; sleep 30"], self.d, timeout=1, tee_path=tee)
-        self.assertEqual((code, out), (adapter.TIMED_OUT, "a\n"))
-        with open(tee) as f:
-            self.assertEqual(f.read(), "a\n")
-
-    def test_a_cap_needs_the_harness_s_own_turn_test(self):
-        with self.assertRaises(ValueError):
-            adapter.run_process(["true"], self.d, max_turns=3)
-
-    def test_a_turn_test_that_raises_does_not_stop_the_reading(self):
-        def bad(line):
-            raise RuntimeError("x")
-        code, out = adapter.run_process(["sh", "-c", "seq 1 5000"], self.d, timeout=30, max_turns=3, turn_ended=bad)
-        self.assertEqual((code, out.count("\n")), (0, 5000))
-
     def test_fix_sh_is_this_runner_with_pi_s_turn_test_by_default(self):
+        import tempfile
         turn = json.dumps({"type": "message_end", "message": {"role": "assistant", "usage": {"output": 1}}})
         code, out = fix.sh(["sh", "-c", f"for i in 1 2 3 4 5; do echo '{turn}'; done; sleep 30"], ".", dict(os.environ), 60, max_turns=2)
         self.assertEqual(code, fix.TURN_CAPPED)
         with self.assertRaises(fix.Stop):
             fix.sh(["sh", "-c", "exit 3"], ".", dict(os.environ), 10, check=True)
-        tee = os.path.join(self.d, "t")
+        d = tempfile.mkdtemp()
+        tee = os.path.join(d, "t")
         self.assertEqual(fix.sh(["echo", "x"], ".", dict(os.environ), 10, tee_path=tee), (0, "x\n"))
         with open(tee) as f:
             self.assertEqual(f.read(), "x\n")
 
 
-class PiAdapter(unittest.TestCase):
-    def stream(self, name):
-        with open(os.path.join(PI_STREAMS, name)) as f:
-            return f.read()
+class ChainReview(unittest.TestCase):
+    """The review as Chain.review has always called pi: the platform's generic adapter is beside this, not under it."""
 
     def test_the_reviews_command_is_what_the_chain_always_sent(self):
         route = adapter.ModelRoute(alias="r", model="fleet-r", base_url="u", endpoint="gw", meta={"pi_provider": "flotilla-gw"})
@@ -341,18 +46,25 @@ class PiAdapter(unittest.TestCase):
                 ("none", "/r.md", ["--no-tools", "--no-context-files"]),
                 ("read", None, ["--tools", "read,grep,find,ls"]),
                 ("read", "/r.md", ["--tools", "read,grep,find,ls", "--no-context-files", "--append-system-prompt", "/r.md"])):
-            req = request("review", model=route, tools=tools, rules_path=rules, readonly=True, workdir="/wt", prompt="PROMPT")
-            inv = harness_pi.PI.build(req)
+            req = request("review", model=route, tools=tools, system_path=rules, workdir="/wt", prompt="PROMPT")
+            inv = pi_review.ChainReview().build(req)
             self.assertEqual((inv.argv, inv.env, inv.stdin, inv.cwd, inv.files), (head + want + ["PROMPT"], {}, None, "/wt", {}), (tools, rules))
+            self.assertEqual(pi_review.ChainReview().phone_home_env(), {}, "the worker image sets them, as it always did")
 
     def test_the_provider_is_the_endpoints_unless_the_chain_names_one(self):
         route = adapter.ModelRoute(alias="r", model="m", base_url="u", endpoint="gw")
-        self.assertEqual(harness_pi.PI.build(request("review", model=route, tools="none")).argv[5], "flotilla-gw")
+        self.assertEqual(pi_review.ChainReview().build(request("review", model=route, tools="none")).argv[5], "flotilla-gw")
 
-    def test_the_other_roles_run_through_pi_s_leaves(self):
-        for role in ("fix", "repro", "verdict", "advisor"):
-            with self.assertRaises(adapter.HarnessError, msg=role):
-                harness_pi.PI.build(request(role))
+    def test_the_review_is_pi_to_the_layer_and_to_the_checks(self):
+        r = pi_review.ChainReview()
+        self.assertEqual((r.name, r.tools_served), ("pi", harness_pi.PI.tools_served))
+        self.assertEqual(adapter.capabilities(r), dict(adapter.capabilities(harness_pi.PI), prompt_via_stdin=False))
+
+
+class PiStreams(unittest.TestCase):
+    def stream(self, name):
+        with open(os.path.join(PI_STREAMS, name)) as f:
+            return f.read()
 
     def test_what_the_chain_reads_of_a_stream_is_the_adapters_answer_error_and_turns(self):
         for name in ("stream_ok.jsonl", "stream_error.jsonl", "stream_error_bare.jsonl", "stream_capped.jsonl"):
@@ -394,116 +106,14 @@ class PiAdapter(unittest.TestCase):
             self.assertFalse(harness_pi.turn_ended(line), line)
 
 
-class Execute(unittest.TestCase):
-    """adapter.execute: build, write the files, run, read the outputs, parse; over the fake harness."""
-
-    def setUp(self):
-        self.h, self.cli = install_fake(self)
-        self.d = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.d, True)
-        self.state = os.path.join(self.d, "state")
-        os.makedirs(self.state)
-        self.env = dict(os.environ, FAKE_STATE=self.state)
-
-    def script(self, *steps):
-        with open(os.path.join(self.state, "fakeh_script"), "w") as f:
-            f.write("".join(json.dumps(s) + "\n" for s in steps))
-
-    def calls(self):
-        with open(os.path.join(self.state, "fakeh_calls")) as f:
-            return [json.loads(x) for x in f]
-
-    def req(self, **kw):
-        return request(run_dir=self.d, workdir=self.d, **kw)
-
-    def test_a_run_gives_the_episode_its_files_and_its_stream(self):
-        self.script({"turns": [{"text": "a", "usage": {"input": 5, "output": 2}, "cost": 0.5}, {"text": "b"}], "answer": "all done"})
-        ep, code, stream = adapter.execute(self.h, self.req(prompt="the prompt", episode="001-fix", rules_path="/r.md"), self.env)
-        self.assertEqual((code, ep.harness, ep.role, ep.answer, ep.session_id, ep.exit_reason), (0, "fakeh", "fix", "all done", "fakeh-sess-1", "completed"))
-        self.assertEqual([t.text for t in ep.turns], ["a", "b"])
-        self.assertEqual((ep.usage_total["output"], ep.cost_est), (2, 0.5))
-        self.assertEqual(ep.notes, ["fakeh: rules not delivered"])
-        self.assertEqual(ep.raw_path, "episodes/001-fix.stream")
-        with open(os.path.join(self.d, ep.raw_path)) as f:
-            self.assertEqual(f.read(), stream)
-        cfg = os.path.join(self.d, "fakeh", "config.json")
-        self.assertEqual(oct(os.stat(cfg).st_mode & 0o777), "0o600")
-        c = self.calls()[0]
-        self.assertEqual((c["stdin"], c["argv"][-2:]), ("the prompt", ["--tools", "all"]), "the prompt is on stdin, not in argv")
-        check_contract(self, ep, self.h)
-
-    def test_the_key_is_in_the_child_s_environment_only(self):
-        kf = os.path.join(self.d, "key")
-        with open(kf, "w") as f:
-            f.write("sk-secret\n")
-        req = self.req()
-        req.model.key_file = kf
-        adapter.execute(self.h, req, self.env)
-        c = self.calls()[0]
-        self.assertEqual(c["key"], "sk-secret")
-        self.assertNotIn("sk-secret", json.dumps(c["argv"]) + c["stdin"])
-
-    def test_a_resume_passes_the_session_back(self):
-        self.script({}, {"answer": "again"})
-        ep1, _, _ = adapter.execute(self.h, self.req(), self.env)
-        ep2, _, _ = adapter.execute(self.h, self.req(resume=self.h.resume_ref(ep1)), self.env)
-        self.assertEqual((ep1.session_id, ep2.session_id, ep2.answer), ("fakeh-sess-1", "fakeh-sess-1", "again"))
-        self.assertEqual(self.calls()[1]["argv"][-2:], ["--resume", "fakeh-sess-1"])
-
-    def test_the_turn_cap_ends_the_run_and_the_episode_says_so(self):
-        self.script({"turns": [{"text": str(i)} for i in range(6)], "sleep": 30})
-        t0 = time.time()
-        ep, code, _ = adapter.execute(self.h, self.req(max_turns=3, episode="002-fix"), self.env)
-        self.assertEqual((code, ep.exit_reason), (adapter.TURN_CAPPED, "turn_cap"))
-        self.assertLess(time.time() - t0, 15)
-        self.assertGreaterEqual(len(ep.turns), 3)
-        self.assertTrue(os.path.exists(os.path.join(self.d, "episodes", "002-fix.stream")))
-
-    def test_a_timeout_and_a_crash_are_named(self):
-        self.script({"turns": [{"text": "x"}], "sleep": 30}, {"exit": 3})
-        ep, code, _ = adapter.execute(self.h, self.req(timeout=1), self.env)
-        self.assertEqual((code, ep.exit_reason, ep.turns[0].text), (adapter.TIMED_OUT, "timeout", "x"))
-        ep, code, _ = adapter.execute(self.h, self.req(), self.env)
-        self.assertEqual((code, ep.exit_reason, ep.error), (3, "error", "no final event"))
-
-    def test_a_role_or_a_resume_the_harness_cannot_serve_is_refused_before_anything_runs(self):
-        self.h.roles = frozenset({"fix"})
-        with self.assertRaises(adapter.HarnessError):
-            adapter.execute(self.h, self.req(role="review"), self.env)
-        self.h.can_resume = False
-        with self.assertRaises(adapter.HarnessError):
-            adapter.execute(self.h, self.req(resume="s"), self.env)
-        self.assertFalse(os.path.exists(os.path.join(self.state, "fakeh_calls")))
-
-    def test_a_file_outside_the_run_directory_is_refused(self):
-        class Evil(FakeH):
-            def build(self, req):
-                inv = super().build(req)
-                inv.files = {"../escape": "x"}
-                return inv
-        with self.assertRaises(adapter.HarnessError):
-            adapter.execute(Evil(self.cli), self.req(), self.env)
-        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(self.d), "escape")))
-
-    def test_outputs_the_run_writes_reach_parse(self):
-        seen = {}
-
-        class Out(FakeH):
-            def build(self, req):
-                inv = super().build(req)
-                inv.outputs = ["fakeh/config.json", "fakeh/missing.json"]
-                return inv
-
-            def parse(self, stream_text, files):
-                seen.update(files)
-                return super().parse(stream_text, files)
-        adapter.execute(Out(self.cli), self.req(), self.env)
-        self.assertEqual(json.loads(seen["fakeh/config.json"]), {"alias": "bugfix-flash"})
-        self.assertEqual(seen["fakeh/missing.json"], "")
-
-    def test_pi_s_stream_is_not_written_beside_its_session_files(self):
-        self.assertFalse(harness_pi.PI.tees)
-        self.assertTrue(self.h.tees)
+class EpisodeFile(unittest.TestCase):
+    def test_the_chain_s_episode_file_is_version_1_and_says_role_as_it_always_did(self):
+        ep = adapter.Episode(harness="fakeh", station="fix", session_id="s")
+        doc = fix.episode_file(ep, "bugfix-flash", 2, 0, "ref")
+        self.assertEqual((doc["version"], doc["role"], "station" in doc), (1, "fix", False))
+        self.assertEqual(list(doc), ["harness", "role", "session_id", "turns", "answer", "error", "exit_reason", "usage_total", "cost_est",
+                                     "raw_path", "notes", "version", "alias", "seq", "code", "resume_ref"], "the keys keep their order")
+        self.assertEqual(adapter.Episode.from_dict(doc).station, "fix", "and the platform reads it back")
 
 
 if __name__ == "__main__":

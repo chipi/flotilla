@@ -1,0 +1,36 @@
+{
+  "harnesses": {
+    "flotilla": {
+      "can_resume": false,
+      "enforces_readonly": false,
+      "native_system_prompt": true,
+      "prompt_via_stdin": false,
+      "reports_cost": true,
+      "reports_usage": true,
+      "resume_after_kill": false,
+      "supports_hooks": true,
+      "supports_turn_cap": true,
+      "tools_served": [
+        "all",
+        "none"
+      ]
+    },
+    "pi": {
+      "can_resume": true,
+      "enforces_readonly": true,
+      "native_system_prompt": true,
+      "prompt_via_stdin": true,
+      "reports_cost": true,
+      "reports_usage": true,
+      "resume_after_kill": true,
+      "supports_hooks": false,
+      "supports_turn_cap": true,
+      "tools_served": [
+        "all",
+        "read",
+        "none"
+      ]
+    }
+  },
+  "version": 1
+}

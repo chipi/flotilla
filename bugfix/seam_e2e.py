@@ -1,4 +1,4 @@
-"""bugfix/seam_e2e.py: the seam end-to-end of a harness (bugfix/HARNESS_SEAMS.md): the real CLI, run by the chain against a
+"""bugfix/seam_e2e.py: the seam end-to-end of a harness (runtime/HARNESS_SEAMS.md): the real CLI, run by the chain against a
 scripted model endpoint instead of a model.
 
 A harness is adopted only when its real CLI binary, driven by bugfix/fix.py's Chain for the roles fix, repro and review
