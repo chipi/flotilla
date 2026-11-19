@@ -564,6 +564,29 @@ func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runner Run
 // identity (routineKey is the routine's id, or a shadow's "<id>@v<n>"), the models, skills, prompts and harness its spec names, and
 // where its spans go. The case it was handed is added by the caller.
 func (s *Scheduler) runEnv(j *spec.Routine, runID, routineKey, stage string, budgetLeft float64, traceparent string) map[string]string {
+	env, err := RunContract(j, s.Models, EnvParams{RunID: runID, RoutineKey: routineKey, Stage: stage, BudgetLeft: budgetLeft, Traceparent: traceparent,
+		OTLPTracesURL: s.OTLPTracesURL, Environment: s.Environment})
+	if err != nil {
+		s.Log.Error("the routine's models", "routine", routineKey, "err", err) // -check refuses this config
+	}
+	return env
+}
+
+// EnvParams is what varies between the runs of one routine version in the environment RunContract builds.
+type EnvParams struct {
+	RunID, RoutineKey, Stage string
+	BudgetLeft               float64
+	Traceparent              string
+	OTLPTracesURL            string
+	Environment              string
+}
+
+// RunContract is the environment a run of a routine version gets: the one function behind a live or shadow run (runEnv) and behind
+// `flotillad -stations`, so an offline run gets exactly what flotillad would hand it. The error is the models subset's; the rest of the
+// environment is returned with it.
+func RunContract(j *spec.Routine, mc *models.Config, p EnvParams) (map[string]string, error) {
+	runID, routineKey, stage, budgetLeft, traceparent := p.RunID, p.RoutineKey, p.Stage, p.BudgetLeft, p.Traceparent
+	var modelsErr error
 	env := map[string]string{
 		"FLEETD_STAGE":       stage,
 		"FLEETD_CYCLE_ID":    runID,
@@ -577,17 +600,15 @@ func (s *Scheduler) runEnv(j *spec.Routine, runID, routineKey, stage string, bud
 	if traceparent != "" {
 		env["TRACEPARENT"] = traceparent
 	}
-	if s.Models != nil && len(j.Models) > 0 {
-		sub, err := s.Models.Subset(j.Models)
+	if mc != nil && len(j.Models) > 0 {
+		sub, err := mc.Subset(j.Models)
 		if err == nil {
 			var js string
 			if js, err = sub.JSON(); err == nil {
 				env["FLOTILLA_MODELS"] = js
 			}
 		}
-		if err != nil {
-			s.Log.Error("the routine's models", "routine", routineKey, "err", err) // -check refuses this config
-		}
+		modelsErr = err
 	}
 	if sk := j.SkillsJSON(); sk != "" {
 		env["FLOTILLA_SKILLS"] = sk // the spec's skills.rule (ADR-0012), matched by the routine's code
@@ -598,13 +619,16 @@ func (s *Scheduler) runEnv(j *spec.Routine, runID, routineKey, stage string, bud
 	if h := j.HarnessJSON(); h != "" {
 		env["FLOTILLA_HARNESS"] = h // the spec's harness: (RFC-0002 §4)
 	}
-	if s.OTLPTracesURL != "" {
-		env["FLOTILLA_OTLP_TRACES_URL"] = s.OTLPTracesURL
+	if st := j.StationsJSON(); st != "" {
+		env["FLOTILLA_STATIONS"] = st // the version's stations with their texts' hashes (v2-design.md section 2); only a version that declares some
 	}
-	if s.Environment != "" {
-		env["FLOTILLA_ENVIRONMENT"] = s.Environment
+	if p.OTLPTracesURL != "" {
+		env["FLOTILLA_OTLP_TRACES_URL"] = p.OTLPTracesURL
 	}
-	return env
+	if p.Environment != "" {
+		env["FLOTILLA_ENVIRONMENT"] = p.Environment
+	}
+	return env, modelsErr
 }
 
 // The case events of a routine that may resume (ADR-0019), and the env key its run reads. The store has no

@@ -287,7 +287,16 @@ func main() {
 	cfgPath := flag.String("config", "/etc/flotilla/flotillad.yaml", "config file")
 	check := flag.Bool("check", false, "load config, callers and specs, print them, exit")
 	testError := flag.Bool("send-test-error", false, "send one labelled ERROR to GlitchTip through the configured path, then exit")
+	stationsDir := flag.String("stations", "", "print what a run of this version folder (fleets/<fleet>/<routine>/v<n>/) gets, with the load checks, and exit; needs no -config")
+	modelsPath := flag.String("models", "", "with -stations: the models config (the installation's models section) the run's FLOTILLA_MODELS is cut from")
 	flag.Parse()
+	if *stationsDir != "" {
+		if err := printStations(os.Stdout, *stationsDir, *modelsPath); err != nil {
+			fmt.Fprintln(os.Stderr, "stations:", err)
+			os.Exit(2)
+		}
+		return
+	}
 
 	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
