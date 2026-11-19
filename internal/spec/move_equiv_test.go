@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -95,8 +96,8 @@ func TestMovedRoutinesAreEquivalentToTheirFlatSpecs(t *testing.T) {
 			moved++
 		}
 		for _, ov := range o.Versions {
-			if got, want := movedRoutine(t, n, ov.Number), movedRoutine(t, o, ov.Number); !reflect.DeepEqual(got, want) {
-				t.Errorf("%s v%d: the moved routine is not equal to its flat spec\n now  %+v\n flat %+v", id, ov.Number, got, want)
+			if diff := differingFields(movedRoutine(t, n, ov.Number), movedRoutine(t, o, ov.Number)); len(diff) > 0 {
+				t.Errorf("%s v%d: the moved routine is not equal to its flat spec: %s", id, ov.Number, strings.Join(diff, "; "))
 			}
 			nv := n.VersionNamed(ov.Number)
 			if nv == nil || nv.Legacy {
@@ -125,6 +126,18 @@ func TestMovedRoutinesAreEquivalentToTheirFlatSpecs(t *testing.T) {
 	t.Logf("%d routines moved from a flat spec to a folder, all equal", moved)
 }
 
+// differingFields names each field of two routines that are not deeply equal, with both values.
+func differingFields(a, b Routine) []string {
+	var out []string
+	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	for i := 0; i < va.NumField(); i++ {
+		if !reflect.DeepEqual(va.Field(i).Interface(), vb.Field(i).Interface()) {
+			out = append(out, fmt.Sprintf("%s is %v, flat %v", va.Type().Field(i).Name, va.Field(i).Interface(), vb.Field(i).Interface()))
+		}
+	}
+	return out
+}
+
 func versionNumbers(j *Routine) []int {
 	var out []int
 	for _, v := range j.Versions {
@@ -151,12 +164,12 @@ func TestMoveEquivalenceNoticesADifference(t *testing.T) {
 	write(t, b, "jobs/r/routine.yaml", "fleet: jobs\nroutine: r\ndescription: d\nenabled: true\nworker: w\ntrigger: {every: 10m}\nautonomy: record\nbudget:\n  day_usd: 0\nfreshness: 25m\n")
 	write(t, b, "jobs/r/v1/spec.yaml", "run:\n  command: echo\n  workdir: .\n  timeout: 1m\n")
 	oa, ob := loadByID(t, a)["jobs/r"], loadByID(t, b)["jobs/r"]
-	if !reflect.DeepEqual(movedRoutine(t, oa, 1), movedRoutine(t, ob, 1)) {
-		t.Fatal("the same routine in both layouts compares unequal")
+	if diff := differingFields(movedRoutine(t, oa, 1), movedRoutine(t, ob, 1)); len(diff) > 0 {
+		t.Fatalf("the same routine in both layouts compares unequal: %v", diff)
 	}
 	write(t, b, "jobs/r/routine.yaml", strings.Replace("fleet: jobs\nroutine: r\ndescription: d\nenabled: true\nworker: w\ntrigger: {every: 10m}\nautonomy: record\nbudget:\n  day_usd: 0\nfreshness: 25m\n", "day_usd: 0", "day_usd: 1", 1))
 	ob = loadByID(t, b)["jobs/r"]
-	if reflect.DeepEqual(movedRoutine(t, oa, 1), movedRoutine(t, ob, 1)) {
-		t.Fatal("a changed budget compares equal")
+	if diff := differingFields(movedRoutine(t, oa, 1), movedRoutine(t, ob, 1)); len(diff) != 1 || !strings.HasPrefix(diff[0], "Budget ") {
+		t.Fatalf("a changed budget must differ in Budget alone: %v", diff)
 	}
 }

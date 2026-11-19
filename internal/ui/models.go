@@ -81,7 +81,7 @@ type invRow struct {
 	CheckFailed                                         bool
 }
 
-// ContractRoutine runs the contract checks (fleets/platform/model-contract.yaml).
+// ContractRoutine runs the contract checks (fleets/platform/model-contract/).
 const ContractRoutine = "platform/model-contract"
 
 // checkRun is one contract-check run's results for one alias.

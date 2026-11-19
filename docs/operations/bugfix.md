@@ -24,7 +24,7 @@ propose. The repos it may act on are the installation's: `action_enums` in `flot
 ## Per-repo profiles
 
 `bugfix/fix` knows nothing of a repo but its flags, so a repo is a routine spec that sets them
-(`fleets/bugfix/fix.yaml` is the example shop's; its defaults are the shop's: npm, vitest). One
+(`fleets/bugfix/fix/` is the example shop's; its defaults are the shop's: npm, vitest). One
 acting routine per case kind, so a second repo needs a kind of its own.
 
 | Flag | What it sets | Default (shop) |

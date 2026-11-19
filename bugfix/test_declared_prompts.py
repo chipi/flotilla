@@ -79,6 +79,22 @@ class Agreement(unittest.TestCase):
                                                     self.root, "bugfix"))
 
 
+class ShippedFleet(unittest.TestCase):
+    def test_the_example_fixs_declared_rules_resolve_to_the_text_the_code_ships(self):
+        # flotillad hands the path of a folder version's prompt as <routine>/v<n>/<file> (internal/spec/version.go); the fix
+        # routine's v1 holds its own copy of bugfix/fleet_rules.md, and the run must find exactly that file
+        root = os.path.normpath(os.path.join(HERE, ".."))
+        spec = open(os.path.join(root, "fleets", "bugfix", "fix", "v1", "spec.yaml")).read()
+        self.assertIn("\nprompts:\n  rules: rules.md\n", spec)
+        copy = os.path.join(root, "fleets", "bugfix", "fix", "v1", "rules.md")
+        with open(copy, "rb") as f:
+            data = f.read()
+        with open(os.path.join(HERE, "fleet_rules.md"), "rb") as f:
+            self.assertEqual(data, f.read(), "fix/v1/rules.md is not the bytes of bugfix/fleet_rules.md")
+        env = {"FLOTILLA_PROMPTS": json.dumps({"rules": {"path": "fix/v1/rules.md", "sha256": sha256(data)}})}
+        self.assertEqual(declared_prompts.resolve("rules", env, root, "bugfix"), copy)
+
+
 def sha256(b):
     return hashlib.sha256(b).hexdigest()
 

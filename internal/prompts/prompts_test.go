@@ -87,9 +87,9 @@ func TestRepoFleetsPrompts(t *testing.T) {
 		t.Fatalf("the example triage and bugfix routines declare prompts, found %d", declared)
 	}
 	a, _ := os.ReadFile(filepath.Join("..", "..", "bugfix", "fleet_rules.md"))
-	b, _ := os.ReadFile(filepath.Join(specs, "bugfix", "playbooks", "rules.md"))
+	b, _ := os.ReadFile(filepath.Join(specs, "bugfix", "fix", "v1", "rules.md"))
 	if len(a) == 0 || string(a) != string(b) {
-		t.Fatal("fleets/bugfix/playbooks/rules.md differs from bugfix/fleet_rules.md")
+		t.Fatal("fleets/bugfix/fix/v1/rules.md differs from bugfix/fleet_rules.md")
 	}
 }
 

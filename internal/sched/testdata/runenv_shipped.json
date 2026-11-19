@@ -6,7 +6,7 @@
     "FLOTILLA_ENVIRONMENT": "test",
     "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"fix-flash\":{\"endpoint\":\"gw\",\"model\":\"m-fix-flash\"},\"fix-reviewer\":{\"endpoint\":\"gw\",\"model\":\"m-fix-reviewer\"}}}",
     "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
-    "FLOTILLA_PROMPTS": "{\"rules\":{\"path\":\"playbooks/rules.md\",\"sha256\":\"e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856\"}}",
+    "FLOTILLA_PROMPTS": "{\"rules\":{\"path\":\"fix/v1/rules.md\",\"sha256\":\"e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856\"}}",
     "FLOTILLA_ROUTINE": "bugfix/fix",
     "FLOTILLA_ROUTINE_VERSION": "1",
     "FLOTILLA_RUN_ID": "run-1",

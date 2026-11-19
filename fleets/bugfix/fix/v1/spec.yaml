@@ -1,23 +1,8 @@
-fleet: bugfix
-routine: fix
-description: >-
-  The acting routine for code_bug cases (RFC-0010 §2, §9). A verdict on the issue, then fixes on the
-  repo's main with gates on what the fix touches only (its tests fail on the base and pass with the
-  fix; no new failure in the related tests; nothing in CI, hooks, config or the lockfile), up to three
-  kick-backs with the advisor, a review, and a github.open_pr plan with the diff, or an escalation with
-  the reason. The whole suite is the PR's CI. It holds no GitHub credential, and its worker can run on
-  another machine (RFC-0011).
-enabled: true
-worker: bugfix-fix
-trigger:
-  # RFC-0013 §2: all of a case's runs together get $1 and 90 minutes; a case past either is escalated
-  # instead of run again. Money counts only what the runs report as spend.
-  case: {kind: code_bug, limit: {usd: 1, minutes: 90}}
 models: [fix-flash, fix-reviewer]
-# The rules every pi step gets instead of the repo's AGENTS.md (ADR-0018): a file in the fleet's folder, its
+# The rules every pi step gets instead of the repo's AGENTS.md (ADR-0018): a file in this version's folder, its
 # hash handed to the run (FLOTILLA_PROMPTS), which refuses any other file. The same bytes as bugfix/fleet_rules.md.
 prompts:
-  rules: playbooks/rules.md
+  rules: rules.md
 run:
   command: >-
     python3 /opt/flotilla/bugfix/fix.py --repo example/shop --worker-model fix-flash
@@ -25,10 +10,6 @@ run:
   workdir: .
   spend_file: .bugfix-fix-spend
   timeout: 3h
-autonomy: shadow
-max_autonomy: propose
-budget:
-  day_usd: 1
 # What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/fix.py.
 explain:
   trigger: >-

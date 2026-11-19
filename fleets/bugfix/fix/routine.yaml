@@ -1,0 +1,19 @@
+fleet: bugfix
+routine: fix
+description: >-
+  The acting routine for code_bug cases (RFC-0010 §2, §9). A verdict on the issue, then fixes on the
+  repo's main with gates on what the fix touches only (its tests fail on the base and pass with the
+  fix; no new failure in the related tests; nothing in CI, hooks, config or the lockfile), up to three
+  kick-backs with the advisor, a review, and a github.open_pr plan with the diff, or an escalation with
+  the reason. The whole suite is the PR's CI. It holds no GitHub credential, and its worker can run on
+  another machine (RFC-0011).
+enabled: true
+worker: bugfix-fix
+trigger:
+  # RFC-0013 §2: all of a case's runs together get $1 and 90 minutes; a case past either is escalated
+  # instead of run again. Money counts only what the runs report as spend.
+  case: {kind: code_bug, limit: {usd: 1, minutes: 90}}
+autonomy: record
+max_autonomy: propose
+budget:
+  day_usd: 1

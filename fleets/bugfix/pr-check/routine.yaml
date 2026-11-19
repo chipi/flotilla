@@ -1,0 +1,13 @@
+fleet: bugfix
+routine: pr-check
+description: >-
+  The check for github.open_pr (registry check pr_resolved, RFC-0010 §3): reads the PR from
+  flotilla/<case>, read only. Merged verifies the case, closed without merging escalates it, open is
+  not yet; the registry's 14-day window escalates a PR nobody decided on.
+enabled: true
+worker: bugfix
+trigger:
+  check: {verify: pr_resolved}
+autonomy: record
+budget:
+  day_usd: 0

@@ -1,22 +1,7 @@
-fleet: bugfix
-routine: intake
-description: >-
-  The bugfix fleet's monitor (RFC-0010 §1): the repo's open issues labelled bug, or routed to bugfix by
-  triage, each a code_bug detection with the issue in its data; flotillad opens a case per issue and
-  absorbs a known one. Code only, read only: GitHub's public issues API.
-enabled: true
-worker: bugfix
-trigger:
-  every: 1h
-detects: [code_bug]
 run:
   command: python3 /opt/flotilla/bugfix/intake.py --repo example/shop --label bug --label triage-fleet/routed:bugfix
   workdir: .
   timeout: 2m
-autonomy: shadow
-budget:
-  day_usd: 0
-freshness: 3h
 # What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/intake.py.
 explain:
   trigger: >-

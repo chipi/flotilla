@@ -1566,11 +1566,11 @@ exec {real} "$@"
         self.assertEqual(self.rules(f), ["verdict none", "fix none", "review none no-context-files=no"])
 
     def test_the_fleets_rules_prompt_is_the_default_rules_file(self):
-        # the example fleet declares fleets/bugfix/playbooks/rules.md; without flotillad the default is
+        # the example fleet declares fleets/bugfix/fix/v1/rules.md; without flotillad the default is
         # bugfix/fleet_rules.md: one text, so a run behaves alike either way
         root = os.path.dirname(os.path.dirname(os.path.abspath(fix.__file__)))
         with open(os.path.join(root, "bugfix", "fleet_rules.md"), "rb") as a, \
-                open(os.path.join(root, "fleets", "bugfix", "playbooks", "rules.md"), "rb") as b:
+                open(os.path.join(root, "fleets", "bugfix", "fix", "v1", "rules.md"), "rb") as b:
             self.assertEqual(a.read(), b.read())
 
     def test_an_empty_pi_rules_keeps_pis_default(self):

@@ -1,42 +1,35 @@
 {
   "bugfix/fix@v1": {
-    "routine_hash": "46d3712fe491",
-    "version_hash": "b5d1680848cd7442eaeca6c85089f1677d3da59c846acb92e36b1e26276afc64",
-    "legacy": true,
+    "routine_hash": "212656264552",
+    "version_hash": "a958ae2ca20bc75fcf9c2da23efb39a82a1525cb370bfbfb98fe0a4c861b299b",
+    "legacy": false,
     "manifest": {
-      "explain": "9a14228f7d25eb02f2d4cd95662ce481ad42133c27d1e0f319bc1b03880a917e",
-      "models": "bbc2f67d14795208dd33ba3a1dc62903562e57e574f4ebf37eff2acb94652ba3",
-      "prompt-file:playbooks/rules.md": "e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856",
-      "prompts": "5f0a62dc190f6092f0c84050a269d64d89b608f33ceac0826285d25eeb108fbc",
-      "run": "578fcd121b8cd44f0f5feeab60f81f9e2d49f7b0be96a5ed80e861b07bb910df",
-      "steps": "6b1ca80aa0ce88ae7b7fa627939ab780fc9b3f0c2dc2fd52a3587c7e72718bb5"
+      "rules.md": "e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856",
+      "spec.yaml": "38d594954f299f2352df1b2cf78380b1ccef83ce4e338bf9a06804b79c69330b"
     }
   },
   "bugfix/intake@v1": {
-    "routine_hash": "ae384fc876dd",
-    "version_hash": "0098461da20e73df0277832c6e593a20a3f227cfaf035147b77da5e10cbfbb13",
-    "legacy": true,
+    "routine_hash": "5929054fb71e",
+    "version_hash": "d8629b2c8e23f405f51e757bc83e195428b2e44dcb15d4d680c7cedecb7619ee",
+    "legacy": false,
     "manifest": {
-      "explain": "3c354f8d78b04eca44c80acbd2cdb22ac70cf01f636e7ccda2c8ae17f9a8b1bf",
-      "run": "4c9164274d8ab19f40f540d716471883393881f5da46701333bfd502d14a6c0c"
+      "spec.yaml": "b5f13aa8fc07f4820eaff8ae25c617c955ef3ae602e97db945e5dc301a72698a"
     }
   },
   "bugfix/open-pr@v1": {
-    "routine_hash": "8c49debaa9c7",
-    "version_hash": "9a93cff2ce679fb6cfd28df0a3b5d17a09e97a394355bac1a4f0e0c42bed5fa6",
-    "legacy": true,
+    "routine_hash": "bd0d96644fc1",
+    "version_hash": "bb868d9477d1564cda036ed4082f1991ab62a6daec410ce49ba9eb8c15f61e2b",
+    "legacy": false,
     "manifest": {
-      "explain": "b976d8748d72a924ba1b1bf2d9c3244b0ceca38d031feca2eedf151699c67f97",
-      "run": "36277c57dfc5df073421f41aa6825b4d0ab9be53e31a31f4fb7d0c964a747037"
+      "spec.yaml": "5845d5100902b379c377130451ca5025b59906d90294e17af44e8b2377b4e408"
     }
   },
   "bugfix/pr-check@v1": {
-    "routine_hash": "b4f4e406264a",
-    "version_hash": "f373eaf42cef398bdb41de25d772732f972c29cdf1304771e54c2ab2c93a39a4",
-    "legacy": true,
+    "routine_hash": "9555af14122a",
+    "version_hash": "e0dc5420ca3b537ecbd5c9a2f994bb228072776aec0b84d7b9d6f912ded83498",
+    "legacy": false,
     "manifest": {
-      "explain": "5bde099d384a123b7442f9b0eef8c42c7e5abf40858b67cf3c539fe7d5916b5f",
-      "run": "cc2764ce57c5f8e698ed38c3e6a0c689daedfc7dc8e7ed81e9165e7194d83a33"
+      "spec.yaml": "41ea8de3017bdce320a17dcbd5ac733fea173b99863ea58e4dea1dcb26f5c20d"
     }
   },
   "campaigns/apply-hold@v1": {
@@ -416,12 +409,11 @@
     }
   },
   "platform/model-contract@v1": {
-    "routine_hash": "950c792fcb7d",
-    "version_hash": "737095a29ccb779a637a0b733db83a327b5658e99610c66b6192bb42561dc470",
-    "legacy": true,
+    "routine_hash": "57345104bec7",
+    "version_hash": "232b658d1c09d1a55c6a48efa67ea516a7b5624140dabcd9a43713942ab7c3a3",
+    "legacy": false,
     "manifest": {
-      "models": "8d795e6e224201e8026e3107521439afe08b0d172d72105df0d353b13153ab83",
-      "run": "5e860729e7d704c2549252a5e8d94bf80b295f6165abfc57176f65c2b70b9076"
+      "spec.yaml": "604145f2d709eaa5274bd3717258be6f6dce7210af99a75366db933f7e6e3a03"
     }
   },
   "renewals/apply-flag@v1": {

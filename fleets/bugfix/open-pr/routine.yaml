@@ -1,0 +1,15 @@
+fleet: bugfix
+routine: open-pr
+description: >-
+  The executing routine for github.open_pr (RFC-0010 §3): once a person approved a plan, it checks
+  the plan's hash, applies the diff to its base commit and opens a draft PR from flotilla/<case>,
+  with a GitHub App token minted for this execution only. It runs no repo code and holds no model
+  key. The operator merges, always.
+enabled: true
+worker: bugfix-act
+trigger:
+  execute: {action: github.open_pr}
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0
