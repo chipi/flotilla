@@ -124,6 +124,7 @@ func (s *Scheduler) resolveCommit(ctx context.Context, j *spec.Routine, runner R
 	sha, err := r.ResolveCommit(ctx, j.Repo.Name, j.Repo.Branch)
 	if err != nil {
 		s.Log.Warn("the commit of the routine's repository was not resolved", "routine", j.ID(), "repo", j.Repo.Name, "branch", j.Repo.Branch, "err", err)
+		// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 		s.StoreError("run_commit")
 		return input.Commit{}
 	}
@@ -165,6 +166,7 @@ func (s *Scheduler) takeSnapshot(ctx context.Context, j *spec.Routine, runner Ru
 	res, err := sn.TakeSnapshot(ctx, runID, j.State)
 	if err != nil {
 		s.Log.Warn("the state snapshot was not taken; the shadows will not run", "routine", j.ID(), "run_id", runID, "err", err)
+		// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 		s.StoreError("run_snapshot")
 		return store.SnapshotNone
 	}
@@ -480,6 +482,7 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 		}
 		if err := s.Store.RecordCalls(fctx, calls); err != nil {
 			log.Error("recording the shadow run's model calls", "run_id", runID, "err", err)
+			// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 			s.StoreError("run_calls")
 		}
 	}
@@ -494,6 +497,7 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 		}
 		if err := s.Store.RecordLoaded(fctx, items); err != nil {
 			log.Error("recording what the shadow run read", "run_id", runID, "err", err)
+			// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 			s.StoreError("run_loaded")
 		}
 	}

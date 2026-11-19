@@ -383,6 +383,9 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	if s.RunTokens != nil {
 		// before the run row, so a refusal leaves no run "running"; revoked on every way out of this function, the run's end included.
 		// A routine with no recorded versions runs as its one, v1 (as store.StartRun reads it).
+		// The token lives in this process only: after a flotillad restart an orphaned live run's ledger write gets 401 until the recovery's
+		// cancel lands (its token went with the old process; it used to succeed with the worker's own). A window of seconds, for a run that
+		// is cancelled anyway. The shadow path's issue (shadow.go) is the same.
 		if apiToken, err = s.RunTokens.Issue(runtoken.Run{ID: runID, Routine: id, Version: max(j.Version, 1), Worker: j.Worker}); err != nil {
 			return nil, nil, fmt.Errorf("run token: %w", err)
 		}
@@ -547,6 +550,7 @@ func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runner Run
 	}
 	if err == nil {
 		err = s.Store.NewInput(ctx, in)
+		// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 	}
 	if err != nil {
 		s.Log.Warn("the run's input was not recorded; its shadows will not run", "routine", id, "run_id", runID, "err", err)
