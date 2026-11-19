@@ -16,6 +16,8 @@ parallel decision log.
   parts went.
 - `0004-v2-step-2-shadows.md` — 2026-11-19: v2 step 2, shadows with no effect: what was built,
   decided and found on the way.
+- `0005-v2-steps-3-4.md` — 2026-11-19: v2 steps 3 and 4, stations and the harness layer in
+  `runtime/`: what was built, decided and found on the way.
 - `decisions.md` — *(optional, not started)* append-only decision log (D-NNNN
   entries). Newer decisions at the top. Use this if you make operational
   decisions worth grep-finding later (port picks, image bumps, tooling

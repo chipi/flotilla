@@ -1,6 +1,6 @@
 # ADR-0020 — Routine versions, stations and harnesses
 
-**Status:** Accepted (2026-11-18). Steps 1 and 2 are built (below); steps 3 to 7 are decided here
+**Status:** Accepted (2026-11-18). Steps 1 to 4 are built (below); steps 5 to 7 are decided here
 and built
 in order. The full design, with every section's reasoning, is
 [Routine versions, stations and harnesses](../wip/v2-design.md); this ADR is its decision record
@@ -206,8 +206,8 @@ the shadow worker, with a models config of its own and recorded tool results sta
 | --- | --- | --- |
 | 1 | routine and versions: the layout, states, controls, freeze, the version on every record, the routine page, the rename, acceptance and its evidence | **built** (the e2e covers the full lifecycle on a real stack) |
 | 2 | shadows with no effect: the per-run token, the shadow record, the worker split, telemetry labels, the frozen input schema, pairs | **built** (unit, integration and the e2e: a hostile shadow changes nothing on the live side; remote workers' routines cannot be shadowed yet) |
-| 3 | stations: the format, `fleets/harnesses.json`, `FLOTILLA_STATIONS`, `flotillad -stations`, the episode schema, the offline entry point | specified |
-| 4 | the harness layer in `runtime/`: the adapter interface, pi's adapter, the seams | specified |
+| 3 | stations: the format, `fleets/harnesses.json`, `FLOTILLA_STATIONS`, `flotillad -stations`, the episode schema, the offline entry point | **built** (unit and integration; the e2e of a station version is not, see [history 0005](../history/0005-v2-steps-3-4.md)). The superset relation with eval-harness's generic episode schema is pending: that schema does not exist yet, so none is pinned and the validator takes a list of schemas |
+| 4 | the harness layer in `runtime/`: the adapter interface, pi's adapter, the seams | **built** (the seam end-to-end runs on the real pi 1.0.0 and, in CI, on a fake harness; pi 0.80.10, the image's version, is not tried) |
 | 5 | the example fleets move to this format; the e2e covers versions, shadows, rollback, backward-readable state and the no-effect test | specified |
 | 6 | the installation moves its routines (each current spec its v1, live, identical, re-recorded with `flotilla versions rerecord`) and writes its v2s | specified |
 | 7 | harnesses adopted one by one | specified |
