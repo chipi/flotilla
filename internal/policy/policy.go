@@ -94,15 +94,18 @@ type State struct {
 	RunOnRecord          bool   // the cited run exists and belongs to the case's acting routine
 	RoutineAutonomy      string // the planning routine's autonomy (the freeze already applied by sched)
 	ActionAutonomy       string // earned; a new action is record
-	HostCeiling          string
-	Tainted              bool
-	Frozen               bool
-	LockHeldBy           string // the case holding the target's lock, "" when free
-	TargetToday          int    // executions of this action on this target today
-	HostHour             int    // executions on this host in the last hour
-	PlatformHour         int    // executions anywhere in the last hour
-	FailedHour           int    // failed or unknown executions in the last hour
-	HostNewCases         int    // cases opened on this host in the incident window
+	// HostExecutorCeiling caps an action the host agent runs; RoutineCeiling one a routine carries out (ADR-0017).
+	// A repo change has neither (it never goes above propose by kind), and the other kind's ceiling is never read.
+	HostExecutorCeiling string
+	RoutineCeiling      string
+	Tainted             bool
+	Frozen              bool
+	LockHeldBy          string // the case holding the target's lock, "" when free
+	TargetToday         int    // executions of this action on this target today
+	HostHour            int    // executions on this host in the last hour
+	PlatformHour        int    // executions anywhere in the last hour
+	FailedHour          int    // failed or unknown executions in the last hour
+	HostNewCases        int    // cases opened on this host in the incident window
 	// The recurrence rule (G14, security T17): the earlier case this one came back after, when that case
 	// was closed as verified, i.e. a fix ran, was checked, and did not hold. "" otherwise.
 	RecursVerified string
@@ -192,8 +195,18 @@ func Decide(p Plan, s State, lim Limits) Decision {
 	say("registry: %s for %s on %s", p.Action, s.CaseKind, s.CaseTarget)
 
 	// 2. Autonomy, lowest wins.
-	caps := []string{s.RoutineAutonomy, s.ActionAutonomy, s.HostCeiling}
-	say("autonomy: routine %s, action %s, host ceiling %s", s.RoutineAutonomy, s.ActionAutonomy, s.HostCeiling)
+	caps := []string{s.RoutineAutonomy, s.ActionAutonomy}
+	switch {
+	case s.Action.Repo():
+		say("autonomy: routine %s, action %s", s.RoutineAutonomy, s.ActionAutonomy)
+	case s.Action.ByRoutine():
+		caps = append(caps, s.RoutineCeiling)
+		say("autonomy: routine %s, action %s, routine-action ceiling %s", s.RoutineAutonomy, s.ActionAutonomy, s.RoutineCeiling)
+	default:
+		caps = append(caps, s.HostExecutorCeiling)
+		// "host ceiling" is the wording recorded plans already carry; the Case page reads it back (ui planLevels).
+		say("autonomy: routine %s, action %s, host ceiling %s", s.RoutineAutonomy, s.ActionAutonomy, s.HostExecutorCeiling)
+	}
 	if s.Tainted {
 		caps = append(caps, spec.AutonomyPropose)
 		say("tainted run: at most propose")

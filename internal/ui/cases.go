@@ -546,10 +546,15 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 	if len(plans) > 0 {
 		p := plans[len(plans)-1]
 		d.Plan = &p
-		routine, action, host, ok := planLevels(p)
+		routine, action, host, routineAction, ok := planLevels(p)
 		if ok {
-			d.Levels = []policyLevel{{"The routine (" + orDash(d.Routine) + ")", routine}, {"This action's earned level", action},
-				{"The host cap on " + hostOf(c.Target), host}}
+			d.Levels = []policyLevel{{"The routine (" + orDash(d.Routine) + ")", routine}, {"This action's earned level", action}}
+			switch {
+			case host != "":
+				d.Levels = append(d.Levels, policyLevel{"The host cap on " + hostOf(c.Target), host})
+			case routineAction != "":
+				d.Levels = append(d.Levels, policyLevel{"The cap on routine actions", routineAction})
+			}
 		}
 		fr, _ := u.API.FreezeState(ctx)
 		frozen := "off"

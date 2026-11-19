@@ -92,6 +92,27 @@ func TestRemoteWorkersConfig(t *testing.T) {
 	}
 }
 
+// routine_actions.max_autonomy: propose (the default, so deploying the option changes no decision) or auto; -check says which.
+func TestRoutineActionsConfig(t *testing.T) {
+	for extra, want := range map[string]string{"": "propose", "routine_actions: {}\n": "propose", "routine_actions: {max_autonomy: propose}\n": "propose",
+		"routine_actions: {max_autonomy: auto}\n": "auto"} {
+		c, err := load(t, extra)
+		if err != nil || c.RoutineActions.MaxAutonomy != want {
+			t.Errorf("%q: max_autonomy %q %v, want %q", extra, c.RoutineActions.MaxAutonomy, err, want)
+			continue
+		}
+		if line := routineActionsLine(c); !strings.Contains(line, "max autonomy "+want) {
+			t.Errorf("%q: -check says %q", extra, line)
+		}
+	}
+	for _, bad := range []string{"routine_actions: {max_autonomy: record}\n", "routine_actions: {max_autonomy: Auto}\n", "routine_actions: {max_autonomy: yes}\n",
+		"routine_actions: {max: auto}\n"} {
+		if _, err := load(t, bad); err == nil || !strings.Contains(err.Error(), "routine_actions") && !strings.Contains(err.Error(), "max") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
 // run_tokens: accept (the default) or required.
 func TestRunTokensConfig(t *testing.T) {
 	for extra, want := range map[string]string{"": RunTokensAccept, "run_tokens: accept\n": RunTokensAccept, "run_tokens: required\n": RunTokensRequired} {

@@ -159,6 +159,8 @@ type Server struct {
 	SpecsDir string
 	// RunTokens resolves a run's own token (internal/runtoken); nil: no run tokens, as before.
 	RunTokens *runtoken.Registry
+	// RoutineActionMax is flotillad.yaml's routine_actions.max_autonomy: propose or auto; "" is propose (RoutineActionCeiling).
+	RoutineActionMax string
 }
 
 type ctxKey struct{}

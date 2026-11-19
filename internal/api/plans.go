@@ -20,10 +20,21 @@ import (
 // has none, so it is record.
 func actionSubject(name string) string { return "action:" + name }
 
-// hostCeiling is the highest autonomy a host accepts. ADR-0006 §5 puts it in each host's reviewed config,
-// installed with the host agent, which is not built: until then every host is a new host, and a new host
-// starts at propose.
-const hostCeiling = spec.AutonomyPropose
+// hostExecutorCeiling is the highest autonomy the host executor accepts, for an action the host agent runs.
+// ADR-0006 §5 puts it in each host's reviewed config, installed with the host agent: per-host ceilings are not
+// built, so every host is a new host and starts at propose. It does not cap a routine action (whose target is
+// not a host; RoutineActionCeiling does) or a repo change (which never goes above propose by kind).
+const hostExecutorCeiling = spec.AutonomyPropose
+
+// RoutineActionCeiling is the highest autonomy a routine action may reach: the installation's
+// `routine_actions.max_autonomy` (flotillad.yaml), propose when unset so nothing changes until it opts in. An
+// action still has to earn auto and its routine be at auto; the ceiling only stops it going further.
+func (s *Server) RoutineActionCeiling() string {
+	if s.RoutineActionMax == spec.AutonomyAuto {
+		return spec.AutonomyAuto
+	}
+	return spec.AutonomyPropose
+}
 
 // incidentWindow is the host incident rule's window (RFC-0004 §5.3).
 const incidentWindow = 15 * time.Minute
@@ -103,7 +114,7 @@ func (s *Server) applyDecision(ctx context.Context, c store.Case, p policy.Plan,
 }
 
 func (s *Server) planState(ctx context.Context, c store.Case, p policy.Plan) (policy.State, error) {
-	st := policy.State{CaseKind: c.Kind, CaseTarget: c.Target, HostCeiling: hostCeiling, ActionAutonomy: spec.AutonomyRecord}
+	st := policy.State{CaseKind: c.Kind, CaseTarget: c.Target, HostExecutorCeiling: hostExecutorCeiling, RoutineCeiling: s.RoutineActionCeiling(), ActionAutonomy: spec.AutonomyRecord}
 	if s.Registry != nil {
 		st.Action, st.ActionFound = s.Registry.Action(p.Action)
 	}
@@ -250,8 +261,8 @@ func (s *Server) holdLift(w http.ResponseWriter, r *http.Request, c Caller) {
 	writeAction(w, err, 200, map[string]string{"id": r.PathValue("id"), "lifted_by": c.Name})
 }
 
-// HostCeiling and IncidentWindow are shown on the UI's Autonomy page as they are.
+// HostExecutorCeiling and IncidentWindow are shown on the UI's Autonomy page as they are.
 const (
-	HostCeiling    = hostCeiling
-	IncidentWindow = incidentWindow
+	HostExecutorCeiling = hostExecutorCeiling
+	IncidentWindow      = incidentWindow
 )

@@ -29,18 +29,18 @@ type changeRow struct{ When, Text string }
 type guard struct{ What, Value string }
 
 type autonomyData struct {
-	Frozen    bool
-	FrozenBy  string
-	FrozenAt  string
-	Line      string
-	Changes   []changeRow
-	Actions   []actionRow
-	Routines  []api.RoutineStatus
-	Guards    []guard
-	Hosts     []hostRow
-	Ceiling   string
-	FleetStop map[string]bool
-	Recur     []recurRow
+	Frozen                      bool
+	FrozenBy                    string
+	FrozenAt                    string
+	Line                        string
+	Changes                     []changeRow
+	Actions                     []actionRow
+	Routines                    []api.RoutineStatus
+	Guards                      []guard
+	Hosts                       []hostRow
+	HostCeiling, RoutineCeiling string
+	FleetStop                   map[string]bool
+	Recur                       []recurRow
 }
 
 // recurRow is one kind under "Recurrence rule per kind" (G14).
@@ -84,7 +84,7 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		breaker = "open"
 	}
 	d := autonomyData{Frozen: fr.Frozen, FrozenBy: strings.TrimPrefix(fr.By, "user:"), FrozenAt: u.clock(fr.At), Routines: routines,
-		Ceiling: api.HostCeiling}
+		HostCeiling: api.HostExecutorCeiling, RoutineCeiling: u.API.RoutineActionCeiling()}
 	if fr.Frozen {
 		d.Line = "Autonomy is frozen."
 	} else {

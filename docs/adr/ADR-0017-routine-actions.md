@@ -36,6 +36,32 @@ are reversible enough to earn auto, which a repo action never may.
 5. **The executing routine checks the plan's hash** (`policy.Plan.Hash`) against the approved one before
    it acts, as `bugfix/open_pr.py` does: a changed parameter is refused, not carried out.
 
+## Amendment, 2026-11-19: the ceiling of a routine action
+
+Decision 3 said a routine action may reach auto, but the host executor's ceiling (propose,
+ADR-0006 §5) was put in every plan's policy state, so no routine action could. The host ceiling
+now caps only an action the host agent runs. A routine action has its own ceiling, an option of
+the installation:
+
+```yaml
+routine_actions:
+  max_autonomy: propose   # or auto; unset is propose
+```
+
+- **Default `propose`**, so deploying this changes no decision until an installation opts in (replayed:
+  `internal/policy/testdata/default_ceiling_replay.jsonl`, 1296 decisions of the registry's real
+  actions, run through the code before the change). `flotillad -check` prints the value.
+- **With `auto`** a routine action runs without approval only when all three allow it: its routine's
+  autonomy, the action's earned autonomy (ADR-0008) and this option. The freeze, the circuit breaker,
+  taint, `reversible: no`, the recurrence rule, locks, holds and limits still apply, and a plan
+  from a rolled-back version is still escalated.
+- **A repo change** has no ceiling of this kind and never goes above propose by kind.
+- **The host executor's ceiling stays `propose` for every host.** Per-host ceilings from each host's
+  reviewed config (ADR-0006 §5) are not built; the code and the UI name it as the host executor's
+  ceiling, and it does not read this option.
+- The recorded reason says which ceiling applied: `host ceiling` (unchanged wording) for a host action,
+  `routine-action ceiling` for a routine action, none for a repo change.
+
 ## Consequences
 
 - The business examples (`fleets/crm`, `campaigns`, `outbound`, `renewals`) declare six routine actions

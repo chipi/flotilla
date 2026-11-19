@@ -153,6 +153,7 @@ token from the container).
 | **Pause the routine** | `flotilla pause triage/cycle`; `flotilla resume triage/cycle --reason "..."`. The UI's routine page has the same controls |
 | **STOP the fleet** | `flotilla stop triage` cancels the fleet's runs in flight and skips its later starts; `flotilla start triage --reason "..."` ends it. `flotilla autonomy freeze` holds every routine at record |
 | **Change autonomy** | `flotilla autonomy triage/cycle record\|propose\|auto --reason "..."` (the routine's own cap is in its spec; `shadow` still works as the old name of `record`) |
+| **Let routine actions earn auto** | `routine_actions: {max_autonomy: auto}` in `flotillad.yaml` (unset is `propose`: every routine action, such as a CRM field change, waits for approval); `flotillad -check` prints the value. It only lifts the ceiling: the routine and the action must still be at auto, earned as above. Host actions stay at propose; the Autonomy page shows both caps |
 | **Deploy a code change** | merge to `main`, wait for CI, then **[host]** `deploy/server/deploy.sh sha-<7>`: see "Deploy and roll back" below. A new image restarts the worker; the next cycle runs the new code |
 | **Deploy the installation's own fleets** | **[host]** `deploy/server/deploy_fleets.sh <commit>`; first `--diff <commit>` to see what changes; `--rollback` goes back one commit |
 | **Roll back code** | **[host]** `deploy/server/deploy.sh --rollback` |

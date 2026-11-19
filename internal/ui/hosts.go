@@ -39,7 +39,7 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 	}
 	out := make([]hostRow, 0, len(hosts))
 	for _, h := range hosts {
-		row := hostRow{Host: h, Cap: api.HostCeiling, Agent: orDash(h.Version), Execs: n[h.Name], Exec24: fmt.Sprint(n[h.Name])}
+		row := hostRow{Host: h, Cap: api.HostExecutorCeiling, Agent: orDash(h.Version), Execs: n[h.Name], Exec24: fmt.Sprint(n[h.Name])}
 		switch {
 		case h.RevokedAt != nil:
 			row.Status, row.Lamp, row.Cap, row.Cert = "revoked", "lamp lamp--idle", "–", "revoked "+u.clock(*h.RevokedAt)
@@ -85,6 +85,8 @@ type hostsData struct {
 	Heads []thCell
 	Rows  []hostRow
 	All   int
+	// RoutineCeiling is shown in the footnote: a host's cap does not apply to routine actions, which have their own.
+	RoutineCeiling string
 }
 
 var hostSorts = map[string]bool{"host": true, "status": true, "exec": true, "agent": true, "cert": true}
@@ -97,7 +99,7 @@ func (u *Server) hostsPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 	}
 	t := readTable(r, "host", false, func(c string) bool { return hostSorts[c] })
 	st, q := t.Get("status"), strings.ToLower(t.Get("q"))
-	d := hostsData{T: t, All: len(rows)}
+	d := hostsData{T: t, All: len(rows), RoutineCeiling: u.API.RoutineActionCeiling()}
 	count := map[string]int{}
 	var out []hostRow
 	for _, h := range rows {
@@ -134,7 +136,7 @@ func (u *Server) hostsPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 	})
 	d.Rows = window(out, &t)
 	d.T = t
-	d.Heads = []thCell{t.Th("host", "Host"), t.Th("status", "Status"), t.Plain("Roles"), t.Plain("Autonomy cap"), t.Plain("CPU · mem · disk"),
+	d.Heads = []thCell{t.Th("host", "Host"), t.Th("status", "Status"), t.Plain("Roles"), t.Plain("Host autonomy cap"), t.Plain("CPU · mem · disk"),
 		t.Th("exec", "Executions 24h"), t.Th("agent", "Host agent"), t.Th("cert", "Certificate")}
 	u.render(w, "hosts.html", 200, u.pageFor(s, "Hosts", "Hosts", r, d))
 }

@@ -40,6 +40,11 @@ every routine (`max_autonomy`, non-impact mode), a fourth cap in the same "lowes
 Amended by [ADR-0014](ADR-0014-operator-ui.md) (2026-11-13): the freeze lowers every routine to
 `shadow`, so nothing outward happens while it holds; it never overwrites a routine's own control.
 
+Amended by [ADR-0017](ADR-0017-routine-actions.md) (2026-11-19): the host's autonomy cap applies to
+actions the host agent runs only. A routine action is capped by the installation's
+`routine_actions.max_autonomy` (default `propose`; `auto` lets it earn auto), a repo change never goes
+above `propose`. Per-host caps are still one cap, propose, for every host.
+
 Amended by [ADR-0020](ADR-0020-routine-versions-stations-harnesses.md) (2026-11-18): the lowest level
 is now named `record` (it records the plan and acts on nothing), because `shadow` became the state of
 a routine version that runs beside the live one. A spec may still say `autonomy: shadow`, read as

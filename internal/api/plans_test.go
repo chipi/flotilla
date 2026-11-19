@@ -181,6 +181,114 @@ func TestFrozenPlansAreRecorded(t *testing.T) {
 	}
 }
 
+const crmUpdate = "crm.update_field"
+
+// plannedOther is plannedCase for another kind and target, planned by triage/cycle in run runID.
+func plannedOther(t *testing.T, s *Server, kind, target, runID string) string {
+	t.Helper()
+	ctx := context.Background()
+	k := store.Key{Kind: "target", Value: kind + "/" + target}
+	id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: kind, Target: target, Keys: []store.Key{k}, Canonical: k}, "ops/monitor", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/monitor", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "triage/cycle", "run "+runID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.StartRun(ctx, store.Run{ID: runID, Routine: "triage/cycle", SpecHash: "x", Trigger: "event", Actor: "flotillad",
+		Autonomy: "record", StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Status: store.StatusRunning}); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func crmPlan(id, runID string) policy.Plan {
+	return policy.Plan{CaseID: id, RunID: runID, Action: crmUpdate,
+		Params: map[string]string{"contact": "c1", "field": "email", "from": "a@example.org", "to": "b@example.org"}}
+}
+
+// earned sets the routine's autonomy and an action's earned autonomy, as the operator would.
+func earned(t *testing.T, s *Server, routine, action, name string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := s.Store.SetControl(ctx, "triage/cycle", sched.KeyAutonomy, routine, "user:ada", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.SetControl(ctx, actionSubject(name), "autonomy", action, "user:ada", "api"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ADR-0017 and the operator's decision of 2026-11-19: a routine action reaches auto only when the routine's autonomy, the action's
+// earned autonomy and flotillad.yaml's routine_actions.max_autonomy all allow it. Unset it is propose, so no decision changes
+// until an installation opts in.
+func TestRoutineActionAutoNeedsEveryCap(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		option, routine, action string
+		outcome, status         string
+	}{
+		{"", "auto", "auto", policy.Propose, cases.AwaitingApproval},
+		{"propose", "auto", "auto", policy.Propose, cases.AwaitingApproval},
+		{"auto", "auto", "auto", policy.Auto, cases.Executing},
+		{"auto", "propose", "auto", policy.Propose, cases.AwaitingApproval},
+		{"auto", "auto", "propose", policy.Propose, cases.AwaitingApproval},
+		{"auto", "auto", "record", policy.Record, cases.Closed},
+	} {
+		s := newServer(t, func(*spec.Routine) {})
+		s.RoutineActionMax = c.option
+		earned(t, s, c.routine, c.action, crmUpdate)
+		id := plannedOther(t, s, "crm_fix", "crm:contact/c-1/email", "run-1")
+		d, _, err := s.DecidePlan(ctx, crmPlan(id, "run-1"))
+		name := "option " + c.option + ", routine " + c.routine + ", action " + c.action
+		if err != nil || d.Outcome != c.outcome {
+			t.Errorf("%s: %+v %v, want %s", name, d, err, c.outcome)
+			continue
+		}
+		if got := caseStatus(t, s, id).Status; got != c.status {
+			t.Errorf("%s: the case is %s, want %s", name, got, c.status)
+		}
+		if h, _ := s.Store.LockHolder(ctx, "crm:contact/c-1/email"); (h == id) != (c.status != cases.Closed) {
+			t.Errorf("%s: the lock is held by %q", name, h)
+		}
+	}
+}
+
+// The option is for routine actions only: a host action at auto everywhere still proposes (its executor's ceiling is propose), and a
+// repo change never goes above propose.
+func TestRoutineActionOptionDoesNotLiftHostOrRepoActions(t *testing.T) {
+	ctx := context.Background()
+	s := newServer(t, func(*spec.Routine) {})
+	s.RoutineActionMax = spec.AutonomyAuto
+	earned(t, s, "auto", "auto", rerun)
+	id := plannedCase(t, s, "", "run-1")
+	d, _, err := s.DecidePlan(ctx, planFor(id, "run-1", "backup-01"))
+	if err != nil || d.Outcome != policy.Propose || !strings.Contains(strings.Join(d.Reasons, ";"), "host ceiling propose") {
+		t.Fatalf("a host action with the option at auto: %+v %v", d, err)
+	}
+	if err := s.Store.SetControl(ctx, actionSubject("repo.process_change"), "autonomy", "auto", "user:ada", "api"); err != nil {
+		t.Fatal(err)
+	}
+	rid := plannedOther(t, s, "process_change", "repo:example/fleets", "run-2")
+	d, _, err = s.DecidePlan(ctx, policy.Plan{CaseID: rid, RunID: "run-2", Action: "repo.process_change",
+		Params: map[string]string{"file": "none", "rule": "below_cycle", "change": "x"}})
+	if err != nil || d.Outcome != policy.Propose {
+		t.Fatalf("a repo change with the option at auto: %+v %v", d, err)
+	}
+}
+
+// RoutineActionCeiling: only auto lifts it; anything else is propose.
+func TestRoutineActionCeilingDefaultsToPropose(t *testing.T) {
+	for in, want := range map[string]string{"": "propose", "propose": "propose", "auto": "auto", "record": "propose", "yolo": "propose"} {
+		if got := (&Server{RoutineActionMax: in}).RoutineActionCeiling(); got != want {
+			t.Errorf("%q: %s, want %s", in, got, want)
+		}
+	}
+}
+
 func TestOnlyAPlannedCaseIsDecided(t *testing.T) {
 	ctx := context.Background()
 	s := newServer(t, func(*spec.Routine) {})

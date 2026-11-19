@@ -107,6 +107,22 @@ type Config struct {
 	// (a worker declared shadow: true below), with the read environment only; queue_max bounds the case inputs that wait per version
 	// (default 20); after_live starts a shadow only when its live run has ended.
 	Shadows sched.ShadowConfig `yaml:"shadows"`
+	// Optional: how far a routine action (ADR-0017) may go. max_autonomy is propose (the default) or auto; an action still has to earn auto
+	// and its routine be at auto. Host actions keep the host executor's ceiling (propose) and repo changes never go above propose.
+	RoutineActions RoutineActionsConfig `yaml:"routine_actions"`
+}
+
+// RoutineActionsConfig is flotillad.yaml's routine_actions block.
+type RoutineActionsConfig struct {
+	MaxAutonomy string `yaml:"max_autonomy"`
+}
+
+// routineActionsLine is what -check says about routine_actions.max_autonomy.
+func routineActionsLine(cfg *Config) string {
+	if cfg.RoutineActions.MaxAutonomy == spec.AutonomyAuto {
+		return "routine actions: max autonomy auto (a routine action runs without approval once its routine and the action have earned auto; host actions stay at propose)"
+	}
+	return "routine actions: max autonomy propose (every routine action waits for approval; unset, or set to propose)"
 }
 
 // The values of run_tokens.
@@ -237,6 +253,13 @@ func loadConfig(path string) (*Config, error) {
 	case RunTokensAccept, RunTokensRequired:
 	default:
 		errs = append(errs, fmt.Errorf("run_tokens %q: accept (the default) or required", c.RunTokens))
+	}
+	switch c.RoutineActions.MaxAutonomy {
+	case "":
+		c.RoutineActions.MaxAutonomy = spec.AutonomyPropose
+	case spec.AutonomyPropose, spec.AutonomyAuto:
+	default:
+		errs = append(errs, fmt.Errorf("routine_actions.max_autonomy %q: propose (the default) or auto", c.RoutineActions.MaxAutonomy))
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
@@ -433,6 +456,7 @@ func main() {
 		}
 		fmt.Printf("run tokens: %s (every run has its own token for the workers' listener%s)\n", cfg.RunTokens,
 			map[bool]string{true: "; a worker's own token opens nothing there", false: "; a worker's own token still opens it"}[cfg.RunTokens == RunTokensRequired])
+		fmt.Println(routineActionsLine(cfg))
 		for _, line := range shadowCheckLines(cfg, routines) {
 			fmt.Println(line)
 		}
@@ -540,7 +564,7 @@ func main() {
 	runTokens := runtoken.New()
 	s.RunTokens = runTokens
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir,
-		RunTokens: runTokens}
+		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
 	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}

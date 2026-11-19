@@ -54,8 +54,9 @@ From the reference installation (the v1 chain).
    running). Still a problem, so it plans `backup.rerun_observability(backup-01)`, citing the numbers.
 4. **Policy.** flotillad checks the plan: the action exists, is declared for `failed_backup`,
    its target is the case's; autonomy is the lowest of the routine's, the action's earned
-   autonomy, the host's autonomy cap, taint and the freeze; the lock is free, limits and holds
-   clear.
+   autonomy, the host's autonomy cap (for a routine action, the installation's
+   `routine_actions.max_autonomy` instead, propose unless it opts in), taint and the freeze; the lock
+   is free, limits and holds clear.
    - In **record**: the plan is recorded and the case closes.
    - In **propose**: the case waits in `awaiting_approval`; the `approvals` channel shows it in Slack;
      the operator approves there or by CLI, bound to the plan's hash (CLI first; Slack from the first

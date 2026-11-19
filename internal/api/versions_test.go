@@ -912,8 +912,10 @@ func TestPlanFiledAfterTheRollbackIsEscalatedAtAuto(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done
-	// A routine action (crm.update_field, executor routine) on a non-host target: with routine and action at auto
-	// nothing else caps it, so without the guard this plan would be decided Auto and the case would execute.
+	// A routine action (crm.update_field, executor routine) on a non-host target: with routine and action at auto and the
+	// installation's routine_actions.max_autonomy at auto nothing else caps it, so without the guard this plan would be
+	// decided Auto and the case would execute.
+	s.RoutineActionMax = spec.AutonomyAuto
 	if err := s.Store.SetControl(ctx, actionSubject("crm.update_field"), "autonomy", policy.Auto, "operator", "test"); err != nil {
 		t.Fatal(err)
 	}

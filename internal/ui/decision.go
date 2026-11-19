@@ -146,9 +146,9 @@ func hostOf(target string) string {
 	return t
 }
 
-// planLevels reads policy's "autonomy: routine X, action Y, host ceiling Z" reason into the levels the
-// Case page's "Why policy asked" lists.
-func planLevels(p store.PlanRecord) (routine, action, host string, ok bool) {
+// planLevels reads policy's "autonomy: routine X, action Y, host ceiling Z" reason (or "routine-action ceiling Z" for a
+// routine action; a repo change has neither) into the levels the Case page's "Why policy asked" lists.
+func planLevels(p store.PlanRecord) (routine, action, host, routineAction string, ok bool) {
 	for _, r := range p.Reasons {
 		rest, found := strings.CutPrefix(r, "autonomy: ")
 		if !found {
@@ -166,11 +166,13 @@ func planLevels(p store.PlanRecord) (routine, action, host string, ok bool) {
 				action = f[len(f)-1]
 			case "host":
 				host = f[len(f)-1]
+			case "routine-action":
+				routineAction = f[len(f)-1]
 			}
 		}
-		return routine, action, host, true
+		return routine, action, host, routineAction, true
 	}
-	return "", "", "", false
+	return "", "", "", "", false
 }
 
 // words writes a duration as people say it: "2 hours", "30 minutes", "1 hour 30 minutes".

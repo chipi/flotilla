@@ -111,9 +111,10 @@
       {{range .Guards}}<div class="kv"><span>{{.What}}</span><span>{{.Value}}</span></div>{{end}}
     </section>
     <section class="card" aria-labelledby="c">
-      <h2 id="c">Host autonomy caps</h2>
-      <p class="panel-note">One cap for every host until each host's reviewed config comes with the host agent.</p>
-      {{range .Hosts}}<div class="kv"><strong>{{.Name}}</strong><span class="{{level .Cap}}">{{.Cap}}</span></div>{{else}}<div class="kv"><span>every host</span><span class="{{level .Ceiling}}">{{.Ceiling}}</span></div>{{end}}
+      <h2 id="c">Autonomy caps</h2>
+      <p class="panel-note">A host action stops at its host's cap (one cap for every host until each host's reviewed config comes with the host agent). A routine action has its own cap, set in flotillad.yaml (<span class="exact">routine_actions.max_autonomy</span>, propose unless the installation opts in); it still has to earn auto. A repo change never goes above propose.</p>
+      {{range .Hosts}}<div class="kv"><span>Host actions on <strong>{{.Name}}</strong></span><span class="{{level .Cap}}">{{.Cap}}</span></div>{{else}}<div class="kv"><span>Host actions, every host</span><span class="{{level .HostCeiling}}">{{.HostCeiling}}</span></div>{{end}}
+      <div class="kv"><span>Routine actions</span><span class="{{level .RoutineCeiling}}">{{.RoutineCeiling}}</span></div>
       <h2>Recurrence rule per kind</h2>
       {{range .Recur}}<div class="kv"><span class="exact">{{.Kind}}</span><span>{{.Rule}}</span></div>{{else}}<p class="panel-note">No action declares a kind yet.</p>{{end}}
     </section>
