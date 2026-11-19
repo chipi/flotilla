@@ -6,6 +6,7 @@ import json
 import os
 import socket
 import sys
+import shutil
 import tempfile
 import threading
 import time
@@ -20,6 +21,7 @@ import flotilla_worker as fw  # noqa: E402
 class TestEnv(unittest.TestCase):
     def test_built_not_inherited(self):
         d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
         f = os.path.join(d, "fleet.env")
         with open(f, "w") as fh:
             fh.write("# comment\nGITHUB_TOKEN=gh-secret\nexport SF_HOST=host-01\nQUOTED=\"q\"\n")
@@ -42,12 +44,14 @@ class TestEnv(unittest.TestCase):
 class TestResolve(unittest.TestCase):
     def test_inside(self):
         d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
         os.makedirs(os.path.join(d, "a", "b"))
         self.assertEqual(fw.resolve(d, "a/b"), os.path.realpath(os.path.join(d, "a", "b")))
         self.assertEqual(fw.resolve(d, "."), os.path.realpath(d))
 
     def test_escape(self):
         d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
         for rel in ("../x", "/etc", "a/../../x"):
             with self.assertRaises(ValueError, msg=rel):
                 fw.resolve(d, rel)
@@ -56,7 +60,9 @@ class TestResolve(unittest.TestCase):
 class TestRunJob(unittest.TestCase):
     def setUp(self):
         self.code = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.code, True)
         self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
         fw.CODE_ROOT = self.code
         self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
 
@@ -253,7 +259,9 @@ class TestRunToken(unittest.TestCase):
 
     def setUp(self):
         self.code = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.code, True)
         self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
         fw.CODE_ROOT = self.code
         self.environ = {"PATH": os.environ["PATH"], "HOME": self.home,
                         "ROUTINE_FLOTILLA_API_TOKEN_FILE": "/run/flotilla/worker.token"}
@@ -344,7 +352,9 @@ class TestShadowLogMarks(unittest.TestCase):
 
     def setUp(self):
         self.code = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.code, True)
         self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
         fw.CODE_ROOT = self.code
         self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
         self.shadow_environ = dict(self.environ, FLOTILLA_WORKER_MODE="shadow")
@@ -554,6 +564,7 @@ class TestEnvSplit(unittest.TestCase):
 
     def setUp(self):
         self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, True)
         self.legacy = os.path.join(self.d, "fleet.env")
         self.read = os.path.join(self.d, "read.env")
         self.write = os.path.join(self.d, "write.env")
@@ -676,8 +687,11 @@ class TestModes(unittest.TestCase):
 class TestShadowRun(unittest.TestCase):
     def setUp(self):
         self.code = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.code, True)
         self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
         self.snaps = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.snaps, True)
         fw.CODE_ROOT = self.code
         self.saved = (fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES)
         fw.SNAPSHOT_DIR = self.snaps
@@ -714,7 +728,7 @@ class TestShadowRun(unittest.TestCase):
         self.assertIn("nice", str(cm.exception))
 
     def test_it_runs_at_a_lower_priority_than_a_live_run(self):
-        cmd = 'python3 -c "import os; print(\'nice=%d\' % os.nice(0))"'
+        cmd = sys.executable + ' -c "import os; print(\'nice=%d\' % os.nice(0))"'
         shadow = fw.run_job(self.req(cmd), self.environ)
         live = fw.run_job({k: v for k, v in self.req(cmd).items() if k != "shadow"}, dict(self.environ, FLOTILLA_WORKER_MODE="live"))
         self.assertIn("nice=%d" % fw.SHADOW_NICE, shadow["output_tail"])
@@ -800,7 +814,9 @@ class TestSnapshots(unittest.TestCase):
 
     def setUp(self):
         self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
         self.snaps = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.snaps, True)
         self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
         self.saved = (fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES)
         fw.SNAPSHOT_DIR = self.snaps
@@ -921,7 +937,9 @@ class TestSnapshotHTTP(unittest.TestCase):
 
     def setUp(self):
         self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
         self.snaps = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.snaps, True)
         self.saved = (fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, os.environ.get("HOME"))
         fw.SNAPSHOT_DIR = self.snaps
         os.environ["HOME"] = self.home
@@ -1034,6 +1052,7 @@ class TestResolveCommit(unittest.TestCase):
 
     def test_the_api_url_is_read_from_the_workers_env_files(self):
         d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
         f = os.path.join(d, "fleet.env")
         write_file(f, "GITHUB_API=http://from-env-file.local\n")
         seen = []

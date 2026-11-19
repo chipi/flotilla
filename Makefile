@@ -69,7 +69,11 @@ llms-txt: ## Regenerate llms.txt, the agent-facing index of the docs (scripts/ll
 	@python3 scripts/llms_txt.py --write
 
 .PHONY: test-unit
-test-unit: ## go test -race (root module) and go test (fleetd), the worker's tests, the triage fleet's unit tests (empty HOME)
+test-unit: ## test-unit-run with TMPDIR in a folder of its own under ~/.cache/flotilla-tests, removed when it ends (scripts/with-tmp.sh)
+	@bash scripts/with-tmp.sh $(MAKE) --no-print-directory test-unit-run
+
+.PHONY: test-unit-run
+test-unit-run: ## go test -race (root module) and go test (fleetd), the worker's tests, the triage fleet's unit tests (empty HOME)
 	@$(GO) test -race ./...   # -race: version state changes and the scheduler's Bind are concurrent by design (+30 s on 36 s)
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) test ./...
 	@python3 worker/test_worker.py >/tmp/flotilla-test_worker.log 2>&1 && echo "PASS worker/test_worker.py" || { echo "FAIL worker/test_worker.py"; tail -30 /tmp/flotilla-test_worker.log; exit 1; }
