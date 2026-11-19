@@ -550,10 +550,10 @@ func (s *Scheduler) recordInput(ctx context.Context, j *spec.Routine, runner Run
 	}
 	if err == nil {
 		err = s.Store.NewInput(ctx, in)
-		// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 	}
 	if err != nil {
 		s.Log.Warn("the run's input was not recorded; its shadows will not run", "routine", id, "run_id", runID, "err", err)
+		// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 		s.StoreError("run_input")
 		return in, false
 	}
