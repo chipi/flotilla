@@ -886,3 +886,73 @@ func TestPromoteWhileHeld(t *testing.T) {
 		})
 	}
 }
+
+// The auto path too: a rollback that keeps autonomy auto must not let a run of the rolled-back version that ended
+// ok after the rollback have its plan decided and executed. The case is escalated with the withdrawn reason.
+func TestPlanFiledAfterTheRollbackIsEscalatedAtAuto(t *testing.T) {
+	ctx := context.Background()
+	s := versioned(t, "")
+	br := newBlockRunner()
+	s.Sched.Workers["triage"] = br
+	if err := s.PromoteVersion(ctx, opCaller, "test", "triage/cycle", 2, PromoteRequest{Autonomy: "propose", Reason: "no pairs yet; the diff was read"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := s.Sched.RunWith(ctx, "triage/cycle", "manual", "operator", nil)
+		done <- err
+	}()
+	var runID string
+	select {
+	case runID = <-br.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run never reached the worker")
+	}
+	if _, err := s.RollbackVersion(ctx, opCaller, "test", "triage/cycle", RollbackRequest{Autonomy: "auto", Reason: "v2 files too much"}); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	// A routine action (crm.update_field, executor routine) on a non-host target: with routine and action at auto
+	// nothing else caps it, so without the guard this plan would be decided Auto and the case would execute.
+	if err := s.Store.SetControl(ctx, actionSubject("crm.update_field"), "autonomy", policy.Auto, "operator", "test"); err != nil {
+		t.Fatal(err)
+	}
+	k := store.Key{Kind: "target", Value: "crm_fix/crm:contact-1"}
+	id, _, err := s.Store.OpenCase(ctx, store.NewCase{Kind: "crm_fix", Target: "crm:contact-1", Keys: []store.Key{k}, Canonical: k}, "ops/crm-monitor", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/crm-monitor", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "triage/cycle", "run "+runID); err != nil {
+		t.Fatal(err)
+	}
+	plan := policy.Plan{CaseID: id, RunID: runID, Action: "crm.update_field",
+		Params: map[string]string{"contact": "c1", "field": "email", "from": "a@example.org", "to": "b@example.org"}}
+	d, _, err := s.DecidePlan(ctx, plan)
+	if err != nil || d.Outcome != policy.Refuse || !strings.Contains(strings.Join(d.Reasons, ";"), "plan from a rolled-back version (v2 rolled back)") {
+		t.Fatalf("a withdrawn plan at auto: %+v %v", d, err)
+	}
+	if c := caseStatus(t, s, id); c.Status != cases.Escalated {
+		t.Fatalf("the case is %s, want escalated", c.Status)
+	}
+	if h, _ := s.Store.LockHolder(ctx, "crm:contact-1"); h != "" {
+		t.Fatalf("a withdrawn plan took the target's lock: %q", h)
+	}
+}
+
+// The re-record body is read strictly, like promote and rollback: a misspelt field is a 400, not a silent no-op.
+func TestRerecordRouteRefusesUnknownFields(t *testing.T) {
+	srv, d := versionedIn(t, "")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	verWrite(t, d, "triage/cycle/v1/spec.yaml", "run: {command: \"echo v1 edited\", timeout: 20m}\n")
+	p := "/v1/routines/triage/cycle/versions/1/rerecord"
+	if c, _ := call(t, ts, "POST", p, opTok, `{"reason":"deliberate","resaon":"typo"}`); c != 400 {
+		t.Fatalf("unknown field: %d, want 400", c)
+	}
+	if c, _ := call(t, ts, "POST", p, opTok, `{"reason":"deliberate"}`); c != 200 {
+		t.Fatalf("the strict body still works: %d", c)
+	}
+}

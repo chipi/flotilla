@@ -408,7 +408,14 @@ func (s *Server) versionRerecord(w http.ResponseWriter, r *http.Request, c Calle
 		writeAction(w, err, 200, nil)
 		return
 	}
-	res, err := s.RerecordVersion(r.Context(), c, "api", routineID(r), n, reason(r, w))
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := strictJSON(http.MaxBytesReader(w, r.Body, 4096), &body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": `body: {"reason": "..."}`})
+		return
+	}
+	res, err := s.RerecordVersion(r.Context(), c, "api", routineID(r), n, body.Reason)
 	if err != nil {
 		writeAction(w, err, 200, nil)
 		return

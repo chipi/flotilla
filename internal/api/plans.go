@@ -43,14 +43,35 @@ func (s *Server) DecidePlan(ctx context.Context, p policy.Plan) (policy.Decision
 	if err != nil {
 		return policy.Decision{}, 0, err
 	}
-	d := policy.Decide(p, st, s.Limits)
+	decide := func() (policy.Decision, error) {
+		d := policy.Decide(p, st, s.Limits)
+		// A run of a rolled-back version can end ok after the rollback: its plan is withdrawn whatever autonomy
+		// the routine kept, so it is escalated and never decided.
+		if _, _, rb, err := s.Store.RunVersionRolledBack(ctx, p.RunID); err != nil {
+			return d, err
+		} else if rb {
+			n := 0
+			if run, err := s.Store.Run(ctx, p.RunID); err == nil && run != nil {
+				n = run.Version
+			}
+			d.Outcome, d.Would = policy.Refuse, ""
+			d.Reasons = []string{fmt.Sprintf("plan from a rolled-back version (v%d rolled back)", n)}
+		}
+		return d, nil
+	}
+	d, err := decide()
+	if err != nil {
+		return d, 0, err
+	}
 	id, err := s.applyDecision(ctx, c, p, d)
 	if errors.Is(err, store.ErrLocked) {
 		// Another case took the lock between the read and the write: decided again with the holder.
 		if st.LockHeldBy, err = s.Store.LockHolder(ctx, c.Target); err != nil {
 			return d, 0, err
 		}
-		d = policy.Decide(p, st, s.Limits)
+		if d, err = decide(); err != nil {
+			return d, 0, err
+		}
 		id, err = s.applyDecision(ctx, c, p, d)
 	}
 	return d, id, err
