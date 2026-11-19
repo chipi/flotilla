@@ -32,6 +32,10 @@ func checkShadows(cfg *Config, routines []*spec.Routine) []error {
 		if len(j.Versions) < 2 || !j.Enabled {
 			continue
 		}
+		if w := cfg.Workers[j.Worker]; w.Remote != "" {
+			errs = append(errs, fmt.Errorf("%s has %d versions and runs on the remote worker %s: a remote worker's routine cannot be shadowed yet (its state snapshot and repository head are read through the link, which has neither)", j.ID(), len(j.Versions), j.Worker))
+			continue
+		}
 		sw := j.ShadowWorkerName()
 		if w, ok := cfg.Workers[sw]; !ok || !w.Shadow {
 			errs = append(errs, fmt.Errorf("%s has %d versions, and its shadow worker %s is not a worker declared shadow: true in the config", j.ID(), len(j.Versions), sw))

@@ -109,6 +109,17 @@ func TestCheckShadows(t *testing.T) {
 	if errs := checkShadows(cfg2, nil); len(errs) != 1 || !strings.Contains(errs[0].Error(), "remote") {
 		t.Fatalf("%v", errs)
 	}
+	// a routine whose live worker is remote cannot be shadowed yet: its snapshot and its commit are read through the link, which has neither
+	cfg3 := &Config{Workers: map[string]WorkerConfig{"bugfix": {Remote: "w-bugfix-m"}, "bugfix-shadow": {Shadow: true}}}
+	cfg3.Shadows.Enabled = true
+	if errs := checkShadows(cfg3, []*spec.Routine{versioned("bugfix/fix", "bugfix", 1, 2)}); len(errs) != 1 ||
+		!strings.Contains(errs[0].Error(), "bugfix/fix has 2 versions and runs on the remote worker bugfix: a remote worker's routine cannot be shadowed yet") {
+		t.Fatalf("%v", errs)
+	}
+	cfg3.Shadows.Enabled = false
+	if errs := checkShadows(cfg3, []*spec.Routine{versioned("bugfix/fix", "bugfix", 1, 2)}); len(errs) != 0 {
+		t.Fatalf("with shadows off a remote routine's versions are only listed: %v", errs)
+	}
 	// shadows off: a routine with versions needs nothing
 	off := &Config{Workers: map[string]WorkerConfig{"triage": {}}}
 	if errs := checkShadows(off, []*spec.Routine{two}); len(errs) != 0 {
