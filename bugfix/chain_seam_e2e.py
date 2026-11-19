@@ -1,5 +1,6 @@
-"""bugfix/seam_e2e.py: the seam end-to-end of a harness (runtime/HARNESS_SEAMS.md): the real CLI, run by the chain against a
-scripted model endpoint instead of a model.
+"""bugfix/chain_seam_e2e.py: the seam end-to-end of a harness as the bugfix chain meets it (runtime/HARNESS_SEAMS.md): the real CLI, run by
+the chain against a scripted model endpoint instead of a model. The harness layer's own seam end-to-end, with no chain in the loop, is
+runtime/seam_e2e.py; this one keeps what stays the chain's (its checkpoint, its kick-back, its spend metering) and shares the scripted gateway.
 
 A harness is adopted only when its real CLI binary, driven by bugfix/fix.py's Chain for the roles fix, repro and review
 over a tiny fixture repo (one failing test, fixed by one edit), shows every seam S1-S11. The model is ScriptedEndpoint:
@@ -27,207 +28,16 @@ import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import unittest
 import unittest.mock
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.append(os.path.join(HERE, "..", "runtime"))
+sys.path.insert(1, os.path.join(HERE, "..", "runtime"))
 
-# built, not written: a literal that looks like a key is what the secrets scan looks for
-KEY = "sk-" + "seam-" + "test-" + "key-0001"
-
-
-class View:
-    """One request as the seams are checked on it."""
-
-    def __init__(self, path, headers, body, method="POST"):
-        self.path, self.method, self.body = path, method, body
-        self.headers = {k.lower(): v for k, v in headers.items()}
-        self.t = time.time()
-
-    @property
-    def auth(self):
-        return self.headers.get("authorization", "")
-
-    @property
-    def model(self):
-        return self.body.get("model")
-
-    @property
-    def messages(self):
-        return self.body.get("messages") or []
-
-    @staticmethod
-    def text_of(content):
-        if isinstance(content, str):
-            return content
-        return "".join(p.get("text", "") for p in content or [] if isinstance(p, dict))
-
-    @property
-    def system(self):
-        """The system text: every system (or developer) message of the conversation, in order."""
-        return "\n".join(self.text_of(m.get("content")) for m in self.messages if m.get("role") in ("system", "developer"))
-
-    @property
-    def users(self):
-        """The text of each user message, in order: the first is the chain's prompt, the later ones its follow-ups."""
-        return [self.text_of(m.get("content")) for m in self.messages if m.get("role") == "user"]
-
-    @property
-    def new_tool_results(self):
-        """The tool results after the last user message: how far into its current prompt the model is."""
-        last = max((i for i, m in enumerate(self.messages) if m.get("role") == "user"), default=-1)
-        return [m for m in self.messages[last + 1:] if m.get("role") == "tool"]
-
-    @property
-    def tool_names(self):
-        return sorted((t.get("function") or {}).get("name") or t.get("name") or "" for t in self.body.get("tools") or [])
-
-
-class Reply:
-    """What the script answers: text, tool calls (name, arguments dict), both, a hold (the request is not answered for
-    `hold` seconds: a run to be killed), or an HTTP error status."""
-
-    def __init__(self, text="", tools=(), hold=0.0, status=200, usage=(100, 20)):
-        self.text, self.tools, self.hold, self.status, self.usage = text, list(tools), hold, status, usage
-
-    def render_chat(self, view):
-        calls = [{"id": f"call_{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
-                 for i, (n, a) in enumerate(self.tools)]
-        finish = "tool_calls" if calls else "stop"
-        usage = {"prompt_tokens": self.usage[0], "completion_tokens": self.usage[1], "total_tokens": sum(self.usage)}
-        if not view.body.get("stream"):
-            msg = {"role": "assistant", "content": self.text or None}
-            if calls:
-                msg["tool_calls"] = calls
-            doc = {"id": "chatcmpl-seam", "object": "chat.completion", "created": 1, "model": view.model,
-                   "choices": [{"index": 0, "message": msg, "finish_reason": finish}], "usage": usage}
-            return "application/json", json.dumps(doc).encode()
-
-        def chunk(delta, finish_reason=None, usage_doc=None):
-            doc = {"id": "chatcmpl-seam", "object": "chat.completion.chunk", "created": 1, "model": view.model,
-                   "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}] if usage_doc is None else []}
-            if usage_doc is not None:
-                doc["usage"] = usage_doc
-            return b"data: " + json.dumps(doc).encode() + b"\n\n"
-        out = [chunk({"role": "assistant", "content": ""})]
-        if self.text:
-            out.append(chunk({"content": self.text}))
-        for i, c in enumerate(calls):
-            out.append(chunk({"tool_calls": [dict(c, index=i)]}))
-        out += [chunk({}, finish), chunk({}, usage_doc=usage), b"data: [DONE]\n\n"]
-        return "text/event-stream", b"".join(out)
-
-
-class ScriptedEndpoint:
-    """The gateway. `script(view) -> Reply` answers each POST, under a lock (a role's requests arrive in order); `requests`
-    keeps every View, GETs included (the meter's /key/info reads the spend: `spend_per_post` for each POST answered)."""
-
-    def __init__(self, script, spend_per_post=0.01):
-        self.script, self.requests, self.lock, self.spend_per_post = script, [], threading.Lock(), spend_per_post
-        endpoint = self
-
-        class H(BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.1"
-
-            def log_message(self, *a):
-                pass
-
-            def send(self, status, ctype, data):
-                self.send_response(status)
-                self.send_header("Content-Type", ctype)
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-            def do_POST(self):
-                n = int(self.headers.get("Content-Length") or 0)
-                raw = self.rfile.read(n) if n else b""
-                try:
-                    body = json.loads(raw or b"{}")
-                except ValueError:
-                    body = {}
-                view = View(self.path, dict(self.headers), body)
-                with endpoint.lock:
-                    endpoint.requests.append(view)
-                    reply = endpoint.script(view)
-                try:
-                    if reply.hold:
-                        time.sleep(reply.hold)
-                    if reply.status != 200:
-                        return self.send(reply.status, "application/json", json.dumps(
-                            {"error": {"message": reply.text or "scripted error", "type": "scripted"}}).encode())
-                    if not self.path.rstrip("/").endswith("/chat/completions"):
-                        return self.send(404, "text/plain", b"")
-                    self.send(200, *reply.render_chat(view))
-                except OSError:   # the client was killed while it waited: what the kill tests mean
-                    pass
-
-            def do_GET(self):
-                with endpoint.lock:
-                    endpoint.requests.append(View(self.path, dict(self.headers), {}, "GET"))
-                    spent = endpoint.spend()
-                if self.path.endswith("/key/info"):
-                    return self.send(200, "application/json", json.dumps({"info": {"spend": spent}}).encode())
-                self.send(404, "text/plain", b"")
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        self.server.daemon_threads = True
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-
-    @property
-    def base_url(self):
-        return f"http://127.0.0.1:{self.server.server_address[1]}/v1"
-
-    def posts(self):
-        return [v for v in self.requests if v.method == "POST"]
-
-    def gets(self):
-        return [v for v in self.requests if v.method == "GET"]
-
-    def spend(self):
-        return round(len([v for v in self.requests if v.method == "POST"]) * self.spend_per_post, 6)
-
-    def close(self):
-        self.server.shutdown()
-        self.server.server_close()
-
-
-class RecordingProxy:
-    """Stands where the egress proxy would be (HTTP_PROXY), with the gateway on NO_PROXY: every request that reaches it is a
-    host the CLI tried that is not the gateway. It refuses them all, and keeps them."""
-
-    def __init__(self):
-        self.seen = []
-        proxy = self
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def refuse(self):
-                proxy.seen.append(f"{self.command} {self.path}")
-                self.send_response(403)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-            do_GET = do_POST = do_PUT = do_HEAD = do_CONNECT = refuse
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        self.server.daemon_threads = True
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-
-    @property
-    def url(self):
-        return f"http://127.0.0.1:{self.server.server_address[1]}"
-
-    def close(self):
-        self.server.shutdown()
-        self.server.server_close()
-
+# the infrastructure every seam end-to-end shares (the scripted gateway, the recording proxy, the key) is runtime/seam_e2e.py's
+from seam_e2e import KEY, Reply, RecordingProxy, ScriptedEndpoint, View, stdin_closed  # noqa: E402,F401
 
 # what the scripted model does for the fixture repo (test_fix.py's: src/a.js returns 1, the issue says "value() returns 1,
 # want 2", the failing test is "expect src/a.js 2"). A role is told apart by the first words of its prompt.
@@ -306,21 +116,6 @@ N=$(python3 "$SEAM_REC" "$@")
 "$SEAM_REAL" "$@" | tee "$SEAM_STATE/stream_$N.jsonl"
 exit ${PIPESTATUS[0]}
 """
-
-
-@contextlib.contextmanager
-def stdin_closed():
-    """The chain's process with no terminal and no held-open pipe on stdin, as the worker's has it: Chain.review starts the CLI
-    without a stdin of its own, and `pi -p` waits for a stdin that never ends."""
-    saved = os.dup(0)
-    null = os.open(os.devnull, os.O_RDONLY)
-    os.dup2(null, 0)
-    try:
-        yield
-    finally:
-        os.dup2(saved, 0)
-        os.close(saved)
-        os.close(null)
 
 
 class Run:

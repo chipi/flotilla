@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -499,6 +500,97 @@ class Execute(unittest.TestCase):
     def test_pi_s_stream_is_not_written_beside_its_session_files(self):
         self.assertFalse(harness_pi.PI.tees)
         self.assertTrue(self.h.tees)
+
+
+class ReadOnlyStationsAreChecked(unittest.TestCase):
+    """S6, the runner's side: a harness that cannot stop a read station writing is asked in the prompt, and the workspace is
+    compared with itself after the station; a change is a fatal stop."""
+
+    def setUp(self):
+        self.h, self.cli = install_fake(self)
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, True)
+        self.wt = os.path.join(self.d, "wt")
+        os.makedirs(os.path.join(self.wt, "src"))
+        with open(os.path.join(self.wt, "src", "a.js"), "w") as f:
+            f.write("module.exports = () => 1;\n")
+        self.state = os.path.join(self.d, "state")
+        os.makedirs(self.state)
+        self.env = dict(os.environ, FAKE_STATE=self.state)
+        self.run_dir = os.path.join(self.d, "run")
+        os.makedirs(self.run_dir)
+
+    def script(self, *steps):
+        with open(os.path.join(self.state, "fakeh_script"), "w") as f:
+            f.write("".join(json.dumps(s) + "\n" for s in steps))
+
+    def go(self, tools, h=None, **kw):
+        return adapter.execute(h or self.h, request(station="check", tools=tools, run_dir=self.run_dir, workdir=self.wt, **kw), self.env)
+
+    def test_a_write_by_a_read_or_none_station_on_a_harness_that_cannot_enforce_it_is_a_fatal_stop(self):
+        for tools in ("read", "none"):
+            self.script({"files": {"src/a.js": "module.exports = () => 2;\n", "src/new.js": "x"}})
+            with self.assertRaises(adapter.ReadOnlyViolation) as cm:
+                self.go(tools)
+            e = cm.exception
+            self.assertEqual(e.changed, ["src/a.js", "src/new.js"], tools)
+            self.assertIn(f"tools={tools}", str(e))
+            self.assertIn("src/a.js", str(e))
+            self.assertIn("cannot enforce it", str(e))
+            self.assertEqual((e.episode.harness, e.episode.station), ("fakeh", "check"), "the run's episode is kept with the stop")
+            self.assertIsInstance(e, adapter.HarnessError)
+            with open(os.path.join(self.wt, "src", "new.js"), "w") as f:   # reset for the next round
+                f.write("")
+            os.remove(os.path.join(self.wt, "src", "new.js"))
+            with open(os.path.join(self.wt, "src", "a.js"), "w") as f:
+                f.write("module.exports = () => 1;\n")
+
+    def test_a_removed_file_is_a_change_too(self):
+        self.script({"remove": ["src/a.js"]})
+        with self.assertRaises(adapter.ReadOnlyViolation) as cm:
+            self.go("read")
+        self.assertEqual(cm.exception.changed, ["src/a.js"])
+
+    def test_a_station_that_only_reads_passes_and_the_workspace_is_untouched(self):
+        self.script({"answer": "looked"})
+        ep, code, _ = self.go("read")
+        self.assertEqual((code, ep.answer), (0, "looked"))
+
+    def test_a_station_with_all_tools_may_write_and_is_not_checked(self):
+        self.script({"files": {"src/a.js": "module.exports = () => 2;\n"}})
+        ep, code, _ = self.go("all")
+        self.assertEqual(code, 0)
+        with open(os.path.join(self.wt, "src", "a.js")) as f:
+            self.assertIn("=> 2", f.read())
+
+    def test_a_harness_that_enforces_it_is_not_digested_the_switches_are_its_word(self):
+        from fakeh import FakeH
+
+        class Enforcing(FakeH):
+            enforces_readonly = True
+        self.script({"files": {"src/a.js": "module.exports = () => 3;\n"}})
+        with unittest.mock.patch.object(adapter, "workspace_digest", side_effect=AssertionError("digested")):
+            ep, code, _ = self.go("read", h=Enforcing(self.cli))
+        self.assertEqual(code, 0)
+
+    def test_what_the_harness_keeps_under_the_run_directory_and_in_git_is_not_the_workspace(self):
+        digest = adapter.workspace_digest(self.wt)
+        os.makedirs(os.path.join(self.wt, ".git"))
+        with open(os.path.join(self.wt, ".git", "index"), "w") as f:
+            f.write("x")
+        inside = os.path.join(self.wt, "run")
+        os.makedirs(inside)
+        with open(os.path.join(inside, "sessions"), "w") as f:
+            f.write("x")
+        self.assertEqual(adapter.workspace_digest(self.wt, exclude=[inside]), digest)
+        self.assertNotEqual(adapter.workspace_digest(self.wt), digest, "without the exclusion the run folder is a change")
+
+    def test_a_symlink_is_digested_by_its_target_not_followed(self):
+        os.symlink("src/a.js", os.path.join(self.wt, "link"))
+        before = adapter.workspace_digest(self.wt)
+        os.remove(os.path.join(self.wt, "link"))
+        os.symlink("elsewhere", os.path.join(self.wt, "link"))
+        self.assertEqual(adapter.digest_changes(before, adapter.workspace_digest(self.wt)), ["link"])
 
 
 if __name__ == "__main__":

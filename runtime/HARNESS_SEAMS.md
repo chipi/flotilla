@@ -1,42 +1,46 @@
 # Harness seams (ADR-0020)
 
-The single source of truth for where the bugfix chain meets a coding harness. The chain
-(`bugfix/fix.py`) owns what a role is asked, what it may touch, how it is stopped and what is
-recorded; a harness adapter (`bugfix/harness_<name>.py`) owns how one CLI is started, fed and read.
-Each place they meet is a **seam**, S1 to S11 below: its contract, who owns it, how pi satisfies it
-today, and the test that proves it.
+The single source of truth for where a station meets a coding harness. A **station** is one model
+step of a routine version, with a name the version chooses and the platform gives no meaning to. The
+caller (the version's code; the bugfix chain, `bugfix/fix.py`, is the first) owns what a station is
+asked, what it may touch, and what is recorded. A harness adapter (`runtime/harness_<name>.py`) owns
+how one CLI is started, fed and read. The runner (`runtime/adapter.py`) owns the process group, the
+turn cap, the timeout and the read-only check. The station driver (`runtime/station_run.py`) renders
+a station's text and keeps its records. Each place they meet is a **seam**, S1 to S11 below: its
+contract, who owns it, how pi satisfies it, and the test that proves it.
 
 Harnesses are adopted **one at a time**, and the seams may change with each adoption. A change to a
 seam is made here first, in the same commit as the code and the tests that carry it, and goes in the
-amendment log at the end. pi is the reference: it passes every seam today, and the next harness must
-pass the same end-to-end (see "The minimum seam end-to-end").
+amendment log at the end. pi is the reference: it passes every seam but one known hole (S5), and the
+next harness must pass the same end-to-end (see "The minimum seam end-to-end").
 
 Code: `runtime/adapter.py` (the types, the registry, the shared runner, and the "how to add a
-harness" contract at its top), `runtime/harness_pi.py`, `bugfix/harness_prompts.py`,
-`bugfix/seam_e2e.py`. Words used: a **role** is repro, fix, verdict, advisor or review; an
-**episode** is one run of a role through a harness; the **gateway** is the routine's LiteLLM
-endpoint.
+harness" contract at its top), `runtime/harness_pi.py`, `runtime/station_run.py`,
+`runtime/seam_e2e.py`, the fake harnesses in `runtime/fakeh.py`. The bugfix chain's own use:
+`bugfix/pi_review.py` and `bugfix/chain_seam_e2e.py`. Words used: an **episode** is one run of a
+station through a harness; a **record** is the episode as `runtime/episode.schema.json` describes it;
+the **gateway** is the routine's LiteLLM endpoint.
 
 ## What a harness reads: every authored text, declared and hashed, and where it lands
 
-A prompt is every authored text a model reads: the system text **and** the role's user-turn task
-text. The installation's rule is that each is declared and hashed (ADR-0018 does it for `rules`).
-Where each is placed (the system slot, appended to the system text, the first user turn) is the
-harness's business and part of S1 and S2 together; each harness's row says so.
+A prompt is every authored text a model reads: the system text **and** the station's user-turn
+text. A version declares each as a file under its `prompts:`, the version's hash covers it, and the
+driver records what it rendered (name, hash and length, per call). An adapter never adds or edits
+authored text, so a hash over the version's text is a hash over what the model reads. Where each
+text is placed (the system slot, appended to the system text, the first user turn) is the harness's
+business and part of S1 and S2 together; each harness's row says so.
+
+The bugfix chain's texts today, which it has not yet moved onto a version's `prompts:` (the
+installation's v2 work, replayed first):
 
 | text | authored in | declared and hashed today | placed by pi |
 | --- | --- | --- | --- |
-| rules | the spec's `prompts: rules` (fleets/&lt;fleet&gt;/…), else `bugfix/fleet_rules.md` | yes when the spec declares it (ADR-0018: `declared_prompts.resolve`, fail closed); the default file is not hashed | system text, appended: `--append-system-prompt <file>` |
-| fix task | `harness_prompts.fix_prompt` (equal to `pi.sh`'s) around the verdict's task and the chain's note | no: code, pinned by `test_harness_prompts.py` and the goldens | first user turn, in argv |
-| repro task | `bugfix-fleet/agents/repro.md`'s body, then the issue | no: a file in the image, pinned the same way | first user turn, in argv |
-| review task | `Chain.review_prompt` | no: code | first user turn, in argv |
-| verdict, advisor | `triage_run.sh`, `advisor_run.sh` and their agent definitions | no: files in the image | first user turn, in argv (their leaves; wave 2) |
-| a resumed turn | the chain's follow-up message (a review's, the gates', the interruption's) | no: code | the next user turn of the same session |
-
-Not done: declaring and hashing every text above except `rules`. They are code or image files today,
-held still by tests, not by a declared hash. That is the installation's v2 work; this document names
-it so the adapters are built for it: an adapter never adds or edits authored text, so a hash over
-the chain's text is a hash over what the model reads.
+| rules | the spec's `prompts: rules`, else `bugfix/fleet_rules.md` | yes when declared (ADR-0018) | system text, appended |
+| fix task | `harness_prompts.fix_prompt` (equal to `pi.sh`'s) | no: code, pinned by tests | first user turn |
+| repro task | `bugfix-fleet/agents/repro.md`'s body, then the issue | no: a file in the image | first user turn |
+| review task | `Chain.review_prompt` | no: code | first user turn |
+| verdict, advisor | `triage_run.sh`, `advisor_run.sh` and their agent definitions | no | their leaves |
+| a resumed turn | the chain's follow-up message | no: code | the next user turn |
 
 ## The seams
 
@@ -45,48 +49,44 @@ Field names are the code's: `Request`, `Invocation`, `Turn`, `Episode`, `ModelRo
 
 ### S1 Prompt in
 
-- **Contract.** `Request.prompt` is the chain's complete user-turn text. The adapter delivers it
-  verbatim, as the first user turn of a new session or the next one of a resumed session. It adds no
-  task text. A difference it cannot avoid (rules sent as a prefix because the CLI has no
-  system-prompt flag, a harness's submit protocol) goes in `Invocation.notes`; the chain keeps each
-  note on `Episode.notes` and as a `harness` step row in the calls file. New adapters send it on
-  stdin (`Invocation.stdin`): no 128 KiB argv limit, nothing in `ps`. The CLI must never wait on an
-  inherited stdin.
-- **Owner.** The chain owns the text (`harness_prompts`, `Chain.review_prompt`, `Chain.attempt`'s
-  note); the adapter owns delivery.
-- **pi today.** One argv string: `pi.sh` and `repro.sh` pass `"$PROMPT"` with `< /dev/null`,
-  `Chain.review` passes it as the last argument, bounded by `REVIEW_PROMPT_MAX` (100000 bytes, under
-  Linux's 128 KiB). pi's review is started with the chain's own stdin, which `pi -p` reads when it
-  is a held-open pipe: found 2026-11-18, when the seam end-to-end's review hung for minutes under a
-  test runner and ended once stdin was closed. Production has run the review this way; what the
-  worker's stdin is was not examined here. The end-to-end closes stdin. Not changed here: pi's calls
-  are pinned byte for byte by the goldens.
-- **pi, the platform's adapter** (`runtime/harness_pi.py`, any station): the prompt on stdin; `pi -p`
-  with no message argument reads it (checked against the real pi 1.0.0, 2026-11-19). `prompt_via_stdin`:
-  yes. The chain's review keeps its argv (`bugfix/pi_review.py`).
-- **Proof.** Unit: `test_pi_golden.py` (argv and prompts), `test_harness_prompts.py` (the Python
-  prompts equal the shell's), `test_harness.py` (`Execute`: the prompt is on stdin, not in argv).
-  End-to-end: `test_s1`.
+- **Contract.** `Request.prompt` is the caller's complete user-turn text, the station's template
+  rendered with its slots (`station_run.render`: a slot the caller did not give, or gave and the text
+  does not use, is an error before the first model call). The adapter delivers it verbatim, as the
+  first user turn of a new session or the next one of a resumed session. It adds no task text. A
+  difference it cannot avoid (the system text sent as a prefix because the CLI has no system-prompt
+  flag, a harness's submit protocol) goes in `Invocation.notes`, which the episode keeps. Adapters
+  send the prompt on stdin (`Invocation.stdin`): no 128 KiB argv limit, nothing in `ps`. The CLI
+  must never wait on an inherited stdin.
+- **Owner.** The caller owns the text; the adapter owns delivery.
+- **pi, the platform's adapter.** The prompt on stdin: `pi -p` with no message argument reads it
+  (`prompt_via_stdin`: yes).
+- **pi in the bugfix chain.** One argv string: `pi.sh` and `repro.sh` pass `"$PROMPT"` with
+  `< /dev/null`, `Chain.review` passes it as the last argument, bounded by `REVIEW_PROMPT_MAX`
+  (100000 bytes, under Linux's 128 KiB). pi's review is started with the chain's own stdin, which
+  `pi -p` reads when it is a held-open pipe: found 2026-11-18, when the review hung for minutes under
+  a test runner and ended once stdin was closed. Not changed: those calls are pinned byte for byte by
+  `bugfix/test_pi_golden.py`.
+- **Proof.** Unit: `test_adapter.py` (the prompt is on stdin, not in argv), `test_station_run.py`
+  (render, slot errors). End-to-end: `test_s1` (what the model received is the rendered text and only
+  that; the first call's record names its hash and length).
 
-### S2 Rules and system text
+### S2 System text
 
-- **Contract.** `Request.system_path` is the declared `rules` file, already verified against its
-  hash before any step runs (`declared_prompts.resolve`; a file that does not hash to what flotillad
-  loaded ends the case with `prompt: …`, before any model call), or `None`. The adapter delivers it
-  as system text added to the harness's own system prompt; if the CLI cannot, as a prefix to the
-  prompt, and says so in `Invocation.notes`. The repository's own `AGENTS.md` or `CLAUDE.md` is
-  never read: the fleet's rules replace it. A review with `--review-tools none` gets no rules (they
-  are about using tools).
-- **Owner.** The chain resolves and checks the file; the adapter delivers it.
-- **pi today.** `--no-context-files --append-system-prompt <path>` (`--no-context-files` alone for
-  the tool-less review). `native_system_prompt`: yes.
-- **pi, the platform's adapter.** Always `--no-context-files`, and `--append-system-prompt <system_path>`
-  when there is one, for every `tools` value; whether a tool-less station gets the text is the caller's
-  choice (it passes none).
-- **Proof.** Unit: goldens (`rules_given_and_review_reads`, `…_has_no_tools`, `no_rules`),
-  `test_declared_prompts.py`. End-to-end: `test_s2` (the marker of the rules file is in the system
-  text of fix and repro, the marker of the repository's `AGENTS.md` is in none, the tool-less review
-  has neither; a declared file is delivered; one that does not hash is refused before a request).
+- **Contract.** `Request.system_path` is the system text to add, a file the caller has verified
+  against its declared hash before any model call (ADR-0018 for the bugfix chain's `rules`), or
+  `None`. The adapter delivers it as system text added to the harness's own system prompt; if the
+  CLI cannot, as a prefix to the prompt, and says so in `Invocation.notes`. The workspace's own
+  `AGENTS.md` or `CLAUDE.md` is never read: the version's texts replace it.
+- **Owner.** The caller resolves and checks the file; the adapter delivers it.
+- **pi, the platform's adapter.** Always `--no-context-files`, and `--append-system-prompt <path>`
+  when there is one, for every `tools` value. Whether a station without tools gets the text is the
+  caller's choice (it passes none).
+- **pi in the bugfix chain.** `--no-context-files --append-system-prompt <path>` (`--no-context-files`
+  alone for the tool-less review: the rules are about using tools).
+- **Proof.** Unit: `test_adapter.py`; the chain's goldens and `bugfix/test_declared_prompts.py`.
+  End-to-end: `test_s2` (the marker of the system file is in the system text of every request, the
+  marker of the workspace's `AGENTS.md` in none); the chain's: `chain_seam_e2e.py`'s `test_s2`,
+  which also refuses a declared file that does not hash before any request.
 
 ### S3 Model route through the gateway
 
@@ -94,125 +94,132 @@ Field names are the code's: `Request`, `Invocation`, `Turn`, `Episode`, `ModelRo
   key_env, meta)`, made from `FLOTILLA_MODELS` by `adapter.route`. The adapter points the CLI at
   `base_url` in the wire protocol the CLI speaks (chat completions; later `/v1/messages`,
   `/v1/responses`), asks for `model`, and sends the key as `adapter.read_key` returns it: in the
-  child's environment, or in a mode-600 file named in `Invocation.files` under `run_dir`; **never in
-  argv**, never in a file of the repository. No other endpoint, no fallback model. Alias names are
-  per routine (`<fleet>-<routine>-<role>`), a convention: an endpoint names a key's variable or
-  file, which each worker resolves to its own key, so routines could share an alias; per-routine
-  names keep them apart in the calls (`run_calls.alias`), the Models page and `models:`. The adapter
-  takes whatever `FLOTILLA_MODELS` gives the routine.
-- **Owner.** The chain picks the alias per role; the adapter wires it.
-- **pi today.** `pi_config.write` makes `<run_dir>/pi/models.json`: a provider `flotilla-<endpoint>`
-  (OpenAI completions) with `apiKey: "!cat <key_file>"` or `"$<key_env>"`, so the key is read by pi
-  at call time and written nowhere. argv: `--provider`, `--model`. The review is sent with the
-  worker's provider (`self.provider`), as it always was.
-- **pi, the platform's adapter.** Writes its own `<run_dir>/pi/models.json` (a provider
-  `flotilla-<endpoint>`, the same `!cat` or `$VAR` naming of the key) through `Invocation.files`,
-  sets `PI_CODING_AGENT_DIR`, and never reads the key: pi does, at call time.
-- **Proof.** Unit: `test_harness.py` (`Types`: route and key), `pi_config` in `test_fix.py`.
+  child's environment, or in a mode-600 file named in `Invocation.files` under `run_dir`, or named
+  where the CLI reads it at call time; **never in argv**, never in a file of the workspace. No other
+  endpoint, no fallback model. The adapter takes whatever `FLOTILLA_MODELS` gives the routine.
+- **Owner.** The caller picks the alias for the station; the adapter wires it.
+- **pi, the platform's adapter.** Writes its own `<run_dir>/pi/models.json` through
+  `Invocation.files` (a provider `flotilla-<endpoint>`, OpenAI completions, `apiKey` as
+  `!cat <key_file>` or `$<key_env>`), sets `PI_CODING_AGENT_DIR`, and passes `--provider` and
+  `--model`. pi reads the key at call time; it is written nowhere.
+- **pi in the bugfix chain.** `pi_config.write` makes the same file, with pi's catalog's context
+  window and prices for each model. The review is sent with the worker's provider (`self.provider`).
+- **Proof.** Unit: `test_adapter.py` (route, key, the configuration names the key and holds none).
   End-to-end: `test_s3` (every request is `POST /v1/chat/completions` with `Authorization: Bearer
-  <the key>` and the alias's model; the key is in no argv and no file of the killed run's
-  directory).
+  <the key>` and the alias's model; the key is in no argv, not on stdin, and in no file of any run).
 
 ### S4 Stream to Episode
 
 - **Contract.** `Harness.parse(stream_text, files) -> Episode`, never raising. `Episode(harness,
-  role, session_id, turns, answer, error, exit_reason, usage_total, cost_est, raw_path, notes)`;
-  `Turn(n, model, text, tools[{name, arg, ok}], usage{input, output, cache_read, cache_write,
-  reasoning} or None, cost_est, stop, error)`. `answer` is the last non-empty assistant text,
-  stripped (exactly what `fix.assistant_text` gives for pi). A stream that is empty, garbled or cut
-  by a kill gives an Episode with `error` set and the whole turns it has. `exit_reason` is
-  completed, turn_cap, timeout or error; the runner sets the last three from the exit code.
-  `Invocation.outputs` names files the run writes that `parse` needs (a trajectory, a last-message
-  file).
-- **Owner.** The adapter parses; the chain reads only the Episode.
-- **pi today.** `harness_pi.parse` over pi's `--mode json` stream; `fix.assistant_text`,
-  `fix.stream_error` and `fix.usage` are wrappers over the same functions.
-- **Proof.** Unit: `test_harness.py` (`PiAdapter`, `check_contract` on every sample in
-  `testdata/pi/`), the parse golden. End-to-end: `test_s4` (the real stream of five episodes becomes
-  the turns, tools, usage and answer the script produced).
+  station, session_id, turns, answer, error, exit_reason, usage_total, cost_est, raw_path, notes)`;
+  `Turn(n, model, text, tools, usage, cost_est, stop, error, time, texts)` where a tool is `{name,
+  arg, ok}` and, when the stream carries them, `args`, `result` and `duration_s` (`adapter.action`:
+  masked and bounded). `answer` is the last non-empty assistant text, stripped. A stream that is
+  empty, garbled or cut by a kill gives an Episode with `error` set and the whole turns it has.
+  `exit_reason` is completed, turn_cap, timeout or error; the runner sets the last three from the
+  exit code. `adapter.episode_record` serializes it to `runtime/episode.schema.json`, and every
+  adapter's episode must validate (`fakeh.check_contract`). What a harness cannot supply is left
+  out, never made up.
+- **Owner.** The adapter parses; the caller reads only the Episode.
+- **pi.** `harness_pi.parse` over pi's `--mode json` stream: the arguments and results of tool calls
+  from its `toolResult` messages, a turn's time from its message timestamp. pi's stream has no
+  duration for a tool call, so none is recorded.
+- **Proof.** Unit: `test_adapter.py`, `test_episode_schema.py` (every pi sample and a real pi 1.0.0
+  stream, the schema, the goldens). End-to-end: `test_s4` (the real stream becomes the turns, tools,
+  usage and answer the script produced, and a record that validates).
 
 ### S5 Turn cap and timeout
 
-- **Contract.** The chain's cap counts `Harness.turn_ended(line)` on each stdout line as it arrives
-  and, at `--fix-max-turns` or `--repro-max-turns`, kills the whole process group: exit 125,
-  `exit_reason` turn_cap. The timeout does the same: exit 124, timeout. Neither leaves a process
-  behind; both leave the stream (the tee). A harness's own cap is set one above the chain's.
-  Declared: `supports_turn_cap`.
-- **Owner.** The chain and the shared runner (`harness.run_process`); the adapter says which line
-  ends a turn.
-- **pi today.** A `message_end` line of an assistant message; no cap of pi's own.
-- **Proof.** Unit: `test_harness.py` (`Runner`, `Execute`), `test_fix.py` (the cap and timeout
-  cases). End-to-end: `test_s5` (a grinding fix is stopped at turn 1 long before the timeout, a held
-  request is stopped by the timeout, no process of either is left, and `turn_ended` counts the model
-  calls of the real stream).
+- **Contract.** The runner counts `Harness.turn_ended(line)` on each stdout line as it arrives and,
+  at `Request.max_turns`, kills the whole process group: exit 125, `exit_reason` turn_cap. The
+  timeout does the same: exit 124, timeout. Neither leaves a process behind; both leave the stream
+  (the tee). A harness's own cap is set one above the runner's. Declared: `supports_turn_cap`.
+- **Owner.** The runner (`adapter.run_process`); the adapter says which line ends a turn.
+- **pi.** A `message_end` line of an assistant message; no cap of pi's own.
+- **KNOWN HOLE, found 2026-11-19 by the seam end-to-end.** A process pi's bash tool starts and
+  detaches (`nohup sleep 300 &`) is alone after the cap's kill: parent 1, a process group and
+  session of its own, outside the group the runner kills. With the fake harness, whose tool runs in
+  the CLI's group, the same scenario leaves nothing. What the runner would have to do to reach
+  such a process (a child subreaper and a walk of descendants) is a decision for the operator, not
+  part of the seam end-to-end: `test_s5_a_process_a_tool_detaches_is_not_left_either` stays an expected
+  failure in `test_seam_pi.py` until it is made, and a pass fails the suite so the marker is not
+  forgotten. The container's limits bound what such a process may use; they do not end it.
+- **Proof.** Unit: `test_adapter.py` (`Runner`, `Execute`), the chain's `test_fix.py` cases.
+  End-to-end: `test_s5` (a grinding station is stopped at its cap long before the timeout, a held
+  request is stopped by the timeout, nothing of the harness is left in either, and `turn_ended`
+  counts the model calls of the real stream), and the hole's test.
 
 ### S6 Tools and read-only
 
-- **Contract.** `Request.tools` is `all`, `read` or `none`. A harness that has switches for it turns
-  off writing and the shell for a read role, and declares `enforces_readonly`. One that does not is
-  asked in the prompt and the chain
-  verifies the worktree after the role: a change is a fatal stop with a clear message (the lead's
-  decision 4, for Codex and dsh). That check is built with the wiring of the roles (step 5), not
-  yet.
-- **Owner.** The chain states the need; the adapter turns it into the CLI's switches.
-- **pi today.** Enforced: `--tools read,grep,find,ls` or `--no-tools`; a fix keeps pi's own four.
-  The verdict and advisor leaves pass `PI_TOOLS`.
-- **pi, the platform's adapter.** The same switches for every station: `all` leaves pi's own four tools,
-  `read` is `--tools read,grep,find,ls`, `none` is `--no-tools`; `tools_served` is all three.
-- **Proof.** Unit: goldens (`review_tools_read`, `PI_TOOLS` of the leaves). End-to-end: `test_s6`
-  (the tools a request offers: none for the default review, find, grep, ls and read for
-  `--review-tools read`, a shell and writes for fix and repro).
+- **Contract.** `Request.tools` is `all`, `read` or `none`; a harness declares the values it serves
+  (`tools_served`) and the runner refuses any other before it starts one. A harness that has switches
+  for it turns off writing and the shell for a read station, and declares `enforces_readonly`. One
+  that does not is asked in the prompt, and the runner compares the workspace with itself after the
+  station (`adapter.workspace_digest`, every file but `.git` and the run's folder): a change is a
+  fatal stop, `adapter.ReadOnlyViolation`, with the paths and a message that says the harness cannot
+  enforce it. The station driver writes the episode, its record and its calls lines before it
+  raises, so the stop is on record. A harness that enforces it is not digested: its switches are
+  its word.
+- **Owner.** The caller states the need; the adapter turns it into the CLI's switches; the runner
+  checks the rest.
+- **pi.** Enforced: `all` leaves pi's own four tools, `read` is `--tools read,grep,find,ls`,
+  `none` is `--no-tools`. The chain's verdict and advisor leaves pass `PI_TOOLS`.
+- **Proof.** Unit: `test_adapter.py` (each value's switches, the digest, the check with a harness
+  that cannot enforce it, not digesting one that can), the chain's goldens. End-to-end: `test_s6`
+  (the tools a request offers: none for `none`, find, grep, ls and read for `read`, a shell and
+  writes for `all`), and in `test_seam_fakeh.py` a harness that ignores the switch is stopped.
 
 ### S7 Session and resume
 
 - **Contract.** `Harness.can_resume` and `Harness.resume_after_kill` are declared. After an episode
-  the chain keeps `episodes/<n>-<role>.json` with `resume_ref` = `Harness.resume_ref(ep)` (normally
-  the session id); a later call gets it as `Request.resume`, and `build` makes the resume
-  invocation, or raises (never a fresh session in silence). The checkpoint (ADR-0019) names the
-  harness of each role (`harness`, `repro_harness`, `review_harness`; absent means pi); a run whose
-  flags differ from the checkpoint's starts fresh. A non-pi checkpoint's session is the episode
-  file, a path inside the run directory. A harness that cannot resume takes the `--no-resume` path.
-  A resumed run records only its own calls (the `.recorded` marker).
-- **Owner.** The chain owns the checkpoint and the follow-up text; the adapter owns the resume
-  invocation.
-- **pi today.** `PI_RESUME_SESSION=<session file>` to `pi.sh`, which adds `--session <file>`;
-  `trim_session` drops the line a kill cut; a run killed in the middle of a fix continues it with
-  `INTERRUPTED`.
-- **pi, the platform's adapter.** `--session <file>`: the file under `<run_dir>/pi/sessions` that the
-  reference names (a session id, or a path inside the run directory; any other path is refused), with
-  the line a kill cut trimmed first. A reference with no saved session raises (`HarnessError`):
-  never a fresh session in silence.
-- **Proof.** Unit: `test_episodes.py` (the checkpoint's harness keys and the mismatch rule, the
-  episode file as a session and nothing outside the run directory, a resumed run's carry, calls a
-  kill left owing), `test_fix.py` (`Durable`), goldens (`…_resumes_the_session`). End-to-end:
-  `test_s7` (a review's follow-up arrives in the same conversation with its earlier turns; a run
-  killed in the middle of the fix and started again with `FLOTILLA_RESUME` goes on in that session
-  and finishes).
+  the caller keeps `episodes/<n>-<station>.json` with `resume_ref` = `Harness.resume_ref(ep)`
+  (normally the session id); a later call gets it as `Request.resume`, and `build` makes the resume
+  invocation, or raises (never a fresh session in silence). A session whose run was killed resumes
+  from the reference the caller kept (the session id in the harness's own store, which the caller
+  checkpoints with the run directory) when the adapter declares `resume_after_kill`.
+- **Owner.** The caller owns the reference, the checkpoint and the follow-up text; the adapter owns
+  the resume invocation. The bugfix chain's checkpoint (ADR-0019) stays the chain's: it names the
+  harness of each role and starts fresh when its flags differ.
+- **pi, the platform's adapter.** `--session <file>`: the file under `<run_dir>/pi/sessions` that
+  the reference names (a session id, or a path inside the run directory; any other path is refused),
+  with the line a kill cut trimmed first. A reference with no saved session raises (`HarnessError`).
+- **pi in the bugfix chain.** `PI_RESUME_SESSION=<session file>` to `pi.sh`, which adds
+  `--session <file>`; `trim_session` drops the line a kill cut; a run killed in the middle of a fix
+  continues it with `INTERRUPTED`.
+- **Proof.** Unit: `test_adapter.py` (the resume invocation, the trim, the refusals),
+  `bugfix/test_episodes.py` (the checkpoint, the episode file as a session). End-to-end: `test_s7` (a
+  follow-up arrives in the same conversation with its earlier turns; a station killed in the middle
+  and resumed by the session it left goes on with its tool results from before the kill), and the
+  chain's own kill and resume in `chain_seam_e2e.py`.
 
 ### S8 Calls recording
 
-- **Contract.** Each model call is one line of the run's calls file (`FLOTILLA_CALLS_FILE`):
-  `callrec_pi`'s line format (`at, alias, endpoint, model, deployment, tokens_in, tokens_out,
+- **Contract.** Each model call is one line of the run's calls file (`FLOTILLA_CALLS_FILE`), in the
+  in-process client's format (`at, alias, endpoint, model, deployment, tokens_in, tokens_out,
   cost_usd, cost_source, latency_s, status, error, finish_reason, step, decision_key, role, episode,
-  episode_seq, tools`) plus `harness` for every harness but pi (an absent field means pi). A tool's
-  argument is redacted by `callrec_pi.clean_arg`. Roles are coder, reviewer, verdict, advisor and
-  (non-pi) reproducer. A harness that reports per exec or per step says so in `Episode.notes`.
-- **Owner.** The chain writes the lines from the Episode; the adapter supplies turns.
-- **pi today.** `callrec_pi.session_lines` over pi's session files, one line per assistant message.
-- **Proof.** Unit: `test_callrec_pi.py`, `test_episodes.py`. End-to-end: `test_s8` (one line per
-  request, the scripted tokens, an episode number per session, the tools with their `ok`).
+  episode_seq, tools`) plus `harness` and `station` (and `role` empty), and `texts` (name, hash,
+  length) on the call that read the rendered texts. A tool in a line is `{name, arg, ok}`: the calls
+  file is not the record. `station_run.calls_lines` writes them; a tool's argument is masked.
+- **Owner.** The caller writes the lines from the Episode; the adapter supplies turns.
+- **pi in the bugfix chain.** `callrec_pi.session_lines` over pi's session files, one line per
+  assistant message, `role` coder, reviewer, verdict or advisor, no `harness` field (absent means pi).
+- **Proof.** Unit: `test_station_run.py` (the line, byte for byte), `bugfix/test_callrec_pi.py`,
+  `bugfix/test_episodes.py`. End-to-end: `test_s8` (one line per request, the scripted tokens, an
+  episode number per session, the tools with their `ok`, the texts).
 
 ### S9 Cost
 
-- **Contract.** The gateway's bill is authoritative: `spend.Meter.episode` reads the key's spend
-  after each episode and the lines share it by tokens (`cost_source: gateway-share`). A harness's
-  own figure is kept as `Turn.cost_est` and `Episode.cost_est`, an estimate, and is reported only
-  when the gateway cannot be read: `spend.episode_cost`, source `harness-estimate`. Declared:
-  `reports_cost`.
-- **Owner.** The chain and `spend.py`.
-- **pi today.** The gateway; pi's catalog figure (`spend.pi_cost`) is the fallback.
-- **Proof.** Unit: `test_spend.py`, `test_episodes.py`. End-to-end: `test_s9` (the spend file is the
-  gateway's figure for the run).
+- **Contract.** The gateway's bill is authoritative and the cost's source is always set: the driver
+  takes an optional `meter` (a callable that returns the gateway's spend so far) and the episode's
+  cost is the difference over the run, `source: gateway`. A harness's own figure is kept as
+  `Turn.cost_est` and `Episode.cost_est`, an estimate, and is the record's cost only when there is
+  no meter, labelled `harness-estimate`; with neither, `unknown`. Declared: `reports_cost`. The
+  bugfix chain's meter (`spend.Meter`, LiteLLM's `/key/info`) and its sharing of a key's spend over
+  the episodes stay the chain's (`bugfix/spend.py`).
+- **Owner.** The caller and `spend.py`; the driver takes the meter.
+- **Proof.** Unit: `test_station_run.py`, `bugfix/test_spend.py`, `bugfix/test_episodes.py`.
+  End-to-end: `test_s9` (every record's cost is the gateway's, and their sum is the endpoint's);
+  the chain's `chain_seam_e2e.py` for the spend file.
 
 ### S10 Phone-home off
 
@@ -221,22 +228,24 @@ Field names are the code's: `Request`, `Invocation`, `Turn`, `Episode`, `ModelRo
   egress proxy carries no vendor host. `harness_probe.py` (run by the installation) checks each
   against the proxy's log.
 - **Owner.** The adapter.
-- **pi today.** The worker image sets `PI_OFFLINE=1` and `PI_SKIP_VERSION_CHECK=1`
-  (`worker-bugfix.Dockerfile`), so `phone_home_env()` is empty; pi uses Node's environment proxy
-  (`NODE_USE_ENV_PROXY=1`).
-- **Proof.** End-to-end: `test_s10` (a proxy standing where the network is saw nothing in any of the
-  runs) and its control (pi pointed at a host that is not on `NO_PROXY` does reach the proxy, so
-  silence means something).
+- **pi, the platform's adapter.** `PI_OFFLINE=1` and `PI_SKIP_VERSION_CHECK=1`. **pi in the bugfix
+  chain:** the worker image sets them (`worker-bugfix.Dockerfile`), so its `phone_home_env()` is
+  empty; pi uses Node's environment proxy (`NODE_USE_ENV_PROXY=1`).
+- **Proof.** End-to-end: `test_s10` (a proxy standing where the network is saw nothing in any of
+  the runs) and its control (the same station pointed at a host that is not on `NO_PROXY` does reach
+  the proxy, so silence means something).
 
 ### S11 Workdir, HOME and the session store
 
-- **Contract.** The CLI runs with `Request.workdir` (the worktree, `<run_dir>/wt`) as its cwd
-  and HOME = `run_dir`. Its sessions, config and caches land under `run_dir`, where the checkpoint
-  can keep them and the run's end deletes them. Nothing is written to the worker's own HOME.
-- **Owner.** The chain sets HOME and the directories; the adapter puts its store under them.
-- **pi today.** `PI_CODING_AGENT_DIR=<run_dir>/pi`: `models.json`, `auth.json` and
-  `sessions/<cwd>/*.jsonl` there. The platform's adapter sets the same variable itself.
-- **Proof.** End-to-end: `test_s11`.
+- **Contract.** The CLI runs with `Request.workdir` as its cwd and HOME = `run_dir` (the driver
+  sets it, whatever the caller's environment had). Its sessions, config and caches land under
+  `run_dir`, where a checkpoint can keep them and the run's end deletes them. Nothing is written to
+  the worker's own HOME.
+- **Owner.** The driver sets HOME; the adapter puts its store under `run_dir`.
+- **pi.** `PI_CODING_AGENT_DIR=<run_dir>/pi`: `models.json`, `auth.json` and
+  `sessions/<cwd>/*.jsonl` there.
+- **Proof.** End-to-end: `test_s11` (the cwd and HOME of every invocation, the session store under
+  the run directory, the worker's HOME left empty).
 
 ## Capabilities
 
@@ -255,62 +264,68 @@ and that file equal to the adapters. Adding a harness adds its row.
 
 ## The minimum seam end-to-end
 
-A harness is adopted when this passes for it, with its real CLI binary. `bugfix/seam_e2e.py` is the
-shared part; `bugfix/test_seam_<name>.py` is the harness's run of it (`test_seam_pi.py` is the
-reference).
+A harness is adopted when this passes for it, with its real CLI binary. `runtime/seam_e2e.py` is
+the shared part; `runtime/test_seam_<name>.py` is the harness's run of it (`test_seam_pi.py` is the
+reference). The suite is run in CI over the fake harness that speaks to a model
+(`test_seam_fakeh.py`), because CI has no pi, so every seam is exercised there and the
+harness-specific parts on a machine that has the CLI.
 
-- **The CLI** is the real binary on PATH, started by the chain; a recording wrapper first on PATH
-  keeps its argv, cwd and environment and its whole stdout, and then runs the real one. Without the
-  binary the test is skipped, with the reason.
-- **The repository** is the fixture of `test_fix.py` plus an `AGENTS.md` it must never read:
-  `src/a.js` returns 1, the issue says "value() returns 1, want 2", one test fails until `src/a.js`
-  returns 2.
+- **The CLI** is the real binary on PATH, started through the station driver. Without the binary
+  the test is skipped, with the reason.
+- **The workspace** is a small directory: `src/a.js` returns 1, and an `AGENTS.md` it must never
+  read.
 - **The model** is `ScriptedEndpoint`, a stdlib HTTP server on loopback that speaks the protocol the
   harness uses (chat completions today; `/v1/messages` and `/v1/responses` are added by the adoption
-  of the first harness that needs them) and answers from a script: a tool call that writes the file,
-  then a final text. It records the path, the `Authorization` header, the model, the system text,
-  the conversation and the tools offered, and answers `/key/info` with a spend that grows with each
-  call.
+  of the first harness that needs them) and answers from a script: a tool call that writes the
+  file, then a final text. It records the path, the `Authorization` header, the model, the system
+  text, the conversation and the tools offered, and its spend grows with each call (the driver's
+  meter).
 - **The network** is a `RecordingProxy` as the egress proxy, with the gateway on `NO_PROXY`: any
   request that reaches it is a host that is not the gateway.
-- **The runs**, through `Chain` with the verdict and advisor leaves as the test's fakes (wave 2):
-  (1) repro, fix, a review that asks for changes, the fix resumed with it, a review that approves,
-  with the calls file and the spend file on; (2) the same with `--review-tools read`; (3) a fix that
-  never stops, with a turn cap of 1; (4) a fix whose request is never answered, with a timeout; (5)
-  a run as a process, killed with SIGTERM to its group while the fix is in flight, then started
-  again with `FLOTILLA_RESUME`.
-- **The checks** are `SeamSuite`: one test per seam, S1 to S11, and a control for S10. A harness's
-  subclass sets `NAME`, `BINARY`, the tool names (`READ_TOOLS`, `WRITE_TOOLS`), `SESSIONS`,
-  `flags()` (the chain flags that put the three roles on it) and `env()`, and
-  `control_sees_other_hosts()`; it adds the protocol to the endpoint if it is a new one.
+- **The runs**, through `station_run.run_station` with names the suite chooses: (1) four stations,
+  one for each `tools` value, one of them resumed by its session; (2) a station that never stops,
+  with a turn cap, whose first tool call starts a background process; (3) a station whose request is
+  never answered, with a timeout; (4) a station run as a process, killed with SIGTERM to its group
+  while its second request is in flight, then resumed by the session it left (for a harness that
+  declares `resume_after_kill`); (5) a station pointed at a host that is not the gateway (the
+  control for S10).
+- **The checks** are `SeamSuite`: one test per seam, S1 to S11. A harness's subclass sets `NAME`,
+  the tool names (`READ_TOOLS`, `WRITE_TOOLS`), `SESSIONS`, `session_ref_after_kill()` and, for a
+  fake, `unavailable()` and `prepare()`; it adds the protocol to the endpoint if it is a new one.
 
-Not covered by it: that a real model behaves; the verdict and advisor roles (wave 2); any harness
-version other than the one on the machine that runs it (pi: 1.0.0 here, 0.80.10 in the worker
-image); resume of a killed session for a harness whose resume is not yet tried; CI, which has no pi.
+Not covered by it: that a real model behaves; the verdict and advisor roles of the bugfix chain
+(their leaves run pi as before); any harness version other than the one on the machine that runs it
+(pi: 1.0.0 here, 0.80.10 in the worker image); a harness that is not pi; CI, which has no pi.
 
 ## Adopting a harness: the order
 
-1. Add its row to the capability table, and the seams that change here, in the same commit as the
-   code.
-2. The adapter and its unit tests (`test_harness_<name>.py`, samples in `testdata/harness/<name>/`,
+1. Add its row to the capability table (regenerate `fleets/harnesses.json`), and the seams that
+   change here, in the same commit as the code.
+2. The adapter and its unit tests (`test_adapter_<name>.py`, samples in `runtime/testdata/`,
    synthetic ones marked until a real run is recorded), then `test_seam_<name>.py` until every seam
    passes.
-3. Only then the chain's flag for it (`--harness`, `--repro-harness`, `--review-harness`), the
-   image, and the installation's probe.
+3. Only then the image, the installation's probe, and the stations that name it.
 
 ## Not done, and not verified
 
-- Declaring and hashing the texts other than `rules` (above).
-- The after-the-fact check of the worktree for a read role of a harness that cannot enforce it (S6),
-  and the startup check of a spec's needs against the table (`harness.missing` exists; nothing calls
-  it yet).
+- The runner's reach for a process a tool detaches (S5's hole).
+- Declaring and hashing the bugfix chain's texts other than `rules` (above).
 - The verdict and advisor roles through adapters; `triage_run.sh` and `advisor_run.sh` run pi as
-  before.
+  before. The bugfix chain's fix and repro keep their leaves; its review keeps its call
+  (`bugfix/pi_review.py`).
 - Every harness but pi: no adapter, no row, no end-to-end.
 - `/v1/messages` and `/v1/responses` in the scripted endpoint.
-- pi 0.80.10, the version in the worker image: the end-to-end ran on 1.0.0.
+- pi 0.80.10, the version in the worker image: the end-to-ends ran on 1.0.0.
 
 ## Amendment log
 
 - 2026-11-18: created with pi as the reference; S1-S11, the capability table, and the seam
-  end-to-end.
+  end-to-end, in `bugfix/`.
+- 2026-11-19: the layer is the platform's (build step 4), moved to `runtime/`. No roles: a station
+  is a free label and an adapter serves a `tools` value (`tools_served`); `Request` replaces
+  `RoleRequest` (`system_path`, no `readonly`). S1 and S3: pi's generic adapter (prompt on stdin, its
+  own models.json). S4: the episode record and its schema; a tool's arguments and result. S5:
+  the known hole. S6: the runner's check of the workspace is built. S7: resume by the reference,
+  after a kill. S8: `station` and `texts` in a calls line. S9: the driver's meter. The seam
+  end-to-end runs through the station driver, with the chain out of the loop and a fake harness in
+  CI.

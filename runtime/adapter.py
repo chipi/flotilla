@@ -85,6 +85,7 @@ import json
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -109,6 +110,16 @@ NOT_ADAPTERS = {"prompts", "cli", "probe"}   # harness_<these>.py are not harnes
 
 class HarnessError(Exception):
     """A request a harness cannot serve (an unknown name, a `tools` value it does not serve, a resume it cannot honour)."""
+
+
+class ReadOnlyViolation(HarnessError):
+    """A station asked for tools=read or tools=none, ran on a harness that cannot enforce it (enforces_readonly: no), and the
+    workspace is not as it was: a fatal stop. `episode` is what the run left, `changed` the paths (added, removed or changed,
+    relative to the workspace)."""
+
+    def __init__(self, message, episode=None, changed=()):
+        super().__init__(message)
+        self.episode, self.changed = episode, list(changed)
 
 
 class ProcessFailed(Exception):
@@ -571,6 +582,37 @@ def _sh_capped(p, timeout, max_turns, turn_ended, tee_path=None, stdin=None):
     return (TURN_CAPPED if capped.is_set() else p.returncode), "".join(lines)
 
 
+def workspace_digest(root, exclude=()):
+    """{relative path: content hash} of every file under `root` (a symlink by its target, never followed), except the .git
+    folder and the folders in `exclude`: the workspace as it is, to compare with itself after a station that was only to read."""
+    out, skip = {}, {os.path.realpath(e) for e in exclude if e}
+    if not root or not os.path.isdir(root):
+        return out
+    for dirpath, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = [d for d in dirs if d != ".git" and os.path.realpath(os.path.join(dirpath, d)) not in skip]
+        for name in files:
+            p = os.path.join(dirpath, name)
+            rel = os.path.relpath(p, root)
+            try:
+                st = os.lstat(p)
+                if stat.S_ISLNK(st.st_mode):
+                    out[rel] = "link:" + os.readlink(p)
+                elif stat.S_ISREG(st.st_mode):
+                    h = hashlib.sha256()
+                    with open(p, "rb") as f:
+                        for chunk in iter(lambda: f.read(1 << 20), b""):
+                            h.update(chunk)
+                    out[rel] = h.hexdigest()
+            except OSError:
+                out[rel] = "unreadable"
+    return out
+
+
+def digest_changes(before, after):
+    """The paths that differ between two workspace_digests, sorted."""
+    return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+
+
 def _inside(run_dir, rel):
     if not isinstance(rel, str) or not rel or os.path.isabs(rel) or ".." in rel.split("/"):
         raise HarnessError(f"path {rel!r} is not inside the run directory")
@@ -588,6 +630,8 @@ def execute(h, req, base_env, run=run_process):
     if req.resume and not h.can_resume:
         raise HarnessError(f"harness {h.name} cannot resume a session")
     inv = h.build(req)
+    # S6: a harness that cannot stop a read station writing is asked in the prompt, and the workspace is checked after
+    checked = req.tools in ("read", "none") and not h.enforces_readonly
     for rel, text in (inv.files or {}).items():
         path = _inside(req.run_dir, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -603,6 +647,7 @@ def execute(h, req, base_env, run=run_process):
             tee = inv.stream_path
         elif req.episode:
             tee = os.path.join(req.run_dir, EPISODES, req.episode + ".stream")
+    before = workspace_digest(inv.cwd or req.workdir, [req.run_dir]) if checked else None
     code, stream = run(inv.argv, inv.cwd or req.workdir, env, req.timeout, max_turns=req.max_turns or None,
                        turn_ended=h.turn_ended if req.max_turns else None, tee_path=tee, stdin=inv.stdin)
     files = {}
@@ -623,6 +668,12 @@ def execute(h, req, base_env, run=run_process):
         ep.exit_reason = "turn_cap"
     elif code != 0 and ep.exit_reason == "completed":
         ep.exit_reason, ep.error = "error", ep.error or f"exit {code}"
+    if checked:
+        changed = digest_changes(before, workspace_digest(inv.cwd or req.workdir, [req.run_dir]))
+        if changed:
+            shown = ", ".join(changed[:10]) + (f" and {len(changed) - 10} more" if len(changed) > 10 else "")
+            raise ReadOnlyViolation(f"station {req.station!r} was to only read (tools={req.tools}) and harness {h.name} cannot enforce it, "
+                                    f"but the workspace changed: {shown}", ep, changed)
     return ep, code, stream
 
 

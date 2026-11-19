@@ -11,7 +11,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_config  # noqa: E402
-import seam_e2e as se  # noqa: E402
+import chain_seam_e2e as se  # noqa: E402
 
 
 class PiSeams(se.SeamSuite):
