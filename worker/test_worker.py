@@ -322,6 +322,65 @@ class TestRunToken(unittest.TestCase):
         self.assertNotIn(os.sep, os.path.basename(p))
 
 
+class TestShadowLogMarks(unittest.TestCase):
+    """Every log line of a shadow run carries shadow=true and routine_version; a live run's lines are as they were."""
+
+    def setUp(self):
+        self.code = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        fw.CODE_ROOT = self.code
+        self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
+
+    def lines(self, req):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            res = fw.run_job(req, self.environ)
+        return res, [json.loads(ln) for ln in buf.getvalue().splitlines() if ln.startswith("{")]
+
+    def req(self, command, shadow=False, run_id="r-sh"):
+        r = {"run_id": run_id, "routine": "t/j", "command": command, "workdir": ".", "timeout_s": 10,
+             "env": {"FLOTILLA_ROUTINE_VERSION": "2"}}
+        if shadow:
+            r["shadow"] = True
+        return r
+
+    def test_a_shadow_runs_output_lines_are_marked(self):
+        res, lines = self.lines(self.req("echo one; echo two", shadow=True))
+        out = [ln for ln in lines if ln["msg"] == "run output"]
+        self.assertEqual([ln["line"] for ln in out], ["one", "two"])
+        for ln in out:
+            self.assertIs(ln["shadow"], True)
+            self.assertEqual(ln["routine_version"], 2)
+
+    def test_a_live_runs_lines_are_unchanged(self):
+        res, lines = self.lines(self.req("echo one"))
+        self.assertTrue(lines)
+        for ln in lines:
+            self.assertNotIn("shadow", ln)
+            self.assertNotIn("routine_version", ln)
+
+    def test_marks_are_gone_when_the_run_ends(self):
+        self.lines(self.req("true", shadow=True))
+        self.assertNotIn("r-sh", fw._marks)
+        fw.log("later", run_id="r-sh")   # nothing of the finished run lingers
+
+    def test_a_missing_version_still_marks_the_shadow(self):
+        r = self.req("echo x", shadow=True)
+        r["env"] = {}
+        _, lines = self.lines(r)
+        out = [ln for ln in lines if ln["msg"] == "run output"]
+        self.assertIs(out[0]["shadow"], True)
+        self.assertNotIn("routine_version", out[0])
+
+    def test_run_marks(self):
+        self.assertEqual(fw.run_marks({}), {})
+        self.assertEqual(fw.run_marks({"shadow": False, "env": {"FLOTILLA_ROUTINE_VERSION": "3"}}), {})
+        self.assertEqual(fw.run_marks({"shadow": True, "env": {"FLOTILLA_ROUTINE_VERSION": "3"}}), {"shadow": True, "routine_version": 3})
+        self.assertEqual(fw.run_marks({"shadow": True, "env": {"FLOTILLA_ROUTINE_VERSION": "x"}}), {"shadow": True})
+
+
 class TestHTTP(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -380,6 +439,27 @@ class TestHTTP(unittest.TestCase):
         self.assertEqual((code, body["status"]), (200, "ok"), body)
         self.assertNotIn(tok, buf.getvalue(), "the worker's log must never hold a run's token")
         self.assertFalse(os.path.exists(fw.token_path({}, "tk1")))
+
+    def test_a_shadow_runs_start_and_end_lines_are_marked_and_a_failure_keeps_its_level(self):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code, body = self.call("/v1/runs", {"run_id": "sh1", "routine": "t/shadow", "command": "exit 3", "timeout_s": 10,
+                                               "shadow": True, "env": {"FLOTILLA_ROUTINE_VERSION": "2"}})
+            code2, _ = self.call("/v1/runs", {"run_id": "lv1", "routine": "t/live", "command": "exit 3", "timeout_s": 10})
+        self.assertEqual((code, body["status"], code2), (200, "error", 200))
+        lines = [json.loads(ln) for ln in buf.getvalue().splitlines() if ln.startswith("{")]
+        mine = [ln for ln in lines if ln.get("run_id") == "sh1"]
+        self.assertEqual({ln["msg"] for ln in mine}, {"run start", "run end"})
+        for ln in mine:
+            self.assertIs(ln["shadow"], True)
+            self.assertEqual(ln["routine_version"], 2)
+        end = next(ln for ln in mine if ln["msg"] == "run end")
+        live_end = next(ln for ln in lines if ln.get("run_id") == "lv1" and ln["msg"] == "run end")
+        self.assertEqual(end["level"], live_end["level"], "a shadow failure logs at the level a live one does")
+        self.assertEqual(end["level"], "warning")
+        self.assertNotIn("shadow", live_end)
 
     def test_run_and_one_at_a_time(self):
         out = {}

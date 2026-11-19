@@ -28,7 +28,14 @@ const Service = "flotillad"
 // Logger writes JSON lines to stdout with service, environment and version on each; ERROR records
 // also go to GlitchTip once Errors has been set up.
 func Logger(env, version string) *slog.Logger {
-	return slog.New(ErrorHandler{slog.NewJSONHandler(os.Stdout, nil)}).With("service", Service, "environment", env, "version", version)
+	return slog.New(ErrorHandler{Handler: slog.NewJSONHandler(os.Stdout, nil)}).With("service", Service, "environment", env, "version", version)
+}
+
+// ShadowLogger is log for one shadow run: every line carries shadow=true and routine_version, so logs of a shadow are separable
+// from the live routine's (a log query excludes shadow:true). The level is the line's own: a shadow's failure logs as loudly as a
+// live one's, and what keeps it out of the live view is the mark, never a quieter level. (version is the build, already on every line.)
+func ShadowLogger(log *slog.Logger, routineVersion int) *slog.Logger {
+	return log.With("shadow", true, "routine_version", routineVersion)
 }
 
 // Tracing sets the global tracer provider. An empty endpoint leaves tracing off (a no-op tracer).
@@ -120,9 +127,17 @@ func (p *Pusher) sample(name string, labels map[string]string, v float64) string
 	return fmt.Sprintf("%s{%s} %g", name, strings.Join(parts, ","), v)
 }
 
-// Run records one run: flotilla_run (1 per run; count with count_over_time), its duration, and the
-// routine's spend so far today. A skipped run has no duration or spend to report.
+// isShadowKey says a routine key is a shadow version's ("<fleet>/<routine>@v<n>"): a loaded routine's id never holds "@v".
+func isShadowKey(key string) bool { return strings.Contains(key, "@v") }
+
+// Run records one live run: flotilla_run (1 per run; count with count_over_time), its duration, and the
+// routine's spend so far today. A skipped run has no duration or spend to report. A shadow's key is refused here (ShadowRun is
+// its way in): a sample under it without the shadow label would be a shadow's failure reading as a live one.
 func (p *Pusher) Run(routine, status, autonomy string, durationS, spendDayUSD float64) {
+	if isShadowKey(routine) {
+		p.refuseShadowKey("Run", routine)
+		return
+	}
 	lines := []string{p.sample("flotilla_run", map[string]string{"routine": routine, "status": status, "autonomy": autonomy, "version": p.Version}, 1)}
 	if status != "skipped" {
 		lines = append(lines,
@@ -130,6 +145,41 @@ func (p *Pusher) Run(routine, status, autonomy string, durationS, spendDayUSD fl
 			p.sample("flotilla_spend_day_usd", map[string]string{"routine": routine}, spendDayUSD))
 	}
 	p.push(lines)
+}
+
+// ShadowRun records one shadow run, on its own series: the routine label is the shadow's key ("<fleet>/<routine>@v<n>"), every
+// sample carries shadow="1" and routine_version, and nothing here is a freshness or last-success sample, so a failed, slow or
+// stale shadow can never fire a stale alert or read as a live routine's run (the alert rules group by routine and read those two
+// series). The live series are untouched.
+func (p *Pusher) ShadowRun(key string, version int, status, autonomy string, durationS, spendDayUSD float64) {
+	if !isShadowKey(key) {
+		p.refuseShadowKey("ShadowRun", key)
+		return
+	}
+	mark := map[string]string{"routine": key, "shadow": "1", "routine_version": fmt.Sprint(version)}
+	with := func(extra map[string]string) map[string]string {
+		l := map[string]string{}
+		for k, v := range mark {
+			l[k] = v
+		}
+		for k, v := range extra {
+			l[k] = v
+		}
+		return l
+	}
+	lines := []string{p.sample("flotilla_run", with(map[string]string{"status": status, "autonomy": autonomy, "version": p.Version}), 1)}
+	if status != "skipped" {
+		lines = append(lines,
+			p.sample("flotilla_run_seconds", with(map[string]string{"autonomy": autonomy}), durationS),
+			p.sample("flotilla_spend_day_usd", with(nil), spendDayUSD))
+	}
+	p.push(lines)
+}
+
+func (p *Pusher) refuseShadowKey(fn, key string) {
+	if p.Log != nil {
+		p.Log.Error("a metric was asked for under the wrong kind of routine key; dropped", "func", fn, "routine", key)
+	}
 }
 
 // StoreError records one store write that failed but did not fail its caller (a run's model calls, what it
@@ -141,7 +191,7 @@ func (p *Pusher) StoreError(op string) {
 
 // LastSuccess pushes the time of a routine's last ok run; the stale alert compares it with now.
 func (p *Pusher) LastSuccess(routine string, at time.Time) {
-	if at.IsZero() {
+	if at.IsZero() || isShadowKey(routine) { // a shadow's success is nobody's freshness
 		return
 	}
 	p.push([]string{p.sample("flotilla_routine_last_success_timestamp_seconds", map[string]string{"routine": routine}, float64(at.Unix()))})
@@ -149,6 +199,9 @@ func (p *Pusher) LastSuccess(routine string, at time.Time) {
 
 // Freshness pushes each routine's declared freshness, so the stale alert needs no per-routine threshold.
 func (p *Pusher) Freshness(routine string, d time.Duration) {
+	if isShadowKey(routine) {
+		return
+	}
 	p.push([]string{p.sample("flotilla_routine_freshness_seconds", map[string]string{"routine": routine}, d.Seconds())})
 }
 

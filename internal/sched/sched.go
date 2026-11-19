@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -382,6 +383,9 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		"FLEETD_BUDGET_LEFT": fmt.Sprintf("%.4f", j.Budget.DayUSD-spent),
 		"FLOTILLA_RUN_ID":    runID,
 		"FLOTILLA_ROUTINE":   id,
+		// the routine's version the run is: the worker's logs and the routine's own spans and traces carry it (a shadow run also
+		// gets FLOTILLA_SHADOW=1)
+		"FLOTILLA_ROUTINE_VERSION": strconv.Itoa(max(j.Version, 1)),
 	}
 	if tp := carrier.Get("traceparent"); tp != "" {
 		env["TRACEPARENT"] = tp

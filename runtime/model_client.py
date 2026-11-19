@@ -229,9 +229,17 @@ class Client:
                 b[k] = v
         if tools and a.tools == "native":
             b["tools"] = tools
-        if trace_id and a.kind == "litellm":
+        shadow = self.environ.get("FLOTILLA_SHADOW") == "1"
+        if (trace_id or shadow) and a.kind == "litellm":
             # LiteLLM's Langfuse logger adds its generation to the run's trace
-            b["metadata"] = {"existing_trace_id": trace_id, "generation_name": generation_name}
+            meta = {"existing_trace_id": trace_id, "generation_name": generation_name} if trace_id else {}
+            if shadow:
+                # a shadow run's generations are tagged, so Langfuse views and the installation's trace readers can leave them out
+                meta["tags"] = ["shadow"] + [f"routine_version:{v}"
+                                             for v in [self.environ.get("FLOTILLA_ROUTINE_VERSION", "")] if v.isdigit()]
+                if generation_name and not trace_id:
+                    meta["generation_name"] = generation_name
+            b["metadata"] = meta
         return b
 
     def chat(self, alias, messages, timeout=90, step=None, decision_key=None, role=None, episode=None,

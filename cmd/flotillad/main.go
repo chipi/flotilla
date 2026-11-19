@@ -75,9 +75,13 @@ type Config struct {
 	// approvals in Slack through one host's connector (G9, internal/api/slack.go); empty = none
 	Slack *api.SlackConfig `yaml:"slack"`
 	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
-	ErrorsDSNFile string                  `yaml:"errors_dsn_file"`
-	CallersFile   string                  `yaml:"callers_file"`
-	Workers       map[string]WorkerConfig `yaml:"workers"`
+	ErrorsDSNFile string `yaml:"errors_dsn_file"`
+	// Optional: a DSN file for the errors of shadow runs, a GlitchTip project of their own (its slug ends in -shadow, which the
+	// triage fleet's poll leaves out). Empty: a shadow's errors go to errors_dsn_file, told apart by the shadow=1 tag and their own
+	// fingerprint.
+	ErrorsShadowDSNFile string                  `yaml:"errors_shadow_dsn_file"`
+	CallersFile         string                  `yaml:"callers_file"`
+	Workers             map[string]WorkerConfig `yaml:"workers"`
 	// routines this installation does not run, whatever their spec says (e.g. an e2e stack that has no
 	// real services for them). A listed id that no spec has is an error, so a typo cannot hide.
 	DisabledRoutines []string `yaml:"disabled_routines"`
@@ -411,7 +415,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	flushErrors, err := telemetry.Errors(cfg.ErrorsDSNFile, cfg.Environment, version)
+	flushErrors, err := telemetry.Errors(cfg.ErrorsDSNFile, cfg.ErrorsShadowDSNFile, cfg.Environment, version)
 	if err != nil {
 		log.Error("errors to GlitchTip", "err", err)
 		os.Exit(1)

@@ -14,10 +14,19 @@ import installation
 from http_util import get_json, post_form_text
 
 
+def live_only(logsql):
+    """The query with `-shadow:true` added to its filter (before its first pipe): every line of a shadow run carries shadow=true
+    (flotillad and the workers, v2 step 2), and triage's evidence is the live system's. Every log read goes through this."""
+    if "shadow:true" in logsql:
+        return logsql
+    head, sep, tail = logsql.partition(" | ")
+    return f"({head}) -shadow:true{sep}{tail}"   # parenthesised: an OR in the filter must not escape the exclusion
+
+
 def vl_query(logsql, timeout=12):
-    """Run a LogsQL query; returns raw text (NDJSON or stats)."""
+    """Run a LogsQL query; returns raw text (NDJSON or stats). Lines of a shadow run are left out (live_only)."""
     return post_form_text(
-        f"{config.VL_URL}/select/logsql/query", {"query": logsql}, timeout=timeout
+        f"{config.VL_URL}/select/logsql/query", {"query": live_only(logsql)}, timeout=timeout
     )
 
 

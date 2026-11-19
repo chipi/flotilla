@@ -253,6 +253,22 @@ def is_dev_signal(signal):
     slug = str((signal.get("labels") or {}).get("project", ""))
     return proj.upper().endswith("-DEV") or slug.lower().endswith("-dev")
 
+# A shadow version of a routine (v2 step 2) runs with no effect on the system: its errors carry the tag shadow=1 and live in a
+# GlitchTip project of their own (<name>-shadow), and the poll leaves both out (sources._is_shadow_issue); one that arrives
+# anyway is refused here, so a shadow's error never becomes a GitHub issue.
+
+
+def is_shadow_signal(signal):
+    """A signal made by a shadow run: its GlitchTip project slug ends in -shadow (or its short id's project part in -SHADOW), or
+    its labels say shadow=1|true or name a shadow version's routine key (<fleet>/<routine>@v<n>)."""
+    labels = signal.get("labels") or {}
+    slug = str(labels.get("project", "")).lower()
+    fp = signal.get("fingerprint", "")
+    proj = fp[len("glitchtip:"):].rsplit("-", 1)[0].lower() if fp.startswith("glitchtip:") else ""
+    return (slug.endswith("-shadow") or proj.endswith("-shadow")
+            or str(labels.get("shadow", "")).lower() in ("1", "true") or "@v" in str(labels.get("routine", "")))
+
+
 # glitchtip project prefix → GitHub repo (the installation's repo_map, first since 2026-07-29).
 # Unmapped projects fall back to SF_OPS_REPO, else the ops repo, as unmapped grafana signals do.
 # Until 2026-11-12 they fell back to SF_OPS_REPO alone, unset on the host, and a refusal was only
@@ -787,6 +803,8 @@ def _file_or_update(signal, issue, kind):
     fp = signal.get("fingerprint", "")
     if is_dev_signal(signal):
         return f"REFUSED: {fp} is from a dev environment; a dev error never becomes a GitHub issue"
+    if is_shadow_signal(signal):
+        return f"REFUSED: {fp} is from a shadow run; a shadow's error never becomes a GitHub issue"
     gk = group_key_for(signal.get("alertname", ""), (issue or {}).get("title", ""),
                        (signal.get("labels") or {}).get("project", ""))
     nk = normalized_key(signal)

@@ -39,12 +39,42 @@ class NoOp(unittest.TestCase):
         self.assertIn("not installed", s.why)
 
 
+class RunMarks(unittest.TestCase):
+    """What a run's spans carry: its routine's version, and for a shadow run flotilla.shadow=true (nothing on a live run)."""
+
+    def test_a_live_run_has_a_version_and_no_shadow_mark(self):
+        self.assertEqual(telemetry.run_marks({"FLOTILLA_ROUTINE_VERSION": "2"}), {"flotilla.version": 2})
+        self.assertEqual(telemetry.run_marks({}), {})
+
+    def test_a_shadow_run_is_marked(self):
+        self.assertEqual(telemetry.run_marks({"FLOTILLA_SHADOW": "1", "FLOTILLA_ROUTINE_VERSION": "3"}),
+                         {"flotilla.version": 3, "flotilla.shadow": True})
+        self.assertEqual(telemetry.run_marks({"FLOTILLA_SHADOW": "1"}), {"flotilla.shadow": True})
+
+    def test_only_one_means_shadow(self):
+        for v in ("0", "true", "", "no"):
+            self.assertNotIn("flotilla.shadow", telemetry.run_marks({"FLOTILLA_SHADOW": v}), v)
+
+    def test_a_bad_version_is_left_out(self):
+        self.assertEqual(telemetry.run_marks({"FLOTILLA_ROUTINE_VERSION": "x2"}), {})
+
+    def test_the_resource_of_a_shadow_run_carries_the_mark_and_a_live_runs_does_not(self):
+        env = {"FLOTILLA_ROUTINE": "triage/cycle", "FLOTILLA_ENVIRONMENT": "e2e", "FLOTILLA_RUN_ID": "r1", "FLOTILLA_ROUTINE_VERSION": "2"}
+        live = telemetry.resource_attrs(env)
+        shadow = telemetry.resource_attrs(dict(env, FLOTILLA_SHADOW="1"))
+        self.assertEqual(live["flotilla.version"], 2)
+        self.assertNotIn("flotilla.shadow", live)
+        self.assertEqual((shadow["flotilla.version"], shadow["flotilla.shadow"]), (2, True))
+        self.assertEqual((shadow["service.name"], shadow["flotilla.run_id"], shadow["flotilla.routine"]), ("flotilla-triage", "r1", "triage/cycle"))
+        self.assertEqual({k: v for k, v in shadow.items() if k != "flotilla.shadow"}, live, "nothing else differs")
+
+
 @unittest.skipUnless(SDK, "no OpenTelemetry SDK here; deploy/e2e/run.sh runs this in the worker image")
 class WithSDK(unittest.TestCase):
     def test_model_call_span_under_the_run(self):
         exp = InMemorySpanExporter()
         env = {"FLOTILLA_ROUTINE": "platform/heartbeat", "FLOTILLA_ENVIRONMENT": "e2e", "FLOTILLA_RUN_ID": "r1",
-               "TRACEPARENT": f"00-{TRACE_ID}-{PARENT}-01"}
+               "FLOTILLA_ROUTINE_VERSION": "2", "FLOTILLA_SHADOW": "1", "TRACEPARENT": f"00-{TRACE_ID}-{PARENT}-01"}
         s = telemetry.setup(env, exporter=exp)
         self.assertTrue(s.active)
         cfg = {"endpoints": {"e": {"base_url": "http://x/v1", "kind": "litellm"}},
@@ -65,6 +95,8 @@ class WithSDK(unittest.TestCase):
         self.assertEqual(sp.attributes["gen_ai.usage.input_tokens"], 3)
         self.assertEqual(sp.resource.attributes["service.name"], "flotilla-platform")
         self.assertEqual(sp.resource.attributes["deployment.environment"], "e2e")
+        self.assertEqual(sp.resource.attributes["flotilla.version"], 2, "the routine's version is on the run's spans")
+        self.assertIs(sp.resource.attributes["flotilla.shadow"], True, "a shadow run's spans carry the mark")
 
 
 if __name__ == "__main__":

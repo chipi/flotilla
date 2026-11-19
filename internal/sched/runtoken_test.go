@@ -148,3 +148,24 @@ func TestTheTokenNamesTheVersionTheRunStartedAs(t *testing.T) {
 		t.Fatalf("version %d, want 3", tr.during[0].Version)
 	}
 }
+
+// Every run is told which version of its routine it is, so the worker's logs and the routine's own spans can carry it.
+func TestARunIsToldItsRoutineVersion(t *testing.T) {
+	s, fr, _ := setup(t, 2)
+	if _, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fr.got[0].Env["FLOTILLA_ROUTINE_VERSION"]; v != "1" {
+		t.Fatalf("a routine with no recorded versions runs as v1: %q", v)
+	}
+	s.Routine("triage/cycle").Version = 4
+	if _, err := s.RunNow(context.Background(), "triage/cycle", "manual", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fr.got[1].Env["FLOTILLA_ROUTINE_VERSION"]; v != "4" {
+		t.Fatalf("version %q, want 4", v)
+	}
+	if _, set := fr.got[1].Env["FLOTILLA_SHADOW"]; set {
+		t.Fatal("a live run is not told it is a shadow")
+	}
+}

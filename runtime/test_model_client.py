@@ -146,6 +146,46 @@ class Golden(unittest.TestCase):
         self.assertEqual(tr.sent[0]["data"], t["data"])
 
 
+class ShadowTags(unittest.TestCase):
+    """A shadow run (FLOTILLA_SHADOW=1) tags its generations in Langfuse; a live run's request is the bytes it always was."""
+
+    MESSAGES = [{"role": "user", "content": "x"}]
+
+    def sent(self, environ, **kw):
+        c, tr = client(ok(), environ=dict({"OPENROUTER_API_KEY": "sk-test"}, **environ))
+        c.chat("triage-default", self.MESSAGES, **kw)
+        return json.loads(tr.sent[0]["data"])
+
+    def test_a_shadow_run_tags_its_generation_in_the_trace(self):
+        body = self.sent({"FLOTILLA_SHADOW": "1", "FLOTILLA_ROUTINE_VERSION": "2"}, trace_id="abc", generation_name="turn-1")
+        self.assertEqual(body["metadata"], {"existing_trace_id": "abc", "generation_name": "turn-1",
+                                            "tags": ["shadow", "routine_version:2"]})
+
+    def test_a_shadow_run_is_tagged_even_without_a_trace(self):
+        body = self.sent({"FLOTILLA_SHADOW": "1", "FLOTILLA_ROUTINE_VERSION": "3"}, generation_name="g")
+        self.assertEqual(body["metadata"], {"tags": ["shadow", "routine_version:3"], "generation_name": "g"})
+        body = self.sent({"FLOTILLA_SHADOW": "1"})
+        self.assertEqual(body["metadata"], {"tags": ["shadow"]})
+
+    def test_a_live_run_sends_what_it_always_did(self):
+        live = self.sent({"FLOTILLA_ROUTINE_VERSION": "2"}, trace_id="abc", generation_name="turn-1")
+        self.assertEqual(live["metadata"], {"existing_trace_id": "abc", "generation_name": "turn-1"})
+        self.assertNotIn("metadata", self.sent({"FLOTILLA_ROUTINE_VERSION": "2"}))
+        self.assertNotIn("tags", json.dumps(live))
+
+    def test_only_one_means_shadow(self):
+        for v in ("0", "true", "", "yes"):
+            self.assertNotIn("metadata", self.sent({"FLOTILLA_SHADOW": v}), v)
+
+    def test_a_direct_endpoint_gets_no_metadata_either_way(self):
+        aliases = mc.load({"endpoints": {"or": {"base_url": "https://openrouter.ai/api/v1", "kind": "openai",
+                                                "defaults": {"json": "object", "cost": "reported", "tools": "json"}}},
+                           "aliases": {"a": {"endpoint": "or", "model": "m"}}})
+        tr = Transport(ok())
+        mc.Client(aliases, transport=tr, tracer=None, environ={"FLOTILLA_SHADOW": "1"}).chat("a", self.MESSAGES, trace_id="abc")
+        self.assertNotIn("metadata", json.loads(tr.sent[0]["data"]))
+
+
 class Chat(unittest.TestCase):
     def test_record_of_a_call(self):
         c, tr = client(ok(usage={"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.0012},

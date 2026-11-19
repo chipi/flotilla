@@ -48,11 +48,27 @@ MAX_BODY = 1 << 20
 
 _running = {}
 _cancels = {}   # run id -> the Event a cancel sets; present from the run's acceptance to its answer
+_marks = {}     # run id -> the fields every log line of that run carries (a shadow run's), while it is in flight
 _lock = threading.Lock()
 
 
+def run_marks(req):
+    """What marks a run's log lines: nothing for a live run (its lines are as they always were); shadow=true and
+    routine_version for a shadow run, so a log query can leave shadows out (a shadow is separated by this mark, never by a
+    quieter level: its failures log as loudly as a live one's)."""
+    if not req.get("shadow"):
+        return {}
+    out = {"shadow": True}
+    v = str((req.get("env") or {}).get("FLOTILLA_ROUTINE_VERSION", ""))
+    if v.isdigit():
+        out["routine_version"] = int(v)
+    return out
+
+
 def log(msg, **fields):
-    """One JSON line to stdout: Alloy collects container stdout into VictoriaLogs."""
+    """One JSON line to stdout: Alloy collects container stdout into VictoriaLogs. A line about a shadow run in flight
+    carries that run's marks."""
+    fields = {**_marks.get(fields.get("run_id"), {}), **fields}
     rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "level": fields.pop("level", "info"),
            "service": f"flotilla-worker-{WORKER}", "msg": msg, **fields}
     print(json.dumps(rec, ensure_ascii=False), flush=True)
@@ -228,6 +244,9 @@ def write_run_token(path, token):
 def run_job(req, environ=None, cancel=None):
     environ = os.environ if environ is None else environ
     env = build_env(req.get("env"), environ)
+    marks = run_marks(req)
+    if marks:
+        _marks[req["run_id"]] = marks
     token_file = ""
     if req.get("api_token"):
         token_file = token_path(env, req["run_id"])
@@ -236,6 +255,8 @@ def run_job(req, environ=None, cancel=None):
     try:
         return _run_job(req, env, cancel)
     finally:
+        if marks:
+            _marks.pop(req["run_id"], None)
         if token_file:
             try:
                 os.remove(token_file)
@@ -394,11 +415,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(409, {"error": f"{req['routine']} is already running ({_running[req['routine']]})"})
             _running[req["routine"]] = req["run_id"]
             cancel = _cancels[req["run_id"]] = threading.Event()
-        log("run start", run_id=req["run_id"], routine=req["routine"])
+        marks = run_marks(req)
+        log("run start", run_id=req["run_id"], routine=req["routine"], **marks)
         try:
             res = run_job(req, cancel=cancel)
         except Exception as e:  # noqa: BLE001 — report, never crash the server
-            log("run failed to start", level="error", run_id=req["run_id"], routine=req["routine"], error=str(e))
+            log("run failed to start", level="error", run_id=req["run_id"], routine=req["routine"], error=str(e), **marks)
             res = {"status": "error", "exit_code": None, "duration_s": 0, "spend_usd": 0, "output_tail": str(e)}
         finally:
             with _lock:
@@ -406,7 +428,7 @@ class Handler(BaseHTTPRequestHandler):
                 _cancels.pop(req["run_id"], None)
         log("run end", run_id=req["run_id"], routine=req["routine"], status=res["status"], exit_code=res["exit_code"],
             duration_s=res["duration_s"], spend_usd=res["spend_usd"],
-            level="info" if res["status"] == "ok" else "warning")
+            level="info" if res["status"] == "ok" else "warning", **marks)
         self._send(200, res)
 
 

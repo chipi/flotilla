@@ -35,6 +35,30 @@ class Session:
             self.provider, self.token = None, None
 
 
+def run_marks(environ):
+    """What every span of the run carries beyond the run's identity: the routine's version (when flotillad said it), and for a shadow
+    run (FLOTILLA_SHADOW=1) flotilla.shadow=true, so a trace query can leave shadows out. A live run has no shadow attribute."""
+    out = {}
+    v = str(environ.get("FLOTILLA_ROUTINE_VERSION", ""))
+    if v.isdigit():
+        out["flotilla.version"] = int(v)
+    if environ.get("FLOTILLA_SHADOW") == "1":
+        out["flotilla.shadow"] = True
+    return out
+
+
+def resource_attrs(environ):
+    """The resource every span of the run carries: who and where, the run's identity, and run_marks."""
+    routine = environ.get("FLOTILLA_ROUTINE", "")
+    attrs = {
+        "service.name": "flotilla-" + (routine.split("/")[0] or "routine"),
+        "service.version": environ.get("FLOTILLA_VERSION", "dev"),
+        "deployment.environment": environ.get("FLOTILLA_ENVIRONMENT", ""),
+        "flotilla.routine": routine, "flotilla.run_id": environ.get("FLOTILLA_RUN_ID", "")}
+    attrs.update(run_marks(environ))
+    return attrs
+
+
 def setup(environ=None, exporter=None):
     """Configure tracing for this process. `exporter` replaces the OTLP exporter (tests)."""
     environ = os.environ if environ is None else environ
@@ -52,12 +76,7 @@ def setup(environ=None, exporter=None):
     if exporter is None:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         exporter = OTLPSpanExporter(endpoint=url, timeout=5)
-    routine = environ.get("FLOTILLA_ROUTINE", "")
-    provider = TracerProvider(resource=Resource.create({
-        "service.name": "flotilla-" + (routine.split("/")[0] or "routine"),
-        "service.version": environ.get("FLOTILLA_VERSION", "dev"),
-        "deployment.environment": environ.get("FLOTILLA_ENVIRONMENT", ""),
-        "flotilla.routine": routine, "flotilla.run_id": environ.get("FLOTILLA_RUN_ID", "")}))
+    provider = TracerProvider(resource=Resource.create(resource_attrs(environ)))
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     token = None

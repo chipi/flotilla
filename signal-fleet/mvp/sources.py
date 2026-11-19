@@ -31,6 +31,22 @@ def _is_test_signal(*fields):
     return bool(TEST_RUN_MARKER.search(" ".join(str(f) for f in fields if f)))
 
 
+def _marked_shadow(labels):
+    """Labels or tags (a dict, or GlitchTip's [{key, value}] list) that say a shadow run made the signal: shadow=1|true, or a
+    routine key of a shadow version ("<fleet>/<routine>@v<n>"). A shadow version's signals are never a live fleet's (v2 step 2)."""
+    if isinstance(labels, list):
+        labels = {t.get("key"): t.get("value") for t in labels if isinstance(t, dict)}
+    labels = labels if isinstance(labels, dict) else {}
+    return str(labels.get("shadow", "")).lower() in ("1", "true") or "@v" in str(labels.get("routine", ""))
+
+
+def _is_shadow_issue(issue):
+    """A GlitchTip issue of a shadow run: its project is a shadow project (<name>-shadow), or its tags or labels carry shadow=1.
+    The project is the separation the installation can rely on; the tag drop is for an issue list that carries tags."""
+    slug = str((issue.get("project") or {}).get("slug", ""))
+    return slug.lower().endswith("-shadow") or _marked_shadow(issue.get("tags")) or _marked_shadow(issue.get("labels"))
+
+
 def firing_alerts():
     """Currently-active Grafana alert instances (Alertmanager v2). Prefers the
     Viewer service-account token; falls back to basic-auth only if no token."""
@@ -51,6 +67,7 @@ def firing_alerts():
             if a.get("status", {}).get("state") == "active"
             and a.get("labels", {}).get("meta") != "true"
             and a.get("labels", {}).get("alertname") not in _PLUMBING
+            and not _marked_shadow(a.get("labels", {}))
             and not _is_test_signal(a.get("labels", {}).get("alertname"),
                                     a.get("labels", {}).get("run_id"),
                                     a.get("labels", {}).get("environment"))]
@@ -206,6 +223,9 @@ def glitchtip_unresolved(limit=10):
     out = []
     for i in issues:
         if i.get("status") != "unresolved":
+            continue
+        if _is_shadow_issue(i):
+            print(f"  [suppress shadow] {i.get('shortId')} {str(i.get('title',''))[:70]}")
             continue
         meta = i.get("metadata") or {}
         if _is_test_signal(i.get("title"), i.get("culprit"), i.get("shortId"),
