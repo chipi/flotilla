@@ -506,22 +506,22 @@ def _kill(p):
     by the run's tag in the environment it kept and by descent, repeated while any is left as a process may fork while it dies."""
     tag = getattr(p, "flotilla_tag", None)
     sweep = tag and have_proc()
-    victims = set()
     try:
         os.killpg(p.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
     if sweep:
         for _ in range(3):
-            victims |= _proc_scan(tag, p.pid)
-            for pid in victims:
+            # only what this scan found: a pid from an earlier round may be a different process by now
+            fresh = _proc_scan(tag, p.pid) - {p.pid}
+            if not fresh:
+                break
+            for pid in fresh:
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
                     pass
             time.sleep(0.05)
-            if not _proc_scan(tag, p.pid) - {p.pid}:
-                break
 
 
 def run_process(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, turn_ended=None, tee_path=None, stdin=None):

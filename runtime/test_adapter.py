@@ -286,6 +286,18 @@ class Runner(unittest.TestCase):
             os.kill(pid, 9)
         self.assertEqual(left, [], "a process the run detached outlived its kill")
 
+    def test_each_sweep_round_kills_only_what_that_scan_found(self):
+        """A pid from an earlier round may be another process by now (pids are reused): it is not killed again."""
+        class P:
+            pid, flotilla_tag = 5, "t"
+        kills = []
+        scans = iter([{10, 11}, {12}, set()])
+        with unittest.mock.patch.object(adapter, "have_proc", return_value=True), unittest.mock.patch.object(adapter, "_proc_scan", side_effect=lambda *a: next(scans)), \
+                unittest.mock.patch.object(adapter.os, "killpg"), unittest.mock.patch.object(adapter.os, "kill", side_effect=lambda pid, sig: kills.append(pid)), \
+                unittest.mock.patch.object(adapter.time, "sleep"):
+            adapter._kill(P())
+        self.assertEqual(sorted(kills), [10, 11, 12], "each pid once")
+
     def test_check_raises_on_a_timeout_and_on_a_failure(self):
         with self.assertRaisesRegex(adapter.ProcessFailed, "no result in 1s"):
             adapter.run_process("sleep 5", self.d, timeout=1, check=True)
