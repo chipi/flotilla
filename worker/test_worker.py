@@ -229,6 +229,23 @@ class TestRunJob(unittest.TestCase):
             self.planned("true", plan_file="../../etc/x")
 
 
+class mode:
+    """FLOTILLA_WORKER_MODE for a block: the HTTP server in these tests reads the process environment per request."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def __enter__(self):
+        self.old = os.environ.get("FLOTILLA_WORKER_MODE")
+        os.environ["FLOTILLA_WORKER_MODE"] = self.value
+
+    def __exit__(self, *a):
+        if self.old is None:
+            os.environ.pop("FLOTILLA_WORKER_MODE", None)
+        else:
+            os.environ["FLOTILLA_WORKER_MODE"] = self.old
+
+
 class TestRunToken(unittest.TestCase):
     """A run's own token for flotillad: a 0600 file in the run's temp directory, named by FLOTILLA_API_TOKEN_FILE, removed after."""
 
@@ -330,13 +347,14 @@ class TestShadowLogMarks(unittest.TestCase):
         self.home = tempfile.mkdtemp()
         fw.CODE_ROOT = self.code
         self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
+        self.shadow_environ = dict(self.environ, FLOTILLA_WORKER_MODE="shadow")
 
     def lines(self, req):
         import contextlib
         import io
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            res = fw.run_job(req, self.environ)
+            res = fw.run_job(req, self.shadow_environ if req.get("shadow") else self.environ)
         return res, [json.loads(ln) for ln in buf.getvalue().splitlines() if ln.startswith("{")]
 
     def req(self, command, shadow=False, run_id="r-sh"):
@@ -445,8 +463,9 @@ class TestHTTP(unittest.TestCase):
         import io
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            code, body = self.call("/v1/runs", {"run_id": "sh1", "routine": "t/shadow", "command": "exit 3", "timeout_s": 10,
-                                               "shadow": True, "env": {"FLOTILLA_ROUTINE_VERSION": "2"}})
+            with mode("shadow"):
+                code, body = self.call("/v1/runs", {"run_id": "sh1", "routine": "t/shadow", "command": "exit 3", "timeout_s": 10,
+                                                   "shadow": True, "env": {"FLOTILLA_ROUTINE_VERSION": "2"}})
             code2, _ = self.call("/v1/runs", {"run_id": "lv1", "routine": "t/live", "command": "exit 3", "timeout_s": 10})
         self.assertEqual((code, body["status"], code2), (200, "error", 200))
         lines = [json.loads(ln) for ln in buf.getvalue().splitlines() if ln.startswith("{")]
@@ -519,6 +538,448 @@ class TestHTTP(unittest.TestCase):
         self.assertEqual(self.call("/v1/runs/c3/cancel", {})[0], 200, "twice while the run is ending")
         t.join(20)
         self.assertEqual(out["r"][1]["status"], "cancelled")
+
+
+
+def write_file(path, text, mode=0o600):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    os.chmod(path, mode)
+
+
+class TestEnvSplit(unittest.TestCase):
+    """The worker's env files are split into the credentials that can only read and the ones that can write (v2 step 2): a live
+    run gets both, a shadow run the read ones, and a shadow worker cannot be configured to reach a write credential."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.legacy = os.path.join(self.d, "fleet.env")
+        self.read = os.path.join(self.d, "read.env")
+        self.write = os.path.join(self.d, "write.env")
+        write_file(self.legacy, "LEGACY_KEY=legacy-value\n")
+        write_file(self.read, "READ_TOKEN=read-value\nSHARED_URL=http://svc\n")
+        write_file(self.write, "GH_TOKEN=write-secret-1\nPUSH_KEY=write-secret-2\n")
+        self.live = {"PATH": "/usr/bin", "HOME": "/home/w", "FLOTILLA_ENV_FILES": self.legacy,
+                     "FLOTILLA_READ_ENV_FILES": self.read, "FLOTILLA_WRITE_ENV_FILES": self.write}
+        self.shadow = {"PATH": "/usr/bin", "HOME": "/home/w", "FLOTILLA_WORKER_MODE": "shadow", "FLOTILLA_READ_ENV_FILES": self.read,
+                       "FLOTILLA_WRITE_ENV_FILES": os.path.join(self.d, "not-mounted.env")}
+
+    def test_a_live_run_gets_all_three(self):
+        env = fw.build_env({}, self.live)
+        for k in ("LEGACY_KEY", "READ_TOKEN", "GH_TOKEN", "PUSH_KEY", "SHARED_URL"):
+            self.assertIn(k, env)
+
+    def test_a_shadow_run_gets_the_read_files_only(self):
+        env = fw.build_env({}, self.shadow)
+        self.assertEqual((env["READ_TOKEN"], env["SHARED_URL"]), ("read-value", "http://svc"))
+        for k in ("GH_TOKEN", "PUSH_KEY", "LEGACY_KEY"):
+            self.assertNotIn(k, env)
+
+    def test_a_shadow_worker_with_the_unsplit_env_files_is_refused(self):
+        bad = dict(self.shadow, FLOTILLA_ENV_FILES=self.legacy)
+        with self.assertRaises(fw.Refused) as cm:
+            fw.build_env({}, bad)
+        self.assertIn("FLOTILLA_READ_ENV_FILES", str(cm.exception))
+        with self.assertRaises(fw.Refused):
+            fw.check_start(bad)
+
+    def test_a_shadow_worker_that_can_read_a_write_file_does_not_start(self):
+        bad = dict(self.shadow, FLOTILLA_WRITE_ENV_FILES=self.write)
+        with self.assertRaises(fw.Refused) as cm:
+            fw.check_start(bad)
+        self.assertIn(self.write, str(cm.exception))
+        self.assertNotIn("write-secret", str(cm.exception), "the refusal names files, never values")
+        fw.check_start(self.shadow)   # the write file is named but not there: fine
+        fw.check_start(self.live)     # a live worker has them all
+
+    def test_a_bad_mode_is_refused(self):
+        for v in ("Shadow", "candidate", "both"):
+            with self.assertRaises(ValueError):
+                fw.worker_mode({"FLOTILLA_WORKER_MODE": v})
+        self.assertEqual(fw.worker_mode({}), "live")
+        self.assertEqual(fw.worker_mode({"FLOTILLA_WORKER_MODE": ""}), "live")
+
+    def test_a_shadow_run_with_a_write_credential_in_its_environment_is_refused(self):
+        base = {"run_id": "s1", "routine": "t/j", "command": "true", "workdir": ".", "timeout_s": 5, "shadow": True}
+        # A shadow worker cannot read the write files, so it is told the names (FLOTILLA_WRITE_KEYS); a key of a write file that
+        # IS reachable counts too. The credential can come in through the request's env or a ROUTINE_ override.
+        named = dict(self.shadow, FLOTILLA_WRITE_KEYS="GH_TOKEN, PUSH_KEY ,DEPLOY_KEY")
+        cases = {
+            "the request": (dict(base, env={"GH_TOKEN": "smuggled-value"}), named, "GH_TOKEN"),
+            "a ROUTINE_ override": (dict(base), dict(named, ROUTINE_PUSH_KEY="override-value"), "PUSH_KEY"),
+            "a key named with spaces": (dict(base, env={"DEPLOY_KEY": "named-value"}), named, "DEPLOY_KEY"),
+            "a write file that is there": (dict(base, env={"GH_TOKEN": "x-value"}), dict(self.shadow, FLOTILLA_WRITE_ENV_FILES=self.write), "GH_TOKEN"),
+        }
+        for name, (req, environ, key) in cases.items():
+            with self.subTest(name):
+                with self.assertRaises(fw.Refused) as cm:
+                    fw.prepare_env(req, environ)
+                msg = str(cm.exception)
+                self.assertIn("write credentials", msg)
+                self.assertIn(key, msg)
+                self.assertNotIn("-value", msg, "names, never values")
+        # nothing named, nothing to refuse: the check is only as good as the names it is given
+        fw.prepare_env(dict(base, env={"GH_TOKEN": "x"}), self.shadow)
+
+    def test_the_write_keys_are_names_only(self):
+        self.assertEqual(fw.write_keys(self.live), {"GH_TOKEN", "PUSH_KEY"})
+        self.assertEqual(fw.write_keys(dict(self.shadow, FLOTILLA_WRITE_KEYS="A,B")), {"A", "B"})
+        self.assertEqual(fw.write_keys({}), set())
+
+    def test_a_clean_shadow_run_is_prepared(self):
+        req = {"run_id": "s1", "routine": "t/j", "command": "true", "workdir": ".", "timeout_s": 5, "shadow": True,
+               "env": {"FLEETD_STAGE": "live", "FOO": "bar"}}
+        env = fw.prepare_env(req, self.shadow)
+        self.assertEqual((env["FLOTILLA_SHADOW"], env["FLEETD_STAGE"], env["FOO"]), ("1", "shadow", "bar"),
+                         "the stage is shadow whatever the request said")
+        self.assertEqual(env["READ_TOKEN"], "read-value")
+
+
+class TestModes(unittest.TestCase):
+    """A shadow run only on a shadow worker, a live run only on a live one."""
+
+    def req(self, shadow=False, run_id="m1"):
+        r = {"run_id": run_id, "routine": "t/j", "command": "true", "workdir": ".", "timeout_s": 5}
+        if shadow:
+            r["shadow"] = True
+        return r
+
+    def test_the_mismatches_are_refused(self):
+        live, shadow = {"HOME": "/h"}, {"HOME": "/h", "FLOTILLA_WORKER_MODE": "shadow"}
+        with self.assertRaises(fw.Refused) as cm:
+            fw.check_mode(self.req(shadow=True), live)
+        self.assertIn("not a shadow worker", str(cm.exception))
+        with self.assertRaises(fw.Refused) as cm:
+            fw.check_mode(self.req(), shadow)
+        self.assertIn("shadow runs only", str(cm.exception))
+        fw.check_mode(self.req(), live)
+        fw.check_mode(self.req(shadow=True), shadow)
+
+    def test_a_live_run_is_not_marked_shadow(self):
+        env = fw.prepare_env(self.req(), {"HOME": "/h", "PATH": "/usr/bin"})
+        self.assertNotIn("FLOTILLA_SHADOW", env)
+
+    def test_the_run_job_refuses_before_it_starts_anything(self):
+        before = set(fw._running)
+        with self.assertRaises(fw.Refused):
+            fw.run_job(self.req(shadow=True), {"HOME": tempfile.mkdtemp(), "PATH": os.environ["PATH"]})
+        self.assertEqual(set(fw._running), before)
+
+
+class TestShadowRun(unittest.TestCase):
+    def setUp(self):
+        self.code = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        self.snaps = tempfile.mkdtemp()
+        fw.CODE_ROOT = self.code
+        self.saved = (fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES)
+        fw.SNAPSHOT_DIR = self.snaps
+        self.environ = {"PATH": os.environ["PATH"], "HOME": self.home, "FLOTILLA_WORKER_MODE": "shadow"}
+
+    def tearDown(self):
+        fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES = self.saved
+
+    def req(self, command, **kw):
+        r = {"run_id": "s1", "routine": "t/j", "command": command, "workdir": ".", "timeout_s": 10, "shadow": True,
+             "env": {"FLEETD_STAGE": "live"}}
+        r.update(kw)
+        return r
+
+    def snapshot(self, run_id, files):
+        for rel, text in files.items():
+            write_file(os.path.join(self.snaps, run_id, rel), text)
+
+    def test_it_runs_as_shadow_with_the_marks_and_the_stage(self):
+        res = fw.run_job(self.req('echo shadow=$FLOTILLA_SHADOW stage=$FLEETD_STAGE'), self.environ)
+        self.assertEqual(res["status"], "ok", res)
+        self.assertIn("shadow=1 stage=shadow", res["output_tail"])
+
+    def test_it_runs_at_a_lower_priority_than_a_live_run(self):
+        cmd = 'python3 -c "import os; print(\'nice=%d\' % os.nice(0))"'
+        shadow = fw.run_job(self.req(cmd), self.environ)
+        live = fw.run_job({k: v for k, v in self.req(cmd).items() if k != "shadow"}, dict(self.environ, FLOTILLA_WORKER_MODE="live"))
+        self.assertIn("nice=%d" % fw.SHADOW_NICE, shadow["output_tail"])
+        self.assertNotIn("nice=%d" % fw.SHADOW_NICE, live["output_tail"])
+
+    def test_the_state_is_the_snapshot_and_what_was_there_is_gone(self):
+        self.snapshot("live-1", {"state/ledger.tsv": "from the live run\n", "state/sub/deep.txt": "deep\n"})
+        write_file(os.path.join(self.home, "state", "ledger.tsv"), "the shadow worker's stale copy\n")
+        write_file(os.path.join(self.home, "state", "leftover.txt"), "an earlier shadow's file\n")
+        write_file(os.path.join(self.home, "other", "keep.txt"), "not a state path\n")
+        res = fw.run_job(self.req('cd "$HOME"; cat state/ledger.tsv state/sub/deep.txt; ls state; cat other/keep.txt',
+                                  snapshot_of="live-1", state=["state"]), self.environ)
+        out = res["output_tail"]
+        self.assertIn("from the live run", out)
+        self.assertIn("deep", out)
+        self.assertNotIn("stale copy", out)
+        self.assertNotIn("leftover.txt", out, "the stale state is removed first")
+        self.assertIn("not a state path", out, "HOME outside the state paths is left alone")
+        self.assertEqual(oct(os.stat(os.path.join(self.home, "state", "ledger.tsv")).st_mode & 0o777), "0o600")
+
+    def test_a_path_the_live_run_never_had_starts_empty(self):
+        self.snapshot("live-1", {"a/x": "1"})
+        write_file(os.path.join(self.home, "b", "stale"), "x")
+        fw.run_job(self.req("true", snapshot_of="live-1", state=["a", "b"]), self.environ)
+        self.assertTrue(os.path.exists(os.path.join(self.home, "a", "x")))
+        self.assertFalse(os.path.exists(os.path.join(self.home, "b")))
+
+    def test_a_missing_snapshot_is_a_refusal_before_the_run_starts(self):
+        with self.assertRaises(fw.Refused) as cm:
+            fw.prepare_env(self.req("true", snapshot_of="nope", state=["state"]), self.environ)
+        self.assertIn("no snapshot of nope", str(cm.exception))
+        with self.assertRaises(fw.Refused) as cm:
+            fw.prepare_env(self.req("true", state=["state"]), self.environ)
+        self.assertIn("snapshot_of", str(cm.exception))
+        fw.prepare_env(self.req("true", snapshot_of="nope"), self.environ)   # no state paths: nothing to copy, no snapshot needed
+
+    def test_a_symlink_in_the_snapshot_is_never_followed(self):
+        victim = tempfile.mkdtemp()
+        write_file(os.path.join(victim, "secret.txt"), "outside\n")
+        self.snapshot("live-1", {"state/real.txt": "real\n"})
+        os.symlink(victim, os.path.join(self.snaps, "live-1", "state", "link"))
+        os.symlink(os.path.join(victim, "secret.txt"), os.path.join(self.snaps, "live-1", "state", "file-link"))
+        fw.run_job(self.req("true", snapshot_of="live-1", state=["state"]), self.environ)
+        self.assertTrue(os.path.exists(os.path.join(self.home, "state", "real.txt")))
+        self.assertFalse(os.path.lexists(os.path.join(self.home, "state", "link")), "a linked directory is not copied")
+        self.assertFalse(os.path.lexists(os.path.join(self.home, "state", "file-link")), "a linked file is not copied")
+
+    def test_a_state_path_cannot_leave_home_or_be_all_of_it(self):
+        self.snapshot("live-1", {"x": "1"})
+        for bad in ("../x", "/etc", "a/../../x", "", ".", "./"):
+            with self.subTest(bad):
+                with self.assertRaises(ValueError):
+                    fw.clean_state_path(bad)
+        # a symlink in HOME that points out is caught by resolve
+        outside = tempfile.mkdtemp()
+        os.symlink(outside, os.path.join(self.home, "escape"))
+        write_file(os.path.join(self.snaps, "live-1", "escape", "f"), "1")
+        with self.assertRaises(ValueError):
+            fw.run_job(self.req("true", snapshot_of="live-1", state=["escape"]), self.environ)
+        self.assertEqual(os.listdir(outside), [], "nothing was written outside HOME")
+
+    def test_a_snapshot_over_the_caps_is_refused(self):
+        self.snapshot("live-1", {"state/big": "x" * 5000})
+        fw.SNAPSHOT_MAX_BYTES = 1000
+        with self.assertRaises(fw.TooBig):
+            fw.run_job(self.req("true", snapshot_of="live-1", state=["state"]), self.environ)
+        fw.SNAPSHOT_MAX_BYTES = 1 << 20
+        fw.SNAPSHOT_MAX_FILES = 1
+        self.snapshot("live-2", {"state/a": "1", "state/b": "2"})
+        with self.assertRaises(fw.TooBig):
+            fw.run_job(self.req("true", run_id="s2", snapshot_of="live-2", state=["state"]), self.environ)
+
+    def test_a_live_run_never_restores_anything(self):
+        self.snapshot("live-1", {"state/x": "1"})
+        live_env = dict(self.environ, FLOTILLA_WORKER_MODE="live")
+        req = {k: v for k, v in self.req("true", snapshot_of="live-1", state=["state"]).items() if k != "shadow"}
+        fw.run_job(req, live_env)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "state")))
+
+
+class TestSnapshots(unittest.TestCase):
+    """The live worker's snapshots of a routine's state: whole or not at all, bounded, never through a symlink."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.snaps = tempfile.mkdtemp()
+        self.environ = {"PATH": os.environ["PATH"], "HOME": self.home}
+        self.saved = (fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES)
+        fw.SNAPSHOT_DIR = self.snaps
+        write_file(os.path.join(self.home, "signal-fleet", "results", "filed.tsv"), "a\tb\n")
+        write_file(os.path.join(self.home, "signal-fleet", "results", "dispositions.tsv"), "c\td\n")
+        write_file(os.path.join(self.home, "other.txt"), "x")
+
+    def tearDown(self):
+        fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES = self.saved
+
+    def take(self, run_id="live-1", paths=("signal-fleet",), environ=None):
+        return fw.make_snapshot(run_id, list(paths), environ or self.environ)
+
+    def test_the_declared_paths_are_copied_with_private_modes(self):
+        res = self.take(paths=["signal-fleet", "other.txt", "not-there"])
+        self.assertEqual((res["files"], res["bytes"], res["skipped"], res["missing"]), (3, 4 + 4 + 1, 0, ["not-there"]))
+        d = os.path.join(self.snaps, "live-1")
+        self.assertTrue(os.path.exists(os.path.join(d, "signal-fleet", "results", "filed.tsv")))
+        self.assertTrue(os.path.exists(os.path.join(d, "other.txt")))
+        self.assertEqual(oct(os.stat(d).st_mode & 0o777), "0o700")
+        self.assertEqual(oct(os.stat(os.path.join(d, "signal-fleet")).st_mode & 0o777), "0o700")
+        self.assertEqual(oct(os.stat(os.path.join(d, "other.txt")).st_mode & 0o777), "0o600")
+        self.assertEqual(sorted(os.listdir(self.snaps)), ["live-1"], "no .partial is left")
+
+    def test_it_is_a_copy_not_a_view(self):
+        self.take()
+        write_file(os.path.join(self.home, "signal-fleet", "results", "filed.tsv"), "changed after\n")
+        with open(os.path.join(self.snaps, "live-1", "signal-fleet", "results", "filed.tsv")) as f:
+            self.assertEqual(f.read(), "a\tb\n")
+
+    def test_a_second_snapshot_of_a_run_is_refused(self):
+        self.take()
+        with self.assertRaises(fw.Refused):
+            self.take()
+
+    def test_a_shadow_worker_takes_none(self):
+        with self.assertRaises(fw.Refused):
+            self.take(environ=dict(self.environ, FLOTILLA_WORKER_MODE="shadow"))
+
+    def test_symlinks_are_skipped_and_counted(self):
+        victim = tempfile.mkdtemp()
+        write_file(os.path.join(victim, "secret"), "outside")
+        os.symlink(victim, os.path.join(self.home, "signal-fleet", "dirlink"))
+        os.symlink(os.path.join(victim, "secret"), os.path.join(self.home, "signal-fleet", "filelink"))
+        res = self.take()
+        self.assertEqual(res["skipped"], 2)
+        d = os.path.join(self.snaps, "live-1", "signal-fleet")
+        self.assertFalse(os.path.lexists(os.path.join(d, "dirlink")))
+        self.assertFalse(os.path.lexists(os.path.join(d, "filelink")))
+        for root, _dirs, files in os.walk(os.path.join(self.snaps, "live-1")):
+            self.assertNotIn("secret", files)
+
+    def test_a_declared_path_that_is_a_symlink_out_of_home_is_refused(self):
+        outside = tempfile.mkdtemp()
+        write_file(os.path.join(outside, "f"), "x")
+        os.symlink(outside, os.path.join(self.home, "escape"))
+        with self.assertRaises(ValueError):
+            self.take(paths=["escape"])
+        self.assertEqual(os.listdir(self.snaps), [], "nothing left behind")
+
+    def test_bad_paths_are_refused(self):
+        for bad in (["../x"], ["/etc"], [""], ["."], [], None, "state", [1]):
+            with self.subTest(str(bad)):
+                with self.assertRaises(ValueError):
+                    fw.make_snapshot("live-1", bad, self.environ)
+        self.assertEqual(os.listdir(self.snaps), [])
+
+    def test_over_the_cap_nothing_is_kept(self):
+        write_file(os.path.join(self.home, "big", "blob"), "x" * 5000)
+        fw.SNAPSHOT_MAX_BYTES = 1000
+        with self.assertRaises(fw.TooBig):
+            self.take(paths=["big"])
+        self.assertEqual(os.listdir(self.snaps), [], "no partial snapshot is visible or left")
+        fw.SNAPSHOT_MAX_BYTES, fw.SNAPSHOT_MAX_FILES = 1 << 20, 1
+        with self.assertRaises(fw.TooBig):
+            self.take(paths=["signal-fleet"])
+        self.assertEqual(os.listdir(self.snaps), [])
+
+    def test_delete_is_idempotent(self):
+        self.take()
+        self.assertTrue(fw.delete_snapshot("live-1"))
+        self.assertFalse(fw.delete_snapshot("live-1"))
+        self.assertFalse(os.path.exists(os.path.join(self.snaps, "live-1")))
+        self.take()   # and the run id is free again
+
+    def test_the_run_id_cannot_steer_the_path(self):
+        self.take(run_id="../../escape")
+        self.assertEqual(os.listdir(self.snaps), [".._.._escape"], "the name is made safe, inside the snapshot directory")
+        with self.assertRaises(ValueError):
+            fw.snapshot_path("..")
+        with self.assertRaises(ValueError):
+            fw.snapshot_path("")
+
+    def test_the_tar_holds_the_snapshot(self):
+        self.take()
+        f = fw.tar_snapshot("live-1")
+        import tarfile
+        with tarfile.open(fileobj=f, mode="r:gz") as tf:
+            names = sorted(m.name for m in tf.getmembers() if m.isfile())
+        self.assertEqual(names, ["./signal-fleet/results/dispositions.tsv", "./signal-fleet/results/filed.tsv"])
+        self.assertIsNone(fw.tar_snapshot("nope"))
+
+
+class TestSnapshotHTTP(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["FLOTILLA_WORKER_TOKEN"] = "t" * 40
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        cls.port = s.getsockname()[1]
+        s.close()
+        cls.srv = fw.ThreadingHTTPServer(("127.0.0.1", cls.port), fw.Handler)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.snaps = tempfile.mkdtemp()
+        self.saved = (fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES, os.environ.get("HOME"))
+        fw.SNAPSHOT_DIR = self.snaps
+        os.environ["HOME"] = self.home
+        write_file(os.path.join(self.home, "state", "f.txt"), "hello\n")
+
+    def tearDown(self):
+        fw.SNAPSHOT_DIR, fw.SNAPSHOT_MAX_BYTES = self.saved[0], self.saved[1]
+        os.environ["HOME"] = self.saved[2]
+
+    def call(self, method, path, body=None, token="t" * 40, raw=False):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=data, method=method,
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                b = r.read()
+                return r.status, (b if raw else json.loads(b)), r.headers
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read()), e.headers
+
+    def test_take_export_and_delete(self):
+        code, body, _ = self.call("POST", "/v1/snapshots", {"run_id": "live-1", "paths": ["state"]})
+        self.assertEqual((code, body["files"], body["bytes"], body["missing"]), (200, 1, 6, []))
+        code, body, _ = self.call("POST", "/v1/snapshots", {"run_id": "live-1", "paths": ["state"]})
+        self.assertEqual(code, 409, body)
+        code, raw, headers = self.call("GET", "/v1/snapshots/live-1", raw=True)
+        self.assertEqual((code, headers["Content-Type"]), (200, "application/gzip"))
+        import io
+        import tarfile
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tf:
+            self.assertIn("./state/f.txt", [m.name for m in tf.getmembers()])
+        code, body, _ = self.call("POST", "/v1/snapshots/live-1/delete", {})
+        self.assertEqual((code, body["existed"]), (200, True))
+        code, body, _ = self.call("POST", "/v1/snapshots/live-1/delete", {})
+        self.assertEqual((code, body["existed"]), (200, False))
+        self.assertEqual(self.call("GET", "/v1/snapshots/live-1")[0], 404)
+
+    def test_refusals(self):
+        self.assertEqual(self.call("POST", "/v1/snapshots", {"run_id": "x", "paths": ["../etc"]})[0], 400)
+        self.assertEqual(self.call("POST", "/v1/snapshots", {"paths": ["state"]})[0], 400)
+        self.assertEqual(self.call("POST", "/v1/snapshots", {"run_id": "x"})[0], 400)
+        self.assertEqual(self.call("POST", "/v1/snapshots", {"run_id": "x", "paths": ["state"]}, token="wrong")[0], 401)
+        self.assertEqual(self.call("GET", "/v1/snapshots/x", token="wrong")[0], 401)
+        self.assertEqual(self.call("POST", "/v1/snapshots/a/b/delete", {})[0], 400)
+        fw.SNAPSHOT_MAX_BYTES = 3
+        code, body, _ = self.call("POST", "/v1/snapshots", {"run_id": "big", "paths": ["state"]})
+        self.assertEqual(code, 413, body)
+        self.assertEqual(os.listdir(self.snaps), [])
+
+    def test_a_shadow_worker_takes_and_deletes_none_and_says_its_mode(self):
+        with mode("shadow"):
+            self.assertEqual(self.call("POST", "/v1/snapshots", {"run_id": "x", "paths": ["state"]})[0], 409)
+            self.assertEqual(self.call("POST", "/v1/snapshots/x/delete", {})[0], 409)
+            code, body, _ = self.call("GET", "/healthz")
+            self.assertEqual((code, body["mode"]), (200, "shadow"))
+        code, body, _ = self.call("GET", "/healthz")
+        self.assertEqual((code, body["mode"]), (200, "live"))
+
+    def test_the_two_modes_refuse_each_others_runs_with_a_409(self):
+        base = {"run_id": "m1", "routine": "t/mode", "command": "true", "timeout_s": 5}
+        code, body, _ = self.call("POST", "/v1/runs", dict(base, shadow=True))
+        self.assertEqual(code, 409, body)
+        self.assertIn("not a shadow worker", body["error"])
+        with mode("shadow"):
+            code, body, _ = self.call("POST", "/v1/runs", dict(base))
+            self.assertEqual(code, 409, body)
+            self.assertIn("shadow runs only", body["error"])
+            code, body, _ = self.call("POST", "/v1/runs", dict(base, shadow=True, state=["state"], snapshot_of="nope"))
+            self.assertEqual(code, 409, body)
+            self.assertIn("no snapshot", body["error"])
+            self.assertEqual(self.call("POST", "/v1/runs", dict(base, shadow=True, state=["../x"], snapshot_of="x"))[0], 400)
+            self.assertEqual(self.call("POST", "/v1/runs", dict(base, shadow=True, state="state"))[0], 400)
+            self.assertEqual(self.call("POST", "/v1/runs", dict(base, shadow=True, snapshot_of=""))[0], 400)
+            self.assertEqual(self.call("POST", "/v1/runs", dict(base, shadow=True, input_key=5))[0], 400)
+        self.assertNotIn("m1", fw._cancels)
+        self.assertNotIn("t/mode", fw._running, "a refused run never registered")
 
 
 if __name__ == "__main__":

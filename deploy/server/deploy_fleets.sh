@@ -143,7 +143,7 @@ FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed '
 # health status, which flotillad's 60 s interval leaves at "starting" for a minute (2026-11-17, a false FAIL).
 ok=0
 for i in $(seq 1 45); do
-  cli health >/dev/null 2>&1 && cli status 2>/dev/null | grep -q '^worker triage: {"ok":true' && { ok=1; break; }
+  cli health >/dev/null 2>&1 && cli status 2>/dev/null | grep -q '^worker triage: .*"ok":true' && { ok=1; break; }
   sleep 2
 done
 mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/opt/flotilla/fleets"}}{{.Source}}{{end}}{{end}}' flotillad)"

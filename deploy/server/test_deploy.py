@@ -313,7 +313,7 @@ FLEETS_DOCKER = textwrap.dedent("""\
         case "$*" in
           *"flotilla-worker-triage tar"*) tar -C "$STUB_RUNNING" -cf - fleets; exit 0;;
           *"flotilla status -json"*) cat "$STUB_CFG/status.json"; exit 0;;
-          *"flotilla status"*) echo "triage/cycle  record  record  10m"; echo 'worker triage: {"ok":true}'; exit 0;;
+          *"flotilla status"*) echo "triage/cycle  record  record  10m"; echo 'worker triage: {"mode":"live","ok":true,"running":[],"version":"v","worker":"triage"}'; exit 0;;
           *"flotilla versions"*)
             if [ -f "$STUB_CFG/up" ]; then
               [ -n "${STUB_VERSIONS_FAIL_AFTER:-}" ] && { echo "flotillad is gone" >&2; exit 1; }

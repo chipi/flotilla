@@ -156,3 +156,126 @@ func TestRunReadsAResultOfAFullCallsCap(t *testing.T) {
 		t.Fatalf("%d calls, dropped %d, %v", len(res.Calls), res.CallsDropped, err)
 	}
 }
+
+// A 409 is a refusal the caller can tell from a failed run: the wrong mode, a write credential, a missing snapshot, or a routine
+// already running. The message says which.
+func TestRunConflictIsARefusal(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(409)
+		w.Write([]byte(`{"error":"this worker is not a shadow worker: it does not run a shadow run"}`))
+	}))
+	defer ts.Close()
+	_, err := New(ts.URL, "s").Run(context.Background(), Request{RunID: "r", Routine: "j/a", Command: "true", TimeoutS: 1, Shadow: true})
+	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "not a shadow worker") || !strings.Contains(err.Error(), "HTTP 409") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestShadowRequestFieldsTravelAndALiveRequestHasNone(t *testing.T) {
+	var raw map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&raw)
+		w.Write([]byte(`{"status":"ok","exit_code":0}`))
+	}))
+	defer ts.Close()
+	c := New(ts.URL, "s")
+	if _, err := c.Run(context.Background(), Request{RunID: "r", Routine: "j/a", Command: "true", TimeoutS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"shadow", "input_key", "snapshot_of", "state", "api_token"} {
+		if _, ok := raw[k]; ok {
+			t.Errorf("a live request carries %q: %v", k, raw)
+		}
+	}
+	if _, err := c.Run(context.Background(), Request{RunID: "s", Routine: "j/a", Command: "true", TimeoutS: 1, Shadow: true,
+		InputKey: "live-1", SnapshotOf: "live-1", State: []string{"signal-fleet"}, APIToken: "tok"}); err != nil {
+		t.Fatal(err)
+	}
+	if raw["shadow"] != true || raw["input_key"] != "live-1" || raw["snapshot_of"] != "live-1" || raw["api_token"] != "tok" ||
+		len(raw["state"].([]any)) != 1 || raw["state"].([]any)[0] != "signal-fleet" {
+		t.Fatalf("%v", raw)
+	}
+}
+
+func TestHealthSaysTheMode(t *testing.T) {
+	for body, capable := range map[string]bool{
+		`{"ok":true,"mode":"shadow"}`: true, `{"ok":true,"mode":"live"}`: false, `{"ok":true}`: false,
+	} {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
+		h, err := New(ts.URL, "s").Health(context.Background())
+		ts.Close()
+		if err != nil || h.ShadowCapable() != capable {
+			t.Errorf("%s: capable %v, want %v (%v)", body, h.ShadowCapable(), capable, err)
+		}
+	}
+	var none *Health
+	if none.ShadowCapable() {
+		t.Error("no answer is not a shadow worker")
+	}
+}
+
+func TestTakeAndDeleteASnapshot(t *testing.T) {
+	var got struct {
+		RunID string   `json:"run_id"`
+		Paths []string `json:"paths"`
+	}
+	var auth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		switch {
+		case r.URL.Path == "/v1/snapshots" && r.Method == "POST":
+			json.NewDecoder(r.Body).Decode(&got)
+			switch got.RunID {
+			case "exists":
+				w.WriteHeader(409)
+				w.Write([]byte(`{"error":"a snapshot of exists already exists"}`))
+			case "big":
+				w.WriteHeader(413)
+				w.Write([]byte(`{"error":"the state is too big to snapshot: more than 5 bytes"}`))
+			case "broken":
+				w.WriteHeader(500)
+				w.Write([]byte(`{"error":"snapshot: no space left"}`))
+			default:
+				w.Write([]byte(`{"run_id":"live-1","bytes":42,"files":3,"skipped":1,"missing":["gone"]}`))
+			}
+		case r.URL.Path == "/v1/snapshots/live-1/delete" && r.Method == "POST":
+			w.Write([]byte(`{"ok":true,"run_id":"live-1","existed":true}`))
+		case r.URL.Path == "/v1/snapshots/odd%2Fid/delete" || r.URL.RawPath == "/v1/snapshots/odd%2Fid/delete":
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":"a snapshot is named by its run id"}`))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+	c := New(ts.URL, "sek")
+	sn, err := c.TakeSnapshot(context.Background(), "live-1", []string{"signal-fleet"})
+	if err != nil || sn.Bytes != 42 || sn.Files != 3 || sn.Skipped != 1 || len(sn.Missing) != 1 || got.RunID != "live-1" || got.Paths[0] != "signal-fleet" || auth != "Bearer sek" {
+		t.Fatalf("%+v %v (sent %+v, auth %q)", sn, err, got, auth)
+	}
+	if _, err := c.TakeSnapshot(context.Background(), "exists", []string{"x"}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("a snapshot that exists: %v", err)
+	}
+	if _, err := c.TakeSnapshot(context.Background(), "big", []string{"x"}); !errors.Is(err, ErrTooBig) {
+		t.Fatalf("over the caps: %v", err)
+	}
+	if _, err := c.TakeSnapshot(context.Background(), "broken", []string{"x"}); err == nil || errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Fatalf("a worker failure is neither: %v", err)
+	}
+	if existed, err := c.DeleteSnapshot(context.Background(), "live-1"); err != nil || !existed {
+		t.Fatalf("delete: %v %v", existed, err)
+	}
+	if _, err := c.DeleteSnapshot(context.Background(), "odd/id"); err == nil || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("a run id with a slash is escaped, not a path: %v", err)
+	}
+}
+
+func TestSnapshotUnreachable(t *testing.T) {
+	c := &Client{URL: "http://127.0.0.1:1", Token: "t", HTTP: http.DefaultClient}
+	if _, err := c.TakeSnapshot(context.Background(), "r", []string{"x"}); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("%v", err)
+	}
+	if _, err := c.DeleteSnapshot(context.Background(), "r"); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("%v", err)
+	}
+}

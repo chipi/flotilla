@@ -23,6 +23,14 @@ var ErrUnreachable = errors.New("worker unreachable")
 // ErrNoSuchRun: the worker is not running that run id (never started there, or already answered).
 var ErrNoSuchRun = errors.New("the worker is not running that run")
 
+// ErrRefused: the worker answered 409, so it did not do what was asked: the routine is already running there, or it is the
+// wrong mode for the run (a shadow run on a live worker, a live run on a shadow worker), or a shadow run's environment holds a
+// write credential, or its snapshot is not there. The message says which.
+var ErrRefused = errors.New("the worker refused")
+
+// ErrTooBig: the state to snapshot is over the worker's caps (413); nothing was kept.
+var ErrTooBig = errors.New("the state is too big to snapshot")
+
 // MaxResultBytes bounds a worker's answer: the output tail and up to the worker's CALLS_MAX (5000) calls, a few hundred
 // bytes each and more with tool arguments. A longer answer would be cut mid-JSON and fail the whole run.
 const MaxResultBytes = 16 << 20
@@ -44,6 +52,12 @@ type Request struct {
 	// Shadow marks a shadow run (v2 step 2): a worker that is not a shadow worker refuses it, and a shadow worker refuses
 	// anything else.
 	Shadow bool `json:"shadow,omitempty"`
+	// InputKey is the live run whose input a shadow run was given; SnapshotOf is the live run whose state snapshot it starts from
+	// (the same run, today) and State the routine's state paths under HOME: the worker removes them from its own HOME and copies
+	// the snapshot's in before the command starts. Only a shadow run has them.
+	InputKey   string   `json:"input_key,omitempty"`
+	SnapshotOf string   `json:"snapshot_of,omitempty"`
+	State      []string `json:"state,omitempty"`
 }
 
 // Result is what the worker reports. Status is ok, error, timeout or cancelled (a cancel stopped it); anything that keeps the
@@ -121,6 +135,89 @@ type Health struct {
 	Worker  string   `json:"worker"`
 	Version string   `json:"version"`
 	Running []string `json:"running"`
+	// Mode is "live" or "shadow"; "" from a worker older than the field, which must never be sent a shadow run (it would drop the
+	// flag and run it as a live one).
+	Mode string `json:"mode,omitempty"`
+}
+
+// ShadowCapable says the worker answered /healthz as a shadow worker: only that is evidence it will refuse what is not a shadow
+// run and run a shadow with the read environment.
+func (h *Health) ShadowCapable() bool { return h != nil && h.Mode == "shadow" }
+
+// Snapshot is what a live worker made of a routine's state paths for a run: how much it copied, the links it skipped and the
+// paths that were not there.
+type Snapshot struct {
+	RunID   string   `json:"run_id"`
+	Bytes   int64    `json:"bytes"`
+	Files   int      `json:"files"`
+	Skipped int      `json:"skipped"`
+	Missing []string `json:"missing"`
+}
+
+// TakeSnapshot asks a live worker to copy a routine's state paths (relative to its HOME) into its snapshot volume under the live
+// run's id, whole or not at all. ErrRefused: one exists, or it is a shadow worker. ErrTooBig: over the caps.
+func (c *Client) TakeSnapshot(ctx context.Context, runID string, paths []string) (*Snapshot, error) {
+	body, err := json.Marshal(map[string]any{"run_id": runID, "paths": paths})
+	if err != nil {
+		return nil, err
+	}
+	raw, status, err := c.do(ctx, http.MethodPost, "/v1/snapshots", body, 2*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	switch status {
+	case http.StatusOK:
+		var sn Snapshot
+		if err := json.Unmarshal(raw, &sn); err != nil {
+			return nil, fmt.Errorf("worker %s: bad snapshot answer: %w", c.URL, err)
+		}
+		return &sn, nil
+	case http.StatusConflict:
+		return nil, fmt.Errorf("worker %s: %w: %s", c.URL, ErrRefused, bytes.TrimSpace(raw))
+	case http.StatusRequestEntityTooLarge:
+		return nil, fmt.Errorf("worker %s: %w: %s", c.URL, ErrTooBig, bytes.TrimSpace(raw))
+	}
+	return nil, fmt.Errorf("worker %s: HTTP %d: %s", c.URL, status, bytes.TrimSpace(raw))
+}
+
+// DeleteSnapshot removes a run's snapshot; existed says whether there was one (a second delete is fine).
+func (c *Client) DeleteSnapshot(ctx context.Context, runID string) (existed bool, err error) {
+	raw, status, err := c.do(ctx, http.MethodPost, "/v1/snapshots/"+url.PathEscape(runID)+"/delete", []byte("{}"), 30*time.Second)
+	if err != nil {
+		return false, err
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("worker %s: HTTP %d: %s", c.URL, status, bytes.TrimSpace(raw))
+	}
+	var out struct {
+		Existed bool `json:"existed"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return false, fmt.Errorf("worker %s: bad delete answer: %w", c.URL, err)
+	}
+	return out.Existed, nil
+}
+
+func (c *Client) do(ctx context.Context, method, path string, body []byte, timeout time.Duration) ([]byte, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return nil, 0, fmt.Errorf("worker %s: %w: %w", c.URL, ErrUnreachable, err)
+		}
+		return nil, 0, fmt.Errorf("worker %s: %w", c.URL, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return raw, resp.StatusCode, nil
 }
 
 type Client struct {
@@ -161,6 +258,9 @@ func (c *Client) Run(ctx context.Context, r Request) (*Result, error) {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, MaxResultBytes))
+	if resp.StatusCode == http.StatusConflict {
+		return nil, fmt.Errorf("worker %s: %w: HTTP %d: %s", c.URL, ErrRefused, resp.StatusCode, bytes.TrimSpace(raw))
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("worker %s: HTTP %d: %s", c.URL, resp.StatusCode, bytes.TrimSpace(raw))
 	}

@@ -11,8 +11,17 @@ says what to run and when; the worker runs it and reports. Python stdlib only.
                   group, SIGKILL after KILL_GRACE_S); the run's own request then answers with status
                   "cancelled" and its spend as usual. A second cancel of a run still ending is 200 again;
                   a run id this worker is not running (never started, or already answered) is 404.
-  GET  /healthz   {ok, worker, version, running}
+  GET  /healthz   {ok, worker, version, running, mode}   (mode: live, or shadow)
   GET  /livez     {ok} without a token: the container healthcheck
+
+A live worker also keeps the state snapshots a shadow starts from (v2 step 2, docs/wip/v2-design.md section 4):
+  POST /v1/snapshots {run_id, paths}       copies the routine's state paths (relative to HOME) into <snapshot dir>/<run_id>/
+                  (mode 0700, never through a symlink, at most SNAPSHOT_MAX_BYTES and SNAPSHOT_MAX_FILES) and answers
+                  {run_id, bytes, files, skipped, missing}; made whole before it is visible, 409 when one exists
+  POST /v1/snapshots/<run_id>/delete       removes it ({ok, existed}); a second delete is fine
+  GET  /v1/snapshots/<run_id>              the snapshot as a tar.gz (an export of a pinned input)
+A shadow worker (FLOTILLA_WORKER_MODE=shadow) runs shadow runs only and a live worker runs none (409 on a mismatch); it reads
+the snapshot directory and copies the run's snapshot_of into its own HOME before the command starts.
 
 Every request needs `Authorization: Bearer <the worker token>`; nothing else on the network can
 start a run. One run per routine at a time (a second start of a running routine is 409).
@@ -20,20 +29,26 @@ start a run. One run per routine at a time (a second start of a running routine 
 A run's environment is built, never inherited: the worker's own environment (which holds its token)
 does not reach the routine.
   1. PATH, HOME, LANG;
-  2. every KEY=VAL of the env files in FLOTILLA_ENV_FILES (colon-separated, read per run, so a
-     rotated secret is picked up without a restart);
+  2. every KEY=VAL of the env files in FLOTILLA_ENV_FILES, then FLOTILLA_READ_ENV_FILES (the credentials that can only read) and
+     FLOTILLA_WRITE_ENV_FILES (the ones that can write), colon-separated, read per run, so a rotated secret is picked up
+     without a restart. A shadow worker loads the read files only, refuses to start with FLOTILLA_ENV_FILES set or any write
+     file present, and refuses a shadow run whose built environment holds a key of a write file or of FLOTILLA_WRITE_KEYS;
   3. every ROUTINE_<KEY> of the worker's environment, as <KEY> (this installation's overrides, e.g. the
      service URLs inside the container network);
   4. the request's env (FLEETD_STAGE, FLEETD_CYCLE_ID, FLEETD_BUDGET_LEFT, TRACEPARENT);
-  5. FLOTILLA_API_TOKEN_FILE, when the request has an api_token: the run's own token file.
+  5. FLOTILLA_API_TOKEN_FILE, when the request has an api_token: the run's own token file;
+  6. for a shadow run: FLOTILLA_SHADOW=1 and FLEETD_STAGE=shadow, whatever the request said.
 """
 import hmac
 import json
 import os
 import re
+import shutil
 import signal
+import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -45,11 +60,33 @@ CODE_ROOT = os.environ.get("FLOTILLA_CODE_ROOT", "/opt/flotilla")
 KILL_GRACE_S = 10
 TAIL = 4000
 MAX_BODY = 1 << 20
+MODE_LIVE, MODE_SHADOW = "live", "shadow"
+SNAPSHOT_DIR = os.environ.get("FLOTILLA_SNAPSHOT_DIR", "/snapshots")
+SNAPSHOT_MAX_BYTES = int(os.environ.get("FLOTILLA_SNAPSHOT_MAX_BYTES", 256 << 20))
+SNAPSHOT_MAX_FILES = int(os.environ.get("FLOTILLA_SNAPSHOT_MAX_FILES", 50000))
+SHADOW_NICE = 10   # a shadow run's priority: below the live run's, so it cannot slow it
 
 _running = {}
 _cancels = {}   # run id -> the Event a cancel sets; present from the run's acceptance to its answer
 _marks = {}     # run id -> the fields every log line of that run carries (a shadow run's), while it is in flight
 _lock = threading.Lock()
+
+
+class Refused(Exception):
+    """A request this worker will not carry out as asked (409): the wrong mode for it, a write credential where a shadow
+    runs, a snapshot that is not there or already is."""
+
+
+class TooBig(Exception):
+    """A snapshot or a state copy over its caps (413)."""
+
+
+def worker_mode(environ=None):
+    environ = os.environ if environ is None else environ
+    mode = environ.get("FLOTILLA_WORKER_MODE") or MODE_LIVE
+    if mode not in (MODE_LIVE, MODE_SHADOW):
+        raise ValueError(f"FLOTILLA_WORKER_MODE={mode!r}: live (the default) or shadow")
+    return mode
 
 
 def run_marks(req):
@@ -92,10 +129,22 @@ def read_env_file(path):
     return out
 
 
+def env_paths(environ, name):
+    return [p for p in environ.get(name, "").split(":") if p]
+
+
 def build_env(request_env, environ=None):
     environ = os.environ if environ is None else environ
     env = {k: environ[k] for k in ("PATH", "HOME", "LANG", "FLOTILLA_VERSION", "FLOTILLA_WORKER") if k in environ}
-    for path in filter(None, environ.get("FLOTILLA_ENV_FILES", "").split(":")):
+    if worker_mode(environ) == MODE_SHADOW:
+        if environ.get("FLOTILLA_ENV_FILES"):
+            raise Refused("a shadow worker is configured with FLOTILLA_ENV_FILES, which does not say which credentials write: "
+                          "split it into FLOTILLA_READ_ENV_FILES and FLOTILLA_WRITE_ENV_FILES and give this worker the read ones")
+        files = env_paths(environ, "FLOTILLA_READ_ENV_FILES")
+    else:
+        files = (env_paths(environ, "FLOTILLA_ENV_FILES") + env_paths(environ, "FLOTILLA_READ_ENV_FILES")
+                 + env_paths(environ, "FLOTILLA_WRITE_ENV_FILES"))
+    for path in files:
         env.update(read_env_file(path))
     prefix = "ROUTINE_"
     for k, v in environ.items():
@@ -220,6 +269,189 @@ def cancel_run(run_id):
     return True
 
 
+def write_keys(environ=None):
+    """The names of the credentials that can write: the keys of FLOTILLA_WRITE_ENV_FILES (files that are there) and the keys
+    FLOTILLA_WRITE_KEYS lists, comma-separated. Names only, never values."""
+    environ = os.environ if environ is None else environ
+    keys = {k.strip() for k in environ.get("FLOTILLA_WRITE_KEYS", "").split(",") if k.strip()}
+    for path in env_paths(environ, "FLOTILLA_WRITE_ENV_FILES"):
+        if os.path.exists(path):
+            keys |= set(read_env_file(path))
+    return keys
+
+
+def check_mode(req, environ=None):
+    """A shadow run only on a shadow worker, and nothing else there: a live worker running a shadow would hand it the live
+    credentials, a shadow worker running a live run would let it act with none. (A remote host agent that predates this field
+    would drop it and run a shadow as live; flotillad refuses a remote shadow unless /healthz says mode.)"""
+    mode = worker_mode(environ)
+    if req.get("shadow") and mode != MODE_SHADOW:
+        raise Refused("this worker is not a shadow worker: it does not run a shadow run")
+    if not req.get("shadow") and mode == MODE_SHADOW:
+        raise Refused("this is a shadow worker: it runs shadow runs only")
+
+
+def check_no_write_credential(env, environ=None):
+    leaked = sorted(write_keys(environ) & set(env))
+    if leaked:
+        raise Refused("a shadow run's environment holds write credentials (" + ", ".join(leaked) + "): refused")
+
+
+def safe_id(run_id):
+    return "".join(c if c.isalnum() or c in "._-" else "_" for c in str(run_id))[:120]
+
+
+def snapshot_path(run_id, snapshot_dir=None):
+    sid = safe_id(run_id)
+    if not sid or sid.strip(".") == "":
+        raise ValueError("a snapshot needs a run id")
+    return os.path.join(SNAPSHOT_DIR if snapshot_dir is None else snapshot_dir, sid)
+
+
+def copy_bounded(src, dst, budget):
+    """Copy a file or a tree (src) to dst: regular files only, never through a symlink (a link is skipped and counted),
+    directories 0700 and files 0600, and at most budget["bytes"] bytes and budget["files"] files in all, counted across calls
+    (TooBig past it). Updates the budget's totals; returns nothing."""
+    if os.path.islink(src) or not (os.path.isdir(src) or os.path.isfile(src)):
+        budget["skipped"] += 1
+        return
+    if os.path.isfile(src):
+        _copy_file(src, dst, budget)
+        return
+    os.makedirs(dst, mode=0o700, exist_ok=True)
+    for root, dirs, files in os.walk(src, followlinks=False):
+        rel = os.path.relpath(root, src)
+        out = dst if rel == "." else os.path.join(dst, rel)
+        os.makedirs(out, mode=0o700, exist_ok=True)
+        for d in list(dirs):
+            if os.path.islink(os.path.join(root, d)):
+                budget["skipped"] += 1
+                dirs.remove(d)
+        for f in files:
+            _copy_file(os.path.join(root, f), os.path.join(out, f), budget)
+
+
+def _copy_file(src, dst, budget):
+    try:
+        fd = os.open(src, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        budget["skipped"] += 1   # a symlink (O_NOFOLLOW), or a file that went away
+        return
+    with os.fdopen(fd, "rb") as fin:
+        if not stat.S_ISREG(os.fstat(fin.fileno()).st_mode):
+            budget["skipped"] += 1
+            return
+        if budget["files"] + 1 > SNAPSHOT_MAX_FILES:
+            raise TooBig(f"more than {SNAPSHOT_MAX_FILES} files")
+        budget["files"] += 1
+        out = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(out, "wb") as fout:
+            while True:
+                chunk = fin.read(1 << 20)
+                if not chunk:
+                    break
+                budget["bytes"] += len(chunk)
+                if budget["bytes"] > SNAPSHOT_MAX_BYTES:
+                    raise TooBig(f"more than {SNAPSHOT_MAX_BYTES} bytes")
+                fout.write(chunk)
+
+
+def new_budget():
+    return {"bytes": 0, "files": 0, "skipped": 0}
+
+
+def clean_state_path(p):
+    if not isinstance(p, str) or not p or p.startswith("/") or "\x00" in p:
+        raise ValueError(f"a state path is relative to HOME, got {p!r}")
+    parts = [x for x in p.split("/") if x not in ("", ".")]
+    if not parts or ".." in parts:
+        raise ValueError(f"a state path stays inside HOME and names something below it, got {p!r}")
+    return "/".join(parts)
+
+
+def make_snapshot(run_id, paths, environ=None, snapshot_dir=None):
+    """Copy the routine's state paths (under HOME) into <snapshot dir>/<run_id>/, whole or not at all. A live worker only."""
+    environ = os.environ if environ is None else environ
+    if worker_mode(environ) != MODE_LIVE:
+        raise Refused("a shadow worker takes no snapshots: it only reads them")
+    if not isinstance(paths, list) or not paths:
+        raise ValueError("paths: a list of state paths, at least one")
+    paths = [clean_state_path(p) for p in paths]
+    home = environ.get("HOME") or "/"
+    final = snapshot_path(run_id, snapshot_dir)
+    if os.path.exists(final):
+        raise Refused(f"a snapshot of {run_id} already exists")
+    tmp = final + ".partial"
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp, mode=0o700)
+    budget, missing = new_budget(), []
+    try:
+        for p in paths:
+            src = resolve(home, p)
+            if not os.path.lexists(src):
+                missing.append(p)
+                continue
+            dst = os.path.join(tmp, p)
+            os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
+            copy_bounded(src, dst, budget)
+        os.rename(tmp, final)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return {"run_id": run_id, "bytes": budget["bytes"], "files": budget["files"], "skipped": budget["skipped"], "missing": missing}
+
+
+def delete_snapshot(run_id, snapshot_dir=None):
+    final = snapshot_path(run_id, snapshot_dir)
+    existed = os.path.exists(final)
+    shutil.rmtree(final, ignore_errors=True)
+    shutil.rmtree(final + ".partial", ignore_errors=True)
+    return existed
+
+
+def tar_snapshot(run_id, snapshot_dir=None):
+    """The snapshot as a tar.gz in a temporary file, rewound; None when there is none."""
+    final = snapshot_path(run_id, snapshot_dir)
+    if not os.path.isdir(final):
+        return None
+    out = tempfile.TemporaryFile()
+    with tarfile.open(fileobj=out, mode="w:gz") as tf:
+        tf.add(final, arcname=".", recursive=True)
+    out.seek(0)
+    return out
+
+
+def restore_state(req, env, environ=None, snapshot_dir=None):
+    """A shadow run's state: for each of the routine's state paths, remove what is in this worker's own HOME and copy the
+    live run's snapshot of it (req snapshot_of) in. Bounded by the snapshot caps, never through a symlink, never outside HOME."""
+    paths = req.get("state") or []
+    if not paths:
+        return
+    sid = req.get("snapshot_of")
+    if not sid:
+        raise Refused("a shadow run with state paths needs snapshot_of: the live run whose snapshot it starts from")
+    src_root = snapshot_path(sid, snapshot_dir)
+    if not os.path.isdir(src_root):
+        raise Refused(f"no snapshot of {sid} here (deleted, never taken, or not on this host)")
+    home = env.get("HOME") or (environ or os.environ).get("HOME") or "/"
+    budget = new_budget()
+    for p in [clean_state_path(x) for x in paths]:
+        dst = resolve(home, p)
+        if dst == os.path.realpath(home):
+            raise ValueError(f"state path {p!r} is the whole of HOME")
+        if os.path.islink(os.path.join(home, p)):
+            os.remove(os.path.join(home, p))
+        elif os.path.isdir(dst):
+            shutil.rmtree(dst)
+        elif os.path.lexists(dst):
+            os.remove(dst)
+        src = os.path.join(src_root, p)
+        if not os.path.lexists(src):
+            continue   # the live routine had nothing there: the shadow starts with nothing
+        os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
+        copy_bounded(resolve(src_root, p), dst, budget)
+
+
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 
 
@@ -241,9 +473,27 @@ def write_run_token(path, token):
         f.write(token)
 
 
+def prepare_env(req, environ=None):
+    """The run's built environment, or a Refused. Side-effect free: the HTTP handler calls it before accepting the run, so a
+    refusal is a 409 and not a started run that failed."""
+    environ = os.environ if environ is None else environ
+    check_mode(req, environ)
+    env = build_env(req.get("env"), environ)
+    if req.get("shadow"):
+        check_no_write_credential(env, environ)
+        env["FLOTILLA_SHADOW"], env["FLEETD_STAGE"] = "1", "shadow"
+        if req.get("state"):
+            sid = req.get("snapshot_of")
+            if not sid:
+                raise Refused("a shadow run with state paths needs snapshot_of: the live run whose snapshot it starts from")
+            if not os.path.isdir(snapshot_path(sid)):
+                raise Refused(f"no snapshot of {sid} here (deleted, never taken, or not on this host)")
+    return env
+
+
 def run_job(req, environ=None, cancel=None):
     environ = os.environ if environ is None else environ
-    env = build_env(req.get("env"), environ)
+    env = prepare_env(req, environ)
     marks = run_marks(req)
     if marks:
         _marks[req["run_id"]] = marks
@@ -253,7 +503,9 @@ def run_job(req, environ=None, cancel=None):
         write_run_token(token_file, req["api_token"])
         env["FLOTILLA_API_TOKEN_FILE"] = token_file   # over a ROUTINE_ value: the run's own token, not the worker's
     try:
-        return _run_job(req, env, cancel)
+        if req.get("shadow"):
+            restore_state(req, env, environ)
+        return _run_job(req, env, cancel, shadow=bool(req.get("shadow")))
     finally:
         if marks:
             _marks.pop(req["run_id"], None)
@@ -264,7 +516,7 @@ def run_job(req, environ=None, cancel=None):
                 pass
 
 
-def _run_job(req, env, cancel):
+def _run_job(req, env, cancel, shadow=False):
     cancel = cancel or threading.Event()
     workdir = resolve(CODE_ROOT, req.get("workdir"))
     spend_path = resolve(env.get("HOME", "/"), req["spend_file"]) if req.get("spend_file") else ""
@@ -287,7 +539,8 @@ def _run_job(req, env, cancel):
     # so a run that gets SIGTERM can tell its own timeout (kill at the deadline) from a cancel or a restart
     env["FLOTILLA_RUN_DEADLINE"] = repr(time.time() + timeout)
     proc = subprocess.Popen(["sh", "-c", req["command"]], cwd=workdir, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, start_new_session=True)
+                            stderr=subprocess.STDOUT, start_new_session=True,
+                            preexec_fn=(lambda: os.nice(SHADOW_NICE)) if shadow else None)
     chunks = []
 
     def pump():
@@ -376,15 +629,69 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if not self._authorized():
             return self._send(401, {"error": "unauthorized"})
+        if self.path.startswith("/v1/snapshots/"):
+            return self._snapshot_get(self.path[len("/v1/snapshots/"):])
         if self.path != "/healthz":
             return self._send(404, {"error": "not found"})
         with _lock:
             running = sorted(_running)
-        self._send(200, {"ok": True, "worker": WORKER, "version": VERSION, "running": running})
+        self._send(200, {"ok": True, "worker": WORKER, "version": VERSION, "running": running, "mode": worker_mode()})
+
+    def _snapshot_get(self, run_id):
+        try:
+            f = tar_snapshot(run_id) if run_id and "/" not in run_id else None
+        except ValueError as e:
+            return self._send(400, {"error": str(e)})
+        if f is None:
+            return self._send(404, {"error": "no such snapshot here"})
+        with f:
+            size = f.seek(0, os.SEEK_END)
+            f.seek(0)
+            self._status = 200
+            self.send_response(200)
+            self.send_header("Content-Type", "application/gzip")
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            shutil.copyfileobj(f, self.wfile)
+
+    def _snapshots_post(self, path):
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            if path.endswith("/delete"):
+                run_id = path[len("/v1/snapshots/"):-len("/delete")]
+                if not run_id or "/" in run_id:
+                    raise ValueError("a snapshot is named by its run id")
+                if worker_mode() != MODE_LIVE:
+                    raise Refused("a shadow worker keeps no snapshots")
+                existed = delete_snapshot(run_id)
+                log("snapshot deleted", run_id=run_id, existed=existed)
+                return self._send(200, {"ok": True, "run_id": run_id, "existed": existed})
+            if path != "/v1/snapshots":
+                return self._send(404, {"error": "not found"})
+            if n <= 0 or n > MAX_BODY:
+                return self._send(400, {"error": "body required, at most 1 MiB"})
+            body = json.loads(self.rfile.read(n))
+            if not isinstance(body, dict) or not isinstance(body.get("run_id"), str) or not body["run_id"]:
+                raise ValueError("run_id (the live run) is required")
+            res = make_snapshot(body["run_id"], body.get("paths"))
+            log("snapshot taken", run_id=body["run_id"], bytes=res["bytes"], files=res["files"], skipped=res["skipped"], missing=len(res["missing"]))
+            return self._send(200, res)
+        except Refused as e:
+            return self._send(409, {"error": str(e)})
+        except TooBig as e:
+            log("snapshot refused: too big", level="warning", error=str(e))
+            return self._send(413, {"error": f"the state is too big to snapshot: {e}"})
+        except (ValueError, json.JSONDecodeError) as e:
+            return self._send(400, {"error": str(e)})
+        except OSError as e:
+            log("snapshot failed", level="error", error=str(e))
+            return self._send(500, {"error": f"snapshot: {e.strerror or e}"})
 
     def do_POST(self):
         if not self._authorized():
             return self._send(401, {"error": "unauthorized"})
+        if self.path.startswith("/v1/snapshots"):
+            return self._snapshots_post(self.path)
         if self.path.startswith("/v1/runs/") and self.path.endswith("/cancel"):
             run_id = self.path[len("/v1/runs/"):-len("/cancel")]
             if not run_id or "/" in run_id or not cancel_run(run_id):
@@ -407,9 +714,22 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("api_token must be 16 to 256 characters of A-Z a-z 0-9 _ -")
             if "shadow" in req and not isinstance(req["shadow"], bool):
                 raise ValueError("shadow must be true or false")
+            if "snapshot_of" in req and not (isinstance(req["snapshot_of"], str) and req["snapshot_of"]):
+                raise ValueError("snapshot_of must be a run id")
+            if "state" in req:
+                if not isinstance(req["state"], list):
+                    raise ValueError("state must be a list of paths")
+                req["state"] = [clean_state_path(p) for p in req["state"]]
+            if "input_key" in req and not isinstance(req["input_key"], str):
+                raise ValueError("input_key must be a string")
             resolve(CODE_ROOT, req.get("workdir"))
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": str(e)})
+        try:
+            prepare_env(req)   # a refusal is a 409 before anything starts
+        except Refused as e:
+            log("run refused", level="warning", run_id=req["run_id"], routine=req["routine"], error=str(e), **run_marks(req))
+            return self._send(409, {"error": str(e)})
         with _lock:
             if req["routine"] in _running:
                 return self._send(409, {"error": f"{req['routine']} is already running ({_running[req['routine']]})"})
@@ -444,15 +764,31 @@ def worker_token():
     return os.environ.get("FLOTILLA_WORKER_TOKEN", "")
 
 
+def check_start(environ=None):
+    """What a worker refuses to start with: a bad mode, and for a shadow worker any way to reach a write credential."""
+    environ = os.environ if environ is None else environ
+    if worker_mode(environ) == MODE_SHADOW:
+        if environ.get("FLOTILLA_ENV_FILES"):
+            raise Refused("a shadow worker with FLOTILLA_ENV_FILES set: split it into FLOTILLA_READ_ENV_FILES and "
+                          "FLOTILLA_WRITE_ENV_FILES, and give a shadow worker the read ones only")
+        present = [p for p in env_paths(environ, "FLOTILLA_WRITE_ENV_FILES") if os.path.exists(p)]
+        if present:
+            raise Refused("a shadow worker can read a write credential file (" + ", ".join(present) + "): it must not")
+
+
 def main():
     if len(worker_token()) < 32:
         sys.exit("no worker token of at least 32 characters (FLOTILLA_WORKER_TOKEN_FILE or "
                  "FLOTILLA_WORKER_TOKEN): refusing to serve without auth")
+    try:
+        check_start()
+    except (Refused, ValueError) as e:
+        sys.exit(f"refusing to serve: {e}")
     addr = os.environ.get("FLOTILLA_WORKER_LISTEN", "0.0.0.0:8081")
     host, port = addr.rsplit(":", 1)
     srv = ThreadingHTTPServer((host, int(port)), Handler)
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=srv.shutdown, daemon=True).start())
-    log("worker listening", addr=addr, version=VERSION)
+    log("worker listening", addr=addr, version=VERSION, mode=worker_mode())
     srv.serve_forever()
 
 
