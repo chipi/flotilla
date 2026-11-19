@@ -61,6 +61,11 @@ def load(role, fleet, root=None, environ=None, default=None):
         rel = default
     else:
         raise PromptError(f"prompt {role}: no FLOTILLA_PROMPTS and no default path")
+    return read(role, fleet, rel, expect, root, environ)
+
+
+def read(role, fleet, rel, expect=None, root=None, environ=None):
+    """The text of the prompt file `rel` of `fleet`, under the rules above; `expect`, when given, is the sha256 the file must have."""
     _check_path(role, rel)
     base = os.path.join(root or code_root(), "fleets", fleet)
     cur = base

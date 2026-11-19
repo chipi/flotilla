@@ -245,17 +245,19 @@ class Client:
         return b
 
     def chat(self, alias, messages, timeout=90, step=None, decision_key=None, role=None, episode=None,
-             episode_seq=None, tool_names=None, **kw):
+             episode_seq=None, tool_names=None, station=None, texts=None, **kw):
         """One call. Returns its record; raises a ModelError (with .record) or ConfigError. `step` (the turn
         within a harness step, 1-based), `decision_key` (what the call decides, e.g. a signal fingerprint),
         `role` (who is calling: triage, coder, ...), `episode` and `episode_seq` (the agent session the call
         belongs to and its order within the run) and `tool_names` (the tools the reply asked for, each a name or a
         {"name", "arg", "ok"} dict (runtime/toolrec.py): a list, or a function of the call's record, as the reply is
         only known after the call) are only recorded in the
-        calls file; they are not part of the request."""
+        calls file; they are not part of the request. `station` and `texts` (runtime/stations.py: the station's name and the
+        rendered texts the call read, each {name, sha256, bytes}) add those two fields to the line, and only then: a line
+         of a run without stations is the line it always was."""
         a = self._alias(alias)
         meta = {"step": step, "decision_key": decision_key, "role": role, "episode": episode,
-                "episode_seq": episode_seq, "tools": tool_names}
+                "episode_seq": episode_seq, "tools": tool_names, "station": station, "texts": texts}
         body = self.body(alias, messages, **kw)
         with self._span(a) as span:
             try:
@@ -286,6 +288,10 @@ class Client:
                 "decision_key": (meta or {}).get("decision_key"), "role": (meta or {}).get("role") or "",
                 "episode": (meta or {}).get("episode") or "", "episode_seq": (meta or {}).get("episode_seq"),
                 "tools": self._tool_names((meta or {}).get("tools"), rec)}
+        if (meta or {}).get("station"):
+            line["station"] = meta["station"]
+            if meta.get("texts"):
+                line["texts"] = [dict(t) for t in meta["texts"]]
         try:
             with open(path, "a") as f:
                 f.write(json.dumps(line) + "\n")
