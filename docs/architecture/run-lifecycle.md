@@ -91,6 +91,19 @@ can no longer be approved or rejected (409), and their cases move to `handed_ove
 `case.rolled_back`, the target lock released) so the live version plans them again. A plan the
 previous version made stays approvable. See [ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md).
 
+## A shadow version's run
+
+With `shadows.enabled`, each live run records its **input** (what the run was handed, frozen at
+its start; `flotilla input show`) and gives every shadow version of the routine a place in the
+queue of its shadow worker. A shadow run starts from that input and, for a routine that keeps
+state, from the live worker's snapshot of it. It runs under its own key
+(`<fleet>/<routine>@v<n>`), one at a time per shadow worker; a scheduled input that waits while a
+newer one arrives is dropped and recorded as not run. What it decides is written as shadow
+records, never as a filing, a case change, a plan, a note or an execution. STOP, a retire and a
+rollback cancel it; a promote lets it finish. When no shadow run waits for an input its snapshot
+is deleted, unless the input is pinned. See
+[ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md) section 8.
+
 ## Stopping a run in flight
 
 Besides its own end and its timeout, a STOP and an operator's cancel end a run that has started; a

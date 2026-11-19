@@ -59,6 +59,15 @@ its routines may plan.
   worker.
 - **Each worker has its own memory and CPU limits** and its own egress allowlist.
 
+## The shadow worker
+
+Shadow versions run on a worker of their own (`worker-triage-shadow`, compose profile `shadow`),
+declared `shadow: true` in `flotillad.yaml`. It holds its own worker token and the read
+environment only, mounts the live worker's snapshots read-only and keeps its own state, has less
+CPU and memory than the live worker and a low CPU weight, and reaches the network only through its
+own proxy (`egress-shadow`), so its requests are in a log apart from the live proxy's. See
+`deploy/compose/README.md`.
+
 ## Host agents
 
 - **Installed by the operator:** `deploy/host/install.sh install <ssh-target>` over SSH with the

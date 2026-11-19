@@ -126,6 +126,7 @@ nav:
     - RFC-0013 — The bugfix clarifier: rfc/RFC-0013-bugfix-clarifier.md
   - In progress:
     - Overview: wip/README.md
+    - "Routine versions, stations and harnesses (design)": wip/v2-design.md
     - Pipeline v1 plan: wip/pipeline-v1-plan.md
     - UI mockup parity: wip/ui-mockup-parity.md
     - Closing the initial vision: wip/vision-plan.md

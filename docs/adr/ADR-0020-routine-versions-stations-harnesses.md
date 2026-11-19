@@ -1,6 +1,7 @@
 # ADR-0020 — Routine versions, stations and harnesses
 
-**Status:** Accepted (2026-11-18). Step 1 is built (below); steps 2 to 7 are decided here and built
+**Status:** Accepted (2026-11-18). Steps 1 and 2 are built (below); steps 3 to 7 are decided here
+and built
 in order. The full design, with every section's reasoning, is
 [Routine versions, stations and harnesses](../wip/v2-design.md); this ADR is its decision record
 and the two stay in step. Builds on [ADR-0007](ADR-0007-routine.md) (the routine),
@@ -54,7 +55,8 @@ any number), **previous** (the version that was live before; the rollback target
 
 - **A routine's first version goes live when it is deployed**, its hash recorded. A later version
   arrives with a fleets deploy as a shadow. In step 1 a shadow is loaded, validated, hashed and
-  listed; it does not run, and records nothing, until step 2.
+listed; with `shadows.enabled` (step 2) it also runs beside the live one, with no effect (section
+8).
 - **Promote** makes a shadow live (the live one becomes previous, the old previous retired). The
   operator chooses the routine's autonomy for it, pre-filled with the current level and never
   inherited in silence; raising it needs a reason, and the routine's `max_autonomy` caps it. It is
@@ -121,7 +123,8 @@ every flat spec; a pinned test holds each shipped one.
 
 `routine.yaml` (or a flat spec) may declare `acceptance:`, a list from `pairs`, `replay`,
 `scenario_eval`; `[pairs]` when absent; every listed kind is required. A promote takes the evidence
-given: pair counts (the store's own, 0 until step 2), gate results (`{name, result: pass|fail,
+given: pair counts (the store's own: the subjects both versions decided on the same input), gate
+results (`{name, result: pass|fail,
 ref}`; a `replay` kind needs one) and eval-harness run ids with verdicts (`{run_id, verdict:
 pass|fail}`; a `scenario_eval` kind needs one). It records the acceptance in force and the evidence
 on the `routine_versions` row and in the `version.promote` event, and it refuses a promote that lacks
@@ -171,6 +174,20 @@ worker (no write credential in any form, its own state snapshot, its own model k
 and the network and telemetry (reads only where the proxy can tell, `shadow=1` labels). Pairs are
 matched per decision subject. An e2e proves it before and after a shadow run, and gates step 5.
 
+As built (step 2): a shadow version runs on a worker declared `shadow: true` (`<worker>-shadow`
+unless the routine names one), in the mode that gives it the read environment only, snapshots
+read-only and its own state. Its token is flotillad's to call it and is no caller of the workers'
+listener. Its run token resolves to the run's key `<fleet>/<routine>@v<n>`: ledger reads are the
+live rows as of the live run's input plus its own, ledger writes land in its own namespace, a
+decision becomes a `shadow_records` row, and a plan is recorded as "would run X (blocked: shadow)"
+and never enqueued: a decision on a shadow's plan and the start of its host execution are refused
+in the store. Every store reader of live rows excludes shadow rows, checked by a guard test over
+the SQL. A shadow's metrics carry `shadow="1"` and never freshness or last success, its logs carry
+`shadow=true`, its spans `flotilla.shadow`, its errors a GlitchTip tag and fingerprint (optionally
+their own project), and its proxy is its own. The routine page lists a shadow's pairs (`flotilla
+pairs`, `pairs export`). Not yet: remote workers' routines (refused when shadows are on),
+per-station texts (step 3).
+
 ### 9. Evaluation is first-class (steps 2 and 3)
 
 flotilla owns the recording, the entry point and the input format; eval-harness owns datasets,
@@ -188,7 +205,7 @@ the shadow worker, with a models config of its own and recorded tool results sta
 | Step | What | State |
 | --- | --- | --- |
 | 1 | routine and versions: the layout, states, controls, freeze, the version on every record, the routine page, the rename, acceptance and its evidence | **built** (the e2e covers the full lifecycle on a real stack) |
-| 2 | shadows with no effect: the per-run token, the shadow record, the worker split, telemetry labels, the frozen input schema, pairs | specified |
+| 2 | shadows with no effect: the per-run token, the shadow record, the worker split, telemetry labels, the frozen input schema, pairs | **built** (unit, integration and the e2e: a hostile shadow changes nothing on the live side; remote workers' routines cannot be shadowed yet) |
 | 3 | stations: the format, `fleets/harnesses.json`, `FLOTILLA_STATIONS`, `flotillad -stations`, the episode schema, the offline entry point | specified |
 | 4 | the harness layer in `runtime/`: the adapter interface, pi's adapter, the seams | specified |
 | 5 | the example fleets move to this format; the e2e covers versions, shadows, rollback, backward-readable state and the no-effect test | specified |
@@ -215,8 +232,8 @@ Negative:
   of a live or previous folder a failed deploy; the error names the files so the fix (a new number)
   is plain.
 - The deprecated alias `autonomy: shadow` lives until step 6.
-- Until step 2 a shadow is listed and promotable but unproven: pairs are 0, so the default
-  acceptance is always missing and every promote needs the operator's reason.
+- A shadow that has not run (shadows off, or no shadow run finished) has no pairs, so the default
+  acceptance is missing and a promote needs the operator's reason.
 - Moving an already-live routine to the folder layout needs one `flotilla versions rerecord` (built
   in step 1), because its recipe changes; a flat routine's own edits need nothing.
 

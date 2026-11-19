@@ -231,6 +231,15 @@ does:
 3. Get the operator's go, run it without `--dry-run`, and re-import the namespace.
 4. Re-close any issue the collision reopened, with a comment saying why.
 
+## Shadow versions of a triage routine
+
+A new version of `triage/cycle` (a folder `v2/` beside `v1/`) runs in shadow once `shadows:
+{enabled: true}` is set and the shadow worker is up (`deploy/compose/README.md`, "The shadow
+worker"). Read its pairs with `flotilla pairs triage/cycle v2` or on the routine page; nothing it
+does is filed, mirrored or posted. Every dashboard and alert that reads the fleet's metrics, logs
+or errors leaves shadow rows out (`shadow="1"`, `shadow=true`); the shadow's own are separable by
+those marks. `flotillad -check` names each shadow version and the worker it runs on.
+
 ## 4. The weekly review — "how is the fleet doing?"
 
 The `triage-fleet-review` skill

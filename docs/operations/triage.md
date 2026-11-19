@@ -479,6 +479,12 @@ These rules came from incidents. Keep them unless the evidence changes.
     newest frozen week of filing decisions with the old and the new code, with the installation's
     own facts, and fails on any difference the operator has not accepted.
 
+## Shadow versions
+
+A version of the triage routine that is not live runs beside it as a shadow (ADR-0020 section 8):
+the same input, its own worker, the read environment only, its decisions recorded as pairs and
+never filed. The live ledger it reads is the one as of the live run's input.
+
 ## Known gaps (as of 2026-11-17)
 
 | Gap | Effect | Status |

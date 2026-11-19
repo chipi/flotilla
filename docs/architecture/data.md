@@ -15,7 +15,10 @@ git.
 
 One file, owned by flotillad. Workers and host agents never open it; they report through the API.
 
-Every table below is built (`internal/store`, schema step 29 on 2026-11-18).
+Every table below is built (`internal/store`, schema step 31). Step 2's tables (`run_inputs`,
+`shadow_runs`, `shadow_records`, and a `shadow` flag and input key on `runs`) hold a live run's
+frozen input, the queue of its shadow runs and what the shadows decided; every other table's
+readers leave shadow rows out.
 
 | Table | Holds |
 | --- | --- |
