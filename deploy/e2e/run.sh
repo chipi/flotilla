@@ -811,6 +811,8 @@ UPG=(--network "${P}_flotilla" --read-only --tmpfs /tmp --user 65532:65532 -v "$
 upgrade_check() { $D run --rm "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?"; }
 upgrade_start() { timeout 25 $D run --rm "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml 2>&1; echo "rc=$?"; }
 upgrade_cfg ""
+# the stand-in must answer before -check, or -check finds it unreachable (not judged) instead of old (seen on a slower CI runner)
+for _ in $(seq 1 30); do $D exec e2e-oldworker python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/livez", timeout=3)' >/dev/null 2>&1 && break; sleep 1; done
 OLDCHK="$(upgrade_check)"; OLDSTART="$(upgrade_start)"
 echo "$OLDCHK" | grep >/dev/null "worker old: NOT run-token capable" && echo "$OLDCHK" | grep >/dev/null "^rc=0" \
   && ok "-check against a worker still on the previous tag (no run_token in /healthz) reports it and passes: a deploy's -check runs before up recreates the workers" \
