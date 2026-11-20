@@ -90,11 +90,14 @@ then prints one row per routine on the `ops-read` worker and ends `NOEFFECT PASS
 
 The row `(all)` is what the shadows must leave alone and no single routine owns: the day's brief,
 the Slack asks (the stand-in host's agent is no connector and logs each plan flotillad asks it to
-post), and the host's audit log. A routine that waits for a case and has no live run on the stack is
-a `SKIP` with that reason; the routines on the `ops-act-host` and `bugfix` workers have no shadow
-worker in the stack (a remote worker's routine cannot be shadowed at all), so they are not in the
-matrix. `E2E_SECTIONS=noeffect bash deploy/e2e/run.sh` runs the matrix and the sections it reads
-(CI's `no-effect` check), with three mutation checks that must go red (`deploy/e2e/mutant.sh`).
+post), and the host's audit log; `e2e/hostile-brief`'s shadow tries to file a plan that would be
+posted and to add a brief line, and those cells must hold. Before the shadows exist every routine
+gets a live run (`matrix.py drive`: new records, plans approved, acting routines and checks run). A
+routine that still has no live run on the stack is a `SKIP` with that reason; the routines on the
+`ops-act-host` and `bugfix` workers have no shadow worker in the stack (a remote worker's routine
+cannot be shadowed at all), so they are not in the matrix. `E2E_SECTIONS=noeffect bash
+deploy/e2e/run.sh` runs the matrix and the sections it reads (CI's `no-effect` check), with four
+mutation checks that must go red (`deploy/e2e/mutant.sh`).
 
 ## An installation's own fleets
 
