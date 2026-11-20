@@ -248,6 +248,22 @@ class DeployWiringTest(DeployBase):
         self.assertIn("DEPLOY FAIL: checks are not green", r.stdout)
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.commits[0])
 
+    def test_a_commit_whose_no_effect_check_is_red_is_not_deployed(self):
+        # v2 step 5: the proof that a shadow version changes nothing is a required check, like e2e
+        red = dict(self.env, STUB_CHECKS="1\\tci-fast\\tcompleted\\tsuccess\\n2\\te2e\\tcompleted\\tsuccess\\n3\\tno-effect\\tcompleted\\tfailure")
+        r = self.deploy(f"sha-{self.commits[1][:7]}", env=red)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("required no-effect: completed/failure", r.stdout)
+        self.assertIn("DEPLOY FAIL: checks are not green", r.stdout)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.commits[0])
+
+    def test_a_commit_with_no_e2e_or_no_effect_run_is_deployed_when_ci_fast_is_green(self):
+        # a docs-only commit has neither (their workflows skip it)
+        green = dict(self.env, STUB_CHECKS="1\\tci-fast\\tcompleted\\tsuccess")
+        r = self.deploy(f"sha-{self.commits[1][:7]}", env=green)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("required no-effect: no run for this commit", r.stdout)
+
     def test_a_commit_whose_ci_fast_is_not_green_is_not_deployed(self):
         # the Fable advisor's review (2026-11-16): an image existing was the deploy's only check
         red = dict(self.env, STUB_CHECKS="1\\tci-fast\\tcompleted\\tfailure")

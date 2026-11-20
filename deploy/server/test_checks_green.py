@@ -2,12 +2,14 @@
 """Tests for checks_green.sh against a stub `gh` on PATH: green, red, missing, pending, cancelled,
 a re-run that replaced a failure, several required names, an API error and a bad argument."""
 import os
+import re
 import subprocess
 import tempfile
 import textwrap
 import unittest
 
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checks_green.sh")
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 
 # The stub prints $STUB_RUNS (the rows `gh api --jq` would print) and records its arguments.
 STUB = textwrap.dedent("""\
@@ -114,6 +116,50 @@ class ChecksGreen(unittest.TestCase):
     def test_bad_argument(self):
         for a in ([], ["main"], ["xyz1234"], ["abc"]):
             self.assertEqual(self.run_script(a).returncode, 2, a)
+
+
+def workflow_job_names():
+    """The check-run names the workflows produce: each job's name: when it has one, else its id (stdlib only: no YAML parser)."""
+    names = set()
+    wf = os.path.join(ROOT, ".github", "workflows")
+    for fn in sorted(os.listdir(wf)):
+        if not fn.endswith((".yml", ".yaml")):
+            continue
+        in_jobs, job = False, None
+        for line in open(os.path.join(wf, fn)).read().split("\n"):
+            if re.match(r"^jobs:\s*$", line):
+                in_jobs = True
+            elif in_jobs and re.match(r"^\S", line):
+                in_jobs = False
+            elif in_jobs and (m := re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)):
+                job = m.group(1)
+                names.add(job)
+            elif in_jobs and job and (m := re.match(r"^    name:\s*(.+?)\s*$", line)):
+                names.discard(job)
+                names.add(m.group(1).strip("\"'"))
+                job = None
+    return names
+
+
+def required_checks():
+    """The names deploy.sh passes to checks_green.sh for a deploy, with their ? removed."""
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy.sh")).read()
+    m = re.search(r'checks_green\.sh" "\$COMMIT"((?: [^ |]+)+) \|', src)
+    assert m, "deploy.sh no longer calls checks_green.sh the way this test reads it"
+    return [x.strip("'").rstrip("?") for x in m.group(1).split()]
+
+
+class RequiredNamesAreJobs(unittest.TestCase):
+    """The required list is code (GitHub has no branch protection): a name that is no workflow's job name would be required of a check that never
+    comes, or, with its ? (a docs-only commit has none), would silently require nothing."""
+
+    def test_a_deploy_requires_ci_fast_e2e_and_no_effect(self):
+        self.assertEqual(required_checks(), ["ci-fast", "e2e", "no-effect"])
+
+    def test_every_required_name_is_a_job_of_a_workflow(self):
+        jobs = workflow_job_names()
+        for name in required_checks():
+            self.assertIn(name, jobs, f"{name} is required by deploy.sh but no workflow has a job of that name (jobs: {sorted(jobs)})")
 
 
 if __name__ == "__main__":

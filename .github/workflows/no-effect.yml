@@ -1,0 +1,80 @@
+# The no-effect check (docs/wip/v2-design.md section 4, build step 5): a shadow version changes nothing outside its own record. It runs the
+# e2e's no-effect sections (E2E_SECTIONS=noeffect: routine versions, the host agent, versions on a case, the shadow and station sections and the
+# matrix over the example fleets), and then three mutation checks that must go red, so a check that cannot fail does not pass:
+#   shadow-write-cred   a write credential in the shadow worker's read environment (the hostile shadow's checks)
+#   shadow-egress-open  the shadow's proxy allows the write host (the stand-ins' record of writes)
+#   matrix-live-write   a generated shadow writes a file the live worker shares (the matrix's "unchanged" cell)
+# A deploy requires it (deploy/server/deploy.sh's list, the job name `no-effect`), like e2e. It builds the stack four times (once for the sections,
+# once per mutant); it skips the commits e2e skips (docs only), and a deploy treats a missing run of it as that.
+
+name: no-effect
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '*.md'
+      - 'llms.txt'
+      - 'llms.config.json'
+      - '.markdownlint.json'
+      - '.markdownlintignore'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '*.md'
+      - 'llms.txt'
+      - 'llms.config.json'
+      - '.markdownlint.json'
+      - '.markdownlintignore'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: no-effect-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  no-effect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      # the hosted runner has only the default Docker context (see e2e.yml)
+      - name: The no-effect sections of the e2e stack
+        env:
+          DOCKER_CONTEXT_DEV: default
+          E2E_SECTIONS: noeffect
+        run: bash deploy/e2e/run.sh
+
+      # each runs the same sections with one fault put in, and passes only when the run goes red on the check that fault must break
+      - name: Mutant shadow-write-cred must go red
+        env:
+          DOCKER_CONTEXT_DEV: default
+        run: bash deploy/e2e/mutant.sh shadow-write-cred noeffect 'hostile shadow|shadow worker secrets'
+
+      - name: Mutant shadow-egress-open must go red
+        env:
+          DOCKER_CONTEXT_DEV: default
+        run: bash deploy/e2e/mutant.sh shadow-egress-open noeffect 'a shadow reached GitHub|the shadow.s proxy'
+
+      - name: Mutant matrix-live-write must go red
+        env:
+          DOCKER_CONTEXT_DEV: default
+        run: bash deploy/e2e/mutant.sh matrix-live-write noeffect 'the no-effect matrix'
+
+      # run.sh tears its stack down on its own, also after a failure; this catches a script killed by the job's timeout.
+      - name: Tear down
+        if: always()
+        env:
+          DOCKER_CONTEXT_DEV: default
+        run: bash deploy/e2e/run.sh down

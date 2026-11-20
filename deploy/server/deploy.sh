@@ -167,12 +167,13 @@ git -C "$REPO" fetch -q origin || die "git fetch failed"
 COMMIT="$(git -C "$REPO" rev-parse --verify -q "${TAG#sha-}^{commit}")" || die "no commit ${TAG#sha-} in chipi/flotilla"
 git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$COMMIT" || die "checkout failed"
 
-# a deploy ships only a commit whose ci-fast and e2e are green (images build only after ci-fast since the CI
-# change, but an image can predate that; e2e runs beside the images, so a deploy waits for it); a docs-only
-# commit has no e2e run. A rollback goes back to a tag that was deployed, so it skips this
+# a deploy ships only a commit whose ci-fast, e2e and no-effect are green (images build only after ci-fast since the CI
+# change, but an image can predate that; e2e and no-effect run beside the images, so a deploy waits for them: no-effect is the
+# proof that a shadow version changes nothing, docs/wip/v2-design.md section 4); a docs-only commit has no e2e or no-effect run.
+# A rollback goes back to a tag that was deployed, so it skips this
 if [ "$EVENT" = deploy ] && [ -z "${FLOTILLA_SKIP_CHECKS:-}" ]; then
   say "== the commit's checks"
-  if ! bash "$REPO/deploy/server/checks_green.sh" "$COMMIT" ci-fast 'e2e?' | sed 's/^/   /'; then   # pipefail: the script's status
+  if ! bash "$REPO/deploy/server/checks_green.sh" "$COMMIT" ci-fast 'e2e?' 'no-effect?' | sed 's/^/   /'; then   # pipefail: the script's status
     [ -n "$CURRENT_COMMIT" ] && git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
     die "checks are not green for $TAG (FLOTILLA_SKIP_CHECKS=\"<why>\" deploys it anyway)"
   fi
