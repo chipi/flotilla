@@ -45,11 +45,15 @@ questions came out of it that are about the platform, not about one fleet.
    opens the workers' listener, and a worker's own token opens nothing. So that this cannot fail
    silently, capabilities are added fields: a worker's `/healthz` lists `caps: ["run_token"]`, an
    agent's worker hello lists `run_token` (`hostwire.CapRunToken`, an older hello still decodes).
-   Under required, flotillad refuses to start, and `-check` refuses, while a reachable worker lacks
-   the capability (naming it), and refuses at link a remote agent that lacks it; under accept
-   nothing is refused and `-check` warns. The exact-version gate stays and refuses an older agent
-   first when flotillad's version is set. `-check` prints one line per worker (`run-token capable`,
-   `NOT run-token capable (update it)`, `not reachable`, `remote`).
+   Under required, flotillad's start refuses while a reachable worker lacks the capability (naming
+   it), and refuses at link a remote agent that lacks it; under accept nothing is refused and
+   `-check` warns. `-check` itself only reports: deploy.sh runs it while the previous tag's workers
+   still answer (`up` recreates them afterwards), so a worker without the capability is the expected
+   state of an upgrade's check, and refusing it there would stop every upgrade before `up`. The
+   start after `up`, with the local workers recreated and healthy (flotillad depends on each of
+   them), enforces. The exact-version gate stays and refuses an older agent first when flotillad's
+   version is set. `-check` prints one line per worker (`run-token capable`, `NOT run-token capable
+   (update it ...)`, `not reachable`, `remote`).
 3. **The callers that held the worker's token follow.** `ledger_sync.py import` and `check` and
    `gate_ledger_backend_replay.py` take `--token-file` and say so when they have none; `pad` is
    local and needs none. The compose files no longer give the workers the worker token as the
@@ -77,8 +81,13 @@ Negative:
 
 - By hand inside a worker, `ledger_sync` and the replay no longer work with the worker's own
   token: an operator token file is needed (`--token-file`), and the replay needs `accept`.
-- Every remote host agent and remote worker must be updated before flotillad, or the link is
-  refused.
+- The remote host agents and remote workers are upgraded after flotillad, in the same window: until
+  an agent is updated, its link is refused under required (its routines are skipped as "not
+  connected"). The order cannot be the other way: an agent of this build sends a field (`caps`) that
+  a flotillad of the previous build rejects (`json: unknown field "caps"`, hostwire reads with
+  DisallowUnknownFields), and that old flotillad's message does not say why. `run_tokens: accept`
+  does not change the agent's hello, so it does not bridge that; the window is short and its
+  routines catch up.
 - The flotillad image holds the examples twice (the worker images do not carry the second copy).
 - The default flips for an installation that set nothing; its `-check` shows it.
 
