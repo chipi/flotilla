@@ -21,6 +21,10 @@ type composeService struct {
 	Environment map[string]string `yaml:"environment"`
 	Volumes     []string          `yaml:"volumes"`
 	Networks    []string          `yaml:"networks"`
+	DependsOn   map[string]struct {
+		Condition string `yaml:"condition"`
+		Required  *bool  `yaml:"required"`
+	} `yaml:"depends_on"`
 }
 
 type composeVolume struct {
@@ -209,5 +213,29 @@ func TestOnlyTheListenersCallersHaveItsAddressAndNoneHasAWorkerTokenFallback(t *
 	}
 	if strings.Contains(string(raw), "FLOTILLA_API") {
 		t.Error("deploy/remote/docker-compose.yml sets a FLOTILLA_API_* variable: a remote worker's routines do not call flotillad's workers' listener")
+	}
+}
+
+// flotillad's start must not race a worker that is still the previous tag's: it waits for every worker the compose file defines, the ones of an
+// optional profile with required: false (a host without the profile is left alone). The candidate was missing, so a start could meet an old
+// candidate that run_tokens: required refuses.
+func TestFlotilladWaitsForEveryWorkerItMayName(t *testing.T) {
+	services := loadCompose(t)
+	deps := services["flotillad"].DependsOn
+	for name, s := range services {
+		if !strings.HasPrefix(name, "worker-") || strings.HasSuffix(name, "-shadow") {
+			continue
+		}
+		d, ok := deps[name]
+		if !ok {
+			t.Errorf("flotillad does not depend_on %s: its start could meet that worker still old", name)
+			continue
+		}
+		if d.Condition != "service_healthy" {
+			t.Errorf("flotillad depends on %s with condition %q, want service_healthy", name, d.Condition)
+		}
+		if len(s.Profiles) > 0 && (d.Required == nil || *d.Required) {
+			t.Errorf("%s is in profile %v, so flotillad's dependency on it needs required: false", name, s.Profiles)
+		}
 	}
 }

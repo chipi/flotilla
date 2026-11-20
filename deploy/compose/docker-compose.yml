@@ -65,6 +65,7 @@ services:
       worker-triage: {condition: service_healthy}   # the first run starts at boot: the worker must be listening
       # The ops workers too, when their profile runs (required: false leaves a host without it alone);
       # 2026-11-14 the monitor's first run at boot met a worker not yet listening.
+      worker-triage-candidate: {condition: service_healthy, required: false}   # profile candidate: an old candidate must not race the start (run_tokens: required refuses it)
       worker-ops-read: {condition: service_healthy, required: false}
       worker-ops-act-host: {condition: service_healthy, required: false}
       worker-bugfix: {condition: service_healthy, required: false}
