@@ -6,6 +6,8 @@
 #   deploy_fleets.sh <commit>       deploy that commit of FLOTILLA_FLEETS_REPO (fetched first)
 #   deploy_fleets.sh --rollback     the commit deployed before the current one
 #   deploy_fleets.sh --diff <commit>  only show what that commit changes against the running fleets
+#   deploy_fleets.sh --check <commit> the diff and the deploy's own -check (versions, re-recorded, routine fields),
+#                                     then stop: nothing is paused, switched or restarted; ends FLEETS CHECK PASS/FAIL
 #
 # Settings (FLOTILLA_HOME/.env):
 #   FLOTILLA_FLEETS_REPO        a checkout of the private fleets repo (fetched, never changed here)
@@ -27,7 +29,8 @@ H="${FLOTILLA_HOME:-$HOME/flotilla}"
 REPO="$H/repo"
 LOG="$H/fleets-deployed.tsv"
 say() { printf '%s\n' "$*"; }
-die() { say "FLEETS DEPLOY FAIL: $*"; exit 1; }
+KIND=DEPLOY
+die() { say "FLEETS $KIND FAIL: $*"; exit 1; }
 
 [ -f "$H/.env" ] || die "$H/.env missing"
 envget() { (set -a; . "$H/.env" >/dev/null 2>&1; eval "printf '%s' \"\${$1:-}\""); }
@@ -53,9 +56,10 @@ case "${1:-}" in
     WANT="$(awk -F'\t' '$3=="pass"{p=c; c=$2} END{print p}' "$LOG" 2>/dev/null)"
     [ -n "$WANT" ] || die "no earlier passing fleets deploy to roll back to" ;;
   --diff) MODE=diff; WANT="${2:-}" ;;
+  --check) MODE=check; KIND=CHECK; WANT="${2:-}" ;;
   *) WANT="${1:-}" ;;
 esac
-[ -n "$WANT" ] || die "usage: deploy_fleets.sh <commit> | --rollback | --diff <commit>"
+[ -n "$WANT" ] || die "usage: deploy_fleets.sh <commit> | --rollback | --diff <commit> | --check <commit>"
 git -C "$FR" fetch -q origin || die "fetch of $FR failed"
 SHA="$(git -C "$FR" rev-parse --verify -q "$WANT^{commit}")" || die "no commit $WANT in $FR"
 DIR="$H/fleets-${SHA:0:7}"
@@ -100,6 +104,7 @@ RF="$(printf '%s\n' "$OUT" | grep -E '^routine [^ ]+: |^routine fields: ' || tru
 if [ -n "$RF" ]; then say "== routine fields (recorded at the start as routine.update events; not frozen, nothing is refused for them):"; printf '%s\n' "$RF" | sed 's/^/   /'; fi
 MV="$(printf '%s\n' "$OUT" | grep -E '^versions: [^ ]+ v[0-9]+ routine fields: ' || true)"
 if [ -n "$MV" ]; then say "== a moved routine's own fields against the stored snapshot (information, not a gate):"; printf '%s\n' "$MV" | sed 's/^versions: /   /'; fi
+[ "$MODE" = check ] && { say "FLEETS CHECK PASS (fleets ${SHA:0:7} at $TAG; nothing was paused, switched or restarted)"; exit 0; }
 
 hashes() { cli status -json | /usr/bin/python3 -c 'import json,sys; [print(r["id"], r.get("spec_hash","-")) for r in json.load(sys.stdin)["routines"]]'; }
 BEFORE="$(hashes)" || die "cannot read the routines' spec hashes"

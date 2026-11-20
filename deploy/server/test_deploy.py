@@ -539,6 +539,39 @@ class DeployFleetsTest(unittest.TestCase):
         self.assertNotIn(" up ", self.docker_calls())
         self.assertFalse(os.path.lexists(os.path.join(self.home, "fleets")), "the live folder was switched")
 
+    def check(self, commit, env=None):
+        return sh(["bash", self.SCRIPT, "--check", commit], env=env or self.env, check=False)
+
+    def test_check_prints_the_move_lines_and_changes_nothing(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "c")))
+        r = self.check(self.c1, env=dict(self.env, STUB_CHECK_MOVED="1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("   triage/cycle v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/triage.md -> v1/system.md, prompts): re-recorded", r.stdout)
+        self.assertIn('   routine triage/cycle: budget {"day_usd":2} -> {"day_usd":7}', r.stdout)
+        self.assertIn("   triage/cycle v1 routine fields: changed since the stored snapshot", r.stdout)
+        self.assertIn("FLEETS CHECK PASS (fleets " + self.c1[:7], r.stdout)
+        self.assertNotIn("FLEETS DEPLOY", r.stdout)
+        calls = self.docker_calls()
+        self.assertIn(" run ", calls, "-check did not run")
+        for moved in (" up ", "routine pause", "routine resume", "pause", "resume"):
+            self.assertNotIn(moved, calls, f"--check called docker with {moved!r}")
+        self.assertFalse(os.path.lexists(os.path.join(self.home, "fleets")), "the live folder was switched")
+        self.assertFalse(os.path.exists(os.path.join(self.home, "fleets-deployed.tsv")), "--check logged a deploy")
+
+    def test_check_refusal_says_check_fail_and_changes_nothing(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.check(self.c1, env=dict(self.env, STUB_CHECK_FAIL="1"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("   versions: triage/cycle v1 is live and its folder changed", r.stdout)
+        self.assertIn("FLEETS CHECK FAIL: versions: flotillad -check refused fleets", r.stdout)
+        self.assertNotIn(" up ", self.docker_calls())
+        self.assertFalse(os.path.lexists(os.path.join(self.home, "fleets")), "the live folder was switched")
+
+    def test_check_without_a_commit_is_usage(self):
+        r = self.check("", env=self.env)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("FLEETS CHECK FAIL: usage:", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
