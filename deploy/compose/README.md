@@ -296,6 +296,15 @@ neither list is not caught by name; keep it out of `TRIAGE_READ_ENV_FILE`, which
 the shadow worker reads. A test on the compose file (`cmd/flotillad/compose_test.go`) holds the
 limits, the volumes, the network and that every `*-secrets` volume is external.
 
+Another worker's routines are shadowed by a shadow worker of their own (`<worker>-shadow` by
+default), declared the same way. The e2e stack has one, `worker-ops-read-shadow` in
+`deploy/e2e/docker-compose.e2e.yml`, for the example fleets on `ops-read` (its model: the ops image
+in shadow mode, a low CPU weight, the `shadow` network and `egress-shadow`, only its own worker
+token). `secrets.sh` puts `FLOTILLA_CONFIG/worker-ops-read-shadow.token` in flotillad's volume and
+the worker's when the file exists, and flotillad's `NO_PROXY` must name the new worker, or its calls
+go through the proxy and come back 407. This compose file ships none: which workers get a shadow
+worker is the installation's choice.
+
 To end shadows: `shadows.enabled: false` (a shadow version is then listed and promotable, and does
 not run), drop `shadow` from `COMPOSE_PROFILES`, deploy. The shadow volumes stay until removed by
 hand.
@@ -313,28 +322,33 @@ To move a worker to `api`, after a deploy whose flotillad has `worker_listen`:
 
 1. Pause the routine (`flotilla pause <routine id>`) and let a run in flight end: between the import
    and the switch the TSVs must not move on without the store.
-2. Import its namespace from its own state, once (counts only are printed):
-   `docker exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485
-   -e FLOTILLA_API_TOKEN_FILE=/run/flotilla/worker.token -e NO_PROXY=flotillad
-   -e FLOTILLA_ROUTINE=<routine id> <worker container> python3 ledger_sync.py import`
-   `run_tokens` is `required` unless flotillad.yaml says `accept` (the one-release way back; `-check` warns):
-   every run has its own token, and a worker's own token opens nothing on `worker_listen`. So the import
-   and the check are the operator's: put an admin's (or the bootstrap operator's) token in a file in the
-   worker's tmpfs for the duration, pass it as `--token-file` (or `FLOTILLA_API_TOKEN_FILE`) instead of
-   `/run/flotilla/worker.token`, and remove it after:
-   `printf %s "$TOKEN" | docker exec -i <worker container> sh -c 'umask 077 && cat > /tmp/operator.token'`
-   … `python3 ledger_sync.py import --token-file /tmp/operator.token` … then
-   `docker exec <worker container> rm /tmp/operator.token`. Without a token file they say "operator token
-   required". flotillad serves the operator's import and reads of a named ledger on `worker_listen` (and
-   on the full API); it takes no row from an operator, and the import is an event naming who. `pad` is
-   local (it rewrites filed.tsv) and needs no token. The compose files no longer give the workers the
-   worker token as a fallback for a routine's ledger calls: a run uses its own.
-   `gate_ledger_backend_replay.py` also writes rows, which no token outside a run may do under `required`
-   (the operator's is import and read only, a run's is confined to its routine's namespace): run it against
-   a flotillad in `run_tokens: accept`, with the worker's own token, before the switch (the e2e does).
-   Before this build is deployed, update every remote worker and agent to it: flotillad refuses, at link,
-   an agent whose hello lacks the `run_token` capability, and `flotillad -check` prints
-   `worker W: run-token capable` or `NOT run-token capable (update it)` for each worker it can reach.
+2. Import its namespace from its own state, once (counts only are printed). `run_tokens` is
+   `required` unless flotillad.yaml says `accept` (the one-release way back; `-check` warns): every
+   run has its own token, and a worker's own token opens nothing on `worker_listen`. So the import
+   and the check are the operator's. Put an admin's (or the bootstrap operator's) token in a file in
+   the worker's tmpfs for the duration, pass it as `--token-file` (or `FLOTILLA_API_TOKEN_FILE`)
+   instead of `/run/flotilla/worker.token`, and remove it after:
+
+   ```sh
+   printf %s "$TOKEN" | docker exec -i <worker container> sh -c 'umask 077 && cat > /tmp/operator.token'
+   docker exec -w /opt/flotilla/signal-fleet/mvp -e FLOTILLA_API_URL=http://flotillad:8485 \
+     -e NO_PROXY=flotillad -e FLOTILLA_ROUTINE=<routine id> <worker container> \
+     python3 ledger_sync.py import --token-file /tmp/operator.token
+   docker exec <worker container> rm /tmp/operator.token
+   ```
+
+   Without a token file they say "operator token required". flotillad serves the operator's import
+   and reads of a named ledger on `worker_listen` (and on the full API); it takes no row from an
+   operator, and the import is an event naming who. `pad` is local (it rewrites filed.tsv) and needs
+   no token. The compose files no longer give the workers the worker token as a fallback for a
+   routine's ledger calls: a run uses its own. `gate_ledger_backend_replay.py` also writes rows,
+   which no token outside a run may do under `required` (the operator's is import and read only, a
+   run's is confined to its routine's namespace): run it against a flotillad in
+   `run_tokens: accept`, with the worker's own token, before the switch (the e2e does). Before this
+   build is deployed, update every remote worker and agent to it: flotillad refuses, at link, an
+   agent whose hello lacks the `run_token` capability, and `flotillad -check` prints
+   `worker W: run-token capable` or `NOT run-token capable (update it)` for each worker it can
+   reach.
 3. Check the store renders both TSVs byte for byte: the same with `check`.
 4. Set the service's backend to `api`, deploy (the live tag, unchanged), and resume the routine (the
    operator's token).

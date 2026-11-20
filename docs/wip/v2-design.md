@@ -9,22 +9,23 @@ A new version runs in shadow beside the live one without any effect on the syste
 and goes live on the operator's word; if it turns out wrong, the operator rolls back. Every routine
 moves to this format; a routine that calls no model has versions and no stations.
 
-**Status: the spec is done (2026-11-18); steps 1 to 4 built.** (Step 2 with shadows off is not a
+**Status: the spec is done (2026-11-18); steps 1 to 5 built.** (Step 2 with shadows off is not a
 strict no-op for a live run: a run token, `FLOTILLA_ROUTINE_VERSION`, one `run_inputs` row per run
-and one `RunIsShadow` read per plan decision; a live run on a remote worker older than step 2 falls
-back to the worker token, which `run_tokens: required` refuses. See
-[history 0004](../history/0004-v2-step-2-shadows.md).) Reviewed in five rounds by an
-advisor and by
-the installation's fleet session; both gave GO on this text, and on section 6 (evaluation), agreed
-with eval-harness. It is
-[ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md); steps 1 to 4 are built (step 2
-is section 4, shadows with no effect; steps 3 and 4 are sections 2, 3 and 6, see
-[history 0005](../history/0005-v2-steps-3-4.md)), steps 5 to 7 are not, and this text stays the
-design they are built from. **Pending:** the episode schema is meant to be a superset of the
-generic episode that eval-harness's transcript schema defines, but that schema does not exist yet,
-so the relation is not checked: no copy is pinned and no placeholder stands in for it. The
-validator takes a list of schemas, so adding theirs is one entry (and a checker extension if it
-needs `$ref`).
+and one `RunIsShadow` read per plan decision. A live run on a remote worker older than step 2
+fell back to the worker token; since step 5 `run_tokens: required` is the default and refuses such
+a worker or agent at start or link. See [history 0004](../history/0004-v2-step-2-shadows.md) and
+[history 0006](../history/0006-v2-step-5.md).) Reviewed in five rounds by an advisor and by the
+installation's fleet session; both gave GO on this text, and on section 6 (evaluation), agreed with
+eval-harness. It is [ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md); steps 1 to
+5 are built (step 2 is section 4, shadows with no effect; steps 3 and 4 are sections 2, 3 and 6,
+see [history 0005](../history/0005-v2-steps-3-4.md); step 5 moved the example fleets to the
+format and made section 4's test a required check, see [history 0006](../history/0006-v2-step-5.md)
+and [ADR-0021](../adr/ADR-0021-examples-catalogue-and-run-tokens-default.md)), steps 6 and 7 are
+not, and this text stays the design they are built from. **Pending:** the episode schema is meant
+to be a superset of the generic episode that eval-harness's transcript schema defines, but that
+schema does not exist yet, so the relation is not checked: no copy is pinned and no placeholder
+stands in for it. The validator takes a list of schemas, so adding theirs is one entry (and a
+checker extension if it needs `$ref`).
 
 ## 1. A routine and its versions
 

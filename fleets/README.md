@@ -1,9 +1,9 @@
 # Example fleets
 
-These are flotilla's **example fleets**: what the images carry, what CI and the e2e stack run, and the
-starting point for an installation's own. They are shaped like a real installation's, and every fact
-in them is a placeholder: the repos are `example/...`, the sites are `example.com`, the addresses are
-documentation addresses.
+These are flotilla's **example fleets**: what the images carry, what CI and the e2e stack run, and
+the starting point for an installation's own. They are shaped like a real installation's, and every
+fact in them is a placeholder: the repos are `example/...`, the sites are `example.com`, the
+addresses are documentation addresses.
 
 | Fleet | Routines | What it shows |
 | --- | --- | --- |
@@ -19,16 +19,16 @@ documentation addresses.
 | `outbound` | `scan`, `draft`, `send`, `check` | a first email per prospect, every personal sentence citing a fact; do-not-contact, consent and a daily cap in code; every send approved |
 | `renewals` | `scan`, `flag`, `apply-flag`, `check` | customer success: a risk score in code, replayed over past renewals, flags the account for its owner; it never writes to the customer |
 
-The business examples (`crm`, `campaigns`, `outbound`, `renewals`) act on stand-in systems: JSON files
-seeded from each fleet's `seed/` (`business/store.py`), carried out by `business/apply.py` as routine
-actions (ADR-0017). They run on the `ops-read` worker so the e2e runs them end to end; an installation
-gives them their own worker with its CRM's, campaign tool's or mail service's credentials, and replaces
-`business/store.py` with an adapter to that system.
+The business examples (`crm`, `campaigns`, `outbound`, `renewals`) act on stand-in systems: JSON
+files seeded from each fleet's `seed/` (`business/store.py`), carried out by `business/apply.py` as
+routine actions (ADR-0017). They run on the `ops-read` worker so the e2e runs them end to end; an
+installation gives them their own worker with its CRM's, campaign tool's or mail service's
+credentials, and replaces `business/store.py` with an adapter to that system.
 
 ## A routine: a file, or a folder with versions
 
-A routine is either one flat file, `fleets/<fleet>/<routine>.yaml` (the routine with one version, `v1`),
-or a folder ([ADR-0020](../docs/adr/ADR-0020-routine-versions-stations-harnesses.md)):
+A routine is either one flat file, `fleets/<fleet>/<routine>.yaml` (the routine with one version,
+`v1`), or a folder ([ADR-0020](../docs/adr/ADR-0020-routine-versions-stations-harnesses.md)):
 
 ```text
 fleets/<fleet>/<routine>/routine.yaml       identity: worker, trigger, detects, autonomy, budget, acceptance, ...
@@ -36,34 +36,65 @@ fleets/<fleet>/<routine>/v<n>/spec.yaml     one version: run, steps, skills, pro
 fleets/<fleet>/<routine>/v<n>/<texts>       the files that version's spec names (paths stay inside v<n>/)
 ```
 
-Never both for one routine. Every example is a folder. Each has one version, `v1`, identical to the flat file it was
-(`internal/spec/move_equiv_test.go` compares every field and the run environment against a copy of the flat
-specs, `internal/spec/testdata/flat-before-step5/`), with two exceptions that gained something on purpose:
-`triage/cycle`'s `v1` declares its model step as a station (the harness block, the prompt and `SF_TRIAGE_MODEL`
-became the `decide` station, run by `signal-fleet/mvp/orchestrator_station.py`, the same requests to the model),
-and it has a `v2`, the candidate that was the routine `triage/cycle-shadow`; `platform/heartbeat` has a `v2` whose
-model call is the `probe` station. A prompt a version declares is a file inside its `v<n>/` (bugfix's `fix/v1/rules.md`
-is a copy of `bugfix/fleet_rules.md`, kept equal by a test; triage's `v1/system.md` is `playbooks/triage.md` with its
-two placeholders written as slots, which triage.py still reads when it runs without flotillad). The class-hint skills
-stay files of the fleet's `skills/` folder, which a version's frozen folder does not cover. The first version of a routine goes live when it is deployed;
-a later `v<n>/` arrives as a shadow and goes live only when the operator promotes it (`flotilla versions`,
-`promote`, `rollback`, `retire`, or the routine page). The live and the previous version's folders are
-frozen: a changed one fails `flotillad -check` and its start, so change a live version by adding a new
-number. `acceptance:` (a list from `pairs`, `replay`, `scenario_eval`; `pairs` when absent) names the
-evidence a promote needs. The lowest autonomy level is `record`; a spec that still says
-`autonomy: shadow` (or `max_autonomy: shadow`) is read as `record`, and `-check` says so. The value
-a run reads in `FLEETD_STAGE` is `shadow` for `record`, as before.
+Never both for one routine. Every example is a folder. Each has one version, `v1`, identical to the
+flat file it was (`internal/spec/move_equiv_test.go` compares every field and the run environment
+against a copy of the flat specs, `internal/spec/testdata/flat-before-step5/`), with two exceptions
+that gained something on purpose: `triage/cycle`'s `v1` declares its model step as a station (the
+harness block, the prompt and `SF_TRIAGE_MODEL` became the `decide` station, run by
+`signal-fleet/mvp/orchestrator_station.py`, the same requests to the model), and it has a `v2`, the
+candidate that was the routine `triage/cycle-shadow`; `platform/heartbeat` has a `v2` whose model
+call is the `probe` station. A prompt a version declares is a file inside its `v<n>/` (bugfix's
+`fix/v1/rules.md` is a copy of `bugfix/fleet_rules.md`, kept equal by a test; triage's
+`v1/system.md` is `playbooks/triage.md` with its two placeholders written as slots, which triage.py
+still reads when it runs without flotillad). The class-hint skills stay files of the fleet's
+`skills/` folder, which a version's frozen folder does not cover. The first version of a routine
+goes live when it is deployed; a later `v<n>/` arrives as a shadow and goes live only when the
+operator promotes it (`flotilla versions`, `promote`, `rollback`, `retire`, or the routine page).
+The live and the previous version's folders are frozen: a changed one fails `flotillad -check` and
+its start, so change a live version by adding a new number. `acceptance:` (a list from `pairs`,
+`replay`, `scenario_eval`; `pairs` when absent) names the evidence a promote needs. The lowest
+autonomy level is `record`; a spec that still says `autonomy: shadow` (or `max_autonomy: shadow`) is
+read as `record`, and `-check` says so. The value a run reads in `FLEETD_STAGE` is `shadow` for
+`record`, as before.
 
 ## Seeing the examples on an installation
 
-The flotillad image carries these fleets a second time at `/opt/flotilla/examples`, where an installation's own fleets (mounted
-over `/opt/flotilla/fleets`) do not reach. With `examples_dir: /opt/flotilla/examples` in its flotillad.yaml, `flotilla status`
-lists every example (state `example`) and the UI has an Examples page (linked from Fleets): each example's description, trigger,
-worker, versions and flow. They are a catalogue, not routines: ids are `example-<fleet>/<routine>`, nothing in them is scheduled,
-reaches the store, a worker, a metric or the brief, and a request that names one (a run, a dry run, a version control) is refused
-with "an example". `-check` needs none of their workers or model aliases. To run one, copy its folder into the installation's own
-fleets repo under a name of your own and deploy it with `deploy_fleets.sh`: its first version goes live as any routine's does.
-Unset, the installation sees no examples.
+The flotillad image carries these fleets a second time at `/opt/flotilla/examples`, where an
+installation's own fleets (mounted over `/opt/flotilla/fleets`) do not reach. With `examples_dir:
+/opt/flotilla/examples` in its flotillad.yaml, `flotilla status` lists every example (state
+`example`) and the UI has an Examples page (linked from Fleets): each example's description,
+trigger, worker, versions and flow. They are a catalogue, not routines: ids are
+`example-<fleet>/<routine>`, nothing in them is scheduled, reaches the store, a worker, a metric or
+the brief, and a request that names one (a run, a dry run, a version control) is refused with "an
+example". `-check` needs none of their workers or model aliases. To run one, copy its folder into
+the installation's own fleets repo under a name of your own and deploy it with `deploy_fleets.sh`:
+its first version goes live as any routine's does. Unset, the installation sees no examples.
+
+## The e2e over the examples
+
+The examples ship `v1` only (a version that does something different is the installation's to
+write), so the e2e makes a shadow for each one it can: `deploy/e2e/make_shadows.py` copies a
+routine's `v1/` to `v2/` and adds a marker file (the version's hash is over its files, and the copy
+would otherwise be `v1` itself). The `v2` runs the example's real command. `deploy/e2e/matrix.py`
+then prints one row per routine on the `ops-read` worker and ends `NOEFFECT PASS n / SKIP m
+(reasons) / FAIL k`:
+
+| Cell | What it proves |
+| --- | --- |
+| `versions` | `v1` live, `v2` a shadow with a hash of its own |
+| `shadow` | a shadow run of `v2` on the live run's input ended done and wrote a shadow record, so the next cell is not the shadow doing nothing |
+| `unchanged` | across every shadow run, nothing the routine's live side holds changed: its rows in every store table, the worker's state files, the cases, and what the outward stand-ins saw from the shadow's proxy |
+| `promote`, `rollback` | `v2` goes live and back: `v1` previous, then live again |
+| `previous` | the image runs the previous version: a run after the rollback is `v1`'s and ends ok (a routine that waits for a case has none to run on) |
+| `state` | backward-readable state: the routine's stores gain a key and a column `v1` does not know (`extend_state.py`), `v1` runs again, and its exit and the cases it decides are those of the run before |
+
+The row `(all)` is what the shadows must leave alone and no single routine owns: the day's brief,
+the Slack asks (the stand-in host's agent is no connector and logs each plan flotillad asks it to
+post), and the host's audit log. A routine that waits for a case and has no live run on the stack is
+a `SKIP` with that reason; the routines on the `ops-act-host` and `bugfix` workers have no shadow
+worker in the stack (a remote worker's routine cannot be shadowed at all), so they are not in the
+matrix. `E2E_SECTIONS=noeffect bash deploy/e2e/run.sh` runs the matrix and the sections it reads
+(CI's `no-effect` check), with three mutation checks that must go red (`deploy/e2e/mutant.sh`).
 
 ## An installation's own fleets
 

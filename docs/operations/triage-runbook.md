@@ -87,8 +87,8 @@ The state paths can be overridden with `SF_LEDGER`, `SF_FILED_LEDGER`, `SF_QUEUE
 ### The routine's spec
 
 The schedule and limits are not a host config file any more. They are the routine's spec,
-[`fleets/triage/cycle/`](https://github.com/chipi/flotilla/tree/main/fleets/triage/cycle) (`routine.yaml` and `v1/spec.yaml`),
-read by flotillad (`flotillad -check` validates it):
+[`fleets/triage/cycle/`](https://github.com/chipi/flotilla/tree/main/fleets/triage/cycle)
+(`routine.yaml` and `v1/spec.yaml`), read by flotillad (`flotillad -check` validates it):
 
 - **`trigger.every: 10m`**, `worker: triage`, `run.timeout: 20m`; the command is
   `python3 orchestrator.py --cycle --limit 10 --no-dry-run` in `signal-fleet/mvp`.

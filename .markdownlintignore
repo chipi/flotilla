@@ -14,3 +14,5 @@ fleets/*/*/v*/
 deploy/e2e/fleets/
 # The installation's earlier fleet docs, moved 2026-11-17 and kept as the record as they were written (docs/fleets/README.md)
 docs/history/origin/
+# The flat specs as they were before step 5 (internal/spec/testdata/flat-before-step5/): prompt text, byte for byte the contract of the move-equivalence test
+internal/spec/testdata/
