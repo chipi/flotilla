@@ -122,7 +122,7 @@ type RoutineActionsConfig struct {
 }
 
 // workerCapLines is -check's line per worker under run_tokens: whether it can carry a run's own token. An unreachable worker is not checked (it
-// may be down for the deploy); a reachable one without the capability is a failure line starting "FAIL", which the caller turns into an exit.
+// may be down for the deploy); a reachable one without the capability is reported, and refused only at a start (enforceRunTokenCaps).
 func workerCapLines(ctx context.Context, cfg *Config, clients map[string]*worker.Client) []string {
 	var out []string
 	names := make([]string, 0, len(cfg.Workers))
@@ -144,7 +144,7 @@ func workerCapLines(ctx context.Context, cfg *Config, clients map[string]*worker
 			case h.RunTokenCapable():
 				out = append(out, fmt.Sprintf("worker %s: run-token capable", n))
 			default:
-				out = append(out, fmt.Sprintf("worker %s: NOT run-token capable (update it)", n))
+				out = append(out, fmt.Sprintf("worker %s: NOT run-token capable (update it: the start refuses it under required; a deploy's up recreates a local worker first)", n))
 			}
 		}
 	}
@@ -152,6 +152,16 @@ func workerCapLines(ctx context.Context, cfg *Config, clients map[string]*worker
 		out = append(out, "WARNING run_tokens: accept: a worker's own token opens the workers' listener; the default is required, and accept goes in the next release")
 	}
 	return out
+}
+
+// enforceRunTokenCaps is requireRunTokenCaps at a start, and nothing at -check: deploy.sh runs -check while the previous tag's workers still answer
+// (they are recreated by `up`, after it), so a worker without the capability is the expected state of an upgrade then, and -check only reports it
+// (workerCapLines). The start after `up` refuses a worker that is still old.
+func enforceRunTokenCaps(ctx context.Context, cfg *Config, clients map[string]*worker.Client, check bool) error {
+	if check {
+		return nil
+	}
+	return requireRunTokenCaps(ctx, cfg, clients)
 }
 
 // requireRunTokenCaps refuses, under run_tokens: required, a reachable worker that does not say it carries run tokens: its routines would run with
@@ -492,7 +502,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	if err := requireRunTokenCaps(context.Background(), cfg, clients); err != nil {
+	if err := enforceRunTokenCaps(context.Background(), cfg, clients, *check); err != nil {
 		fmt.Fprintln(os.Stderr, "workers:", err)
 		os.Exit(2)
 	}

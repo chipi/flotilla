@@ -89,7 +89,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept; do $D rm -f "$c" >/dev/null 2>&1; done
+  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept e2e-oldworker e2e-newworker e2e-upgrade-flotillad; do $D rm -f "$c" >/dev/null 2>&1; done
   for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
     $D volume rm "$v" >/dev/null 2>&1
   done
@@ -771,22 +771,79 @@ for W in triage-candidate ops-read ops-act-host bugfix; do
     && ok "run tokens on the $W worker: its run's own token file, its own token refused on the listener, the run's accepted, the namespace forced" \
     || bad "token-probe on $W: $(cli runs e2e/token-probe-$W -n 1) $($D logs flotilla-worker-$W 2>&1 | grep -o 'PROBE [^"]*' | tail -2)"
 done
-# an old worker (no run_token in its /healthz): flotillad refuses it under required, naming it, and only says so under accept
-$D run -d --label $LABEL --name e2e-oldworker --network "${P}_flotilla" --memory 64m -v "$ROOT/deploy/e2e/old_worker.py:/o.py:ro" \
+# The upgrade path (deploy.sh runs -check while the previous tag's workers still answer, then `up` recreates them, then flotillad starts): a worker
+# whose /healthz lacks run_token is the expected state of that -check, so -check reports it and passes; the start refuses it under required (by name),
+# and only says so under accept; after the worker is replaced by one that carries the capability, the start runs and required holds. One idle flotillad
+# of its own (a spec that only keeps it running) against a worker that answers as e2e-upgrade, first the old stub and then the real worker image.
+$D run -d --label $LABEL --name e2e-oldworker --network "${P}_flotilla" --network-alias e2e-upgrade --memory 64m -v "$ROOT/deploy/e2e/old_worker.py:/o.py:ro" \
   python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b python3 -u /o.py >/dev/null || bad "the old worker stand-in did not start"
 tok > "$WORK/config/worker-old.token"; chmod 644 "$WORK/config/worker-old.token"
-old_check() {  # old_check MODE-LINE: flotillad -check on the stack's config plus the old worker
-  sed "s|^workers:\$|$1workers:\n  old: {url: \"http://e2e-oldworker:8081\", token_file: /run/flotilla-old/old.token}|; s|^state_dir: .*|state_dir: /tmp/old-check|" "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-old.yaml"
-  $D run --rm --network "${P}_flotilla" --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-old.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
-    -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/worker-old.token:/run/flotilla-old/old.token:ro" -v "$WORK/config/specs:/etc/flotilla/specs:ro" \
-    -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?"
+mkdir -p "$WORK/config/specs-upgrade/e2e"
+cat > "$WORK/config/specs-upgrade/e2e/idle.yaml" <<EOF2
+fleet: e2e
+routine: idle
+description: The e2e's upgrade flotillad has one routine, which only keeps it running.
+enabled: true
+worker: old
+trigger: {every: 8760h}
+run: {command: "true", workdir: ., timeout: 1m}
+autonomy: record
+budget: {day_usd: 0}
+freshness: 9000h
+EOF2
+upgrade_cfg() {  # upgrade_cfg MODE-LINE
+  cat > "$WORK/config/flotillad-upgrade.yaml" <<EOF2
+listen: 127.0.0.1:8484
+worker_listen: 0.0.0.0:8485
+specs_dir: /etc/flotilla/specs
+state_dir: /tmp/upgrade-state
+environment: e2e
+callers_file: /etc/flotilla/callers.yaml
+$1
+registry_files: [/opt/flotilla/host/registry.json]
+workers:
+  old: {url: "http://e2e-upgrade:8081", token_file: /run/flotilla-old/old.token}
+EOF2
 }
-OLDREQ="$(old_check "")"; OLDACC="$(old_check "run_tokens: accept\n")"
-echo "$OLDREQ" | grep >/dev/null "worker old does not carry run tokens" && echo "$OLDREQ" | grep >/dev/null "^rc=2" \
-  && ok "run_tokens: required refuses a worker whose /healthz lacks run_token, by name (exit 2)" || bad "an old worker under required: $(echo "$OLDREQ" | tail -3)"
-echo "$OLDACC" | grep >/dev/null "worker old: NOT run-token capable" && echo "$OLDACC" | grep >/dev/null "^rc=0" \
-  && ok "under accept the same old worker is only reported (rc 0)" || bad "an old worker under accept: $(echo "$OLDACC" | tail -3)"
+UPG=(--network "${P}_flotilla" --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-upgrade.yaml:/etc/flotilla/flotillad.yaml:ro"
+  -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" -v "$WORK/config/worker-old.token:/run/flotilla-old/old.token:ro"
+  -v "$WORK/config/specs-upgrade:/etc/flotilla/specs:ro")
+upgrade_check() { $D run --rm "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?"; }
+upgrade_start() { timeout 25 $D run --rm "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml 2>&1; echo "rc=$?"; }
+upgrade_cfg ""
+OLDCHK="$(upgrade_check)"; OLDSTART="$(upgrade_start)"
+echo "$OLDCHK" | grep >/dev/null "worker old: NOT run-token capable" && echo "$OLDCHK" | grep >/dev/null "^rc=0" \
+  && ok "-check against a worker still on the previous tag (no run_token in /healthz) reports it and passes: a deploy's -check runs before up recreates the workers" \
+  || bad "-check against an old worker: $(echo "$OLDCHK" | tail -3)"
+echo "$OLDSTART" | grep >/dev/null "worker old does not carry run tokens" && echo "$OLDSTART" | grep >/dev/null "^rc=2" \
+  && ok "run_tokens: required: the start refuses a worker whose /healthz lacks run_token, by name (exit 2)" || bad "the start with an old worker: $(echo "$OLDSTART" | tail -3)"
+upgrade_cfg "run_tokens: accept"
+OLDACC="$(upgrade_start | head -c 600; echo)"; OLDACCCHK="$(upgrade_check)"
+echo "$OLDACCCHK" | grep >/dev/null "worker old: NOT run-token capable" && echo "$OLDACCCHK" | grep >/dev/null "^rc=0" && ! echo "$OLDACC" | grep >/dev/null "does not carry run tokens" \
+  && ok "under accept the same old worker is only reported, and the start does not refuse it" || bad "an old worker under accept: $(echo "$OLDACCCHK" | tail -2) / $(echo "$OLDACC" | tail -2)"
+upgrade_cfg ""
+# the upgrade: the old worker is replaced by the real worker image (which carries the capability), answering as the same name
 $D rm -f e2e-oldworker >/dev/null 2>&1
+$D run -d --label $LABEL --name e2e-newworker --network "${P}_flotilla" --network-alias e2e-upgrade --read-only --tmpfs /tmp --tmpfs /home/worker:uid=10001,gid=10001 \
+  --user 10001:10001 --memory 128m -e FLOTILLA_WORKER=old -e FLOTILLA_WORKER_TOKEN_FILE=/t/old.token -e FLOTILLA_WORKER_LISTEN=0.0.0.0:8081 \
+  -v "$WORK/config/worker-old.token:/t/old.token:ro" "local/flotilla-worker-triage:$TAG" >/dev/null || bad "the upgraded worker did not start"
+for _ in $(seq 1 30); do $D exec e2e-newworker python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/livez", timeout=3)' >/dev/null 2>&1 && break; sleep 1; done
+NEWCHK="$(upgrade_check)"
+echo "$NEWCHK" | grep >/dev/null "worker old: run-token capable" && echo "$NEWCHK" | grep >/dev/null "^rc=0" \
+  && ok "after the upgrade the same -check says the worker is run-token capable" || bad "-check after the upgrade: $(echo "$NEWCHK" | tail -3)"
+$D run -d --label $LABEL --name e2e-upgrade-flotillad "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "the upgraded stack's flotillad did not start"
+for _ in $(seq 1 30); do $D logs e2e-upgrade-flotillad 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
+UPGOUT="$($D exec -e NO_PROXY=e2e-upgrade-flotillad -e HTTP_PROXY= -e HTTPS_PROXY= e2e-newworker python3 -c '
+import urllib.error, urllib.request
+tok = open("/t/old.token").read().strip()
+r = urllib.request.Request("http://e2e-upgrade-flotillad:8485/v1/ledger/counts?ns=e2e/upgrade", headers={"Authorization": "Bearer " + tok})
+try:
+    urllib.request.urlopen(r, timeout=10); print(200)
+except urllib.error.HTTPError as e: print(e.code)' 2>&1 | tail -1)"
+$D logs e2e-upgrade-flotillad 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && [ "$UPGOUT" = 401 ] \
+  && ok "after the upgrade the start runs, and required holds: the worker's own token opens nothing on the listener (401)" \
+  || bad "the upgraded stack: listener answered '$UPGOUT'; $($D logs e2e-upgrade-flotillad 2>&1 | tail -2 | cut -c1-200)"
+$D rm -f e2e-upgrade-flotillad e2e-newworker >/dev/null 2>&1
 # run_tokens: required is the default (the stack's own config says nothing), read by the real binary (-check, read-only): a worker's own
 # token is not a caller then; accept is the one-release way back, which -check warns about
 sed 's|^state_dir: .*|state_dir: /tmp/accept-check|; /^worker_listen:/a run_tokens: accept' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-accept.yaml"
