@@ -2148,6 +2148,40 @@ class TestGlitchtipSync(unittest.TestCase):
             filing.urllib.request.urlopen, filing.config.GLITCHTIP_WRITE_TOKEN = orig
         self.assertEqual(sent["auth"], "Bearer write-tok")
 
+    def _gh_auth(self, method, env):
+        """The Authorization _gh sends for method with only env's GitHub variables set, or the error it raises."""
+        import io
+        import filing
+        sent, keys = {}, ("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_READ_TOKEN")
+        saved = {k: os.environ.pop(k, None) for k in keys}
+        os.environ.update(env)
+        orig = filing.urllib.request.urlopen
+
+        def fake(req, timeout=None):
+            sent["auth"] = req.get_header("Authorization")
+            return io.BytesIO(b"{}")
+        filing.urllib.request.urlopen = fake
+        try:
+            filing._gh(method, "/repos/o/r/issues/1", {"x": 1} if method != "GET" else None)
+            return sent["auth"]
+        except RuntimeError as e:
+            return f"refused: {e}"
+        finally:
+            filing.urllib.request.urlopen = orig
+            for k in keys:
+                os.environ.pop(k, None)
+                if saved[k] is not None:
+                    os.environ[k] = saved[k]
+
+    def test_the_read_token_reads_and_never_writes(self):
+        self.assertEqual(self._gh_auth("GET", {"GITHUB_READ_TOKEN": "r"}), "Bearer r")
+        for m in ("POST", "PATCH", "PUT", "DELETE"):
+            self.assertTrue(self._gh_auth(m, {"GITHUB_READ_TOKEN": "r"}).startswith("refused:"), m)
+
+    def test_the_write_token_still_wins_for_reads(self):
+        self.assertEqual(self._gh_auth("GET", {"GITHUB_TOKEN": "w", "GITHUB_READ_TOKEN": "r"}), "Bearer w")
+        self.assertEqual(self._gh_auth("POST", {"GITHUB_TOKEN": "w", "GITHUB_READ_TOKEN": "r"}), "Bearer w")
+
 
 class TestIdentityAndFoldFixes(unittest.TestCase):
     """2026-10-17 weekly review: short-id reuse, fatal events in rollups, provider-auth storms."""

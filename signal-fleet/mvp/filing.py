@@ -622,6 +622,9 @@ def _link(fp, gk, nk, ak, prior):
 # ── GitHub REST ──────────────────────────────────────────────────────────
 def _gh(method, path, payload=None):
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    # A shadow worker refuses GITHUB_TOKEN and GH_TOKEN by name (they write); its read-only token reads, and only reads.
+    if not token and method == "GET":
+        token = os.environ.get("GITHUB_READ_TOKEN")
     if not token:
         raise RuntimeError("filing requires GITHUB_TOKEN on this host (propose stage)")
     req = urllib.request.Request(f"https://api.github.com{path}", method=method,

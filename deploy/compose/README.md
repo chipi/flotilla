@@ -298,8 +298,11 @@ GlitchTip event-write, Grafana admin, Slack and bugfix-pusher names this repo's 
 extended by `FLOTILLA_WRITE_KEYS` (comma-separated; the compose file sets it on the shadow worker)
 and by the keys of any `FLOTILLA_WRITE_ENV_FILES` it can read. A write credential whose name is on
 neither list is not caught by name; keep it out of `TRIAGE_READ_ENV_FILE`, which is the one file
-the shadow worker reads. A test on the compose file (`cmd/flotillad/compose_test.go`) holds the
-limits, the volumes, the network and that every `*-secrets` volume is external.
+the shadow worker reads. GitHub reads in a shadow use `GITHUB_READ_TOKEN` (a token that can only
+read: triage's `filing._gh` takes it for GET requests when it has no `GITHUB_TOKEN`, never for a
+write), since `GITHUB_TOKEN` itself is refused by name. A test on the compose file
+(`cmd/flotillad/compose_test.go`) holds the limits, the volumes, the network and that every
+`*-secrets` volume is external.
 
 Another worker's routines are shadowed by a shadow worker of their own (`<worker>-shadow` by
 default), declared the same way. The e2e stack has one, `worker-ops-read-shadow` in
