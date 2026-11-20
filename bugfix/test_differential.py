@@ -32,6 +32,11 @@ class Harness(unittest.TestCase):
         rows = d.differential(self.old, d.ROOT, "fix.py")
         self.assertEqual(rows, [], d.table(rows)[0])
 
+    def test_the_chain_on_stations_is_the_chain_in_every_scenario(self):
+        """bugfix/fix2.py takes the models, texts and limits from its stations and not from flags; its calls are v1's."""
+        rows = d.differential(self.old, d.ROOT, "fix2.py")
+        self.assertEqual(rows, [], d.table(rows)[0])
+
     def test_one_prompt_byte_changed_in_the_new_path_is_found(self):
         new = d.copy_tree(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, new, True)

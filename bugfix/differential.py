@@ -241,8 +241,61 @@ def install_leaves(f, root):
     return leaves
 
 
+FLEET_DIR = os.path.join("fleets", "bugfix", "fix", "v2")
+
+
+def translate(args, rules):
+    """A scenario's chain arguments (v1's flags) as the two sides take them: (flags both take, v1's whole flags, the stations' settings).
+    `rules` is the path of the rules file both sides read, so a path is never a delta: v1 gets it as --pi-rules, unless the scenario
+    says none (''). The stations stand for the model, limit and tools flags (bugfix/fix2.py refuses them)."""
+    flags, set_ = [], {"rules": True, "review_tools": "none", "fix_turns": 0, "repro_turns": 0, "timeout": None, "version": {}}
+    i = 0
+    while i < len(args):
+        a, v = args[i], args[i + 1] if i + 1 < len(args) else None
+        if a == "--pi-rules":
+            set_["rules"], i = bool(v), i + 1
+        elif a == "--review-tools":
+            set_["review_tools"], i = v, i + 1
+        elif a == "--fix-max-turns":
+            set_["fix_turns"], i = int(v), i + 1
+        elif a == "--repro-max-turns":
+            set_["repro_turns"], i = int(v), i + 1
+        elif a == "--episode-timeout":
+            set_["timeout"], i = int(v), i + 1
+        elif a == "--kickback-max":
+            set_["version"]["kickback_max"], i = int(v), i + 1
+        else:
+            flags.append(a)
+        i += 1
+    old = list(flags) + ["--pi-rules", rules if set_["rules"] else "", "--review-tools", set_["review_tools"]]
+    for key, flag in (("fix_turns", "--fix-max-turns"), ("repro_turns", "--repro-max-turns"), ("timeout", "--episode-timeout")):
+        if set_[key]:
+            old += [flag, str(set_[key])]
+    for k, v in set_["version"].items():
+        old += ["--" + k.replace("_", "-"), str(v)]
+    return flags, old, set_
+
+
+def stations_doc(settings, code):
+    """FLOTILLA_STATIONS for a scenario: the three stations on the fixture's aliases, v1's defaults where the scenario sets no limit,
+    their texts files of the code root (copies of bugfix/fleet_rules.md and agents/repro.md)."""
+    def text(rel):
+        with open(os.path.join(code, "fleets", "bugfix", rel), "rb") as fh:
+            return {"path": rel, "sha256": hashlib.sha256(fh.read()).hexdigest()}
+    rules = {"rules": text("fix/v2/rules.md")} if settings["rules"] else {}
+    limits = {"timeout": f"{settings['timeout']}s" if settings["timeout"] else "20m", "max_output_tokens": 32768}
+    return {"schema_version": 1, "version_limits": settings["version"], "stations": {
+        "fix": {"harness": "pi", "model": "bugfix-flash", "tools": "all", "texts": dict(rules),
+                "limits": dict(limits, **({"max_turns": settings["fix_turns"]} if settings["fix_turns"] else {}))},
+        "repro": {"harness": "pi", "model": "bugfix-flash", "tools": "all", "texts": dict(rules, agent=text("fix/v2/agent.md")),
+                  "limits": dict(limits, **({"max_turns": settings["repro_turns"]} if settings["repro_turns"] else {}))},
+        "review": {"harness": "pi", "model": "bugfix-reviewer", "tools": settings["review_tools"], "texts": dict(rules),
+                   "limits": {"timeout": "10m", "max_output_tokens": 32768}}}}
+
+
 def run_scenario(name, root, entry, roots=()):
-    """One scenario on the chain at `root`, started as `python3 <root>/bugfix/<entry>`: {"plan", "calls"} as recorded."""
+    """One scenario on the chain at `root`, started as `python3 <root>/bugfix/<entry>`: {"plan", "calls"} as recorded. fix2.py takes
+    the scenario as stations; fix.py as flags."""
     verdicts, fixes, state, args = golden.SCENARIOS[name]
     f = tf.Fixture(verdicts, fixes)
     try:
@@ -250,6 +303,11 @@ def run_scenario(name, root, entry, roots=()):
             with open(os.path.join(f.state, fname), "w") as fh:
                 fh.write("".join(x + "\n" for x in items))
         leaves = install_leaves(f, root)
+        code = os.path.join(f.d, "code")
+        os.makedirs(os.path.join(code, FLEET_DIR))
+        shutil.copy(os.path.join(root, "bugfix", "fleet_rules.md"), os.path.join(code, FLEET_DIR, "rules.md"))
+        shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "repro.md"), os.path.join(code, FLEET_DIR, "agent.md"))
+        flags, old, settings = translate(args, os.path.join(code, FLEET_DIR, "rules.md"))
         plan = os.path.join(f.d, "plan.json")
         env = dict(os.environ, FLOTILLA_PLAN_FILE=plan, FLOTILLA_MODELS=json.dumps(tf.MODELS), FAKE_STATE=f.state, DIFF_LEAVES=leaves,
                    GIT_ALLOW_PROTOCOL="file", GIT_REMOTE_BASE=f.remotes, BUGFIX_BAKEOFF_DIR=f.bakeoff,
@@ -258,14 +316,18 @@ def run_scenario(name, root, entry, roots=()):
                    FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": f"repo:{f.repo}/issues/12",
                                              "data": {"issue": {"repo": f.repo, "number": 12, "title": "value is 1",
                                                                 "body": "value() returns 1, want 2", "url": "u"}}}))
-        for k in [k for k in env if k.startswith(("PI_", "BUGFIX_PI"))]:
+        for k in [k for k in env if k.startswith(("PI_", "BUGFIX_PI", "FLOTILLA_STATIONS"))]:
             del env[k]
-        repro = "repros" in state
-        argv = [sys.executable, os.path.join(root, "bugfix", entry), "--repo", f.repo, "--worker-model", "bugfix-flash",
-                "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
-                "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
-                "--scratch", f.scratch, *([] if repro else ["--no-repro"]), *args]
-        p = subprocess.run(argv, env=env, cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        common = ["--repo", f.repo, "--setup", "true", "--test-cmd", f"python3 {f.suite} run %s",
+                  "--related-cmd", f"python3 {f.suite} related %s", "--scratch", f.scratch, *([] if "repros" in state else ["--no-repro"])]
+        if entry == "fix2.py":
+            env.update(FLOTILLA_STATIONS=json.dumps(stations_doc(settings, code)), FLOTILLA_CODE_ROOT=code, FLOTILLA_ROUTINE="bugfix/fix")
+            tail = [*common, *flags]
+        else:
+            tail = [*common, "--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer",
+                    *old]
+        p = subprocess.run([sys.executable, os.path.join(root, "bugfix", entry), *tail], env=env, cwd=root, stdin=subprocess.DEVNULL,
+                           capture_output=True, text=True)
         if not os.path.exists(plan):
             raise RuntimeError(f"{name}: {entry} at {root} wrote no plan (exit {p.returncode}): {(p.stdout + p.stderr)[-800:]}")
         with open(plan) as fh:
