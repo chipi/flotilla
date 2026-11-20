@@ -38,6 +38,7 @@ TRIAGE_ENV_FILE=<the triage fleet's secrets file>     # copied into the worker's
 TRIAGE_READ_ENV_FILE=<the read-only credentials, for the shadow worker>  # optional: see "The shadow worker"
 TRIAGE_STATE_VOLUME=flotilla-triage-state-shadow      # the triage fleet's state (the live state volume)
 FLOTILLA_ERRORS_DSN_FILE=<file with SENTRY_DSN=...>   # optional: flotillad's GlitchTip DSN, copied into its secrets volume
+FLOTILLA_ERRORS_SHADOW_DSN_FILE=<file with SENTRY_DSN=...>  # optional: the shadow runs' GlitchTip project, copied beside it
 TRIAGE_DEPLOY_LOG=<the triage fleet's deploys.tsv>     # optional: deploy.sh appends a row per deploy and rollback (the triage fleet's own)
 FLOTILLA_FLEETS_REPO=<checkout of the private fleets repo>  # optional: the installation's own fleets (deploy_fleets.sh)
 FLOTILLA_FLEETS_DIR=<FLOTILLA_HOME>/fleets            # optional: mounted over the image's fleets (fleets.yml); unset: the image's
@@ -68,6 +69,7 @@ timezone: <Region/City>                 # the budget day
 vm_url: http://victoriametrics:8428     # through the proxy
 otlp_traces_url: http://victoriatraces:10428/insert/opentelemetry/v1/traces
 errors_dsn_file: /run/flotilla/errors.env     # optional: secrets.sh copies FLOTILLA_ERRORS_DSN_FILE here
+errors_shadow_dsn_file: /run/flotilla/errors-shadow.env  # optional: FLOTILLA_ERRORS_SHADOW_DSN_FILE; a shadow run's errors go there
 callers_file: /etc/flotilla/callers.yaml
 workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
@@ -270,7 +272,9 @@ The compose service is `worker-triage-shadow` (profile `shadow`), with its own p
 3. Its proxy's allowlist: `FLOTILLA_CONFIG/egress-shadow-acl.yaml`, the same form as
    `egress-acl.yaml` (a shadow reads what the live fleet reads; start from a copy). Every request
    a shadow makes is in `docker logs flotilla-egress-shadow`, apart from the live proxy's.
-4. `flotillad.yaml`: `shadows: {enabled: true}`. `flotillad -check` then lists each routine's
+4. `flotillad.yaml`: `shadows: {enabled: true}`, and `errors_shadow_dsn_file:
+   /run/flotilla/errors-shadow.env` with `FLOTILLA_ERRORS_SHADOW_DSN_FILE` in `.env` (a GlitchTip project
+   of its own, so a shadow's errors never reach the live project). `flotillad -check` then lists each routine's
    shadow versions and the worker they run on, and refuses a routine with several versions whose
    shadow worker (`shadow_worker:` in `routine.yaml`, default `<worker>-shadow`) is not a worker
    declared `shadow: true`.

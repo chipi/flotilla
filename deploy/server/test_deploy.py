@@ -574,5 +574,44 @@ class DeployFleetsTest(unittest.TestCase):
         self.assertIn("FLEETS CHECK FAIL: usage:", r.stdout)
 
 
+class SecretsTest(unittest.TestCase):
+    """secrets.sh with a stub docker: which file lands in which volume under which name."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.home = os.path.join(self.tmp, "home"); os.makedirs(self.home)
+        self.cfg = os.path.join(self.tmp, "cfg"); os.makedirs(self.cfg)
+        for f in ("cli.token", "worker-triage.token", "fleet.env", "dsn.env", "dsn-shadow.env"):
+            with open(os.path.join(self.cfg, f), "w") as fh:
+                fh.write("x\n")
+        bindir = os.path.join(self.tmp, "bin"); os.makedirs(bindir)
+        self.calls = os.path.join(self.tmp, "calls")
+        with open(os.path.join(bindir, "docker"), "w") as f:
+            f.write('#!/bin/bash\necho "$*" >> "$DOCKER_CALLS"\ncase " $* " in *" run --rm -i "*) cat >/dev/null;; esac\nexit 0\n')
+        os.chmod(os.path.join(bindir, "docker"), 0o755)
+        # secrets.sh puts the system paths first, so the stub is named, never found on PATH: no real engine is touched
+        self.env = dict(os.environ, FLOTILLA_DOCKER=os.path.join(bindir, "docker"), FLOTILLA_HOME=self.home, DOCKER_CALLS=self.calls)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_secrets(self, extra):
+        with open(os.path.join(self.home, ".env"), "w") as f:
+            f.write(f"FLOTILLA_CONFIG={self.cfg}\nTRIAGE_ENV_FILE={self.cfg}/fleet.env\nFLOTILLA_ERRORS_DSN_FILE={self.cfg}/dsn.env\n" + extra)
+        r = sh(["bash", os.path.join(HERE, "secrets.sh"), "sha-1234567"], env=self.env, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r.stdout
+
+    def test_the_shadow_dsn_goes_beside_the_live_one(self):
+        out = self.run_secrets(f"FLOTILLA_ERRORS_SHADOW_DSN_FILE={self.cfg}/dsn-shadow.env\n")
+        self.assertIn("flotilla-flotillad-secrets/errors.env <- dsn.env (600, uid 65532)", out)
+        self.assertIn("flotilla-flotillad-secrets/errors-shadow.env <- dsn-shadow.env (600, uid 65532)", out)
+
+    def test_no_shadow_dsn_without_the_setting(self):
+        out = self.run_secrets("")
+        self.assertIn("flotilla-flotillad-secrets/errors.env <- dsn.env", out)
+        self.assertNotIn("errors-shadow.env", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

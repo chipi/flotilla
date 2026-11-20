@@ -20,7 +20,7 @@ H="${FLOTILLA_HOME:-$HOME/flotilla}"
 TAG="${1:?usage: secrets.sh sha-<7> [--seed-state VOLUME DIR]}"
 set -a; . "$H/.env"; set +a
 IMG="${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-triage:$TAG"
-D="docker ${DOCKER_CONTEXT:+--context $DOCKER_CONTEXT}"
+D="${FLOTILLA_DOCKER:-docker} ${DOCKER_CONTEXT:+--context $DOCKER_CONTEXT}"   # FLOTILLA_DOCKER: a stub, in the tests
 V="${FLOTILLA_VOLUME_PREFIX:-flotilla}"
 
 put() {  # put <volume> <name in volume> <owner uid> <host file>
@@ -112,6 +112,11 @@ fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"
+fi
+# optional: the DSN of the GlitchTip project that takes the shadow runs' errors, apart from the live ones
+# (flotillad.yaml errors_shadow_dsn_file: /run/flotilla/errors-shadow.env)
+if [ -n "${FLOTILLA_ERRORS_SHADOW_DSN_FILE:-}" ]; then
+  put $V-flotillad-secrets errors-shadow.env 65532 "$FLOTILLA_ERRORS_SHADOW_DSN_FILE"
 fi
 # optional: the host agents' intermediate CA (flotillad.yaml hosts.ca_dir: /run/flotilla), from
 # `flotilla ca intermediate ROOTDIR $FLOTILLA_CONFIG/host-ca`; the root's key is never among them
