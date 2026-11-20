@@ -156,6 +156,23 @@ class SeamSuite(unittest.TestCase):
         return {"HTTP_PROXY": proxy.url, "HTTPS_PROXY": proxy.url, "NO_PROXY": "127.0.0.1,localhost,::1", "NODE_USE_ENV_PROXY": "1"}
 
     @classmethod
+    def run_main(cls, f, args):
+        """One run of the chain in this process with the chain's flags `args`: (plan, what main returned). The chain is bugfix/fix.py."""
+        return f.run(*args)
+
+    @classmethod
+    def killed_setup(cls, f):
+        """Before the killed run's environment is made from f.extra_env: what the chain that is started as a process needs in it."""
+
+    @classmethod
+    def killed_command(cls, f):
+        """The chain as a process, for the run that is killed and resumed."""
+        return [sys.executable, os.path.join(HERE, "fix.py"), "--repo", f.repo, "--worker-model", "bugfix-flash",
+                "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
+                "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
+                "--scratch", f.scratch, *cls.flags()]
+
+    @classmethod
     def parse(cls, stream_text):
         import adapter
         return adapter.get(cls.NAME).parse(stream_text, {})
@@ -277,7 +294,7 @@ class SeamSuite(unittest.TestCase):
         more = ["--spend-file", ".spend", "--spend-poll", "0.05", "--spend-settle", "2", "--spend-stable", "0.2"] if spend else []
         with unittest.mock.patch.dict(os.environ, env), unittest.mock.patch.object(fix.Chain, "review_prompt", spy), \
                 contextlib.redirect_stdout(out), stdin_closed():
-            plan, _ = f.run(*cls.flags(), *more, *extra)
+            plan, _ = cls.run_main(f, [*cls.flags(), *more, *extra])
         run = Run(plan=plan, out=out.getvalue(), elapsed=time.time() - t0, review_prompts=prompts, fixture=f, home=home)
         cls.evidence(run, ep, proxy, state, f)
         if calls:
@@ -299,6 +316,7 @@ class SeamSuite(unittest.TestCase):
         cls.addClassCleanup(ep.close)
         cls.addClassCleanup(proxy.close)
         f, state = cls.fixture("killed", ep, proxy)
+        cls.killed_setup(f)
         home = os.path.join(cls.tmp, "killed-home")
         os.makedirs(home)
         calls = os.path.join(state, "calls.jsonl")
@@ -310,10 +328,7 @@ class SeamSuite(unittest.TestCase):
                                              "data": {"issue": {"repo": f.repo, "number": 12, "title": "value is 1",
                                                                 "body": "value() returns 1, want 2", "url": "u"}}}),
                    FLOTILLA_CALLS_FILE=calls, **f.extra_env)
-        cmd = [sys.executable, os.path.join(HERE, "fix.py"), "--repo", f.repo, "--worker-model", "bugfix-flash",
-               "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer", "--setup", "true",
-               "--test-cmd", f"python3 {f.suite} run %s", "--related-cmd", f"python3 {f.suite} related %s",
-               "--scratch", f.scratch, *cls.flags()]
+        cmd = cls.killed_command(f)
         p = subprocess.Popen(cmd, env=env, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True)
         cls.addClassCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))

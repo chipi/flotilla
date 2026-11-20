@@ -264,6 +264,8 @@ def translate(args, rules):
             set_["timeout"], i = int(v), i + 1
         elif a == "--kickback-max":
             set_["version"]["kickback_max"], i = int(v), i + 1
+        elif a == "--review-kickback-max":
+            set_["version"]["review_kickback_max"], i = int(v), i + 1
         else:
             flags.append(a)
         i += 1
@@ -274,6 +276,14 @@ def translate(args, rules):
     for k, v in set_["version"].items():
         old += ["--" + k.replace("_", "-"), str(v)]
     return flags, old, set_
+
+
+def code_root(dst, root=ROOT):
+    """A code root at dst with the version's two texts (copies of bugfix/fleet_rules.md and agents/repro.md) where stations_doc names them."""
+    os.makedirs(os.path.join(dst, FLEET_DIR), exist_ok=True)
+    shutil.copy(os.path.join(root, "bugfix", "fleet_rules.md"), os.path.join(dst, FLEET_DIR, "rules.md"))
+    shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "repro.md"), os.path.join(dst, FLEET_DIR, "agent.md"))
+    return dst
 
 
 def stations_doc(settings, code):
@@ -303,10 +313,7 @@ def run_scenario(name, root, entry, roots=()):
             with open(os.path.join(f.state, fname), "w") as fh:
                 fh.write("".join(x + "\n" for x in items))
         leaves = install_leaves(f, root)
-        code = os.path.join(f.d, "code")
-        os.makedirs(os.path.join(code, FLEET_DIR))
-        shutil.copy(os.path.join(root, "bugfix", "fleet_rules.md"), os.path.join(code, FLEET_DIR, "rules.md"))
-        shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "repro.md"), os.path.join(code, FLEET_DIR, "agent.md"))
+        code = code_root(os.path.join(f.d, "code"), root)
         flags, old, settings = translate(args, os.path.join(code, FLEET_DIR, "rules.md"))
         plan = os.path.join(f.d, "plan.json")
         env = dict(os.environ, FLOTILLA_PLAN_FILE=plan, FLOTILLA_MODELS=json.dumps(tf.MODELS), FAKE_STATE=f.state, DIFF_LEAVES=leaves,
