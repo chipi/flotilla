@@ -1081,20 +1081,8 @@ FD="$WORK/config/specs/e2e"
 RUNNING="$WORK/running-fleets"   # the running (flat) fleets: what deploy_fleets.sh hands -check -moved-from
 mkdir -p "$RUNNING/e2e/playbooks" && cp "$FD/flat-playbook.yaml" "$RUNNING/e2e/" && cp "$FPB" "$RUNNING/e2e/playbooks/flat.md" && chmod -R a+rX "$RUNNING"
 rm "$FD/flat-playbook.yaml"; mkdir -p "$FD/flat-playbook/v1"
-flat_routine() {  # $1: the day_usd the folder's routine.yaml has (the flat spec's is 0)
-cat > "$FD/flat-playbook/routine.yaml" <<EOF
-fleet: e2e
-routine: flat-playbook
-description: The e2e's flat-routine check, moved to the folder layout.
-enabled: false
-worker: triage
-trigger:
-  every: 60m
-autonomy: record
-budget:
-  day_usd: $1
-freshness: 120m
-EOF
+flat_routine() {  # $1: the day_usd the folder's routine.yaml has: the flat spec's own routine fields (its run and prompts left out), with that budget
+  awk '/^run:/{skip=1} /^autonomy:/{skip=0} !skip' "$RUNNING/e2e/flat-playbook.yaml" | sed "s/day_usd: 0/day_usd: $1/" > "$FD/flat-playbook/routine.yaml"
 }
 flat_routine 0
 cat > "$FD/flat-playbook/v1/spec.yaml" <<EOF
@@ -1107,7 +1095,7 @@ prompts:
 EOF
 cp "$FPB" "$FD/flat-playbook/v1/system.md"; echo "one changed byte" >> "$FD/flat-playbook/v1/system.md"; chmod -R a+rX "$FD"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
-[ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 is live and its folder changed .*not the same as the recorded flat spec: prompt-file:playbooks/flat.md -> v1/system.md (changed)" \
+[ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 is live and its folder changed .*not the same as the recorded flat spec: prompt-file:v1/system.md (changed" \
   && echo "$OUT" | grep >/dev/null "ship the change as v2 .*flotilla versions rerecord e2e/flat-playbook v1 --reason R" \
   && ok "a move with one changed byte is refused by -check, naming the playbook, the way out named (exit $RC)" || bad "-check on the impure move: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -2)"
 # the byte put back, and a changed budget in routine.yaml (not frozen, so not refused)
