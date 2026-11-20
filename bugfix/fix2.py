@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime"))
 import adapter  # noqa: E402
+import callrec_pi  # noqa: E402
 import declared_prompts  # noqa: E402
 import fix  # noqa: E402
 import harness_pi  # noqa: E402
@@ -188,11 +189,45 @@ class Chain(fix.Chain):
         The adapter writes pi/models.json for the call's one route, so the run's own file, which the verdict and advisor leaves read,
         is put back when it returns, however it returns."""
         try:
-            return adapter.execute(harness_pi.PI, req, self.env if env is None else env, run=fix.sh)
+            got = adapter.execute(harness_pi.PI, req, self.env if env is None else env, run=fix.sh)
         except adapter.HarnessError as e:
             raise fix.Stop(f"{req.station}: {e}") from None
         finally:
             self.restore_models()
+        self.keep(got[0], req, got[1])
+        return got
+
+    def keep(self, ep, req, code):
+        """The episode as <run>/episodes/<n>-<station>.json, a version 2 document (adapter.episode_doc: `station`, not v1's `role`),
+        for evaluation. pi's calls and spend have one source: its session files (calls.record, spend.pi_cost), never this file as
+        well: the file is marked recorded before it exists, so a run that resumes does not write its calls again, and
+        spend.episode_cost counts the episodes of the harnesses that are not pi. A file that cannot be written is said and the run goes on."""
+        self.episode_n += 1
+        stem = f"{self.episode_n:03d}-{req.station}"
+        try:
+            os.makedirs(os.path.join(self.run_dir, adapter.EPISODES), exist_ok=True)
+            open(os.path.join(self.run_dir, adapter.EPISODES, stem + ".json" + callrec_pi.RECORDED), "w").close()
+            doc = adapter.episode_doc(ep, req.model.alias, self.episode_n, code, harness_pi.PI.resume_ref(ep))
+            doc["calls_role"] = fix.CALLS_ROLE.get(req.station, req.station)
+            adapter.write_episode(self.run_dir, stem, doc)
+        except OSError as e:
+            print(f"BUGFIX FIX #{self.n} no episode file for {req.station}: {e}", flush=True)
+
+    def adopt(self, ck):
+        super().adopt(ck)
+        self.forget_pi_episodes()
+
+    def forget_pi_episodes(self):
+        """A resumed run numbers its sessions and episode files by first appearance (callrec_pi.Recorder.skip_existing); the pi episode
+        files are a second record of sessions that are numbered already, and would shift every later session's number."""
+        for f in list(self.calls.seq):
+            if f.endswith(".json") and os.path.dirname(f) == self.calls.episodes:
+                try:
+                    with open(f) as fh:
+                        if json.load(fh).get("harness") == "pi":
+                            del self.calls.seq[f]
+                except (OSError, ValueError, AttributeError):
+                    pass
 
     # fix.Chain runs the fix and the reproducer as bash leaves (harnesses/pi.sh, repro.sh) through the module's `sh`. These two run
     # the same steps with the leaf's call replaced: while one of them runs, a command that is one of those leaves is the station's

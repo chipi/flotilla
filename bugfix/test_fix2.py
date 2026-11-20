@@ -17,6 +17,8 @@ sys.path.insert(0, HERE)
 import fix  # noqa: E402
 import fix2  # noqa: E402
 import adapter  # noqa: E402  (fix2 puts runtime/ on the path)
+import callrec_pi  # noqa: E402
+import spend  # noqa: E402
 import harness_pi  # noqa: E402
 import harness_prompts  # noqa: E402
 import pi_config  # noqa: E402
@@ -57,8 +59,9 @@ class World:
                                             "limits": dict(base, timeout="10m")}}}
         for k, v in limits.items():
             self.doc["stations"]["fix"]["limits"][k] = v
+        self.calls = os.path.join(self.tmp, "calls.jsonl")
         self.environ = {"FLOTILLA_MODELS": json.dumps(tf.MODELS), "FLOTILLA_STATIONS": json.dumps(self.doc),
-                        "FLOTILLA_CODE_ROOT": self.code, "FLOTILLA_ROUTINE": "bugfix/fix"}
+                        "FLOTILLA_CODE_ROOT": self.code, "FLOTILLA_ROUTINE": "bugfix/fix", "FLOTILLA_CALLS_FILE": self.calls}
         self.st = stations.load(self.environ)
         self.case = {"id": "case-1", "data": {"issue": {"repo": "example/shop", "number": 12, "title": "t", "body": "b"}}}
 
@@ -295,6 +298,98 @@ class Station(unittest.TestCase):
         self.assertTrue(seen[0][1]["check"])
         self.assertIsNot(fix.sh, None)
         self.assertEqual(fix.sh.__name__, "sh", "the swap ends with the step")
+
+
+SESSION = os.path.join(HERE, "testdata", "pi", "session.jsonl")
+
+
+def golden_session():
+    """pi's saved session of testdata/pi/session.jsonl (two assistant messages, one bill of 0.5) and the stream pi printed for it."""
+    with open(SESSION) as f:
+        lines = [json.loads(x) for x in f][:-1]   # without its last, failed, message
+    stream = "".join(json.dumps(x if x["type"] == "session" else {"type": "message_end", "message": x["message"]}) + "\n" for x in lines)
+    return "".join(json.dumps(x) + "\n" for x in lines), stream
+
+
+class Episodes(unittest.TestCase):
+    """pi's episodes as version 2 files, and pi's calls and spend counted once: from its session files."""
+
+    def setUp(self):
+        self.w = World(self)
+        self.c = self.w.chain()
+        os.makedirs(self.c.wt)
+        self.session, self.stream = golden_session()
+        self.n = 0
+
+    def run_station(self, station="fix", alias="bugfix-flash", resume=None):
+        def run(cmd, cwd, env=None, timeout=None, **kw):
+            self.n += 1
+            d = os.path.join(self.c.run_dir, "pi", "sessions", "--wt--")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, f"s{self.n}.jsonl"), "w") as f:
+                f.write(self.session)
+            return 0, self.stream
+        req = adapter.Request(station=station, prompt="p", system_path=None, model=self.c.route(alias), tools="all", resume=resume,
+                              max_turns=0, workdir=self.c.wt, run_dir=self.c.run_dir, timeout=60)
+        with unittest.mock.patch.object(fix, "sh", run):
+            return self.c.execute(req)
+
+    def episodes(self):
+        d = os.path.join(self.c.run_dir, "episodes")
+        return sorted(x for x in os.listdir(d)) if os.path.isdir(d) else []
+
+    def test_a_station_leaves_a_version_2_episode_file_of_the_harness_pi(self):
+        self.run_station("fix")
+        self.run_station("review", "bugfix-reviewer")
+        self.assertEqual(self.episodes(), ["001-fix.json", "001-fix.json.recorded", "002-review.json", "002-review.json.recorded"])
+        doc = adapter.read_episode(os.path.join(self.c.run_dir, "episodes", "001-fix.json"))
+        self.assertEqual((doc["version"], doc["harness"], doc["station"], doc["alias"], doc["seq"], doc["code"]),
+                         (2, "pi", "fix", "bugfix-flash", 1, 0))
+        self.assertEqual((doc["session_id"], doc["resume_ref"], doc["calls_role"], len(doc["turns"])), ("sess-golden", "sess-golden", "coder", 2))
+        self.assertNotIn("role", doc, "version 1 says `role`; the platform's own document says `station`")
+        self.assertEqual(adapter.read_episode(os.path.join(self.c.run_dir, "episodes", "002-review.json"))["alias"], "bugfix-reviewer")
+
+    def test_the_spend_of_a_pi_run_is_its_sessions_and_not_also_its_episode_files(self):
+        self.run_station("fix")
+        run_dir, agent = self.c.run_dir, os.path.join(self.c.run_dir, "pi")
+        with open(os.path.join(HERE, "testdata", "golden_pi_parse.json")) as f:
+            v1 = json.load(f)["streams"]["session.jsonl"]["pi_cost"]
+        with open(os.path.join(run_dir, "episodes", "001-fix.json")) as f:
+            self.assertEqual(json.load(f)["cost_est"], 0.5, "the episode file holds the figure the sessions hold")
+        self.assertEqual((spend.pi_cost(agent), spend.episode_cost(run_dir)), (v1, 0.0))
+        self.assertEqual(spend.pi_cost(agent) + spend.episode_cost(run_dir), v1, "run_case's sum is the v1 figure")
+        self.assertEqual(spend.pi_cost(agent, 0.5) + spend.episode_cost(run_dir, 0.0), 0.0, "a resumed run's baseline is the sessions'")
+
+    def test_the_calls_of_a_pi_run_are_its_sessions_and_not_also_its_episode_files(self):
+        self.run_station("fix")
+        self.c.calls.record("coder", "bugfix-flash")
+        self.c.calls.record_pending_episodes()
+        with open(self.w.calls) as f:
+            lines = [json.loads(x) for x in f]
+        self.assertEqual([(c["role"], c["step"]) for c in lines if c.get("kind") != "step"], [("coder", 1), ("coder", 2)])
+
+    def test_version_2_files_of_other_harnesses_are_read_by_the_spend_and_the_calls(self):
+        """spend.episode_cost and callrec_pi accept version 2: a harness other than pi counts, and is recorded when no marker says it was."""
+        ep = adapter.Episode(harness="fakeh", station="fix", turns=[adapter.Turn(n=1, model="m", usage=adapter.usage_dict(10, 2))],
+                             cost_est=0.2)
+        doc = dict(adapter.episode_doc(ep, "bugfix-flash", 1, 0, ""), calls_role="coder")
+        adapter.write_episode(self.c.run_dir, "001-fix", doc)
+        self.assertEqual(doc["version"], 2)
+        self.assertEqual(spend.episode_cost(self.c.run_dir), 0.2)
+        self.c.calls.record_pending_episodes()
+        with open(self.w.calls) as f:
+            self.assertEqual([(c["role"], c["harness"]) for c in map(json.loads, f)], [("coder", "fakeh")])
+
+    def test_a_resumed_run_does_not_number_pi_s_episode_files_among_its_sessions(self):
+        self.run_station("fix")
+        ep = adapter.Episode(harness="fakeh", station="fix")
+        adapter.write_episode(self.c.run_dir, "002-fix", dict(adapter.episode_doc(ep, "a", 2, 0, ""), calls_role="coder"))
+        self.c.calls.skip_existing()
+        names = sorted(os.path.basename(f) for f in self.c.calls.seq)
+        self.assertEqual(names, ["001-fix.json", "002-fix.json", "s1.jsonl"])
+        self.c.forget_pi_episodes()
+        self.assertEqual(sorted(os.path.basename(f) for f in self.c.calls.seq), ["002-fix.json", "s1.jsonl"])
+        self.assertEqual(adapter.last_episode(self.c.run_dir), 2, "the episode counter still goes on from the files")
 
 
 if __name__ == "__main__":
