@@ -3,7 +3,9 @@
 What the stations say and the flags may not; the model route the adapter is given (pi's catalog entry survives: bugfix/pi_config.py's
 context windows and reply-limit floor); the pi calls of the three stations as the differential harness (bugfix/differential.py) sees
 them against the chain as it was before the switch. test_fix.py and test_pi_golden.py keep pinning fix.py."""
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -390,6 +392,90 @@ class Episodes(unittest.TestCase):
         self.c.forget_pi_episodes()
         self.assertEqual(sorted(os.path.basename(f) for f in self.c.calls.seq), ["002-fix.json", "s1.jsonl"])
         self.assertEqual(adapter.last_episode(self.c.run_dir), 2, "the episode counter still goes on from the files")
+
+
+class Resumption(unittest.TestCase):
+    """ADR-0019 across the two chains: a checkpoint of one is not continued by the other (a session of one harness is not continued by
+    another: the checkpoint names the harness of each role, fix.load_checkpoint compares them), and each continues its own."""
+
+    CASE = "case-20261115-abc"
+
+    def setUp(self):
+        self.w = World(self)
+        self.f = tf.Fixture([], [])
+        self.addCleanup(self.f.close)
+        self.home = os.path.join(self.f.d, "home")
+        os.makedirs(self.home)
+
+    def env(self, resume=None):
+        f = self.f
+        env = dict(os.environ, FLOTILLA_PLAN_FILE=os.path.join(f.d, "plan.json"), FAKE_STATE=f.state, GIT_ALLOW_PROTOCOL="file",
+                   GIT_REMOTE_BASE=f.remotes, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+                   FLOTILLA_CASE=json.dumps({"id": self.CASE, "kind": "code_bug", "target": f"repo:{f.repo}/issues/12",
+                                             "data": {"issue": {"repo": f.repo, "number": 12, "title": "value is 1", "body": "b", "url": "u"}}}),
+                   HOME=self.home, **self.w.environ)
+        if resume:
+            env["FLOTILLA_RESUME"] = json.dumps(resume)
+        return env
+
+    def run_dir(self):
+        return os.path.join(self.f.scratch, "runs", self.CASE)
+
+    def start(self, chain_module, resume=None):
+        """One run of the chain, whose loop is replaced by: check the base out and checkpoint it (as the real loop does), or note what
+        it was restored from; a fresh run is then killed (Terminated), so its directory and checkpoint are left. Returns (what the chain
+        was restored from, its output)."""
+        got, out = [], io.StringIO()
+
+        def rounds(chain):
+            got.append(chain.restored)
+            if not chain.restored:
+                chain.checkout()
+                chain.save("checkout", None)
+                raise fix.Terminated()
+            return {"outcome": "escalate", "detail": "resumed"}
+        common = ["--repo", self.f.repo, "--setup", "true", "--scratch", self.f.scratch, "--no-repro"]
+        models = ["--worker-model", "bugfix-flash", "--advisor-model", "bugfix-reviewer", "--reviewer-model", "bugfix-reviewer"]
+        with unittest.mock.patch.object(fix.Chain, "rounds", rounds), contextlib.redirect_stdout(out):
+            try:
+                if chain_module == "fix":
+                    fix.main(common + models, environ=self.env(resume))
+                else:
+                    fix2.main(common, environ=self.env(resume))
+            except fix.Terminated:
+                pass
+        return got, out.getvalue()
+
+    def checkpoint(self):
+        with open(os.path.join(self.run_dir(), fix.CHECKPOINT)) as f:
+            return json.load(f)
+
+    def test_the_checkpoints_name_the_harness_of_each_role(self):
+        self.start("fix")
+        self.assertEqual({k: self.checkpoint()[k] for k in fix.HARNESS_KEYS}, {"harness": "pi", "repro_harness": "pi", "review_harness": "pi"})
+        self.start("fix2")
+        self.assertEqual({k: self.checkpoint()[k] for k in fix.HARNESS_KEYS},
+                         {"harness": "pi", "repro_harness": fix2.ADAPTER_KEY, "review_harness": fix2.ADAPTER_KEY})
+
+    def test_a_v1_checkpoint_starts_fresh_under_fix2(self):
+        self.start("fix")
+        got, out = self.start("fix2", resume={"run_id": "r1", "spend_usd": 0})
+        self.assertEqual(got, [None], "a fresh start")
+        self.assertIn(f"no usable checkpoint (ValueError: it was made with repro_harness 'pi', this run's flags say '{fix2.ADAPTER_KEY}')", out)
+
+    def test_a_fix2_checkpoint_starts_fresh_under_v1(self):
+        self.start("fix2")
+        got, out = self.start("fix", resume={"run_id": "r1", "spend_usd": 0})
+        self.assertEqual(got, [None])
+        self.assertIn(f"it was made with repro_harness '{fix2.ADAPTER_KEY}', this run's flags say 'pi'", out)
+
+    def test_each_chain_continues_its_own_checkpoint(self):
+        for module in ("fix", "fix2"):
+            with self.subTest(module):
+                fresh = self.start(module)[0]
+                self.assertEqual(fresh, [None])
+                got, out = self.start(module, resume={"run_id": "r1", "spend_usd": 0})
+                self.assertEqual([c["phase"] for c in got], ["checkout"], out)
 
 
 if __name__ == "__main__":
