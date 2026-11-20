@@ -1165,3 +1165,48 @@ func (s *Store) stateOf(t *testing.T, routine string, n int) (RoutineVersion, bo
 	}
 	return RoutineVersion{}, false, err
 }
+
+// A flat v1 moved to the folder layout and proven unchanged by the caller (LoadedVersion.Moved) is re-recorded: the row takes the folder's
+// hash and manifest, the event lists what was compared. The proof is the caller's; without it a folder v1 stays frozen, and a row that
+// was not recorded from a flat spec is never followed.
+func TestEnsureVersionsRecordsAProvenFolderMove(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	flat := LoadedVersion{Version: 1, Hash: "h1", Legacy: true, Manifest: map[string]string{"run": "r1", "prompts": "p1", "prompt-file:playbooks/x.md": "b1"}}
+	if _, err := s.EnsureVersions(ctx, rt, []LoadedVersion{flat}, "flotillad"); err != nil {
+		t.Fatal(err)
+	}
+	folder := LoadedVersion{Version: 1, Hash: "h2", Manifest: map[string]string{"spec.yaml": "s1", "x.md": "b1"}}
+
+	// no proof: frozen, nothing written
+	n0, _ := s.Events(ctx, 1000)
+	if res, err := s.EnsureVersions(ctx, rt, []LoadedVersion{folder}, "flotillad"); err != nil || len(res.Rerecorded) != 0 {
+		t.Fatalf("unproven: %+v %v", res, err)
+	}
+	if v, _, _ := s.LiveVersion(ctx, rt); v.Hash != "h1" {
+		t.Fatalf("an unproven folder move changed the row: %+v", v)
+	}
+	if n1, _ := s.Events(ctx, 1000); len(n1) != len(n0) {
+		t.Fatal("an unproven move wrote an event")
+	}
+
+	folder.Moved = []string{"run", "prompt-file:playbooks/x.md -> v1/x.md", "prompts"}
+	res, err := s.EnsureVersions(ctx, rt, []LoadedVersion{folder}, "flotillad")
+	if err != nil || len(res.Rerecorded) != 1 {
+		t.Fatalf("proven: %+v %v", res, err)
+	}
+	v, _, _ := s.LiveVersion(ctx, rt)
+	if v.Hash != "h2" || v.State != VersionLive || v.Manifest["spec.yaml"] != "s1" || v.Manifest["run"] != "" {
+		t.Fatalf("row %+v", v)
+	}
+	e := lastVersionEvent(t, s, "version.update", rt+"@v1")
+	const want = "legacy v1 (flat) moved to the folder layout, unchanged (run, prompt-file:playbooks/x.md -> v1/x.md, prompts): re-recorded: hash h1 -> h2"
+	if e.Actor != "flotillad" || e.Detail != want {
+		t.Fatalf("event %+v, want %s", e, want)
+	}
+	// the row now names files, not keys: a second, different proven "move" does not follow it
+	other := LoadedVersion{Version: 1, Hash: "h3", Manifest: map[string]string{"spec.yaml": "s2"}, Moved: []string{"run"}}
+	if res, err := s.EnsureVersions(ctx, rt, []LoadedVersion{other}, "flotillad"); err != nil || len(res.Rerecorded) != 0 {
+		t.Fatalf("a folder row followed a move: %+v %v", res, err)
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -21,18 +20,9 @@ var flatBeforeStep5 = filepath.Join("testdata", "flat-before-step5")
 // to the fleet's folder, so it names the file's new place; its role and its content hash must be the same.
 func movedRoutine(t *testing.T, j *Routine, version int) Routine {
 	t.Helper()
-	vj, err := j.WithVersion(version)
+	c, err := MovedView(j, version)
 	if err != nil {
 		t.Fatal(err)
-	}
-	c := *vj
-	c.Path, c.Hash, c.VersionHash, c.Versions, c.Version, c.Notes = "", "", "", nil, 0, nil
-	if c.Prompts != nil {
-		p := map[string]string{}
-		for role, f := range c.Prompts {
-			p[role] = path.Base(f)
-		}
-		c.Prompts = p
 	}
 	return c
 }
@@ -150,25 +140,8 @@ func TestMovedRoutinesAreEquivalentToTheirFlatSpecs(t *testing.T) {
 	t.Logf("%d routines moved from a flat spec to a folder, all equal", moved)
 }
 
-// differingFields names each field of two routines that are not deeply equal, with both values.
-func differingFields(a, b Routine) []string {
-	var out []string
-	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
-	for i := 0; i < va.NumField(); i++ {
-		if !reflect.DeepEqual(va.Field(i).Interface(), vb.Field(i).Interface()) {
-			out = append(out, fmt.Sprintf("%s is %s, flat %s", va.Type().Field(i).Name, short(va.Field(i).Interface()), short(vb.Field(i).Interface())))
-		}
-	}
-	return out
-}
-
-func short(v any) string {
-	s := fmt.Sprintf("%v", v)
-	if len(s) > 160 {
-		s = s[:160] + "..."
-	}
-	return s
-}
+// differingFields is the production comparison (move.go), the one -check's -moved-from line uses.
+func differingFields(a, b Routine) []string { return DifferingFields(a, b) }
 
 func versionNumbers(j *Routine) []int {
 	var out []int

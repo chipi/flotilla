@@ -608,3 +608,101 @@ func TestEachBoundRunnableAndRetired(t *testing.T) {
 		t.Fatalf("runnable %v, retired %v", run, retired)
 	}
 }
+
+// A flat v1 moved to the folder layout that loads to the same thing is re-recorded at the start, like a flat v1's edit, and the
+// comparison is the evidence: the plan line, and the version.update event, name each key and file that was equal.
+func TestPureFolderMoveIsReRecordedWithTheComparison(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d, folder := moveFixture(t)
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	was, _, _ := s.LiveVersion(ctx, "triage/cycle")
+	rs := load(t, folder)
+	stored, _ := s.AllVersions(ctx)
+	plan, err := Check(rs, stored)
+	const line = "triage/cycle v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/triage.md -> v1/system.md, prompts): re-recorded"
+	if err != nil || len(plan.Updates) != 1 || plan.Updates[0].Line() != line {
+		t.Fatalf("check: %v %+v", err, plan.Updates)
+	}
+	if now, _, _ := s.LiveVersion(ctx, "triage/cycle"); now.Hash != was.Hash {
+		t.Fatal("Check is read-only: it recorded something")
+	}
+	bound, plan, err := Reconcile(ctx, s, rs)
+	if err != nil || bound[0].Version != 1 || plan.States("triage/cycle") != "v1:live" {
+		t.Fatalf("reconcile: %v %s", err, plan.States("triage/cycle"))
+	}
+	now, _, _ := s.LiveVersion(ctx, "triage/cycle")
+	if now.Hash != rs[0].VersionHash || now.Hash == was.Hash || now.State != store.VersionLive || now.LiveAt != was.LiveAt || now.Manifest["spec.yaml"] == "" {
+		t.Fatalf("recorded %+v, was %+v", now, was)
+	}
+	e, _ := s.LatestEvent(ctx, "version.update", "triage/cycle@v1")
+	want := "legacy v1 (flat) moved to the folder layout, unchanged (run, prompt-file:playbooks/triage.md -> v1/system.md, prompts): re-recorded: hash " + was.Hash + " -> " + now.Hash
+	if e == nil || e.Actor != Actor || e.Detail != want {
+		t.Fatalf("event %+v, want %s", e, want)
+	}
+	stored, _ = s.AllVersions(ctx)
+	if plan, err = Check(load(t, folder), stored); err != nil || len(plan.Updates) != 0 {
+		t.Fatalf("second check: %v %+v", err, plan.Updates)
+	}
+}
+
+// Anything that is not provably the same is refused, as before, naming the key or file; and nothing is written.
+func TestImpureFolderMoveIsRefusedNamingTheDifference(t *testing.T) {
+	for _, c := range []struct{ name, file, body, want string }{
+		{"a changed command", "triage/cycle/v1/spec.yaml", strings.Replace(moveSpec, "a.py", "b.py", 1), "run (changed)"},
+		{"a changed prompt byte", "triage/cycle/v1/system.md", "the text!\n", "prompt-file:v1/system.md (changed"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := open(t)
+			d, folder := moveFixture(t)
+			if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+				t.Fatal(err)
+			}
+			was, _, _ := s.LiveVersion(ctx, "triage/cycle")
+			write(t, folder, c.file, c.body)
+			_, _, err := Reconcile(ctx, s, load(t, folder))
+			if err == nil {
+				t.Fatal("an impure move was accepted")
+			}
+			for _, w := range []string{"versions: triage/cycle v1 is live and its folder changed", c.want, "`flotilla versions rerecord triage/cycle v1 --reason R`"} {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("the refusal lacks %q: %v", w, err)
+				}
+			}
+			if now, _, _ := s.LiveVersion(ctx, "triage/cycle"); now.Hash != was.Hash {
+				t.Fatal("a refused start recorded something")
+			}
+		})
+	}
+}
+
+// The routine's own fields are outside the freeze: a move that also changes the budget is the same version.
+func TestFolderMoveWithAChangedBudgetIsStillTheSameVersion(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	d, folder := moveFixture(t)
+	if _, _, err := Reconcile(ctx, s, load(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, folder, "triage/cycle/routine.yaml", strings.Replace(routineYAML, "day_usd: 2", "day_usd: 7", 1))
+	if _, plan, err := Reconcile(ctx, s, load(t, folder)); err != nil || len(plan.Updates) != 1 {
+		t.Fatalf("%v %+v", err, plan.Updates)
+	}
+}
+
+const moveSpec = "run: {command: \"python3 a.py\", workdir: signal-fleet/mvp, timeout: 20m}\nprompts:\n  system: system.md\n"
+
+// moveFixture is a flat triage/cycle with a playbook, and the same routine in the folder layout: two fleets folders.
+func moveFixture(t *testing.T) (flatDir, folderDir string) {
+	t.Helper()
+	flatDir, folderDir = t.TempDir(), t.TempDir()
+	write(t, flatDir, "triage/cycle.yaml", routineYAML+"run: {command: \"python3 a.py\", workdir: signal-fleet/mvp, timeout: 20m}\nprompts:\n  system: playbooks/triage.md\n")
+	write(t, flatDir, "triage/playbooks/triage.md", "the text\n")
+	write(t, folderDir, "triage/cycle/routine.yaml", routineYAML)
+	write(t, folderDir, "triage/cycle/v1/spec.yaml", moveSpec)
+	write(t, folderDir, "triage/cycle/v1/system.md", "the text\n")
+	return flatDir, folderDir
+}

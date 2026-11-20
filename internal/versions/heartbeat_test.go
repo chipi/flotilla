@@ -56,10 +56,10 @@ func TestHeartbeatV1IsIdenticalInTheFolderLayout(t *testing.T) {
 	}
 }
 
-// A store that recorded the flat heartbeat's v1 hash (every store up to this change) refuses the folder layout:
-// the recipe differs, and a live version never changes. Moving a routine that is already live is step 6's
-// controlled re-record (not built): until then the freeze message names the files, which is the safe answer.
-func TestStoreThatRecordedTheFlatHeartbeatRefusesTheFolderLayout(t *testing.T) {
+// A store that recorded the flat heartbeat's v1 (every store up to step 5) accepts the folder layout: the shipped v1 is provably the same
+// (each recorded key and file equal), so the start re-records it and the event says so. This is the one routine shipped both ways: real data
+// for the proof, not a fixture.
+func TestStoreThatRecordedTheFlatHeartbeatReRecordsTheFolderLayout(t *testing.T) {
 	ctx := context.Background()
 	st := open(t)
 	raw, err := os.ReadFile(filepath.Join("testdata", "heartbeat_flat.yaml"))
@@ -86,21 +86,15 @@ func TestStoreThatRecordedTheFlatHeartbeatRefusesTheFolderLayout(t *testing.T) {
 		}
 	}
 	stored, _ := st.AllVersions(ctx)
-	_, err = Check(hb, stored)
-	if err == nil {
-		t.Fatal("the folder layout was accepted over a recorded flat v1")
+	plan, err := Check(hb, stored)
+	if err != nil || len(plan.Updates) != 1 || !strings.HasPrefix(plan.Updates[0].Line(), "platform/heartbeat v1 moved to the folder layout, unchanged (run") {
+		t.Fatalf("the shipped folder was not proven the flat v1: %v %+v", err, plan.Updates)
 	}
-	for _, want := range []string{"versions: platform/heartbeat v1 is live and its folder changed", "recorded ", "spec.yaml (added)", "run (missing)"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the freeze message lacks %q: %v", want, err)
-		}
+	if _, _, err := Reconcile(ctx, st, hb); err != nil {
+		t.Fatal(err)
 	}
-	if _, _, err := Reconcile(ctx, st, hb); err == nil {
-		t.Fatal("Reconcile accepted it too")
-	}
-	// the store is as it was: v1 live with the flat hash
 	live, ok, _ := st.LiveVersion(ctx, "platform/heartbeat")
-	if !ok || live.Hash != flat[0].Versions[0].Hash {
-		t.Fatalf("a refused start changed the record: %+v", live)
+	if !ok || live.Hash != hb[0].Versions[0].Hash || live.Hash == flat[0].Versions[0].Hash {
+		t.Fatalf("v1 was not re-recorded from the folder: %+v", live)
 	}
 }

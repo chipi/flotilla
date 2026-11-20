@@ -79,6 +79,9 @@ type LoadedVersion struct {
 	Manifest map[string]string
 	// Legacy: it is a flat spec's v1, which is not frozen (a changed one is re-recorded, see EnsureVersions).
 	Legacy bool
+	// Moved: a folder v1 that replaces a flat one and that spec.ProveMoved found unchanged: the keys and files compared and equal. The
+	// caller sets it after the proof; EnsureVersions then re-records the row from the folder layout and says what was compared.
+	Moved []string
 }
 
 const versionCols = `routine, version, hash, manifest, state, deployed_at, live_at, state_by, state_at, state_why, retired_kind, autonomy_at_promote, promote_evidence`
@@ -211,6 +214,17 @@ func (s *Store) EnsureVersions(ctx context.Context, routine string, loaded []Loa
 				return res, err
 			}
 			res.Updated = append(res.Updated, lv.Version)
+		case (row.State == VersionLive || row.State == VersionPrevious) && len(lv.Moved) > 0 && !lv.Legacy && row.Hash != lv.Hash && RecordedLegacy(row):
+			// A flat v1 moved to the folder layout, proven unchanged against its recorded manifest by the caller: the row follows the folder.
+			if _, err := tx.ExecContext(ctx, `UPDATE routine_versions SET hash = ?, manifest = ? WHERE routine = ? AND version = ?`,
+				lv.Hash, string(manifest), routine, lv.Version); err != nil {
+				return res, err
+			}
+			detail := "legacy v1 (flat) moved to the folder layout, unchanged (" + strings.Join(lv.Moved, ", ") + "): re-recorded: hash " + row.Hash + " -> " + lv.Hash
+			if err := addVersionEvent(ctx, tx, at, actor, "deploy", "version.update", routine, lv.Version, detail); err != nil {
+				return res, err
+			}
+			res.Rerecorded = append(res.Rerecorded, lv.Version)
 		case (row.State == VersionLive || row.State == VersionPrevious) && lv.Legacy && row.Hash != lv.Hash && RecordedLegacy(row):
 			// A flat spec's v1 is not frozen: its playbooks and settings change in the ordinary way, so the new hash and
 			// manifest are recorded and the event says what moved. A folder version stays frozen (Rerecord moves it).

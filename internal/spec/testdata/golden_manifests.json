@@ -161,11 +161,11 @@
     }
   },
   "e2e/flat-playbook@v1": {
-    "routine_hash": "9f97c63e8038",
-    "version_hash": "433e5a8a47bb3fd3fd5e08fdd0a6ae7536299e0589d540c346171108f8a29224",
+    "routine_hash": "a5d410b6e46f",
+    "version_hash": "fbd9f1f676094786e72059635d95333ee5330b7712399a6d33029cc532f04fde",
     "legacy": true,
     "manifest": {
-      "prompt-file:playbooks/flat.md": "691840a0a7be4c1c7d5d706dc7a4f71f4b580a72681d24b40bee295d2f1e0aa7",
+      "prompt-file:playbooks/flat.md": "320a5eb994fe0a351ac51bb6232666fbc4b8856f2ca0761129e25db9416b22bc",
       "prompts": "9996911f57f5090f98af5c2e47ab38740832a3cb53cb93c765da901902d003f8",
       "run": "6290b432dbeba98bf4e50cd22c3418425365ce60279dbb634f500ec91b4304a7"
     }

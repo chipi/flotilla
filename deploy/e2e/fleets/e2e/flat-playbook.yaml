@@ -3,7 +3,7 @@ routine: flat-playbook
 description: >-
   The e2e's flat-routine check, never shipped: a flat spec with a playbook. Disabled, so it never runs. The e2e
   edits its playbook (an ordinary change: the next start re-records the version's hash) and then moves it to the
-  folder layout (a new recipe: refused until the operator re-records it).
+  folder layout (a new recipe: re-recorded at the start when every recorded key and file is equal, refused when one differs).
 enabled: false
 worker: triage
 trigger:

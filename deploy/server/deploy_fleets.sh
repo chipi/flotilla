@@ -92,7 +92,16 @@ OUT="$(FLEETS="$DIR" compose run --rm --no-deps flotillad -config /etc/flotilla/
   }
 # A flat routine's v1 is not frozen: -check says each one it will re-record (the start records it with a version.update event)
 RR="$(printf '%s\n' "$OUT" | grep '^versions: .*re-recorded' || true)"
-if [ -n "$RR" ]; then say "== re-recorded at the start (a flat routine's v1 is not frozen):"; printf '%s\n' "$RR" | sed 's/^versions: /   /'; fi
+if [ -n "$RR" ]; then say "== re-recorded at the start (a flat routine's v1 is not frozen; a move to the folder layout is re-recorded when every recorded key and file is equal):"; printf '%s\n' "$RR" | sed 's/^versions: /   /'; fi
+# A flat routine moved to the folder layout: the running (flat) fleets, mounted read-only, are what -check sets the folder routine's own
+# fields against. Information for the operator's go, not a gate; asked only when -check reported a move, so a tag without the flag is never given it.
+if printf '%s\n' "$OUT" | grep -q '^versions: .*moved to the folder layout'; then
+  chmod -R a+rX "$RUN"
+  MV="$(FLEETS="$DIR" compose run --rm --no-deps -v "$RUN/fleets:/moved-from:ro" flotillad -config /etc/flotilla/flotillad.yaml -check -moved-from /moved-from 2>&1 \
+    | grep '^versions: .*routine fields' || true)"
+  say "== a moved routine's own fields, the flat spec against the folder (information, not a gate):"
+  if [ -n "$MV" ]; then printf '%s\n' "$MV" | sed 's/^versions: /   /'; else say "   no comparison line (flotillad -check printed none)"; fi
+fi
 
 hashes() { cli status -json | /usr/bin/python3 -c 'import json,sys; [print(r["id"], r.get("spec_hash","-")) for r in json.load(sys.stdin)["routines"]]'; }
 BEFORE="$(hashes)" || die "cannot read the routines' spec hashes"

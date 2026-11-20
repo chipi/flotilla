@@ -417,6 +417,7 @@ func main() {
 	testError := flag.Bool("send-test-error", false, "send one labelled ERROR to GlitchTip through the configured path, then exit")
 	stationsDir := flag.String("stations", "", "print what a run of this version folder (fleets/<fleet>/<routine>/v<n>/) gets, with the load checks, and exit; needs no -config")
 	modelsPath := flag.String("models", "", "with -stations: the models config (the installation's models section) the run's FLOTILLA_MODELS is cut from")
+	movedFrom := flag.String("moved-from", "", "with -check: the running (flat) fleets folder; each flat v1 moved to the folder layout gets a line comparing the routine's fields with the flat spec's (information, not a gate)")
 	flag.Parse()
 	if *stationsDir != "" {
 		if err := printStations(os.Stdout, *stationsDir, *modelsPath); err != nil {
@@ -548,6 +549,11 @@ func main() {
 			os.Exit(2)
 		}
 		printVersions(os.Stdout, routines, plan, freeze, textNotes)
+		if *movedFrom != "" {
+			for _, l := range movedFromLines(*movedFrom, routines, plan) {
+				fmt.Println(l)
+			}
+		}
 		n := 0
 		if cfg.Models != nil {
 			n = len(cfg.Models.Aliases)
@@ -632,7 +638,7 @@ func main() {
 		log.Warn("versions: tolerated", "note", n)
 	}
 	for _, u := range plan.Updates {
-		log.Warn("versions: re-recorded", "routine", u.Routine, "version", u.Version, "old_hash", u.OldHash, "new_hash", u.NewHash, "changed", u.Changed)
+		log.Warn("versions: re-recorded", "routine", u.Routine, "version", u.Version, "old_hash", u.OldHash, "new_hash", u.NewHash, "changed", u.Changed, "moved_unchanged", u.Moved)
 	}
 	textNotes, err := checkTexts(cfg.SpecsDir, src, plan)
 	if err != nil {

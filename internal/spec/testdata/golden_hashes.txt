@@ -1,5 +1,5 @@
 e2e/candidate 98a9d31be1a3
-e2e/flat-playbook 9f97c63e8038
+e2e/flat-playbook a5d410b6e46f
 e2e/hang 222e7afd703d
 e2e/host-absent-act d41775d7d1a4
 e2e/host-absent-monitor 9a4f49870131

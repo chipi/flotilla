@@ -227,7 +227,7 @@
     "FLEETD_STAGE": "shadow",
     "FLOTILLA_ENVIRONMENT": "test",
     "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
-    "FLOTILLA_PROMPTS": "{\"system\":{\"path\":\"playbooks/flat.md\",\"sha256\":\"691840a0a7be4c1c7d5d706dc7a4f71f4b580a72681d24b40bee295d2f1e0aa7\"}}",
+    "FLOTILLA_PROMPTS": "{\"system\":{\"path\":\"playbooks/flat.md\",\"sha256\":\"320a5eb994fe0a351ac51bb6232666fbc4b8856f2ca0761129e25db9416b22bc\"}}",
     "FLOTILLA_ROUTINE": "e2e/flat-playbook",
     "FLOTILLA_ROUTINE_VERSION": "1",
     "FLOTILLA_RUN_ID": "run-1",

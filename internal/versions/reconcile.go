@@ -118,6 +118,20 @@ func Check(routines []*spec.Routine, stored []store.RoutineVersion) (Plan, error
 					p.Updates = append(p.Updates, Update{Routine: id, Version: n, OldHash: row.Hash, NewHash: v.Hash, Changed: spec.ChangedFiles(row.Manifest, v.Manifest)})
 					p.Ensure[id] = append(p.Ensure[id], lv(v))
 					p.states[id][n] = row.State
+				case v.Hash != row.Hash && !v.Legacy && store.RecordedLegacy(row):
+					// a flat v1 moved to the folder layout: re-recorded like a flat v1's edit when every recorded key and file is equal,
+					// with the comparison as the evidence; refused, naming what differs, when any is not
+					proof := j.ProveMoved(v, row.Manifest)
+					if proof.Unchanged() {
+						p.Updates = append(p.Updates, Update{Routine: id, Version: n, OldHash: row.Hash, NewHash: v.Hash, Moved: proof.Compared})
+						l := lv(v)
+						l.Moved = proof.Compared
+						p.Ensure[id] = append(p.Ensure[id], l)
+						p.states[id][n] = row.State
+					} else {
+						bad("%s v%d is %s and its folder changed (recorded %s, found %s): moved from the flat layout and not the same as the recorded flat spec: %s; ship the change as v%d (a shadow or retired folder may change), or `flotilla versions rerecord %s v%d --reason R` if this change is deliberate",
+							id, n, row.State, short(row.Hash), short(v.Hash), strings.Join(proof.Differs, ", "), nextNumber(rows, j), id, n)
+					}
 				case v.Hash != row.Hash:
 					bad("%s v%d is %s and its folder changed (recorded %s, found %s): %s; ship the change as v%d (a shadow or retired folder may change), or `flotilla versions rerecord %s v%d --reason R` if this change is deliberate",
 						id, n, row.State, short(row.Hash), short(v.Hash), strings.Join(spec.ChangedFiles(row.Manifest, v.Manifest), ", "), nextNumber(rows, j), id, n)
@@ -279,10 +293,14 @@ type Update struct {
 	Version          int
 	OldHash, NewHash string
 	Changed          []string // spec.ChangedFiles: "prompt-file:playbooks/triage.md (changed)"
+	Moved            []string // a flat v1 moved to the folder layout, unchanged: each key and file compared and equal (Changed is then empty)
 }
 
 // Line is how -check and the deploy say it: "triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md (changed)".
 func (u Update) Line() string {
+	if len(u.Moved) > 0 {
+		return fmt.Sprintf("%s v%d moved to the folder layout, unchanged (%s): re-recorded", u.Routine, u.Version, strings.Join(u.Moved, ", "))
+	}
 	return fmt.Sprintf("%s v%d (flat) re-recorded: %s", u.Routine, u.Version, strings.Join(u.Changed, ", "))
 }
 
