@@ -75,7 +75,7 @@ if [ -s "$FLOTILLA_CONFIG/deploy.token" ]; then
   put $V-flotillad-secrets deploy.token 65532 "$FLOTILLA_CONFIG/deploy.token"
 fi
 # the ops workers (compose profile ops), where their tokens exist: a host without them is unaffected
-for w in ops-read ops-act-host; do
+for w in ops-read ops-read-shadow ops-act-host; do
   if [ -s "$FLOTILLA_CONFIG/worker-$w.token" ]; then
     put $V-flotillad-secrets worker-$w.token 65532 "$FLOTILLA_CONFIG/worker-$w.token"
     put $V-worker-$w-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-$w.token"

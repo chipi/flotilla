@@ -1,0 +1,14 @@
+# E2E_MUTANT=matrix-live-write (deploy/e2e/run.sh): a mutation check, never used by anything else. The live ops-read worker and its shadow worker
+# share one folder, as a shadow with a path to live state would; a generated shadow version then appends to a file in it, and the matrix's
+# "unchanged" cell must go red.
+services:
+  worker-ops-read:
+    volumes:
+      - mut-live:/mut
+  worker-ops-read-shadow:
+    volumes:
+      - mut-live:/mut
+volumes:
+  mut-live:
+    name: flotilla-e2e-mut-live
+    external: true

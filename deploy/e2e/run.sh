@@ -37,6 +37,13 @@ PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
 # the model contract check measures real models; against the stand-in gateway it can only fail: off in the demo
 if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEMO_DISABLED=""; fi
+# The mutation checks (E2E_MUTANT=name, run by deploy/e2e/mutant.sh, which passes only if the run goes red on the check the fault must break):
+#   shadow-write-cred, shadow-egress-open    the shadow's environment and egress (the hostile shadow's and the stand-ins' checks)
+#   station-live-key, station-span-mark      the stations section (the images are built from a patched copy of the tree)
+#   matrix-live-write                        a generated shadow writes a file the live ops-read worker shares (the matrix's `unchanged` cell)
+#   noeffect-vacuous                         a generated shadow does nothing and writes no record (the matrix's `shadow` cell)
+#   required-fallback                        flotillad takes a worker's own token as a caller again under required (the run-token probes)
+#   caps-skip                                flotillad takes any worker or agent for run-token capable (the old worker's refusal)
 # E2E_MUTANT=shadow-write-cred is a mutation check: it puts a write credential into the shadow worker's read environment, and the hostile shadow's
 # check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
@@ -53,19 +60,36 @@ WORK="${E2E_WORK:-$ROOT/.e2e}"
 fails=0
 ok() { echo "PASS $*"; }
 bad() { echo "FAIL $*"; fails=$((fails + 1)); }
+# E2E_SECTIONS=a,b runs only those sections (the build, the config and `up` always run); unset runs all. `noeffect` is versions, hostagent,
+# versionscase, shadows, stations and matrix: the no-effect proof (docs/wip/v2-design.md section 4) and the sections whose state it reads (the
+# shadow monitor's pairs count the case that versionscase leaves open on the host agent's target, which needs versions' routine). The other sections
+# lean on each other as well (ui before remote); name those together.
+sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui remote hardening"
+want() {
+  [ -z "${E2E_SECTIONS:-}" ] && return 0
+  local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
+  for x in ${s//,/ }; do case ",$E2E_SECTIONS," in *",$x,"*) return 0 ;; esac; done
+  return 1
+}
+if [ -n "${E2E_SECTIONS:-}" ]; then
+  for x in ${E2E_SECTIONS//,/ }; do case " $sections_known noeffect " in *" $x "*) ;; *) echo "E2E_SECTIONS: unknown section '$x' (known: $sections_known noeffect)" >&2; exit 2 ;; esac; done
+fi
 
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
   COMPOSE_PROFILES=candidate,ops,bugfix,shadow TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
-compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" -f "$ROOT/deploy/e2e/docker-compose.e2e.yml" "$@"; }
+# E2E_MUTANT=matrix-live-write gives the ops-read worker and its shadow worker one folder in common, which a generated shadow version then writes to
+COMPOSE_MUT=()
+[[ ",${E2E_MUTANT:-}," != *,matrix-live-write,* ]] || COMPOSE_MUT=(-f "$ROOT/deploy/e2e/docker-compose.mutant-live-write.yml")
+compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker-compose.yml" -f "$ROOT/deploy/e2e/docker-compose.e2e.yml" "${COMPOSE_MUT[@]}" "$@"; }
 
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link e2e-required e2e-accept; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -75,7 +99,7 @@ if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
 down
 
 echo "== build"
-case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*)
+case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,required-fallback,*|*,caps-skip,*)
   BUILD_CTX="$WORK/mutated-src"; mkdir -p "$BUILD_CTX"
   (cd "$ROOT" && tar --exclude=./.git --exclude=./.e2e --exclude=./.venv --exclude=./site --exclude=./node_modules --exclude=./.claude -cf - .) | tar -xf - -C "$BUILD_CTX"
   if [[ ",${E2E_MUTANT}," == *,station-live-key,* ]]; then
@@ -85,6 +109,14 @@ case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*)
   if [[ ",${E2E_MUTANT}," == *,station-span-mark,* ]]; then
     sed -i 's/        out\["flotilla.shadow"\] = True/        pass/' "$BUILD_CTX/runtime/telemetry.py"
     cmp -s "$ROOT/runtime/telemetry.py" "$BUILD_CTX/runtime/telemetry.py" && { echo "MUTANT station-span-mark did not change telemetry.py"; exit 1; }
+  fi
+  if [[ ",${E2E_MUTANT}," == *,required-fallback,* ]]; then   # a worker's own token is a caller again under required
+    sed -i 's/^\tif cfg.RunTokens == RunTokensRequired {$/\tif false \&\& cfg.RunTokens == RunTokensRequired {/' "$BUILD_CTX/cmd/flotillad/shadows.go"
+    cmp -s "$ROOT/cmd/flotillad/shadows.go" "$BUILD_CTX/cmd/flotillad/shadows.go" && { echo "MUTANT required-fallback did not change shadows.go"; exit 1; }
+  fi
+  if [[ ",${E2E_MUTANT}," == *,caps-skip,* ]]; then   # flotillad takes any worker and any agent for run-token capable
+    sed -i 's/^\tif cfg.RunTokens != RunTokensRequired {$/\tif true || cfg.RunTokens != RunTokensRequired {/; s/link.RequireRunToken = cfg.RunTokens == RunTokensRequired/link.RequireRunToken = false/' "$BUILD_CTX/cmd/flotillad/main.go"
+    cmp -s "$ROOT/cmd/flotillad/main.go" "$BUILD_CTX/cmd/flotillad/main.go" && { echo "MUTANT caps-skip did not change main.go"; exit 1; }
   fi ;;
 esac
 for i in flotillad worker-triage worker-ops worker-bugfix smokescreen; do
@@ -104,6 +136,8 @@ mkdir -p "$WORK/config"
 mkdir -p "$WORK/config/specs" && cp -r "$ROOT/fleets/." "$WORK/config/specs/"
 # the e2e-only fleet tests the platform itself (a hang, a remote echo, harmless host actions): not in the demo
 [ "${DEMO:-}" = 1 ] || cp -r "$ROOT/deploy/e2e/fleets/." "$WORK/config/specs/"
+# one run-token probe per worker class (token-probe on triage is the fleet's own file); the remote worker's is run in its section
+[ "${DEMO:-}" = 1 ] || python3 "$ROOT/deploy/e2e/make_probes.py" "$WORK/config/specs" triage-candidate ops-read ops-act-host bugfix remote-e2e:/remote/worker.token >/dev/null
 cp "$ROOT/deploy/e2e/registry-e2e.json" "$WORK/config/registry-e2e.json"
 printf '%s\n' "${E2E_ENV[@]}" > "$WORK/.env"
 tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
@@ -112,7 +146,7 @@ hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
 printf %s "$WT" > "$WORK/config/worker-triage.token"
 printf %s "$(tok)" > "$WORK/config/worker-triage-shadow.token"      # the shadow worker's own, and flotillad never takes it for a caller
 printf %s "$(tok)" > "$WORK/config/worker-triage-candidate.token"   # its own: flotillad refuses two workers that share one
-tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"
+tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"; tok > "$WORK/config/worker-ops-read-shadow.token"
 tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"
 tok > "$WORK/config/bugfix-model.key"   # a stand-in: the e2e's bugfix routines that would use it are disabled
 printf %s "$OP" > "$WORK/config/cli.token"          # the CLI inside flotillad acts as the operator here
@@ -135,6 +169,7 @@ registry_files: [/opt/flotilla/host/registry.json, /etc/flotilla/registry-e2e.js
 state_dir: /var/lib/flotilla
 environment: e2e
 timezone: Europe/Amsterdam
+brief_at: "00:00"                       # the morning brief is written at the first start of the day: the matrix compares it before and after the shadows
 vm_url: http://victoriametrics:8080
 otlp_traces_url: http://victoriatraces:8080/insert/opentelemetry/v1/traces
 callers_file: /etc/flotilla/callers.yaml
@@ -143,6 +178,7 @@ workers:
   triage-candidate: {url: "http://worker-triage-candidate:8081", token_file: /run/flotilla/worker-triage-candidate.token}
   triage-shadow: {url: "http://worker-triage-shadow:8081", token_file: /run/flotilla/worker-triage-shadow.token, shadow: true}
   ops-read: {url: "http://worker-ops-read:8081", token_file: /run/flotilla/worker-ops-read.token}
+  ops-read-shadow: {url: "http://worker-ops-read-shadow:8081", token_file: /run/flotilla/worker-ops-read-shadow.token, shadow: true}
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
@@ -167,6 +203,9 @@ models:
     fix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
+# Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
+# That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
+slack: {connector_host: e2e-host, team_id: T0E2E000001, ui_url: "https://$UI_HOST", users: {U0E2E000001: e2e-slack}}
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 printf 'SHADOW_READ_ONLY=%s\n' "$(tok)" > "$WORK/config/fleet-read.env"   # what a shadow worker may read: no write credential in it
@@ -323,6 +362,9 @@ echo "$S25" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if
 $D rm -f e2e-store25 >/dev/null 2>&1; $D volume rm flotilla-e2e-store25 >/dev/null 2>&1
 fi
 
+if [[ ",${E2E_MUTANT:-}," == *,matrix-live-write,* ]]; then
+  $D volume create --label $LABEL flotilla-e2e-mut-live >/dev/null && $D run --rm --user 0 -v flotilla-e2e-mut-live:/v --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'chown -R 10001:10001 /v'
+fi
 echo "== up"
 if ! compose up -d >"$WORK/up.log" 2>&1; then
   cat "$WORK/up.log"; bad "compose up"; [ "${KEEP:-}" = 1 ] || down; echo "E2E FAIL ($fails)"; exit 1
@@ -352,10 +394,96 @@ $D logs flotilla-worker-triage 2>&1 | grep '"line": "HEARTBEAT PASS"' >/dev/null
   || bad "no HEARTBEAT PASS in the worker's log (waited 15s)"
 # the proxy writes its log line just after it refuses: wait for it rather than read once (a race, 2026-11-11)
 seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep "$2" >/dev/null && return 0; sleep 1; done; return 1; }
+# helpers the sections share (so E2E_SECTIONS can leave any section out)
+# Each monitor runs at start on the ops-read worker; its detections become cases, the acting routine plans
+# each, and policy records the plan in shadow and closes the case. The gates' refusals escalate instead.
+want_closed() {  # kind target: a case of that kind on that target closed as a recorded shadow plan
+  for _ in $(seq 1 45); do
+    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*[^_[:alnum:]]plan_recorded" && return 0; sleep 2
+  done
+  return 1
+}
+want_case() {  # kind target status: a case of that kind on that target in that status
+  for _ in $(seq 1 45); do
+    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*$3" && return 0; sleep 2
+  done
+  return 1
+}
+# The freeze (ADR-0014 decision 8), through the real scheduler and worker: the heartbeat's own autonomy is auto.
+agent() { $D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla "$@"; }
+# e2e/versioned is a routine folder with v1 to v6; v1 went live at the first start and the rest arrived as shadows.
+vq() {  # vq ROUTINE 'python expression over v, the routine's versions answer': print it
+  cli versions "$1" -json | python3 -c "import json,sys; v=json.load(sys.stdin); print($2)"
+}
+vstates() { vq "$1" "' '.join('%d:%s' % (x['version'], x['state']) for x in v['versions'])"; }
+vrow() { cli versions "$1" -json | python3 -c "import json,sys; v=json.load(sys.stdin); x=next(y for y in v['versions'] if y['version'] == $2); print(x$3)"; }
+runs_json() { cli runs "$1" -json -n 100; }
+started() { $D inspect "$1" --format '{{.State.StartedAt}}' 2>&1; }
+hx() { $D exec "$@"; }
+hostlog() { $D exec flotilla-e2e-host cat /var/log/flotilla-host/agent.log 2>/dev/null; }
+hseen() { for _ in $(seq 1 30); do hostlog | grep >/dev/null "$1" && return 0; sleep 1; done; return 1; }
+# H9c, real executions through the whole path: a detection, a case, the acting routine's plan, policy
+# (propose: the action promoted, the routine capped at propose), an operator's approval, the envelope
+# signed and sent, the host's own checks, the result. The first runs /bin/true and is verified by the
+# check routine, which closes it and releases the target; the second is refused by the host's rate
+# limit and the third by its allowlist, each escalated and then closed by the operator. Then the
+# host's audit log against flotillad's record.
+proposed() {  # proposed KIND MONITOR: run the monitor, print the case it opened once it awaits approval
+  local id=""
+  cli run "e2e/$2" >/dev/null
+  for _ in $(seq 1 45); do
+    id="$(cli case list --all 2>&1 | awk -v k="$1" '$2 == k && /host:e2e-host/ && /awaiting_approval/ {print $1; exit}')"
+    [ -n "$id" ] && break; sleep 2
+  done
+  echo "$id"
+}
+status_is() {  # status_is CASE STATUS: wait for it
+  for _ in $(seq 1 45); do cli case list --all 2>&1 | grep >/dev/null "^$1 .* $2 " && return 0; sleep 2; done
+  return 1
+}
+# A second, idle flotillad on the stack's network (its one routine runs `true` once a year, and flotillad ends when no timed routine is
+# enabled, so it has to be), in the run_tokens mode asked for: e2e-<mode>, its workers' listener on e2e-<mode>:8485.
+idle_flotillad() {
+  local mode="$1" name="e2e-$1" dir="$WORK/config/specs-$1"
+  mkdir -p "$dir/e2e"
+  cat > "$dir/e2e/idle.yaml" <<EOF2
+fleet: e2e
+routine: idle
+description: The e2e's second flotillad (run_tokens $mode) has one routine, which only keeps it running (flotillad ends with no timed routine).
+enabled: true
+worker: triage
+trigger: {every: 8760h}
+run: {command: "true", workdir: ., timeout: 1m}
+autonomy: record
+budget: {day_usd: 0}
+freshness: 9000h
+EOF2
+  cat > "$WORK/config/flotillad-$name-live.yaml" <<EOF2
+listen: 127.0.0.1:8484
+worker_listen: 0.0.0.0:8485
+specs_dir: /etc/flotilla/specs
+state_dir: /var/lib/flotilla
+environment: e2e
+callers_file: /etc/flotilla/callers.yaml
+run_tokens: $mode
+registry_files: [/opt/flotilla/host/registry.json]
+workers:
+  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
+EOF2
+  $D volume create --label $LABEL "flotilla-$name" >/dev/null
+  $D run --rm --user 0 -v "flotilla-$name:/v" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'chown -R 65532:65532 /v' >/dev/null
+  $D run -d --label $LABEL --name "$name" --network "${P}_flotilla" --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --memory 256m \
+    -v "flotilla-$name:/var/lib/flotilla" -v "$WORK/config/flotillad-$name-live.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+    -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$dir:/etc/flotilla/specs:ro" \
+    "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad in run_tokens: $mode"
+  for _ in $(seq 1 60); do $D logs "$name" 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
+}
+stop_idle_flotillad() { $D rm -f "e2e-$1" >/dev/null 2>&1; $D volume rm "flotilla-e2e-$1" >/dev/null 2>&1; }
 seen flotilla-egress "forbidden" && ok "the proxy logged the refused host" || bad "the proxy has no record of the refused host"
 [ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
 cli status | grep -E "^platform/heartbeat" | grep >/dev/null -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
 
+if want model; then
 echo "== the model client (runtime/), from the heartbeat's model step"
 L="$($D logs flotilla-worker-triage 2>&1)"
 echo "$L" | grep >/dev/null 'ok   model   triage-flash: model=fleet-triage-flash deployment=e2e-deployment cost=2.1e-06 (reported:body) usage_reported=True traced=True' \
@@ -372,6 +500,8 @@ else
 fi
 $D exec flotilla-worker-triage python3 -m pip check >/dev/null 2>&1 && ok "the image's Python packages are consistent (pip check)" || bad "pip check failed in the worker image"
 
+fi
+if want telemetry; then
 echo "== telemetry"
 # pushes and span exports are asynchronous: wait for each line up to 30 s (a fixed 8 s sleep lost the
 # model.chat span once on 2026-11-11), the check itself unchanged
@@ -383,6 +513,8 @@ seen e2e-victoriatraces "POST /insert/opentelemetry/v1/traces" && ok "traces rea
 seen e2e-victoriatraces "SPAN model.chat" && ok "the routine's model.chat span reached VictoriaTraces through the proxy" \
   || bad "no model.chat span at the VictoriaTraces stand-in"
 
+fi
+if want cases; then
 echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
 # The monitor runs at start; the stand-in says the backup is 25.5h old, above shadow's 25h. The dispatcher
 # (every 15s) hands the case to jobs/rerun-backup, whose plan policy records in shadow, closing the case.
@@ -402,15 +534,9 @@ echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*[^_[:alnum:]]plan_reco
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
   && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
 
+fi
+if want business; then
 echo "== the business examples (crm, campaigns, outbound, renewals), on their stand-in data, in shadow"
-# Each monitor runs at start on the ops-read worker; its detections become cases, the acting routine plans
-# each, and policy records the plan in shadow and closes the case. The gates' refusals escalate instead.
-want_closed() {  # kind target: a case of that kind on that target closed as a recorded shadow plan
-  for _ in $(seq 1 45); do
-    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*[^_[:alnum:]]plan_recorded" && return 0; sleep 2
-  done
-  return 1
-}
 want_closed crm_fix "crm:contact/c-101/email" && ok "crm: the email to normalize became a case, planned and recorded in shadow" \
   || bad "crm: $(cli case list --all 2>&1 | grep crm_fix)"
 want_closed crm_fix "crm:contact/c-103/merge" && ok "crm: the duplicate became a merge plan, recorded in shadow" \
@@ -427,13 +553,9 @@ cli case list --all 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && ok "o
 want_closed renewal_risk "account:a-401" && ok "renewals: the account at risk flagged for its owner, recorded in shadow" \
   || bad "renewals: $(cli case list --all 2>&1 | grep renewal_risk)"
 
+fi
+if want world; then
 echo "== the examples that reach the outside world (sites, deps), on deploy/e2e/world.py, in shadow"
-want_case() {  # kind target status: a case of that kind on that target in that status
-  for _ in $(seq 1 45); do
-    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*$3" && return 0; sleep 2
-  done
-  return 1
-}
 want_case seo_live_regression "site:description/www.example.com/about" "" && ok "sites: the page without a description is a case" \
   || bad "sites description: $(cli case list --all 2>&1 | grep seo_live)"
 want_case seo_live_regression "site:link/www.example.com/old-offers" "" && ok "sites: the link that answers 404 is a case" \
@@ -452,6 +574,8 @@ cli case list --all 2>&1 | grep >/dev/null "repo:example/shop/deps/flask" && bad
 $D logs e2e-world 2>&1 | grep >/dev/null "world GET api.github.com/repos/example/shop/commits/HEAD" \
   && ok "deps reached the GitHub stand-in through the bugfix proxy, over TLS from the stack's CA" || bad "no GitHub request at the world stand-in"
 
+fi
+if want triage; then
 echo "== the triage example, on the world's GlitchTip and Grafana and the scripted model, in shadow"
 TRI=""
 for _ in $(seq 1 60); do
@@ -471,11 +595,14 @@ $D logs e2e-world 2>&1 | grep >/dev/null "world GET errors.example.com/api/0/org
 $D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT auth=bearer model=fleet-triage-flash" && ok "triage asked the model through the gateway, with its key" \
   || bad "no triage model call at the gateway stand-in"
 
+fi
+if want bugfix; then
 echo "== the bugfix example's intake, on the world's GitHub"
 want_case code_bug "repo:example/shop/issues/7" "handed_over" \
   && ok "bugfix: the open bug issue became a code_bug case (its fix needs a real coding model: off here)" \
   || bad "bugfix intake: $(cli case list --all 2>&1 | grep code_bug)"
 
+fi
 if [ "${DEMO:-}" = 1 ]; then
   echo "== the demo"
   echo "cases the example fleets opened (they keep running on their schedules):"
@@ -505,6 +632,7 @@ if [ "${DEMO:-}" = 1 ]; then
   exit 0
 fi
 
+if want controls; then
 echo "== controls and auth"
 OUT="$($D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla autonomy platform/heartbeat record 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 403" && ok "an agent cannot change a routine's autonomy ($OUT)" || bad "agent autonomy change: $OUT"
@@ -522,8 +650,6 @@ cli runs e2e/hang -n 1 | grep >/dev/null " cancelled .*cancelled: operator, flee
   && ok "a STOPped fleet's run in flight ends as cancelled, with who and why" || bad "STOP did not cancel the run in flight: $(cli runs e2e/hang -n 1 2>&1)"
 cli start e2e --reason "e2e: start after the cancel check" >/dev/null
 cli events -n 5 | grep >/dev/null "control.stop" && ok "the event log records the STOP" || bad "no control.stop event"
-# The freeze (ADR-0014 decision 8), through the real scheduler and worker: the heartbeat's own autonomy is auto.
-agent() { $D exec -e FLOTILLA_TOKEN="$AGENT" flotillad /usr/local/bin/flotilla "$@"; }
 OUT="$(agent autonomy freeze 2>&1)"
 echo "$OUT" | grep >/dev/null '"frozen":"1"' && ok "an agent pulls the freeze" || bad "agent freeze: $OUT"
 cli status | grep >/dev/null "^FROZEN since .* by e2e-agent" && ok "status says frozen, and who froze it" || bad "status while frozen: $(cli status 2>&1 | head -3)"
@@ -580,45 +706,9 @@ SK="$($D exec -w /opt/flotilla/signal-fleet/mvp -e OPENROUTER_API_KEY=x -e SF_OB
 [ "$SK" = "96a4218f 1" ] && ok "the worker image has triage's playbook and hint skills (PROMPT_SHA 96a4218f with the example facts, the hint loads)" \
   || bad "triage in the worker image: '$SK'"
 
-# A second, idle flotillad on the stack's network (its one routine runs `true` once a year, and flotillad ends when no timed routine is
-# enabled, so it has to be), in the run_tokens mode asked for: e2e-<mode>, its workers' listener on e2e-<mode>:8485.
-idle_flotillad() {
-  local mode="$1" name="e2e-$1" dir="$WORK/config/specs-$1"
-  mkdir -p "$dir/e2e"
-  cat > "$dir/e2e/idle.yaml" <<EOF2
-fleet: e2e
-routine: idle
-description: The e2e's second flotillad (run_tokens: $mode) has one routine, which only keeps it running (flotillad ends with no timed routine).
-enabled: true
-worker: triage
-trigger: {every: 8760h}
-run: {command: "true", workdir: ., timeout: 1m}
-autonomy: record
-budget: {day_usd: 0}
-freshness: 9000h
-EOF2
-  cat > "$WORK/config/flotillad-$name-live.yaml" <<EOF2
-listen: 127.0.0.1:8484
-worker_listen: 0.0.0.0:8485
-specs_dir: /etc/flotilla/specs
-state_dir: /var/lib/flotilla
-environment: e2e
-callers_file: /etc/flotilla/callers.yaml
-run_tokens: $mode
-registry_files: [/opt/flotilla/host/registry.json]
-workers:
-  triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}
-EOF2
-  $D volume create --label $LABEL "flotilla-$name" >/dev/null
-  $D run --rm --user 0 -v "flotilla-$name:/v" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'chown -R 65532:65532 /v' >/dev/null
-  $D run -d --label $LABEL --name "$name" --network "${P}_flotilla" --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --memory 256m \
-    -v "flotilla-$name:/var/lib/flotilla" -v "$WORK/config/flotillad-$name-live.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
-    -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$dir:/etc/flotilla/specs:ro" \
-    "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml >/dev/null || bad "starting flotillad in run_tokens: $mode"
-  for _ in $(seq 1 60); do $D logs "$name" 2>&1 | grep >/dev/null '"msg":"flotillad listening for workers' && break; sleep 1; done
-}
-stop_idle_flotillad() { $D rm -f "e2e-$1" >/dev/null 2>&1; $D volume rm "flotilla-e2e-$1" >/dev/null 2>&1; }
 
+fi
+if want ledger; then
 echo "== the ledger (RFC-0002 §9 step 5): a worker's routine on flotillad's workers' listener"
 # The replay writes rows through the API as a routine's own worker would, which only run_tokens: accept lets a worker's own token do (a run's token
 # is confined to the run's own namespace, the operator's is import and read only): it runs against a flotillad in the one-release way back.
@@ -638,6 +728,8 @@ try:
 except urllib.error.HTTPError as e: print(e.code)' 2>&1 | tail -1)"
 [ "$WL" = 404 ] && ok "the workers' listener does not serve the full API (/v1/status: 404)" || bad "workers' listener /v1/status: $WL"
 
+fi
+if want runtokens; then
 echo "== run tokens (v2 step 2): every run has its own token for the workers' listener"
 # e2e/token-probe (fleets/e2e/token-probe.yaml) reads FLOTILLA_API_TOKEN_FILE, which must be its own file and not the worker's,
 # and files a ledger row naming another routine's namespace and another run's id: flotillad files it under the probe's own.
@@ -656,6 +748,31 @@ print(n("e2e/token-probe"), n("bugfix/fix"))' 2>&1 | tail -1)"
 [ "$NSC" = "1 0" ] && ok "the filing landed in the run's own namespace (e2e/token-probe: 1 row, the namespace it named: 0)" || bad "ledger rows by namespace: '$NSC'"
 TL="$($D exec flotilla-worker-triage sh -c 'ls -A /tmp | grep -c "^.flotilla-token-" || true' 2>&1 | tail -1)"
 [ "$TL" = 0 ] && ok "no run's token file is left on the worker after the run" || bad "token files left in the worker's /tmp: $TL"
+# every worker class: the run's own token file, the worker's own token refused on the listener (401), the run's token accepted, the namespace forced.
+# (triage above; the shadow worker by the hostile shadow in its section; the remote worker in its own.)
+for W in triage-candidate ops-read ops-act-host bugfix; do
+  cli run e2e/token-probe-$W >/dev/null 2>&1
+  for i in $(seq 1 30); do cli runs e2e/token-probe-$W -n 1 | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 1; done
+  [ "$(cli runs e2e/token-probe-$W -json -n 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["runs"][0]["status"])')" = ok ] \
+    && ok "run tokens on the $W worker: its run's own token file, its own token refused on the listener, the run's accepted, the namespace forced" \
+    || bad "token-probe on $W: $(cli runs e2e/token-probe-$W -n 1) $($D logs flotilla-worker-$W 2>&1 | grep -o 'PROBE [^"]*' | tail -2)"
+done
+# an old worker (no run_token in its /healthz): flotillad refuses it under required, naming it, and only says so under accept
+$D run -d --label $LABEL --name e2e-oldworker --network "${P}_flotilla" --memory 64m -v "$ROOT/deploy/e2e/old_worker.py:/o.py:ro" \
+  python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b python3 -u /o.py >/dev/null || bad "the old worker stand-in did not start"
+tok > "$WORK/config/worker-old.token"; chmod 644 "$WORK/config/worker-old.token"
+old_check() {  # old_check MODE-LINE: flotillad -check on the stack's config plus the old worker
+  sed "s|^workers:\$|$1workers:\n  old: {url: \"http://e2e-oldworker:8081\", token_file: /run/flotilla-old/old.token}|; s|^state_dir: .*|state_dir: /tmp/old-check|" "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-old.yaml"
+  $D run --rm --network "${P}_flotilla" --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad-old.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
+    -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/worker-old.token:/run/flotilla-old/old.token:ro" -v "$WORK/config/specs:/etc/flotilla/specs:ro" \
+    -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?"
+}
+OLDREQ="$(old_check "")"; OLDACC="$(old_check "run_tokens: accept\n")"
+echo "$OLDREQ" | grep >/dev/null "worker old does not carry run tokens" && echo "$OLDREQ" | grep >/dev/null "^rc=2" \
+  && ok "run_tokens: required refuses a worker whose /healthz lacks run_token, by name (exit 2)" || bad "an old worker under required: $(echo "$OLDREQ" | tail -3)"
+echo "$OLDACC" | grep >/dev/null "worker old: NOT run-token capable" && echo "$OLDACC" | grep >/dev/null "^rc=0" \
+  && ok "under accept the same old worker is only reported (rc 0)" || bad "an old worker under accept: $(echo "$OLDACC" | tail -3)"
+$D rm -f e2e-oldworker >/dev/null 2>&1
 # run_tokens: required is the default (the stack's own config says nothing), read by the real binary (-check, read-only): a worker's own
 # token is not a caller then; accept is the one-release way back, which -check warns about
 sed 's|^state_dir: .*|state_dir: /tmp/accept-check|; /^worker_listen:/a run_tokens: accept' "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-accept.yaml"
@@ -710,6 +827,8 @@ $D exec flotilla-worker-triage rm -f /tmp/op.token
 stop_idle_flotillad required
 fi
 
+fi
+if want inputs; then
 echo "== frozen inputs (v2 step 2): the input a live run was handed, exported"
 # every live run's input is recorded when it starts (what it was handed, the ledger's marks, the open case keys of what it detects);
 # `flotilla input export` writes it to a folder outside any repo (here flotillad's state volume), which is checked by the repo's own
@@ -741,6 +860,8 @@ AG="$($D exec -e FLOTILLA_TOKEN="$(cat "$WORK/agent.token")" flotillad /usr/loca
 echo "$AG" | grep >/dev/null "HTTP 403" && ok "an agent's token cannot read an input (production data)" || bad "an agent reading an input: $AG"
 fi
 
+fi
+if want candidate; then
 echo "== the candidate worker (shadow comparison of a candidate image)"
 for i in $(seq 1 30); do
   [ "$($D inspect flotilla-worker-triage-candidate --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2
@@ -763,14 +884,9 @@ echo "$OUT" | grep >/dev/null 'worker triage-candidate: .*"ok":true' && ok "flot
 NW="$($D inspect flotilla-worker-triage-candidate --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
 [ "$NW" = "${P}_flotilla " ] && ok "the candidate is on the internal network only" || bad "candidate networks: '$NW'"
 
+fi
+if want versions; then
 echo "== routine versions (docs/wip/v2-design.md section 1): the folder layout, the states, the operator's controls, the freeze, the rename"
-# e2e/versioned is a routine folder with v1 to v6; v1 went live at the first start and the rest arrived as shadows.
-vq() {  # vq ROUTINE 'python expression over v, the routine's versions answer': print it
-  cli versions "$1" -json | python3 -c "import json,sys; v=json.load(sys.stdin); print($2)"
-}
-vstates() { vq "$1" "' '.join('%d:%s' % (x['version'], x['state']) for x in v['versions'])"; }
-vrow() { cli versions "$1" -json | python3 -c "import json,sys; v=json.load(sys.stdin); x=next(y for y in v['versions'] if y['version'] == $2); print(x$3)"; }
-runs_json() { cli runs "$1" -json -n 100; }
 [ "$(vstates e2e/versioned)" = "1:live 2:shadow 3:shadow 4:shadow 5:shadow 6:shadow" ] \
   && ok "e2e/versioned (a routine folder): v1 live from the first start, v2 to v6 arrived as shadows" || bad "versions at start: $(vstates e2e/versioned)"
 [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["runs"] or []))')" = 0 ] \
@@ -926,8 +1042,9 @@ for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
 [ "$(vstates e2e/flat-playbook)" = "1:live" ] && [ "$(vrow e2e/flat-playbook 1 "['hash']")" = "$NEWH" ] \
   && ok "flotillad starts on the folder layout: v1 still live, with the re-recorded hash" || bad "after the folder move: $(vstates e2e/flat-playbook) $($D logs flotillad 2>&1 | grep versions | tail -2)"
 
+fi
+if want confighash; then
 echo "== a changed config recreates its service (deploy.sh's FLOTILLA_CONFIG_HASH_*)"
-started() { $D inspect "$1" --format '{{.State.StartedAt}}' 2>&1; }
 F0="$(started flotillad)"; E0="$(started flotilla-egress)"; W0="$(started flotilla-worker-triage)"
 FLOTILLA_CONFIG_HASH_FLOTILLAD=changed-in-e2e compose up -d >"$WORK/up2.log" 2>&1
 for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
@@ -948,6 +1065,8 @@ N="$(agent case list --all 2>&1 | grep -c failed_backup)"
   && ok "after the restart the monitor's repeat went into the incident's case (one case, absorbed or counted)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
 
+fi
+if want hostagent; then
 echo "== the host agent (ADR-0006): installed by deploy/host/remote-install.sh; enrol, connect, heartbeat, a flotillad restart, revocation, remove"
 mkdir -p "$WORK/host"
 cp "$WORK/config/host-ca/root.crt" "$WORK/host/root.crt"
@@ -966,9 +1085,6 @@ chmod 644 "$WORK/host/"*
 # the one capability chattr +a needs (the container's own filesystem does not take the flag)
 $D run -d --name flotilla-e2e-host --label $LABEL --network ${P}_flotilla --memory 256m --cap-add LINUX_IMMUTABLE \
   -v flotilla-e2e-host-audit:/var/log/flotilla-host -v "$WORK/host:/stage-src:ro" "$HOST_AGENT_IMAGE" >/dev/null || bad "the stand-in host did not start"
-hx() { $D exec "$@"; }
-hostlog() { $D exec flotilla-e2e-host cat /var/log/flotilla-host/agent.log 2>/dev/null; }
-hseen() { for _ in $(seq 1 30); do hostlog | grep >/dev/null "$1" && return 0; sleep 1; done; return 1; }
 HT="$(cli host enrolment e2e-host 2>&1 | sed -n 's/.*"token":"\(fle_[0-9a-f]*\)".*/\1/p')"
 [ ${#HT} = 68 ] && ok "an operator minted an enrolment token" || bad "host enrolment: $(cli host enrolment e2e-host 2>&1)"
 # stage as install.sh does: the files, the binary, the token (mode 600)
@@ -1011,27 +1127,10 @@ HL="$(cli host list 2>&1)"
 echo "$HL" | grep >/dev/null "^e2e-host  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z  *-\?[0-9.]*[mµn]\?s  *[0-9-]*T[0-9:.]*Z  *-  *-$" \
   && ok "host list: connected, its version, last contact and clock offset, from the store (no chain head: nothing ran)" || bad "host list while connected: $HL"
 ! $D logs flotillad 2>&1 | grep '"msg":"host alert"' >/dev/null && ok "no host alert while it is connected" || bad "a host alert: $($D logs flotillad 2>&1 | grep '"host alert' | tail -2)"
-# H9c, real executions through the whole path: a detection, a case, the acting routine's plan, policy
-# (propose: the action promoted, the routine capped at propose), an operator's approval, the envelope
-# signed and sent, the host's own checks, the result. The first runs /bin/true and is verified by the
-# check routine, which closes it and releases the target; the second is refused by the host's rate
-# limit and the third by its allowlist, each escalated and then closed by the operator. Then the
-# host's audit log against flotillad's record.
-proposed() {  # proposed KIND MONITOR: run the monitor, print the case it opened once it awaits approval
-  local id=""
-  cli run "e2e/$2" >/dev/null
-  for _ in $(seq 1 45); do
-    id="$(cli case list --all 2>&1 | awk -v k="$1" '$2 == k && /host:e2e-host/ && /awaiting_approval/ {print $1; exit}')"
-    [ -n "$id" ] && break; sleep 2
-  done
-  echo "$id"
-}
-status_is() {  # status_is CASE STATUS: wait for it
-  for _ in $(seq 1 45); do cli case list --all 2>&1 | grep >/dev/null "^$1 .* $2 " && return 0; sleep 2; done
-  return 1
-}
 cli action autonomy host.true propose --reason "e2e: the security e2e's harmless action" >/dev/null 2>&1
 cli action list 2>&1 | grep >/dev/null "^host.true  *propose " && ok "host.true promoted to propose (operator, with a reason)" || bad "promote: $(cli action list 2>&1)"
+fi
+if want versionscase; then
 echo "== routine versions on a case: a v2 plan waits for approval, a rollback withdraws it, a promote leaves a run in flight alone"
 # v2 is live (promoted above, autonomy propose). The monitor's case goes to v2, whose plan waits at propose.
 cli action autonomy host.vtrue propose --reason "e2e: the versions check's harmless action" >/dev/null 2>&1
@@ -1115,6 +1214,10 @@ SHOW="$(cli case show "$VC3" 2>&1)"
 HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
   || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
+# Slack approvals (the slack section of flotillad.yaml): the plan that waits is offered to the connector host every 15 seconds. The stand-in host's agent
+# is no connector: it logs each plan it is asked to post and posts nothing, which is the e2e's recording of what Slack would have been sent
+hseen 'not its Slack connector' && ok "Slack: flotillad asked the connector host to post the plan waiting for approval; the stand-in's agent logged it" \
+  || bad "no plan was offered to the Slack connector host: $(hostlog | tail -3) / $($D logs flotillad 2>&1 | grep -i slack | tail -2)"
 OUT="$(cli case approve "$HC" 2>&1)"
 echo "$OUT" | grep >/dev/null '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"
 status_is "$HC" closed
@@ -1177,6 +1280,8 @@ echo "$OUT" | grep >/dev/null "^REMOVE PASS" && [ "$R" = "/var/log/flotilla-host
   && ok "remove: binary, config, state and sudoers gone; the audit log stays" || bad "remove: $OUT / left: $R"
 $D rm -f flotilla-e2e-host >/dev/null
 
+fi
+if want shadows; then
 echo "== shadow versions (v2 step 2): a shadow runs beside the live version on its own worker, its decisions are paired, and it can do no harm"
 # shadows are off until now; turn them on in flotillad's config and restart
 printf 'shadows: {enabled: true}\n' >> "$WORK/config/flotillad.yaml"   # appended in place: the bind mount keeps its file
@@ -1380,6 +1485,8 @@ TRLOG="$($D logs e2e-victoriatraces 2>&1)"
 echo "$TRLOG" | grep >/dev/null "SHADOW_SPAN" && ! echo "$TRLOG" | grep >/dev/null "UNMARKED_SHADOW_SPAN" \
   && ok "traces: a shadow run's span reached VictoriaTraces carrying flotilla.shadow, and none arrived without it" || bad "traces: $(echo "$TRLOG" | grep -c SHADOW_SPAN) marked, $(echo "$TRLOG" | grep -c UNMARKED_SHADOW_SPAN) unmarked"
 
+fi
+if want stations; then
 echo "== stations (v2 steps 3 and 4): a station version's texts, recorded per call, shadowed, marked, and run offline"
 # e2e/station-monitor: v1 live and v2 a shadow, each with one station on harness flotilla that renders a system text and a task text and calls the model
 # through the client. v2's system text differs and its task text is the same, so the pair has one text equal and one differing.
@@ -1435,7 +1542,7 @@ cli case close "$(cli case list --all 2>&1 | awk '$2 == "e2e_stations" {print $1
 echo "-- the offline run of the same version, on an authored input (flotillad -stations, then runtime/offline_run.py in the worker image)"
 OFF="$WORK/offline"
 off_clean() {  # the offline runs' folders hold files owned by the worker's uid (and 0700 homes): removed by that uid, then the folder by us
-  [ -d "$OFF" ] && $D run --rm --user 10001:10001 -v "$OFF:/x" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'rm -rf /x/out /x/out-known /x/out-unknown' >/dev/null 2>&1
+  [ -d "$OFF" ] && $D run --rm --user 10001:10001 -v "$OFF:/x" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'rm -rf /x/out /x/out-known /x/out-unknown /x/out-hb' >/dev/null 2>&1
   rm -rf "$OFF"
 }
 off_clean; mkdir -p "$OFF"; chmod 777 "$OFF"
@@ -1496,8 +1603,63 @@ sys.exit(0 if r["exit_code"] not in (0, 77) and "RecordedMiss" in out else 1)' "
 $D run --rm --network none --user 10001:10001 -v "$OFF:/work" "local/flotilla-worker-triage:$TAG" python3 /opt/flotilla/runtime/offline_run.py \
   --contract /work/contract-known.json --input /work/rec-input.json --models /work/models.json --out /opt/flotilla/fleets/e2e/out --forbid /opt/flotilla/fleets > "$OFF/forbid.out" 2>&1; FRC=$?
 [ "$FRC" = 2 ] && grep >/dev/null "offline_run: --out" "$OFF/forbid.out" && ok "--out inside the fleets tree is refused" || bad "--out in the fleets tree: rc=$FRC $(cat "$OFF/forbid.out" | tail -2)"
+# A shipped example's version, offline, on an authored input (design section 7, step 5): platform/heartbeat v2, whose one model call is the probe
+# station (the example fleets' own folder, as the image carries it). triage/cycle v1 cannot be run here: offline_run hands a run the contract's
+# FLOTILLA_* variables only, and triage reads its sources from SF_* settings a worker supplies. The heartbeat's two URLs are such settings; they
+# are put in front of its own command, as a scenario's author would, and name the model host (allowed) and the stack's refused host (denied).
+cat > "$OFF/input-hb.json" <<EOF2
+{"schema_version": 1, "input_key": "e2e-offline-hb", "routine": "platform/heartbeat", "kind": "tick", "version": 2}
+EOF2
+$D run --rm --network none --user 65532:65532 -v "$OFF:/work" -v "$WORK/config/specs:/etc/flotilla/specs:ro" "local/flotilla-flotillad:$TAG" \
+  -stations /etc/flotilla/specs/platform/heartbeat/v2 -models /work/models.json > "$OFF/contract-hb.json" 2> "$OFF/contract-hb.err"
+cat > "$OFF/hb_contract.py" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))
+c["command"] = "env HEARTBEAT_ALLOWED_URL=http://litellm:8080/health/liveliness HEARTBEAT_DENIED_URL=http://forbidden:8080/ " + c["command"]
+json.dump(c, open(sys.argv[1], "w"))
+PY
+python3 "$OFF/hb_contract.py" "$OFF/contract-hb.json"
+$D run --rm --network e2e-litellm --user 10001:10001 -v "$OFF:/work" "local/flotilla-worker-triage:$TAG" \
+  python3 /opt/flotilla/runtime/offline_run.py --contract /work/contract-hb.json --input /work/input-hb.json --models /work/models.json --out /work/out-hb --forbid /opt/flotilla/fleets > "$OFF/offline-hb.out" 2>&1; HBRC=$?
+python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1] + "/result.json"))
+c = json.load(open(sys.argv[2]))
+calls = [json.loads(x) for x in open(sys.argv[1] + "/calls.jsonl")]
+refused = [json.loads(x) for x in open(sys.argv[1] + "/refused.jsonl")]
+out = open(sys.argv[1] + "/output.txt").read()
+sys.exit(0 if r["exit_code"] == 0 and "HEARTBEAT PASS" in out and c["routine"] == "platform/heartbeat" and c["version"] == 2
+         and any(x.get("station") == "probe" and [t["name"] for t in x.get("texts") or []] == ["task"] for x in calls)
+         and any("forbidden" in x["target"] for x in refused) and not any("TOKEN" in k or "API_URL" in k for k in c["env"]) else 1)' "$OFF/out-hb" "$OFF/contract-hb.json" \
+  && [ "$HBRC" = 0 ] && ok "the example platform/heartbeat v2, offline on an authored input: its own command ran in the worker image, the probe station's call was made on the eval's own key and recorded with its text, the host off the list was refused, and the contract carries no flotillad address or token" \
+  || bad "offline run of heartbeat v2 rc=$HBRC: $(tail -c 300 "$OFF/offline-hb.out") $(tail -c 300 "$OFF/out-hb/output.txt" 2>/dev/null)"
 off_clean
 
+fi
+if want matrix; then
+echo "== the no-effect matrix (docs/wip/v2-design.md section 4): every example routine on the ops-read worker, shadowed, promoted, rolled back, on extended state"
+if [ "${DEMO:-}" != 1 ]; then
+# The example fleets ship v1 only; the generated v2 (deploy/e2e/make_shadows.py) is v1's files plus a marker, so the real example code runs as a shadow.
+# The folder gains them while flotillad runs: they are listed as shadows at its next start (shadows are on since the shadow section).
+python3 "$ROOT/deploy/e2e/make_shadows.py" "$WORK/config/specs" ops-read > "$WORK/matrix.list" || bad "make_shadows.py"
+NGEN="$(sed -n 's/^GENERATED //p' "$WORK/matrix.list")"; grep -v '^GENERATED' "$WORK/matrix.list" > "$WORK/matrix-routines.txt"
+# E2E_MUTANT=noeffect-vacuous: crm/scan's shadow does nothing, and writes no record; matrix-live-write: it writes to a file the live worker shares (the
+# worker state hash must change)
+if [[ ",${E2E_MUTANT:-}," == *,noeffect-vacuous,* ]]; then sed -i 's|^  command: .*|  command: "true"|' "$WORK/config/specs/crm/scan/v2/spec.yaml"; fi
+if [[ ",${E2E_MUTANT:-}," == *,matrix-live-write,* ]]; then sed -i 's|^  command: \(.*\)$|  command: echo shadow-wrote >> /mut/live-state.txt \&\& \1|' "$WORK/config/specs/crm/scan/v2/spec.yaml"; fi
+$D restart flotillad >/dev/null
+for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
+[ "${NGEN:-0}" -ge 20 ] && ok "$NGEN example routines have a generated shadow v2 (the ops-read worker's)" || bad "generated shadows: '$NGEN'"
+for i in $(seq 1 30); do [ "$($D inspect flotilla-worker-ops-read-shadow --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ] && break; sleep 2; done
+[ "$($D inspect flotilla-worker-ops-read-shadow --format '{{.State.Health.Status}}' 2>&1)" = healthy ] && ok "the ops-read shadow worker is healthy" || bad "ops-read shadow worker: $($D logs flotilla-worker-ops-read-shadow 2>&1 | tail -3)"
+MX="$(WORK="$WORK" ROOT="$ROOT" TAG="$TAG" DOCKER_CONTEXT_DEV="${DOCKER_CONTEXT_DEV:-dev}" E2E_MUTANT="${E2E_MUTANT:-}" python3 "$ROOT/deploy/e2e/matrix.py" "$WORK/matrix-routines.txt" 2>&1)"; MXRC=$?
+echo "$MX"
+MXS="$(echo "$MX" | grep '^NOEFFECT PASS')"
+[ "$MXRC" = 0 ] && echo "$MXS" | grep >/dev/null -E "FAIL 0$" && [ "$(echo "$MX" | grep -c 'shadow=PASS')" -ge 5 ] \
+  && ok "the no-effect matrix: $(echo "$MXS" | cut -c1-200)" || bad "the no-effect matrix: $(echo "$MX" | grep -E '^   |^NOEFFECT PASS' | head -12 | tr '\n' '|' | cut -c1-900)"
+fi
+fi
+if want ui; then
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"
 ADMIN="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
@@ -1522,7 +1684,9 @@ while IFS= read -r line; do
 done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
+fi
 echo "== hardening"
+if want remote; then
 echo "== a remote worker (RFC-0011): its link dials the host endpoint, flotillad's network never reaches it"
 acli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # the first admin has retired the operator token
 R="$(acli run e2e/remote-echo 2>&1)"
@@ -1544,6 +1708,13 @@ $D run -d --name flotilla-e2e-remote-link "${RW[@]}" --entrypoint /usr/local/bin
 seen flotillad '"msg":"remote worker connected".*"worker":"remote-e2e"' \
   && ok "flotillad authenticated the link as remote-e2e's (identity w-remote-e2e, version $TAG)" || bad "link connect: $($D logs flotilla-e2e-remote-link 2>&1 | tail -3)"
 for _ in $(seq 1 10); do acli host list 2>&1 | grep >/dev/null "^w-remote-e2e  *yes  *$TAG " && break; sleep 1; done
+# run_tokens: required, on the remote worker: the run's token travels in the request through the link, the worker writes it to its own file, the
+# worker's own token is refused by the listener (the stack's remote worker can reach it; a real one is on another host and does not)
+acli run e2e/token-probe-remote-e2e >/dev/null 2>&1
+for _ in $(seq 1 30); do acli runs e2e/token-probe-remote-e2e 2>&1 | sed -n 2p | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 1; done
+acli runs e2e/token-probe-remote-e2e 2>&1 | sed -n 2p | grep >/dev/null " ok " \
+  && ok "run tokens on the remote worker: the run's token came through the link into its own file, the worker's own token is refused, the run's accepted" \
+  || bad "token-probe on the remote worker: $(acli runs e2e/token-probe-remote-e2e 2>&1 | head -2) $($D logs flotilla-e2e-remote-worker 2>&1 | grep -o 'PROBE [^"]*' | tail -2)"
 acli host list 2>&1 | grep >/dev/null "^w-remote-e2e  *yes  *$TAG  *[0-9-]*T[0-9:.]*Z" \
   && ok "host list shows the link connected, its version and last contact" || bad "host list for the link: $(acli host list 2>&1)"
 ! $D logs flotillad 2>&1 | grep '"msg":"host alert".*w-remote-e2e' >/dev/null && ok "no not_connected alert for the connected link" \
@@ -1564,6 +1735,8 @@ newest_remote_run | grep >/dev/null "skipped.*not connected" \
   && ok "with its link gone, the remote worker's routine is skipped again" || bad "after the link: $(acli runs e2e/remote-echo 2>&1 | head -3)"
 $D rm -f flotilla-e2e-remote-worker >/dev/null
 
+fi
+if want hardening; then
 for w in flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act; do
   NW="$($D inspect $w --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
   [ "$NW" = "${P}_flotilla " ] && ok "$w is on the internal network only" || bad "$w networks: '$NW'"
@@ -1583,5 +1756,6 @@ NW="$($D network inspect ${P}_flotilla --format '{{.Internal}}' 2>&1)"
 NW="$($D network inspect ${P}_shadow --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the shadow network is internal (no route out)" || bad "shadow network internal=$NW"
 
+fi
 if [ "${KEEP:-}" != 1 ]; then down; fi
 if [ "$fails" -eq 0 ]; then echo "E2E PASS"; else echo "E2E FAIL ($fails)"; exit 1; fi

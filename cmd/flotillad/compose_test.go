@@ -186,3 +186,28 @@ func TestTheShadowWorkerCannotStarveOrReachTheLiveWorker(t *testing.T) {
 		t.Error("flotillad reaches the shadow worker directly, not through its proxy")
 	}
 }
+
+// Only the workers whose routines call flotillad's workers' listener have its address, and none has a worker-token fallback for it: under
+// run_tokens: required (the default) a routine reaches the listener with its run's own token alone. The bugfix, bugfix-act and marketing
+// workers run no routine that reads it (pi's tools, steered by an untrusted issue, would inherit the address), and a remote worker's compose
+// file (deploy/remote) sets none either; the run token its routine is given sits in a file nothing there reads.
+func TestOnlyTheListenersCallersHaveItsAddressAndNoneHasAWorkerTokenFallback(t *testing.T) {
+	services := loadCompose(t)
+	want := map[string]bool{"worker-triage": true, "worker-triage-candidate": true, "worker-triage-shadow": true, "worker-ops-read": true, "worker-ops-act-host": true}
+	for name, s := range services {
+		_, has := s.Environment["ROUTINE_FLOTILLA_API_URL"]
+		if has != want[name] {
+			t.Errorf("%s: ROUTINE_FLOTILLA_API_URL set=%v, want %v", name, has, want[name])
+		}
+		if _, ok := s.Environment["ROUTINE_FLOTILLA_API_TOKEN_FILE"]; ok {
+			t.Errorf("%s: ROUTINE_FLOTILLA_API_TOKEN_FILE is the worker-token fallback, which run_tokens: required refuses", name)
+		}
+	}
+	raw, err := os.ReadFile("../../deploy/remote/docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "FLOTILLA_API") {
+		t.Error("deploy/remote/docker-compose.yml sets a FLOTILLA_API_* variable: a remote worker's routines do not call flotillad's workers' listener")
+	}
+}

@@ -16,7 +16,9 @@ import sys
 SHADOW_TABLES = {"shadow_runs", "shadow_records"}
 
 
-def main(db, routine):
+def dump(db, routine):
+    """The dump's lines (what main prints): one per table, then SHADOW and ROWS."""
+    out = []
     con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
     needles = (routine, routine.replace("/", "-"))
     tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
@@ -35,11 +37,16 @@ def main(db, routine):
             rows.append(json.dumps([cols, [v if not isinstance(v, bytes) else v.hex() for v in row]], sort_keys=True, default=str))
         rows.sort()
         total += len(rows)
-        print("%s %d %s" % (t, len(rows), hashlib.sha256("\n".join(rows).encode()).hexdigest()[:16]))
+        out.append("%s %d %s" % (t, len(rows), hashlib.sha256("\n".join(rows).encode()).hexdigest()[:16]))
     shadow_rows = sum(con.execute('SELECT COUNT(*) FROM "%s"' % t).fetchone()[0] for t in SHADOW_TABLES if t in tables)
     shadow_runs = con.execute("SELECT COUNT(*) FROM runs WHERE shadow = 1").fetchone()[0] if "runs" in tables else 0
-    print("SHADOW %d %d" % (shadow_rows, shadow_runs))
-    print("ROWS %d" % total)
+    out.append("SHADOW %d %d" % (shadow_rows, shadow_runs))
+    out.append("ROWS %d" % total)
+    return out
+
+
+def main(db, routine):
+    print("\n".join(dump(db, routine)))
 
 
 if __name__ == "__main__":

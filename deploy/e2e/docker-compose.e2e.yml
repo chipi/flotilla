@@ -6,6 +6,9 @@ services:
     volumes:
       - ${FLOTILLA_CONFIG}/specs:/etc/flotilla/specs:ro
       - ${FLOTILLA_CONFIG}/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro
+    environment:
+      # the compose file's own list plus the ops-read shadow worker, which only this stack has: flotillad reaches workers directly, never by the proxy
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-read-shadow,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,egress,localhost,127.0.0.1
   # the stack's own CA (run.sh makes it): the example fleets that reach the outside world (sites, deps) reach
   # deploy/e2e/world.py instead, which answers with a certificate from this CA
   worker-ops-read:
@@ -34,3 +37,46 @@ services:
       - ${FLOTILLA_CONFIG}/specs/e2e:/opt/flotilla/fleets/e2e:ro
     environment:
       ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem
+  # The ops-read worker's shadow worker (the matrix of the example fleets, deploy/e2e/matrix.py): its image and read-only settings, less memory and CPU
+  # and a low CPU weight than ops-read, its own proxy (egress-shadow), its own network. It holds its worker token and nothing else (the ops workers
+  # have no fleet secret); a shadow run starts from the example's seed data in its own /tmp. The compose file the installation deploys has none:
+  # which workers get a shadow worker is the installation's choice.
+  worker-ops-read-shadow:
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    profiles: [shadow]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-ops:${FLOTILLA_TAG}
+    container_name: flotilla-worker-ops-read-shadow
+    mem_limit: 192m
+    cpus: 0.25
+    cpu_shares: 128
+    tmpfs: ["/tmp:size=16m", "/home/worker:size=16m,uid=10001,gid=10001,mode=0700"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-ops.env"]
+    environment:
+      FLOTILLA_WORKER: ops-read-shadow
+      FLOTILLA_WORKER_MODE: shadow
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress-shadow:4750
+      ROUTINE_HTTPS_PROXY: http://egress-shadow:4750
+      ROUTINE_NO_PROXY: flotillad
+      ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
+      ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem
+    volumes:
+      - worker-ops-read-shadow-secrets:/run/flotilla:ro
+      - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/livez', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 1s
+    networks: [shadow]
+volumes:
+  worker-ops-read-shadow-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-ops-read-shadow-secrets
+    external: true
