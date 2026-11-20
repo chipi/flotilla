@@ -229,3 +229,43 @@ func TestARealStartWithExamplesDir(t *testing.T) {
 		t.Errorf("%d version rows", len(read.Rows))
 	}
 }
+
+// main's own wiring: what loadSpecs returns as routines is what the scheduler and the metrics loop are given, and the examples catalogue is
+// never among them, whatever examples_dir holds. A catalogue appended to the routines in loadSpecs turns this red (and so the metrics loop's
+// series, which the scheduler's routines make).
+func TestLoadSpecsHandsTheSchedulerNoExampleAndTheMetricsLoopNoSeriesForOne(t *testing.T) {
+	own := t.TempDir()
+	writeTree(t, own, map[string]string{"triage/cycle.yaml": "fleet: triage\nroutine: cycle\ndescription: mine\nenabled: true\nworker: w\n" +
+		"trigger: {every: 10m}\nrun: {command: \"true\", workdir: ., timeout: 1m}\nautonomy: record\nbudget: {day_usd: 1}\nfreshness: 35m\n"})
+	routines, _, cat, err := loadSpecs(&Config{SpecsDir: own, ExamplesDir: filepath.Join("..", "..", "fleets")})
+	if err != nil || cat == nil || len(cat.Examples()) == 0 {
+		t.Fatalf("%v %v", err, cat)
+	}
+	if len(routines) != 1 || routines[0].ID() != "triage/cycle" {
+		t.Errorf("the routines main hands on: %d", len(routines))
+	}
+	var mu sync.Mutex
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+	}))
+	defer ts.Close()
+	st, err := store.Open(filepath.Join(t.TempDir(), "m.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{}}
+	s.SetRoutines(routines)
+	push := &telemetry.Pusher{URL: ts.URL, Env: "test", Version: "t", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	pushRoutineMetrics(context.Background(), push, s, st)
+	mu.Lock()
+	all := strings.Join(bodies, "\n")
+	mu.Unlock()
+	if !strings.Contains(all, `routine="triage/cycle"`) || strings.Contains(all, "example") {
+		t.Fatalf("series: %s", all)
+	}
+}

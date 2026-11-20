@@ -173,6 +173,25 @@ func requireRunTokenCaps(ctx context.Context, cfg *Config, clients map[string]*w
 	return fmt.Errorf("run_tokens is required and worker %s does not carry run tokens: update it to this build (or set run_tokens: accept for one release)", strings.Join(bad, ", "))
 }
 
+// loadSpecs reads what flotillad runs (the routines, from specs_dir, which the scheduler, the version reconciler, the metrics loop and every other
+// consumer take from this one place) and the examples catalogue beside it, which none of them is handed: the catalogue is returned apart and the
+// routines never include it.
+func loadSpecs(cfg *Config) ([]*spec.Routine, map[string]spec.Fleet, *spec.Catalogue, error) {
+	routines, err := spec.LoadVersions(cfg.SpecsDir)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("specs: %w", err)
+	}
+	fleets, err := spec.LoadFleets(cfg.SpecsDir, routines)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fleets: %w", err)
+	}
+	examples, err := loadExamples(cfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("examples: %w", err)
+	}
+	return routines, fleets, examples, nil
+}
+
 // loadExamples reads the examples catalogue when examples_dir is set; nil when it is not.
 func loadExamples(cfg *Config) (*spec.Catalogue, error) {
 	if cfg.ExamplesDir == "" {
@@ -403,19 +422,9 @@ func main() {
 		os.Exit(2)
 	}
 	log := telemetry.Logger(cfg.Environment, version)
-	routines, err := spec.LoadVersions(cfg.SpecsDir)
+	routines, fleets, examples, err := loadSpecs(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "specs:", err)
-		os.Exit(2)
-	}
-	fleets, err := spec.LoadFleets(cfg.SpecsDir, routines)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "fleets:", err)
-		os.Exit(2)
-	}
-	examples, err := loadExamples(cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "examples:", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	callers, err := api.LoadCallers(cfg.CallersFile)
