@@ -273,9 +273,10 @@ The compose service is `worker-triage-shadow` (profile `shadow`), with its own p
    `egress-acl.yaml` (a shadow reads what the live fleet reads; start from a copy). Every request
    a shadow makes is in `docker logs flotilla-egress-shadow`, apart from the live proxy's.
 4. `flotillad.yaml`: `shadows: {enabled: true}`, and `errors_shadow_dsn_file:
-   /run/flotilla/errors-shadow.env` with `FLOTILLA_ERRORS_SHADOW_DSN_FILE` in `.env` (a GlitchTip project
-   of its own, so a shadow's errors never reach the live project). `flotillad -check` then lists each routine's
-   shadow versions and the worker they run on, and refuses a routine with several versions whose
+   /run/flotilla/errors-shadow.env` with `FLOTILLA_ERRORS_SHADOW_DSN_FILE` in `.env` (a GlitchTip
+   project of its own, so a shadow's errors never reach the live project). `flotillad -check` then
+   lists each routine's shadow versions and the worker they run on, and refuses a routine with several
+   versions whose
    shadow worker (`shadow_worker:` in `routine.yaml`, default `<worker>-shadow`) is not a worker
    declared `shadow: true`.
 5. A routine that keeps state (`state:` in `routine.yaml`, paths under the worker's HOME) is
