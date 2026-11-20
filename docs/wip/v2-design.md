@@ -107,8 +107,9 @@ why, like autonomy.
   event (actor flotillad; old and new hash and the changed manifest keys), a `-check` line and a
   deploy proof line, for example `triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md
   (changed)`. A folder version stays frozen as above, and so does a v1 recorded from a folder, so
-  moving a flat routine to the folder layout (a new recipe) is refused until the operator re-records
-  it.
+  moving a flat routine to the folder layout (a new recipe) is re-recorded at the start when it
+  provably loads to the same thing (every recorded key and file equal, ADR-0020 section 3), and
+  refused, naming what differs, when it does not.
 - **State stays readable backward.** A version may add to what the routine stores (ledger columns
   and values, columns of its own state files), never remove or rename; readers ignore what they do
   not know. The e2e proves it for each example routine by running the previous version against the
@@ -343,7 +344,7 @@ and flotilla's episode schema is a compatible superset of it.
    readable state, the no-effect test and an offline run of one example version on an authored
    fixture input (never an exported capture).
 6. **Freeze;** the installation moves its routines (each current spec its v1, live, identical, each
-   move recorded with `flotilla versions rerecord`; its
+   move re-recorded at the start when provably unchanged; its
    existing candidate routines, such as triage's cycle-shadow, become shadow versions), then writes
    its v2s. Before any promote, the installation's own gates run each routine's previous version
    against the new version's rows and state files (backward-readable state), as the e2e does for the

@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -11,7 +13,7 @@ skills:
     - when: {class: external}
       load: [hint-x]
 prompts:
-  system: playbooks/triage.md
+  system: playbooks/system.md
   user: playbooks/user.md
 models: [triage-flash]
 `
@@ -33,7 +35,7 @@ func moveProof(t *testing.T, edit func(d string)) MoveProof {
 	t.Helper()
 	flat := t.TempDir()
 	write(t, flat, "triage/cycle.yaml", strings.Replace(folderRoutine, "autonomy: shadow", "autonomy: record", 1)+moveFlatBody)
-	write(t, flat, "triage/playbooks/triage.md", "the system text\n")
+	write(t, flat, "triage/playbooks/system.md", "the system text\n")
 	write(t, flat, "triage/playbooks/user.md", "the user text\n")
 	write(t, flat, "triage/skills/hint-x/SKILL.md", "hint x\n")
 	fj, err := Load(flat)
@@ -62,7 +64,7 @@ func TestProveMovedAcceptsAPureMove(t *testing.T) {
 		t.Fatalf("a pure move: %+v", p)
 	}
 	got := strings.Join(p.Compared, ", ")
-	for _, want := range []string{"run", "skills", "models", "prompt-file:playbooks/triage.md -> v1/system.md", "prompt-file:playbooks/user.md -> v1/user.md", "prompts", "skill-file:hint-x"} {
+	for _, want := range []string{"run", "skills", "models", "prompt-file:playbooks/system.md -> v1/system.md", "prompt-file:playbooks/user.md -> v1/user.md", "prompts", "skill-file:hint-x"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("compared lacks %q: %s", want, got)
 		}
@@ -89,7 +91,12 @@ func TestProveMovedRefusesAnyDifferenceAndNamesIt(t *testing.T) {
 			write(t, d, "triage/cycle/v1/spec.yaml", moveFolderBody+"explain:\n  run: why\n")
 		}, "explain (added)"},
 		{"a changed prompt byte", func(d string) { write(t, d, "triage/cycle/v1/system.md", "the system text!\n") },
-			"prompt-file:v1/system.md (changed"},
+			"prompt-file:playbooks/system.md -> v1/system.md (changed)"},
+		{"a changed prompt byte in a renamed file", func(d string) {
+			write(t, d, "triage/cycle/v1/main.md", "changed\n")
+			os.Remove(filepath.Join(d, "triage/cycle/v1/system.md"))
+			write(t, d, "triage/cycle/v1/spec.yaml", strings.Replace(moveFolderBody, "system.md", "main.md", 1))
+		}, "prompt-file:v1/main.md (changed: no recorded prompt file has these bytes)"},
 		{"a prompt role pointing at the other file", func(d string) {
 			write(t, d, "triage/cycle/v1/spec.yaml", strings.Replace(moveFolderBody, "system: system.md\n  user: user.md", "system: user.md\n  user: system.md", 1))
 		}, "prompts (changed: a role points at another file)"},
@@ -119,6 +126,42 @@ func TestProveMovedIgnoresRoutineFields(t *testing.T) {
 		write(t, d, "triage/cycle/routine.yaml", strings.Replace(strings.Replace(folderRoutine, "autonomy: shadow", "autonomy: record", 1), "day_usd: 2", "day_usd: 9", 1))
 	})
 	if !p.Unchanged() {
+		t.Fatalf("%+v", p)
+	}
+}
+
+// a prompt file renamed in the move is still the same bytes: matched by content, and the roles recheck says the map is the flat spec's
+func TestProveMovedAcceptsARenamedPromptFile(t *testing.T) {
+	p := moveProof(t, func(d string) {
+		if err := os.Rename(filepath.Join(d, "triage/cycle/v1/system.md"), filepath.Join(d, "triage/cycle/v1/main.md")); err != nil {
+			t.Fatal(err)
+		}
+		write(t, d, "triage/cycle/v1/spec.yaml", strings.Replace(moveFolderBody, "system.md", "main.md", 1))
+	})
+	if !p.Unchanged() || !strings.Contains(strings.Join(p.Compared, ", "), "prompt-file:playbooks/system.md -> v1/main.md") {
+		t.Fatalf("%+v", p)
+	}
+}
+
+// a version with stations has no flat counterpart, even when every key a flat spec could write is equal
+func TestProveMovedRefusesAVersionWithStations(t *testing.T) {
+	flat := t.TempDir()
+	head := strings.Replace(folderRoutine, "autonomy: shadow", "autonomy: record", 1)
+	const run = "run: {command: \"python3 x.py\", workdir: signal-fleet/mvp, timeout: 20m}\n"
+	write(t, flat, "triage/cycle.yaml", head+run)
+	fj, err := Load(flat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := t.TempDir()
+	write(t, folder, "triage/cycle/routine.yaml", head)
+	write(t, folder, "triage/cycle/v1/spec.yaml", run+"stations:\n  decide: {harness: flotilla, model: triage-flash, tools: all, tool_names: [], gates: [], prompts: {system: system.md}}\n")
+	write(t, folder, "triage/cycle/v1/system.md", "s\n")
+	nj, err := Load(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := nj[0].ProveMoved(nj[0].Versions[0], fj[0].Versions[0].Manifest); p.Unchanged() || len(p.Differs) != 1 || !strings.HasPrefix(p.Differs[0], "stations") {
 		t.Fatalf("%+v", p)
 	}
 }

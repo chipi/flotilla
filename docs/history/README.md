@@ -20,6 +20,8 @@ parallel decision log.
   `runtime/`: what was built, decided and found on the way.
 - `0006-v2-step-5.md` — 2026-11-19: v2 step 5, the example fleets in the v2 format, the examples
   catalogue, `run_tokens: required`, and the no-effect matrix as a required check.
+- `0007-folder-move-rerecord.md` — 2026-11-20: a live flat routine moves to the folder layout in one
+  deploy, re-recorded at the start when every recorded key and file is equal.
 - `decisions.md` — *(optional, not started)* append-only decision log (D-NNNN
   entries). Newer decisions at the top. Use this if you make operational
   decisions worth grep-finding later (port picks, image bumps, tooling

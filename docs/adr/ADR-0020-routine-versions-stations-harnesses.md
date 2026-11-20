@@ -108,14 +108,40 @@ every flat spec; a pinned test holds each shipped one.
   re-recorded: prompt-file:playbooks/triage.md (changed)`, and `deploy_fleets.sh` repeats it as a
   proof line. A folder version stays frozen, and the refusal for it says the way out (ship the
   change as v<n+1>, or `flotilla versions rerecord` if this change is deliberate).
+- **A flat v1 that moves to the folder layout, and loads to the same thing, is re-recorded at the
+  start the same way** (amended 2026-11-20). Before, a move changed the recipe and so the
+  hash, and a deploy could not carry it: `rerecord` reads only the folder flotillad has mounted,
+  and the deploy that mounts the new fleets folder was the one the refusal stopped. The proof is
+  the recorded legacy manifest, key by key (`spec.ProveMoved`):
+  - each version-owned key (`run`, `explain`, `steps`, `skills`, `harness`, `models`) has the sha256
+    of its YAML in `v1/spec.yaml` equal to the recorded one;
+  - each prompt file is matched to the recorded `prompt-file:` entry with the same bytes (its path
+    changes with the move), and the recorded `prompts` sha must equal the hash of the role-to-old-path
+    map so rebuilt, so a role that points at another file is caught;
+  - each `skill-file:` entry is equal;
+  - a v1 with stations or limits has no flat counterpart and is refused.
+
+  `-check` prints `versions: R v1 moved to the folder layout, unchanged (run,
+  prompt-file:playbooks/x.md -> v1/x.md, prompts): re-recorded`; the start records it with a
+  `version.update` event carrying the same list; `deploy_fleets.sh` prints the line under
+  "re-recorded at the start". Anything unequal is refused as before, naming the key or file
+  (`... not the same as the recorded flat spec: prompt-file:v1/x.md (changed: ...)`).
+- **The routine's own fields are outside the freeze,** for every routine, flat or folder:
+  `routine.yaml`'s budget, trigger, worker, autonomy and the rest are in no version's hash, and a
+  normal fleets deploy changes them. The recorded manifest does not hold them, so a move cannot be
+  refused for them. The operator gets information instead: `deploy_fleets.sh` hands `flotillad -check
+  -moved-from DIR` the running (flat) fleets, and for each moved routine -check prints `routine
+  fields identical to the flat spec` or the differing fields, using the move-equivalence test's
+  comparison (`spec.MovedView`, `spec.DifferingFields`). It is information, not a gate: the start does
+  not use it, and the operator's go decides.
 - **`flotilla versions rerecord ROUTINE vN --reason R`** (API `POST .../versions/{n}/rerecord`,
   `ActVersion`: an operator or an admin) records the folder as flotillad's fleets folder holds it
   now as the live or previous version's hash and manifest, in one transaction with a
   `version.rerecord` event (old and new hash, the manifest diff, who, why). It is for a deliberate
-  change to a frozen version: a flat routine moved to the folder layout (its recipe changes, so the
-  store that recorded the flat v1 refuses it until this is run; step 6 uses it), a routine removed
-  and added again. A shadow follows its folder by itself and a retired version is history, so both
-  are refused. A new store (the e2e's, a first deploy) records the folder recipe from the start:
+  change to a frozen version: a routine removed and added again, or a moved flat routine that is not
+  provably the same (a provably unchanged move is re-recorded at the start, above). A shadow
+  follows its folder by itself and a retired version is history, so both are refused.
+  A new store (the e2e's, a first deploy) records the folder recipe from the start:
   `platform/heartbeat` is the first routine shipped in the folder layout, its v1 identical to the
   flat spec it replaces, and its runs' `spec_hash` changes once.
 
@@ -209,7 +235,7 @@ the shadow worker, with a models config of its own and recorded tool results sta
 | 3 | stations: the format, `fleets/harnesses.json`, `FLOTILLA_STATIONS`, `flotillad -stations`, the episode schema, the offline entry point | **built** (unit, integration and the e2e: a station version's texts per call, its shadow and pair, its marks, `flotillad -stations` and an offline run with recorded tool results; see [history 0005](../history/0005-v2-steps-3-4.md)). The superset relation with eval-harness's generic episode schema is pending: that schema does not exist yet, so none is pinned and the validator takes a list of schemas |
 | 4 | the harness layer in `runtime/`: the adapter interface, pi's adapter, the seams | **built** (the seam end-to-end runs on the real pi 1.0.0 and, in CI, on a fake harness; pi 0.80.10, the image's version, is not tried) |
 | 5 | the example fleets move to this format; the e2e covers versions, shadows, rollback, backward-readable state and the no-effect test | **built** (every example is a folder, proven equal to its flat spec; triage on a station; the examples catalogue and `run_tokens: required`, [ADR-0021](ADR-0021-examples-catalogue-and-run-tokens-default.md); the e2e's no-effect matrix over the example routines on the `ops-read` worker, run alone as the required `no-effect` check with four mutants that must go red; see [history 0006](../history/0006-v2-step-5.md)). Not in the matrix: the routines on the `bugfix` and `ops-act-host` workers (no shadow worker in the stack; a remote worker's routine cannot be shadowed), and the example's offline run is heartbeat v2, not triage's cycle |
-| 6 | the installation moves its routines (each current spec its v1, live, identical, re-recorded with `flotilla versions rerecord`) and writes its v2s | specified |
+| 6 | the installation moves its routines (each current spec its v1, live, identical: a provably unchanged move is re-recorded at the start) and writes its v2s | specified |
 | 7 | harnesses adopted one by one | specified |
 
 ## Consequences
@@ -234,8 +260,10 @@ Negative:
 - The deprecated alias `autonomy: shadow` lives until step 6.
 - A shadow that has not run (shadows off, or no shadow run finished) has no pairs, so the default
   acceptance is missing and a promote needs the operator's reason.
-- Moving an already-live routine to the folder layout needs one `flotilla versions rerecord` (built
-  in step 1), because its recipe changes; a flat routine's own edits need nothing.
+- Moving an already-live routine to the folder layout changes its recipe: the start re-records it,
+  with the comparison as evidence, when every recorded key and file is equal, and refuses it, naming
+  the difference, when not (ship a new number, or `flotilla versions rerecord`); a flat routine's
+  own edits need nothing.
 
 Neutral:
 
