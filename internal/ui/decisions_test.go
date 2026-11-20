@@ -89,8 +89,11 @@ func TestDecisionsTab(t *testing.T) {
 		t.Fatal("a Decisions tab on a fleet with no decision")
 	}
 	now := time.Now().UTC()
+	// the page counts a UTC day's decisions together, so the three must be on one UTC day whatever the time is: minutes before now straddled
+	// midnight for the first three minutes of every UTC day (the failing run of 2026-11-20 00:02 UTC)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	for i, disp := range []string{"file", "file", "escalate"} {
-		ts := now.Add(-time.Duration(i+1) * time.Minute).Format(time.RFC3339)
+		ts := today.Format(time.RFC3339)
 		if _, err := f.st.AppendEntry(ctx, "triage/cycle", "decision", map[string]string{"ts": ts, "disposition": disp, "stage": "propose",
 			"occurrence_id": "o" + string(rune('a'+i)), "fingerprint": "glitchtip:SHOP-PROD-25", "gates": "i:passed/d:fired"}, "r1"); err != nil {
 			t.Fatal(err)
