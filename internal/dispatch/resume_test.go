@@ -63,7 +63,7 @@ func TestResumeAfterErrorOnce(t *testing.T) {
 	}
 	firstRun := strings.TrimPrefix(first[0].Detail, "run ")
 
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	rs := f.resumeOf(t, 1)
 	if rs == nil || rs.RunID != firstRun || rs.Status != "error" {
@@ -74,7 +74,7 @@ func TestResumeAfterErrorOnce(t *testing.T) {
 		t.Fatalf("run.resumed: %+v", ev)
 	}
 
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if f.resumeOf(t, 2) != nil || len(f.events(t, id, sched.EventRunResumed)) != 1 {
 		t.Fatalf("a third run after max 1 resumes is fresh: %+v", f.w.got[2].Env)
@@ -123,7 +123,7 @@ func TestResumeOnlyForListedStatuses(t *testing.T) {
 			f.w.status, f.w.plan = c.status, c.plan
 			id := f.handOver(t, "")
 			f.pass(t)
-			f.now = f.now.Add(DefaultBackoff + time.Second)
+			f.pastBackoff(time.Second)
 			f.pass(t)
 			if len(f.w.got) != 2 || f.resumeOf(t, 1) != nil || len(f.events(t, id, sched.EventRunResumed)) != 0 {
 				t.Fatalf("%d runs, resume %+v", len(f.w.got), f.w.got[len(f.w.got)-1].Env)
@@ -162,7 +162,7 @@ func TestResumeStaysInsideTheCaseLimit(t *testing.T) {
 	f.w.status, f.w.spend, f.w.secs = "error", 1.2, 60
 	id := f.handOver(t, "")
 	f.pass(t)
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if c := f.cs(t, id); len(f.w.got) != 1 || c.Status != cases.Escalated {
 		t.Fatalf("%d runs, case %s: a case past its limit is escalated, not resumed", len(f.w.got), c.Status)
@@ -181,7 +181,7 @@ func TestResumedRunTimeoutIsTheCasesTimeLeft(t *testing.T) {
 	f.w.status, f.w.secs = "error", 60*60
 	f.handOver(t, "")
 	f.pass(t)
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if f.resumeOf(t, 1) == nil || f.w.got[1].TimeoutS != 30*60 {
 		t.Fatalf("resume %+v, timeout %v s, want the 1800 s left", f.resumeOf(t, 1), f.w.got[1].TimeoutS)
@@ -197,12 +197,12 @@ func TestResumeSurvivesASkippedRun(t *testing.T) {
 	id := f.handOver(t, "")
 	f.pass(t)
 	firstRun := strings.TrimPrefix(f.events(t, id, sched.EventRunStarted)[0].Detail, "run ")
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t) // resumes the error run, but the worker is unreachable
 	if rs := f.resumeOf(t, 1); rs == nil || rs.RunID != firstRun {
 		t.Fatalf("the second run's resume: %+v", rs)
 	}
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if rs := f.resumeOf(t, 2); rs == nil || rs.RunID != firstRun || rs.Status != "error" {
 		t.Fatalf("after a skipped run the third run resumes the errored one: %+v, want run %s", rs, firstRun)
@@ -217,15 +217,15 @@ func TestResumeMaxIsPerChain(t *testing.T) {
 	f.w.script = []string{"error", "error", "interrupted", "ok"}
 	id := f.handOver(t, "")
 	f.pass(t) // A: fresh, error
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t) // B: resumes A, error
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t) // C: max spent, fresh, error
 	if f.resumeOf(t, 1) == nil || f.resumeOf(t, 2) != nil {
 		t.Fatalf("B resumes A and C is fresh: %+v, %+v", f.resumeOf(t, 1), f.resumeOf(t, 2))
 	}
 	c := strings.TrimPrefix(f.events(t, id, sched.EventRunStarted)[2].Detail, "run ")
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if rs := f.resumeOf(t, 3); rs == nil || rs.RunID != c {
 		t.Fatalf("D resumes the fresh chain's run %s: %+v", c, rs)
@@ -240,7 +240,7 @@ func TestResumedRunSeesTheChargedSpend(t *testing.T) {
 	f.w.status, f.w.spend, f.w.secs = "error", 1.5, 600
 	f.handOver(t, "")
 	f.pass(t)
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	var cv struct {
 		Left caseLeft `json:"left"`
@@ -275,9 +275,9 @@ func TestResumeSurvivesABusyRun(t *testing.T) {
 	id := f.handOver(t, "")
 	f.pass(t)
 	firstRun := strings.TrimPrefix(f.events(t, id, sched.EventRunStarted)[0].Detail, "run ")
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t) // resumes the error run; busy
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if rs := f.resumeOf(t, 2); rs == nil || rs.RunID != firstRun {
 		t.Fatalf("after a busy run the third run still resumes the first: %+v, want %s", rs, firstRun)
@@ -295,7 +295,7 @@ func TestResumptionCarriesThePriorRunsSpend(t *testing.T) {
 	f.w.status, f.w.spend = "error", 0.4
 	f.handOver(t, "")
 	f.pass(t)
-	f.now = f.now.Add(DefaultBackoff + time.Second)
+	f.pastBackoff(time.Second)
 	f.pass(t)
 	if rs := f.resumeOf(t, 1); rs == nil || rs.SpendUSD != 0.4 {
 		t.Fatalf("resume %+v, want spend 0.4", rs)

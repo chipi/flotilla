@@ -122,6 +122,15 @@ func (f *fixture) handOver(t *testing.T, key string) string {
 	return id
 }
 
+// pastBackoff moves the clock past the backoff. The store stamps case events with the wall clock, which runs
+// ahead of the fixture's clock on a slow machine, so the step starts from whichever is later.
+func (f *fixture) pastBackoff(margin time.Duration) {
+	if wall := time.Now(); wall.After(f.now) {
+		f.now = wall
+	}
+	f.now = f.now.Add(DefaultBackoff + margin)
+}
+
 func (f *fixture) pass(t *testing.T) {
 	t.Helper()
 	if err := f.d.Once(context.Background()); err != nil {
@@ -204,7 +213,7 @@ func TestNoDecisionBacksOff(t *testing.T) {
 			if f.w.runs() != 1 {
 				t.Fatalf("dispatched again inside the backoff: %d runs", f.w.runs())
 			}
-			f.now = f.now.Add(DefaultBackoff + time.Second)
+			f.pastBackoff(time.Second)
 			f.pass(t)
 			if f.w.runs() != 2 {
 				t.Fatalf("not dispatched after the backoff: %d runs", f.w.runs())
@@ -668,7 +677,7 @@ func TestCheckNotYetLooksAgain(t *testing.T) {
 	if f.w.runs() != 1 {
 		t.Fatalf("looked again inside the backoff: %d runs", f.w.runs())
 	}
-	f.now = f.now.Add(DefaultBackoff + time.Minute)
+	f.pastBackoff(time.Minute)
 	f.result(`{"outcome": "verified", "detail": "backup at 10:42"}`)
 	f.pass(t)
 	if c := f.cs(t, id); c.Status != cases.Closed || c.Resolution != cases.Verified || f.w.runs() != 2 {
