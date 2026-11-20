@@ -478,5 +478,31 @@ class Resumption(unittest.TestCase):
                 self.assertEqual([c["phase"] for c in got], ["checkout"], out)
 
 
+class Example(unittest.TestCase):
+    """fleets/bugfix/fix/v2, the version fix2.py is written for (flotillad -check and -stations read it: cmd/flotillad/bugfixv2_test.go)."""
+
+    V2 = os.path.join(os.path.dirname(HERE), "fleets", "bugfix", "fix", "v2")
+
+    def read(self, *path):
+        with open(os.path.join(*path)) as f:
+            return f.read()
+
+    def test_its_texts_are_the_ones_the_v1_chain_reads(self):
+        self.assertEqual(self.read(self.V2, "rules.md"), self.read(HERE, "fleet_rules.md"))
+        self.assertEqual(self.read(self.V2, "rules.md"), self.read(os.path.dirname(HERE), "fleets", "bugfix", "fix", "v1", "rules.md"))
+        self.assertEqual(self.read(self.V2, "repro.md"), self.read(os.path.dirname(HERE), "bugfix-fleet", "agents", "repro.md"))
+
+    def test_its_stations_and_command_are_what_fix2_serves(self):
+        text = self.read(self.V2, "spec.yaml")
+        import re
+        names = re.findall(r"^  (\w+):\n    harness: (\w+)\n", text, re.M)
+        self.assertEqual(names, [(fix2.FIX, "pi"), (fix2.REPRO, "pi"), (fix2.REVIEW, "pi")])
+        command = re.search(r"command: >-\n\s+(.*)\n", text).group(1)
+        self.assertIn("bugfix/fix2.py", command)
+        self.assertEqual([f for f in fix2.REFUSED_FLAGS if f in command], [], "no model, text or limit in the command's flags")
+        self.assertIn("prompts: {rules: rules.md, agent: repro.md}", text, "the reproducer's agent text is the station's `agent`")
+        self.assertIn("limits: {kickback_max: 2, review_kickback_max: 1}", text)
+
+
 if __name__ == "__main__":
     unittest.main()

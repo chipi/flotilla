@@ -8,6 +8,16 @@
       "spec.yaml": "38d594954f299f2352df1b2cf78380b1ccef83ce4e338bf9a06804b79c69330b"
     }
   },
+  "bugfix/fix@v2": {
+    "routine_hash": "e4f67c829431",
+    "version_hash": "9ea686b37b13b4320b3d8ac7f47c2f134944a0452559fe9bbcccc2dc89505033",
+    "legacy": false,
+    "manifest": {
+      "repro.md": "4db67ea788e4e265f164e05489751e3d086dbf65452c55a0753b0a028e030f7a",
+      "rules.md": "e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856",
+      "spec.yaml": "e3847f76b3e3b9b8972b2ab51b0f4c2d10b88a8a4bfc90bf5ea68cc4df3a92e9"
+    }
+  },
   "bugfix/intake@v1": {
     "routine_hash": "5929054fb71e",
     "version_hash": "d8629b2c8e23f405f51e757bc83e195428b2e44dcb15d4d680c7cedecb7619ee",

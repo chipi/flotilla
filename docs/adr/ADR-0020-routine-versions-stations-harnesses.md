@@ -191,6 +191,58 @@ load) against `fleets/harnesses.json`, the harnesses' capabilities, refuses what
 serve. A run receives `FLOTILLA_STATIONS`; `flotillad -stations` prints what a version's run gets,
 offline. No model, text or limit belongs in a version's code or its command's flags.
 
+#### Amended 2026-11-20 (step 6): the bugfix chain's stations
+
+The bugfix fix routine is the first to write its v2 on stations. The decisions, for
+`fleets/bugfix/fix/v2`:
+
+- **Scope.** Three stations on `harness: pi`: `fix`, `repro` and `review`, the chain's three
+  coding-agent calls. The verdict and the advisor stay as they are, bash leaves of the bake-off
+  folder, out of this step; they have no station, so their aliases are the ones a station carries:
+  the verdict's is `fix`'s model, the advisor's is `review`'s (what v1's `--worker-model` and
+  `--advisor-model` said).
+- **New code beside the old.** `bugfix/fix2.py` is `fix.py`'s chain for a version with stations:
+  its models, rules texts, the reproducer's agent text, limits (`timeout`, `max_turns`,
+  `max_output_tokens`) and the version's flow limits (`kickback_max`, `review_kickback_max`,
+  `test_timeout`, `setup_timeout`) all come from `FLOTILLA_STATIONS`, and a flag that says one is
+  refused. `fix.py`, `pi_review.py` and v1's spec are unchanged, so v1's behaviour is byte for byte
+  what it was. The spec hash does not cover code, so a version's code is never edited under it.
+- **The calls.** The three stations run through `runtime/adapter.py` on `runtime/harness_pi.py`
+  with no override: the prompt on stdin, the station's `rules` text as the system text (a review
+  with no tools is not given it, as in v1), `--session` for a resume,
+  `NODE_OPTIONS=--max-old-space-size=4096` kept (the leaves exported it; the adapter does not).
+- **models.json.** The adapter writes `pi/models.json` for the one route of its call, over the file
+  `bugfix/pi_config.py` wrote for every alias of the run. Two things follow, and both are decided
+  here. The route carries the chain's catalog entry for its model in `route.meta["pi_model"]`, so
+  the context window, prices and the reply-limit floor (the stations' `max_output_tokens`, v1's
+  `--min-output`) survive: a test pins that the file the adapter writes is the one `pi_config`
+  writes for that alias. And the run's full file is put back after every call, however it ends,
+  because the verdict and advisor leaves read every alias from it. The alternative, having the
+  adapter merge into the file, would change the adapter for every harness and was not taken.
+- **Records.** Each call also leaves a version 2 episode file (`station`, not v1's `role`). pi's
+  calls and spend have one source, its session files: the file is marked recorded when it is made
+  and `spend.episode_cost` counts only the harnesses that are not pi, so nothing is counted twice.
+- **Checkpoints.** A checkpoint of one chain is not continued by the other: fix2 names the adapter
+  for the repro and review roles in the checkpoint's harness keys, and `fix.load_checkpoint`
+  refuses the mismatch in both directions (the run starts fresh and says why).
+- **Proof offline.** `bugfix/differential.py` runs the golden scenarios on the chain at the commit
+  before the switch (taken from git) and on fix2 and prints every field that differs. What the
+  model is sent, the system file and its hash, the tools switches, `--session`, the working
+  directory, `NODE_OPTIONS` and the plans are equal; the deltas are an allow-list: the prompt on
+  stdin, the provider's name, `PI_OFFLINE` and `PI_SKIP_VERSION_CHECK`, the models.json rewrite,
+  and `--no-context-files` on every call (S2). The last is a behaviour change in one case: v1 run
+  with `--pi-rules ''` let pi load the repository's own AGENTS.md, and a version on stations has no
+  such choice. `bugfix/test_seam_fix2.py` runs the seam end to end (S1 to S11) over fix2 on the
+  real pi.
+- **Acceptance is `[replay]`.** Promoting v2 needs a replay of the installation's recorded cases
+  through both versions, with a gate result (section 4). The offline differential is the code's
+  proof, not that evidence. The example does not declare it: `acceptance:` is a routine field, so
+  writing it into the example's `routine.yaml` changes the routine's hash and breaks the
+  move-equivalence and golden-manifest tests that pin v1 as shipped. The installation declares it
+  in its own `routine.yaml` when it takes v2 (a promote then refuses without the gate result). v2
+  is written, not promoted; v1 stays live and is the rollback (promote v1 back; nothing of v1 was
+  edited).
+
 ### 7. Harnesses are the platform's (steps 4 and 7)
 
 The harness layer lives in `runtime/`: one adapter per harness, the shared runner and the seams
@@ -244,7 +296,7 @@ the shadow worker, with a models config of its own and recorded tool results sta
 | 3 | stations: the format, `fleets/harnesses.json`, `FLOTILLA_STATIONS`, `flotillad -stations`, the episode schema, the offline entry point | **built** (unit, integration and the e2e: a station version's texts per call, its shadow and pair, its marks, `flotillad -stations` and an offline run with recorded tool results; see [history 0005](../history/0005-v2-steps-3-4.md)). The superset relation with eval-harness's generic episode schema is pending: that schema does not exist yet, so none is pinned and the validator takes a list of schemas |
 | 4 | the harness layer in `runtime/`: the adapter interface, pi's adapter, the seams | **built** (the seam end-to-end runs on the real pi 1.0.0 and, in CI, on a fake harness; pi 0.80.10, the image's version, is not tried) |
 | 5 | the example fleets move to this format; the e2e covers versions, shadows, rollback, backward-readable state and the no-effect test | **built** (every example is a folder, proven equal to its flat spec; triage on a station; the examples catalogue and `run_tokens: required`, [ADR-0021](ADR-0021-examples-catalogue-and-run-tokens-default.md); the e2e's no-effect matrix over the example routines on the `ops-read` worker, run alone as the required `no-effect` check with four mutants that must go red; see [history 0006](../history/0006-v2-step-5.md)). Not in the matrix: the routines on the `bugfix` and `ops-act-host` workers (no shadow worker in the stack; a remote worker's routine cannot be shadowed), and the example's offline run is heartbeat v2, not triage's cycle |
-| 6 | the installation moves its routines (each current spec its v1, live, identical: a provably unchanged move is re-recorded at the start) and writes its v2s | specified |
+| 6 | the installation moves its routines (each current spec its v1, live, identical: a provably unchanged move is re-recorded at the start) and writes its v2s | **in progress**: the moves are built (history 0007); the bugfix fix routine's v2 (stations `fix`, `repro`, `review` on pi, `bugfix/fix2.py`) is written and proven offline, acceptance `[replay]`, not promoted (see the amendment under section 6) |
 | 7 | harnesses adopted one by one | specified |
 
 ## Consequences

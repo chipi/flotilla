@@ -12,6 +12,19 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "bugfix/fix@v2": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"fix-flash\":{\"endpoint\":\"gw\",\"model\":\"m-fix-flash\"},\"fix-reviewer\":{\"endpoint\":\"gw\",\"model\":\"m-fix-reviewer\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "bugfix/fix",
+    "FLOTILLA_ROUTINE_VERSION": "2",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"kickback_max\":2,\"review_kickback_max\":1},\"stations\":{\"fix\":{\"harness\":\"pi\",\"model\":\"fix-flash\",\"tools\":\"all\",\"limits\":{\"max_turns\":90,\"timeout\":\"20m\",\"max_output_tokens\":32768},\"texts\":{\"rules\":{\"path\":\"fix/v2/rules.md\",\"sha256\":\"e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]},\"repro\":{\"harness\":\"pi\",\"model\":\"fix-flash\",\"tools\":\"all\",\"limits\":{\"max_turns\":40,\"timeout\":\"20m\",\"max_output_tokens\":32768},\"texts\":{\"agent\":{\"path\":\"fix/v2/repro.md\",\"sha256\":\"4db67ea788e4e265f164e05489751e3d086dbf65452c55a0753b0a028e030f7a\"},\"rules\":{\"path\":\"fix/v2/rules.md\",\"sha256\":\"e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]},\"review\":{\"harness\":\"pi\",\"model\":\"fix-reviewer\",\"tools\":\"none\",\"limits\":{\"max_turns\":0,\"timeout\":\"10m\",\"max_output_tokens\":32768},\"texts\":{\"rules\":{\"path\":\"fix/v2/rules.md\",\"sha256\":\"e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "bugfix/intake@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",
