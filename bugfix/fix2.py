@@ -26,6 +26,8 @@ import adapter  # noqa: E402
 import declared_prompts  # noqa: E402
 import fix  # noqa: E402
 import harness_pi  # noqa: E402
+import harness_prompts  # noqa: E402
+import prompts  # noqa: E402
 import stations  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +43,7 @@ VERSION_LIMITS = {"kickback_max": "--kickback-max", "review_kickback_max": "--re
 # this chain, nor this chain's by v1 (fix.load_checkpoint compares them). The fix role's key stays "pi": fix.Chain.attempt names
 # the leaf it runs from it.
 ADAPTER_KEY = "pi-adapter"
+NODE_OPTIONS = "--max-old-space-size=4096"   # pi's heap, as harnesses/pi.sh and repro.sh set it
 FIX_PARSE = fix.parse   # fix.main is run with parse swapped for this module's
 
 
@@ -157,6 +160,16 @@ class Chain(fix.Chain):
                     self.rules[name] = text_path(self.st, name, "rules", environ)
                 except declared_prompts.PromptError as e:
                     raise fix.Stop(f"prompt: {e}") from None
+        # the reproducer's text, read (and its hash checked) before any model call; repro.sh read agents/repro.md for it
+        self.repro_agent = ""
+        if a.repro:
+            root, fleet = fleet_root(environ)
+            try:
+                self.repro_agent = harness_prompts.agent_def_body(
+                    self.st.render(REPRO, "agent", {}, fleet, root=root, environ=environ).text)
+            except (stations.StationsError, prompts.PromptError) as e:
+                raise fix.Stop(f"prompt: {e}") from None
+        self.environ0 = dict(environ)
 
     def route(self, alias):
         """The model route of an alias with pi's catalog entry for it (context window, prices, the reply-limit floor) as pi_config
@@ -180,6 +193,48 @@ class Chain(fix.Chain):
             raise fix.Stop(f"{req.station}: {e}") from None
         finally:
             self.restore_models()
+
+    # fix.Chain runs the fix and the reproducer as bash leaves (harnesses/pi.sh, repro.sh) through the module's `sh`. These two run
+    # the same steps with the leaf's call replaced: while one of them runs, a command that is one of those leaves is the station's
+    # call through the adapter, whatever else the step runs (git, the tests) is `sh` as it was.
+    @contextlib.contextmanager
+    def leaves(self):
+        outer = fix.sh
+        scripts = {os.path.join(fix.BAKEOFF, "harnesses", self.a.harness + ".sh"): FIX,
+                   os.path.join(fix.BAKEOFF, "harnesses", "repro.sh"): REPRO}
+
+        def dispatch(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, turn_ended=None, tee_path=None, stdin=None):
+            role = scripts.get(cmd[0]) if isinstance(cmd, list) and len(cmd) == 3 else None
+            if role is None:
+                return outer(cmd, cwd, env, timeout, check=check, max_turns=max_turns, turn_ended=turn_ended, tee_path=tee_path,
+                             stdin=stdin)
+            return self.station(role, cmd[2], env, timeout, max_turns)
+        fix.sh = dispatch
+        try:
+            yield
+        finally:
+            fix.sh = outer
+
+    def station(self, role, desc, env, timeout, max_turns):
+        """The fix's or the reproducer's call: (exit code, pi's stream), as the leaf gave them. A fix is the template around the task
+        (harness_prompts.fix_prompt; a resumed one is sent `desc` as it is, the next message of its session), the reproducer's the
+        agent text then the issue. harnesses/pi.sh and repro.sh export NODE_OPTIONS for pi's heap; so does this."""
+        s = self.st.station(role)
+        resume = (env or {}).get("PI_RESUME_SESSION") or None if role == FIX else None
+        prompt = (desc if resume else harness_prompts.fix_prompt(desc)) if role == FIX else harness_prompts.repro_prompt(self.repro_agent, desc)
+        limit = seconds((s.get("limits") or {}).get("timeout") or timeout)
+        req = adapter.Request(station=role, prompt=prompt, system_path=self.rules.get(role) or None, model=self.route(s["model"]),
+                              tools="all", resume=resume, max_turns=max_turns or 0, workdir=self.wt, run_dir=self.run_dir, timeout=limit)
+        _, code, stream = self.execute(req, dict(env if env is not None else self.env, NODE_OPTIONS=NODE_OPTIONS))
+        return code, stream
+
+    def attempt(self, manifest, resume=None, cont=None):
+        with self.leaves():
+            return super().attempt(manifest, resume, cont)
+
+    def repro(self, manifest):
+        with self.leaves():
+            return super().repro(manifest)
 
     def review(self, diff, task="", summary=""):
         prompt = self.review_prompt(diff, task, summary)

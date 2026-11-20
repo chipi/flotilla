@@ -18,6 +18,7 @@ import fix  # noqa: E402
 import fix2  # noqa: E402
 import adapter  # noqa: E402  (fix2 puts runtime/ on the path)
 import harness_pi  # noqa: E402
+import harness_prompts  # noqa: E402
 import pi_config  # noqa: E402
 import stations  # noqa: E402
 import test_fix as tf  # noqa: E402
@@ -208,6 +209,92 @@ class Review(unittest.TestCase):
                 c.review("diff")
         with open(c.models_path) as f:
             self.assertEqual(f.read(), c.models_text)
+
+
+class Station(unittest.TestCase):
+    """The fix's and the reproducer's calls: what the bash leaves sent, as the adapter sends it."""
+
+    DESC = "THE ISSUE AS FILED:\nvalue() returns 1\n\nTHE TASK:\nmake value() return 2 ($HOME `x` \"q\")"
+
+    def setUp(self):
+        self.w = World(self)
+        self.c = self.w.chain()
+        os.makedirs(self.c.wt)
+        self.session = os.path.join(self.c.run_dir, "pi", "sessions", "--wt--", "2026_s1.jsonl")
+        os.makedirs(os.path.dirname(self.session))
+        with open(self.session, "w") as f:
+            f.write('{"type":"session","id":"s1"}\n{"type":"message","mess')
+
+    def call(self, role, desc, env=None, timeout=1200, max_turns=0):
+        """The command, keyword arguments and environment fix.sh was given by the step for a leaf, as the chain runs it."""
+        seen = []
+
+        def run(cmd, cwd, env=None, timeout=None, **kw):
+            seen.append((cmd, cwd, env, timeout, kw))
+            return 0, "STREAM"
+        leaf = os.path.join(fix.BAKEOFF, "harnesses", "pi.sh" if role == "fix" else "repro.sh")
+        with unittest.mock.patch.object(fix, "sh", run), self.c.leaves():
+            got = fix.sh([leaf, self.c.wt, desc], fix.BAKEOFF, dict(self.c.env, **(env or {})), timeout, max_turns=max_turns)
+        self.assertEqual(got, (0, "STREAM"))
+        return seen[-1]
+
+    def test_a_fresh_fix_is_the_prompt_template_on_stdin_with_pi_s_heap(self):
+        cmd, cwd, env, timeout, kw = self.call("fix", self.DESC, max_turns=90)
+        self.assertEqual((cwd, timeout, kw["max_turns"]), (self.c.wt, 1200, 90))
+        self.assertEqual(kw["stdin"], harness_prompts.fix_prompt(self.DESC))
+        self.assertNotIn("--session", cmd)
+        self.assertEqual(env["NODE_OPTIONS"], "--max-old-space-size=4096")
+        self.assertEqual(env["PI_CODING_AGENT_DIR"], os.path.join(self.c.run_dir, "pi"))
+        self.assertEqual(cmd[cmd.index("--model") + 1], "fleet-bugfix-flash")
+
+    def test_a_resumed_fix_continues_the_session_with_the_message_as_it_is(self):
+        cmd, _, env, _, kw = self.call("fix", "YOUR FIX DID NOT PASS ITS GATES", env={"PI_RESUME_SESSION": self.session})
+        self.assertEqual(cmd[cmd.index("--session") + 1], os.path.realpath(self.session))
+        self.assertEqual(kw["stdin"], "YOUR FIX DID NOT PASS ITS GATES", "no template around a follow-up")
+        self.assertEqual(env["NODE_OPTIONS"], "--max-old-space-size=4096")
+        with open(self.session) as f:
+            self.assertEqual(f.read(), '{"type":"session","id":"s1"}\n', "a line the kill cut short is dropped before pi reads it")
+
+    def test_the_interrupted_run_continues_in_its_session_with_the_chain_s_message(self):
+        """What Chain.attempt asks for after a kill (ADR-0019): the session it was killed in, and INTERRUPTED plus the frozen-test note."""
+        note = "\n\nIMPORTANT: the failing test src/a.test.js reproduces the bug and is frozen."
+        cmd, _, _, _, kw = self.call("fix", fix.INTERRUPTED + note, env={"PI_RESUME_SESSION": self.session})
+        self.assertEqual(kw["stdin"], fix.INTERRUPTED + note)
+        self.assertEqual(cmd[cmd.index("--session") + 1], os.path.realpath(self.session))
+
+    def test_a_session_that_is_not_in_the_run_directory_is_no_session(self):
+        with self.assertRaisesRegex(fix.Stop, "no saved session"):
+            self.call("fix", "x", env={"PI_RESUME_SESSION": "/etc/passwd"})
+
+    def test_the_reproducer_is_the_agent_text_then_the_issue(self):
+        cmd, _, env, _, kw = self.call("repro", self.DESC, max_turns=40)
+        self.assertEqual(kw["stdin"], harness_prompts.repro_prompt(harness_prompts.agent_def_body(
+            "---\nname: repro\n---\n---\n# reproducer\nWrite one test.\n"), self.DESC))
+        self.assertTrue(kw["stdin"].startswith("# reproducer\nWrite one test.\n\nTHE ISSUE AS FILED:"))
+        self.assertEqual((kw["max_turns"], env["NODE_OPTIONS"]), (40, "--max-old-space-size=4096"))
+
+    def test_a_station_has_its_own_timeout_and_rules(self):
+        w = World(self)
+        w.doc["stations"]["repro"]["limits"]["timeout"] = "7m"
+        w.environ["FLOTILLA_STATIONS"] = json.dumps(w.doc)
+        w.st = stations.load(w.environ)
+        c = w.chain()
+        os.makedirs(c.wt)
+        seen = []
+        with unittest.mock.patch.object(fix, "sh", lambda *a, **k: seen.append((a, k)) or (0, "")), c.leaves():
+            fix.sh([os.path.join(fix.BAKEOFF, "harnesses", "repro.sh"), c.wt, "d"], fix.BAKEOFF, dict(c.env), 1200)
+        (cmd, *_), kw = seen[-1]
+        self.assertEqual(seen[-1][0][3], 420, "the repro station's 7m, not the fix station's 20m the step was given")
+        self.assertEqual(cmd[cmd.index("--append-system-prompt") + 1], c.rules["repro"])
+
+    def test_what_is_not_a_leaf_is_run_as_it_was(self):
+        seen = []
+        with unittest.mock.patch.object(fix, "sh", lambda *a, **k: seen.append((a, k)) or (0, "out")), self.c.leaves():
+            self.assertEqual(fix.sh(["git", "-C", self.c.wt, "status"], self.c.run_dir, None, 60, check=True), (0, "out"))
+        self.assertEqual(seen[0][0][0], ["git", "-C", self.c.wt, "status"])
+        self.assertTrue(seen[0][1]["check"])
+        self.assertIsNot(fix.sh, None)
+        self.assertEqual(fix.sh.__name__, "sh", "the swap ends with the step")
 
 
 if __name__ == "__main__":
