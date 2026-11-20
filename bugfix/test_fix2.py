@@ -155,5 +155,60 @@ class Route(unittest.TestCase):
                          ["fleet-bugfix-flash", "fleet-bugfix-reviewer"])
 
 
+class Review(unittest.TestCase):
+    def call(self, w, c, tools):
+        """c.review with fix.sh replaced by a runner that records the models.json it finds and the argv it was given."""
+        seen = []
+
+        def run(cmd, cwd, env=None, timeout=None, **kw):
+            with open(c.models_path) as f:
+                seen.append((cmd, kw, json.load(f)))
+            return 0, '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"VERDICT: approve"}]}}\n'
+        c.a.review_tools = tools
+        os.makedirs(c.wt, exist_ok=True)
+        with unittest.mock.patch.object(fix, "sh", run), unittest.mock.patch.object(c, "review_prompt", return_value="THE REVIEW PROMPT"):
+            answer = c.review("diff")
+        return answer, seen
+
+    def test_the_review_is_the_pi_adapter_s_call_and_the_runs_models_json_is_put_back(self):
+        w = World(self)
+        c = w.chain()
+        answer, seen = self.call(w, c, "none")
+        self.assertEqual(answer, "VERDICT: approve")
+        (cmd, kw, during), = seen
+        self.assertEqual(cmd[:2], ["pi", "-p"])
+        self.assertEqual(kw["stdin"], "THE REVIEW PROMPT")
+        self.assertNotIn("THE REVIEW PROMPT", cmd, "the prompt is on stdin, not in argv")
+        self.assertEqual([m["id"] for m in during["providers"]["flotilla-gateway-bugfix"]["models"]], ["fleet-bugfix-reviewer"])
+        with open(c.models_path) as f:
+            self.assertEqual(f.read(), c.models_text, "the verdict and advisor leaves need every alias")
+
+    def test_the_rules_are_given_to_a_review_that_has_tools_and_not_to_one_that_has_none(self):
+        w = World(self)
+        c = w.chain()
+        rules = c.rules["review"]
+        self.assertTrue(rules.endswith("rules.md"))
+        for tools, given in (("none", False), ("read", True)):
+            with self.subTest(tools):
+                (cmd, _, _), = self.call(w, c, tools)[1]
+                self.assertEqual("--append-system-prompt" in cmd, given)
+                self.assertEqual(cmd[cmd.index("--append-system-prompt") + 1] if given else None, rules if given else None)
+                self.assertIn("--no-context-files", cmd, "the repository's own rules are never read")
+                self.assertEqual(("--no-tools" in cmd, "--tools" in cmd), (tools == "none", tools == "read"))
+
+    def test_a_models_json_is_put_back_when_the_call_raises(self):
+        w = World(self)
+        c = w.chain()
+        os.makedirs(c.wt, exist_ok=True)
+
+        def run(*a, **k):
+            raise fix.Stop("killed")
+        with unittest.mock.patch.object(fix, "sh", run), unittest.mock.patch.object(c, "review_prompt", return_value="p"):
+            with self.assertRaises(fix.Stop):
+                c.review("diff")
+        with open(c.models_path) as f:
+            self.assertEqual(f.read(), c.models_text)
+
+
 if __name__ == "__main__":
     unittest.main()

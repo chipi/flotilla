@@ -32,10 +32,17 @@ class Harness(unittest.TestCase):
         rows = d.differential(self.old, d.ROOT, "fix.py")
         self.assertEqual(rows, [], d.table(rows)[0])
 
-    def test_the_chain_on_stations_is_the_chain_in_every_scenario(self):
-        """bugfix/fix2.py takes the models, texts and limits from its stations and not from flags; its calls are v1's."""
+    # what the review's call may differ in between the chain's own and the generic pi adapter's (the allow-list's rules, named)
+    REVIEW_DELTAS = {"prompt_channel", "models_json", "env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK", "no_context_files"}
+
+    def test_the_review_on_the_pi_adapter_differs_by_the_allow_list_and_nothing_else(self):
+        """bugfix/fix2.py on stations: the review is harness_pi.Pi's own call (no override); fix and repro are still v1's."""
         rows = d.differential(self.old, d.ROOT, "fix2.py")
-        self.assertEqual(rows, [], d.table(rows)[0])
+        self.assertEqual([r for r in rows if r[6] is None], [], d.table(rows)[0])
+        self.assertEqual({r[2] for r in rows}, {"review"})
+        self.assertEqual({r[3] for r in rows}, self.REVIEW_DELTAS)
+        s2 = {r[0] for r in rows if r[3] == "no_context_files"}
+        self.assertEqual(s2, {"no_rules"}, "--no-context-files is a delta only where v1 was given no rules at all")
 
     def test_one_prompt_byte_changed_in_the_new_path_is_found(self):
         new = d.copy_tree(tempfile.mkdtemp())

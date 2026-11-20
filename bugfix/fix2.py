@@ -170,6 +170,30 @@ class Chain(fix.Chain):
             f.write(self.models_text)
         os.chmod(self.models_path, 0o600)
 
+    def execute(self, req, env=None):
+        """One station's pi call through the adapter (adapter.execute on harness_pi.Pi, run by fix.sh as every call of the chain is).
+        The adapter writes pi/models.json for the call's one route, so the run's own file, which the verdict and advisor leaves read,
+        is put back when it returns, however it returns."""
+        try:
+            return adapter.execute(harness_pi.PI, req, self.env if env is None else env, run=fix.sh)
+        except adapter.HarnessError as e:
+            raise fix.Stop(f"{req.station}: {e}") from None
+        finally:
+            self.restore_models()
+
+    def review(self, diff, task="", summary=""):
+        prompt = self.review_prompt(diff, task, summary)
+        tools = "none" if self.a.review_tools == "none" else "read"
+        # the rules are about using tools: a review that has none is not given them (and still never the repository's own)
+        req = adapter.Request(station=REVIEW, prompt=prompt, system_path=(self.rules.get(REVIEW) or None) if tools == "read" else None,
+                              model=self.route(self.a.reviewer_model), tools=tools, resume=None, max_turns=0, workdir=self.wt,
+                              run_dir=self.run_dir, timeout=self.a.review_timeout)
+        ep, code, _ = self.execute(req)
+        self.calls.record("reviewer", self.a.reviewer_model)
+        if ep.answer:
+            return ep.answer
+        return f"(no review: {fix.tail(ep.error, 300)})" if ep.error else f"(no review: the reviewer episode ended {code} with no text)"
+
 
 @contextlib.contextmanager
 def _swapped(**attrs):
