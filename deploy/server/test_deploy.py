@@ -354,6 +354,7 @@ FLEETS_DOCKER = textwrap.dedent("""\
               echo "versions: triage/cycle v1 routine fields: changed since the stored snapshot: budget {\\"day_usd\\":2} -> {\\"day_usd\\":7} (information only, not a gate: the freeze covers the version's keys and files, and the start only records this)"
             fi
             [ -n "${STUB_CHECK_NOSNAP:-}" ] && echo "routine fields: no snapshot yet (the first start after this deploy records one for every routine); nothing to compare"
+            echo "routine actions: max autonomy auto (a routine action runs without approval once its routine and the action have earned auto; host actions stay at propose)"
             echo "CHECK PASS"; exit 0;;
           *" up "*) : > "$STUB_CFG/up"; exit 0;;
         esac; exit 0;;
@@ -511,7 +512,7 @@ class DeployFleetsTest(unittest.TestCase):
         self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
         r = self.deploy(self.c1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertNotIn("== routine fields", r.stdout)
+        self.assertNotIn("== routine fields", r.stdout, "the routine actions config line is not a routine's field")
         self.assertNotIn("a moved routine's own fields", r.stdout)
 
     def test_a_promote_in_the_proof_is_a_state_change_on_both_versions(self):

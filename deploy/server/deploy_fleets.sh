@@ -100,7 +100,7 @@ if [ -n "$RR" ]; then say "== re-recorded at the start (a flat routine's v1 is n
 # The routines' own fields (budget, trigger, worker, autonomy ...) are in no version's hash: -check compares each with the snapshot the last start
 # recorded, and the start records what moved as a routine.update event. Information, never a refusal. A flat routine moved to the folder layout
 # gets its own line: identical to the stored snapshot, or what moved.
-RF="$(printf '%s\n' "$OUT" | grep -E '^routine [^ ]+: |^routine fields: ' || true)"
+RF="$(printf '%s\n' "$OUT" | grep -E '^routine [^ /]+/[^ ]+: |^routine fields: ' || true)"
 if [ -n "$RF" ]; then say "== routine fields (recorded at the start as routine.update events; not frozen, nothing is refused for them):"; printf '%s\n' "$RF" | sed 's/^/   /'; fi
 MV="$(printf '%s\n' "$OUT" | grep -E '^versions: [^ ]+ v[0-9]+ routine fields: ' || true)"
 if [ -n "$MV" ]; then say "== a moved routine's own fields against the stored snapshot (information, not a gate):"; printf '%s\n' "$MV" | sed 's/^versions: /   /'; fi
