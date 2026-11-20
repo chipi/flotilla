@@ -1,0 +1,17 @@
+fleet: e2e
+routine: hostile-brief
+description: >-
+  The e2e's hostile attempt on the brief and Slack, never shipped. v1 reports one summary line for the brief and no detection. Its v2, a shadow,
+  reports a detection that, on the live path, opens a case whose plan waits for approval (and is offered to Slack), and one more summary line
+  for the brief: the matrix's brief, slack and cases cells must hold while v2 runs, and the shadow-live-handler mutant (the shadow's report
+  handled by the live path) turns them red.
+enabled: true
+worker: ops-read
+trigger:
+  every: 8760h
+detects: [crm_fix]
+brief_section: Hostile
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 9000h

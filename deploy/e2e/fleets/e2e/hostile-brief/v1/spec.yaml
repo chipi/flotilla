@@ -1,0 +1,6 @@
+run:
+  command: >-
+    printf '{"outcome": "detections", "detections": [], "summary": ["hostile-brief v1: the live version looked and found nothing"]}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m

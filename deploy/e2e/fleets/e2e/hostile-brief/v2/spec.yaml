@@ -1,0 +1,6 @@
+run:
+  command: >-
+    printf '{"outcome": "detections", "detections": [{"kind": "crm_fix", "target": "crm:contact/c-901/country", "detail": "a shadow asks for a plan to be posted", "data": {"op": "update", "contact": "c-901", "field": "country", "from": "Spain", "to": "ES"}}], "summary": ["hostile-brief v2: a shadow wrote this brief line"]}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m

@@ -41,6 +41,7 @@ DB = os.path.join(WORK, "matrix-store.db")
 
 PASS, SKIP, FAIL = "PASS", "SKIP", "FAIL"
 cells = []   # (routine, step, verdict, note)
+HOSTILE = ["e2e/hostile-brief"]   # its v2 reports a detection whose plan would wait for approval (offered to Slack) and a brief line
 STEPS = ["versions", "shadow", "unchanged", "promote", "rollback", "previous", "state", "brief", "slack", "hosts"]
 
 
@@ -86,15 +87,25 @@ def state_hash():
     return out
 
 
-def table_state(db, tables):
-    """(rows, hash) of whole tables of a store copy, in canonical form: what the brief and the Slack asks are."""
+def table_state(db, tables, queries=()):
+    """(rows, hash) of whole tables of a store copy, and of the rows some queries select, in canonical form: what the brief and the Slack asks are."""
     import hashlib
     con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
     rows = []
     for t in tables:
         rows += [json.dumps([t, list(r)], default=str) for r in con.execute('SELECT * FROM "%s"' % t)]
+    for q in queries:
+        rows += [json.dumps([q, list(r)], default=str) for r in con.execute(q)]
     rows.sort()
     return len(rows), hashlib.sha256("\n".join(rows).encode()).hexdigest()[:16]
+
+
+def brief_state():
+    return table_state(DB, ["briefs", "brief_marks"], ["SELECT subject, detail FROM events WHERE kind = 'routine.summary'"])
+
+
+def slack_state():
+    return table_state(DB, ["slack_asks"], ["SELECT id, kind, status FROM cases WHERE status = 'awaiting_approval'"])
 
 
 def host_state():
@@ -116,15 +127,18 @@ def world_writes(ip):
     return sorted(l for l in out.split("\n") if "world WRITE" in l and ("client=%s " % ip) in l)
 
 
-def case_hash():
+def case_hash(kind=None):
+    """The cases (their ids and kinds; their status moves on its own as other routines work), of one kind or all."""
     rc, out = cli("case", "list", "--all")
-    return "\n".join(" ".join(l.split()[:3]) for l in out.split("\n")[1:] if l.strip())
+    rows = [l.split()[:2] for l in out.split("\n")[1:] if l.strip()]
+    return "\n".join(" ".join(x) for x in sorted(rows) if kind is None or x[1] == kind)
 
 
-def live_input(r):
+def live_input(r, taken=()):
+    """The newest live run that ended ok and has no shadow run on it yet (a shadow run on an input is one per version; flotillad refuses a second)."""
     runs = cli_json("runs", r, "-json", "-n", "30")
     for x in (runs or {}).get("runs") or []:
-        if not x.get("shadow") and x.get("status") == "ok":
+        if not x.get("shadow") and x.get("status") == "ok" and x["id"] not in taken:
             return x["id"]
     return ""
 
@@ -134,17 +148,22 @@ def shadow_ends(r):
     return sum(1 for l in out.split("\n") if '"msg":"shadow run end"' in l and ('"routine":"%s@v2"' % r) in l)
 
 
-def wait_run(r, before, timeout=90):
+def newest_run(r):
+    runs = (cli_json("runs", r, "-json", "-n", "5") or {}).get("runs") or []
+    return runs[0] if runs else {}
+
+
+def wait_run(r, before, timeout=120):
     for _ in range(timeout):
-        runs = (cli_json("runs", r, "-json", "-n", "5") or {}).get("runs") or []
-        if len(runs) > before and runs[0].get("status") not in ("running", "queued"):
-            return runs[0]
+        run = newest_run(r)
+        if run.get("id") != before and run.get("status") not in (None, "running", "queued"):
+            return run
         time.sleep(1)
     return None
 
 
 def run_by_hand(r):
-    before = len(((cli_json("runs", r, "-json", "-n", "200")) or {}).get("runs") or [])
+    before = newest_run(r).get("id")
     cli("run", r)
     return wait_run(r, before)
 
@@ -174,8 +193,80 @@ def scheduled(r):
         return any(l.strip().startswith("every:") for l in f)
 
 
+EXAMPLE_KIND_SKIP = ("e2e_", "failed_backup", "code_bug", "dependency_update", "signal", "process_change")
+
+
+def acting(r):
+    """Whether the routine acts on cases (its routine.yaml caps its autonomy)."""
+    with open(os.path.join(WORK, "config", "specs", r, "routine.yaml")) as f:
+        return any(l.startswith("max_autonomy:") for l in f)
+
+
+def drive(routines):
+    """Give the routines that wait for a case a live run: their autonomy and their actions at propose, the monitors run, and every plan that
+    waits for a person approved, round after round, so the acting routines run and so do their checks (the stand-in systems are JSON files).
+    Done before the matrix's before-picture, so the shadows are compared on a settled stack."""
+    with open(os.path.join(ROOT, "deploy/e2e/clone_records.py")) as f:
+        rc, out = docker("exec", "-i", "flotilla-worker-ops-read", "python3", "-", "/tmp/flotilla-example", stdin=f.read())
+    print("drive: " + out.strip())
+    rc, out = cli("action", "list")
+    for l in out.split("\n")[1:]:
+        name = l.split()[0] if l.split() else ""
+        if name and not name.startswith(("host.", "backup.", "github.", "repo.")):
+            cli("action", "autonomy", name, "propose", "--reason", "e2e matrix: the examples' actions run, so their routines have a live run")
+    for r in routines:
+        if acting(r):
+            cli("autonomy", r, "propose", "--reason", "e2e matrix: so a plan waits for approval and the routine after it runs")
+    for r in routines:
+        if scheduled(r):
+            run_by_hand(r)
+    for _ in range(8):
+        rc, out = cli("case", "list", "--all")
+        todo = [l.split()[0] for l in out.split("\n")[1:] if "awaiting_approval" in l and len(l.split()) > 1
+                and not l.split()[1].startswith(EXAMPLE_KIND_SKIP)]
+        if not todo:
+            break
+        for c in todo:
+            cli("case", "approve", c)
+        time.sleep(10)
+    time.sleep(10)
+
+
+def triage_state():
+    """Backward-readable state for the triage fleet: its ledgers (dispositions and filed rows, tsv) gain a column v1 does not know, and the cycle
+    runs again and decides as it did on the state before. The ledger entries with extra columns are these files."""
+    r = "triage/cycle"
+    def lines():
+        rc, out = docker("exec", "flotilla-worker-triage", "sh", "-c", "cat /home/worker/signal-fleet/results/*.tsv | wc -l")
+        return int(out.split()[0]) if out.split() and out.split()[0].isdigit() else -1
+    a = run_by_hand(r)
+    n0, c0 = lines(), case_hash()
+    b = run_by_hand(r)
+    n1, c1 = lines(), case_hash()
+    with open(os.path.join(ROOT, "deploy/e2e/extend_state.py")) as f:
+        rc, out = docker("exec", "-i", "flotilla-worker-triage", "python3", "-", "/home/worker/signal-fleet/results", stdin=f.read())
+    ext = [int(x) for x in out.split() if x.isdigit()]
+    n2 = lines()
+    c = run_by_hand(r)
+    n3, c3 = lines(), case_hash()
+    if not (a and b and c):
+        cell(r, "state", FAIL, "a run did not end")
+    elif not ext or ext[1] == 0:
+        cell(r, "state", FAIL, "extend_state changed nothing (%s)" % out.strip()[:100])
+    elif not (a["status"] == b["status"] == c["status"] == "ok"):
+        cell(r, "state", FAIL, "run statuses %s %s %s" % (a["status"], b["status"], c["status"]))
+    elif c1 != c3 or (n3 - n2) != (n1 - n0):
+        cell(r, "state", FAIL, "v1 on the extended ledgers decided differently (cases %r vs %r, lines added %d vs %d)" % (c1 != c3, False, n3 - n2, n1 - n0))
+    else:
+        cell(r, "state", PASS, "%d rows extended; the cycle added %d lines as before" % (ext[1], n3 - n2))
+
+
 def main(argv):
-    routines = [l.strip() for l in open(argv[1]) if l.strip()]
+    if argv[1] == "drive":
+        import make_shadows
+        drive(make_shadows.generate(os.path.join(WORK, "config", "specs"), {"ops-read"}, dry=True))
+        return 0
+    routines = [l.strip() for l in open(argv[1]) if l.strip()] + HOSTILE
     ip = shadow_ip()
 
     # versions
@@ -185,16 +276,22 @@ def main(argv):
         cell(r, "versions", PASS if ok else FAIL, "" if ok else "v1/v2 states: %s" % {k: x.get("state") for k, x in v.items()})
 
     # the shadow runs, all of them, beside one before and one after of everything the live side holds
-    inputs = {r: live_input(r) for r in routines}
+    with open(os.path.join(ROOT, "deploy/e2e/plant_contact.py")) as f:   # the hostile shadow's detection has a contact to be about, no scan has seen
+        rc, out = docker("exec", "-i", "flotilla-worker-ops-read", "python3", "-", "/tmp/flotilla-example", stdin=f.read())
+    print("hostile: " + out.strip())
     snapshot()
+    con0 = sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
+    taken = {row[0] for row in con0.execute("SELECT input_key FROM shadow_runs WHERE version = 2")}
+    con0.close()
+    inputs = {r: live_input(r, taken) for r in routines}
     before = {r: storediff.dump(DB, r) for r in routines}
-    brief0, slack0, host0 = table_state(DB, ["briefs", "brief_marks"]), table_state(DB, ["slack_asks"]), host_state()
+    brief0, slack0, host0 = brief_state(), slack_state(), host_state()
     state0, writes0, cases0 = state_hash(), world_writes(ip), case_hash()
     ends0 = {r: shadow_ends(r) for r in routines}
     queued = []
     for r in routines:
         if not inputs[r]:
-            cell(r, "shadow", SKIP, "no live run to take as its input: a routine that waits for a case has none on this stack")
+            cell(r, "shadow", SKIP, "no live run without a shadow beside it to take as its input (a routine that waits for a case runs only when its case reaches it)")
             cell(r, "unchanged", SKIP, "no shadow run")
             continue
         rc, out = cli("versions", "shadow-run", r, "v2", "--input", inputs[r])
@@ -206,11 +303,12 @@ def main(argv):
     deadline = time.time() + 300
     while time.time() < deadline and any(shadow_ends(r) <= ends0[r] for r in queued):
         time.sleep(2)
+    time.sleep(20)   # flotillad offers the plans that wait for a person to Slack every 15 s
     snapshot()
     after = {r: storediff.dump(DB, r) for r in routines}
     con = sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
     state1, writes1, cases1 = state_hash(), world_writes(ip), case_hash()
-    brief1, slack1, host1 = table_state(DB, ["briefs", "brief_marks"]), table_state(DB, ["slack_asks"]), host_state()
+    brief1, slack1, host1 = brief_state(), slack_state(), host_state()
     for name, a, b, what in (("brief", brief0, brief1, "the day's brief rows"), ("slack", slack0, slack1, "the Slack asks"),
                               ("hosts", host0, host1, "the host agent's audit log and the plans it was asked to post")):
         if a is None or b is None:
@@ -263,20 +361,21 @@ def main(argv):
 
     # backward-readable state: the business fleets' stores
     detectors = {"crm": "crm/scan", "campaigns": "campaigns/scan", "outbound": "outbound/scan", "renewals": "renewals/scan"}
+    kinds = {"crm": "crm_fix", "campaigns": "campaign_ready", "outbound": "prospect_new", "renewals": "renewal_risk"}
     for r in routines:
         fleet = r.split("/")[0]
         if detectors.get(fleet) != r:
             cell(r, "state", SKIP, "the fleet's stores are read by its scan, whose row covers them" if fleet in detectors else "it keeps no state store of its own")
             continue
         a = run_by_hand(r)
-        c1 = case_hash()
+        c1 = case_hash(kinds[fleet])
         b = run_by_hand(r)
-        c2 = case_hash()
+        c2 = case_hash(kinds[fleet])
         with open(os.path.join(ROOT, "deploy/e2e/extend_state.py")) as f:
             rc, out = docker("exec", "-i", "flotilla-worker-ops-read", "python3", "-", "/tmp/flotilla-example/" + fleet, stdin=f.read())
         ext = [int(x) for x in out.split() if x.isdigit()]
         c = run_by_hand(r)
-        c3 = case_hash()
+        c3 = case_hash(kinds[fleet])
         if not (a and b and c):
             cell(r, "state", FAIL, "a run did not end")
         elif not ext or ext[0] == 0 or ext[1] == 0:
@@ -290,7 +389,9 @@ def main(argv):
         else:
             cell(r, "state", PASS, "%d records extended" % ext[1])
 
-    return report(routines + ["(all)"])
+    cells[:] = [c for c in cells if c[0] != "triage/cycle"]
+    triage_state()
+    return report(routines + ["triage/cycle", "(all)"])
 
 
 def report(routines):

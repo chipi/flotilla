@@ -43,7 +43,8 @@ if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEM
 #   matrix-live-write                        a generated shadow writes a file the live ops-read worker shares (the matrix's `unchanged` cell)
 #   noeffect-vacuous                         a generated shadow does nothing and writes no record (the matrix's `shadow` cell)
 #   required-fallback                        flotillad takes a worker's own token as a caller again under required (the run-token probes)
-#   caps-skip                                flotillad takes any worker or agent for run-token capable (the old worker's refusal)
+#   caps-skip                                flotillad takes any worker or agent for run-token capable (the old worker's and the old agent's refusal)
+#   shadow-live-handler                      a shadow's report goes through the live path too: e2e/hostile-brief's case, brief line and Slack ask
 # E2E_MUTANT=shadow-write-cred is a mutation check: it puts a write credential into the shadow worker's read environment, and the hostile shadow's
 # check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
@@ -88,7 +89,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link e2e-required e2e-accept; do $D rm -f "$c" >/dev/null 2>&1; done
+  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept; do $D rm -f "$c" >/dev/null 2>&1; done
   for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
     $D volume rm "$v" >/dev/null 2>&1
   done
@@ -99,7 +100,7 @@ if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
 down
 
 echo "== build"
-case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,required-fallback,*|*,caps-skip,*)
+case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,required-fallback,*|*,caps-skip,*|*,shadow-live-handler,*)
   BUILD_CTX="$WORK/mutated-src"; mkdir -p "$BUILD_CTX"
   (cd "$ROOT" && tar --exclude=./.git --exclude=./.e2e --exclude=./.venv --exclude=./site --exclude=./node_modules --exclude=./.claude -cf - .) | tar -xf - -C "$BUILD_CTX"
   if [[ ",${E2E_MUTANT}," == *,station-live-key,* ]]; then
@@ -114,6 +115,10 @@ case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,require
     sed -i 's/^\tif cfg.RunTokens == RunTokensRequired {$/\tif false \&\& cfg.RunTokens == RunTokensRequired {/' "$BUILD_CTX/cmd/flotillad/shadows.go"
     cmp -s "$ROOT/cmd/flotillad/shadows.go" "$BUILD_CTX/cmd/flotillad/shadows.go" && { echo "MUTANT required-fallback did not change shadows.go"; exit 1; }
   fi
+  if [[ ",${E2E_MUTANT}," == *,shadow-live-handler,* ]]; then   # a shadow run's report is handled by the live path too: a case, a brief line
+    sed -i 's/^\tend := store.ShadowDone$/\tif s.AfterRun != nil \&\& outcome != nil {\n\t\ts.AfterRun(fctx, sj, \&out, outcome)\n\t}\n\tend := store.ShadowDone/' "$BUILD_CTX/internal/sched/shadow.go"
+    cmp -s "$ROOT/internal/sched/shadow.go" "$BUILD_CTX/internal/sched/shadow.go" && { echo "MUTANT shadow-live-handler did not change shadow.go"; exit 1; }
+  fi
   if [[ ",${E2E_MUTANT}," == *,caps-skip,* ]]; then   # flotillad takes any worker and any agent for run-token capable
     sed -i 's/^\tif cfg.RunTokens != RunTokensRequired {$/\tif true || cfg.RunTokens != RunTokensRequired {/; s/link.RequireRunToken = cfg.RunTokens == RunTokensRequired/link.RequireRunToken = false/' "$BUILD_CTX/cmd/flotillad/main.go"
     cmp -s "$ROOT/cmd/flotillad/main.go" "$BUILD_CTX/cmd/flotillad/main.go" && { echo "MUTANT caps-skip did not change main.go"; exit 1; }
@@ -126,6 +131,15 @@ done
 HOST_AGENT_IMAGE=local/flotilla-e2e-host-agent:$TAG
 $D build -q -f "$ROOT/deploy/e2e/host-agent.Dockerfile" --build-arg VERSION=$TAG -t "$HOST_AGENT_IMAGE" "$ROOT" >/dev/null \
   || { echo "BUILD FAIL e2e-host-agent"; exit 1; }
+if [ "${DEMO:-}" != 1 ] && want remote; then
+  OLD_SRC="$WORK/old-agent-src"; mkdir -p "$OLD_SRC"
+  (cd "$ROOT" && tar --exclude=./.git --exclude=./.e2e --exclude=./.venv --exclude=./site --exclude=./node_modules --exclude=./.claude -cf - .) | tar -xf - -C "$OLD_SRC"
+  sed -i 's/, Caps: \[\]string{hostwire.CapRunToken}//' "$OLD_SRC/internal/hostagent/link.go"
+  cmp -s "$ROOT/internal/hostagent/link.go" "$OLD_SRC/internal/hostagent/link.go" && { echo "the old agent's source is not changed"; exit 1; }
+  $D build -q -f "$OLD_SRC/deploy/docker/worker-bugfix.Dockerfile" --build-arg VERSION=$TAG -t local/flotilla-worker-bugfix-old:$TAG "$OLD_SRC" >/dev/null \
+    || { echo "BUILD FAIL old agent"; exit 1; }
+  rm -rf "$OLD_SRC"
+fi
 $D build -q -f "$ROOT/deploy/e2e/browser.Dockerfile" -t "$PLAYWRIGHT_IMAGE" "$ROOT/deploy/e2e" >/dev/null \
   || { echo "BUILD FAIL e2e-browser"; exit 1; }
 ok "images built"
@@ -1641,6 +1655,10 @@ echo "== the no-effect matrix (docs/wip/v2-design.md section 4): every example r
 if [ "${DEMO:-}" != 1 ]; then
 # The example fleets ship v1 only; the generated v2 (deploy/e2e/make_shadows.py) is v1's files plus a marker, so the real example code runs as a shadow.
 # The folder gains them while flotillad runs: they are listed as shadows at its next start (shadows are on since the shadow section).
+# First every routine of the matrix gets work and a live run (new records, plans approved, acting routines and checks run), while it has no shadow to
+# start beside each live run.
+MXENV=(WORK="$WORK" ROOT="$ROOT" TAG="$TAG" DOCKER_CONTEXT_DEV="${DOCKER_CONTEXT_DEV:-dev}" E2E_MUTANT="${E2E_MUTANT:-}")
+env "${MXENV[@]}" python3 "$ROOT/deploy/e2e/matrix.py" drive || bad "the matrix's live runs"
 python3 "$ROOT/deploy/e2e/make_shadows.py" "$WORK/config/specs" ops-read > "$WORK/matrix.list" || bad "make_shadows.py"
 NGEN="$(sed -n 's/^GENERATED //p' "$WORK/matrix.list")"; grep -v '^GENERATED' "$WORK/matrix.list" > "$WORK/matrix-routines.txt"
 # E2E_MUTANT=noeffect-vacuous: crm/scan's shadow does nothing, and writes no record; matrix-live-write: it writes to a file the live worker shares (the
@@ -1733,6 +1751,19 @@ newest_remote_run() { acli runs e2e/remote-echo 2>&1 | sed -n 2p; }
 for _ in $(seq 1 10); do newest_remote_run | grep >/dev/null "skipped.*not connected" && break; sleep 1; done
 newest_remote_run | grep >/dev/null "skipped.*not connected" \
   && ok "with its link gone, the remote worker's routine is skipped again" || bad "after the link: $(acli runs e2e/remote-echo 2>&1 | head -3)"
+# an old agent (this tree's, before it listed run_token in its hello): under required its link is refused, with the way out, and the stack runs on
+$D run -d --name flotilla-e2e-remote-link-old "${RW[@]}" --entrypoint /usr/local/bin/flotilla-host local/flotilla-worker-bugfix-old:$TAG \
+  link -identity w-remote-e2e -worker remote-e2e -worker-url http://flotilla-e2e-remote-worker:8081 -worker-token-file /remote/worker.token \
+  -state /remote/state -root /remote/root.crt -addr flotillad:8487 -server-name flotillad -heartbeat 2s >/dev/null || bad "the old agent's link did not start"
+seen flotillad '"msg":"remote worker refused: its agent does not carry run tokens"' \
+  && ok "run_tokens: required refused the link of an agent whose hello lists no run_token capability, logged by flotillad" || bad "old agent: $($D logs flotillad 2>&1 | grep -i 'remote worker' | tail -2)"
+seen flotilla-e2e-remote-link-old 'the agent does not carry run tokens' \
+  && ok "the old agent was told why and what to do: update the agent to this build" || bad "old agent's message: $($D logs flotilla-e2e-remote-link-old 2>&1 | tail -3)"
+acli runs e2e/remote-echo 2>&1 >/dev/null; acli run e2e/remote-echo >/dev/null 2>&1
+for _ in $(seq 1 10); do newest_remote_run | grep >/dev/null "skipped.*not connected" && break; sleep 1; done
+newest_remote_run | grep >/dev/null "skipped.*not connected" && [ "$(acli health 2>&1 | head -c 2)" != "" ] && acli status 2>&1 | grep >/dev/null "^platform/heartbeat" \
+  && ok "the refused link is not connected, its routine is skipped, and the stack still answers" || bad "after the old agent: $(acli runs e2e/remote-echo 2>&1 | head -2)"
+$D rm -f flotilla-e2e-remote-link-old >/dev/null
 $D rm -f flotilla-e2e-remote-worker >/dev/null
 
 fi

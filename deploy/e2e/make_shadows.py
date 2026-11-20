@@ -19,7 +19,7 @@ MARKER = "shadow-marker.txt"
 SKIP_FLEETS = {"e2e"}
 
 
-def generate(specs, workers):
+def generate(specs, workers, dry=False):
     made = []
     for fleet in sorted(os.listdir(specs)):
         fdir = os.path.join(specs, fleet)
@@ -37,6 +37,9 @@ def generate(specs, workers):
                         worker = line.split(":", 1)[1].strip()
             v1, v2 = os.path.join(rdir, "v1"), os.path.join(rdir, "v2")
             if worker not in workers or not os.path.isdir(v1) or os.path.exists(v2):
+                continue
+            if dry:
+                made.append(fleet + "/" + routine)
                 continue
             shutil.copytree(v1, v2)
             with open(os.path.join(v2, MARKER), "w") as f:

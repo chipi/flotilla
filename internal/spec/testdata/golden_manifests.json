@@ -218,6 +218,22 @@
       "run": "c90db1b469c2e605f17fd46fb1181858cf97cdaf52e209862b5e3a3e012c7111"
     }
   },
+  "e2e/hostile-brief@v1": {
+    "routine_hash": "e89e753a4461",
+    "version_hash": "d808d7e5cba40d78ada97690ddb7fb2e070f4654b5bedcd2185c47c49ef509dd",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "51f3f1cde6186bd71974a80d57fd30469006d0f16b32001c05202f088304fd2d"
+    }
+  },
+  "e2e/hostile-brief@v2": {
+    "routine_hash": "a60c7f0cfc33",
+    "version_hash": "2f2db7659f310859f6adfae8a79bc14816be7650e5003fe141eb05eeff180705",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "b39ec943ecfacc5f07f69394f30fb9f5ab9b67f3c71709a1143773be3d9ee8e2"
+    }
+  },
   "e2e/hostile@v1": {
     "routine_hash": "db1454577b24",
     "version_hash": "06ca2e127e2d46fdf0b78af5778e51380167742b22b4dcff9a0a70dc5fed66cd",
