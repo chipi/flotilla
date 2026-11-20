@@ -1,0 +1,93 @@
+"""python3 bugfix/test_differential.py: the differential harness (bugfix/differential.py) finds what it should and nothing else.
+
+The old side is the chain at differential.OLD_SHA in a detached worktree; a copy of the working tree stands in for the new side
+where a test needs to edit it."""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import differential as d  # noqa: E402
+
+
+class Harness(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tree = d.OldTree()
+        cls.old = cls.tree.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tree.__exit__(None, None, None)
+
+    def test_the_old_side_is_the_commit_named_not_the_working_tree(self):
+        head = subprocess.run(["git", "-C", self.old, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(head, d.OLD_SHA)
+
+    def test_identical_code_has_an_empty_delta_in_every_scenario(self):
+        """The chain against itself, every golden scenario: no field differs, so none needs an allowance."""
+        rows = d.differential(self.old, d.ROOT, "fix.py")
+        self.assertEqual(rows, [], d.table(rows)[0])
+
+    def test_one_prompt_byte_changed_in_the_new_path_is_found(self):
+        new = d.copy_tree(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, new, True)
+        sh = os.path.join(new, "bugfix-fleet", "bakeoff", "harnesses", "pi.sh")
+        with open(sh) as f:
+            text = f.read()
+        self.assertIn("Diagnose the cause", text)
+        with open(sh, "w") as f:
+            f.write(text.replace("Diagnose the cause", "Diagnoze the cause"))
+        rows = d.differential(self.old, new, "fix.py", ["fresh_clean_fix"])
+        self.assertEqual([(r[3], r[6]) for r in rows], [("prompt", None)], d.table(rows)[0])
+        self.assertEqual(d.table(rows)[1], 1)
+
+
+class Allowances(unittest.TestCase):
+    """What the allow-list says, call by call, with no chain run."""
+
+    def call(self, **kw):
+        base = {"role": "fix", "argv": ["-p", "--mode", "json", "--provider", "p1", "--model", "m1", "--no-context-files",
+                                        "--append-system-prompt", "<ROOT>/r.md", "TEXT"],
+                "prompt": "TEXT", "prompt_channel": "argv", "cwd": "<D>/wt", "env": {}, "system_sha": "aa",
+                "models_json": {"providers": {"p1": {"baseUrl": "u", "models": [{"id": "m1"}, {"id": "m2"}]}}}}
+        base.update(kw)
+        return base
+
+    def rows(self, old, new):
+        return d.compare("s", {"plan": {}, "calls": [old]}, {"plan": {}, "calls": [new]})
+
+    def test_the_listed_deltas_are_allowed(self):
+        new = self.call(argv=["-p", "--mode", "json", "--provider", "flotilla-g", "--model", "m1", "--no-context-files",
+                              "--append-system-prompt", "<ROOT>/r.md"], prompt_channel="stdin",
+                        env={"PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1"},
+                        models_json={"providers": {"flotilla-g": {"baseUrl": "u", "models": [{"id": "m1"}]}}})
+        got = self.rows(self.call(), new)
+        self.assertEqual(sorted(r[3] for r in got), ["env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK", "models_json", "prompt_channel",
+                                                     "provider"])
+        self.assertTrue(all(r[6] for r in got), got)
+
+    def test_what_must_match_is_never_allowed(self):
+        argv = self.call()["argv"]
+        for field, new in (("prompt", self.call(prompt="TEXT!")),
+                           ("tools", self.call(argv=argv[:-1] + ["--no-tools", "TEXT"])),
+                           ("system_file", self.call(argv=[a for a in argv if a != "--append-system-prompt" and a != "<ROOT>/r.md"])),
+                           ("system_sha", self.call(system_sha="bb")),
+                           ("session", self.call(argv=argv + ["--session", "s"])),
+                           ("cwd", self.call(cwd="<D>/other")),
+                           ("env.NODE_OPTIONS", self.call(env={"NODE_OPTIONS": "--max-old-space-size=4096"})),
+                           ("model", self.call(argv=[("m2" if a == "m1" else a) for a in argv]))):
+            with self.subTest(field):
+                got = [r for r in self.rows(self.call(), new) if r[3] == field]
+                self.assertEqual([r[6] for r in got], [None], got)
+
+    def test_a_models_json_that_changes_the_called_entry_is_unexplained(self):
+        new = self.call(models_json={"providers": {"p1": {"baseUrl": "u", "models": [{"id": "m1", "maxTokens": 1}]}}})
+        self.assertEqual([r[6] for r in self.rows(self.call(), new) if r[3] == "models_json"], [None])
+
+
+if __name__ == "__main__":
+    unittest.main()
