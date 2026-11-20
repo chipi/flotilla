@@ -21,7 +21,7 @@
 # a promote with a run in flight, a rollback with a run in flight (the run cancelled, the case back with the acting
 # routine), a changed live folder refusing flotillad's start and -check (and naming the way out), a changed shadow
 # starting fine; a flat routine's playbook edit re-recorded at the start, and its move to the folder layout
-# re-recorded at the start when every recorded key and file is equal (-check prints the comparison; -moved-from reports the routine's own fields), refused when one byte differs; a schema-25 store migrated and started on by the real image
+# re-recorded at the start when every recorded key and file is equal (-check prints the comparison and the routine fields against the stored snapshot), refused when one byte differs; a schema-25 store migrated and started on by the real image
 # (every routine's v1 live, the history version 1); the autonomy rename (a routine at record reads FLEETD_STAGE=shadow);
 # the same forms in Chromium.
 # Never on the production engine (the installation's ADR-0009): it uses the `dev` context only.
@@ -1065,6 +1065,18 @@ FH2="$(vrow e2e/flat-playbook 1 "['hash']")"
 [ "$(vrow e2e/flat-playbook 1 "['state']")" = live ] && [ "$FH2" != "$FH" ] \
   && cli events -n 40 | grep >/dev/null "version.update .*e2e/flat-playbook@v1 .*legacy v1 (flat) re-recorded.*prompt-file:playbooks/flat.md (changed)" \
   && ok "the start re-recorded the flat routine's v1 (still live), with a version.update event naming the playbook" || bad "flat re-record: $(vrow e2e/flat-playbook 1 "['state'] + ' ' + x['hash'][:12]") (was ${FH:0:12}) $(cli events -n 40 | grep flat-playbook | head -2)"
+# The routine's own fields are in no version's hash: each start records them (a snapshot) and a field that moved is one routine.update event. A budget
+# changed between two starts shows in -check first, then as the event; the start after it, with nothing moved, writes none.
+sed -i 's/day_usd: 0/day_usd: 1/' "$WORK/config/specs/e2e/flat-playbook.yaml"
+OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
+[ $RC = 0 ] && [ "$(echo "$OUT" | grep -c -F 'routine e2e/flat-playbook: budget {"day_usd":0} -> {"day_usd":1}')" = 1 ] \
+  && ok "-check says a routine's changed budget before the deploy: routine e2e/flat-playbook: budget {\"day_usd\":0} -> {\"day_usd\":1} (exit $RC)" || bad "-check on a changed budget: rc=$RC $(echo "$OUT" | grep -E '^routine|^versions' | head -3)"
+$D restart flotillad >/dev/null 2>&1
+for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
+cli events -n 300 | grep >/dev/null 'routine.update .*e2e/flat-playbook .*budget {"day_usd":0} -> {"day_usd":1}' \
+  && ok "the start recorded the changed budget as a routine.update event naming the field, old and new" || bad "routine.update: $(cli events -n 300 | grep 'routine.update' | head -3)"
+$D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1 | grep >/dev/null '^routine e2e/flat-playbook: ' \
+  && bad "-check still reports the budget after the start recorded it" || ok "after the start, -check has no field change to report"
 # The forms of a re-record that apply to any version, against the flotillad that runs the flat routine: an agent is refused, a reason is needed,
 # the version must exist, a shadow follows its folder.
 OUT="$(agent versions rerecord e2e/flat-playbook v1 --reason "e2e: an agent tries" 2>&1)"
@@ -1078,47 +1090,50 @@ echo "$OUT" | grep >/dev/null "HTTP 409.*is a shadow" && ok "a shadow is not re-
 # Moving it to the folder layout changes its recipe, so its hash. A move that provably changes nothing (every key and file the flat v1 was recorded with is
 # equal) is re-recorded at the start, and -check prints what it compared; a move that changes one byte is refused, naming it.
 FD="$WORK/config/specs/e2e"
-RUNNING="$WORK/running-fleets"   # the running (flat) fleets: what deploy_fleets.sh hands -check -moved-from
+RUNNING="$WORK/running-fleets"   # the flat spec as it ran: the moved routine.yaml is made from its own fields
 mkdir -p "$RUNNING/e2e/playbooks" && cp "$FD/flat-playbook.yaml" "$RUNNING/e2e/" && cp "$FPB" "$RUNNING/e2e/playbooks/flat.md" && chmod -R a+rX "$RUNNING"
 rm "$FD/flat-playbook.yaml"; mkdir -p "$FD/flat-playbook/v1"
 flat_routine() {  # $1: the day_usd the folder's routine.yaml has: the flat spec's own routine fields (its run and prompts left out), with that budget
-  awk '/^run:/{skip=1} /^autonomy:/{skip=0} !skip' "$RUNNING/e2e/flat-playbook.yaml" | sed "s/day_usd: 0/day_usd: $1/" > "$FD/flat-playbook/routine.yaml"
+  awk '/^run:/{skip=1} /^autonomy:/{skip=0} !skip' "$RUNNING/e2e/flat-playbook.yaml" | sed "s/day_usd: [0-9.]*/day_usd: $1/" > "$FD/flat-playbook/routine.yaml"
 }
-flat_routine 0
+flat_routine 1
 cat > "$FD/flat-playbook/v1/spec.yaml" <<EOF
 run:
   command: "true"
   workdir: .
   timeout: 1m
 prompts:
-  system: system.md
+  system: flat.md
 EOF
-cp "$FPB" "$FD/flat-playbook/v1/system.md"; echo "one changed byte" >> "$FD/flat-playbook/v1/system.md"; chmod -R a+rX "$FD"
+cp "$FPB" "$FD/flat-playbook/v1/flat.md"; echo "one changed byte" >> "$FD/flat-playbook/v1/flat.md"; chmod -R a+rX "$FD"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
-[ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 is live and its folder changed .*not the same as the recorded flat spec: prompt-file:v1/system.md (changed" \
+[ $RC = 2 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 is live and its folder changed .*not the same as the recorded flat spec: prompt-file:playbooks/flat.md -> v1/flat.md (changed)" \
   && echo "$OUT" | grep >/dev/null "ship the change as v2 .*flotilla versions rerecord e2e/flat-playbook v1 --reason R" \
   && ok "a move with one changed byte is refused by -check, naming the playbook, the way out named (exit $RC)" || bad "-check on the impure move: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -2)"
 # the byte put back, and a changed budget in routine.yaml (not frozen, so not refused)
-cp "$FPB" "$FD/flat-playbook/v1/system.md"; flat_routine 1; chmod -R a+rX "$FD"
+cp "$FPB" "$FD/flat-playbook/v1/flat.md"; flat_routine 1; chmod -R a+rX "$FD"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
-LINE="versions: e2e/flat-playbook v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/flat.md -> v1/system.md, prompts): re-recorded"
+LINE="versions: e2e/flat-playbook v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/flat.md -> v1/flat.md, prompts): re-recorded"
 [ $RC = 0 ] && [ "$(echo "$OUT" | grep -c -F "$LINE")" = 1 ] \
   && ok "a pure move passes -check and says what was compared: $LINE (exit $RC)" || bad "-check on the pure move: rc=$RC $(echo "$OUT" | grep -E '^versions' | head -3)"
-OUT="$(compose run --rm --no-deps -v "$RUNNING:/moved-from:ro" flotillad -config /etc/flotilla/flotillad.yaml -check -moved-from /moved-from 2>&1)"; RC=$?
-[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 routine fields differ from the flat spec: Budget is .*(information only, not a gate" \
-  && ok "-moved-from names the changed budget as information, and the check still passes (exit $RC)" || bad "-check -moved-from with a changed budget: rc=$RC $(echo "$OUT" | grep -E '^versions|FAIL' | head -3)"
-flat_routine 0; chmod -R a+rX "$FD"
-OUT="$(compose run --rm --no-deps -v "$RUNNING:/moved-from:ro" flotillad -config /etc/flotilla/flotillad.yaml -check -moved-from /moved-from 2>&1)"; RC=$?
-[ $RC = 0 ] && echo "$OUT" | grep >/dev/null "^versions: e2e/flat-playbook v1 routine fields identical to the flat spec (information only, not a gate" \
-  && ok "-moved-from says the routine's fields are identical to the flat spec's (exit $RC)" || bad "-check -moved-from, identical: rc=$RC $(echo "$OUT" | grep -E '^versions|FAIL' | head -3)"
+[ "$(echo "$OUT" | grep -c -F 'versions: e2e/flat-playbook v1 routine fields: identical to the stored snapshot (information only, not a gate')" = 1 ] \
+  && ok "a pure move after a snapshot prints routine fields: identical to the stored snapshot" || bad "the pure move's fields line: $(echo "$OUT" | grep -E '^versions|^routine' | head -4)"
+# the routine's own fields may change in the same deploy: reported, never refused
+flat_routine 3; chmod -R a+rX "$FD"
+OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"; RC=$?
+[ $RC = 0 ] && echo "$OUT" | grep >/dev/null -F 'routine e2e/flat-playbook: budget {"day_usd":1} -> {"day_usd":3}' \
+  && echo "$OUT" | grep >/dev/null -F 'versions: e2e/flat-playbook v1 routine fields: changed since the stored snapshot: budget {"day_usd":1} -> {"day_usd":3} (information only, not a gate' \
+  && ok "a moved routine with a changed budget is reported against the snapshot and not refused (exit $RC)" || bad "-check on the move with a changed budget: rc=$RC $(echo "$OUT" | grep -E '^versions|^routine' | head -4)"
+flat_routine 1; chmod -R a+rX "$FD"
 $D restart flotillad >/dev/null 2>&1
 for i in $(seq 1 45); do cli health >/dev/null 2>&1 && break; sleep 2; done
 FH4="$(vrow e2e/flat-playbook 1 "['hash']")"
 [ "$(vstates e2e/flat-playbook)" = "1:live" ] && [ -n "$FH4" ] && [ "$FH4" != "$FH2" ] \
-  && cli events -n 40 | grep >/dev/null "version.update .*e2e/flat-playbook@v1 .*legacy v1 (flat) moved to the folder layout, unchanged (run, prompt-file:playbooks/flat.md -> v1/system.md, prompts): re-recorded: hash $FH2 -> $FH4" \
+  && cli events -n 40 | grep >/dev/null "version.update .*e2e/flat-playbook@v1 .*legacy v1 (flat) moved to the folder layout, unchanged (run, prompt-file:playbooks/flat.md -> v1/flat.md, prompts): re-recorded: hash $FH2 -> $FH4" \
   && ok "the start re-recorded the move: v1 still live with the folder's hash, and a version.update event carrying the comparison" || bad "the start on the pure move: $(vstates e2e/flat-playbook) ${FH4:0:12} (was ${FH2:0:12}) $(cli events -n 40 | grep flat-playbook | head -2) $($D logs flotillad 2>&1 | grep versions | tail -2)"
 $D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check >/dev/null 2>&1 \
-  && ok "after the start, -check passes over the folder layout with nothing left to re-record" || bad "-check after the re-record: $($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1 | grep '^versions' | head -2)"
+  && [ "$(cli events -n 300 | grep -c 'routine.update .*e2e/flat-playbook ')" = 1 ] \
+  && ok "after the start, -check passes with nothing left to re-record, and the starts since the budget change wrote no further routine.update event" || bad "-check after the re-record: $($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1 | grep '^versions' | head -2)"
 
 fi
 if want confighash; then

@@ -397,8 +397,8 @@ func TestATextKeptWithoutABodyGainsItWhenALaterRunHasIt(t *testing.T) {
 }
 
 func TestAStoreAtTheLatestSchemaReadsOldCallsWithNoStation(t *testing.T) {
-	if len(schema) != 32 {
-		t.Fatalf("step 32 is the stations': the schema has %d steps", len(schema))
+	if len(schema) != 33 {
+		t.Fatalf("step 33 is the routine snapshots; the schema has %d steps", len(schema))
 	}
 	s, ctx := pairWorld(t)
 	if err := s.RecordCalls(ctx, []ModelCall{{RunID: "old", Routine: "triage/cycle", Alias: "a", Role: "triage"}}); err != nil {

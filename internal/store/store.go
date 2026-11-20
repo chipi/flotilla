@@ -487,6 +487,14 @@ var schema = []string{
 		redacted INTEGER NOT NULL DEFAULT 0,
 		over_cap INTEGER NOT NULL DEFAULT 0
 	);`,
+	// The routine's own fields as a record (ADR-0020 section 3): what routine.yaml (or a flat spec) held at the last start, as canonical JSON with a hash,
+	// so a start can say which field moved (a routine.update event) and -check can say it before the deploy. Not a freeze: nothing is refused for them.
+	`CREATE TABLE routine_snapshots (
+		routine TEXT PRIMARY KEY,
+		hash TEXT NOT NULL,
+		fields TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

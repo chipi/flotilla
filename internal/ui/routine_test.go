@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -57,5 +58,33 @@ func TestRoutinePage(t *testing.T) {
 	}
 	if _, page := f.do("GET", "/fleets/triage", ck, nil, nil); !strings.Contains(page, `href="/fleets/triage/cycle"`) || !strings.Contains(page, "node node--agent") {
 		t.Error("the board's block does not lead to the routine page, or lacks who acts")
+	}
+}
+
+// The routine's own fields a start found moved are a short "Changed" list on the routine page, newest first, from the routine.update events; a routine
+// with none has no such card. The card reuses the page's wrapping list, which the mobile checks hold to no sideways scroll.
+func TestRoutinePageListsTheFieldsAStartFoundChanged(t *testing.T) {
+	triage := &spec.Routine{Fleet: "triage", Routine: "cycle", Description: "one pass", Enabled: true, Worker: "triage", Autonomy: "record",
+		Run: spec.Run{Command: "python3 orchestrator.py --cycle", Timeout: "20m"}, Every: 10 * time.Minute, Limit: time.Minute, Fresh: 35 * time.Minute,
+		Trigger: spec.Trigger{Every: "10m"}, Freshness: "35m"}
+	f := setupWith(t, []*spec.Routine{triage})
+	ck, _ := f.csrfOf(f.addOperator())
+	if _, page := f.do("GET", "/fleets/triage/cycle", ck, nil, nil); strings.Contains(page, "field-changes") {
+		t.Fatal("a routine with no field change has a Changed card")
+	}
+	ctx := context.Background()
+	for _, day := range []string{"1", "2", "3"} {
+		if _, err := f.st.RecordRoutineFields(ctx, map[string]map[string]string{"triage/cycle": {"budget": `{"day_usd":` + day + `}`}}, "flotillad"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, page := f.do("GET", "/fleets/triage/cycle", ck, nil, nil)
+	for _, want := range []string{`id="field-changes"`, "<h2 id=\"field-changes-h\">Changed</h2>", "budget {&#34;day_usd&#34;:2} -&gt; {&#34;day_usd&#34;:3}", "budget {&#34;day_usd&#34;:1} -&gt; {&#34;day_usd&#34;:2}", `<div class="changes">`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the routine page lacks %q", want)
+		}
+	}
+	if strings.Index(page, "day_usd&#34;:2} -&gt; {&#34;day_usd&#34;:3") > strings.Index(page, "day_usd&#34;:1} -&gt; {&#34;day_usd&#34;:2") {
+		t.Error("the newest change comes first")
 	}
 }

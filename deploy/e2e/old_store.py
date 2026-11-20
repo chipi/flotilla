@@ -120,7 +120,7 @@ ROWS_25 = [
 def _counts(db):
     names = [r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-        " AND name NOT IN ('routine_versions', 'schema_version')")]
+        " AND name NOT IN ('routine_versions', 'routine_snapshots', 'schema_version')")]
     return {n: db.execute(f"SELECT COUNT(*) FROM {n}").fetchone()[0] for n in names}
 
 
@@ -172,6 +172,14 @@ def check28(path, started=False):
         want("SELECT COUNT(*) FROM events WHERE kind = 'version.deploy' AND detail LIKE 'live:%'", live)
     else:
         want("SELECT COUNT(*) FROM routine_versions", 0)
+    # step 33 (the routines' own fields as a record): the table exists and the migration fills none; the first start records one snapshot per
+    # routine and no routine.update event (there is nothing to compare a first snapshot with)
+    want("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'routine_snapshots'", 1)
+    if started:
+        want("SELECT COUNT(*) FROM routine_snapshots", live)
+        want("SELECT COUNT(*) FROM events WHERE kind = 'routine.update'", 0)
+    else:
+        want("SELECT COUNT(*) FROM routine_snapshots", 0)
     want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'shadow'", 0)
     want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'record'", 2)
     want("SELECT COUNT(*) FROM controls WHERE key = 'autonomy' AND value = 'propose'", 1)

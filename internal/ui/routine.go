@@ -55,7 +55,8 @@ type routineData struct {
 	Panel                             *modelPanel
 	Paths                             *pathSummary
 	Versions                          *versionsData
-	Pairs                             *pairsData // a shadow version's pairs beside the live version's (pairs.go)
+	FieldChanges                      []changeRow // the routine's own fields that a start found moved (routine.update events), newest first
+	Pairs                             *pairsData  // a shadow version's pairs beside the live version's (pairs.go)
 	SpecText                          string
 }
 
@@ -379,6 +380,14 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 	if d.Versions, err = u.versionsFor(ctx, id, st); err != nil {
 		http.Error(w, "versions failed", 500)
 		return
+	}
+	if es, err := u.API.Store.RoutineChanges(ctx, id, 5); err != nil {
+		http.Error(w, "field changes failed", 500)
+		return
+	} else {
+		for _, e := range es {
+			d.FieldChanges = append(d.FieldChanges, changeRow{When: u.clock(e.At), Text: e.Detail})
+		}
 	}
 	if vv, err := u.API.RoutineVersions(ctx, id); err != nil {
 		http.Error(w, "versions failed", 500)

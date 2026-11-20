@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -174,45 +173,4 @@ func (j *Routine) ProveMoved(v *Version, recorded map[string]string) MoveProof {
 		diff("nothing recorded to compare")
 	}
 	return p
-}
-
-// MovedView is a routine bound to version n with what a move may legitimately change taken out: where it was loaded from, its recorded
-// hashes, the version list and the notes about the old autonomy word. A prompt's path is written relative to the fleet's folder, so it
-// names the file's new place; its role and its content hash must be the same. Two views of the same routine in the two layouts
-// are equal when the move changed nothing the routine loads to.
-func MovedView(j *Routine, version int) (Routine, error) {
-	vj, err := j.WithVersion(version)
-	if err != nil {
-		return Routine{}, err
-	}
-	c := *vj
-	c.Path, c.Hash, c.VersionHash, c.Versions, c.Version, c.Notes = "", "", "", nil, 0, nil
-	if c.Prompts != nil {
-		p := map[string]string{}
-		for role, f := range c.Prompts {
-			p[role] = path.Base(f)
-		}
-		c.Prompts = p
-	}
-	return c, nil
-}
-
-// DifferingFields names each field of two routines that are not deeply equal, with both values.
-func DifferingFields(a, b Routine) []string {
-	var out []string
-	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
-	for i := 0; i < va.NumField(); i++ {
-		if !reflect.DeepEqual(va.Field(i).Interface(), vb.Field(i).Interface()) {
-			out = append(out, fmt.Sprintf("%s is %s, flat %s", va.Type().Field(i).Name, short(va.Field(i).Interface()), short(vb.Field(i).Interface())))
-		}
-	}
-	return out
-}
-
-func short(v any) string {
-	s := fmt.Sprintf("%v", v)
-	if len(s) > 160 {
-		s = s[:160] + "..."
-	}
-	return s
 }

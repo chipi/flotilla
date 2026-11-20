@@ -199,10 +199,12 @@ resumes the routines and prints every routine whose spec hash changed. It ends w
 A flat routine moved to the folder layout needs no extra step. When every key and file its live v1
 was recorded with is equal in the folder, `-check` says `versions: R v1 moved to the folder layout,
 unchanged (...): re-recorded`, the deploy prints it under "re-recorded at the start", and flotillad
-records it at the start. The deploy also prints, as information, each moved routine's own fields
-(budget, trigger, worker, autonomy) against the running flat spec: `identical to the flat spec` or
-what differs. That is for the operator's go, not a gate. A move with any difference in the version's
-keys or files is refused before anything is paused, naming it.
+records it at the start. The deploy also prints, as information, each routine's own fields that
+differ from the snapshot the last start recorded (budget, trigger, worker, autonomy: `routine R:
+budget ... -> ...`), and for a moved routine `routine fields: identical to the stored snapshot` or
+what changed. That is for the operator's go, not a gate; the start records each change as a
+`routine.update` event. A move with any difference in the version's keys or files is refused before
+anything is paused, naming it.
 
 ### A command in the worker
 

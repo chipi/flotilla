@@ -129,11 +129,20 @@ every flat spec; a pinned test holds each shipped one.
 - **The routine's own fields are outside the freeze,** for every routine, flat or folder:
   `routine.yaml`'s budget, trigger, worker, autonomy and the rest are in no version's hash, and a
   normal fleets deploy changes them. The recorded manifest does not hold them, so a move cannot be
-  refused for them. The operator gets information instead: `deploy_fleets.sh` hands `flotillad -check
-  -moved-from DIR` the running (flat) fleets, and for each moved routine -check prints `routine
-  fields identical to the flat spec` or the differing fields, using the move-equivalence test's
-  comparison (`spec.MovedView`, `spec.DifferingFields`). It is information, not a gate: the start does
-  not use it, and the operator's go decides.
+  refused for them. They are a **record** instead (schema step 33, `routine_snapshots`: per routine,
+  the fields as canonical JSON with a hash, `spec.Routine.RoutineFields`):
+  - every start compares each routine's loaded fields with its snapshot; a routine with none gets
+    one and no event; a changed one gets the new snapshot and one `routine.update` event (actor
+    flotillad, via deploy) listing each field that moved with old and new value; an unchanged start
+    writes nothing;
+  - `-check` reads the snapshots read-only and prints the same per-field diff
+    (`routine R: budget {"day_usd":1} -> {"day_usd":2}`), or `routine fields: no snapshot yet` on the
+    first deploy after the step; `deploy_fleets.sh` prints them under "routine fields";
+  - for a flat v1 that moved, -check adds `versions: R v1 routine fields: identical to the stored
+    snapshot` or `changed since the stored snapshot: ...`, with "information only, not a gate":
+    nothing is refused for a field, and the operator's go decides. The snapshot is what the running
+    flat spec had at its last start, so no second folder is needed;
+  - the routine page lists the latest field changes in a short "Changed" card.
 - **`flotilla versions rerecord ROUTINE vN --reason R`** (API `POST .../versions/{n}/rerecord`,
   `ActVersion`: an operator or an admin) records the folder as flotillad's fleets folder holds it
   now as the live or previous version's hash and manifest, in one transaction with a

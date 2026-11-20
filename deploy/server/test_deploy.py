@@ -349,11 +349,11 @@ FLEETS_DOCKER = textwrap.dedent("""\
             if [ -n "${STUB_CHECK_OTHER:-}" ]; then echo "specs: triage/cycle.yaml: field x not found" >&2; exit 1; fi
             [ -n "${STUB_CHECK_RERECORD:-}" ] && echo "versions: triage/cycle v1 (flat) re-recorded: prompt-file:playbooks/triage.md (changed)"
             if [ -n "${STUB_CHECK_MOVED:-}" ]; then
-              case "$*" in
-                *" -moved-from /moved-from"*) echo "versions: triage/cycle v1 routine fields differ from the flat spec: Budget is {7 0 0}, flat {2 0 0} (information only, not a gate: the freeze covers the version's keys and files, and the start does not use this)";;
-                *) echo "versions: triage/cycle v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/triage.md -> v1/system.md, prompts): re-recorded";;
-              esac
+              echo "versions: triage/cycle v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/triage.md -> v1/system.md, prompts): re-recorded"
+              echo 'routine triage/cycle: budget {"day_usd":2} -> {"day_usd":7}'
+              echo "versions: triage/cycle v1 routine fields: changed since the stored snapshot: budget {\\"day_usd\\":2} -> {\\"day_usd\\":7} (information only, not a gate: the freeze covers the version's keys and files, and the start only records this)"
             fi
+            [ -n "${STUB_CHECK_NOSNAP:-}" ] && echo "routine fields: no snapshot yet (the first start after this deploy records one for every routine); nothing to compare"
             echo "CHECK PASS"; exit 0;;
           *" up "*) : > "$STUB_CFG/up"; exit 0;;
         esac; exit 0;;
@@ -489,25 +489,30 @@ class DeployFleetsTest(unittest.TestCase):
         changed = [l.strip() for l in r.stdout.split("== versions:")[1].split("\n") if l.strip().startswith(("<", ">"))]
         self.assertEqual(changed, ["< triage/cycle v1 live " + "a" * 12, "> triage/cycle v1 live " + "c" * 12], r.stdout)
 
-    def test_a_moved_routine_prints_what_was_compared_and_its_own_fields_as_information(self):
+    def test_a_moved_routine_prints_what_was_compared_and_its_fields_against_the_snapshot(self):
         self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "c")))
         r = self.deploy(self.c1, env=dict(self.env, STUB_CHECK_MOVED="1"))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("== re-recorded at the start", r.stdout)
         self.assertIn("   triage/cycle v1 moved to the folder layout, unchanged (run, prompt-file:playbooks/triage.md -> v1/system.md, prompts): re-recorded", r.stdout)
-        self.assertIn("== a moved routine's own fields, the flat spec against the folder (information, not a gate):", r.stdout)
-        self.assertIn("   triage/cycle v1 routine fields differ from the flat spec: Budget is {7 0 0}, flat {2 0 0} (information only, not a gate", r.stdout)
-        calls = self.docker_calls()
-        self.assertIn("-moved-from /moved-from", calls, "the running fleets are handed to -check")
-        self.assertIn("/moved-from:ro", calls, "read-only")
-        self.assertEqual(calls.count("-moved-from /moved-from"), 1, "asked once, after -check reported a move")
+        self.assertIn("== routine fields (recorded at the start as routine.update events; not frozen, nothing is refused for them):\n"
+                      '   routine triage/cycle: budget {"day_usd":2} -> {"day_usd":7}', r.stdout)
+        self.assertIn("== a moved routine's own fields against the stored snapshot (information, not a gate):\n"
+                      '   triage/cycle v1 routine fields: changed since the stored snapshot: budget {"day_usd":2} -> {"day_usd":7} (information only, not a gate', r.stdout)
+        self.assertNotIn("-moved-from", self.docker_calls(), "the running fleets are not handed to -check: the store has the record")
 
-    def test_no_move_no_moved_from(self):
+    def test_no_snapshot_yet_is_said_and_does_not_fail_the_deploy(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_CHECK_NOSNAP="1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("   routine fields: no snapshot yet (the first start after this deploy records one for every routine)", r.stdout)
+
+    def test_no_field_change_prints_no_fields_block(self):
         self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
         r = self.deploy(self.c1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("== routine fields", r.stdout)
         self.assertNotIn("a moved routine's own fields", r.stdout)
-        self.assertNotIn("-moved-from", self.docker_calls(), "a tag whose -check does not report a move is never given the flag")
 
     def test_a_promote_in_the_proof_is_a_state_change_on_both_versions(self):
         self.versions(versions_json((1, "live", "a"), (2, "shadow", "b")), versions_json((1, "previous", "a"), (2, "live", "b")))

@@ -79,6 +79,14 @@
 
   {{with .Paths}}{{template "paths" .}}{{end}}
 
+  {{with .FieldChanges}}<section class="card" id="field-changes" aria-labelledby="field-changes-h">
+    <h2 id="field-changes-h">Changed</h2>
+    <div class="changes">
+      <p class="meta">The routine's own fields (budget, trigger, worker, autonomy and the rest) as a start found them moved. They are not frozen: a deploy changes them.</p>
+      <ul>{{range .}}<li><span class="exact">{{.When}}</span><span>{{.Text}}</span></li>{{end}}</ul>
+    </div>
+  </section>{{end}}
+
   {{with .Versions}}<section class="card" id="versions" aria-labelledby="versions-h">
     <h2 id="versions-h">Versions</h2>
     <p class="meta">Live: v{{.Live}}. A new version arrives as a shadow and goes live only on your word; rolling back makes the previous one live at once. A promote needs: <span class="exact">{{.Acceptance}}</span>.</p>
