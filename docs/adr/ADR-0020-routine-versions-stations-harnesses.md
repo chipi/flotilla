@@ -223,8 +223,9 @@ The bugfix fix routine is the first to write its v2 on stations. The decisions, 
   or shape-failing, and an advisor that cannot locate; it compares the prompts, the argv and the files
   written (triage.json, shape.txt, advisor.json, the manifests, the ledger, harness.json and the
   arguments of the langfuse push). The allow-list did not grow. Not the same, and stated: pi's
-  stdout and stderr arrive as one stream, so `harness.json` holds its JSON lines and `harness.err`
-  the rest; the wall cap is the station's `timeout` (15m and 10m, the scripts' 900 s and 600 s;
+  stdout and stderr arrive as one stream, so `harness.json` holds its lines that are JSON objects
+  (split at newlines only, as the scripts' files are) and `harness.err` the rest; the wall cap is
+  the station's `timeout` (15m and 10m, the scripts' 900 s and 600 s;
   `TRIAGE_MAX_WALL` and `ADVISOR_MAX_WALL` are no longer read) and a cut is made by the runner,
   not a 5 s poll; the seconds in what the script prints are the port's own; a failure of the extractor's
   python prints one line, not a traceback; `langfuse.env` is sourced for the push only, not for pi.

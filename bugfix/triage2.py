@@ -10,7 +10,9 @@ and sed is still run by those tools, with the bash's own text, so their behaviou
 What the bash did that this reproduces on purpose: `read -r -d '' X <<EOF` drops the whitespace (space, tab, newline) at both
 ends of the text, so the advisor's findings, which start with a blank line, are glued to the task before them; `$(...)` drops the
 trailing newlines; and the touched files of an evidence folder with none are "\\nnone" (paste printed a newline for no input and
-the `|| echo none` followed). bugfix/test_triage2.py runs the real scripts and compares.
+the `|| echo none` followed). bugfix/differential.py runs the real scripts against this port, scenario by scenario (a CRLF issue body
+and raw U+2028 in an answer among them); bugfix/test_triage2.py checks the prompt and print texts against the scripts and the bytes
+the scripts keep (a CR from jq, a stream split at newlines only, the pin line of an answer that is not an object).
 
 What is not the same, and is said in ADR-0020's amendment: pi's stdout and stderr arrive as one stream, so harness.json holds the
 stream's lines that are JSON objects and harness.err the rest; the wall cap is the station's `timeout` (TRIAGE_MAX_WALL and
@@ -55,8 +57,13 @@ class Run:
 
 
 def _bash(r, script, *args, cwd=None, stdin=None):
-    p = subprocess.run(["bash", "-c", FRAGMENT_HEAD + script, "triage", *args], capture_output=True, text=True, errors="surrogateescape",
-                       env=r.env, cwd=cwd or r.cwd, input=stdin)
+    # bytes in and out, decoded with no newline translation: text mode would turn a CR (a web-written issue body's \r\n) into \n, and
+    # bash's $(...) keeps it, so the prompts would not be the scripts' byte for byte
+    data = stdin.encode("utf-8", "surrogateescape") if isinstance(stdin, str) else stdin
+    p = subprocess.run(["bash", "-c", FRAGMENT_HEAD + script, "triage", *args], capture_output=True, env=r.env, cwd=cwd or r.cwd,
+                       input=data)
+    p.stdout = p.stdout.decode("utf-8", "surrogateescape")
+    p.stderr = p.stderr.decode("utf-8", "surrogateescape")
     if p.stderr:
         r.out.append(p.stderr)
     return p
@@ -290,11 +297,28 @@ def extract_advisor(src, dst, r):
     r.say("ADVISOR: ok")
 
 
+def pin_shown(r, pin):
+    """advisor_run.sh's `echo "ADVISOR PIN: $(jq ...)"`: the jq is inside the echo, so when it fails (the answer is JSON but not an
+    object) it prints nothing and the script goes on to exit 0."""
+    return _val_try(r, "jq -r 'if (.file // \"\") == \"\" then \"not locatable: \" + (.not_locatable // \"-\") else .file + \" :: \" "
+                       "+ (.function // \"\") end' \"$1\"", pin)
+
+
 def split_stream(stream):
     """pi's stdout and stderr came as one stream: the lines that are JSON objects were its stdout (harness.json), the rest its stderr."""
+    # lines end at \n only, as the scripts' files do: str.splitlines also splits at U+2028, U+2029 and U+0085, which JSON.stringify
+    # leaves raw, and cut an event in two; and a line is stdout only when it is a JSON object (a stderr line can start with "{")
     out, err = [], []
-    for ln in (stream or "").splitlines(keepends=True):
-        (out if ln.lstrip().startswith("{") else err).append(ln if ln.endswith("\n") else ln + "\n")
+    text = stream or ""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    for ln in lines:
+        try:
+            obj = json.loads(ln)
+        except ValueError:
+            obj = None
+        (out if isinstance(obj, dict) else err).append(ln + "\n")
     return "".join(out), "".join(err)
 
 
@@ -514,9 +538,7 @@ def _advisor(r, argv, model, call):
     except Exception as e:  # noqa: BLE001 -- `|| true`
         r.say(f"ADVISOR: {type(e).__name__}: {e}")
     if os.path.isfile(pin):
-        shown = _val(r, "jq -r 'if (.file // \"\") == \"\" then \"not locatable: \" + (.not_locatable // \"-\") else .file + \" :: \" "
-                        "+ (.function // \"\") end' \"$1\"", pin)
-        r.say(f"ADVISOR PIN: {shown}  ({wall}s)")
+        r.say(f"ADVISOR PIN: {pin_shown(r, pin)}  ({wall}s)")
         return
     r.say(f"ADVISOR: no usable output ({wall}s)")
     raise Abort(4)

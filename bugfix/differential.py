@@ -340,7 +340,10 @@ VERDICT_LEAF = tf.POP + tf.SESS + textwrap.dedent('''\
     elif kind == "no-expected":
         v.update(verdict="actionable")
         problem["expected"] = ""
-    text = "Looked at it.\\n```json\\n" + json.dumps(v) + "\\n```"
+    elif kind == "unicode":   # a line separator and a next-line in the answer: JSON.stringify leaves both raw in the event line
+        v.update(verdict="actionable")
+        problem["symptom"] = "value() returns 1\\u2028on the second line\\u0085still the symptom"
+    text = "Looked at it.\\n```json\\n" + json.dumps(v, ensure_ascii=False) + "\\n```"
     if kind == "bare":
         v["verdict"] = "actionable"
         text = "My answer: " + json.dumps(v) + " and nothing else"
@@ -352,7 +355,7 @@ VERDICT_LEAF = tf.POP + tf.SESS + textwrap.dedent('''\
     elif kind == "badjson":
         text = "```json\\n{not json}\\n```"
     print(json.dumps({"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": text}],
-                                                         "usage": {"input": 10, "output": 3, "cost": {"total": 0.25}}}}))
+                                                         "usage": {"input": 10, "output": 3, "cost": {"total": 0.25}}}}, ensure_ascii=False))
     PY
     ''')
 
@@ -492,6 +495,11 @@ SCENARIOS = dict(
     verdict_with_no_acceptance=(["no-acceptance"], ["good"], {}, []),
     verdict_with_no_symptom=(["no-symptom"], ["good"], {}, []),
     verdict_with_no_expected=(["no-expected"], ["good"], {}, []),
+    # what the fixture's ticket never had: a web-written body (CRLF, a lone CR, non-ASCII), raw separators in the model's answer,
+    # and an advisor answer that is JSON but not an object
+    issue_body_with_crlf=(["actionable"], ["notest", "good"], {"_body": ["value() returns 1,\r\nwant 2\rsee café ✓"]}, []),
+    verdict_with_line_separators=(["unicode"], ["good"], {}, []),
+    advisor_answer_not_an_object=(["actionable"], ["notest"], {"advisor.json": ['["a"]']}, []),
     kickback_verdict_that_does_not_pin=(["actionable", "unpinned"], ["notest", "good"], {}, ["--no-advisor"]),
     # the fix at the advisor's pin still fails: the acceptance-gap prompt, then the downgrade
     acceptance_gap=(["actionable"] * 4, ["notest", "notest", "good"], {}, []),
@@ -504,7 +512,10 @@ def run_scenario(name, root, entry, roots=()):
     verdicts, fixes, state, args = SCENARIOS[name]
     f = tf.Fixture(verdicts, fixes)
     try:
+        body = "".join(state.get("_body", ["value() returns 1, want 2"]))
         for fname, items in state.items():
+            if fname.startswith("_"):
+                continue
             with open(os.path.join(f.state, fname), "w") as fh:
                 fh.write("".join(x + "\n" for x in items))
         leaves = install_leaves(f, root)
@@ -518,7 +529,7 @@ def run_scenario(name, root, entry, roots=()):
                    GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
                    FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": f"repo:{f.repo}/issues/12",
                                              "data": {"issue": {"repo": f.repo, "number": 12, "title": "value is 1",
-                                                                "body": "value() returns 1, want 2", "url": "u"}}}))
+                                                                "body": body, "url": "u"}}}))
         for k in [k for k in env if k.startswith(("PI_", "BUGFIX_PI", "FLOTILLA_STATIONS"))]:
             del env[k]
         common = ["--repo", f.repo, "--setup", "true", "--test-cmd", f"python3 {f.suite} run %s",

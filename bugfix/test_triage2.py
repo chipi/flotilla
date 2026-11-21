@@ -43,5 +43,37 @@ class Drift(unittest.TestCase):
         self.assertEqual(len(re.findall("═", self.script("advisor_run.sh"))) % 2, 0)
 
 
+class Bytes(unittest.TestCase):
+    """What the scripts keep and the port must keep too (the second review, 2026-11-21)."""
+
+    def run_(self):
+        import tempfile
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self.d, True)
+        return triage2.Run(dict(os.environ), self.d)
+
+    def write(self, name, text):
+        p = os.path.join(self.d, name)
+        with open(p, "w", newline="") as f:
+            f.write(text)
+        return p
+
+    def test_a_cr_from_jq_is_kept_as_bash_keeps_it(self):
+        r = self.run_()
+        ticket = self.write("t.json", '{"description": "line1\\r\\nline2\\rline3 café"}')
+        self.assertEqual(triage2._val(r, "jq -r .description \"$1\"", ticket), "line1\r\nline2\rline3 café")
+
+    def test_the_pin_line_of_an_answer_that_is_json_but_not_an_object_is_empty_and_the_run_goes_on(self):
+        r = self.run_()
+        self.assertEqual(triage2.pin_shown(r, self.write("a.json", '["a"]')), "")
+        self.assertEqual(triage2.pin_shown(r, self.write("b.json", '{"file": "src/a.js", "function": "value"}')), "src/a.js :: value")
+
+    def test_the_stream_splits_at_newlines_only_and_a_stderr_brace_is_stderr(self):
+        ev1 = '{"type": "message_end", "text": "x y\u0085z"}'
+        out, err = triage2.split_stream(ev1 + "\n" + "{ inspected error object\n" + '{"type": "agent_end"}\n')
+        self.assertEqual(out, ev1 + "\n" + '{"type": "agent_end"}\n')
+        self.assertEqual(err, "{ inspected error object\n")
+
+
 if __name__ == "__main__":
     unittest.main()
