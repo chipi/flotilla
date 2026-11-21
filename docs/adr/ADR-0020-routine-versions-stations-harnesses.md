@@ -229,10 +229,11 @@ The bugfix fix routine is the first to write its v2 on stations. The decisions, 
   before the switch (taken from git) and on fix2 and prints every field that differs. What the
   model is sent, the system file and its hash, the tools switches, `--session`, the working
   directory, `NODE_OPTIONS` and the plans are equal; the deltas are an allow-list: the prompt on
-  stdin, the provider's name, `PI_OFFLINE` and `PI_SKIP_VERSION_CHECK`, the models.json rewrite,
-  and `--no-context-files` on every call (S2). The last is a behaviour change in one case: v1 run
-  with `--pi-rules ''` let pi load the repository's own AGENTS.md, and a version on stations has no
-  such choice. `bugfix/test_seam_fix2.py` runs the seam end to end (S1 to S11) over fix2 on the
+  stdin, the provider's name, `PI_OFFLINE` and `PI_SKIP_VERSION_CHECK`, and the models.json
+  rewrite. `--no-context-files` is not one: v1 passed it only with a rules file declared (and the
+  tool-less review passed it alone), and so does fix2 (`Request.no_context_files` is false for a
+  station that declares no `rules`, and pi then loads the repository's own AGENTS.md as before).
+  `bugfix/test_seam_fix2.py` runs the seam end to end (S1 to S11) over fix2 on the
   real pi.
 - **Acceptance is `[replay]`.** Promoting v2 needs a replay of the installation's recorded cases
   through both versions, with a gate result (section 4). The offline differential is the code's

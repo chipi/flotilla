@@ -39,7 +39,7 @@ def sha(text):
 class World:
     """A code root with the version's texts, the stations document flotillad would hand a run of it, and a Chain on them."""
 
-    def __init__(self, tc, **limits):
+    def __init__(self, tc, no_rules=False, **limits):
         self.tmp = tempfile.mkdtemp()
         tc.addCleanup(shutil.rmtree, self.tmp, True)
         self.code = os.path.join(self.tmp, "code")
@@ -61,6 +61,9 @@ class World:
                                             "limits": dict(base, timeout="10m")}}}
         for k, v in limits.items():
             self.doc["stations"]["fix"]["limits"][k] = v
+        if no_rules:
+            for st in self.doc["stations"].values():
+                del st["texts"]["rules"]
         self.calls = os.path.join(self.tmp, "calls.jsonl")
         self.environ = {"FLOTILLA_MODELS": json.dumps(tf.MODELS), "FLOTILLA_STATIONS": json.dumps(self.doc),
                         "FLOTILLA_CODE_ROOT": self.code, "FLOTILLA_ROUTINE": "bugfix/fix", "FLOTILLA_CALLS_FILE": self.calls}
@@ -202,6 +205,15 @@ class Review(unittest.TestCase):
                 self.assertIn("--no-context-files", cmd, "the repository's own rules are never read")
                 self.assertEqual(("--no-tools" in cmd, "--tools" in cmd), (tools == "none", tools == "read"))
 
+    def test_without_rules_declared_the_repository_s_own_are_read_as_in_v1(self):
+        w = World(self, no_rules=True)
+        c = w.chain()
+        for tools in ("none", "read"):
+            with self.subTest(tools):
+                (cmd, _, _), = self.call(w, c, tools)[1]
+                self.assertNotIn("--no-context-files", cmd)
+                self.assertNotIn("--append-system-prompt", cmd)
+
     def test_a_models_json_is_put_back_when_the_call_raises(self):
         w = World(self)
         c = w.chain()
@@ -252,6 +264,20 @@ class Station(unittest.TestCase):
         self.assertEqual(env["PI_CODING_AGENT_DIR"], os.path.join(self.c.run_dir, "pi"))
         self.assertEqual(cmd[cmd.index("--model") + 1], "fleet-bugfix-flash")
 
+    def test_without_rules_declared_the_repository_s_own_are_read_as_in_v1(self):
+        w = World(self, no_rules=True)
+        c = w.chain()
+        os.makedirs(c.wt)
+        seen = []
+        leaves = {"fix": "pi.sh", "repro": "repro.sh"}
+        with unittest.mock.patch.object(fix, "sh", lambda cmd, *a, **k: seen.append(cmd) or (0, "")), c.leaves():
+            for role, leaf in leaves.items():
+                fix.sh([os.path.join(fix.BAKEOFF, "harnesses", leaf), c.wt, "d"], fix.BAKEOFF, dict(c.env), 60)
+        self.assertEqual(len(seen), 2)
+        for cmd in seen:
+            self.assertNotIn("--no-context-files", cmd)
+            self.assertNotIn("--append-system-prompt", cmd)
+
     def test_a_resumed_fix_continues_the_session_with_the_message_as_it_is(self):
         cmd, _, env, _, kw = self.call("fix", "YOUR FIX DID NOT PASS ITS GATES", env={"PI_RESUME_SESSION": self.session})
         self.assertEqual(cmd[cmd.index("--session") + 1], os.path.realpath(self.session))
@@ -277,6 +303,12 @@ class Station(unittest.TestCase):
             "---\nname: repro\n---\n---\n# reproducer\nWrite one test.\n"), self.DESC))
         self.assertTrue(kw["stdin"].startswith("# reproducer\nWrite one test.\n\nTHE ISSUE AS FILED:"))
         self.assertEqual((kw["max_turns"], env["NODE_OPTIONS"]), (40, "--max-old-space-size=4096"))
+
+    def test_with_rules_declared_fix_and_repro_never_read_the_repository_s_own(self):
+        for role, leaf in (("fix", "pi.sh"), ("repro", "repro.sh")):
+            cmd = self.call(role, self.DESC)[0]
+            self.assertIn("--no-context-files", cmd, role)
+            self.assertEqual(cmd[cmd.index("--append-system-prompt") + 1], self.c.rules[role])
 
     def test_a_station_has_its_own_timeout_and_rules(self):
         w = World(self)

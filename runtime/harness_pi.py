@@ -187,7 +187,8 @@ class Pi(adapter.Harness):
         agent = os.path.join(req.run_dir, "pi")
         provider = "flotilla-" + (req.model.endpoint or "gateway")
         tools = {"none": ["--no-tools"], "read": ["--tools", READ_ONLY_TOOLS]}.get(req.tools, [])
-        # --no-context-files always: the workspace's own AGENTS.md or CLAUDE.md is never read (S2)
+        # --no-context-files by default: the workspace's own AGENTS.md or CLAUDE.md is never read (S2)
+        context = ["--no-context-files"] if req.no_context_files else []
         system = ["--append-system-prompt", req.system_path] if req.system_path else []
         resume = []
         if req.resume:
@@ -197,7 +198,7 @@ class Pi(adapter.Harness):
             trim_session(f)
             resume = ["--session", f]
         return adapter.Invocation(
-            argv=["pi", "-p", "--mode", "json", "--provider", provider, "--model", req.model.model, *tools, "--no-context-files",
+            argv=["pi", "-p", "--mode", "json", "--provider", provider, "--model", req.model.model, *tools, *context,
                   *system, *resume],
             env={"PI_CODING_AGENT_DIR": agent}, stdin=req.prompt, cwd=req.workdir,
             files={"pi/models.json": json.dumps(models_json(req.model, provider), indent=2)})

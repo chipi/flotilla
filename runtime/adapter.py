@@ -154,6 +154,8 @@ class Request:
     timeout: int
     episode: str = ""               # the stem of the episode's files under run_dir/episodes ("" = not kept)
     station: str = ""               # a free label (the version's own station name); recorded on the Episode, never read by an adapter
+    no_context_files: bool = True   # S2: the workspace's own instruction files are never read; False only for a caller that must keep a
+                                    # call as it was sent before it moved onto the adapter (bugfix/fix2.py: no rules declared, none given)
 
 
 @dataclass

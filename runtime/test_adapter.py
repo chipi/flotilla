@@ -372,6 +372,11 @@ class PiServesEveryToolsValue(unittest.TestCase):
             self.assertNotIn("--append-system-prompt", harness_pi.PI.build(self.req(tools=tools)).argv, "none given, none appended")
             self.assertIn("--no-context-files", harness_pi.PI.build(self.req(tools=tools)).argv)
 
+    def test_a_caller_that_keeps_a_call_as_it_was_can_leave_the_workspace_s_instructions_to_pi(self):
+        for tools in ("all", "read", "none"):
+            argv = harness_pi.PI.build(self.req(tools=tools, no_context_files=False)).argv
+            self.assertNotIn("--no-context-files", argv, tools)
+
     def test_the_session_store_and_the_model_configuration_are_under_the_run_directory(self):
         inv = harness_pi.PI.build(self.req())
         self.assertEqual(inv.env, {"PI_CODING_AGENT_DIR": os.path.join(self.d, "pi")})

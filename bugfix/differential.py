@@ -175,8 +175,6 @@ ALLOWED = {
     "models.json is rewritten for the one route (its entry is the old file's)":
         ("models_json", lambda o, n, of, nf: _called_entry_only(n, nf["provider"], nf["model"])
          == _called_entry_only(o, of["provider"], of["model"]) and _called_entry_only(n, nf["provider"], nf["model"]) is not None),
-    "--no-context-files always (S2), where the old call had no system file and so loaded the repo's AGENTS.md":
-        ("no_context_files", lambda o, n, of, nf: (o, n, of["system_file"]) == (False, True, None)),
 }
 
 

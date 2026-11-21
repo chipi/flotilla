@@ -131,7 +131,7 @@ def text_path(st, station, name, environ):
 
 def pi_rules(a, environ):
     """fix.pi_rules for stations: the fix station's `rules` text, the rules the verdict and the advisor leaves get too ('' when
-    it declares none: pi then loads no rules, and still never the repository's)."""
+    it declares none: pi then loads the repository's own, as v1 run with --pi-rules '' did)."""
     return text_path(a.stations, FIX, "rules", environ) or ""
 
 
@@ -259,7 +259,8 @@ class Chain(fix.Chain):
         prompt = (desc if resume else harness_prompts.fix_prompt(desc)) if role == FIX else harness_prompts.repro_prompt(self.repro_agent, desc)
         limit = seconds((s.get("limits") or {}).get("timeout") or timeout)
         req = adapter.Request(station=role, prompt=prompt, system_path=self.rules.get(role) or None, model=self.route(s["model"]),
-                              tools="all", resume=resume, max_turns=max_turns or 0, workdir=self.wt, run_dir=self.run_dir, timeout=limit)
+                              tools="all", resume=resume, max_turns=max_turns or 0, workdir=self.wt, run_dir=self.run_dir, timeout=limit,
+                              no_context_files=bool(self.rules.get(role)))
         _, code, stream = self.execute(req, dict(env if env is not None else self.env, NODE_OPTIONS=NODE_OPTIONS))
         return code, stream
 
@@ -274,10 +275,12 @@ class Chain(fix.Chain):
     def review(self, diff, task="", summary=""):
         prompt = self.review_prompt(diff, task, summary)
         tools = "none" if self.a.review_tools == "none" else "read"
-        # the rules are about using tools: a review that has none is not given them (and still never the repository's own)
+        # the rules are about using tools: a review that has none is not given them, but with rules declared it still never reads the
+        # repository's own; with none declared, pi loads them, as v1's review did
         req = adapter.Request(station=REVIEW, prompt=prompt, system_path=(self.rules.get(REVIEW) or None) if tools == "read" else None,
                               model=self.route(self.a.reviewer_model), tools=tools, resume=None, max_turns=0, workdir=self.wt,
-                              run_dir=self.run_dir, timeout=self.a.review_timeout)
+                              run_dir=self.run_dir, timeout=self.a.review_timeout,
+                              no_context_files=bool(self.rules.get(REVIEW)))
         ep, code, _ = self.execute(req)
         self.calls.record("reviewer", self.a.reviewer_model)
         if ep.answer:

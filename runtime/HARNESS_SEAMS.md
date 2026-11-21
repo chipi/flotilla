@@ -78,9 +78,11 @@ Field names are the code's: `Request`, `Invocation`, `Turn`, `Episode`, `ModelRo
   CLI cannot, as a prefix to the prompt, and says so in `Invocation.notes`. The workspace's own
   `AGENTS.md` or `CLAUDE.md` is never read: the version's texts replace it.
 - **Owner.** The caller resolves and checks the file; the adapter delivers it.
-- **pi, the platform's adapter.** Always `--no-context-files`, and `--append-system-prompt <path>`
-  when there is one, for every `tools` value. Whether a station without tools gets the text is the
-  caller's choice (it passes none).
+- **pi, the platform's adapter.** `--no-context-files` by default (`Request.no_context_files`), and
+  `--append-system-prompt <path>` when there is one, for every `tools` value. Whether a station
+  without tools gets the text is the caller's choice (it passes none). A caller that must keep a
+  call as it was sent before it moved onto the adapter sets `no_context_files=False`; the bugfix
+  chain on stations (`bugfix/fix2.py`) does when its station declares no `rules`, as v1 did.
 - **pi in the bugfix chain.** `--no-context-files --append-system-prompt <path>` (`--no-context-files`
   alone for the tool-less review: the rules are about using tools).
 - **Proof.** Unit: `test_adapter.py`; the chain's goldens and `bugfix/test_declared_prompts.py`.
