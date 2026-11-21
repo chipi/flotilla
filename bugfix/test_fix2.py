@@ -50,15 +50,17 @@ class World:
             with open(os.path.join(d, name), "w") as f:
                 f.write(text)
         ref = lambda n: {"path": f"fix/v2/{n}", "sha256": sha(texts[n])}  # noqa: E731
-        base = {"max_output_tokens": 32768}
-        self.doc = {"schema_version": 1, "version_limits": {"kickback_max": 3},
+        # distinct floors per station (the largest, 32768, is the run's) and distinct values for each of the version's limits, so a
+        # station or a limit mixed up with another shows
+        self.doc = {"schema_version": 1, "version_limits": {"kickback_max": 3, "review_kickback_max": 4, "test_timeout": 555,
+                                                            "setup_timeout": 777},
                     "stations": {"fix": {"harness": "pi", "model": "bugfix-flash", "tools": "all", "texts": {"rules": ref("rules.md")},
-                                         "limits": dict(base, timeout="20m", max_turns=90)},
+                                         "limits": {"max_output_tokens": 16384, "timeout": "20m", "max_turns": 90}},
                                  "repro": {"harness": "pi", "model": "bugfix-flash", "tools": "all",
                                            "texts": {"rules": ref("rules.md"), "agent": ref("agent.md")},
-                                           "limits": dict(base, timeout="20m", max_turns=40)},
+                                           "limits": {"max_output_tokens": 32768, "timeout": "20m", "max_turns": 40}},
                                  "review": {"harness": "pi", "model": "bugfix-reviewer", "tools": "none", "texts": {"rules": ref("rules.md")},
-                                            "limits": dict(base, timeout="10m")}}}
+                                            "limits": {"max_output_tokens": 8192, "timeout": "10m"}}}}
         for k, v in limits.items():
             self.doc["stations"]["fix"]["limits"][k] = v
         if no_rules:
@@ -87,8 +89,14 @@ class Parsing(unittest.TestCase):
         self.assertEqual((a.worker_model, a.advisor_model, a.reviewer_model, a.review_tools), ("bugfix-flash", "bugfix-reviewer",
                                                                                                 "bugfix-reviewer", "none"))
         self.assertEqual((a.episode_timeout, a.review_timeout, a.fix_max_turns, a.repro_max_turns, a.min_output), (1200, 600, 90, 40, 32768))
-        self.assertEqual(a.kickback_max, 3, "the version's own limit")
+        self.assertEqual((a.kickback_max, a.review_kickback_max, a.test_timeout, a.setup_timeout), (3, 4, 555, 777),
+                         "the version's own limits, each in its own flag")
         self.assertEqual((a.repro_harness, a.review_harness), (fix2.ADAPTER_KEY, fix2.ADAPTER_KEY))
+
+    def test_the_reply_floor_is_the_largest_of_the_stations_the_run_calls(self):
+        w = World(self)
+        self.assertEqual(w.args().min_output, 32768, "the reproducer's, the largest of 16384, 32768 and 8192")
+        self.assertEqual(w.args("--no-repro").min_output, 16384, "no reproducer: the fix's and the review's")
 
     def test_a_model_a_text_or_a_limit_in_a_flag_is_refused(self):
         w = World(self)
@@ -171,7 +179,7 @@ class Review(unittest.TestCase):
 
         def run(cmd, cwd, env=None, timeout=None, **kw):
             with open(c.models_path) as f:
-                seen.append((cmd, kw, json.load(f)))
+                seen.append((cmd, dict(kw, timeout=timeout), json.load(f)))
             return 0, '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"VERDICT: approve"}]}}\n'
         c.a.review_tools = tools
         os.makedirs(c.wt, exist_ok=True)
@@ -187,6 +195,7 @@ class Review(unittest.TestCase):
         (cmd, kw, during), = seen
         self.assertEqual(cmd[:2], ["pi", "-p"])
         self.assertEqual(kw["stdin"], "THE REVIEW PROMPT")
+        self.assertEqual((kw["timeout"], kw["max_turns"]), (600, None), "the review station's 10m, and no turn cap")
         self.assertNotIn("THE REVIEW PROMPT", cmd, "the prompt is on stdin, not in argv")
         self.assertEqual([m["id"] for m in during["providers"]["flotilla-gateway-bugfix"]["models"]], ["fleet-bugfix-reviewer"])
         with open(c.models_path) as f:
@@ -461,6 +470,7 @@ class Resumption(unittest.TestCase):
 
         def rounds(chain):
             got.append(chain.restored)
+            self.chain = chain
             if not chain.restored:
                 chain.checkout()
                 chain.save("checkout", None)
@@ -500,6 +510,25 @@ class Resumption(unittest.TestCase):
         got, out = self.start("fix", resume={"run_id": "r1", "spend_usd": 0})
         self.assertEqual(got, [None])
         self.assertIn(f"it was made with repro_harness '{fix2.ADAPTER_KEY}', this run's flags say 'pi'", out)
+
+    def test_a_resumed_fix2_run_numbers_its_sessions_without_pi_s_episode_files(self):
+        """Chain.adopt end to end: the earlier run left a pi session and, as fix2 keeps for each pi call, a version 2 episode file of
+        it. The sessions are the record of pi's calls, so the episode file is not numbered among them (callrec_pi.skip_existing
+        numbers by first appearance), whereas the file of a harness other than pi is."""
+        self.start("fix2")
+        run_dir = self.run_dir()
+        session, _ = golden_session()
+        os.makedirs(os.path.join(run_dir, "pi", "sessions", "--wt--"))
+        with open(os.path.join(run_dir, "pi", "sessions", "--wt--", "s1.jsonl"), "w") as f:
+            f.write(session)
+        for n, harness in ((1, "pi"), (2, "fakeh")):
+            ep = adapter.Episode(harness=harness, station="fix")
+            adapter.write_episode(run_dir, f"00{n}-fix", dict(adapter.episode_doc(ep, "bugfix-flash", n, 0, ""), calls_role="coder"))
+            open(os.path.join(run_dir, "episodes", f"00{n}-fix.json" + callrec_pi.RECORDED), "w").close()
+        got, out = self.start("fix2", resume={"run_id": "r1", "spend_usd": 0})
+        self.assertEqual([c["phase"] for c in got], ["checkout"], out)
+        self.assertEqual(sorted(os.path.basename(f) for f in self.chain.calls.seq), ["002-fix.json", "s1.jsonl"])
+        self.assertEqual(self.chain.episode_n, 2, "the episode counter goes on from the files")
 
     def test_each_chain_continues_its_own_checkpoint(self):
         for module in ("fix", "fix2"):
