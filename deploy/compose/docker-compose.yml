@@ -201,7 +201,7 @@ services:
     volumes:
       - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-shadow-acl.yaml:/etc/smokescreen/acl.yaml:ro
-    networks: [shadow, out, backend, litellm, glitchtip, langfuse]
+    networks: [shadow, out, backend, litellm, glitchtip]   # not langfuse: pushing a trace is a write, and a shadow writes nothing (no-effect)
 
   # The ops workers (pipeline v1, ADR-0005 decision 5: workers per role), profile ops: one image, two
   # roles. ops-read runs the monitors, ops-act-host the acting routines (it holds no host key: flotillad

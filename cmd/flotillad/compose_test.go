@@ -194,16 +194,19 @@ func TestTheShadowWorkerCannotStarveOrReachTheLiveWorker(t *testing.T) {
 	if l, s := live.Environment["ROUTINE_SF_LEDGER_BACKEND"], shadow.Environment["ROUTINE_SF_LEDGER_BACKEND"]; l == "" || s != l {
 		t.Errorf("the shadow worker's ledger backend %q is not the live worker's %q", s, l)
 	}
-	// the shadow proxy reaches every outside service the live one does (a shadow reads what the live fleet reads, and its traces carry
-	// the shadow marks): without langfuse its Langfuse pushes failed on name lookup (2026-11-21)
+	// the shadow proxy reaches every outside service the live one reads, but not Langfuse: pushing a trace is a write, and a shadow writes
+	// nothing (the e2e's no-effect section asserts the same on the running stack)
 	onShadow := map[string]bool{}
 	for _, n := range egressShadow.Networks {
 		onShadow[n] = true
 	}
 	for _, n := range egress.Networks {
-		if n != "flotilla" && !onShadow[n] {
+		if n != "flotilla" && n != "langfuse" && !onShadow[n] {
 			t.Errorf("the shadow proxy is not on %q, which the live proxy is on", n)
 		}
+	}
+	if onShadow["langfuse"] {
+		t.Error("the shadow proxy is on langfuse: a shadow's trace push would be a write")
 	}
 }
 
