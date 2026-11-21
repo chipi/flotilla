@@ -28,6 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # the whole history: bugfix/differential.py takes the old chain from git at the commit before the pi switch
+          fetch-depth: 0
 
       # The runner image's own Go and Python 3: the fleet code is stdlib-only and fleetd has no
       # dependencies, so no setup actions. Go fetches the version fleetd's go.mod asks for itself
