@@ -45,6 +45,7 @@ BACKUPS="$H/backups"
 KEEP="${FLOTILLA_BACKUPS_KEEP:-10}"
 HEALTH_TRIES="${FLOTILLA_HEALTH_TRIES:-30}"
 HEALTH_SLEEP="${FLOTILLA_HEALTH_SLEEP:-2}"
+UP_TRIES="${FLOTILLA_UP_TRIES:-3}"; UP_SLEEP="${FLOTILLA_UP_SLEEP:-10}"
 die() { say "DEPLOY FAIL: $*"; event failure "${TAG:-?}" "$*"; exit 1; }
 
 event() {  # status tag message
@@ -159,6 +160,21 @@ tag_schema() {
 
 restore_checkout() {  # after a refusal that changed nothing
   [ -z "$CURRENT_COMMIT" ] || git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
+}
+
+# up_tag TAG: compose up, again (up to UP_TRIES, UP_SLEEP apart) when the engine drops mid-up: the containers it made are then
+# created and never started, and the next up starts them (2026-11-20/21: "Cannot connect to the Docker daemon" mid-up four times,
+# each a few seconds; one left flotillad unstarted for two hours). The exit is the last try's; every failed try is said.
+up_tag() {
+  local t="$1" n rc=1
+  for n in $(seq 1 "$UP_TRIES"); do
+    compose "$t" up -d --remove-orphans 2>&1 | sed 's/^/   /'
+    rc=${PIPESTATUS[0]}
+    [ "$rc" = 0 ] && return 0
+    say "compose up exited $rc (try $n of $UP_TRIES)"
+    [ "$n" -lt "$UP_TRIES" ] && sleep "$UP_SLEEP"
+  done
+  return "$rc"
 }
 
 # wait_healthy [TAG]: flotillad answers and its workers are ok, and (with TAG) it is TAG's flotillad: a healthy
@@ -276,7 +292,7 @@ fall_back() {
     [ "${PIPESTATUS[0]}" = 0 ] || { FALL_BACK_WHY="restoring $snap failed"; return 1; }
     say "   restored the store from $snap (schema $(cat "$snap/SCHEMA")); rows written after it are lost"
   fi
-  compose "$t" up -d --remove-orphans >/dev/null 2>&1
+  up_tag "$t" >/dev/null || { FALL_BACK_WHY="compose up of $t failed $UP_TRIES times"; return 1; }
   wait_healthy "$t" || { FALL_BACK_WHY="it did not come up healthy either"; return 1; }
 }
 
@@ -301,9 +317,8 @@ FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egre
 FLOTILLA_CONFIG_HASH_EGRESS_SEO="$(cfghash "$CFG/smokescreen-seo.yaml" "$CFG/egress-seo-acl.yaml")"
 FLOTILLA_CONFIG_HASH_EGRESS_SHADOW="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-shadow-acl.yaml")"
 export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO FLOTILLA_CONFIG_HASH_EGRESS_SHADOW
-compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
-UP_RC=${PIPESTATUS[0]}
-[ "$UP_RC" = 0 ] || say "compose up exited $UP_RC"
+up_tag "$TAG"; UP_RC=$?
+[ "$UP_RC" = 0 ] || say "compose up exited $UP_RC after $UP_TRIES tries"
 if has deploy_log; then deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; fi
 if [ "$UP_RC" != 0 ] || ! wait_healthy "$TAG"; then
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$TAG" "$COMMIT" fail >> "$LOG"

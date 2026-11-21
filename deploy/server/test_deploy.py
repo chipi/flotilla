@@ -85,6 +85,10 @@ FAKE_DOCKER = textwrap.dedent("""\
           up)
             # the engine dropped mid-up (2026-11-20): it exits 1 and nothing new runs; or it exits 0 and the old one still runs
             [ "${STUB_UP_FAIL:-}" = "$tag" ] && { echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2; exit 1; }
+            # the engine drops once for this tag: the first up exits 1 having started nothing, the next one goes through
+            if [ "${STUB_UP_FAIL_ONCE:-}" = "$tag" ] && [ ! -f "$STUB_CFG/dropped-$tag" ]; then
+              : > "$STUB_CFG/dropped-$tag"; echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2; exit 1
+            fi
             [ -n "${STUB_UP_STAYS:-}" ] && [ "$tag" = "$STUB_UP_STAYS" ] && exit 0
             echo "$tag" > "$STUB_CFG/running"
             # flotillad came up but another service did not (the shadow proxy, 2026-11-20): up exits 1
@@ -159,7 +163,7 @@ class Base(unittest.TestCase):
         self.env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HOME=self.tmp, USER="tester",
                         GATE_CALLS=self.calls, HOOK_LOG=self.log, DOCKER_CALLS=os.path.join(self.tmp, "docker_calls"),
                         FLOTILLA_HOME=self.home, VLOGS="http://127.0.0.1:9", STUB_CFG=self.stub, STUB_VOLS=self.vols,
-                        HELPER_PATH=HELPER, FLOTILLA_HEALTH_TRIES="2", FLOTILLA_HEALTH_SLEEP="0")
+                        HELPER_PATH=HELPER, FLOTILLA_HEALTH_TRIES="2", FLOTILLA_HEALTH_SLEEP="0", FLOTILLA_UP_SLEEP="0")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -247,6 +251,20 @@ class DeployUpTest(DeployBase):
         self.assertIn("compose up exited 1", r.stdout)
         self.assertNotIn("DEPLOY PASS", r.stdout)
         self.assertNotIn([self.new, "pass"], [[row[1], row[3]] for row in self.tsv()])
+
+    def test_an_up_the_engine_drops_once_is_tried_again_and_passes(self):
+        r = self.deploy(self.new, env=dict(self.env, STUB_UP_FAIL_ONCE=self.new))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("compose up exited 1 (try 1 of 3)", r.stdout)
+        self.assertIn(f"DEPLOY PASS ({self.new})", r.stdout)
+        self.assertEqual(self.running(), self.new)
+
+    def test_the_rollback_up_the_engine_drops_once_still_brings_the_old_tag_back(self):
+        # 2026-11-21 02:12Z: the new tag's up failed, then the rollback's up dropped too and flotillad was left created, not started
+        r = self.deploy(self.new, env=dict(self.env, STUB_UP_FAIL=self.new, STUB_UP_FAIL_ONCE=self.old))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"DEPLOY FAIL ({self.new}): rolled back to {self.old}", r.stdout)
+        self.assertEqual(self.running(), self.old)
 
     def test_a_good_up_still_passes(self):
         r = self.deploy(self.new)
