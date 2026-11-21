@@ -83,12 +83,20 @@ FAKE_DOCKER = textwrap.dedent("""\
             echo "CHECK PASS";;
           stop) : > "$STUB_CFG/running";;
           up)
+            # the engine dropped mid-up (2026-11-20): it exits 1 and nothing new runs; or it exits 0 and the old one still runs
+            [ "${STUB_UP_FAIL:-}" = "$tag" ] && { echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2; exit 1; }
+            [ -n "${STUB_UP_STAYS:-}" ] && [ "$tag" = "$STUB_UP_STAYS" ] && exit 0
             echo "$tag" > "$STUB_CFG/running"
+            # flotillad came up but another service did not (the shadow proxy, 2026-11-20): up exits 1
+            [ "${STUB_UP_PARTIAL:-}" = "$tag" ] && { echo "service egress-shadow: Cannot connect to the Docker daemon" >&2; exit 1; }
             if [ -f "$(tagfile "$tag" migrate)" ] && ! refuses "$tag"; then
               python3 "$STUB_CFG/migrate.py" "$STUB_VOLS/flotilla-state/flotilla.db" "$(cat "$(tagfile "$tag" migrate)")"
             fi;;
         esac
         exit 0;;
+      inspect)
+        t="$(cat "$STUB_CFG/running" 2>/dev/null)"
+        [ -n "$t" ] && echo "ghcr.io/chipi/flotilla-flotillad:$t"; exit 0;;
       exec)
         t="$(cat "$STUB_CFG/running" 2>/dev/null)"
         healthy() { [ -n "$t" ] && [ ! -f "$(tagfile "$t" unhealthy)" ] && ! refuses "$t"; }
@@ -189,6 +197,62 @@ class DeployBase(Base):
     def deploy(self, *args, env=None):
         return sh(["bash", os.path.join(self.repo, "deploy", "server", "deploy.sh"), *args],
                   env=env or self.env, check=False)
+
+
+class DeployUpTest(DeployBase):
+    """2026-11-20: the engine dropped mid-up. The first deploy printed DEPLOY PASS with the old flotillad still running and logged a
+    pass; the retry then found "no earlier tag" and left flotillad created, not started. A pass is the new tag running and healthy."""
+
+    def setUp(self):
+        super().setUp()
+        self.old, self.new = f"sha-{self.commits[0][:7]}", f"sha-{self.commits[1][:7]}"
+        with open(os.path.join(self.stub, "running"), "w") as f:
+            f.write(self.old + "\n")
+
+    def tsv(self):
+        with open(os.path.join(self.home, "deployed.tsv")) as f:
+            return [l.rstrip("\n").split("\t") for l in f]
+
+    def running(self):
+        with open(os.path.join(self.stub, "running")) as f:
+            return f.read().strip()
+
+    def test_an_up_the_engine_drops_is_no_pass_and_the_old_tag_runs_again(self):
+        r = self.deploy(self.new, env=dict(self.env, STUB_UP_FAIL=self.new))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("compose up exited 1", r.stdout)
+        self.assertNotIn("DEPLOY PASS", r.stdout)
+        self.assertIn(f"DEPLOY FAIL ({self.new}): rolled back to {self.old}", r.stdout)
+        self.assertNotIn([self.new, "pass"], [[row[1], row[3]] for row in self.tsv()])
+        self.assertEqual(self.running(), self.old)
+
+    def test_the_old_flotillad_still_running_after_up_is_no_pass(self):
+        r = self.deploy(self.new, env=dict(self.env, STUB_UP_STAYS=self.new))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("DEPLOY PASS", r.stdout)
+        self.assertNotIn([self.new, "pass"], [[row[1], row[3]] for row in self.tsv()])
+
+    def test_a_false_pass_in_the_log_does_not_hide_the_running_tag(self):
+        with open(os.path.join(self.home, "deployed.tsv"), "a") as f:
+            f.write(f"2026-11-20T22:26:03Z\t{self.new}\t{self.commits[1]}\tpass\n")   # logged, never ran
+        r = self.deploy(self.new, env=dict(self.env, STUB_UP_FAIL=self.new))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"flotillad runs {self.old}: {self.old} is the tag to come back to", r.stdout)
+        self.assertNotIn("no earlier tag", r.stdout)
+        self.assertEqual(self.running(), self.old)
+
+    def test_a_partial_up_is_no_pass_even_with_the_new_flotillad_healthy(self):
+        r = self.deploy(self.new, env=dict(self.env, STUB_UP_PARTIAL=self.new))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("compose up exited 1", r.stdout)
+        self.assertNotIn("DEPLOY PASS", r.stdout)
+        self.assertNotIn([self.new, "pass"], [[row[1], row[3]] for row in self.tsv()])
+
+    def test_a_good_up_still_passes(self):
+        r = self.deploy(self.new)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"DEPLOY PASS ({self.new})", r.stdout)
+        self.assertEqual(self.running(), self.new)
 
 
 class DeployWiringTest(DeployBase):

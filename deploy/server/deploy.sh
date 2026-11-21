@@ -61,8 +61,17 @@ event() {  # status tag message
 [ -n "$STORE_HELPER" ] || die "$REPO/deploy/server/store_snapshot.py missing: check out a commit that has it, then run this again"
 
 previous() { awk -F'\t' '$4=="pass"{t=$2} END{print t}' "$LOG" 2>/dev/null; }
+# the tag of the image the flotillad container runs (empty when there is none)
+running_tag() { local i; i="$(docker inspect -f '{{.Config.Image}}' flotillad 2>/dev/null)"; [ -n "$i" ] && printf '%s' "${i##*:}"; }
 CURRENT="$(previous)"
 CURRENT_COMMIT="$(awk -F'\t' '$4=="pass"{c=$3} END{print c}' "$LOG" 2>/dev/null)"
+# what runs is the truth: a log row can be wrong (2026-11-20: a pass logged for an up that never happened made the
+# next failure find "no earlier tag"), so a running flotillad of another tag is the one to come back to
+RUNNING="$(running_tag 2>/dev/null)"
+if [ -n "$RUNNING" ] && [ "$RUNNING" != "$CURRENT" ]; then
+  say "the log's last pass is ${CURRENT:-none}, but flotillad runs $RUNNING: $RUNNING is the tag to come back to"
+  CURRENT="$RUNNING"; CURRENT_COMMIT="${RUNNING#sha-}"
+fi
 envget() { (set -a; . "$H/.env" >/dev/null 2>&1; eval "printf '%s' \"\${$1:-}\""); }
 HOOKS="$(envget FLOTILLA_DEPLOY_HOOKS)"
 if [ -n "$HOOKS" ]; then
@@ -152,11 +161,14 @@ restore_checkout() {  # after a refusal that changed nothing
   [ -z "$CURRENT_COMMIT" ] || git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$CURRENT_COMMIT"
 }
 
+# wait_healthy [TAG]: flotillad answers and its workers are ok, and (with TAG) it is TAG's flotillad: a healthy
+# flotillad of the tag before is not a passed deploy (2026-11-20: an up the engine dropped left the old one running)
 wait_healthy() {
   local _
   for _ in $(seq 1 "$HEALTH_TRIES"); do
     if docker exec flotillad /usr/local/bin/flotilla health >/dev/null 2>&1 \
-       && docker exec flotillad /usr/local/bin/flotilla status 2>/dev/null | grep -q '"ok":true'; then return 0; fi
+       && docker exec flotillad /usr/local/bin/flotilla status 2>/dev/null | grep -q '"ok":true' \
+       && { [ -z "${1:-}" ] || [ "$(running_tag)" = "$1" ]; }; then return 0; fi
     sleep "$HEALTH_SLEEP"
   done
   return 1
@@ -265,7 +277,7 @@ fall_back() {
     say "   restored the store from $snap (schema $(cat "$snap/SCHEMA")); rows written after it are lost"
   fi
   compose "$t" up -d --remove-orphans >/dev/null 2>&1
-  wait_healthy || { FALL_BACK_WHY="it did not come up healthy either"; return 1; }
+  wait_healthy "$t" || { FALL_BACK_WHY="it did not come up healthy either"; return 1; }
 }
 
 say "== up"
@@ -290,8 +302,10 @@ FLOTILLA_CONFIG_HASH_EGRESS_SEO="$(cfghash "$CFG/smokescreen-seo.yaml" "$CFG/egr
 FLOTILLA_CONFIG_HASH_EGRESS_SHADOW="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-shadow-acl.yaml")"
 export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO FLOTILLA_CONFIG_HASH_EGRESS_SHADOW
 compose "$TAG" up -d --remove-orphans 2>&1 | sed 's/^/   /'
+UP_RC=${PIPESTATUS[0]}
+[ "$UP_RC" = 0 ] || say "compose up exited $UP_RC"
 if has deploy_log; then deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; fi
-if ! wait_healthy; then
+if [ "$UP_RC" != 0 ] || ! wait_healthy "$TAG"; then
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$TAG" "$COMMIT" fail >> "$LOG"
   if [ -n "$CURRENT" ] && [ "$CURRENT" != "$TAG" ]; then
     say "flotillad or the worker did not come up healthy: back to $CURRENT"
