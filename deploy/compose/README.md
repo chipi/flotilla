@@ -299,9 +299,9 @@ extended by `FLOTILLA_WRITE_KEYS` (comma-separated; the compose file sets it on 
 and by the keys of any `FLOTILLA_WRITE_ENV_FILES` it can read. A write credential whose name is on
 neither list is not caught by name; keep it out of `TRIAGE_READ_ENV_FILE`, which is the one file
 the shadow worker reads. The shadow proxy is not on Langfuse (a trace push is a write), so leave the
-`LANGFUSE_*` keys out of it too. GitHub reads in a shadow use `GITHUB_READ_TOKEN` (a token that can only
-read: triage's `filing._gh` takes it for GET requests when it has no `GITHUB_TOKEN`, never for a
-write), since `GITHUB_TOKEN` itself is refused by name. A test on the compose file
+`LANGFUSE_*` keys out of it too. GitHub reads in a shadow use `GITHUB_READ_TOKEN` (a token that can
+only read: triage's `filing._gh` takes it for GET requests when it has no `GITHUB_TOKEN`, never for
+a write), since `GITHUB_TOKEN` itself is refused by name. A test on the compose file
 (`cmd/flotillad/compose_test.go`) holds the limits, the volumes, the network and that every
 `*-secrets` volume is external.
 
