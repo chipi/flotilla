@@ -208,9 +208,30 @@ The bugfix fix routine is the first to write its v2 on stations. The decisions, 
   refused. `fix.py`, `pi_review.py` and v1's spec are unchanged, so v1's behaviour is byte for byte
   what it was. The spec hash does not cover code, so a version's code is never edited under it.
 - **The calls.** The three stations run through `runtime/adapter.py` on `runtime/harness_pi.py`
-  with no override: the prompt on stdin, the station's `rules` text as the system text (a review
-  with no tools is not given it, as in v1), `--session` for a resume,
-  `NODE_OPTIONS=--max-old-space-size=4096` kept (the leaves exported it; the adapter does not).
+  with no override (`--no-context-files` only where the station declares `rules`, as v1 did): the
+  prompt on stdin, the station's `rules` text as the system text (a review with no tools is not
+  given it, as in v1), `--session` for a resume, `NODE_OPTIONS=--max-old-space-size=4096` kept (the
+  leaves exported it; the adapter does not).
+- **Equal to v1 by the spec's values, not by construction.** v1 has one model for the fix and the
+  reproducer, one `--episode-timeout` for both, one rules file for every pi call and one reply
+  floor (`--min-output`) for every alias. v2 declares each per station. The chain on stations
+  behaves as v1 only because the shipped `fleets/bugfix/fix/v2/spec.yaml` sets the same values on
+  every station (and the differential runs the stations equal for what v1 cannot tell apart). Editing
+  a station (a different model or timeout for `repro`, rules on one station and not another, a
+  different `max_output_tokens`) changes behaviour, and that change needs its own replay before it
+  ships. The run's reply floor is the largest `max_output_tokens` of the stations it calls, because
+  `pi_config` writes one `models.json` for every alias.
+- **The review's endpoint.** v1 sent the review with the worker's provider (`self.provider`), not
+  the reviewer alias's own. fix2 sends it to the reviewer alias's endpoint (`flotilla-<endpoint>`).
+  The two are the same when both aliases share an endpoint, as in the example (`fix-flash` and
+  `fix-reviewer` on one gateway); a version that puts the reviewer on another endpoint changes where
+  the review goes.
+- **A pi that cannot be started.** The fix and the reproducer were bash leaves, which gave an exit
+  code (127 for a missing pi); `run_process` raises instead. fix2 maps a missing pi to 127, a pi
+  that cannot be run to 126 and a prompt the pipe cannot carry to 1, for those two calls only, so
+  the chain handles them as it did. The review raised in v1 and raises in fix2. A prompt with a
+  lone surrogate cannot be written to stdin: v1 crashed on U+D800 too, but passed U+DC80..U+DCFF
+  through argv as raw bytes, which fix2 does not.
 - **models.json.** The adapter writes `pi/models.json` for the one route of its call, over the file
   `bugfix/pi_config.py` wrote for every alias of the run. Two things follow, and both are decided
   here. The route carries the chain's catalog entry for its model in `route.meta["pi_model"]`, so

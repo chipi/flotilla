@@ -298,7 +298,8 @@ harness-specific parts on a machine that has the CLI.
 
 Not covered by it: that a real model behaves; the verdict and advisor roles of the bugfix chain
 (their leaves run pi as before); any harness version other than the one on the machine that runs it
-(pi: 1.0.0 here, 0.80.10 in the worker image); a harness that is not pi; CI, which has no pi.
+(pi: 1.0.0 here, 0.80.10 in the worker image; the bugfix chain's two end-to-ends were also run on
+0.80.10 once, below); a harness that is not pi; CI, which has no pi.
 
 ## Adopting a harness: the order
 
@@ -318,7 +319,11 @@ Not covered by it: that a real model behaves; the verdict and advisor roles of t
   (`bugfix/pi_review.py`).
 - Every harness but pi: no adapter, no row, no end-to-end.
 - `/v1/messages` and `/v1/responses` in the scripted endpoint.
-- pi 0.80.10, the version in the worker image: the end-to-ends ran on 1.0.0.
+- pi 0.80.10, the version in the worker image: the end-to-ends ran on 1.0.0. They were also run
+  once on 0.80.10 (2026-11-21, node 22, a throwaway npm prefix): `bugfix/test_seam_fix2.py` (14),
+  `bugfix/test_seam_pi.py` (13) and `runtime/test_seam_pi.py` (14), all green. That `PI_OFFLINE` is
+  what keeps pi off the network was not shown on either version: with and without it pi made no
+  request outside the gateway in `-p` mode.
 
 ## Amendment log
 

@@ -6,9 +6,10 @@ there as `!cat <file>` or `$VAR`, never written), the session store under <run_d
 reference. The pi stream's reading is here too: assistant_text, stream_error and usage (bugfix/fix.py keeps the names as
 wrappers) and parse(), which turns a stream into the normalized Episode.
 
-The bugfix chain's own calls (its fix and reproducer through harnesses/pi.sh and repro.sh, its review through
-bugfix/pi_review.py) keep their command paths: bugfix/test_pi_golden.py pins them byte for byte, and switching a routine
-onto this adapter is that routine's own change, replayed.
+The bugfix chain's v1 calls (bugfix/fix.py: its fix and reproducer through harnesses/pi.sh and repro.sh, its review through
+bugfix/pi_review.py) keep their command paths: bugfix/test_pi_golden.py pins them byte for byte. bugfix/fix2.py, the chain of a
+version that declares stations, runs its fix, reproducer and review through this adapter; bugfix/differential.py lists what differs
+from v1.
 """
 import glob
 import json
