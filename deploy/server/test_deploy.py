@@ -438,10 +438,15 @@ FLEETS_DOCKER = textwrap.dedent("""\
             [ -n "${STUB_CHECK_NOSNAP:-}" ] && echo "routine fields: no snapshot yet (the first start after this deploy records one for every routine); nothing to compare"
             echo "routine actions: max autonomy auto (a routine action runs without approval once its routine and the action have earned auto; host actions stay at propose)"
             echo "CHECK PASS"; exit 0;;
-          *" up "*) : > "$STUB_CFG/up"; exit 0;;
+          *" up "*)
+            # the engine drops the first STUB_UP_DROPS ups (nothing is recreated); STUB_UP_KEEP_OLD: up exits 0 and recreates nothing
+            n=$(cat "$STUB_CFG/ups" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$STUB_CFG/ups"
+            [ "$n" -le "${STUB_UP_DROPS:-0}" ] && { echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2; exit 1; }
+            [ -n "${STUB_UP_KEEP_OLD:-}" ] && exit 0
+            : > "$STUB_CFG/up"; printf '%s\\n' "$FLOTILLA_FLEETS_DIR" > "$STUB_CFG/mounted"; exit 0;;
         esac; exit 0;;
       ps) printf 'flotillad\nflotilla-worker-triage\n'; exit 0;;
-      inspect) echo /srv/flotilla/fleets-mounted; exit 0;;
+      inspect) cat "$STUB_CFG/mounted" 2>/dev/null || echo /srv/flotilla/fleets-before; exit 0;;
     esac
     exit 0
 """)
@@ -497,7 +502,7 @@ class DeployFleetsTest(unittest.TestCase):
         os.chmod(os.path.join(bindir, "docker"), 0o755)
         self.calls = os.path.join(self.tmp, "docker_calls")
         self.env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HOME=self.tmp, FLOTILLA_HOME=self.home,
-                        STUB_CFG=self.stub, STUB_RUNNING=self.running, DOCKER_CALLS=self.calls)
+                        STUB_CFG=self.stub, STUB_RUNNING=self.running, DOCKER_CALLS=self.calls, FLOTILLA_UP_SLEEP="0")
 
     def tearDown(self):
         subprocess.run(["chmod", "-R", "u+w", self.tmp])
@@ -621,6 +626,30 @@ class DeployFleetsTest(unittest.TestCase):
         self.assertIn("field x not found", r.stdout)
         self.assertNotIn(" up ", self.docker_calls())
         self.assertFalse(os.path.lexists(os.path.join(self.home, "fleets")), "the live folder was switched")
+
+    def test_an_up_the_engine_drops_once_is_tried_again_and_passes(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_UP_DROPS="1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("compose up exited 1 (try 1 of 3)", r.stdout)
+        self.assertIn("FLEETS DEPLOY PASS", r.stdout)
+        self.assertIn("mounted " + os.path.join(self.home, "fleets-" + self.c1[:7]), r.stdout)
+
+    def test_an_up_that_recreates_nothing_is_no_pass(self):
+        # the old flotillad stays healthy on the folder before: health alone would call it a pass
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_UP_KEEP_OLD="1"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("FLEETS DEPLOY PASS", r.stdout)
+        self.assertIn("flotillad mounts /srv/flotilla/fleets-before, not " + os.path.join(self.home, "fleets-" + self.c1[:7]), r.stdout)
+
+    def test_an_up_the_engine_drops_every_time_is_no_pass(self):
+        self.versions(versions_json((1, "live", "a")), versions_json((1, "live", "a")))
+        r = self.deploy(self.c1, env=dict(self.env, STUB_UP_DROPS="9"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("compose up exited 1 (try 3 of 3)", r.stdout)
+        self.assertIn("compose up failed 3 times", r.stdout)
+        self.assertNotIn("FLEETS DEPLOY PASS", r.stdout)
 
     def check(self, commit, env=None):
         return sh(["bash", self.SCRIPT, "--check", commit], env=env or self.env, check=False)

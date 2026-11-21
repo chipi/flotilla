@@ -150,7 +150,16 @@ docker ps -a --format '{{.Names}}' | grep -qx flotilla-worker-triage-shadow && s
 for w in worker-bugfix worker-ops-read worker-ops-act-host; do
   grep -q "^  $w:" "$REPO/deploy/compose/fleets.yml" && docker ps -a --format '{{.Names}}' | grep -qx "flotilla-$w" && svcs+=("$w")
 done
-FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed 's/^/   /'
+# tried again when the engine drops mid-up, as deploy.sh does (2026-11-20/21: "Cannot connect to the Docker daemon" mid-up, the host's
+# socket relay refusing a burst of connections; the containers it made are left created and the next up starts them)
+UP_TRIES="${FLOTILLA_UP_TRIES:-3}"; UP_SLEEP="${FLOTILLA_UP_SLEEP:-10}"; UP_RC=1
+for n in $(seq 1 "$UP_TRIES"); do
+  FLEETS="$DIR" compose up -d --no-deps --force-recreate "${svcs[@]}" 2>&1 | sed 's/^/   /'
+  UP_RC=${PIPESTATUS[0]}
+  [ "$UP_RC" = 0 ] && break
+  say "compose up exited $UP_RC (try $n of $UP_TRIES)"
+  [ "$n" -lt "$UP_TRIES" ] && sleep "$UP_SLEEP"
+done
 
 # As deploy.sh waits: flotillad's own health command and the triage worker answering it, not Docker's
 # health status, which flotillad's 60 s interval leaves at "starting" for a minute (2026-11-17, a false FAIL).
@@ -160,6 +169,9 @@ for i in $(seq 1 45); do
   sleep 2
 done
 mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/opt/flotilla/fleets"}}{{.Source}}{{end}}{{end}}' flotillad)"
+# a pass is the up done and flotillad recreated on this folder: a healthy flotillad left from before the up still mounts the old one
+[ "$UP_RC" = 0 ] || { ok=0; say "compose up failed $UP_TRIES times"; }
+[ "$mounted" = "$DIR" ] || { ok=0; say "flotillad mounts ${mounted:-nothing}, not $DIR"; }
 AFTER="$(hashes)" || ok=0
 say "== spec hashes:"
 CH="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep '^[<>]' || true)"
