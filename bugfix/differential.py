@@ -331,6 +331,15 @@ VERDICT_LEAF = tf.POP + tf.SESS + textwrap.dedent('''\
     elif kind == "uncited":
         v.update(verdict="actionable")
         problem["acceptance"] = [{"criterion": "value() returns 2", "intent_source": ""}]
+    elif kind == "no-acceptance":   # the shape check's three notes on an actionable verdict
+        v.update(verdict="actionable")
+        problem["acceptance"] = []
+    elif kind == "no-symptom":
+        v.update(verdict="actionable")
+        problem["symptom"] = ""
+    elif kind == "no-expected":
+        v.update(verdict="actionable")
+        problem["expected"] = ""
     text = "Looked at it.\\n```json\\n" + json.dumps(v) + "\\n```"
     if kind == "bare":
         v["verdict"] = "actionable"
@@ -480,6 +489,9 @@ SCENARIOS = dict(
     verdict_smuggles_a_location=(["smuggled"], ["good"], {}, []),
     verdict_cites_no_intent=(["uncited"], ["good"], {}, []),
     verdict_pins_on_a_first_pass=(["pinned-first"], ["good"], {}, []),
+    verdict_with_no_acceptance=(["no-acceptance"], ["good"], {}, []),
+    verdict_with_no_symptom=(["no-symptom"], ["good"], {}, []),
+    verdict_with_no_expected=(["no-expected"], ["good"], {}, []),
     kickback_verdict_that_does_not_pin=(["actionable", "unpinned"], ["notest", "good"], {}, ["--no-advisor"]),
     # the fix at the advisor's pin still fails: the acceptance-gap prompt, then the downgrade
     acceptance_gap=(["actionable"] * 4, ["notest", "notest", "good"], {}, []),
