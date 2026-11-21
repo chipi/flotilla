@@ -14,12 +14,12 @@ new side on stdin, and the table compares the two as one field.
 
 A delta is allowed only when ALLOWED names it and its predicate holds; any other is UNEXPLAINED, and `main` exits 1.
 """
-import getpass
 import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -81,27 +81,35 @@ FAKE_PI = textwrap.dedent('''\
     ''') % {"fix_head": harness_prompts.FIX_HEAD, "keys": RECORDED_ENV}
 
 
-def tests_base():
-    return os.environ.get("FLOTILLA_TEST_TMP_BASE") or f"/var/tmp/flotilla-tests-{os.environ.get('USER') or getpass.getuser()}"
-
-
 class OldTree:
-    """The repository at `sha` in a detached worktree of its own under the tests' base folder, removed on exit."""
+    """The repository at `sha` in a detached worktree of its own under TMPDIR (scripts/with-tmp.sh sets it), removed on exit and on
+    SIGTERM. A worktree a killed run left registered (its folder gone) is pruned first."""
 
     def __init__(self, sha=OLD_SHA):
         self.sha = sha
-        base = tests_base()
-        os.makedirs(base, exist_ok=True)
-        self.dir = tempfile.mkdtemp(prefix="differential-", dir=base)
+        self.dir = tempfile.mkdtemp(prefix="differential-")
         self.path = os.path.join(self.dir, "old")
+        self.previous = None
 
     def __enter__(self):
+        subprocess.run(["git", "-C", ROOT, "worktree", "prune"], check=True, capture_output=True)
+        try:
+            self.previous = signal.signal(signal.SIGTERM, self.terminated)
+        except ValueError:   # not the main thread: no handler, the folder is still removed on exit
+            pass
         subprocess.run(["git", "-C", ROOT, "worktree", "add", "--detach", self.path, self.sha], check=True, capture_output=True)
         return self.path
+
+    def terminated(self, signum, frame):
+        self.__exit__(None, None, None)
+        sys.exit(128 + signum)
 
     def __exit__(self, *exc):
         subprocess.run(["git", "-C", ROOT, "worktree", "remove", "--force", self.path], capture_output=True)
         shutil.rmtree(self.dir, ignore_errors=True)
+        if self.previous is not None:
+            signal.signal(signal.SIGTERM, self.previous)
+            self.previous = None
 
 
 def copy_tree(dst):

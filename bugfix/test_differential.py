@@ -60,6 +60,43 @@ class Harness(unittest.TestCase):
         self.assertEqual(d.table(rows)[1], 2, "the text is in argv on both sides, so both fields show it")
 
 
+class OldTreeLifecycle(unittest.TestCase):
+    """The old side's worktree is made under TMPDIR, pruned at the start and gone after a SIGTERM."""
+
+    def registered(self):
+        out = subprocess.run(["git", "-C", d.ROOT, "worktree", "list", "--porcelain"], capture_output=True, text=True, check=True).stdout
+        return [x[len("worktree "):] for x in out.splitlines() if x.startswith("worktree ")]
+
+    def test_it_lives_under_tmpdir(self):
+        with d.OldTree() as old:
+            self.assertTrue(os.path.realpath(old).startswith(os.path.realpath(tempfile.gettempdir()) + os.sep), old)
+            self.assertIn(old, self.registered())
+        self.assertFalse(os.path.exists(old))
+        self.assertNotIn(old, self.registered())
+
+    def test_a_worktree_a_killed_run_left_registered_is_pruned_at_the_start(self):
+        stale = os.path.join(tempfile.mkdtemp(), "old")
+        subprocess.run(["git", "-C", d.ROOT, "worktree", "add", "--detach", stale, d.OLD_SHA], check=True, capture_output=True)
+        shutil.rmtree(os.path.dirname(stale))
+        self.assertIn(stale, self.registered())
+        with d.OldTree():
+            self.assertNotIn(stale, self.registered())
+
+    def test_sigterm_removes_the_folder_and_the_registration(self):
+        code = ("import os, sys, time\nsys.path.insert(0, %r)\nimport differential as d\n"
+                "with d.OldTree() as old:\n    print(old, flush=True)\n    time.sleep(60)\n") % os.path.dirname(os.path.abspath(d.__file__))
+        p = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(p.stdout.close)
+        old = p.stdout.readline().strip()
+        self.assertTrue(os.path.isdir(old))
+        self.assertIn(old, self.registered())
+        p.terminate()
+        self.assertEqual(p.wait(timeout=30), 128 + 15)
+        self.assertFalse(os.path.exists(old))
+        self.assertFalse(os.path.exists(os.path.dirname(old)))
+        self.assertNotIn(old, self.registered())
+
+
 class FakePi(unittest.TestCase):
     """The fake pi records the bytes it is sent, as sent."""
 
