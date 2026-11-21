@@ -189,6 +189,22 @@ func TestTheShadowWorkerCannotStarveOrReachTheLiveWorker(t *testing.T) {
 	if !strings.Contains(svc["flotillad"].Environment["NO_PROXY"], "worker-triage-shadow") {
 		t.Error("flotillad reaches the shadow worker directly, not through its proxy")
 	}
+	// a shadow's decisions reach the pairs only through flotillad's ledger: with the default (a TSV in its own volume) it decided and
+	// paired nothing (2026-11-21, the first shadow run of the installation's triage/cycle v2: 10 decided, 0 pairs)
+	if l, s := live.Environment["ROUTINE_SF_LEDGER_BACKEND"], shadow.Environment["ROUTINE_SF_LEDGER_BACKEND"]; l == "" || s != l {
+		t.Errorf("the shadow worker's ledger backend %q is not the live worker's %q", s, l)
+	}
+	// the shadow proxy reaches every outside service the live one does (a shadow reads what the live fleet reads, and its traces carry
+	// the shadow marks): without langfuse its Langfuse pushes failed on name lookup (2026-11-21)
+	onShadow := map[string]bool{}
+	for _, n := range egressShadow.Networks {
+		onShadow[n] = true
+	}
+	for _, n := range egress.Networks {
+		if n != "flotilla" && !onShadow[n] {
+			t.Errorf("the shadow proxy is not on %q, which the live proxy is on", n)
+		}
+	}
 }
 
 // Only the workers whose routines call flotillad's workers' listener have its address, and none has a worker-token fallback for it: under

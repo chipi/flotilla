@@ -165,6 +165,9 @@ services:
       ROUTINE_HTTPS_PROXY: http://egress-shadow:4750
       ROUTINE_FLOTILLA_API_URL: http://flotillad:8485
       ROUTINE_NO_PROXY: flotillad
+      # the live worker's ledger backend: a shadow's decisions are paired only through flotillad's ledger (its own namespace there, the live
+      # rows as of its input); with the TSV default they stay in its own volume and nothing pairs
+      ROUTINE_SF_LEDGER_BACKEND: ${TRIAGE_LEDGER_BACKEND:-tsv}
       # over worker-triage.env, which is the live fleet's: the shadow's series, inbox and traces carry their own name, and it mirrors
       # nothing into GlitchTip
       ROUTINE_SF_SERVICE: triage-fleet-shadow
@@ -198,7 +201,7 @@ services:
     volumes:
       - ${FLOTILLA_CONFIG}/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
       - ${FLOTILLA_CONFIG}/egress-shadow-acl.yaml:/etc/smokescreen/acl.yaml:ro
-    networks: [shadow, out, backend, litellm, glitchtip]
+    networks: [shadow, out, backend, litellm, glitchtip, langfuse]
 
   # The ops workers (pipeline v1, ADR-0005 decision 5: workers per role), profile ops: one image, two
   # roles. ops-read runs the monitors, ops-act-host the acting routines (it holds no host key: flotillad
