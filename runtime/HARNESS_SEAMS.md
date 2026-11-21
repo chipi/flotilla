@@ -323,7 +323,9 @@ runs it
 - `/v1/messages` and `/v1/responses` in the scripted endpoint.
 - pi 0.80.10, the version in the worker image: the end-to-ends ran on 1.0.0. They were also run
   once on 0.80.10 (2026-11-21, node 22, a throwaway npm prefix): `bugfix/test_seam_fix2.py` (14),
-  `bugfix/test_seam_pi.py` (13) and `runtime/test_seam_pi.py` (14), all green. That `PI_OFFLINE` is
+  `bugfix/test_seam_pi.py` (13) and `runtime/test_seam_pi.py` (14), all green; and again on 2026-11-22
+  inside the bugfix worker image itself (sha-dc3315d: node v22.23.4, pi 0.80.10, Python 3.11.2; no
+  network, the tree mounted read-only), the same three, all green. That `PI_OFFLINE` is
   what keeps pi off the network was not shown on either version: with and without it pi made no
   request outside the gateway in `-p` mode.
 
