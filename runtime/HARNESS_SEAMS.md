@@ -297,7 +297,8 @@ harness-specific parts on a machine that has the CLI.
   fake, `unavailable()` and `prepare()`; it adds the protocol to the endpoint if it is a new one.
 
 Not covered by it: that a real model behaves; the verdict and advisor roles of the bugfix chain
-(their leaves run pi as before); any harness version other than the one on the machine that runs it
+of v1 (their leaves run pi as before); any harness version other than the one on the machine that
+runs it
 (pi: 1.0.0 here, 0.80.10 in the worker image; the bugfix chain's two end-to-ends were also run on
 0.80.10 once, below); a harness that is not pi; CI, which has no pi.
 
@@ -314,9 +315,10 @@ Not covered by it: that a real model behaves; the verdict and advisor roles of t
 
 - Detached processes on a system without `/proc` (S5).
 - Declaring and hashing the bugfix chain's texts other than `rules` (above).
-- The verdict and advisor roles through adapters; `triage_run.sh` and `advisor_run.sh` run pi as
-  before. The bugfix chain's fix and repro keep their leaves; its review keeps its call
-  (`bugfix/pi_review.py`).
+- The verdict and advisor roles through adapters, in the bugfix chain of v1: `triage_run.sh` and
+  `advisor_run.sh` run pi as before, as do its fix and repro leaves and its review
+  (`bugfix/pi_review.py`). `bugfix/fix2.py` (a version on stations) serves all five through
+  adapters.
 - Every harness but pi: no adapter, no row, no end-to-end.
 - `/v1/messages` and `/v1/responses` in the scripted endpoint.
 - pi 0.80.10, the version in the worker image: the end-to-ends ran on 1.0.0. They were also run

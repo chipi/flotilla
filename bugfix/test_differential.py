@@ -37,11 +37,11 @@ class Harness(unittest.TestCase):
     DELTAS = {"prompt_channel", "models_json", "env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK", "positional"}
 
     def test_the_stations_on_the_pi_adapter_differ_by_the_allow_list_and_nothing_else(self):
-        """bugfix/fix2.py on stations: fix, repro and review are harness_pi.Pi's own calls; what each sends the model, its system
+        """bugfix/fix2.py on stations: verdict, fix, repro, advisor and review are harness_pi.Pi's own calls; what each sends the model, its system
         file, tools, --session, cwd and NODE_OPTIONS are the chain's (none of them is in the table), and every other delta is a rule."""
         rows = d.differential(self.old, d.ROOT, "fix2.py")
         self.assertEqual([r for r in rows if r[6] is None], [], d.table(rows)[0])
-        self.assertEqual({r[2] for r in rows}, {"fix", "repro", "review"})
+        self.assertEqual({r[2] for r in rows}, {"verdict", "fix", "repro", "advisor", "review"})
         self.assertEqual({r[3] for r in rows}, self.DELTAS)
         self.assertEqual([r for r in rows if r[3] == "no_context_files"], [],
                          "v1 passed --no-context-files only with a rules file declared, and so does fix2")

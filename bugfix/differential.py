@@ -37,12 +37,29 @@ OLD_SHA = "8b9af6d98f6fc5acf7c72d43a00608caa8cd1533"
 
 RECORDED_ENV = golden.ENV_KEYS + ("NODE_OPTIONS", "PI_OFFLINE", "PI_SKIP_VERSION_CHECK")
 
-# The fake pi (d/bin/pi). It records the call, then execs the scenario's leaf for the role the call is: the fix and the
-# reproducer are told apart by their prompt (a fix's starts with harness_prompts.FIX_HEAD, or resumes a --session), the review
-# by its tools switch. The leaves are test_fix.py's own fakes, which take the worktree and the prompt as arguments.
-FAKE_PI = textwrap.dedent('''\
-    #!/usr/bin/env python3
-    import hashlib, json, os, sys
+# What the fakes record of the files the chain's leaves wrote (the verdict's and the advisor's results folders, the manifests): every
+# file under BAKEOFF_ROOT and BAKEOFF_TRIAGED_DIR with its text, as [path, text] pairs.
+SNAP = textwrap.dedent('''\
+    def snap():
+        out = []
+        for base in (os.environ.get("BAKEOFF_ROOT"), os.environ.get("BAKEOFF_TRIAGED_DIR")):
+            for dp, dn, fn in os.walk(base or "/nonexistent"):
+                dn.sort()
+                for n in sorted(fn):
+                    p = os.path.join(dp, n)
+                    try:
+                        out.append([p, open(p, "rb").read().decode("utf-8", "surrogateescape")])
+                    except OSError:
+                        pass
+        return out
+    ''')
+
+# The fake pi (d/bin/pi). It records the call, then execs the scenario's leaf for the role the call is: the verdict and the advisor
+# are told apart by their prompt's first words (the triager's definition, the advisor's brief), the fix and the reproducer by theirs
+# (a fix's starts with harness_prompts.FIX_HEAD, or resumes a --session), the review by its tools switch. The leaves are
+# test_fix.py's own fakes for the fix, the reproducer and the review, and the ones below for the verdict and the advisor; they take
+# the worktree and the prompt as arguments.
+FAKE_PI = "#!/usr/bin/env python3\nimport hashlib, json, os, sys\n" + SNAP + textwrap.dedent('''\
     argv = sys.argv[1:]
     stdin = sys.stdin.buffer.read().decode("utf-8", "surrogateescape")   # bytes as sent: no newline translation, no decoding errors
     prompt = stdin if stdin else (argv[-1] if argv else "")
@@ -50,7 +67,11 @@ FAKE_PI = textwrap.dedent('''\
         return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else None
     tools = "none" if "--no-tools" in argv else ("read:" + after("--tools") if "--tools" in argv else "all")
     session = after("--session")
-    if tools != "all":
+    if prompt.startswith(%(advisor_head)r):
+        role = "advisor"
+    elif prompt.startswith(%(triage_head)r):
+        role = "verdict"
+    elif tools != "all":
         role = "review"
     elif prompt.startswith(%(fix_head)r) or session:
         role = "fix"
@@ -69,7 +90,8 @@ FAKE_PI = textwrap.dedent('''\
     except (KeyError, OSError, ValueError):
         pass
     rec = {"role": role, "argv": argv, "prompt": prompt, "prompt_channel": "stdin" if stdin else "argv", "cwd": os.getcwd(),
-           "env": {k: os.environ[k] for k in %(keys)r if k in os.environ}, "system_sha": sha, "models_json": models}
+           "env": {k: os.environ[k] for k in %(keys)r if k in os.environ}, "system_sha": sha, "models_json": models,
+           "results": snap() if role in ("fix", "repro", "review") else []}   # the verdict's and the advisor's folders are still being written
     with open(os.path.join(os.environ["FAKE_STATE"], "differential.jsonl"), "a") as f:
         f.write(json.dumps(rec) + "\\n")
     leaf = os.path.join(os.environ["DIFF_LEAVES"], role + ".sh")
@@ -78,7 +100,14 @@ FAKE_PI = textwrap.dedent('''\
         env["PI_RESUME_SESSION"] = session
     args = ["bash", leaf, os.getcwd(), prompt] if role != "review" else ["bash", leaf, *argv, prompt]
     os.execvpe("bash", args, env)
-    ''') % {"fix_head": harness_prompts.FIX_HEAD, "keys": RECORDED_ENV}
+    ''') % {"fix_head": harness_prompts.FIX_HEAD, "keys": RECORDED_ENV, "advisor_head": "You are a senior engineer doing a READ-ONLY",
+              "triage_head": harness_prompts.agent_def_body(open(os.path.join(ROOT, "bugfix-fleet", "agents", "triage.md")).read()).strip()[:40]}
+
+# langfuse_push.py is the last thing triage_run.sh does (and the port after it): a stand-in that records what the verdict left behind
+LANGFUSE_STUB = "#!/usr/bin/env python3\nimport json, os, sys\n" + SNAP + textwrap.dedent('''\
+    with open(os.path.join(os.environ["FAKE_STATE"], "differential_after.jsonl"), "a") as f:
+        f.write(json.dumps({"args": sys.argv[1:], "results": snap()}) + "\\n")
+    ''')
 
 
 class OldTree:
@@ -117,6 +146,8 @@ def copy_tree(dst):
     for rel in ("bugfix", "runtime", os.path.join("bugfix-fleet", "bakeoff", "harnesses"), os.path.join("bugfix-fleet", "agents")):
         shutil.copytree(os.path.join(ROOT, rel), os.path.join(dst, rel),
                         ignore=shutil.ignore_patterns("__pycache__", "testdata", "*.orig"))
+    for name in ("triage_run.sh", "advisor_run.sh"):
+        shutil.copy(os.path.join(ROOT, "bugfix-fleet", "bakeoff", name), os.path.join(dst, "bugfix-fleet", "bakeoff", name))
     return dst
 
 
@@ -163,7 +194,13 @@ def fields(inv):
            "session": a["session"], "other_args": a["other"], "positional": a["positional"], "models_json": inv["models_json"]}
     for k in RECORDED_ENV:
         out["env." + k] = inv["env"].get(k)
+    out.update(files(inv.get("results")))
     return out
+
+
+def files(results):
+    """What the leaves had written by then, one field per file."""
+    return {"file " + path: text for path, text in results or []}
 
 
 def _called_entry_only(models, provider, model):
@@ -208,10 +245,25 @@ def compare(scenario, old, new):
         rows.append((scenario, "-", "-", "pi calls", len(old["calls"]), len(new["calls"]), None))
     for i, (o, n) in enumerate(zip(old["calls"], new["calls"]), 1):
         of, nf = fields(o), fields(n)
-        for k in of:
-            if of[k] != nf[k]:
-                rows.append((scenario, i, nf["role"], k, of[k], nf[k], classify(k, of[k], nf[k], of, nf)))
+        for k in list(of) + [k for k in nf if k not in of]:
+            if of.get(k) != nf.get(k):
+                rows.append((scenario, i, nf["role"], k, of.get(k), nf.get(k), classify(k, of.get(k), nf.get(k), of, nf)))
+    if len(old.get("after") or []) != len(new.get("after") or []):
+        rows.append((scenario, "-", "-", "verdicts written", len(old.get("after") or []), len(new.get("after") or []), None))
+    for i, (o, n) in enumerate(zip(old.get("after") or [], new.get("after") or []), 1):
+        of, nf = dict(files(o["results"]), args=o["args"]), dict(files(n["results"]), args=n["args"])
+        for k in list(of) + [k for k in nf if k not in of]:
+            if of.get(k) != nf.get(k):
+                rows.append((scenario, f"v{i}", "verdict", k, of.get(k), nf.get(k), None))
     return rows
+
+
+def wall_free(line):
+    """A ledger row (triage_runs.tsv: ten tab-separated fields, the wall seconds sixth) without its wall seconds."""
+    cells = line.split("\t")
+    if len(cells) == 10 and cells[5].isdigit():
+        cells[5] = "N"
+    return "\t".join(cells)
 
 
 def _norm(f, roots):
@@ -223,7 +275,9 @@ def _norm(f, roots):
         if isinstance(x, str):
             for a, b in subs:
                 x = x.replace(a, b)
-            return x
+            for wall in (r"triager: \d+s", r"\| \d+s \$", r"\(\d+s\)"):   # the seconds a leaf says it took
+                x = re.sub(wall, lambda m: re.sub(r"\d+s", "Ns", m.group(0)), x)
+            return "\n".join(wall_free(ln) for ln in x.split("\n")) if "\t" in x else x
         if isinstance(x, list):
             return [norm(v) for v in x]
         if isinstance(x, dict):
@@ -242,28 +296,98 @@ def counted(text):
     return SEQ + text.replace("$RANDOM", "$(bump)")
 
 
-def count_sessions(path):
-    """counted(), for a leaf already written with its interpreter lines (the fixture's verdict and advisor)."""
-    with open(path) as fh:
-        shebang, setline, rest = fh.read().split("\n", 2)
-    with open(path, "w") as fh:
-        fh.write("\n".join([shebang, setline, counted(rest)]))
+# The verdict's answer, as the model gives it (the real triage_run.sh and its port read it from the stream): the kinds are the scenario's
+# verdicts file. A kick-back's prompt names its round, which the answer repeats.
+VERDICT_LEAF = tf.POP + tf.SESS + textwrap.dedent('''\
+    V=$(pop verdicts)
+    sess verdict
+    KB=0
+    case "$2" in
+      *"KICK-BACK SECOND PASS (kickback_round = "*)
+        KB=$(printf '%s' "$2" | sed -n 's/.*KICK-BACK SECOND PASS (kickback_round = \\([0-9][0-9]*\\)).*/\\1/p' | head -n 1) ;;
+    esac
+    echo "verdict $V kb=$KB" >> "$FAKE_STATE/calls"
+    python3 - "$V" "$KB" <<'PY'
+    import json, sys
+    kind, kb = sys.argv[1], int(sys.argv[2])
+    problem = {"symptom": "value() returns 1", "expected": "value() returns 2",
+               "acceptance": [{"criterion": "value() returns 2", "intent_source": "reporter", "source_ref": "value() returns 1, want 2"}],
+               "domain_facts": ["the value is an integer"], "pin": {"file": "", "function": "", "decoy": ""}}
+    v = {"verdict": kind, "level": "L1" if kb == 0 else "L2-pinned", "kickback_round": kb, "missing": [], "problem": problem}
+    if kb:
+        problem["pin"] = {"file": "src/a.js", "function": "value", "decoy": "src/b.js"}
+    if kind == "needs-info":
+        v["missing"] = ["the expected value"]
+    elif kind == "actionable-missing":
+        v.update(verdict="actionable", missing=["the expected value"])
+    elif kind == "unpinned":
+        v.update(verdict="actionable", level="L1")
+    elif kind == "pinned-first":
+        v.update(verdict="actionable", level="L1")
+        problem["pin"] = {"file": "src/a.js", "function": "value", "decoy": ""}
+    elif kind == "smuggled":
+        v.update(verdict="actionable")
+        problem["acceptance"] = ["getValue() in src/a.js returns 2"]
+    elif kind == "uncited":
+        v.update(verdict="actionable")
+        problem["acceptance"] = [{"criterion": "value() returns 2", "intent_source": ""}]
+    text = "Looked at it.\\n```json\\n" + json.dumps(v) + "\\n```"
+    if kind == "bare":
+        v["verdict"] = "actionable"
+        text = "My answer: " + json.dumps(v) + " and nothing else"
+    elif kind == "two-blocks":   # a first guess in a fenced block, then the answer: the last one is the verdict
+        v["verdict"] = "actionable"
+        text = "First guess:\\n```json\\n{\\"verdict\\": \\"reject\\"}\\n```\\nOn reflection:\\n```json\\n" + json.dumps(v) + "\\n```"
+    elif kind == "garbage":
+        text = "I could not decide."
+    elif kind == "badjson":
+        text = "```json\\n{not json}\\n```"
+    print(json.dumps({"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": text}],
+                                                         "usage": {"input": 10, "output": 3, "cost": {"total": 0.25}}}}))
+    PY
+    ''')
+
+# The advisor's answer: the scenario's advisor.json file when it has one (a pin, or a "not locatable"), else a pin on src/a.js
+ADVISOR_LEAF = tf.POP + tf.SESS + textwrap.dedent('''\
+    sess advisor
+    echo "advisor" >> "$FAKE_STATE/calls"
+    A='{"file": "src/a.js", "function": "value", "decoy": "src/b.js", "rationale": "it computes it"}'
+    [ -f "$FAKE_STATE/advisor.json" ] && A=$(cat "$FAKE_STATE/advisor.json")
+    python3 - "$A" <<'PY'
+    import json, sys
+    text = "A first thought:\\n```json\\n{\\"file\\": \\"decoy.js\\"}\\n```\\nThe answer:\\n```json\\n" + sys.argv[1] + "\\n```"
+    print(json.dumps({"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": text}],
+                                                         "usage": {"input": 10, "output": 3, "cost": {"total": 0.125}}}}))
+    PY
+    ''')
 
 
 def install_leaves(f, root):
-    """The real harnesses/pi.sh and repro.sh of `root` beside the scenario's fake verdict and advisor, a fake pi on PATH, and the
-    scenario's own fakes (test_fix.py) as the leaves it execs."""
+    """The real harnesses/pi.sh and repro.sh, triage_run.sh and advisor_run.sh of `root` (with the agent definitions they read) in the
+    fixture's bake-off folder, a fake pi on PATH, and the scenario's own fakes (test_fix.py's, and VERDICT_LEAF and ADVISOR_LEAF) as the
+    leaves it execs. langfuse_push.py is a stand-in that records what the verdict left behind."""
     h = os.path.join(f.bakeoff, "harnesses")
+    bake = os.path.join(root, "bugfix-fleet", "bakeoff")
     for name in ("pi.sh", "repro.sh"):
-        shutil.copy(os.path.join(root, "bugfix-fleet", "bakeoff", "harnesses", name), os.path.join(h, name))
+        shutil.copy(os.path.join(bake, "harnesses", name), os.path.join(h, name))
+    for name in ("triage_run.sh", "advisor_run.sh"):
+        shutil.copy(os.path.join(bake, name), os.path.join(f.bakeoff, name))
+    with open(os.path.join(f.bakeoff, "langfuse_push.py"), "w") as fh:
+        fh.write(LANGFUSE_STUB)
     os.makedirs(os.path.join(f.d, "agents"), exist_ok=True)
-    shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "repro.md"), os.path.join(f.d, "agents", "repro.md"))
+    for name in ("repro.md", "triage.md"):
+        shutil.copy(os.path.join(root, "bugfix-fleet", "agents", name), os.path.join(f.d, "agents", name))
     leaves = os.path.join(f.d, "leaves")
     tf.write(os.path.join(leaves, "fix.sh"), counted(tf.PI_HARNESS))
     tf.write(os.path.join(leaves, "repro.sh"), counted(tf.REPRO_HARNESS))
     tf.write(os.path.join(leaves, "review.sh"), counted(tf.PI_BIN))
-    for name in ("triage_run.sh", "advisor_run.sh"):
-        count_sessions(os.path.join(f.bakeoff, name))
+    tf.write(os.path.join(leaves, "verdict.sh"), counted(VERDICT_LEAF))
+    tf.write(os.path.join(leaves, "advisor.sh"), counted(ADVISOR_LEAF))
+    # triage_run.sh and advisor_run.sh poll their pi every 5 s (and wait 2 s after a cut): the fakes answer at once, so the polls are
+    # made short here (the old side's only; the port does not poll). Any other sleep is the real one (the `hang` leaf's).
+    with open(os.path.join(f.d, "bin", "sleep"), "w") as fh:
+        fh.write('#!/bin/sh\ncase "$1" in 5|2) exec /bin/sleep 0.05;; *) exec /bin/sleep "$@";; esac\n')
+    os.chmod(os.path.join(f.d, "bin", "sleep"), 0o755)
     with open(os.path.join(f.d, "bin", "pi"), "w") as fh:
         fh.write(FAKE_PI)
     os.chmod(os.path.join(f.d, "bin", "pi"), 0o755)
@@ -309,16 +433,17 @@ def translate(args, rules):
 
 
 def code_root(dst, root=ROOT):
-    """A code root at dst with the version's two texts (copies of bugfix/fleet_rules.md and agents/repro.md) where stations_doc names them."""
+    """A code root at dst with the version's three texts (copies of bugfix/fleet_rules.md, agents/repro.md and agents/triage.md) where stations_doc names them."""
     os.makedirs(os.path.join(dst, FLEET_DIR), exist_ok=True)
     shutil.copy(os.path.join(root, "bugfix", "fleet_rules.md"), os.path.join(dst, FLEET_DIR, "rules.md"))
     shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "repro.md"), os.path.join(dst, FLEET_DIR, "agent.md"))
+    shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "triage.md"), os.path.join(dst, FLEET_DIR, "triage.md"))
     return dst
 
 
 def stations_doc(settings, code):
-    """FLOTILLA_STATIONS for a scenario: the three stations on the fixture's aliases, v1's defaults where the scenario sets no limit,
-    their texts files of the code root (copies of bugfix/fleet_rules.md and agents/repro.md)."""
+    """FLOTILLA_STATIONS for a scenario: the five stations on the fixture's aliases, v1's defaults where the scenario sets no limit,
+    their texts files of the code root (copies of bugfix/fleet_rules.md, agents/repro.md and agents/triage.md)."""
     def text(rel):
         with open(os.path.join(code, "fleets", "bugfix", rel), "rb") as fh:
             return {"path": rel, "sha256": hashlib.sha256(fh.read()).hexdigest()}
@@ -335,11 +460,30 @@ def stations_doc(settings, code):
         "repro": {"harness": "pi", "model": "bugfix-flash", "tools": "all", "texts": dict(rules, agent=text("fix/v2/agent.md")),
                   "limits": dict(limits("repro"), **({"max_turns": settings["repro_turns"]} if settings["repro_turns"] else {}))},
         "review": {"harness": "pi", "model": "bugfix-reviewer", "tools": settings["review_tools"], "texts": dict(rules),
-                   "limits": {"timeout": "10m", "max_output_tokens": 32768}}}}
+                   "limits": {"timeout": "10m", "max_output_tokens": 32768}},
+        "verdict": {"harness": "pi", "model": "bugfix-flash", "tools": "read", "texts": dict(rules, agent=text("fix/v2/triage.md")),
+                    "limits": {"timeout": "15m", "max_output_tokens": 32768}},
+        "advisor": {"harness": "pi", "model": "bugfix-reviewer", "tools": "read", "texts": dict(rules),
+                    "limits": {"timeout": "10m", "max_output_tokens": 32768}}}}
 
 
 # the goldens' scenarios, and the ones only this harness has
-SCENARIOS = dict(golden.SCENARIOS, reproducer_timeout=(["actionable"], [], {"repros": ["chatty"]}, ["--episode-timeout", "2"]))
+SCENARIOS = dict(
+    golden.SCENARIOS,
+    reproducer_timeout=(["actionable"], [], {"repros": ["chatty"]}, ["--episode-timeout", "2"]),
+    # the verdict's answers that the shape check, the extraction and the manifest treat differently
+    verdict_bare_json=(["bare"], ["good"], {}, []),
+    verdict_two_blocks=(["two-blocks"], ["good"], {}, []),
+    verdict_no_json=(["garbage"], [], {}, []),
+    verdict_bad_json=(["badjson"], [], {}, []),
+    verdict_lists_what_is_missing=(["actionable-missing"], [], {}, []),
+    verdict_smuggles_a_location=(["smuggled"], ["good"], {}, []),
+    verdict_cites_no_intent=(["uncited"], ["good"], {}, []),
+    verdict_pins_on_a_first_pass=(["pinned-first"], ["good"], {}, []),
+    kickback_verdict_that_does_not_pin=(["actionable", "unpinned"], ["notest", "good"], {}, ["--no-advisor"]),
+    # the fix at the advisor's pin still fails: the acceptance-gap prompt, then the downgrade
+    acceptance_gap=(["actionable"] * 4, ["notest", "notest", "good"], {}, []),
+    advisor_cannot_locate=(["actionable"], ["notest"], {"advisor.json": ['{"file": "", "not_locatable": "no code here"}']}, []))
 
 
 def run_scenario(name, root, entry, roots=()):
@@ -381,10 +525,17 @@ def run_scenario(name, root, entry, roots=()):
             doc = json.load(fh)
         with open(os.path.join(f.state, "differential.jsonl")) as fh:
             calls = [json.loads(x) for x in fh]
+        after = os.path.join(f.state, "differential_after.jsonl")
+        written = []
+        if os.path.exists(after):
+            with open(after) as fh:
+                written = [json.loads(x) for x in fh]
+            for w in written:
+                w["args"][6] = "N"   # the wall seconds
         norm = _norm(f, [os.path.realpath(root), root, *roots])
         prm = doc.get("params") or {}
         return norm({"plan": {k: doc.get(k) for k in ("outcome", "action", "detail")} | {"title": prm.get("title"), "body": prm.get("body")},
-                     "calls": calls})
+                     "calls": calls, "after": written})
     finally:
         f.close()
 

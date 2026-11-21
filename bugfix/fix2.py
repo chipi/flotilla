@@ -6,13 +6,14 @@ FLOTILLA_STATIONS and no model, text or limit in its flags:
 
   python3 bugfix/fix2.py --repo example/shop --spend-file .bugfix-fix-spend
 
-What a station gives the chain: its model alias (`fix` the verdict's too, `review` the advisor's: the two aliases v1 named by
-flags), its `rules` text (the system text of its pi call), the `agent` text of `repro` (agents/repro.md), its limits (timeout,
-max_turns, max_output_tokens: the floor of the model's reply limit in pi's models.json) and, for `review`, its tools (none or read).
-The version's own limits (kickback_max, review_kickback_max, test_timeout, setup_timeout) are read from FLOTILLA_STATIONS too.
-Verdict and advisor are v1's leaves still (bash, harnesses of bugfix-fleet/bakeoff); everything else is fix.py's Chain.
+What a station gives the chain: its model alias (v1 named three by flags: the worker's, the advisor's and the reviewer's), its
+`rules` text (the system text of its pi call), the `agent` text of `repro` (agents/repro.md) and `verdict` (agents/triage.md), its
+limits (timeout, max_turns, max_output_tokens: the floor of the model's reply limit in pi's models.json) and its tools (`review`:
+none or read; `verdict` and `advisor`: read). The version's own limits (kickback_max, review_kickback_max, test_timeout,
+setup_timeout) are read from FLOTILLA_STATIONS too. Everything else is fix.py's Chain.
 
-The pi calls of the chain's three stations go through runtime/adapter.py and runtime/harness_pi.py; see Chain below.
+The pi calls of the chain's five stations go through runtime/adapter.py and runtime/harness_pi.py; see Chain below. The verdict and
+the advisor were bash leaves (bugfix-fleet/bakeoff/triage_run.sh, advisor_run.sh); bugfix/triage2.py does their other steps.
 """
 import contextlib
 import json
@@ -30,9 +31,10 @@ import harness_pi  # noqa: E402
 import harness_prompts  # noqa: E402
 import prompts  # noqa: E402
 import stations  # noqa: E402
+import triage2  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIX, REPRO, REVIEW = "fix", "repro", "review"
+FIX, REPRO, REVIEW, VERDICT, ADVISOR = "fix", "repro", "review", "verdict", "advisor"
 # What a v1 flag said, now said by a station or the version's limits: a run that still passes one is refused, so a model, a text or
 # a limit is never in two places (v2-design.md section 2).
 REFUSED_FLAGS = ("--worker-model", "--advisor-model", "--reviewer-model", "--harness", "--pi-rules", "--review-tools", "--min-output",
@@ -75,18 +77,23 @@ def flags_of(st, argv):
     if bad:
         raise stations.StationsError(f"{', '.join(bad)}: the stations and the version's limits say that; no model, text or limit in a flag")
     repro = "--no-repro" not in argv
-    _need(st, (FIX, REPRO, REVIEW) if repro else (FIX, REVIEW))
-    for name in (FIX, REPRO, REVIEW) if repro else (FIX, REVIEW):
+    called = (FIX, REPRO, REVIEW, VERDICT, ADVISOR) if repro else (FIX, REVIEW, VERDICT, ADVISOR)
+    _need(st, called)
+    tools = {REVIEW: ("none", "read"), VERDICT: ("read",), ADVISOR: ("read",)}
+    for name in called:
         s = st.station(name)
         if s.get("harness") != "pi":
             raise stations.StationsError(f"station {name}: harness {s.get('harness')!r}; bugfix/fix2.py serves pi")
         if not s.get("model"):
             raise stations.StationsError(f"station {name} names no model")
-        want = ("none", "read") if name == REVIEW else ("all",)
+        want = tools.get(name, ("all",))
         if s.get("tools") not in want:
             raise stations.StationsError(f"station {name}: tools {s.get('tools')!r}; the {name} step takes {' or '.join(want)}")
-    fx, rv = st.station(FIX), st.station(REVIEW)
-    flags = ["--worker-model", fx["model"], "--advisor-model", rv["model"], "--reviewer-model", rv["model"],
+    fx, rv, vd, ad = (st.station(n) for n in (FIX, REVIEW, VERDICT, ADVISOR))
+    if vd["model"] not in (fx["model"], rv["model"], ad["model"]):
+        # pi_config writes the catalog entries of the three aliases the flags name; the verdict's is one of them
+        raise stations.StationsError(f"station verdict: model {vd['model']!r} is not that of the fix, review or advisor station")
+    flags = ["--worker-model", fx["model"], "--advisor-model", ad["model"], "--reviewer-model", rv["model"],
              "--review-tools", rv["tools"]]
     lim = lambda s, k: (s.get("limits") or {}).get(k) or 0  # noqa: E731
     if lim(fx, "timeout"):
@@ -97,7 +104,7 @@ def flags_of(st, argv):
         flags += ["--fix-max-turns", str(lim(fx, "max_turns"))]
     if repro and lim(st.station(REPRO), "max_turns"):
         flags += ["--repro-max-turns", str(lim(st.station(REPRO), "max_turns"))]
-    floor = max((int(lim(st.station(n), "max_output_tokens")) for n in ((FIX, REPRO, REVIEW) if repro else (FIX, REVIEW))), default=0)
+    floor = max((int(lim(st.station(n), "max_output_tokens")) for n in called), default=0)
     flags += ["--min-output", str(floor)]
     for name, flag in VERSION_LIMITS.items():
         if name in st.limits():
@@ -155,7 +162,7 @@ class Chain(fix.Chain):
             self.models_text = f.read()
         self.models = json.loads(self.models_text)
         self.rules = {}
-        for name in (FIX, REPRO, REVIEW):
+        for name in (FIX, REPRO, REVIEW, VERDICT, ADVISOR):
             if name in self.st.doc["stations"]:
                 try:
                     self.rules[name] = text_path(self.st, name, "rules", environ)
@@ -170,6 +177,12 @@ class Chain(fix.Chain):
                     self.st.render(REPRO, "agent", {}, fleet, root=root, environ=environ).text)
             except (stations.StationsError, prompts.PromptError) as e:
                 raise fix.Stop(f"prompt: {e}") from None
+        # the triager's definition, likewise (triage_run.sh read agents/triage.md)
+        root, fleet = fleet_root(environ)
+        try:
+            self.triage_agent = self.st.render(VERDICT, "agent", {}, fleet, root=root, environ=environ).text
+        except (stations.StationsError, prompts.PromptError) as e:
+            raise fix.Stop(f"prompt: {e}") from None
         self.environ0 = dict(environ)
 
     def route(self, alias):
@@ -243,26 +256,53 @@ class Chain(fix.Chain):
                 except (OSError, ValueError, AttributeError):
                     pass
 
-    # fix.Chain runs the fix and the reproducer as bash leaves (harnesses/pi.sh, repro.sh) through the module's `sh`. These two run
-    # the same steps with the leaf's call replaced: while one of them runs, a command that is one of those leaves is the station's
-    # call through the adapter, whatever else the step runs (git, the tests) is `sh` as it was.
+    # fix.Chain runs the verdict, the fix, the reproducer and the advisor as bash leaves (triage_run.sh, harnesses/pi.sh, repro.sh,
+    # advisor_run.sh) through the module's `sh`. While the chain runs, a command that is one of those leaves is the station's call
+    # through the adapter, whatever else the steps run (git, the tests) is `sh` as it was.
+    def run(self):
+        with self.leaves():
+            return super().run()
+
     @contextlib.contextmanager
     def leaves(self):
         outer = fix.sh
         scripts = {os.path.join(fix.BAKEOFF, "harnesses", self.a.harness + ".sh"): FIX,
-                   os.path.join(fix.BAKEOFF, "harnesses", "repro.sh"): REPRO}
+                   os.path.join(fix.BAKEOFF, "harnesses", "repro.sh"): REPRO,
+                   os.path.join(fix.BAKEOFF, "triage_run.sh"): VERDICT, os.path.join(fix.BAKEOFF, "advisor_run.sh"): ADVISOR}
 
         def dispatch(cmd, cwd, env=None, timeout=None, check=False, max_turns=None, turn_ended=None, tee_path=None, stdin=None):
-            role = scripts.get(cmd[0]) if isinstance(cmd, list) and len(cmd) == 3 else None
-            if role is None:
-                return outer(cmd, cwd, env, timeout, check=check, max_turns=max_turns, turn_ended=turn_ended, tee_path=tee_path,
-                             stdin=stdin)
-            return self.station(role, cmd[2], env, timeout, max_turns)
+            role = scripts.get(cmd[0]) if isinstance(cmd, list) and cmd else None
+            if role in (FIX, REPRO) and len(cmd) == 3:
+                return self.station(role, cmd[2], env, timeout, max_turns)
+            if role == VERDICT:
+                return self.consult(role, cmd, cwd, env)
+            if role == ADVISOR and len(cmd) == 3:
+                return self.consult(role, cmd, cwd, env)
+            return outer(cmd, cwd, env, timeout, check=check, max_turns=max_turns, turn_ended=turn_ended, tee_path=tee_path, stdin=stdin)
         fix.sh = dispatch
         try:
             yield
         finally:
             fix.sh = outer
+
+    def consult(self, role, cmd, cwd, env):
+        """The verdict's or the advisor's call: (exit code, what the leaf printed). bugfix/triage2.py does the leaf's steps; the pi call
+        in the middle is the station's, read-only (tools `read`), with the station's rules, model and timeout."""
+        s = self.st.station(role)
+        env = dict(self.env if env is None else env, NODE_OPTIONS=NODE_OPTIONS)
+        # the wall caps of the scripts (TRIAGE_MAX_WALL 900, ADVISOR_MAX_WALL 600) are the stations' timeouts
+        limit = seconds((s.get("limits") or {}).get("timeout") or (900 if role == VERDICT else 600))
+        route = self.route(s["model"])
+
+        def call(prompt):
+            req = adapter.Request(station=role, prompt=prompt, system_path=self.rules.get(role) or None, model=route, tools="read",
+                                  resume=None, max_turns=0, workdir=env.get("BAKEOFF_WT") or self.wt, run_dir=self.run_dir, timeout=limit,
+                                  no_context_files=bool(self.rules.get(role)))
+            ep, code, stream = self.execute(req, env, leaf=True)
+            return code, stream, limit if code == adapter.TIMED_OUT else 0
+        if role == VERDICT:
+            return triage2.verdict(cmd[1:], env, cwd, self.triage_agent, route.model, os.path.dirname(cmd[0]), call)
+        return triage2.advisor(cmd[1:], env, cwd, route.model, call)
 
     def station(self, role, desc, env, timeout, max_turns):
         """The fix's or the reproducer's call: (exit code, pi's stream), as the leaf gave them. A fix is the template around the task
@@ -277,14 +317,6 @@ class Chain(fix.Chain):
                               no_context_files=bool(self.rules.get(role)))
         _, code, stream = self.execute(req, dict(env if env is not None else self.env, NODE_OPTIONS=NODE_OPTIONS), leaf=True)
         return code, stream
-
-    def attempt(self, manifest, resume=None, cont=None):
-        with self.leaves():
-            return super().attempt(manifest, resume, cont)
-
-    def repro(self, manifest):
-        with self.leaves():
-            return super().repro(manifest)
 
     def review(self, diff, task="", summary=""):
         prompt = self.review_prompt(diff, task, summary)

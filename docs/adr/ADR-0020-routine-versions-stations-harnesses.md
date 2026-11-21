@@ -196,11 +196,10 @@ offline. No model, text or limit belongs in a version's code or its command's fl
 The bugfix fix routine is the first to write its v2 on stations. The decisions, for
 `fleets/bugfix/fix/v2`:
 
-- **Scope.** Three stations on `harness: pi`: `fix`, `repro` and `review`, the chain's three
-  coding-agent calls. The verdict and the advisor stay as they are, bash leaves of the bake-off
-  folder, out of this step; they have no station, so their aliases are the ones a station carries:
-  the verdict's is `fix`'s model, the advisor's is `review`'s (what v1's `--worker-model` and
-  `--advisor-model` said).
+- **Scope.** Five stations on `harness: pi`: `verdict`, `fix`, `repro`, `advisor` and `review`,
+  every pi call of the chain, so that any of them can be moved to another harness by the spec.
+  `verdict` and `advisor` have tools `read`; the verdict's model is one of the fix, review and
+  advisor stations' (`pi_config` writes the catalog entries of those three).
 - **New code beside the old.** `bugfix/fix2.py` is `fix.py`'s chain for a version with stations:
   its models, rules texts, the reproducer's agent text, limits (`timeout`, `max_turns`,
   `max_output_tokens`) and the version's flow limits (`kickback_max`, `review_kickback_max`,
@@ -212,6 +211,23 @@ The bugfix fix routine is the first to write its v2 on stations. The decisions, 
   prompt on stdin, the station's `rules` text as the system text (a review with no tools is not
   given it, as in v1), `--session` for a resume, `NODE_OPTIONS=--max-old-space-size=4096` kept (the
   leaves exported it; the adapter does not).
+- **The verdict and the advisor.** `triage_run.sh` and `advisor_run.sh` did more than call pi:
+  they built the prompt, read the answer out of the stream, checked its shape, rendered the triaged
+  manifest the fix is given and wrote ledgers. `bugfix/triage2.py` does those steps and leaves the
+  pi call to the station (the scripts stay, v1 runs them). The text is the scripts' byte for byte:
+  the same bash quirks are reproduced on purpose (`read` trims the findings' leading newline, so
+  they are glued to the task before them; no touched file is `"\nnone"`), and what the scripts did
+  with jq, grep, cut, paste and sed is still run by those tools with the scripts' own text.
+  `bugfix/differential.py` runs the real scripts and the port over every scenario, including kick-backs
+  with the advisor's findings, the acceptance gap, a verdict that is bare, two-blocked, not JSON,
+  or shape-failing, and an advisor that cannot locate; it compares the prompts, the argv and the files
+  written (triage.json, shape.txt, advisor.json, the manifests, the ledger, harness.json and the
+  arguments of the langfuse push). The allow-list did not grow. Not the same, and stated: pi's
+  stdout and stderr arrive as one stream, so `harness.json` holds its JSON lines and `harness.err`
+  the rest; the wall cap is the station's `timeout` (15m and 10m, the scripts' 900 s and 600 s;
+  `TRIAGE_MAX_WALL` and `ADVISOR_MAX_WALL` are no longer read) and a cut is made by the runner,
+  not a 5 s poll; the seconds in what the script prints are the port's own; a failure of the extractor's
+  python prints one line, not a traceback; `langfuse.env` is sourced for the push only, not for pi.
 - **Equal to v1 by the spec's values, not by construction.** v1 has one model for the fix and the
   reproducer, one `--episode-timeout` for both, one rules file for every pi call and one reply
   floor (`--min-output`) for every alias. v2 declares each per station. The chain on stations

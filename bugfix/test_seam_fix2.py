@@ -30,6 +30,10 @@ sys.path.insert(0, HERE)   # the suite imports test_harness by name when it runs
 
 
 class Fix2Seams(base.PiSeams):
+    LEAD = 1
+    TASK = ("value() returns 1\n\nExpected: value() returns 2\n\nAcceptance criteria:\n"
+            "- value() returns 2 [reporter: value() returns 1, want 2]")
+
     @classmethod
     def declared_rules(cls, marker, honest):
         """A spec that declares its `rules` text on its stations: the code root carries the version's files, and the stations name
@@ -91,9 +95,9 @@ class Fix2Seams(base.PiSeams):
         return [sys.executable, os.path.join(HERE, "fix2.py"), *cls.common(f), *cls.flags()]
 
     def test_the_chain_ran_on_fix2_and_not_on_the_leaves(self):
-        """No bash leaf was started for the fix or the reproducer: every pi call of the run was the adapter's (the prompt on stdin)."""
+        """No bash leaf was started for the verdict, the fix or the reproducer: every pi call of the run was the adapter's (the prompt on stdin)."""
         main = self.runs["main"]
-        self.assertEqual(len(main.invocations), 5, "repro, fix, review, fix (resumed), review")
+        self.assertEqual(len(main.invocations), 6, "verdict, repro, fix, review, fix (resumed), review")
         for inv in main.invocations:
             self.assertNotIn(main.review_prompts[0], inv["argv"], "no prompt in argv")
             self.assertFalse(any(a.startswith(("You are fixing a bug", "Review this automated fix")) for a in inv["argv"]))

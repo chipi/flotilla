@@ -45,7 +45,8 @@ class World:
         self.code = os.path.join(self.tmp, "code")
         d = os.path.join(self.code, "fleets", "bugfix", "fix", "v2")
         os.makedirs(d)
-        texts = {"rules.md": "# Rules\nKeep it small.\n", "agent.md": "---\nname: repro\n---\n---\n# reproducer\nWrite one test.\n"}
+        texts = {"rules.md": "# Rules\nKeep it small.\n", "agent.md": "---\nname: repro\n---\n---\n# reproducer\nWrite one test.\n",
+                 "triage.md": "---\nname: triage\nversion: 7\n---\n\n# triager\nNormalize it.\n"}
         for name, text in texts.items():
             with open(os.path.join(d, name), "w") as f:
                 f.write(text)
@@ -60,7 +61,12 @@ class World:
                                            "texts": {"rules": ref("rules.md"), "agent": ref("agent.md")},
                                            "limits": {"max_output_tokens": 32768, "timeout": "20m", "max_turns": 40}},
                                  "review": {"harness": "pi", "model": "bugfix-reviewer", "tools": "none", "texts": {"rules": ref("rules.md")},
-                                            "limits": {"max_output_tokens": 8192, "timeout": "10m"}}}}
+                                            "limits": {"max_output_tokens": 8192, "timeout": "10m"}},
+                                  "verdict": {"harness": "pi", "model": "bugfix-flash", "tools": "read",
+                                              "texts": {"rules": ref("rules.md"), "agent": ref("triage.md")},
+                                              "limits": {"max_output_tokens": 4096, "timeout": "15m"}},
+                                  "advisor": {"harness": "pi", "model": "bugfix-reviewer", "tools": "read", "texts": {"rules": ref("rules.md")},
+                                              "limits": {"max_output_tokens": 2048, "timeout": "5m"}}}}
         for k, v in limits.items():
             self.doc["stations"]["fix"]["limits"][k] = v
         if no_rules:
@@ -110,7 +116,7 @@ class Parsing(unittest.TestCase):
 
     def test_a_missing_station_or_one_the_chain_cannot_run_is_refused_before_any_model_call(self):
         w = World(self)
-        for name in ("fix", "repro", "review"):
+        for name in ("fix", "repro", "review", "verdict", "advisor"):
             doc = json.loads(json.dumps(w.doc))
             del doc["stations"][name]
             with self.subTest(f"no {name}"), self.assertRaisesRegex(stations.StationsError, f"declares no station {name}"):
@@ -120,7 +126,9 @@ class Parsing(unittest.TestCase):
         self.assertEqual(fix2.parse(["--repo", "example/shop", "--no-repro"], stations.Stations(doc)).repro, False,
                          "a run without a reproducer needs no repro station")
         for edit, why in ((("fix", "harness", "claude"), "serves pi"), (("review", "tools", "all"), "takes none or read"),
-                          (("fix", "tools", "read"), "takes all"), (("fix", "model", ""), "names no model")):
+                          (("fix", "tools", "read"), "takes all"), (("fix", "model", ""), "names no model"),
+                          (("verdict", "tools", "all"), "takes read"), (("advisor", "tools", "none"), "takes read"),
+                          (("verdict", "model", "other-alias"), "not that of the fix, review or advisor station")):
             doc = json.loads(json.dumps(w.doc))
             doc["stations"][edit[0]][edit[1]] = edit[2]
             with self.subTest(edit), self.assertRaisesRegex(stations.StationsError, why):
@@ -597,16 +605,18 @@ class Example(unittest.TestCase):
         self.assertEqual(self.read(self.V2, "rules.md"), self.read(HERE, "fleet_rules.md"))
         self.assertEqual(self.read(self.V2, "rules.md"), self.read(os.path.dirname(HERE), "fleets", "bugfix", "fix", "v1", "rules.md"))
         self.assertEqual(self.read(self.V2, "repro.md"), self.read(os.path.dirname(HERE), "bugfix-fleet", "agents", "repro.md"))
+        self.assertEqual(self.read(self.V2, "triage.md"), self.read(os.path.dirname(HERE), "bugfix-fleet", "agents", "triage.md"))
 
     def test_its_stations_and_command_are_what_fix2_serves(self):
         text = self.read(self.V2, "spec.yaml")
         import re
         names = re.findall(r"^  (\w+):\n    harness: (\w+)\n", text, re.M)
-        self.assertEqual(names, [(fix2.FIX, "pi"), (fix2.REPRO, "pi"), (fix2.REVIEW, "pi")])
+        self.assertEqual(names, [(fix2.VERDICT, "pi"), (fix2.FIX, "pi"), (fix2.REPRO, "pi"), (fix2.REVIEW, "pi"), (fix2.ADVISOR, "pi")])
         command = re.search(r"command: >-\n\s+(.*)\n", text).group(1)
         self.assertIn("bugfix/fix2.py", command)
         self.assertEqual([f for f in fix2.REFUSED_FLAGS if f in command], [], "no model, text or limit in the command's flags")
         self.assertIn("prompts: {rules: rules.md, agent: repro.md}", text, "the reproducer's agent text is the station's `agent`")
+        self.assertIn("prompts: {rules: rules.md, agent: triage.md}", text, "the triager's agent text is the verdict station's `agent`")
         self.assertIn("limits: {kickback_max: 2, review_kickback_max: 1}", text)
 
 

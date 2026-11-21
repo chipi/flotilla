@@ -1,8 +1,9 @@
-# Version 2 of the fix routine: the chain's fix, reproducer and review are stations on the pi adapter (runtime/harness_pi.py), and
-# their models, texts and limits are declared here and handed to the run as FLOTILLA_STATIONS: bugfix/fix2.py reads them, no flag says them
-# (ADR-0020 section 6, the step 6 amendment). The verdict and the advisor are still v1's bash leaves, on the aliases of `fix` (the
-# verdict's) and `review` (the advisor's). v1 stays live; promoting this version needs a replay of recorded cases as evidence
-# (acceptance: [replay], which the installation declares in its own routine.yaml).
+# Version 2 of the fix routine: every pi call of the chain is a station on the pi adapter (runtime/harness_pi.py): verdict, fix,
+# repro, advisor and review. Their models, texts and limits are declared here and handed to the run as FLOTILLA_STATIONS:
+# bugfix/fix2.py reads them, no flag says them (ADR-0020 section 6, the step 6 amendment). The values are v1's (one model for the
+# verdict, the fix and the reproducer, one for the advisor and the review, one rules text, one reply floor); the chain behaves as v1
+# only while they stay the same on every station that v1 had one value for (the amendment says which). v1 stays live; promoting this
+# version needs a replay of recorded cases as evidence (acceptance: [replay], which the installation declares in its own routine.yaml).
 run:
   command: >-
     python3 /opt/flotilla/bugfix/fix2.py --repo example/shop --spend-file .bugfix-fix-spend
@@ -10,6 +11,12 @@ run:
   spend_file: .bugfix-fix-spend
   timeout: 3h
 stations:
+  verdict:
+    harness: pi
+    model: fix-flash
+    prompts: {rules: rules.md, agent: triage.md}
+    tools: read
+    limits: {timeout: 15m, max_output_tokens: 32768}
   fix:
     harness: pi
     model: fix-flash
@@ -27,6 +34,12 @@ stations:
     model: fix-reviewer
     prompts: {rules: rules.md}
     tools: none
+    limits: {timeout: 10m, max_output_tokens: 32768}
+  advisor:
+    harness: pi
+    model: fix-reviewer
+    prompts: {rules: rules.md}
+    tools: read
     limits: {timeout: 10m, max_output_tokens: 32768}
 # the version's own flow limits, read by bugfix/fix2.py
 limits: {kickback_max: 2, review_kickback_max: 1}

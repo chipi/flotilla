@@ -9,13 +9,14 @@
     }
   },
   "bugfix/fix@v2": {
-    "routine_hash": "e4f67c829431",
-    "version_hash": "9ea686b37b13b4320b3d8ac7f47c2f134944a0452559fe9bbcccc2dc89505033",
+    "routine_hash": "fa0caa9a8647",
+    "version_hash": "97169d236c6a424501a131996c826f54faf836989d59916c764b34949702851d",
     "legacy": false,
     "manifest": {
       "repro.md": "4db67ea788e4e265f164e05489751e3d086dbf65452c55a0753b0a028e030f7a",
       "rules.md": "e452c78b15478d643856594d691c34ed8cc7d87136976639c51f29d72329f856",
-      "spec.yaml": "e3847f76b3e3b9b8972b2ab51b0f4c2d10b88a8a4bfc90bf5ea68cc4df3a92e9"
+      "spec.yaml": "39a7c39a68b7326f1141a4b85e5dd9aa76cf95d1cf6282b3d800ba09b0c8145a",
+      "triage.md": "14ec73b9844b0b2c156cb9d06e776f9be9d168a94082c1db6e606297afaf126c"
     }
   },
   "bugfix/intake@v1": {

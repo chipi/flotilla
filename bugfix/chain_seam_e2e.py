@@ -63,7 +63,19 @@ def role_of(view):
         return "repro"
     if first.startswith("Review this automated fix"):
         return "review"
+    if first.lstrip().startswith("# active triager"):
+        return "verdict"
+    if first.startswith("You are a senior engineer doing a READ-ONLY"):
+        return "advisor"
     return "other"
+
+
+VERDICT_ANSWER = {"verdict": "actionable", "level": "L1", "kickback_round": 0, "missing": [],
+                  "problem": {"symptom": "value() returns 1", "expected": "value() returns 2",
+                              "acceptance": [{"criterion": "value() returns 2", "intent_source": "reporter",
+                                              "source_ref": "value() returns 1, want 2"}],
+                              "domain_facts": [], "pin": {"file": "", "function": "", "decoy": ""}}}
+ADVISOR_ANSWER = {"file": "src/a.js", "function": "value", "decoy": "src/b.js", "rationale": "it computes it"}
 
 
 class Script:
@@ -94,6 +106,10 @@ class Script:
         if role == "review":
             self.reviews += 1
             return Reply(text=REVIEW_ASKS if self.review_asks and self.reviews == 1 else REVIEW_APPROVES)
+        if role == "verdict":   # only a chain whose verdict is a pi call (bugfix/fix2.py); fix.py's is a fake leaf here
+            return Reply(text="```json\n" + json.dumps(VERDICT_ANSWER) + "\n```")
+        if role == "advisor":
+            return Reply(text="```json\n" + json.dumps(ADVISOR_ANSWER) + "\n```")
         return Reply(text="unexpected request")
 
 
@@ -133,6 +149,10 @@ class Run:
 
 
 class SeamSuite(unittest.TestCase):
+    # what the chain under test differs in: a chain whose verdict is a pi call too (bugfix/fix2.py) has that request first, and the
+    # task its fix is given is the manifest the verdict's answer is rendered into
+    LEAD = 0
+    TASK = "make value() return 2"
     """The checks of HARNESS_SEAMS.md, one method per seam. A harness's test file subclasses it and sets NAME and BINARY; what
     differs by harness (flags, the sessions' place, what its tools are called) is a class attribute or a hook."""
 
@@ -378,19 +398,20 @@ class SeamSuite(unittest.TestCase):
         import harness_prompts as hp
         frozen = ("\n\nIMPORTANT: the failing test src/a.test.js reproduces the bug and is frozen. Fix the source so that it "
                   "passes; do not change, move or delete it (you may add other tests).")
-        return hp.fix_prompt("make value() return 2" + frozen)
+        return hp.fix_prompt(self.TASK + frozen)
 
     def repro_prompt(self):
         import harness_prompts as hp
         with open(os.path.join(os.path.dirname(HERE), "bugfix-fleet", "agents", "repro.md")) as fh:
             body = hp.agent_def_body(fh.read())
         return hp.repro_prompt(body, "THE ISSUE AS FILED:\nvalue is 1\n\nvalue() returns 1, want 2\n\nTHE TASK THE VERDICT STEP WROTE FROM "
-                                     "IT (it can be wrong; never take a phrase from it):\nmake value() return 2")
+                                     "IT (it can be wrong; never take a phrase from it):\n" + self.TASK)
 
     def test_s0_the_scripted_chain_ran_to_a_plan(self):
         main = self.runs["main"]
         self.assertEqual(main.plan["outcome"], "plan", main.plan)
-        self.assertEqual(sorted({role_of(v) for v in main.requests}), ["fix", "repro", "review"])
+        self.assertEqual(sorted({role_of(v) for v in main.requests}),
+                         ["fix", "repro", "review"] + (["verdict"] if self.LEAD else []))
         self.assertTrue(self.runs["killed"].held, "the killed run did reach the held request")
         self.assertEqual(self.runs["resumed"].plan["outcome"], "plan", self.runs["resumed"].out[-600:])
 
@@ -443,7 +464,7 @@ class SeamSuite(unittest.TestCase):
     def test_s4_the_stream_becomes_an_episode(self):
         import test_harness as th
         main = self.runs["main"]
-        eps = [self.parse(s) for s in main.streams]
+        eps = [self.parse(s) for s in main.streams][self.LEAD:]
         for ep in eps:
             th.check_contract(self, ep)
         # invocation order: repro, fix, review (asks for changes), fix (resumed), review (approves)
@@ -460,12 +481,12 @@ class SeamSuite(unittest.TestCase):
         self.assertEqual(rev2.answer, REVIEW_APPROVES)
         self.assertEqual(len(fix2.turns), 2, "a resumed episode's turns are this call's, not the session's")
         import fix
-        self.assertEqual(fix.usage(main.streams[1]), (2, 40), "the chain's own count of pi's stream agrees")
+        self.assertEqual(fix.usage(main.streams[1 + self.LEAD]), (2, 40), "the chain's own count of pi's stream agrees")
 
     def test_s5_the_cap_and_the_timeout_end_the_episode_and_the_process_group(self):
         import harness_pi
         main = self.runs["main"]
-        for stream, ep_turns in zip(main.streams, (2, 2, 1, 2, 1)):
+        for stream, ep_turns in zip(main.streams, (1,) * self.LEAD + (2, 2, 1, 2, 1)):
             ends = [ln for ln in stream.splitlines() if harness_pi.turn_ended(ln)]
             self.assertEqual(len(ends), ep_turns, "turn_ended counts the model calls of the real stream")
         cap = self.runs["cap"]
@@ -502,7 +523,7 @@ class SeamSuite(unittest.TestCase):
         self.assertGreater(len(second.messages), len(first.messages), "the earlier turns are in the conversation")
         self.assertEqual(killed.checkpoint["phase"], "attempt")
         self.assertEqual(killed.checkpoint["harness"], "pi")
-        self.assertEqual(len(killed.sessions), 2, f"the killed run's sessions (repro, fix) are in the run directory: {killed.sessions}")
+        self.assertEqual(len(killed.sessions), 2 + self.LEAD, f"the killed run's sessions ((verdict,) repro, fix) are in the run directory: {killed.sessions}")
         fixes = resumed.by_role("fix")
         self.assertTrue(fixes, resumed.out[-500:])
         self.assertEqual(fixes[0].users[0], killed.by_role("fix")[0].users[0], "the resumed fix is the killed fix's session")
@@ -520,13 +541,13 @@ class SeamSuite(unittest.TestCase):
         seqs = {}
         for c in lines:
             seqs.setdefault(c["episode"], set()).add(c["episode_seq"])
-        self.assertEqual(sorted(len(v) for v in seqs.values()), [1, 1, 1, 1], "an episode keeps its order number")
-        self.assertEqual(sorted(x for v in seqs.values() for x in v), [1, 2, 3, 4],
+        self.assertEqual(sorted(len(v) for v in seqs.values()), [1] * (4 + self.LEAD), "an episode keeps its order number")
+        self.assertEqual(sorted(x for v in seqs.values() for x in v), list(range(1, 5 + self.LEAD)),
                          "an episode per pi session: the repro's, the fix's (resumed in the same one) and two reviews")
         self.assertTrue(all("harness" not in c for c in lines), "pi's lines carry no harness field (absent means pi)")
         writes = [t for c in lines for t in c["tools"] if t["name"] == "write"]
         self.assertEqual([(t["arg"], t.get("ok")) for t in writes], [("src/a.test.js", True), ("src/a.js", True), ("src/a.js", True)])
-        self.assertEqual({c["role"] for c in lines}, {"coder", "reviewer"})
+        self.assertEqual({c["role"] for c in lines}, {"coder", "reviewer"} | ({"verdict"} if self.LEAD else set()))
 
     def test_s9_the_cost_is_the_gateways(self):
         main = self.runs["main"]

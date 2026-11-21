@@ -65,10 +65,11 @@ func TestTheBugfixFixV2ExampleLoadsAndPrintsTheStationsItsChainReads(t *testing.
 	if err := json.Unmarshal([]byte(got.Env["FLOTILLA_STATIONS"]), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Stations) != 3 || doc.VersionLimits["kickback_max"] != 2 || doc.VersionLimits["review_kickback_max"] != 1 {
+	if len(doc.Stations) != 5 || doc.VersionLimits["kickback_max"] != 2 || doc.VersionLimits["review_kickback_max"] != 1 {
 		t.Fatalf("%+v", doc)
 	}
-	want := map[string][3]string{"fix": {"fix-flash", "all", "20m"}, "repro": {"fix-flash", "all", "20m"}, "review": {"fix-reviewer", "none", "10m"}}
+	want := map[string][3]string{"fix": {"fix-flash", "all", "20m"}, "repro": {"fix-flash", "all", "20m"}, "review": {"fix-reviewer", "none", "10m"},
+		"verdict": {"fix-flash", "read", "15m"}, "advisor": {"fix-reviewer", "read", "10m"}}
 	for name, w := range want {
 		s := doc.Stations[name]
 		if s.Harness != "pi" || [3]string{s.Model, s.Tools, s.Limits.Timeout} != w || s.Limits.MaxOutputTokens != 32768 {
@@ -80,6 +81,9 @@ func TestTheBugfixFixV2ExampleLoadsAndPrintsTheStationsItsChainReads(t *testing.
 	}
 	if doc.Stations["fix"].Limits.MaxTurns != 90 || doc.Stations["repro"].Limits.MaxTurns != 40 {
 		t.Fatalf("the turn caps v1's flags gave: %+v", doc.Stations)
+	}
+	if a := doc.Stations["verdict"].Texts["agent"]; a.Path != "fix/v2/triage.md" || a.SHA256 != fileSHA(t, filepath.Join("..", "..", "bugfix-fleet", "agents", "triage.md")) {
+		t.Fatalf("the verdict's text is agents/triage.md: %+v", a)
 	}
 	if a := doc.Stations["repro"].Texts["agent"]; a.Path != "fix/v2/repro.md" || a.SHA256 != fileSHA(t, filepath.Join("..", "..", "bugfix-fleet", "agents", "repro.md")) {
 		t.Fatalf("the reproducer's text is agents/repro.md: %+v", a)
@@ -96,7 +100,7 @@ func TestAStationOfTheBugfixV2ExampleNamingAToolsValueItsHarnessDoesNotServeIsRe
 		t.Run(c.name, func(t *testing.T) {
 			d := t.TempDir()
 			files := map[string]string{"models.json": bugfixModels}
-			for _, f := range []string{"routine.yaml", "v2/spec.yaml", "v2/rules.md", "v2/repro.md"} {
+			for _, f := range []string{"routine.yaml", "v2/spec.yaml", "v2/rules.md", "v2/repro.md", "v2/triage.md"} {
 				b, err := os.ReadFile(filepath.Join(src, f))
 				if err != nil {
 					t.Fatal(err)
