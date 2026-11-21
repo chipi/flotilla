@@ -184,18 +184,32 @@ class Chain(fix.Chain):
             f.write(self.models_text)
         os.chmod(self.models_path, 0o600)
 
-    def execute(self, req, env=None):
+    def execute(self, req, env=None, leaf=False):
         """One station's pi call through the adapter (adapter.execute on harness_pi.Pi, run by fix.sh as every call of the chain is).
         The adapter writes pi/models.json for the call's one route, so the run's own file, which the verdict and advisor leaves read,
-        is put back when it returns, however it returns."""
+        is put back when it returns, however it returns. `leaf`: a call that v1 ran as a bash leaf (the fix and the reproducer)."""
         try:
-            got = adapter.execute(harness_pi.PI, req, self.env if env is None else env, run=fix.sh)
+            got = adapter.execute(harness_pi.PI, req, self.env if env is None else env, run=self.started if leaf else fix.sh)
         except adapter.HarnessError as e:
             raise fix.Stop(f"{req.station}: {e}") from None
         finally:
             self.restore_models()
         self.keep(got[0], req, got[1])
         return got
+
+    @staticmethod
+    def started(*args, **kw):
+        """fix.sh for a call v1 made through a bash leaf, which gave an exit code where pi could not be started: 127 for a pi that is
+        not there, 126 for one that cannot be run, and 1 for a prompt the pipe cannot carry. The chain handles an exit code; what
+        run_process raises it does not. (The review was not a leaf: v1 raised the same there, and so does this.)"""
+        try:
+            return fix.sh(*args, **kw)
+        except FileNotFoundError:
+            return 127, "pi: command not found\n"
+        except OSError as e:
+            return 126, f"pi: {e.strerror or e}\n"
+        except UnicodeEncodeError as e:
+            return 1, f"pi: the prompt cannot be sent: {e}\n"
 
     def keep(self, ep, req, code):
         """The episode as <run>/episodes/<n>-<station>.json, a version 2 document (adapter.episode_doc: `station`, not v1's `role`),
@@ -261,7 +275,7 @@ class Chain(fix.Chain):
         req = adapter.Request(station=role, prompt=prompt, system_path=self.rules.get(role) or None, model=self.route(s["model"]),
                               tools="all", resume=resume, max_turns=max_turns or 0, workdir=self.wt, run_dir=self.run_dir, timeout=limit,
                               no_context_files=bool(self.rules.get(role)))
-        _, code, stream = self.execute(req, dict(env if env is not None else self.env, NODE_OPTIONS=NODE_OPTIONS))
+        _, code, stream = self.execute(req, dict(env if env is not None else self.env, NODE_OPTIONS=NODE_OPTIONS), leaf=True)
         return code, stream
 
     def attempt(self, manifest, resume=None, cont=None):

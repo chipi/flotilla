@@ -223,6 +223,17 @@ class Review(unittest.TestCase):
                 self.assertNotIn("--no-context-files", cmd)
                 self.assertNotIn("--append-system-prompt", cmd)
 
+    def test_a_pi_that_cannot_be_started_raises_in_the_review_as_it_did_in_v1(self):
+        w = World(self)
+        c = w.chain()
+        os.makedirs(c.wt, exist_ok=True)
+
+        def run(*a, **k):
+            raise FileNotFoundError(2, "No such file or directory", "pi")
+        with unittest.mock.patch.object(fix, "sh", run), unittest.mock.patch.object(c, "review_prompt", return_value="p"):
+            with self.assertRaises(FileNotFoundError):
+                c.review("diff")
+
     def test_a_models_json_is_put_back_when_the_call_raises(self):
         w = World(self)
         c = w.chain()
@@ -345,6 +356,27 @@ class Station(unittest.TestCase):
             for leaf in ("pi.sh", "repro.sh"):
                 fix.sh([os.path.join(fix.BAKEOFF, "harnesses", leaf), c.wt, "d"], fix.BAKEOFF, dict(c.env), 60)
         self.assertEqual([cmd[cmd.index("--model") + 1] for cmd in seen], ["fleet-bugfix-flash", "fleet-bugfix-reviewer"])
+
+    def test_a_pi_that_cannot_be_started_is_an_exit_code_as_the_bash_leaf_gave(self):
+        """v1: `bash pi.sh` ran no pi and gave 127; the chain handles an exit code and not the OSError run_process raises."""
+        for error, code in ((FileNotFoundError(2, "No such file or directory", "pi"), 127), (PermissionError(13, "Permission denied"), 126),
+                            (UnicodeEncodeError("utf-8", "\ud800", 0, 1, "surrogates not allowed"), 1)):
+            for role, leaf in (("fix", "pi.sh"), ("repro", "repro.sh")):
+                def run(*a, **k):
+                    raise error
+                with self.subTest(type(error).__name__, role=role), unittest.mock.patch.object(fix, "sh", run), self.c.leaves():
+                    got = fix.sh([os.path.join(fix.BAKEOFF, "harnesses", leaf), self.c.wt, self.DESC], fix.BAKEOFF, dict(self.c.env), 60)
+                self.assertEqual(got[0], code)
+                self.assertTrue(got[1].startswith("pi: "), got)
+                with open(self.c.models_path) as f:
+                    self.assertEqual(f.read(), self.c.models_text)
+
+    def test_an_error_that_is_not_about_starting_pi_is_not_an_exit_code(self):
+        def run(*a, **k):
+            raise ValueError("max_turns needs turn_ended")
+        with unittest.mock.patch.object(fix, "sh", run), self.c.leaves():
+            with self.assertRaises(ValueError):
+                fix.sh([os.path.join(fix.BAKEOFF, "harnesses", "pi.sh"), self.c.wt, self.DESC], fix.BAKEOFF, dict(self.c.env), 60)
 
     def test_what_is_not_a_leaf_is_run_as_it_was(self):
         seen = []
