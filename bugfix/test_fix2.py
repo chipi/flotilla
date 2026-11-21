@@ -333,6 +333,19 @@ class Station(unittest.TestCase):
         self.assertEqual(seen[-1][0][3], 420, "the repro station's 7m, not the fix station's 20m the step was given")
         self.assertEqual(cmd[cmd.index("--append-system-prompt") + 1], c.rules["repro"])
 
+    def test_each_station_calls_its_own_model(self):
+        w = World(self)
+        w.doc["stations"]["repro"]["model"] = "bugfix-reviewer"
+        w.environ["FLOTILLA_STATIONS"] = json.dumps(w.doc)
+        w.st = stations.load(w.environ)
+        c = w.chain()
+        os.makedirs(c.wt)
+        seen = []
+        with unittest.mock.patch.object(fix, "sh", lambda cmd, *a, **k: seen.append(cmd) or (0, "")), c.leaves():
+            for leaf in ("pi.sh", "repro.sh"):
+                fix.sh([os.path.join(fix.BAKEOFF, "harnesses", leaf), c.wt, "d"], fix.BAKEOFF, dict(c.env), 60)
+        self.assertEqual([cmd[cmd.index("--model") + 1] for cmd in seen], ["fleet-bugfix-flash", "fleet-bugfix-reviewer"])
+
     def test_what_is_not_a_leaf_is_run_as_it_was(self):
         seen = []
         with unittest.mock.patch.object(fix, "sh", lambda *a, **k: seen.append((a, k)) or (0, "out")), self.c.leaves():

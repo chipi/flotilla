@@ -2,6 +2,7 @@
 
 The old side is the chain at differential.OLD_SHA in a detached worktree; a copy of the working tree stands in for the new side
 where a test needs to edit it."""
+import json
 import os
 import shutil
 import subprocess
@@ -33,7 +34,7 @@ class Harness(unittest.TestCase):
         self.assertEqual(rows, [], d.table(rows)[0])
 
     # what a station's call may differ in between the chain's own and the generic pi adapter's (the allow-list's rules, named)
-    DELTAS = {"prompt_channel", "models_json", "env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK"}
+    DELTAS = {"prompt_channel", "models_json", "env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK", "positional"}
 
     def test_the_stations_on_the_pi_adapter_differ_by_the_allow_list_and_nothing_else(self):
         """bugfix/fix2.py on stations: fix, repro and review are harness_pi.Pi's own calls; what each sends the model, its system
@@ -55,8 +56,30 @@ class Harness(unittest.TestCase):
         with open(sh, "w") as f:
             f.write(text.replace("Diagnose the cause", "Diagnoze the cause"))
         rows = d.differential(self.old, new, "fix.py", ["fresh_clean_fix"])
-        self.assertEqual([(r[3], r[6]) for r in rows], [("prompt", None)], d.table(rows)[0])
-        self.assertEqual(d.table(rows)[1], 1)
+        self.assertEqual([(r[3], r[6]) for r in rows], [("prompt", None), ("positional", None)], d.table(rows)[0])
+        self.assertEqual(d.table(rows)[1], 2, "the text is in argv on both sides, so both fields show it")
+
+
+class FakePi(unittest.TestCase):
+    """The fake pi records the bytes it is sent, as sent."""
+
+    def test_stdin_is_read_as_bytes(self):
+        tmp = tempfile.mkdtemp(dir=os.environ.get("TMPDIR"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        leaves = os.path.join(tmp, "leaves")
+        os.makedirs(leaves)
+        with open(os.path.join(leaves, "repro.sh"), "w") as f:   # a call with no tools switch and no resume is the reproducer's
+            f.write("exit 0\n")
+        pi = os.path.join(tmp, "pi")
+        with open(pi, "w") as f:
+            f.write(d.FAKE_PI)
+        sent = b"line one\r\nline two \xff\xfe\r\n\n"
+        subprocess.run([sys.executable, pi, "-p"], input=sent, cwd=tmp, check=True, capture_output=True,
+                       env=dict(os.environ, FAKE_STATE=tmp, DIFF_LEAVES=leaves, PI_CODING_AGENT_DIR=tmp))
+        with open(os.path.join(tmp, "differential.jsonl")) as fh:
+            got = json.loads(fh.readline())
+        self.assertEqual(got["prompt"].encode("utf-8", "surrogateescape"), sent)
+        self.assertEqual(got["prompt_channel"], "stdin")
 
 
 class Allowances(unittest.TestCase):
@@ -79,8 +102,8 @@ class Allowances(unittest.TestCase):
                         env={"PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1"},
                         models_json={"providers": {"flotilla-g": {"baseUrl": "u", "models": [{"id": "m1"}]}}})
         got = self.rows(self.call(), new)
-        self.assertEqual(sorted(r[3] for r in got), ["env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK", "models_json", "prompt_channel",
-                                                     "provider"])
+        self.assertEqual(sorted(r[3] for r in got), ["env.PI_OFFLINE", "env.PI_SKIP_VERSION_CHECK", "models_json", "positional",
+                                                     "prompt_channel", "provider"])
         self.assertTrue(all(r[6] for r in got), got)
 
     def test_what_must_match_is_never_allowed(self):
@@ -92,7 +115,10 @@ class Allowances(unittest.TestCase):
                            ("session", self.call(argv=argv + ["--session", "s"])),
                            ("cwd", self.call(cwd="<D>/other")),
                            ("env.NODE_OPTIONS", self.call(env={"NODE_OPTIONS": "--max-old-space-size=4096"})),
-                           ("model", self.call(argv=[("m2" if a == "m1" else a) for a in argv]))):
+                           ("model", self.call(argv=[("m2" if a == "m1" else a) for a in argv])),
+                           # the text in stdin and still in argv: the model is sent it twice
+                           ("prompt_channel", self.call(prompt_channel="stdin")),
+                           ("positional", self.call(argv=argv + ["EXTRA"]))):
             with self.subTest(field):
                 got = [r for r in self.rows(self.call(), new) if r[3] == field]
                 self.assertEqual([r[6] for r in got], [None], got)

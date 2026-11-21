@@ -44,7 +44,7 @@ FAKE_PI = textwrap.dedent('''\
     #!/usr/bin/env python3
     import hashlib, json, os, sys
     argv = sys.argv[1:]
-    stdin = sys.stdin.read()
+    stdin = sys.stdin.buffer.read().decode("utf-8", "surrogateescape")   # bytes as sent: no newline translation, no decoding errors
     prompt = stdin if stdin else (argv[-1] if argv else "")
     def after(flag):
         return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else None
@@ -152,7 +152,7 @@ def fields(inv):
     out = {"role": inv["role"], "prompt": inv["prompt"], "prompt_channel": inv["prompt_channel"], "cwd": inv["cwd"],
            "provider": a["provider"], "model": a["model"], "mode": a["mode"], "print": a["print"], "tools": a["tools"],
            "no_context_files": a["no_context_files"], "system_file": a["system_file"], "system_sha": inv["system_sha"],
-           "session": a["session"], "other_args": a["other"], "models_json": inv["models_json"]}
+           "session": a["session"], "other_args": a["other"], "positional": a["positional"], "models_json": inv["models_json"]}
     for k in RECORDED_ENV:
         out["env." + k] = inv["env"].get(k)
     return out
@@ -168,7 +168,11 @@ def _called_entry_only(models, provider, model):
 
 # name: (field, predicate(old, new, old_fields, new_fields)). A delta is allowed only when a rule names its field and holds.
 ALLOWED = {
-    "the prompt moves from argv to stdin": ("prompt_channel", lambda o, n, of, nf: (o, n) == ("argv", "stdin")),
+    "the prompt moves from argv to stdin":
+        ("prompt_channel", lambda o, n, of, nf: (o, n) == ("argv", "stdin") and nf["positional"] == []),
+    "the prompt leaves argv with it moving to stdin":
+        ("positional", lambda o, n, of, nf: (of["prompt_channel"], nf["prompt_channel"]) == ("argv", "stdin")
+         and o == [of["prompt"]] and n == []),
     "the provider's name is the route's endpoint": ("provider", lambda o, n, of, nf: bool(n) and n.startswith("flotilla-")),
     "pi's phone-home switch: PI_OFFLINE": ("env.PI_OFFLINE", lambda o, n, of, nf: (o, n) == (None, "1")),
     "pi's phone-home switch: PI_SKIP_VERSION_CHECK": ("env.PI_SKIP_VERSION_CHECK", lambda o, n, of, nf: (o, n) == (None, "1")),
@@ -211,14 +215,31 @@ def _norm(f, roots):
         if isinstance(x, str):
             for a, b in subs:
                 x = x.replace(a, b)
-            x = re.sub(r"(s-[a-z]+)-\d+\.jsonl", r"\1-N.jsonl", x)
-            return re.sub(r"(sess-[a-z]+-)\d+", r"\1N", x)
+            return x
         if isinstance(x, list):
             return [norm(v) for v in x]
         if isinstance(x, dict):
             return {k: norm(v) for k, v in x.items()}
         return x
     return norm
+
+
+# The fakes name the sessions they save with $RANDOM; here a counter of the scenario's own, so the names are the same on both sides of
+# a scenario and a call that resumes another session than the old chain did is a delta, not a digit the table hides.
+SEQ = 'bump() { local n; n=$(cat "$FAKE_STATE/ctr" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_STATE/ctr"; echo "$n"; }\n'
+
+
+def counted(text):
+    """A fake leaf's text with its $RANDOM replaced by the scenario's counter."""
+    return SEQ + text.replace("$RANDOM", "$(bump)")
+
+
+def count_sessions(path):
+    """counted(), for a leaf already written with its interpreter lines (the fixture's verdict and advisor)."""
+    with open(path) as fh:
+        shebang, setline, rest = fh.read().split("\n", 2)
+    with open(path, "w") as fh:
+        fh.write("\n".join([shebang, setline, counted(rest)]))
 
 
 def install_leaves(f, root):
@@ -230,9 +251,11 @@ def install_leaves(f, root):
     os.makedirs(os.path.join(f.d, "agents"), exist_ok=True)
     shutil.copy(os.path.join(root, "bugfix-fleet", "agents", "repro.md"), os.path.join(f.d, "agents", "repro.md"))
     leaves = os.path.join(f.d, "leaves")
-    tf.write(os.path.join(leaves, "fix.sh"), tf.PI_HARNESS)
-    tf.write(os.path.join(leaves, "repro.sh"), tf.REPRO_HARNESS)
-    tf.write(os.path.join(leaves, "review.sh"), tf.PI_BIN)
+    tf.write(os.path.join(leaves, "fix.sh"), counted(tf.PI_HARNESS))
+    tf.write(os.path.join(leaves, "repro.sh"), counted(tf.REPRO_HARNESS))
+    tf.write(os.path.join(leaves, "review.sh"), counted(tf.PI_BIN))
+    for name in ("triage_run.sh", "advisor_run.sh"):
+        count_sessions(os.path.join(f.bakeoff, name))
     with open(os.path.join(f.d, "bin", "pi"), "w") as fh:
         fh.write(FAKE_PI)
     os.chmod(os.path.join(f.d, "bin", "pi"), 0o755)
@@ -246,7 +269,8 @@ def translate(args, rules):
     """A scenario's chain arguments (v1's flags) as the two sides take them: (flags both take, v1's whole flags, the stations' settings).
     `rules` is the path of the rules file both sides read, so a path is never a delta: v1 gets it as --pi-rules, unless the scenario
     says none (''). The stations stand for the model, limit and tools flags (bugfix/fix2.py refuses them)."""
-    flags, set_ = [], {"rules": True, "review_tools": "none", "fix_turns": 0, "repro_turns": 0, "timeout": None, "version": {}}
+    flags, set_ = [], {"rules": True, "review_tools": "none", "fix_turns": 0, "repro_turns": 0, "timeout": None, "version": {},
+                       "timeout_for": ("fix", "repro")}
     i = 0
     while i < len(args):
         a, v = args[i], args[i + 1] if i + 1 < len(args) else None
@@ -291,20 +315,29 @@ def stations_doc(settings, code):
         with open(os.path.join(code, "fleets", "bugfix", rel), "rb") as fh:
             return {"path": rel, "sha256": hashlib.sha256(fh.read()).hexdigest()}
     rules = {"rules": text("fix/v2/rules.md")} if settings["rules"] else {}
-    limits = {"timeout": f"{settings['timeout']}s" if settings["timeout"] else "20m", "max_output_tokens": 32768}
+
+    def limits(station):
+        # v1's one --episode-timeout is the fix's and the reproducer's. Where a scenario runs only one of them, the other station
+        # keeps v1's default (20m), so a call that took the other station's timeout shows as a different outcome.
+        t = settings["timeout"] if station in settings["timeout_for"] else None
+        return {"timeout": f"{t}s" if t else "20m", "max_output_tokens": 32768}
     return {"schema_version": 1, "version_limits": settings["version"], "stations": {
         "fix": {"harness": "pi", "model": "bugfix-flash", "tools": "all", "texts": dict(rules),
-                "limits": dict(limits, **({"max_turns": settings["fix_turns"]} if settings["fix_turns"] else {}))},
+                "limits": dict(limits("fix"), **({"max_turns": settings["fix_turns"]} if settings["fix_turns"] else {}))},
         "repro": {"harness": "pi", "model": "bugfix-flash", "tools": "all", "texts": dict(rules, agent=text("fix/v2/agent.md")),
-                  "limits": dict(limits, **({"max_turns": settings["repro_turns"]} if settings["repro_turns"] else {}))},
+                  "limits": dict(limits("repro"), **({"max_turns": settings["repro_turns"]} if settings["repro_turns"] else {}))},
         "review": {"harness": "pi", "model": "bugfix-reviewer", "tools": settings["review_tools"], "texts": dict(rules),
                    "limits": {"timeout": "10m", "max_output_tokens": 32768}}}}
+
+
+# the goldens' scenarios, and the ones only this harness has
+SCENARIOS = dict(golden.SCENARIOS, reproducer_timeout=(["actionable"], [], {"repros": ["chatty"]}, ["--episode-timeout", "2"]))
 
 
 def run_scenario(name, root, entry, roots=()):
     """One scenario on the chain at `root`, started as `python3 <root>/bugfix/<entry>`: {"plan", "calls"} as recorded. fix2.py takes
     the scenario as stations; fix.py as flags."""
-    verdicts, fixes, state, args = golden.SCENARIOS[name]
+    verdicts, fixes, state, args = SCENARIOS[name]
     f = tf.Fixture(verdicts, fixes)
     try:
         for fname, items in state.items():
@@ -313,10 +346,11 @@ def run_scenario(name, root, entry, roots=()):
         leaves = install_leaves(f, root)
         code = code_root(os.path.join(f.d, "code"), root)
         flags, old, settings = translate(args, os.path.join(code, FLEET_DIR, "rules.md"))
+        settings["timeout_for"] = tuple(n for n, ran in (("fix", bool(fixes)), ("repro", "repros" in state)) if ran)
         plan = os.path.join(f.d, "plan.json")
         env = dict(os.environ, FLOTILLA_PLAN_FILE=plan, FLOTILLA_MODELS=json.dumps(tf.MODELS), FAKE_STATE=f.state, DIFF_LEAVES=leaves,
                    GIT_ALLOW_PROTOCOL="file", GIT_REMOTE_BASE=f.remotes, BUGFIX_BAKEOFF_DIR=f.bakeoff,
-                   PATH=os.path.join(f.d, "bin") + os.pathsep + os.environ["PATH"],
+                   PATH=os.path.join(f.d, "bin") + os.pathsep + os.environ["PATH"], FAKE_SESS="1",
                    GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
                    FLOTILLA_CASE=json.dumps({"id": "case-20261115-abc", "kind": "code_bug", "target": f"repo:{f.repo}/issues/12",
                                              "data": {"issue": {"repo": f.repo, "number": 12, "title": "value is 1",
@@ -350,7 +384,7 @@ def run_scenario(name, root, entry, roots=()):
 def differential(old_root, new_root, new_entry="fix.py", scenarios=None):
     """The delta rows of every scenario between the chain at old_root (fix.py) and the one at new_root (new_entry)."""
     rows = []
-    for name in scenarios or list(golden.SCENARIOS):
+    for name in scenarios or list(SCENARIOS):
         rows += compare(name, run_scenario(name, old_root, "fix.py"), run_scenario(name, new_root, new_entry))
     return rows
 
