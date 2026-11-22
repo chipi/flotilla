@@ -220,6 +220,27 @@ hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad]
 # Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
 # That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
 slack: {connector_host: e2e-host, team_id: T0E2E000001, ui_url: "https://$UI_HOST", users: {U0E2E000001: e2e-slack}}
+# RFC-0014 §4.2: the stub plumbing on e2e-plumbing calls these (section hooks); meeting's kind has no routine here, smoke closes its own case
+hooks_listen: 0.0.0.0:8488
+hooks:
+  - name: meeting
+    secret_file: /run/flotilla/hook-meeting.secret
+    kind: meeting
+    title: "A meeting's notes arrived"
+    project: meetings
+    target: file
+    target_pattern: '[A-Za-z0-9._-]{1,120}'
+    fields: {file: {type: text, max: 120}, text: {type: text, max: 2000}}
+    max_body: 4096
+  - name: smoke
+    secret_file: /run/flotilla/hook-smoke.secret
+    kind: smoke
+    title: "The plumbing's smoke test"
+    project: platform
+    target: probe
+    target_pattern: '[a-z0-9-]{1,40}'
+    fields: {probe: {type: text, max: 40}}
+    close_on_arrival: true
 EOF
 echo "E2E_ONLY=1" > "$WORK/config/fleet.env"
 printf 'SHADOW_READ_ONLY=%s\n' "$(tok)" > "$WORK/config/fleet-read.env"   # what a shadow worker may read: no write credential in it
@@ -325,6 +346,7 @@ echo "$SK" | grep >/dev/null '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/con
 SIGNPUB="$(echo "$SK" | sed -n 's/^  "e2e1": "\(.*\)"$/\1/p')"
 
 echo "== secrets and seeded state (deploy/server/secrets.sh, as a deploy runs it)"
+mkdir -p "$WORK/config/hooks" && (umask 077; tok > "$WORK/config/hooks/meeting.secret"; tok > "$WORK/config/hooks/smoke.secret")   # RFC-0014: the hooks' signing secrets, shared with the stub plumbing
 printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\nOPENROUTER_API_KEY=%s\nGLITCHTIP_TOKEN=%s\nGRAFANA_TOKEN=%s\nGITHUB_TOKEN=%s\n' \
   "$(tok)" "$(tok)" "$(tok)" "$(tok)" "$(tok)" > "$WORK/config/fleet.env"   # random stand-in keys, made per run
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
@@ -1782,6 +1804,37 @@ done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 fi
+echo "== hooks (RFC-0014 §4.2): the stub plumbing on the plumbing network calls them, signed"
+HK="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
+  -e HOOK_SECRET_MEETING="$(cat "$WORK/config/hooks/meeting.secret")" -e HOOK_SECRET_SMOKE="$(cat "$WORK/config/hooks/smoke.secret")" \
+  --entrypoint python3 "local/flotilla-worker-triage:$TAG" /hookcall.py http://flotillad:8488 2>&1)"
+echo "$HK"
+hk() { echo "$HK" | awk -v l="$1" '$1 == l {print $2; exit}'; }
+HCASE="$(echo "$HK" | awk '$1 == "opened" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
+[ "$(hk opened)" = 202 ] && [ -n "$HCASE" ] && cli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "handed_over" \
+  && ok "a signed call opened one meeting case, handed over ($HCASE)" || bad "hook opened: $(hk opened) case '$HCASE': $(cli case list --all 2>&1 | grep "^$HCASE " )"
+[ "$(hk replay)" = 200 ] && echo "$HK" | grep '^replay ' | grep >/dev/null "\"case\":\"$HCASE\"" \
+  && ok "the same delivery again opened nothing (200, the same case)" || bad "hook replay: $(echo "$HK" | grep '^replay ')"
+[ "$(hk unsigned)" = 401 ] && [ "$(hk wrong-key)" = 401 ] && [ "$(hk stale)" = 401 ] \
+  && ok "an unsigned call, one signed with another key and a stale one are refused (401)" || bad "hook signatures: $(echo "$HK" | grep -E '^(unsigned|wrong-key|stale) ')"
+[ "$(hk oversized)" = 413 ] && [ "$(hk bad-target)" = 400 ] && [ "$(hk undeclared)" = 404 ] \
+  && ok "an oversized body (413), a target outside its pattern (400) and an undeclared hook (404) are refused" || bad "hook refusals: $(echo "$HK" | grep -E '^(oversized|bad-target|undeclared) ')"
+[ "$(cli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 1 ] \
+  && ok "the refused calls opened no case: one meeting case in all" || bad "meeting cases: $(cli case list --all 2>&1 | awk '$2 == "meeting"')"
+HSHOW="$(cli case show "$HCASE" 2>&1)"
+echo "$HSHOW" | grep >/dev/null "A meeting's notes arrived" && ! echo "$HSHOW" | grep >/dev/null '"kind":"bugfix"' \
+  && ok "the case's title is the hook's wording, and a payload field the hook does not declare (kind) was not kept" || bad "hook case: $HSHOW"
+SCASE="$(echo "$HK" | awk '$1 == "smoke" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
+[ "$(hk smoke)" = 202 ] && cli case list --all 2>&1 | grep "^$SCASE " | grep >/dev/null "closed" \
+  && ok "the smoke hook's case closed on arrival ($SCASE)" || bad "smoke: $(hk smoke) $(cli case list --all 2>&1 | grep "^$SCASE ")"
+[ "$(hk api-route)" = 404 ] && ok "the hooks' listener serves no API route (/v1/status: 404)" || bad "hooks listener /v1/status: $(hk api-route)"
+HEV="$(cli events -n 200 2>&1)"
+[ "$(echo "$HEV" | grep -c 'hook.refused')" -ge 5 ] && [ "$(echo "$HEV" | grep -c 'hook.accepted')" -ge 3 ] \
+  && ok "every call to a declared hook is in the events, accepted or refused" || bad "hook events: $(echo "$HEV" | grep 'hook\.')"
+OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
+echo "$OUT" | grep >/dev/null "^WARNING hook meeting: opens meeting cases, and no enabled routine acts on that kind" && echo "$OUT" | grep >/dev/null "^hook smoke: .*closes it on arrival" \
+  && ok "-check lists the hooks, and warns on a kind no routine acts on" || bad "-check hooks: $(echo "$OUT" | grep -i hook)"
+
 echo "== hardening"
 if want remote; then
 echo "== a remote worker (RFC-0011): its link dials the host endpoint, flotillad's network never reaches it"

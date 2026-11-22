@@ -118,6 +118,14 @@ fi
 if [ -n "${FLOTILLA_ERRORS_SHADOW_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors-shadow.env 65532 "$FLOTILLA_ERRORS_SHADOW_DSN_FILE"
 fi
+# optional: each hook's signing secret (RFC-0014 §4.2; flotillad.yaml hooks: secret_file: /run/flotilla/hook-<name>.secret),
+# one $FLOTILLA_CONFIG/hooks/<name>.secret per hook, shared with the plumbing tool that signs its calls
+if [ -d "$FLOTILLA_CONFIG/hooks" ]; then
+  for f in "$FLOTILLA_CONFIG"/hooks/*.secret; do
+    [ -e "$f" ] || continue
+    put $V-flotillad-secrets "hook-$(basename "$f")" 65532 "$f"
+  done
+fi
 # optional: the host agents' intermediate CA (flotillad.yaml hosts.ca_dir: /run/flotilla), from
 # `flotilla ca intermediate ROOTDIR $FLOTILLA_CONFIG/host-ca`; the root's key is never among them
 if [ -s "$FLOTILLA_CONFIG/host-ca/intermediate.key" ]; then
