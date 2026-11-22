@@ -397,8 +397,8 @@ func TestATextKeptWithoutABodyGainsItWhenALaterRunHasIt(t *testing.T) {
 }
 
 func TestAStoreAtTheLatestSchemaReadsOldCallsWithNoStation(t *testing.T) {
-	if len(schema) != 34 {
-		t.Fatalf("step 34 is the hook deliveries; the schema has %d steps", len(schema))
+	if len(schema) != 35 {
+		t.Fatalf("step 35 is the ledger's run index; the schema has %d steps", len(schema))
 	}
 	s, ctx := pairWorld(t)
 	if err := s.RecordCalls(ctx, []ModelCall{{RunID: "old", Routine: "triage/cycle", Alias: "a", Role: "triage"}}); err != nil {
@@ -407,5 +407,28 @@ func TestAStoreAtTheLatestSchemaReadsOldCallsWithNoStation(t *testing.T) {
 	m, _ := s.RunCalls(ctx, []string{"old"})
 	if c := m["old"][0]; c.Station != "" || c.Texts != "" || c.Role != "triage" {
 		t.Fatalf("%+v", c)
+	}
+}
+
+// A pairs answer reads the live run's decisions once per input; without an index on run_id that is a scan of the whole ledger each time
+// (2026-11-22: 208 inputs x 0.24 s on the installation's ledger, past the CLI's 30 s timeout).
+func TestTheLiveSidesQueryUsesAnIndex(t *testing.T) {
+	s := openTest(t)
+	rows, err := s.db.Query(`EXPLAIN QUERY PLAN SELECT ` + entrySubject + `, e.row, e.written_at FROM ledger_entries e WHERE e.run_id = 'x' AND e.kind = 'decision' AND instr(e.namespace, '@v') = 0 ORDER BY e.seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if got := strings.Join(plan, "; "); !strings.Contains(got, "USING INDEX ledger_entries_run") {
+		t.Fatalf("the live side's query plan: %s", got)
 	}
 }

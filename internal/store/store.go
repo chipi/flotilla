@@ -504,6 +504,9 @@ var schema = []string{
 		case_id TEXT NOT NULL DEFAULT '',
 		PRIMARY KEY (hook, delivery)
 	);`,
+	// A pairs answer reads the live run's decisions per input by run_id (pairs.go liveSides); with no index that was a scan of the whole
+	// ledger per input (2026-11-22, the installation's store, 204 inputs: 3.3 s natively and past the CLI's 30 s in the container; 0.15 s with it).
+	`CREATE INDEX ledger_entries_run ON ledger_entries(run_id, kind, seq);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run
