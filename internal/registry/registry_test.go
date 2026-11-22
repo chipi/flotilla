@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +70,15 @@ func TestRoutineActions(t *testing.T) {
 	} {
 		if _, err := Load(write(t, `{"component": "c", "actions": [`+strings.Replace(routine, c.from, c.to, 1)+`]}`)); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+	// RFC-0014 §4.6: plumbing.call is one action per callback, each its own ladder, carried out by a routine; a chat post can be
+	// taken back by the bot (reversible yes) and so may earn auto, and none is high
+	for name, kind := range map[string]string{"plumbing.create_tasks": "meeting", "plumbing.post_decisions": "meeting",
+		"plumbing.reply": "question", "plumbing.post": "team_brief", "plumbing.retract": "correction"} {
+		a, ok := r.Action(name)
+		if !ok || a.Executor != ExecRoutine || a.MaxAutonomy() != "auto" || a.Risk == "high" || !slices.Contains(a.ForKinds, kind) {
+			t.Errorf("%s: ok %v, executor %q, max %s, risk %s, kinds %v", name, ok, a.Executor, a.MaxAutonomy(), a.Risk, a.ForKinds)
 		}
 	}
 	// RFC-0014 §4.6: a message to a customer or the public is declared high, and high only ever proposes, however reversible

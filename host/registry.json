@@ -141,6 +141,81 @@
       "check": {"verify": "account_flagged", "within": "10m"},
       "limits": {"per_target_per_day": 1},
       "timeout": "5m"
+    },
+    {
+      "name": "plumbing.create_tasks",
+      "executor": "routine",
+      "for_kinds": ["meeting"],
+      "params": {
+        "items": {"kind": "text", "max": 4000}
+      },
+      "risk": "medium",
+      "reversible": "regenerable",
+      "pre": [],
+      "check": {"verify": "plumbing_confirmed", "within": "10m"},
+      "limits": {"per_target_per_day": 3},
+      "timeout": "2m"
+    },
+    {
+      "name": "plumbing.post_decisions",
+      "executor": "routine",
+      "for_kinds": ["meeting"],
+      "params": {
+        "page": {"kind": "enum", "enum": ["decisions"]},
+        "text": {"kind": "text", "max": 8000}
+      },
+      "risk": "medium",
+      "reversible": "regenerable",
+      "pre": [],
+      "check": {"verify": "plumbing_confirmed", "within": "10m"},
+      "limits": {"per_target_per_day": 3},
+      "timeout": "2m"
+    },
+    {
+      "name": "plumbing.reply",
+      "executor": "routine",
+      "for_kinds": ["question"],
+      "params": {
+        "channel": {"kind": "enum", "enum": ["general"]},
+        "thread": {"kind": "text", "max": 64},
+        "text": {"kind": "text", "max": 3000}
+      },
+      "risk": "medium",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "plumbing_confirmed", "within": "10m"},
+      "limits": {"per_target_per_day": 3},
+      "timeout": "2m"
+    },
+    {
+      "name": "plumbing.post",
+      "executor": "routine",
+      "for_kinds": ["team_brief"],
+      "params": {
+        "channel": {"kind": "enum", "enum": ["general"]},
+        "text": {"kind": "text", "max": 3000}
+      },
+      "risk": "medium",
+      "reversible": "yes",
+      "pre": [],
+      "check": {"verify": "plumbing_confirmed", "within": "10m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "2m"
+    },
+    {
+      "name": "plumbing.retract",
+      "executor": "routine",
+      "for_kinds": ["correction"],
+      "params": {
+        "message_ref": {"kind": "text", "max": 200},
+        "reason": {"kind": "text", "max": 500}
+      },
+      "risk": "medium",
+      "reversible": "regenerable",
+      "pre": [],
+      "check": {"verify": "plumbing_confirmed", "within": "10m"},
+      "limits": {"per_target_per_day": 5},
+      "timeout": "2m"
     }
   ]
 }

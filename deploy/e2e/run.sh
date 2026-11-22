@@ -417,7 +417,7 @@ echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 
 fi
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
-  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 12 actions$" \
+  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 17 actions$" \
   && echo "$OUT" | grep >/dev/null "^action crm.merge$" && echo "$OUT" | grep >/dev/null "^action email.send$" \
   && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
