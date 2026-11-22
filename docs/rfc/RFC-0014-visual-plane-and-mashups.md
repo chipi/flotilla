@@ -36,7 +36,10 @@ and how they are governed.
 | M1 triggers | One signed inbound webhook that opens a case (§4.2). It never starts a routine on its own. |
 | M2 a business process | A fleet; its steps are case stages (what bugfix and ops already do). No flow engine. |
 | M3 knowledge | As the knowledge plan says: the platform's knowledge volume and its lookup tools, each step only after the one before it shows a measured effect (§4.4). |
-| Open | Where flotilla stops and a plumbing tool starts (§4.1); chat events (§4.3). |
+| M4 the strategy | Three layers (records, plumbing, flotilla) meeting at three points: in, out, read (§4.0). |
+| M5 the check | Four end-to-end cases carry the design (§4.5). |
+| Docs | Updated last, in full, architecture and diagrams included (§8). |
+| Open | Where flotilla stops and a plumbing tool starts (§4.1); chat events (§4.3); the rest of §6. |
 
 ## 3. The visual plane
 
@@ -104,6 +107,36 @@ A big screen in a shared room is the same page with two differences:
 It is designed when a real wall is wanted, not now.
 
 ## 4. Mashups
+
+### 4.0 The strategy: three layers
+
+A small company runs on its tools: a productivity suite (Google Workspace or Microsoft 365), chat
+(Slack or Teams), a wiki (Confluence or the like), code (GitHub), tasks (Jira or the like). It wants
+agents to take on its recurring work and to be its "second brain", without leaving those tools.
+
+| Layer | Who | Does | Does not |
+| --- | --- | --- | --- |
+| Systems of record | the company's tools | hold the data and the people; people keep working there | decide anything |
+| Plumbing | n8n or a tool like it | move events and data: watch, copy, reformat, call an API | judge, draft, own consequences |
+| flotilla | the company's fleets (agent = routine) | decide, draft and act, each step governed | connectors to every system; flows of plumbing |
+
+**The line:** a step that is deterministic (route, copy, format, notify) is the plumbing's. A step
+that needs judgment or has consequences (decide, answer, draft, file, change something) is a
+flotilla routine, where it is in the ledger, approved until it has earned autonomy, versioned with
+shadows, evaluated and budgeted.
+
+**They meet at three points, and only there:**
+
+1. **In:** the plumbing calls a signed hook, which opens a case (§4.2).
+2. **Out:** a routine's outward effect is an action: done by flotilla itself where it has the
+   effect (opening a pull request today), or asked of the plumbing through a signed callback, so
+   flotilla never needs a Jira or a wiki connector of its own (§4.6).
+3. **Read:** the plumbing exports what the company knows (wiki spaces, folders, task projects, chat
+   digests) to files on a schedule; flotilla's knowledge volume serves them to routines, read-only,
+   with their sources (§4.4).
+
+People rarely open flotilla: they ask, approve and read results in their own tools. The operator and
+staff use flotilla's pages for the ledger, the approvals and the live view (§3).
 
 ### 4.1 Where flotilla stops (open)
 
@@ -180,15 +213,89 @@ paths of each project's repo at the deployed release, read-only, with maps from 
 maps miss). Its order holds: bug fixing reads docs first and must show an effect, then the volume,
 then triage. A knowledge desk (§4.5) is a consumer of that volume, not a second store.
 
-### 4.5 Example fleets that would show it
+**Beyond code repos.** The plan's sources are each project's repo. A second brain needs the
+company's other knowledge too: the plumbing exports wiki spaces, folders, task projects and chat
+digests to files (a folder or a git repo of its own) on a schedule, and the volume takes that export
+as one more declared source, with its own VERSION (the export's time). The same rules hold:
+declared, never discovered; read-only; data, never rules; and each new source only after a replay
+shows it helps.
 
-Disabled examples, like the others, until each is walked through:
+### 4.5 End-to-end cases
 
-- **Team brief:** who did what yesterday, from the repo, the tracker and chat; delivered where the
-  team works. (The operator's brief is the seed.)
-- **Knowledge desk:** a question in, an answer with its sources out, from the knowledge volume.
-- **Meeting notes:** notes in (through a hook), decisions and follow-ups out, each follow-up a case
-  at `propose` that needs a person's go.
+Four cases, each step marked with its layer (R records, P plumbing, F flotilla) and whether flotilla
+has it today. They are the check that the three layers and three meeting points (§4.0) carry real
+work. Each becomes a disabled example fleet once its missing parts exist.
+
+**Case 1. Ask the second brain** (a knowledge desk).
+
+| Step | Layer | Today |
+| --- | --- | --- |
+| Someone asks a question in the chat's `#ask` channel. | R | |
+| The plumbing sees the message and calls the hook `ask` (the text, the asker's chat id, the thread). | P | hook: missing (§4.2) |
+| The hook opens a case of kind `question`; its text is data. | F | cases: yes |
+| `knowledge-desk/answer` reads the knowledge volume (wiki and folder exports, code docs) and drafts an answer with its sources. | F | the volume: planned (§4.4); exports: missing |
+| Its action `reply` starts at `propose`: a person approves the first answers in chat. | F | approvals in chat: yes (ADR-0005); the action: missing (§4.6) |
+| flotilla calls the plumbing back; the reply lands in the thread. | F to P to R | callback: missing (§4.6) |
+| The question, the sources read, the answer and who approved it are in the ledger; the answers are scored (sources cited, approved as sent). | F | ledger, evaluation: yes |
+| After enough approved answers, `reply` earns `auto` for this kind. | F | earned autonomy: yes |
+
+**Case 2. Who did what yesterday** (a team brief).
+
+| Step | Layer | Today |
+| --- | --- | --- |
+| A schedule in flotilla starts `team/brief` each morning. | F | yes |
+| It reads the code host directly (merged changes, reviews) and last night's task and chat exports from the volume. | F (reads R through P's export) | code reads: yes; exports: missing |
+| It writes the brief: what moved, what is stuck, who is waiting on whom. | F | a brief: yes (the operator's) |
+| Its action `post` to the team's channel starts at `propose`, then earns `auto`. | F to P to R | the action: missing (§4.6) |
+
+**Case 3. A meeting into decisions and follow-ups.**
+
+| Step | Layer | Today |
+| --- | --- | --- |
+| A meeting's transcript lands in a shared folder. | R | |
+| The plumbing sees the new file and calls the hook `meeting` (the file's text). | P | hook: missing |
+| `meetings/notes` extracts the decisions and the follow-ups. | F | |
+| Each follow-up becomes a case of its own at `propose` (who, what, by when). | F | case stages: yes |
+| A person approves a follow-up in chat; its action asks the plumbing to create the task. | F to P to R | approvals: yes; the action: missing |
+| The decisions go to the next export, so the second brain remembers them. | F to P | missing |
+
+**Case 4. Code, as today** (triage and bugfix).
+
+| Step | Layer | Today |
+| --- | --- | --- |
+| An alert or an error arrives (the error tracker, the monitoring). | R | |
+| triage polls them on its schedule and decides: file, attach, dismiss, escalate. | F | yes |
+| A filed issue becomes a case; bugfix's stages draft a fix, reproduce, review. | F | yes |
+| The pull request is opened only on a person's approval. | F to R | yes (the platform's own effect) |
+
+Case 4 is the proof that the core already works: cases, stages, approvals, earned autonomy, shadows,
+the ledger. Cases 1-3 add the three meeting points around it.
+
+**What the cases leave open:** whether nightly exports are fresh enough for a second brain, or some
+reads must be live (§4.1 C, read-only tools); how a chat user maps to a person flotilla knows (for
+approvals and for "who asked"); how large a company's documents get against the knowledge plan's
+"cheapest lookup first".
+
+### 4.6 What flotilla must add for them
+
+- **The hook** (§4.2).
+- **One generic outward action, `plumbing.call`:** a signed request to a callback the installation
+  declares (an n8n webhook, say), with a fixed name and payload shape per declared callback, its risk
+  and reversibility in the action registry, at `propose` until earned. It is how a routine creates a
+  task, posts a reply or files a page without flotilla owning a connector.
+- **Exports as a knowledge source** (§4.4).
+- **People across tools:** a declared map from a chat user to a person flotilla knows, so approvals
+  and "who asked" mean the same person everywhere.
+
+### 4.7 The plumbing for the installation's own test
+
+To run the cases on the installation itself: n8n, self-hosted beside flotilla (one container and a
+store), as the plumbing. Its webhooks, connectors (chat, the productivity suite, the wiki, the task
+tracker, the code host) and a code step for the HMAC signature cover every P step above. Its licence
+is fair-code (the Sustainable Use License): fine for an organization's own use, restricted for
+offering it to others as a service. Activepieces (MIT core) is the alternative if flotilla's public
+story ever pairs with a plumbing tool. Running it is the installation's operations work, and adding
+it is a dependency decision (§6).
 
 ## 5. Not in scope
 
@@ -210,8 +317,13 @@ Disabled examples, like the others, until each is walked through:
 5. **The first hook:** which outside service would call it, and what case kind it opens. A real first
    caller in the installation, so the hook has recorded calls to replay its decisions against before
    it ships (project rule 3).
-6. **Which example fleet first** (§4.5)?
-7. **The order** (§8): the visual plane first, then the hook? Or the hook first?
+6. **Which case first** (§4.5)? Case 1 (the second brain) exercises all three meeting points; case 3
+   needs no knowledge volume.
+7. **The plumbing** (§4.7): n8n for the installation's own test, or Activepieces?
+8. **Fresh enough?** Nightly exports for the second brain, or some reads live from the start (§4.1 C,
+   read-only)?
+9. **People across tools** (§4.6): where the map from a chat user to a person lives, and who keeps it.
+10. **The order** (§8): the visual plane first, then the hook? Or the hook first?
 
 ## 7. How we would know it works
 
@@ -231,6 +343,12 @@ Disabled examples, like the others, until each is walked through:
    controls; the mockup pass first, as the contract.
 2. The hook: `hooks:` config, the signature, window, nonce, caps and rate, the §7 e2e, with a first
    real caller.
-3. One example fleet through it (meeting notes: follow-ups as cases at `propose`).
-4. §4.1's option C as its own RFC, if a fleet needs it.
-5. The wall screen (§3.6), when one is wanted.
+3. `plumbing.call` (§4.6) and the map of people across tools.
+4. The plumbing on the installation (§4.7), run by its operations, and the first case end to end
+   (§6 Q6), then the others; exports as a knowledge source when a case needs them, after the
+   knowledge plan's step before it has shown an effect.
+5. §4.1's option C as its own RFC, if a case needs live reads.
+6. The wall screen (§3.6), when one is wanted.
+7. **The docs, last and in full:** the architecture pages and their diagrams (the three layers, the
+   three meeting points, the live page's hub), the concepts page, the README and the examples' guide,
+   so what is described is what was built.
