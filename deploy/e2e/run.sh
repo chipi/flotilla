@@ -89,7 +89,7 @@ compose() { env "${E2E_ENV[@]}" $D compose -p $P -f "$ROOT/deploy/compose/docker
 down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
-  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept e2e-oldworker e2e-newworker e2e-upgrade-flotillad; do $D rm -f "$c" >/dev/null 2>&1; done
+  for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept e2e-oldworker e2e-newworker e2e-upgrade-flotillad e2e-upgrade-start; do $D rm -f "$c" >/dev/null 2>&1; done
   for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
     $D volume rm "$v" >/dev/null 2>&1
   done
@@ -831,7 +831,12 @@ UPG=(--network "${P}_flotilla" --read-only --tmpfs /tmp --user 65532:65532 -v "$
   -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" -v "$WORK/config/worker-old.token:/run/flotilla-old/old.token:ro"
   -v "$WORK/config/specs-upgrade:/etc/flotilla/specs:ro")
 upgrade_check() { $D run --rm "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?"; }
-upgrade_start() { timeout 25 $D run --rm "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml 2>&1; echo "rc=$?"; }
+# timeout stops the docker client, not the container: a start that does not refuse kept running (a stray container after the run, 2026-11-22)
+upgrade_start() {
+  $D rm -f e2e-upgrade-start >/dev/null 2>&1
+  timeout 25 $D run --rm --name e2e-upgrade-start "${UPG[@]}" "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml 2>&1; echo "rc=$?"
+  $D rm -f e2e-upgrade-start >/dev/null 2>&1
+}
 upgrade_cfg ""
 # the stand-in must answer before -check, or -check finds it unreachable (not judged) instead of old (seen on a slower CI runner)
 for _ in $(seq 1 30); do $D exec e2e-oldworker python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/livez", timeout=3)' >/dev/null 2>&1 && break; sleep 1; done
@@ -842,7 +847,9 @@ echo "$OLDCHK" | grep >/dev/null "worker old: NOT run-token capable" && echo "$O
 echo "$OLDSTART" | grep >/dev/null "worker old does not carry run tokens" && echo "$OLDSTART" | grep >/dev/null "^rc=2" \
   && ok "run_tokens: required: the start refuses a worker whose /healthz lacks run_token, by name (exit 2)" || bad "the start with an old worker: $(echo "$OLDSTART" | tail -3)"
 upgrade_cfg "run_tokens: accept"
-OLDACC="$(upgrade_start | head -c 600; echo)"; OLDACCCHK="$(upgrade_check)"
+OLDACC="$(upgrade_start | head -c 600; echo)"; $D rm -f e2e-upgrade-start >/dev/null 2>&1; OLDACCCHK="$(upgrade_check)"
+[ -z "$($D ps -aq --filter name='^e2e-upgrade-start$')" ] && ok "the start that ran on to its timeout left no container behind" \
+  || bad "the timed-out start's container is still there: $($D ps -a --filter name='^e2e-upgrade-start$' --format '{{.Status}}')"
 echo "$OLDACCCHK" | grep >/dev/null "worker old: NOT run-token capable" && echo "$OLDACCCHK" | grep >/dev/null "^rc=0" && ! echo "$OLDACC" | grep >/dev/null "does not carry run tokens" \
   && ok "under accept the same old worker is only reported, and the start does not refuse it" || bad "an old worker under accept: $(echo "$OLDACCCHK" | tail -2) / $(echo "$OLDACC" | tail -2)"
 upgrade_cfg ""
