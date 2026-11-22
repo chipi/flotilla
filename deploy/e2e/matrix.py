@@ -134,6 +134,20 @@ def case_hash(kind=None):
     return "\n".join(" ".join(x) for x in sorted(rows) if kind is None or x[1] == kind)
 
 
+def settle(limit=240, quiet=20):
+    """Waits until the cases and the Slack asks are the same twice, quiet seconds apart (flotillad plans a handed-over case and offers a
+    waiting plan to Slack every 15 s); False if they still move after limit seconds."""
+    prev, end = None, time.time() + limit
+    while time.time() < end:
+        snapshot()
+        cur = (slack_state(), sorted(l for l in cli("case", "list", "--all")[1].split("\n")[1:] if l.strip()))
+        if cur == prev:
+            return True
+        prev = cur
+        time.sleep(quiet)
+    return False
+
+
 def live_input(r, taken=()):
     """The newest live run that ended ok and has no shadow run on it yet (a shadow run on an input is one per version; flotillad refuses a second)."""
     runs = cli_json("runs", r, "-json", "-n", "30")
@@ -275,7 +289,11 @@ def main(argv):
         ok = bool(v) and v.get(1, {}).get("state") == "live" and v.get(2, {}).get("state") == "shadow" and v[1].get("hash") != v[2].get("hash") and v[2].get("hash")
         cell(r, "versions", PASS if ok else FAIL, "" if ok else "v1/v2 states: %s" % {k: x.get("state") for k, x in v.items()})
 
-    # the shadow runs, all of them, beside one before and one after of everything the live side holds
+    # the shadow runs, all of them, beside one before and one after of everything the live side holds. The live runs of the cells above
+    # still have work in flight (a case they opened is planned by its acting routine, then offered to Slack): the "before" waits until the
+    # cases and the asks stop moving, or a live plan lands between the two and reads as a shadow's (2026-11-22: crm/fix planned 30 s after
+    # crm/scan's case, inside the window)
+    print("live side settled: %s" % settle())
     with open(os.path.join(ROOT, "deploy/e2e/plant_contact.py")) as f:   # the hostile shadow's detection has a contact to be about, no scan has seen
         rc, out = docker("exec", "-i", "flotilla-worker-ops-read", "python3", "-", "/tmp/flotilla-example", stdin=f.read())
     print("hostile: " + out.strip())
