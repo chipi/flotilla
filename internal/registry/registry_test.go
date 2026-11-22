@@ -71,6 +71,10 @@ func TestRoutineActions(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
+	// RFC-0014 §4.6: a message to a customer or the public is declared high, and high only ever proposes, however reversible
+	if a := (Action{Risk: "high", Reversible: "yes", Executor: ExecRoutine}); a.MaxAutonomy() != "propose" {
+		t.Errorf("a high-risk reversible action may reach %s, want propose", a.MaxAutonomy())
+	}
 	host := strings.Replace(strings.Replace(routine, `"executor": "routine", `, "", 1), `{"kind": "text", "max": 100}`, `{"kind": "target_host"}`, 1)
 	if _, err := Load(write(t, `{"component": "c", "actions": [`+host+`]}`)); err == nil {
 		t.Error("a host action with no precondition: accepted")

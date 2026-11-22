@@ -52,6 +52,7 @@ func TestDecide(t *testing.T) {
 		{"the host's ceiling", nil, func(s *State) { s.HostExecutorCeiling = "propose" }, Propose, "propose", "", ""},
 		{"a tainted run", nil, func(s *State) { s.Tainted = true }, Propose, "propose", "", "tainted"},
 		{"cannot be undone", nil, func(s *State) { s.Action.Reversible = "no" }, Propose, "propose", "", "cannot be undone"},
+		{"high risk, though reversible", nil, func(s *State) { s.Action.Risk = "high" }, Propose, "propose", "", "high risk"},
 		{"the circuit breaker", nil, func(s *State) { s.FailedHour = 3 }, Propose, "propose", "", "circuit breaker"},
 		{"below the breaker", nil, func(s *State) { s.FailedHour = 2 }, Auto, "auto", "", ""},
 		{"a host incident", nil, func(s *State) { s.HostNewCases = 6 }, Propose, "propose", "", "host incident"},

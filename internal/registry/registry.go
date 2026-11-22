@@ -88,10 +88,11 @@ func (a Action) Repo() bool { return a.Executor == ExecRepo }
 // rather than a host agent.
 func (a Action) ByRoutine() bool { return a.Repo() || a.Executor == ExecRoutine }
 
-// MaxAutonomy is the highest level the action may run at: an irreversible action or a repo change
-// only ever proposes (a person approves each).
+// MaxAutonomy is the highest level the action may run at: an irreversible action, a high-risk one (a
+// message to a customer or the public, RFC-0014 §4.6) or a repo change only ever proposes (a person
+// approves each).
 func (a Action) MaxAutonomy() string {
-	if a.Reversible == "no" || a.Repo() {
+	if a.Reversible == "no" || a.Risk == "high" || a.Repo() {
 		return "propose"
 	}
 	return "auto"

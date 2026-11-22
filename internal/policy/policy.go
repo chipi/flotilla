@@ -215,6 +215,10 @@ func Decide(p Plan, s State, lim Limits) Decision {
 		caps = append(caps, spec.AutonomyPropose)
 		say("cannot be undone: at most propose")
 	}
+	if s.Action.Risk == "high" {
+		caps = append(caps, spec.AutonomyPropose)
+		say("high risk: at most propose")
+	}
 	if s.Action.Repo() {
 		caps = append(caps, spec.AutonomyPropose)
 		say("a change to the repo: at most propose, a person approves it")
