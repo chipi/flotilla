@@ -46,7 +46,8 @@ and how they are governed.
 | M8 people | From the company's directory, read-only; an installation without one keeps a people file in its host config (§4.6). |
 | M9 order | The hook first, then the cases 3, 1, 2 in turn, then the visual plane (§8). |
 | Docs | Updated last, in full, architecture and diagrams included (§8). |
-| Open | Chat events (§4.3); the visual plane's look, spend and history (§6). |
+| V7 look, spend, history | A board with flotilla's world in the details; a budget fill for all, amounts for roles that see cost; "now" plus today's counts (§3.5). |
+| Open | Chat events (§4.3). |
 
 ## 3. The visual plane
 
@@ -92,10 +93,20 @@ Slack).
 
 ### 3.5 The look
 
-flotilla's own world, not a dashboard: the sea, fleets as convoys, routines as vessels, a run as a
-wake, a case as cargo moving between stations, a waiting approval as a ship at anchor. A mockup
-first, as the contract, at laptop and phone widths. It must be readable without colour alone (shape
-and label too), honour reduced motion, and keep a legend on screen.
+**Decided (2026-11-22):** an operations board's layout with flotilla's own world in the details. A
+lane per fleet; cases as cards moving across their kind's stage columns; a "waiting for a person"
+column for approvals; routines and their runs in the lane's header. flotilla's world (the sea,
+convoys, vessels, wakes, cargo, a ship at anchor) is in the names, the icons and the motion, never at
+the cost of reading the board in seconds. Two mockups first (the board, and the full sea world) as
+the contract, at laptop and phone widths; the operator picks from the pictures. It must be readable
+without colour alone (shape and label too), honour reduced motion, and keep a legend on screen.
+
+**Spend:** a fill against the day's budget for everyone; the amounts besides, only for a role that
+already sees flotilla's cost page (V2).
+
+**History:** only "now" (the hub's snapshot, then notices), plus a strip of today's counts (cases
+opened, approved, runs failed) that the hub keeps as it goes. A replay of the day would read the
+store, which the stream never does (§3.3); it is a page of its own later, if wanted.
 
 ### 3.6 Later: a wall screen
 
@@ -426,14 +437,13 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
 
 ## 6. Ideas to bounce, and open questions
 
-**Open:**
-
-1. **The look (§3.5):** the sea and fleets, or another world? Which moments should catch the eye: an
-   approval waiting, a shadow disagreeing, a routine late?
-2. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
-3. **History:** only "now", or also a slow replay of the day?
+**Open:** chat events (§4.3), assessed later. Which moments catch the eye on the board (an approval
+waiting, a shadow disagreeing, a routine late) is settled in the mockups (§3.5).
 
 **Decided (2026-11-22):**
+
+- **The look, spend, history:** a board with flotilla's world in the details; a fill for everyone
+  and the amounts for roles that see cost; "now" plus today's counts (§3.5).
 
 - **§4.1:** A for in and out, C read-only for reads, B never (M6).
 - **The first hook caller:** n8n, for case 3: a meeting transcript landing in a folder opens a case
