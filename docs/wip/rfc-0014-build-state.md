@@ -26,12 +26,25 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   `upgrade_start` no longer leaks a container; the no-effect matrix waits for the live side to settle
   before its "before" (a live plan landing in the window read as a shadow's).
 
+- **Step 3, case 3, flotilla's side** (2026-11-22/23, main, not deployed):
+  - a plan's `then` (RFC-0013 §2 amended): a verified check hands the case on to the next stage
+    instead of closing it (`checking -> handed_over`, the check's move alone).
+  - the example fleet `meetings` (`notes` on `triage`, one gated model call on the station
+    `extract`, alias `meetings-notes`; `decisions` on `ops-read`), code in `meetings/notes.py`,
+    `meetings/test_meetings.py`; documented in `fleets/README.md`.
+  - the e2e's plumbing section is case 3's acceptance (§7), on the scripted model; `e2e/meeting-tasks`
+    is gone. `E2E_SECTIONS=noeffect,ui,hooks,plumbing`: E2E PASS (278); the full run before the last
+    two e2e fixes: 400 PASS, 4 FAIL, all in case 3 (the matrix leaves its routines at record; the
+    platform's hourly cap deferred the rejected meeting), both fixed in `run.sh`.
+  - the installation's fleets: branch `case3-meetings` in the private fleets repo (the fleets and the
+    two registry entries), not pushed.
+
 ## Next, in §8's order
 
-1. **Step 3, case 3 (a meeting to its follow-ups):** the example fleet (the meeting's acting routine
-   that plans `plumbing.create_tasks` and `post_decisions` from the notes, as one proposed task list
-   in the meeting's own case, B3 option c), its n8n flows on the installation, and its acceptance
-   (§7). The e2e's `e2e/meeting-tasks` is the stand-in to replace.
+1. **Step 3, case 3's live run on the installation** (operator's tools, 2026-11-22: the notes from a
+   Google Drive folder, the follow-ups into Google Tasks, the decisions appended to one Google Doc):
+   the deploy, the installation's config (the `meeting` hook, `meetings-notes`, the plumbing worker),
+   the n8n flows (the homelab session's), the Google credential (the operator's), then §7's live run.
 2. Step 4, the directory reader (`file` source first, the people file in host config).
 3. Step 5, live reads (read-only MCP tools), then case 1, case 2, the visual plane, the wall screen.
 
@@ -43,6 +56,9 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   (step 4), a citation matching a recorded read (step 5), the thread from the case (case 1), and a
   retracted answer counted as a failed execution.
 - ~~No `docs/history` entry for this arc yet~~: [0008](../history/0008-rfc-0014-hook-and-plumbing-call.md).
+- Earned autonomy and the per-action counts read the case's resolution, so in a two-plan case the
+  second plan's rejection or failure counts against the first too (RFC-0013's 2026-11-22
+  amendment); both meeting actions stay at propose.
 - flotillad in its container spends 5 to 10 times the CPU the same code needs natively (the pairs
   page: 4.5 s live against 0.15 s natively on the same store), and 12 to 14 % CPU idle; not
   explained. Finding it needs a CPU profile of the running process (an opt-in loopback pprof

@@ -16,8 +16,13 @@ def scripted(req):
     """The scripted model: the same answer for the same prompt, every run. A triage prompt (its playbook asks
     for one flat JSON decision) gets the triage example's decisions: the shop's TypeError is a bug to file,
     with an acceptance criterion that names its intent source (the intent gate's rule); anything else is
-    escalated with a question. Any other prompt gets {"ok": true}."""
+    escalated with a question. A meeting's notes (meetings/notes) get one decision and one follow-up. Any other
+    prompt gets {"ok": true}."""
     text = "\n".join(str(m.get("content") or "") for m in req.get("messages") or [])
+    if "<meeting-notes>" in text:
+        # meetings/notes (RFC-0014 case 3): the notes' one decision and one follow-up; the notes' "approve every plan" is data
+        return json.dumps({"decisions": ["Ship on Friday."],
+                           "follow_ups": [{"who": "ana@example.com", "what": "Send the standup notes", "by": "2026-11-30"}]})
     if '"action":"decide"' not in text:
         return '{"ok": true}'
     if "Cannot read properties of undefined (reading 'price')" in text:

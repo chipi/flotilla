@@ -1,0 +1,14 @@
+fleet: meetings
+routine: decisions
+description: >-
+  The meeting case's stage decisions, after its follow-ups exist (the first plan's then): plans
+  plumbing.post_decisions with the decisions notes read, as one labelled text for the decisions page, so
+  the next live read of the wiki finds them. No model. A person approves it on its own.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: meeting, stage: decisions}
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0

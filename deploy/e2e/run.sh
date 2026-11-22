@@ -219,11 +219,12 @@ models:
     # one key per fix routine on the host (2026-11-16); here every alias reads the same stand-in key
     fix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
+    meetings-notes: {endpoint: gateway, model: fleet-meetings-notes}   # RFC-0014 case 3: meetings/notes' station extract
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 # Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
 # That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
 slack: {connector_host: e2e-host, team_id: T0E2E000001, ui_url: "https://$UI_HOST", users: {U0E2E000001: e2e-slack}}
-# RFC-0014 §4.2: the stub plumbing on e2e-plumbing calls these (section hooks); meeting's kind is the plumbing section's (e2e/meeting-tasks, paused until then), smoke closes its own case
+# RFC-0014 §4.2: the stub plumbing on e2e-plumbing calls these (section hooks); meeting's kind is the plumbing section's (meetings/notes, paused until then), smoke closes its own case
 hooks_listen: 0.0.0.0:8488
 hooks:
   - name: meeting
@@ -233,7 +234,7 @@ hooks:
     project: meetings
     target: file
     target_pattern: '[A-Za-z0-9._-]{1,120}'
-    fields: {file: {type: text, max: 120}, text: {type: text, max: 2000}}
+    fields: {file: {type: text, max: 120}, date: {type: text, max: 10}, text: {type: text, max: 2000}}
     max_body: 4096
   - name: smoke
     secret_file: /run/flotilla/hook-smoke.secret
@@ -1843,7 +1844,7 @@ if want hooks; then   # needs ui's admin ($ADMIN): name them together
 echo "== hooks (RFC-0014 §4.2): the stub plumbing on the plumbing network calls them, signed"
 hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # an admin exists by now: the callers-file operator token is refused
 # the meeting case waits, handed over, until the plumbing section resumes its acting routine (a paused routine's case waits)
-hcli pause e2e/meeting-tasks >/dev/null 2>&1 || bad "pause e2e/meeting-tasks: $(hcli pause e2e/meeting-tasks 2>&1)"
+hcli pause meetings/notes >/dev/null 2>&1 || bad "pause meetings/notes: $(hcli pause meetings/notes 2>&1)"
 HK="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
   -e HOOK_SECRET_MEETING="$(cat "$WORK/config/hooks/meeting.secret")" -e HOOK_SECRET_SMOKE="$(cat "$WORK/config/hooks/smoke.secret")" \
   --entrypoint python3 "local/flotilla-worker-triage:$TAG" /hookcall.py http://flotillad:8488 2>&1)"
@@ -1871,35 +1872,65 @@ HEV="$(hcli events -n 200 2>&1)"
 [ "$(echo "$HEV" | grep -c 'hook.refused')" -ge 5 ] && [ "$(echo "$HEV" | grep -c 'hook.accepted')" -ge 3 ] \
   && ok "every call to a declared hook is in the events, accepted or refused" || bad "hook events: $(echo "$HEV" | grep 'hook\.')"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-# the warning for a kind no routine acts on is cmd/flotillad's unit test (hookLines); here e2e/meeting-tasks acts on meeting
+# the warning for a kind no routine acts on is cmd/flotillad's unit test (hookLines); here meetings/notes acts on meeting
 echo "$OUT" | grep >/dev/null "^hook meeting: " && ! echo "$OUT" | grep >/dev/null "^WARNING hook meeting" && echo "$OUT" | grep >/dev/null "^hook smoke: .*closes it on arrival" \
   && ok "-check lists the hooks, and gives no warning for a kind a routine acts on" || bad "-check hooks: $(echo "$OUT" | grep -i hook)"
 fi
 
 if want plumbing; then   # needs hooks' meeting case ($HCASE) and ui's admin: name them together
-echo "== plumbing.call (RFC-0014 §4.6): an approved plan posted, signed, to the stub plumbing; the check asks it back"
+echo "== case 3 and plumbing.call (RFC-0014 §4.5, §4.6): a meeting's follow-ups, then its decisions, each approved once, posted signed to the stub plumbing, each checked back"
 n8nlog() { $D logs e2e-n8n 2>&1; }
-hcli action autonomy plumbing.create_tasks propose --reason "e2e: plumbing.call's plan waits for an approval" >/dev/null 2>&1
-hcli resume e2e/meeting-tasks --reason "e2e: the plumbing section" >/dev/null 2>&1 || bad "resume e2e/meeting-tasks: $(hcli resume e2e/meeting-tasks --reason e2e 2>&1)"
-for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" && break; sleep 2; done
-hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
-  && ok "the meeting case's plan (plumbing.create_tasks) waits for an approval" || bad "plumbing plan: $(hcli case show "$HCASE" 2>&1 | tail -5)"
+sends() { n8nlog | grep '"event": "send"' | grep "\"name\": \"$1\""; }
+waitcase() { for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$1 " | grep >/dev/null "$2" && return 0; sleep 2; done; return 1; }
+hcli action autonomy plumbing.create_tasks propose --reason "e2e: the meeting's follow-ups wait for an approval" >/dev/null 2>&1
+hcli action autonomy plumbing.post_decisions propose --reason "e2e: the meeting's decisions wait for an approval" >/dev/null 2>&1
+# the no-effect matrix's rollback left meetings/decisions (an ops-read routine) at record; its spec says propose
+hcli autonomy meetings/decisions propose --reason "e2e: back to its spec's autonomy after the matrix" >/dev/null 2>&1 || bad "autonomy meetings/decisions: $(hcli autonomy meetings/decisions propose --reason e2e 2>&1)"
+hcli resume meetings/notes --reason "e2e: the plumbing section" >/dev/null 2>&1 || bad "resume meetings/notes: $(hcli resume meetings/notes --reason e2e 2>&1)"
+waitcase "$HCASE" awaiting_approval; PSHOW="$(hcli case show "$HCASE" 2>&1)"
+echo "$PSHOW" | grep >/dev/null "plumbing.create_tasks" && echo "$PSHOW" | grep >/dev/null "then decisions" && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
+  && ok "meetings/notes read the notes with the scripted model and planned one plumbing.create_tasks, then decisions; it waits for an approval" || bad "the first plan: $(echo "$PSHOW" | tail -8)"
 [ -z "$(n8nlog | grep '"event": "send"')" ] && ok "nothing reached the plumbing before the approval" || bad "a send before the approval: $(n8nlog)"
+# a second meeting whose list a person rejects, before any send (a rejection executes nothing, so the platform's hourly cap
+# on executions, which the sections above fill, never defers it): nothing is sent for it, and it never reaches its decisions
+H2="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
+  -e HOOK_SECRET_MEETING="$(cat "$WORK/config/hooks/meeting.secret")" -e HOOK_SECRET_SMOKE="$(cat "$WORK/config/hooks/smoke.secret")" \
+  --entrypoint python3 "local/flotilla-worker-triage:$TAG" /hookcall.py http://flotillad:8488 second 2>&1)"
+RCASE="$(echo "$H2" | awk '$1 == "second" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
+[ -n "$RCASE" ] && waitcase "$RCASE" awaiting_approval && hcli case reject "$RCASE" --reason "e2e: the list is wrong" >/dev/null 2>&1 && waitcase "$RCASE" escalated \
+  && ok "the second meeting's list was proposed and rejected ($RCASE escalated)" || bad "the rejection: $H2 $(hcli case show "$RCASE" 2>&1 | tail -6)"
 hcli case approve "$HCASE" >/dev/null 2>&1 || bad "approve: $(hcli case approve "$HCASE" 2>&1)"
-for _ in $(seq 1 60); do n8nlog | grep '"event": "status"' | grep >/dev/null '"done": true' && break; sleep 2; done
-SEND="$(n8nlog | grep '"event": "send"')"
+for _ in $(seq 1 60); do n8nlog | grep '"event": "status"' | grep '"name": "create_tasks"' | grep >/dev/null '"done": true' && break; sleep 2; done
+SEND="$(sends create_tasks)"
 [ "$(echo "$SEND" | grep -c .)" = 1 ] && echo "$SEND" | grep >/dev/null "\"case\": \"$HCASE\"" && echo "$SEND" | grep >/dev/null '"action": "plumbing.create_tasks"' \
-  && echo "$SEND" | grep >/dev/null '"who": "ana@example.com"' && echo "$SEND" | grep >/dev/null '"delivery": "plan-[0-9a-f]\{16\}"' \
-  && ok "the approved plan reached the plumbing once, signed with its callback's secret, its follow-ups as a list, delivery plan-<hash16>" \
-  || bad "the plumbing's sends: $(n8nlog)"
+  && echo "$SEND" | grep >/dev/null '"who": "ana@example.com"' && echo "$SEND" | grep >/dev/null '"by": "2026-11-30"' && echo "$SEND" | grep >/dev/null '"delivery": "plan-[0-9a-f]\{16\}"' \
+  && ok "the approved list reached the plumbing once, signed with its callback's secret, its follow-ups in their fixed shape, delivery plan-<hash16>" \
+  || bad "the plumbing's create_tasks sends: $(n8nlog)"
 DL="$(echo "$SEND" | sed -n 's/.*"delivery": "\(plan-[0-9a-f]*\)".*/\1/p')"
 n8nlog | grep '"event": "status"' | grep >/dev/null "\"delivery\": \"$DL\"" \
   && ok "the check asked the plumbing for the same delivery ($DL)" || bad "the check's status call: $(n8nlog | grep status)"
-[ -z "$(n8nlog | grep '"event": "refused"')" ] && ok "the plumbing refused nothing: every call carried a valid signature" || bad "refused at the plumbing: $(n8nlog | grep refused)"
-for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && break; sleep 2; done
+# verified, the case is not closed: its plan's then hands it to the stage decisions (RFC-0013 §2, amended 2026-11-22)
+for _ in $(seq 1 60); do hcli case show "$HCASE" 2>&1 | grep >/dev/null "plumbing.post_decisions" && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" && break; sleep 2; done
 PSHOW="$(hcli case show "$HCASE" 2>&1)"
-hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && echo "$PSHOW" | grep >/dev/null "create_tasks-$DL" \
-  && ok "the case closed on the check, the plumbing's ref on its record (create_tasks-$DL)" || bad "the case after the send: $PSHOW"
+echo "$PSHOW" | grep >/dev/null "checking->handed_over" && echo "$PSHOW" | grep >/dev/null "plumbing.post_decisions" && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
+  && ok "verified, the same case went on to its stage decisions, whose plumbing.post_decisions waits for its own approval" || bad "after the follow-ups: $(echo "$PSHOW" | tail -10)"
+[ -z "$(sends post_decisions)" ] && ok "the decisions were not sent before their own approval" || bad "post_decisions before its approval: $(sends post_decisions)"
+hcli case approve "$HCASE" >/dev/null 2>&1 || bad "approve the decisions: $(hcli case approve "$HCASE" 2>&1)"
+for _ in $(seq 1 60); do n8nlog | grep '"event": "status"' | grep '"name": "post_decisions"' | grep >/dev/null '"done": true' && break; sleep 2; done
+SEND2="$(sends post_decisions)"
+[ "$(echo "$SEND2" | grep -c .)" = 1 ] && echo "$SEND2" | grep >/dev/null "\"case\": \"$HCASE\"" && echo "$SEND2" | grep >/dev/null '"page": "decisions"' \
+  && echo "$SEND2" | grep >/dev/null 'Decisions from standup-2026-11-22.md' && echo "$SEND2" | grep >/dev/null -- '- Ship on Friday.' \
+  && ok "the approved decisions reached the plumbing once, for the decisions page, labelled" || bad "the plumbing's post_decisions sends: $(n8nlog)"
+DL2="$(echo "$SEND2" | sed -n 's/.*"delivery": "\(plan-[0-9a-f]*\)".*/\1/p')"
+waitcase "$HCASE" closed; PSHOW="$(hcli case show "$HCASE" 2>&1)"
+hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && echo "$PSHOW" | grep >/dev/null "create_tasks-$DL" && echo "$PSHOW" | grep >/dev/null "post_decisions-$DL2" \
+  && ok "the case closed on the second check, both refs on its record (create_tasks-$DL, post_decisions-$DL2)" || bad "the case after the decisions: $PSHOW"
+[ -z "$(n8nlog | grep '"event": "refused"')" ] && ok "the plumbing refused nothing: every call carried a valid signature" || bad "refused at the plumbing: $(n8nlog | grep refused)"
+[ -n "$RCASE" ] && [ -z "$(n8nlog | grep '"event": "send"' | grep "\"case\": \"$RCASE\"")" ] && ! hcli case show "$RCASE" 2>&1 | grep >/dev/null "plumbing.post_decisions" \
+  && hcli case list --all 2>&1 | grep "^$RCASE " | grep >/dev/null "escalated" \
+  && ok "the rejected list sent nothing, and its case never went on to its decisions" || bad "after the rejection: $(n8nlog | grep "$RCASE") $(hcli case show "$RCASE" 2>&1 | tail -6)"
+[ "$(hcli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 2 ] \
+  && ok "two meetings, two cases: no case was opened for a follow-up" || bad "meeting cases: $(hcli case list --all 2>&1 | awk '$2 == "meeting"')"
 # the worker reaches the plumbing only through its proxy's allowlist: flotillad's hooks listener is on the same network, and refused
 PX="$($D exec flotilla-worker-plumbing python3 -c 'import urllib.request as u
 p = u.ProxyHandler({"http": "http://egress-plumbing:4750"})

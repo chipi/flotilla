@@ -5,7 +5,9 @@ decided on 2026-11-22; a first review (an advisor's, the same day) found where t
 not match the code, and this version follows it; a second review (2026-11-22) found six blockers,
 four fixed by it and two decided by the operator (a chat post's reversibility, a meeting's
 follow-ups). The visual plane's look, spend and history were decided the same day (§6). Building
-follows §8's order: the hook (step 1) is in sha-52bfbb9, live on the installation since 2026-11-22.
+follows §8's order: the hook (step 1) is in sha-52bfbb9, live on the installation since 2026-11-22;
+`plumbing.call` (step 2) and case 3's example fleet `meetings` with its e2e (step 3) are on `main`,
+not yet on the installation.
 **Builds on:** [the two ideas](../wip/ideas-2026-11-19.md) (2026-11-19), [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one binary, server-rendered UI), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (approvals outside the
 UI), [RFC-0002](RFC-0002-job-runtime.md) §5 and §7 (data between delimiters; external knowledge), the
@@ -289,6 +291,12 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | The meeting stays one case. Its first stage plans `plumbing.create_tasks`: the list of follow-ups (who, what, by when), at `propose`. A follow-up is a task a person does in the tracker, not a flotilla case: flotilla has no work on it once it exists. | F | case stages: yes; the action: missing |
 | A person approves the list once in chat; the plumbing creates the tasks. A wrong item is closed in the tracker. | F to P to R | approvals: yes |
 | Its second stage plans `plumbing.post_decisions`, at `propose`: the decisions go to the wiki's decisions page once approved, so the second brain finds them on its next live read. | F to P to R | the action: missing |
+
+Built (2026-11-22, step 3) as the example fleet `meetings` (`notes`, `decisions`; `fleets/README.md`).
+The first stage's plan names the second as its `then`: a verified check hands the case on instead of
+closing it (RFC-0013 §2, amended 2026-11-22), since nothing let a verified case plan again before.
+The installation's tools for its live run (operator, 2026-11-22): the notes from a Google Drive
+folder, the follow-ups into Google Tasks, the decisions appended to one Google Doc.
 
 **Case 4. Code, as today** (triage and bugfix).
 

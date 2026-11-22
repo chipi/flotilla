@@ -1,0 +1,9 @@
+fleet: meetings
+description: >-
+  A meeting into its follow-ups and decisions (RFC-0014 §4.5, case 3). The installation's plumbing sees a
+  meeting's notes land (a shared folder) and calls the signed hook `meeting`, which opens one case. notes
+  reads the follow-ups and the decisions with one model call, gated in code, and plans
+  plumbing.create_tasks: one list, approved once, which the plumbing turns into tasks in the tracker. Once
+  they exist, the same case goes on to decisions, which plans plumbing.post_decisions for the decisions page,
+  approved on its own. A follow-up is a person's task, not a flotilla case. The notes are data: nothing in
+  them chooses an action, a stage or a target.

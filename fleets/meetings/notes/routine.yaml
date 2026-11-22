@@ -1,0 +1,17 @@
+fleet: meetings
+routine: notes
+description: >-
+  The acting routine for meeting cases (the hook `meeting`): one model call on its station extract reads the
+  meeting's decisions and follow-ups (who, what, by when) from the notes, which it reads as data between
+  markers. Code gates the answer's shape, then it plans plumbing.create_tasks with the follow-ups and, as the
+  plan's then, the decisions for the stage decisions. No follow-ups: it hands the case to that stage. Neither:
+  the case resolves itself. A person approves the list.
+enabled: true
+worker: triage
+shadow_worker: triage-shadow
+trigger:
+  case: {kind: meeting, limit: {usd: 0.5, minutes: 20}}
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 2

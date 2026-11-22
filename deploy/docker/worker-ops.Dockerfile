@@ -8,6 +8,7 @@ COPY worker /opt/flotilla/worker
 COPY ops /opt/flotilla/ops
 COPY business /opt/flotilla/business
 COPY plumbing /opt/flotilla/plumbing
+COPY meetings /opt/flotilla/meetings
 COPY seo /opt/flotilla/seo
 COPY fleets /opt/flotilla/fleets
 COPY host/registry.json /opt/flotilla/host/registry.json

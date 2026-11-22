@@ -261,14 +261,6 @@
       "spec.yaml": "e0e25cf52618e198c617f1002422d8e60b8ad1903dc08d75126a0e3f74cb1853"
     }
   },
-  "e2e/meeting-tasks@v1": {
-    "routine_hash": "7000f0d8eb3e",
-    "version_hash": "abfe07ef4c386751ac8fede7178ecc5195f6591d1b2414b6bd5dc26749580ee5",
-    "legacy": true,
-    "manifest": {
-      "run": "fc7045169a728452416c3add88f717b077eb1eee0a32b1bafeb7cfbf0ead3d5c"
-    }
-  },
   "e2e/remote-echo@v1": {
     "routine_hash": "eb2856f2a6af",
     "version_hash": "5234ba4f46daaed398aea494504c74c8c3f856026151d268a6cd3cf04518aed5",
@@ -409,6 +401,24 @@
     "legacy": false,
     "manifest": {
       "spec.yaml": "4614d24e57237be0d291e14796f784da8e472e1933844ff0bb481b473608515b"
+    }
+  },
+  "meetings/decisions@v1": {
+    "routine_hash": "e6487739c421",
+    "version_hash": "249c85cdcc89807755a35ef733c492609077fae063603dfb60e9efc010ec6244",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "63fe85529815f902bbacdcbac0cb69f3be34355c2773f145cca9052d656bae3d"
+    }
+  },
+  "meetings/notes@v1": {
+    "routine_hash": "81e8af878a3a",
+    "version_hash": "3c3f24d5e7b7a2251896f57c6cc6d1335aef89f8dfa31c2a888e44aea56307fe",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "f57dde71762fe729d7404b4311a1e2680734c7d6e4b2a7b3b05d52494ad5d826",
+      "system.md": "67ad21cc69981c38a93f7946a77cf3b958918c8c85a62f39b3e325f9bc0377a1",
+      "task.md": "3eb1eca1a1f76a9639f30ca4d0c6fe1d1aa9085a3e2d7d06ed56cb83addad9b6"
     }
   },
   "outbound/check@v1": {

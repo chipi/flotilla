@@ -358,17 +358,6 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
-  "e2e/meeting-tasks@v1": {
-    "FLEETD_BUDGET_LEFT": "1.5000",
-    "FLEETD_CYCLE_ID": "run-1",
-    "FLEETD_STAGE": "shadow",
-    "FLOTILLA_ENVIRONMENT": "test",
-    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
-    "FLOTILLA_ROUTINE": "e2e/meeting-tasks",
-    "FLOTILLA_ROUTINE_VERSION": "1",
-    "FLOTILLA_RUN_ID": "run-1",
-    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-  },
   "e2e/remote-echo@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",
@@ -558,6 +547,30 @@
     "FLOTILLA_ROUTINE": "jobs/verify-backup",
     "FLOTILLA_ROUTINE_VERSION": "1",
     "FLOTILLA_RUN_ID": "run-1",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
+  "meetings/decisions@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "meetings/decisions",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
+  "meetings/notes@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"meetings-notes\":{\"endpoint\":\"gw\",\"model\":\"m-meetings-notes\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "meetings/notes",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{},\"stations\":{\"extract\":{\"harness\":\"flotilla\",\"model\":\"meetings-notes\",\"tools\":\"none\",\"limits\":{\"max_turns\":1,\"timeout\":\"2m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"notes/v1/system.md\",\"sha256\":\"67ad21cc69981c38a93f7946a77cf3b958918c8c85a62f39b3e325f9bc0377a1\"},\"task\":{\"path\":\"notes/v1/task.md\",\"sha256\":\"3eb1eca1a1f76a9639f30ca4d0c6fe1d1aa9085a3e2d7d06ed56cb83addad9b6\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[]}}}",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
   "outbound/check@v1": {

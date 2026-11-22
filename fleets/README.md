@@ -19,12 +19,53 @@ addresses are documentation addresses.
 | `outbound` | `scan`, `draft`, `send`, `check` | a first email per prospect, every personal sentence citing a fact; do-not-contact, consent and a daily cap in code; every send approved |
 | `renewals` | `scan`, `flag`, `apply-flag`, `check` | customer success: a risk score in code, replayed over past renewals, flags the account for its owner; it never writes to the customer |
 | `plumbing` | `send-create-tasks`, `send-post-decisions`, `send-reply`, `send-post`, `send-retract`, `check` | plumbing.call (RFC-0014): an approved plan posted, signed, to the installation's plumbing tool, which writes it where it belongs; the check asks it whether the delivery is done there. No connector of its own, no URL or secret in the specs |
+| `meetings` | `notes`, `decisions` | a meeting into its follow-ups and decisions (RFC-0014 case 3): the plumbing's signed hook opens one case per meeting; one gated model call reads the notes as data; the follow-ups go to the tracker as one approved list, then the same case plans the decisions for the wiki, approved on its own (a plan's `then`) |
 
 The business examples (`crm`, `campaigns`, `outbound`, `renewals`) act on stand-in systems: JSON
 files seeded from each fleet's `seed/` (`business/store.py`), carried out by `business/apply.py` as
 routine actions (ADR-0017). They run on the `ops-read` worker so the e2e runs them end to end; an
 installation gives them their own worker with its CRM's, campaign tool's or mail service's
 credentials, and replaces `business/store.py` with an adapter to that system.
+
+## The meetings example: a meeting into its follow-ups and decisions
+
+`meetings` is RFC-0014's case 3, flotilla as the governed step between an organisation's own tools.
+Flotilla holds no connector to any of them: the installation's plumbing tool (n8n on the reference
+installation) brings the meeting in and writes the results out.
+
+```text
+notes land in a folder --plumbing--> POST /hooks/meeting (signed) --> a meeting case
+  meetings/notes: one model call (station extract) reads decisions and follow-ups; code gates the shape
+    plans plumbing.create_tasks (the follow-ups, one list)       then: {stage: decisions, ...}
+    a person approves once --> plumbing/send-create-tasks --signed--> plumbing --> tasks in the tracker
+    plumbing/check asks the plumbing: done --> verified, and the case goes on to its stage decisions
+  meetings/decisions: plans plumbing.post_decisions (one labelled text)
+    a person approves once --> plumbing/send-post-decisions --> plumbing --> the decisions page
+    plumbing/check: done --> the case closes, verified
+```
+
+- **The notes are data.** The task text puts them between `<meeting-notes>` markers they cannot
+  close; the answer must be exactly `{"decisions": [...], "follow_ups": [{who, what, by}]}`, each
+  field a bounded text and `by` a real date, or the case escalates. Nothing the model says picks an
+  action, a stage or a target.
+- **A follow-up is a task, not a case.** flotilla proposes the list once; a wrong item is closed in
+  the tracker. A rejected list sends nothing, and the case never reaches its decisions.
+- **One case, two plans,** through a plan's `then` ([RFC-0013](../docs/rfc/RFC-0013-bugfix-clarifier.md)
+  §2, amended 2026-11-22). No follow-ups: `notes` hands the case straight to `decisions`. Neither:
+  the case resolves itself.
+- **Workers:** `notes` on `triage` (it needs the model key and the gateway), `decisions` on
+  `ops-read` (no model), the sends and the check on `plumbing` (the callbacks' secrets, a proxy that
+  reaches only the plumbing).
+
+To run it on an installation, copy `fleets/meetings/` into its own fleets repo and add:
+
+| Where | What |
+| --- | --- |
+| `flotillad.yaml` `hooks:` | the hook `meeting`: kind `meeting`, target `file` (a pattern for the file names), fields `file`, `date` and `text` (its maximum the longest notes), its secret file |
+| `flotillad.yaml` `models:` | the alias `meetings-notes`, a model that answers in JSON |
+| the plumbing worker | `ROUTINE_PLUMBING_CREATE_TASKS_URL` and `_SECRET_FILE`, the same for `POST_DECISIONS` (`deploy/compose/README.md`, "The plumbing worker") |
+| the plumbing tool | a flow per callback (`send`: make it, write the delivery id into it, answer `{"ref"}`; `status`: find it by the delivery id, answer `{"done", "ref"}`), and the flow that watches the notes' folder and calls the hook |
+| autonomy | both actions stay at `propose`, a person approving each list |
 
 ## A routine: a file, or a folder with versions
 

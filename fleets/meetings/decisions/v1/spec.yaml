@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/meetings/notes.py decisions
+  workdir: .
+  timeout: 1m

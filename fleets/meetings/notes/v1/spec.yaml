@@ -1,0 +1,13 @@
+run:
+  command: python3 /opt/flotilla/meetings/notes.py notes
+  workdir: .
+  timeout: 3m
+stations:
+  extract:
+    harness: flotilla
+    model: meetings-notes
+    prompts: {system: system.md, task: task.md}
+    tools: none
+    tool_names: []
+    gates: []
+    limits: {max_turns: 1, timeout: 2m}
