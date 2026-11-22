@@ -296,7 +296,7 @@ default:
 EOF
 find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
 chmod -R a+rX "$WORK/config/specs"
-for n in $NETS; do $D network create --label $LABEL "$n" >/dev/null; done
+for n in $NETS; do $D network create --label $LABEL $([ "$n" = e2e-plumbing ] && echo --internal) "$n" >/dev/null; done   # the plumbing tool's network is internal, as the installation's is
 stub() { $D run -d --label $LABEL --name "e2e-$1" --network "$2" --network-alias "$1" --memory 64m \
   -v "$ROOT/deploy/e2e/stub.py:/stub.py:ro" python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b \
   python3 -u /stub.py "$1" >/dev/null; }
@@ -1858,13 +1858,15 @@ done
 NW="$($D inspect flotilla-worker-triage --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
 [ "$NW" = "${P}_flotilla " ] && ok "flotilla-worker-triage is on the internal network only" || bad "flotilla-worker-triage networks: '$NW'"
 NW="$($D inspect flotillad --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
-[ "$NW" = "e2e-ui ${P}_flotilla ${P}_shadow " ] && ok "flotillad is on the internal flotilla and shadow networks and the UI network only" || bad "flotillad networks: '$NW'"
+[ "$NW" = "e2e-plumbing e2e-ui ${P}_flotilla ${P}_shadow " ] && ok "flotillad is on the internal flotilla, shadow and plumbing networks and the UI network only" || bad "flotillad networks: '$NW'"
 NW="$($D network inspect e2e-ui --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the UI network is internal (no route out)" || bad "ui network internal=$NW"
 NW="$($D network inspect ${P}_flotilla --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the flotilla network is internal (no route out)" || bad "flotilla network internal=$NW"
 NW="$($D network inspect ${P}_shadow --format '{{.Internal}}' 2>&1)"
 [ "$NW" = true ] && ok "the shadow network is internal (no route out)" || bad "shadow network internal=$NW"
+NW="$($D network inspect e2e-plumbing --format '{{.Internal}}' 2>&1)"
+[ "$NW" = true ] && ok "the plumbing network is internal (no route out)" || bad "plumbing network internal=$NW"
 
 fi
 if [ "${KEEP:-}" != 1 ]; then down; fi
