@@ -1805,30 +1805,31 @@ done <<< "$UIB"
 
 fi
 echo "== hooks (RFC-0014 §4.2): the stub plumbing on the plumbing network calls them, signed"
+hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # an admin exists by now: the callers-file operator token is refused
 HK="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
   -e HOOK_SECRET_MEETING="$(cat "$WORK/config/hooks/meeting.secret")" -e HOOK_SECRET_SMOKE="$(cat "$WORK/config/hooks/smoke.secret")" \
   --entrypoint python3 "local/flotilla-worker-triage:$TAG" /hookcall.py http://flotillad:8488 2>&1)"
 echo "$HK"
 hk() { echo "$HK" | awk -v l="$1" '$1 == l {print $2; exit}'; }
 HCASE="$(echo "$HK" | awk '$1 == "opened" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
-[ "$(hk opened)" = 202 ] && [ -n "$HCASE" ] && cli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "handed_over" \
-  && ok "a signed call opened one meeting case, handed over ($HCASE)" || bad "hook opened: $(hk opened) case '$HCASE': $(cli case list --all 2>&1 | grep "^$HCASE " )"
+[ "$(hk opened)" = 202 ] && [ -n "$HCASE" ] && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "handed_over" \
+  && ok "a signed call opened one meeting case, handed over ($HCASE)" || bad "hook opened: $(hk opened) case '$HCASE': $(hcli case list --all 2>&1 | grep "^$HCASE " )"
 [ "$(hk replay)" = 200 ] && echo "$HK" | grep '^replay ' | grep >/dev/null "\"case\":\"$HCASE\"" \
   && ok "the same delivery again opened nothing (200, the same case)" || bad "hook replay: $(echo "$HK" | grep '^replay ')"
 [ "$(hk unsigned)" = 401 ] && [ "$(hk wrong-key)" = 401 ] && [ "$(hk stale)" = 401 ] \
   && ok "an unsigned call, one signed with another key and a stale one are refused (401)" || bad "hook signatures: $(echo "$HK" | grep -E '^(unsigned|wrong-key|stale) ')"
 [ "$(hk oversized)" = 413 ] && [ "$(hk bad-target)" = 400 ] && [ "$(hk undeclared)" = 404 ] \
   && ok "an oversized body (413), a target outside its pattern (400) and an undeclared hook (404) are refused" || bad "hook refusals: $(echo "$HK" | grep -E '^(oversized|bad-target|undeclared) ')"
-[ "$(cli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 1 ] \
-  && ok "the refused calls opened no case: one meeting case in all" || bad "meeting cases: $(cli case list --all 2>&1 | awk '$2 == "meeting"')"
-HSHOW="$(cli case show "$HCASE" 2>&1)"
+[ "$(hcli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 1 ] \
+  && ok "the refused calls opened no case: one meeting case in all" || bad "meeting cases: $(hcli case list --all 2>&1 | awk '$2 == "meeting"')"
+HSHOW="$(hcli case show "$HCASE" 2>&1)"
 echo "$HSHOW" | grep >/dev/null "A meeting's notes arrived" && ! echo "$HSHOW" | grep >/dev/null '"kind":"bugfix"' \
   && ok "the case's title is the hook's wording, and a payload field the hook does not declare (kind) was not kept" || bad "hook case: $HSHOW"
 SCASE="$(echo "$HK" | awk '$1 == "smoke" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
-[ "$(hk smoke)" = 202 ] && cli case list --all 2>&1 | grep "^$SCASE " | grep >/dev/null "closed" \
-  && ok "the smoke hook's case closed on arrival ($SCASE)" || bad "smoke: $(hk smoke) $(cli case list --all 2>&1 | grep "^$SCASE ")"
+[ "$(hk smoke)" = 202 ] && hcli case list --all 2>&1 | grep "^$SCASE " | grep >/dev/null "closed" \
+  && ok "the smoke hook's case closed on arrival ($SCASE)" || bad "smoke: $(hk smoke) $(hcli case list --all 2>&1 | grep "^$SCASE ")"
 [ "$(hk api-route)" = 404 ] && ok "the hooks' listener serves no API route (/v1/status: 404)" || bad "hooks listener /v1/status: $(hk api-route)"
-HEV="$(cli events -n 200 2>&1)"
+HEV="$(hcli events -n 200 2>&1)"
 [ "$(echo "$HEV" | grep -c 'hook.refused')" -ge 5 ] && [ "$(echo "$HEV" | grep -c 'hook.accepted')" -ge 3 ] \
   && ok "every call to a declared hook is in the events, accepted or refused" || bad "hook events: $(echo "$HEV" | grep 'hook\.')"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
