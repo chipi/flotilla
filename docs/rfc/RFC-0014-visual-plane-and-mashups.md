@@ -366,7 +366,13 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
    approval waiting, a shadow disagreeing, a routine late?
 2. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
 3. **History:** only "now", or also a slow replay of the day?
-4. **The directory service** for the installation (§4.6): lldap, or another, as its operations judge.
+4. **The directory service** for the installation (§4.6). Its operations' assessment (2026-11-22):
+   lldap, pinned, one container with a SQLite store in the mini's backup, no published port, a
+   `lldap_strict_readonly` account for flotilla, the three tool-id attributes. Rejected: OpenLDAP
+   (heavy to run), Authentik (an identity provider with Postgres and Redis), Kanidm (harder to
+   script). Not verified: that a read-only account sees custom attributes over GraphQL (attributes
+   carry a visibility flag); that is the setup's first test, before flotilla's reader is built. Waits
+   for the operator's go.
 
 **Decided (2026-11-22):**
 
