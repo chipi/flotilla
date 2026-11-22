@@ -2,8 +2,9 @@
 
 **Status:** Draft, for the operator's review. The boundaries in §2 and the mashups' design were
 decided on 2026-11-22; a first review (an advisor's, the same day) found where the first draft did
-not match the code, and this version follows it. Open: the visual plane's look, spend and history
-(§6). Nothing is built until the operator says so.
+not match the code, and this version follows it; a second review (2026-11-22) found six blockers,
+four fixed here and two left as questions. Open: the visual plane's look, spend and history, a chat
+post's reversibility, a meeting's follow-ups (§6). Nothing is built until the operator says so.
 **Builds on:** [the two ideas](../wip/ideas-2026-11-19.md) (2026-11-19), [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one binary, server-rendered UI), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (approvals outside the
 UI), [RFC-0002](RFC-0002-job-runtime.md) §5 and §7 (data between delimiters; external knowledge), the
@@ -101,7 +102,7 @@ A big screen in a shared room is the same page with two differences:
 
 - **A signed-in session on the screen's browser,** with a role that sees only what anyone passing may
   see. The roles today are not that (`viewer` reads case contents, runs, events and the ledger:
-  `internal/api/authorize.go:40-48`, `api.go:175-179`), so the wall needs one.
+  `internal/api/authorize.go:46-48`, `api.go:175-179`), so the wall needs one.
 - **A projection, not the full data.** Today's records name people (an event's actor is
   `user:<name>`), hosts, repos and the problem (a case's target, project and title), and case ids
   carry the date (`internal/store/cases.go:45-56`, `83-88`). A wall therefore gets its own record type
@@ -192,10 +193,16 @@ outside service, so it signs.
 - **`POST /hooks/<name>`**, signed with HMAC-SHA256 over the timestamp and the body. A timestamp
   outside a five-minute window is refused, and so is a delivery id already seen (a nonce table that
   expires). The body is capped in size and the hook in rate.
+- **Where it listens.** On the API listener (`listen`), the one route there that takes a signature
+  instead of a bearer token; not on the UI listener (sessions) or the workers' listener (run
+  tokens). The plumbing joins the docker network that reaches the API listener, and nothing outside
+  the installation's network does (§5). The e2e stack's stub plumbing calls it the same way.
 - **It opens one case and nothing else.** The case's kind starts its acting routine under the kind's
   case limits and canonical-key dedupe (`internal/spec/spec.go:210-226`, `internal/store/cases.go:108-126`),
   as every case does. There is no "start a routine": a bare run would skip both and leave no case.
-- **The payload is data.** Only the declared fields are kept, scrubbed before the store, between
+- **The payload is data.** Only the declared fields are kept, capped in size, with credentials
+  redacted before the store (the runtime's patterns in `runtime/toolrec.py`, ported to Go, since
+  flotillad has no redaction of its own today), between
   delimiters wherever a model reads them, never as rules or instructions. The case title is the hook's
   wording, not the payload's, since titles reach Slack notices.
 - **Its own key space.** The canonical key's kind is `hook:<name>`, so an outsider can never match a
@@ -243,7 +250,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | Its action `reply` starts at `propose`: a person approves the first answers in chat. | F | approvals in chat: yes (ADR-0005); the action: missing (§4.6) |
 | flotilla calls the plumbing back; the reply lands in the thread. | F to P to R | callback: missing (§4.6) |
 | The question, the sources read, the answer and who approved it are in the ledger; the answers are scored (sources cited, approved as sent). | F | ledger, evaluation: yes |
-| After enough approved answers, `reply` earns `auto` for this kind. | F | earned autonomy: yes |
+| After enough approved answers, `reply` earns `auto` (autonomy is per action, not per kind), if a chat post is declared reversible (§6, open). | F | earned autonomy: yes |
 
 **Case 2. Who did what yesterday** (a team brief).
 
@@ -253,7 +260,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | It reads the code host directly (merged changes, reviews), and the tasks and chat threads of the last day live through its read-only tools. | F (reads R) | code reads: yes; live reads: missing (§4.8) |
 | Each name in the brief is a person from the directory, the same person across the code host, the tracker and chat. | F | the directory: missing (§4.6) |
 | It writes the brief: what moved, what is stuck, who is waiting on whom. | F | a brief: yes (the operator's) |
-| Its action `post` to the team's channel starts at `propose`, then earns `auto`. | F to P to R | the action: missing (§4.6) |
+| Its action `post` to the team's channel starts at `propose`, and may earn `auto` on the same terms as `reply` (§6, open). | F to P to R | the action: missing (§4.6) |
 
 **Case 3. A meeting into decisions and follow-ups.**
 
@@ -262,7 +269,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | A meeting's transcript lands in a shared folder. | R | |
 | The plumbing sees the new file and calls the hook `meeting` (the file's text). | P | hook: missing |
 | `meetings/notes` extracts the decisions and the follow-ups. | F | |
-| Each follow-up becomes a case of its own at `propose` (who, what, by when). | F | case stages: yes |
+| Each follow-up becomes a case of its own at `propose` (who, what, by when), or a task proposed in the meeting's own case (§6, open). | F | missing: a routine on a case cannot open cases (`internal/spec/spec.go:783`) |
 | A person approves a follow-up in chat; its action asks the plumbing to create the task. | F to P to R | approvals: yes; the action: missing |
 | The decisions are written to the wiki's decisions page through `plumbing.call`, so the second brain finds them on its next live read. | F to P to R | the action: missing |
 
@@ -286,10 +293,21 @@ lookup first", which the first replays of case 1 measure.
 ### 4.6 What flotilla must add for them
 
 - **The hook** (§4.2).
-- **One generic outward action, `plumbing.call`:** a signed request to a callback the installation
-  declares (an n8n webhook, say), with a fixed name and payload shape per declared callback, its risk
-  and reversibility in the action registry, at `propose` until earned. It is how a routine creates a
-  task, posts a reply or files a page without flotilla owning a connector.
+- **`plumbing.call`: one declared action per callback, one shared way to send them.** It is how a
+  routine creates a task, posts a reply or files a page without flotilla owning a connector.
+  - **One action per callback,** never one generic action: risk, reversibility, the kinds it serves,
+    its limits and its earned autonomy all belong to one action name (`internal/registry/registry.go:70-82`;
+    autonomy per action name, `internal/api/plans.go:21`), so `plumbing.create_task`,
+    `plumbing.post_decisions`, `plumbing.reply` and `plumbing.post` are four actions with four
+    ladders. Each is an `executor: routine` action (ADR-0017) whose params are the callback's payload
+    shape (enums, text with a maximum), so policy refuses a payload outside it before anything is
+    sent (`internal/policy/policy.go:173-176`).
+  - **One shared sender.** Each action's execute routine is a small spec around one shared
+    `plumbing/call.py`: it signs the payload with HMAC-SHA256 and posts it to the callback. The
+    callback's URL and its secret file are an installation setting keyed by the action's name, never
+    in the spec. One execute routine per action, as ADR-0017 has it (`internal/spec/spec.go:231-233`).
+  - **A worker of its own.** The callback secrets live in that worker's environment, and its proxy
+    ACL admits only the plumbing's host.
 - **Live reads** through read-only MCP tools (§4.8).
 - **People from the directory.** A chat user, a code-host login and a tracker account mean the same
   person everywhere, for "who asked", for names in a brief, and for who approved:
@@ -301,13 +319,16 @@ lookup first", which the first replays of case 1 measure.
   - **No directory, then a file** (decided 2026-11-22). A company without one (this installation)
     keeps a people file in its host config: mode 600, each person's email, name and ids in each tool.
     It is one more source kind, `file`, read on the same schedule as a directory, through the same
-    sync, so the ledger, the voided approvals and the acceptance tests are the same. A directory
+    sync, so the ledger entries and the acceptance tests are the same. A directory
     service of its own (lldap was assessed) was rejected: a container, a backup and credentials to
     buy only a web page for editing and an LDAP that nothing here uses.
   - **Who someone is, never what they may do.** The directory names people; what a person may
     approve stays in flotilla's roles and ADR-0005's pinned users. A person the directory does not
-    know may ask a question but approves nothing. Each sync's changes are in the ledger; a person
-    removed from the directory has their open approvals voided.
+    know may ask a question but approves nothing; that refusal is today's Slack pin
+    (`internal/api/slack.go:130`), not the directory's. Each sync's changes are in the ledger; a
+    person removed from the directory resolves to "unknown" on the next lookup. A plan records no
+    approver until it is approved, so there is nothing to void. `flotillad -check` warns when a
+    pinned Slack user is not in the directory.
   - **One reader per source kind,** in Go on the standard library: `file` first, for the
     installation; Google and Entra (HTTP and JSON) when a company needs them; a plain LDAP reader
     would be a dependency decision of its own, made only when a company brings an LDAP-only
@@ -331,23 +352,37 @@ can send and receive.
 A routine reads the company's tools while it works, through MCP servers it declares as tools. Reads
 only: every write is `plumbing.call` (§4.6), so a read tool can never have an effect.
 
-- **Declared per routine** in its spec: the server, the tools it may call (each by name, each one a
-  read), and a read-only credential of its own, a mode-600 file the host config names. A tool that is
-  not declared is refused before the call; a server that offers a writing tool is rejected at load
-  unless the routine's list leaves it out.
+- **Declared per routine** in its spec: the server and the tools it may call, each by name. The list
+  is the allowlist: a tool not on it is refused before the call. flotilla cannot tell a reading tool
+  from a writing one (MCP's `readOnlyHint` is advisory, and its spec tells clients not to trust it),
+  so read-only rests on two things: the declaration, reviewed like any spec change, and a read-only
+  credential behind the server.
 - **Which servers.** For the installation: n8n's MCP server trigger first, so the tools' credentials
   stay in the plumbing and one server fronts the wiki, the documents and the tracker (to confirm when
-  n8n is set up); a tool maker's own MCP server where one is better, each declared in the same way.
+  n8n is set up). Its operations must give those read workflows read-only credentials to the wiki and
+  the tracker, separate from the ones the `plumbing.call` workflows use. A tool maker's own MCP
+  server where one is better, declared in the same way, with a read-only credential in a mode-600
+  file the host config names.
 - **Through the one runtime.** The runtime gains an MCP client (the streamable HTTP transport, which
-  the standard library can speak; a library is a dependency decision). Each call is recorded as a tool
-  call of the model call that made it, with the server, the tool, the arguments and the result.
-- **The result is data.** Between delimiters (RFC-0002 §5), never as rules; scrubbed before the
-  store; capped in size per call and in calls per run.
-- **Replays.** A live read gives another answer tomorrow, so the recording is the replay's source:
-  a replay serves each recorded result again instead of calling the server. A shadow calls the same
-  read tools live, with the same read-only credential, since a read has no effect; the shadow proxy
-  admits the declared servers' hosts.
-- **Egress.** Each declared server's host is in the routine's egress allowlist, and nothing else.
+  the standard library can speak; a library is a dependency decision).
+- **The record, the replay's source.** A live read gives another answer tomorrow, so each run keeps
+  its reads in full: per station, `{tool, args, result, ok}` in the envelope's
+  `recorded_tool_results` format (`runtime/input.schema.json:59`), the whole result up to the per-call
+  cap, stored with the run's frozen input (`internal/input`). A replay feeds them back through
+  `FLOTILLA_RECORDED_TOOLS` (`runtime/offline_run.py:160-182`), where a miss fails the run and is
+  never sent live. The episode's tool record is not this source: it keeps a result only up to 8192
+  characters, above that a hash (`runtime/adapter.py:315`), and a wiki page is routinely longer.
+- **A shadow reads the recording, not the tools.** A read through n8n starts a workflow execution
+  that n8n saves: a record in a third system, which the no-effect rule forbids (ADR-0020 §8) and the
+  e2e's store diff cannot see. So a shadow of a routine with read tools is served the live run's
+  recorded results, which also makes the pair compare like with like. The shadow proxy admits no
+  read-tool host.
+- **The result is data.** Between delimiters (RFC-0002 §5), never as rules; credentials redacted by
+  the runtime's patterns (`runtime/toolrec.py`) before the record; capped in size per call and in
+  calls per run.
+- **Egress.** The allowlist is a worker's proxy ACL, not a routine's (`deploy/compose/docker-compose.yml`),
+  so every routine on a worker reaches its hosts. The routines with read tools get a worker of their
+  own, whose ACL admits the declared servers' hosts and nothing else.
 - **Spend.** Calls and their time count against the routine's budget like model calls.
 
 ## 5. Not in scope
@@ -368,6 +403,13 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
    approval waiting, a shadow disagreeing, a routine late?
 2. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
 3. **History:** only "now", or also a slow replay of the day?
+4. **Can a chat post earn auto?** The registry keeps an action declared `reversible: no` at
+   `propose` forever (`internal/registry/registry.go:93-98`; ADR-0017 counts a sent email as
+   irreversible). A chat reply is read the moment it lands. Decide `reply` and `post`'s
+   reversibility, and with it whether cases 1 and 2 ever send without a person.
+5. **A meeting's follow-ups:** a flotilla case each (opened through the plumbing calling a hook once
+   per item, or by a routine allowed to open cases), or only tasks in the tracker, proposed from the
+   meeting's own case? It turns on whether flotilla does any work on a follow-up after it exists.
 
 **Decided (2026-11-22):**
 
@@ -390,19 +432,22 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
 - **The hook:** an e2e of a signed call opening one case; the same delivery id opening none; an
   unsigned, stale or oversized call refused; a payload naming another kind, title or target ignored;
   a payload carrying instructions kept as data.
-- **`plumbing.call`:** an e2e of an approved action reaching a declared callback signed, with its
-  fixed name and payload shape; an undeclared callback or a payload outside its shape refused; an
-  action at `propose` never sent before its approval.
-- **Live reads:** an e2e of a declared read tool called and recorded; an undeclared tool refused
-  before the call; a server offering an undeclared writing tool rejected at load; a replay served
-  from the recording with the server down.
+- **`plumbing.call`:** an e2e of an approved action reaching its callback, signed, with its payload
+  shape; a payload outside the action's params refused by policy before anything is sent; an action
+  at `propose` never sent before its approval; two callback actions keeping separate autonomy.
+- **Live reads:** an e2e of a declared read tool called and recorded in full (a result above 8192
+  characters included); an undeclared tool refused before the call; a replay served from the record
+  with the server down; a shadow of the routine served the live run's record, calling no server.
 - **The directory:** an e2e of a sync adding, changing and removing a person, each change in the
-  ledger; a removed person's open approval voided; an unknown chat user's approval refused.
+  ledger; a removed person resolving to "unknown" on the next lookup; `flotillad -check` warning on
+  a pinned Slack user who is not in the people file.
 
 **The cases' acceptance.** Each case is accepted twice: an e2e in the e2e stack, run in CI against a
-stub plumbing, stub read tools and a stub directory that speak the same HTTP as the real ones (no
-model server: the model's answers recorded); and a live run on the installation with n8n, the real
-tools and the people file, its ledger read back by a script. A case is done when both pass.
+stub plumbing, stub read tools and a people file, with the stack's scripted stub model
+(`deploy/e2e/stub.py`) extended for the new prompts (a transcript gives fixed decisions and
+follow-ups; a question gives an answer citing the stub tool's source); and a live run on the
+installation with n8n, the real tools and the people file, its ledger read back by a script. A case
+is done when both pass.
 
 | Case | The e2e passes when | The live run passes when |
 | --- | --- | --- |
@@ -414,9 +459,14 @@ tools and the people file, its ledger read back by a script. A case is done when
 ## 8. Order of work (decided 2026-11-22)
 
 0. The installation's side, alongside: n8n, by its operations (asked 2026-11-22); the people file in
-   host config, by the operator, before case 1.
-1. The hook: `hooks:` config, the signature, window, nonce, caps and rate, and its §7 e2e.
-2. `plumbing.call` (§4.6) and its §7 e2e.
+   host config, by the operator, before case 1; the Slack connector (ADR-0005: its connector host,
+   team, UI URL and pinned user) before case 3's live run, or that run approves in the UI; and
+   `routine_actions.max_autonomy: auto` (ADR-0017's amendment) for any callback action meant to
+   earn auto.
+1. The hook: `hooks:` config, the signature, window, nonce, caps and rate, the Go credential
+   redaction, and its §7 e2e.
+2. `plumbing.call` (§4.6): the shared sender, the first callback actions and their worker, and its
+   §7 e2e.
 3. **Case 3**, the meeting to follow-ups: the example fleet, its n8n flows on the installation, and
    its acceptance (§7).
 4. The directory reader (§4.6) and its §7 e2e.
