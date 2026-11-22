@@ -294,8 +294,11 @@ store), as the plumbing. Its webhooks, connectors (chat, the productivity suite,
 tracker, the code host) and a code step for the HMAC signature cover every P step above. Its licence
 is fair-code (the Sustainable Use License): fine for an organization's own use, restricted for
 offering it to others as a service. Activepieces (MIT core) is the alternative if flotilla's public
-story ever pairs with a plumbing tool. Running it is the installation's operations work, and adding
-it is a dependency decision (§6).
+story ever pairs with a plumbing tool. Running it is the installation's operations work.
+
+**Decided (operator, 2026-11-22): n8n.** The installation's operations set it up; flotilla adds no
+dependency on it, because the hook and `plumbing.call` speak plain signed HTTP that any plumbing tool
+can send and receive.
 
 ## 5. Not in scope
 
@@ -319,7 +322,7 @@ it is a dependency decision (§6).
    it ships (project rule 3).
 6. **Which case first** (§4.5)? Case 1 (the second brain) exercises all three meeting points; case 3
    needs no knowledge volume.
-7. **The plumbing** (§4.7): n8n for the installation's own test, or Activepieces?
+7. **The plumbing** (§4.7): decided, n8n.
 8. **Fresh enough?** Nightly exports for the second brain, or some reads live from the start (§4.1 C,
    read-only)?
 9. **People across tools** (§4.6): where the map from a chat user to a person lives, and who keeps it.
