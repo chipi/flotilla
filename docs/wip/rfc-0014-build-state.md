@@ -71,6 +71,7 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   then the worker's token, the callbacks' secrets, `worker-plumbing.env`, the proxy's ACL and its
   `smokescreen-plumbing.yaml` with the plumbing network's own range (smokescreen refuses every
   private address outside `allow_ranges`), and `plumbing` in `COMPOSE_PROFILES`.
-- Whether n8n may read the hooks' and callbacks' secrets from a read-only mounted folder (option b)
-  instead of a credential pasted by hand for each.
+- ~~Whether n8n may read the hooks' and callbacks' secrets from a read-only mounted folder (option b)~~:
+  option (a), a credential pasted by hand into n8n for each hook and callback (the operator, through
+  the homelab session, 2026-11-23).
 - The opt-in pprof listener above.
