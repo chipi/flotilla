@@ -261,6 +261,14 @@
       "spec.yaml": "e0e25cf52618e198c617f1002422d8e60b8ad1903dc08d75126a0e3f74cb1853"
     }
   },
+  "e2e/meeting-tasks@v1": {
+    "routine_hash": "7000f0d8eb3e",
+    "version_hash": "abfe07ef4c386751ac8fede7178ecc5195f6591d1b2414b6bd5dc26749580ee5",
+    "legacy": true,
+    "manifest": {
+      "run": "fc7045169a728452416c3add88f717b077eb1eee0a32b1bafeb7cfbf0ead3d5c"
+    }
+  },
   "e2e/remote-echo@v1": {
     "routine_hash": "eb2856f2a6af",
     "version_hash": "5234ba4f46daaed398aea494504c74c8c3f856026151d268a6cd3cf04518aed5",

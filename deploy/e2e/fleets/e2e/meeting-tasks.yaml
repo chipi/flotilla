@@ -1,0 +1,20 @@
+fleet: e2e
+routine: meeting-tasks
+description: >-
+  The plumbing e2e's acting routine (RFC-0014 §4.6), never shipped: plans plumbing.create_tasks with one
+  fixed follow-up for a meeting case the hooks section opened. Capped at propose, so the plan waits for an
+  approval, then plumbing/send-create-tasks posts it, signed, to the stand-in plumbing.
+enabled: true
+worker: ops-read
+trigger:
+  case: {kind: meeting}
+run:
+  command: >-
+    printf '%s' '{"outcome": "plan", "action": "plumbing.create_tasks", "params": {"items": "[{\"who\": \"ana@example.com\", \"what\": \"send the standup notes\", \"by\": \"2026-11-30\"}]"}, "detail": "e2e: one follow-up"}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0

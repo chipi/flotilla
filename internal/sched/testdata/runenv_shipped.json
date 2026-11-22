@@ -358,6 +358,17 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "e2e/meeting-tasks@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/meeting-tasks",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "e2e/remote-echo@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",

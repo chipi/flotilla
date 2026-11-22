@@ -10,3 +10,4 @@ e2e/remote-echo eb2856f2a6af
 e2e/stage-probe d76887fb1d37
 e2e/token-probe 68916df8610a
 e2e/versioned-monitor f40ede417c18
+e2e/meeting-tasks 7000f0d8eb3e

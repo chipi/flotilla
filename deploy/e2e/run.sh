@@ -64,8 +64,8 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # E2E_SECTIONS=a,b runs only those sections (the build, the config and `up` always run); unset runs all. `noeffect` is versions, hostagent,
 # versionscase, shadows, stations and matrix: the no-effect proof (docs/wip/v2-design.md section 4) and the sections whose state it reads (the
 # shadow monitor's pairs count the case that versionscase leaves open on the host agent's target, which needs versions' routine). The other sections
-# lean on each other as well (ui reads the shadows' and stations' pairs, hooks uses ui's admin, remote comes after ui); name those together.
-sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui hooks remote hardening"
+# lean on each other as well (ui reads the shadows' and stations' pairs, hooks uses ui's admin, plumbing hooks' meeting case, remote comes after ui); name those together.
+sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui hooks plumbing remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
   local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
@@ -78,7 +78,7 @@ fi
 
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
-  COMPOSE_PROFILES=candidate,ops,bugfix,shadow TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
+  COMPOSE_PROFILES=candidate,ops,bugfix,shadow,plumbing TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
   NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui NET_PLUMBING=e2e-plumbing
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 # E2E_MUTANT=matrix-live-write gives the ops-read worker and its shadow worker one folder in common, which a generated shadow version then writes to
@@ -90,7 +90,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept e2e-oldworker e2e-newworker e2e-upgrade-flotillad e2e-upgrade-start; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-worker-plumbing-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -161,7 +161,9 @@ printf %s "$WT" > "$WORK/config/worker-triage.token"
 printf %s "$(tok)" > "$WORK/config/worker-triage-shadow.token"      # the shadow worker's own, and flotillad never takes it for a caller
 printf %s "$(tok)" > "$WORK/config/worker-triage-candidate.token"   # its own: flotillad refuses two workers that share one
 tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"; tok > "$WORK/config/worker-ops-read-shadow.token"
-tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"
+tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"; tok > "$WORK/config/worker-plumbing.token"
+# RFC-0014 §4.6: each plumbing.call callback's signing secret, shared with the stub plumbing (deploy/e2e/plumbing_stub.py)
+mkdir -p "$WORK/config/plumbing" && (umask 077; for n in create_tasks post_decisions reply post retract; do tok > "$WORK/config/plumbing/$n.secret"; done)
 tok > "$WORK/config/bugfix-model.key"   # a stand-in: the e2e's bugfix routines that would use it are disabled
 printf %s "$OP" > "$WORK/config/cli.token"          # the CLI inside flotillad acts as the operator here
 printf %s "$AGENT" > "$WORK/agent.token"
@@ -196,6 +198,7 @@ workers:
   ops-act-host: {url: "http://worker-ops-act-host:8081", token_file: /run/flotilla/worker-ops-act-host.token}
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
+  plumbing: {url: "http://worker-plumbing:8081", token_file: /run/flotilla/worker-plumbing.token}   # RFC-0014 §4.6: plumbing.call's own worker
   # the fix routines' own workers on the host are remote (a second machine); the e2e runs neither routine, so they
   # name the local bugfix worker
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
@@ -220,7 +223,7 @@ hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad]
 # Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
 # That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
 slack: {connector_host: e2e-host, team_id: T0E2E000001, ui_url: "https://$UI_HOST", users: {U0E2E000001: e2e-slack}}
-# RFC-0014 §4.2: the stub plumbing on e2e-plumbing calls these (section hooks); meeting's kind has no routine here, smoke closes its own case
+# RFC-0014 §4.2: the stub plumbing on e2e-plumbing calls these (section hooks); meeting's kind is the plumbing section's (e2e/meeting-tasks, paused until then), smoke closes its own case
 hooks_listen: 0.0.0.0:8488
 hooks:
   - name: meeting
@@ -266,6 +269,11 @@ ROUTINE_VM_URL=http://victoriametrics:8080
 ROUTINE_BACKUP_INSTANCE=backup-01
 ROUTINE_BACKUP_TARGET=host:backup-01
 EOF
+# plumbing.call's callbacks: the stub plumbing on e2e-plumbing answers as the installation's n8n (deploy/e2e/plumbing_stub.py)
+for n in create_tasks post_decisions reply post retract; do
+  N="$(echo "$n" | tr a-z A-Z)"
+  printf 'ROUTINE_PLUMBING_%s_URL=http://n8n:8090/webhook/%s\nROUTINE_PLUMBING_%s_SECRET_FILE=/run/flotilla/plumbing-%s.secret\n' "$N" "$n" "$N" "$n"
+done > "$WORK/config/worker-plumbing.env"
 # The outside world the example fleets read (sites, deps): deploy/e2e/world.py answers as these hosts, with a
 # certificate from the stack's own CA (the workers that reach it trust that CA, docker-compose.e2e.yml). The
 # certificate is valid for 9 days, below the example sites' 21: the certificate check has something to find.
@@ -315,15 +323,35 @@ default:
   action: enforce
   allowed_domains: [litellm, api.github.com, pypi.org, api.osv.dev]
 EOF
+# plumbing.call's proxy: the stub plumbing (n8n, on e2e-plumbing) and nothing else; its settings, with that network's own range,
+# are written once the network exists (below)
+cat > "$WORK/config/egress-plumbing-acl.yaml" <<EOF
+version: v1
+services: []
+default:
+  project: flotilla-plumbing
+  action: enforce
+  allowed_domains: [n8n]
+EOF
 find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
 chmod -R a+rX "$WORK/config/specs"
 for n in $NETS; do $D network create --label $LABEL $([ "$n" = e2e-plumbing ] && echo --internal) "$n" >/dev/null; done   # the plumbing tool's network is internal, as the installation's is
+# the plumbing proxy allows the plumbing network's range alone, as an installation's does (deploy/compose/README.md): smokescreen
+# refuses every private address outside allow_ranges (2026-11-22: 172.16.0.0/12 missed e2e-plumbing's 192.168.16.0/20, a 407)
+PLUMBING_RANGE="$($D network inspect e2e-plumbing --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+sed "s|^allow_ranges: .*|allow_ranges: [$PLUMBING_RANGE]|" "$WORK/config/smokescreen.yaml" > "$WORK/config/smokescreen-plumbing.yaml" && chmod 644 "$WORK/config/smokescreen-plumbing.yaml"
+grep >/dev/null "^allow_ranges: \[[0-9./]*\]$" "$WORK/config/smokescreen-plumbing.yaml" || { echo "the plumbing proxy's range: '$PLUMBING_RANGE'"; exit 1; }
 stub() { $D run -d --label $LABEL --name "e2e-$1" --network "$2" --network-alias "$1" --memory 64m \
   -v "$ROOT/deploy/e2e/stub.py:/stub.py:ro" python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b \
   python3 -u /stub.py "$1" >/dev/null; }
 stub victoriametrics e2e-backend; stub victoriatraces e2e-backend; stub litellm e2e-litellm
 # off the allowlist but reachable and answering: refusing it is the proxy's doing, nothing else
 stub forbidden e2e-backend
+# RFC-0014 §4.6: the stub plumbing, as the installation's n8n on its internal network, verifying each callback's signature
+$D run -d --label $LABEL --name e2e-n8n --network e2e-plumbing --network-alias n8n --memory 64m \
+  -v "$ROOT/deploy/e2e/plumbing_stub.py:/plumbing_stub.py:ro" -v "$WORK/config/plumbing:/secrets:ro" \
+  python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b python3 -u /plumbing_stub.py 8090 >/dev/null \
+  || { echo "the stub plumbing did not start"; exit 1; }
 WORLD_ALIASES="$(for h in $WORLD_HOSTS; do printf -- '--alias %s ' "$h"; done)"
 $D run -d --label $LABEL --name e2e-world --network e2e-backend $(echo "$WORLD_ALIASES" | sed 's/--alias/--network-alias/g') \
   --memory 64m -v "$ROOT/deploy/e2e/world.py:/world.py:ro" -v "$W:/w:ro" \
@@ -1814,6 +1842,8 @@ fi
 if want hooks; then   # needs ui's admin ($ADMIN): name them together
 echo "== hooks (RFC-0014 §4.2): the stub plumbing on the plumbing network calls them, signed"
 hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # an admin exists by now: the callers-file operator token is refused
+# the meeting case waits, handed over, until the plumbing section resumes its acting routine (a paused routine's case waits)
+hcli pause e2e/meeting-tasks >/dev/null 2>&1 || bad "pause e2e/meeting-tasks: $(hcli pause e2e/meeting-tasks 2>&1)"
 HK="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
   -e HOOK_SECRET_MEETING="$(cat "$WORK/config/hooks/meeting.secret")" -e HOOK_SECRET_SMOKE="$(cat "$WORK/config/hooks/smoke.secret")" \
   --entrypoint python3 "local/flotilla-worker-triage:$TAG" /hookcall.py http://flotillad:8488 2>&1)"
@@ -1841,8 +1871,43 @@ HEV="$(hcli events -n 200 2>&1)"
 [ "$(echo "$HEV" | grep -c 'hook.refused')" -ge 5 ] && [ "$(echo "$HEV" | grep -c 'hook.accepted')" -ge 3 ] \
   && ok "every call to a declared hook is in the events, accepted or refused" || bad "hook events: $(echo "$HEV" | grep 'hook\.')"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
-echo "$OUT" | grep >/dev/null "^WARNING hook meeting: opens meeting cases, and no enabled routine acts on that kind" && echo "$OUT" | grep >/dev/null "^hook smoke: .*closes it on arrival" \
-  && ok "-check lists the hooks, and warns on a kind no routine acts on" || bad "-check hooks: $(echo "$OUT" | grep -i hook)"
+# the warning for a kind no routine acts on is cmd/flotillad's unit test (hookLines); here e2e/meeting-tasks acts on meeting
+echo "$OUT" | grep >/dev/null "^hook meeting: " && ! echo "$OUT" | grep >/dev/null "^WARNING hook meeting" && echo "$OUT" | grep >/dev/null "^hook smoke: .*closes it on arrival" \
+  && ok "-check lists the hooks, and gives no warning for a kind a routine acts on" || bad "-check hooks: $(echo "$OUT" | grep -i hook)"
+fi
+
+if want plumbing; then   # needs hooks' meeting case ($HCASE) and ui's admin: name them together
+echo "== plumbing.call (RFC-0014 §4.6): an approved plan posted, signed, to the stub plumbing; the check asks it back"
+n8nlog() { $D logs e2e-n8n 2>&1; }
+hcli action autonomy plumbing.create_tasks propose --reason "e2e: plumbing.call's plan waits for an approval" >/dev/null 2>&1
+hcli resume e2e/meeting-tasks --reason "e2e: the plumbing section" >/dev/null 2>&1 || bad "resume e2e/meeting-tasks: $(hcli resume e2e/meeting-tasks --reason e2e 2>&1)"
+for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" && break; sleep 2; done
+hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
+  && ok "the meeting case's plan (plumbing.create_tasks) waits for an approval" || bad "plumbing plan: $(hcli case show "$HCASE" 2>&1 | tail -5)"
+[ -z "$(n8nlog | grep '"event": "send"')" ] && ok "nothing reached the plumbing before the approval" || bad "a send before the approval: $(n8nlog)"
+hcli case approve "$HCASE" >/dev/null 2>&1 || bad "approve: $(hcli case approve "$HCASE" 2>&1)"
+for _ in $(seq 1 60); do n8nlog | grep '"event": "status"' | grep >/dev/null '"done": true' && break; sleep 2; done
+SEND="$(n8nlog | grep '"event": "send"')"
+[ "$(echo "$SEND" | grep -c .)" = 1 ] && echo "$SEND" | grep >/dev/null "\"case\": \"$HCASE\"" && echo "$SEND" | grep >/dev/null '"action": "plumbing.create_tasks"' \
+  && echo "$SEND" | grep >/dev/null '"who": "ana@example.com"' && echo "$SEND" | grep >/dev/null '"delivery": "plan-[0-9a-f]\{16\}"' \
+  && ok "the approved plan reached the plumbing once, signed with its callback's secret, its follow-ups as a list, delivery plan-<hash16>" \
+  || bad "the plumbing's sends: $(n8nlog)"
+DL="$(echo "$SEND" | sed -n 's/.*"delivery": "\(plan-[0-9a-f]*\)".*/\1/p')"
+n8nlog | grep '"event": "status"' | grep >/dev/null "\"delivery\": \"$DL\"" \
+  && ok "the check asked the plumbing for the same delivery ($DL)" || bad "the check's status call: $(n8nlog | grep status)"
+[ -z "$(n8nlog | grep '"event": "refused"')" ] && ok "the plumbing refused nothing: every call carried a valid signature" || bad "refused at the plumbing: $(n8nlog | grep refused)"
+for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && break; sleep 2; done
+PSHOW="$(hcli case show "$HCASE" 2>&1)"
+hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && echo "$PSHOW" | grep >/dev/null "create_tasks-$DL" \
+  && ok "the case closed on the check, the plumbing's ref on its record (create_tasks-$DL)" || bad "the case after the send: $PSHOW"
+# the worker reaches the plumbing only through its proxy's allowlist: flotillad's hooks listener is on the same network, and refused
+PX="$($D exec flotilla-worker-plumbing python3 -c 'import urllib.request as u
+p = u.ProxyHandler({"http": "http://egress-plumbing:4750"})
+try:
+    print(u.build_opener(p).open("http://flotillad:8488/healthz", timeout=10).status)
+except Exception as e:
+    print(getattr(e, "code", e))' 2>&1)"
+[ "$PX" = 407 ] || [ "$PX" = 403 ] && ok "the plumbing proxy refuses any host but the plumbing's (flotillad:8488: $PX)" || bad "the plumbing proxy let flotillad:8488 through: $PX"
 fi
 
 echo "== hardening"

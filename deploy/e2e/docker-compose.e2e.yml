@@ -8,7 +8,7 @@ services:
       - ${FLOTILLA_CONFIG}/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro
     environment:
       # the compose file's own list plus the ops-read shadow worker, which only this stack has: flotillad reaches workers directly, never by the proxy
-      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-read-shadow,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-read-shadow,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,worker-plumbing,egress,localhost,127.0.0.1
   # the stack's own CA (run.sh makes it): the example fleets that reach the outside world (sites, deps) reach
   # deploy/e2e/world.py instead, which answers with a certificate from this CA
   worker-ops-read:
