@@ -2,8 +2,8 @@
 
 **Status:** Draft, for the operator's review. The boundaries in §2 and the mashups' design were
 decided on 2026-11-22; a first review (an advisor's, the same day) found where the first draft did
-not match the code, and this version follows it. Open: the visual plane's look, spend and history,
-and the installation's directory service (§6). Nothing is built until the operator says so.
+not match the code, and this version follows it. Open: the visual plane's look, spend and history
+(§6). Nothing is built until the operator says so.
 **Builds on:** [the two ideas](../wip/ideas-2026-11-19.md) (2026-11-19), [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one binary, server-rendered UI), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (approvals outside the
 UI), [RFC-0002](RFC-0002-job-runtime.md) §5 and §7 (data between delimiters; external knowledge), the
@@ -41,7 +41,7 @@ and how they are governed.
 | M5 the check | Four end-to-end cases carry the design (§4.5); cases 1-3 are each built as an example fleet with an end-to-end acceptance test (§7). |
 | M6 where flotilla stops | In and out through the plumbing (A); reads live, through read-only MCP tools (C, read-only); no connectors of flotilla's own (B never) (§4.1, §4.8). |
 | M7 the plumbing | n8n, run by the installation's operations; flotilla takes no dependency on it (§4.7). |
-| M8 people | From the company's directory, read-only; an installation without one runs a small directory service of its own (§4.6). |
+| M8 people | From the company's directory, read-only; an installation without one keeps a people file in its host config (§4.6). |
 | M9 order | The hook first, then the cases 3, 1, 2 in turn, then the visual plane (§8). |
 | Docs | Updated last, in full, architecture and diagrams included (§8). |
 | Open | Chat events (§4.3); the visual plane's look, spend and history (§6). |
@@ -298,18 +298,20 @@ lookup first", which the first replays of case 1 measure.
     keeps a copy, so a directory outage never stops a case. Each person is keyed by their email, with
     their ids in each tool as attributes (a custom schema in Google, extension attributes in Entra,
     custom attributes in LDAP); where a tool gives the email itself, the match is by email.
-  - **No directory, then a small one.** A company without one (this installation) runs a small
-    directory service of its own. For the installation, a light LDAP server on the mini, run by its
-    operations; lldap is the candidate (users with custom attributes, a web page to edit them, a
-    GraphQL API), to confirm with them. Functionally it is a declared list of people, kept in a
-    service instead of in flotilla's config.
+  - **No directory, then a file** (decided 2026-11-22). A company without one (this installation)
+    keeps a people file in its host config: mode 600, each person's email, name and ids in each tool.
+    It is one more source kind, `file`, read on the same schedule as a directory, through the same
+    sync, so the ledger, the voided approvals and the acceptance tests are the same. A directory
+    service of its own (lldap was assessed) was rejected: a container, a backup and credentials to
+    buy only a web page for editing and an LDAP that nothing here uses.
   - **Who someone is, never what they may do.** The directory names people; what a person may
     approve stays in flotilla's roles and ADR-0005's pinned users. A person the directory does not
     know may ask a question but approves nothing. Each sync's changes are in the ledger; a person
     removed from the directory has their open approvals voided.
-  - **One reader per source kind,** in Go on the standard library where the source speaks HTTP and
-    JSON (Google, Entra, lldap's GraphQL); a plain LDAP reader would be a dependency decision of its
-    own, made only when a company brings an LDAP-only directory.
+  - **One reader per source kind,** in Go on the standard library: `file` first, for the
+    installation; Google and Entra (HTTP and JSON) when a company needs them; a plain LDAP reader
+    would be a dependency decision of its own, made only when a company brings an LDAP-only
+    directory.
 
 ### 4.7 The plumbing for the installation's own test
 
@@ -366,13 +368,6 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
    approval waiting, a shadow disagreeing, a routine late?
 2. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
 3. **History:** only "now", or also a slow replay of the day?
-4. **The directory service** for the installation (§4.6). Its operations' assessment (2026-11-22):
-   lldap, pinned, one container with a SQLite store in the mini's backup, no published port, a
-   `lldap_strict_readonly` account for flotilla, the three tool-id attributes. Rejected: OpenLDAP
-   (heavy to run), Authentik (an identity provider with Postgres and Redis), Kanidm (harder to
-   script). Not verified: that a read-only account sees custom attributes over GraphQL (attributes
-   carry a visibility flag); that is the setup's first test, before flotilla's reader is built. Waits
-   for the operator's go.
 
 **Decided (2026-11-22):**
 
@@ -382,7 +377,8 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
 - **The cases:** all three, in the order 3, 1, 2, each with an acceptance test (§7).
 - **The plumbing:** n8n (§4.7).
 - **Freshness:** reads are live (§4.8); no nightly export to begin with.
-- **People:** from the directory; an installation without one runs a small one (§4.6).
+- **People:** from the directory; an installation without one keeps a people file in its host
+  config, read as a directory source (§4.6). No directory service on the installation.
 - **The order:** the hook first, the visual plane after the cases (§8).
 
 ## 7. How we would know it works
@@ -406,7 +402,7 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
 **The cases' acceptance.** Each case is accepted twice: an e2e in the e2e stack, run in CI against a
 stub plumbing, stub read tools and a stub directory that speak the same HTTP as the real ones (no
 model server: the model's answers recorded); and a live run on the installation with n8n, the real
-tools and the directory service, its ledger read back by a script. A case is done when both pass.
+tools and the people file, its ledger read back by a script. A case is done when both pass.
 
 | Case | The e2e passes when | The live run passes when |
 | --- | --- | --- |
@@ -417,8 +413,8 @@ tools and the directory service, its ledger read back by a script. A case is don
 
 ## 8. Order of work (decided 2026-11-22)
 
-0. The installation's side, by its operations, alongside: n8n (asked 2026-11-22), then the directory
-   service (§4.6).
+0. The installation's side, alongside: n8n, by its operations (asked 2026-11-22); the people file in
+   host config, by the operator, before case 1.
 1. The hook: `hooks:` config, the signature, window, nonce, caps and rate, and its §7 e2e.
 2. `plumbing.call` (§4.6) and its §7 e2e.
 3. **Case 3**, the meeting to follow-ups: the example fleet, its n8n flows on the installation, and
