@@ -4,8 +4,8 @@
 decided on 2026-11-22; a first review (an advisor's, the same day) found where the first draft did
 not match the code, and this version follows it; a second review (2026-11-22) found six blockers,
 four fixed by it and two decided by the operator (a chat post's reversibility, a meeting's
-follow-ups). Open: the visual plane's look, spend and history (§6). Nothing is built until the
-operator says so.
+follow-ups). The visual plane's look, spend and history were decided the same day (§6). Building
+follows §8's order: the hook (step 1) is in sha-52bfbb9, live on the installation since 2026-11-22.
 **Builds on:** [the two ideas](../wip/ideas-2026-11-19.md) (2026-11-19), [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one binary, server-rendered UI), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (approvals outside the
 UI), [RFC-0002](RFC-0002-job-runtime.md) §5 and §7 (data between delimiters; external knowledge), the
