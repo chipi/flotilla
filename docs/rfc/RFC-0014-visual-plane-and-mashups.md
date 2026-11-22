@@ -464,7 +464,8 @@ is done when both pass.
    `routine_actions.max_autonomy: auto` (ADR-0017's amendment) for any callback action meant to
    earn auto.
 1. The hook: `hooks:` config, the signature, window, nonce, caps and rate, the Go credential
-   redaction, and its §7 e2e.
+   redaction, and its §7 e2e; and a `smoke` hook whose case kind closes itself on arrival, so the
+   plumbing's manual smoke-test flow proves the path end to end without opening real work.
 2. `plumbing.call` (§4.6): the shared sender, the first callback actions and their worker, and its
    §7 e2e.
 3. **Case 3**, the meeting to follow-ups: the example fleet, its n8n flows on the installation, and
