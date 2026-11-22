@@ -262,14 +262,21 @@ func TestFlotilladWaitsForEveryWorkerItMayName(t *testing.T) {
 
 // RFC-0014: the plumbing tool's network carries the hook into flotillad and the callbacks out of it. A worker or a proxy on it would let the
 // plumbing reach a routine's process, or a routine reach the plumbing past its action's policy.
-func TestOnlyFlotilladIsOnThePlumbingNetwork(t *testing.T) {
-	for name, s := range loadCompose(t) {
+// RFC-0014: flotillad joins the plumbing's network for the hooks it serves, and plumbing.call's own proxy for the callbacks its
+// worker sends; no worker joins it, so a worker reaches the plumbing only through that proxy's allowlist.
+func TestOnlyFlotilladAndThePlumbingProxyAreOnThePlumbingNetwork(t *testing.T) {
+	cs := loadCompose(t)
+	for name, s := range cs {
 		on := slices.Contains(s.Networks, "plumbing")
-		if name == "flotillad" && !on {
-			t.Error("flotillad is not on the plumbing network")
+		want := name == "flotillad" || name == "egress-plumbing"
+		if want && !on {
+			t.Errorf("%s is not on the plumbing network", name)
 		}
-		if name != "flotillad" && on {
-			t.Errorf("%s is on the plumbing network: only flotillad joins it", name)
+		if !want && on {
+			t.Errorf("%s is on the plumbing network: only flotillad and egress-plumbing join it", name)
 		}
+	}
+	if w := cs["worker-plumbing"]; !slices.Equal(w.Networks, []string{"flotilla"}) {
+		t.Errorf("worker-plumbing's networks %v: the flotilla network alone, the plumbing through egress-plumbing", w.Networks)
 	}
 }

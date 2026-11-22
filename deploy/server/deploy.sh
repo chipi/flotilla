@@ -309,14 +309,15 @@ fi
 cfghash() { for f in "$@"; do printf '%s\n' "$f"; cat "$f" 2>/dev/null; done | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-16; }
 CFG="$(envget FLOTILLA_CONFIG)"
 # host-ca/: flotillad reads the intermediate and the signing key only at start, so a rotated one
-# (docs/operations/host-keys.md) must recreate it too
-FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-triage-candidate.token" "$CFG/worker-triage-shadow.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$CFG/worker-bugfix.token" "$CFG/worker-bugfix-act.token" "$CFG/worker-marketing.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)" "$(envget FLOTILLA_ERRORS_SHADOW_DSN_FILE)" \
-  "$CFG/host-ca/intermediate.crt" "$CFG/host-ca/root.crt" "$CFG/host-ca/signing.key")"
+# (docs/operations/host-keys.md) must recreate it too; so must a rotated hook secret (hooks/, read at start)
+FLOTILLA_CONFIG_HASH_FLOTILLAD="$(cfghash "$CFG/flotillad.yaml" "$CFG/callers.yaml" "$CFG/cli.token" "$CFG/worker-triage.token" "$CFG/worker-triage-candidate.token" "$CFG/worker-triage-shadow.token" "$CFG/worker-ops-read.token" "$CFG/worker-ops-act-host.token" "$CFG/worker-bugfix.token" "$CFG/worker-bugfix-act.token" "$CFG/worker-marketing.token" "$CFG/worker-plumbing.token" "$(envget FLOTILLA_ERRORS_DSN_FILE)" "$(envget FLOTILLA_ERRORS_SHADOW_DSN_FILE)" \
+  "$CFG/host-ca/intermediate.crt" "$CFG/host-ca/root.crt" "$CFG/host-ca/signing.key" "$CFG"/hooks/*.secret)"
 FLOTILLA_CONFIG_HASH_EGRESS="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-acl.yaml")"
 FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-bugfix-acl.yaml")"
 FLOTILLA_CONFIG_HASH_EGRESS_SEO="$(cfghash "$CFG/smokescreen-seo.yaml" "$CFG/egress-seo-acl.yaml")"
+FLOTILLA_CONFIG_HASH_EGRESS_PLUMBING="$(cfghash "$CFG/smokescreen-plumbing.yaml" "$CFG/egress-plumbing-acl.yaml")"
 FLOTILLA_CONFIG_HASH_EGRESS_SHADOW="$(cfghash "$CFG/smokescreen.yaml" "$CFG/egress-shadow-acl.yaml")"
-export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO FLOTILLA_CONFIG_HASH_EGRESS_SHADOW
+export FLOTILLA_CONFIG_HASH_FLOTILLAD FLOTILLA_CONFIG_HASH_EGRESS FLOTILLA_CONFIG_HASH_EGRESS_BUGFIX FLOTILLA_CONFIG_HASH_EGRESS_SEO FLOTILLA_CONFIG_HASH_EGRESS_PLUMBING FLOTILLA_CONFIG_HASH_EGRESS_SHADOW
 up_tag "$TAG"; UP_RC=$?
 [ "$UP_RC" = 0 ] || say "compose up exited $UP_RC after $UP_TRIES tries"
 if has deploy_log; then deploy_log "$EVENT" "$CURRENT_COMMIT" "$COMMIT" | sed 's/^/   /'; fi

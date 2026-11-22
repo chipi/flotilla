@@ -170,6 +170,30 @@ They reach VictoriaMetrics through the proxy, already on its allowlist for floti
 `rerun-backup` is capped at record: its plans are recorded and nothing is sent to the host.
 `flotilla case list` and `flotilla case show <id>` show what they did.
 
+## The plumbing worker: plumbing.call (RFC-0014 §4.6)
+
+The image carries `fleets/plumbing/`: one execute routine per `plumbing.*` action and their check, on
+the `plumbing` worker. Each posts an approved plan, signed, to the installation's plumbing tool (n8n
+on the reference installation), and the check asks the same callback whether the delivery is done.
+A host whose specs are the image's must do one of two things before deploying a tag that has them:
+
+- **Run them:** add `plumbing` to `COMPOSE_PROFILES`; create `config/worker-plumbing.token` (32+
+  random characters), one `config/plumbing/<name>.secret` per callback (32+ characters, shared with
+  the plumbing tool), and `config/worker-plumbing.env` with, per action, `ROUTINE_PLUMBING_<NAME>_URL`
+  (the callback, e.g. `http://n8n:5678/webhook/<path>`) and `ROUTINE_PLUMBING_<NAME>_SECRET_FILE=/run/flotilla/plumbing-<name>.secret`
+  (`NAME` is the action after `plumbing.`, upper case: `CREATE_TASKS`); create `config/egress-plumbing-acl.yaml`
+  (the plumbing's host alone) and `config/smokescreen-plumbing.yaml` (`allow_ranges`: the plumbing
+  network's range only); add the worker under `workers` (`url: http://worker-plumbing:8081`,
+  `token_file: /run/flotilla/worker-plumbing.token`). `secrets.sh` fills its volume when the token exists.
+- **Not yet:** list the `plumbing/...` routines in `disabled_routines`.
+
+The worker is on flotilla's network alone; its proxy, `egress-plumbing`, is the only other service
+of flotilla's on the plumbing network besides flotillad. Every callback answers two kinds of body:
+`{"mode": "send", ...}` with `{"ref": "<what it made>"}`, and `{"mode": "status", "plan_hash": ...}`
+with `{"done": true|false, "ref": ...}`, found from the delivery id (`plan-<hash16>`) it wrote into
+what it made. A host that mounts its own fleets over the image's has none of this until its fleets
+name the worker.
+
 ## The deploy stand-down (RFC-0004 §5.1)
 
 While a deploy changes a host, policy defers every plan on it. `deploy/server/standdown.sh HOST DURATION

@@ -460,6 +460,54 @@
       "spec.yaml": "604145f2d709eaa5274bd3717258be6f6dce7210af99a75366db933f7e6e3a03"
     }
   },
+  "plumbing/check@v1": {
+    "routine_hash": "f196b2cfd6bd",
+    "version_hash": "e4e0e2b3228cb476f78fbdf2a6f995bef77471a9a24c8924e12b64cf14594adf",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "9010ef51e9ae071ba05b6a41d89ff76f2e9f461a5c6a3b394921298b7aac62dd"
+    }
+  },
+  "plumbing/send-create-tasks@v1": {
+    "routine_hash": "4d9cb1245245",
+    "version_hash": "a8dfefb98038d82ae0cf1f8b52cbeb9c99ffc7784573507bd21d59cf4975630d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "fe90fc2d087e3899ea96ff3614e3ea827911d1bd479b0d6d30494fc1033f5d00"
+    }
+  },
+  "plumbing/send-post-decisions@v1": {
+    "routine_hash": "1e6dcca2acaf",
+    "version_hash": "a8dfefb98038d82ae0cf1f8b52cbeb9c99ffc7784573507bd21d59cf4975630d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "fe90fc2d087e3899ea96ff3614e3ea827911d1bd479b0d6d30494fc1033f5d00"
+    }
+  },
+  "plumbing/send-post@v1": {
+    "routine_hash": "eba909ec4efc",
+    "version_hash": "a8dfefb98038d82ae0cf1f8b52cbeb9c99ffc7784573507bd21d59cf4975630d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "fe90fc2d087e3899ea96ff3614e3ea827911d1bd479b0d6d30494fc1033f5d00"
+    }
+  },
+  "plumbing/send-reply@v1": {
+    "routine_hash": "720913ea7fbc",
+    "version_hash": "a8dfefb98038d82ae0cf1f8b52cbeb9c99ffc7784573507bd21d59cf4975630d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "fe90fc2d087e3899ea96ff3614e3ea827911d1bd479b0d6d30494fc1033f5d00"
+    }
+  },
+  "plumbing/send-retract@v1": {
+    "routine_hash": "1dd8370a7987",
+    "version_hash": "a8dfefb98038d82ae0cf1f8b52cbeb9c99ffc7784573507bd21d59cf4975630d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "fe90fc2d087e3899ea96ff3614e3ea827911d1bd479b0d6d30494fc1033f5d00"
+    }
+  },
   "renewals/apply-flag@v1": {
     "routine_hash": "abc33bc13c1f",
     "version_hash": "b50115d77c0f8d17414578f0785cf658a8fa58a999ba624bb1c94b27fa080064",

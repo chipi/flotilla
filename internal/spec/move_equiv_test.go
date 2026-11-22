@@ -63,7 +63,11 @@ func loadByID(t *testing.T, dir string) map[string]*Routine {
 // another, and a version a routine gained. Each is named with its reason; anything else that differs fails.
 var (
 	stepFiveRemoved = map[string]string{"triage/cycle-shadow": "now v2 of triage/cycle, a candidate version (TestTriageCycleIsAStationVersionOfTheSameRoutine)"}
-	stepFiveAdded   = map[string]string{}
+	stepFiveAdded   = map[string]string{
+		// RFC-0014 §4.6 (step 2): plumbing.call's execute routines and its check, new routines, not moved ones
+		"plumbing/send-create-tasks": "RFC-0014 step 2", "plumbing/send-post-decisions": "RFC-0014 step 2", "plumbing/send-reply": "RFC-0014 step 2",
+		"plumbing/send-post": "RFC-0014 step 2", "plumbing/send-retract": "RFC-0014 step 2", "plumbing/check": "RFC-0014 step 2",
+	}
 	stepFiveVersion = map[string]int{"triage/cycle": 2, "platform/heartbeat": 2} // routine id -> the first version number step 5 added to it
 	// stepFiveStations are routines whose v1 became a station version on purpose: the routine's own fields must still be the flat spec's,
 	// and the version body is proven by TestTriageCycleIsAStationVersionOfTheSameRoutine and the request-equivalence test.

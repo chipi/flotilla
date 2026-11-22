@@ -18,6 +18,7 @@ addresses are documentation addresses.
 | `campaigns` | `scan`, `decide`, `apply-launch`, `apply-hold`, `check` | marketing: launch checks in code decide; a launch is always approved, a hold can earn auto |
 | `outbound` | `scan`, `draft`, `send`, `check` | a first email per prospect, every personal sentence citing a fact; do-not-contact, consent and a daily cap in code; every send approved |
 | `renewals` | `scan`, `flag`, `apply-flag`, `check` | customer success: a risk score in code, replayed over past renewals, flags the account for its owner; it never writes to the customer |
+| `plumbing` | `send-create-tasks`, `send-post-decisions`, `send-reply`, `send-post`, `send-retract`, `check` | plumbing.call (RFC-0014): an approved plan posted, signed, to the installation's plumbing tool, which writes it where it belongs; the check asks it whether the delivery is done there. No connector of its own, no URL or secret in the specs |
 
 The business examples (`crm`, `campaigns`, `outbound`, `renewals`) act on stand-in systems: JSON
 files seeded from each fleet's `seed/` (`business/store.py`), carried out by `business/apply.py` as

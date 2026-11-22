@@ -50,7 +50,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,worker-plumbing,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
@@ -71,6 +71,7 @@ services:
       worker-bugfix: {condition: service_healthy, required: false}
       worker-bugfix-act: {condition: service_healthy, required: false}
       worker-marketing: {condition: service_healthy, required: false}
+      worker-plumbing: {condition: service_healthy, required: false}
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
@@ -340,6 +341,30 @@ services:
     healthcheck: *ops-health
     networks: [flotilla]
 
+  # plumbing.call's worker (profile plumbing, RFC-0014 §4.6): the five callbacks' execute and check routines
+  # (plumbing/call.py). The callbacks' URLs are FLOTILLA_CONFIG/worker-plumbing.env (ROUTINE_PLUMBING_<NAME>_URL);
+  # their secrets are in its own volume (plumbing-<name>.secret, secrets.sh), so no other worker holds them.
+  # It reaches the plumbing only through its own proxy.
+  worker-plumbing:
+    <<: *hardening
+    profiles: [plumbing]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-ops:${FLOTILLA_TAG}
+    container_name: flotilla-worker-plumbing
+    mem_limit: 128m
+    cpus: 0.25
+    tmpfs: ["/tmp:size=16m", "/home/worker:size=16m,uid=10001,gid=10001,mode=0700"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-plumbing.env"]   # ROUTINE_PLUMBING_* URLs and secret file paths; no secrets in it
+    environment:
+      FLOTILLA_WORKER: plumbing
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress-plumbing:4750
+      ROUTINE_HTTPS_PROXY: http://egress-plumbing:4750
+    volumes:
+      - worker-plumbing-secrets:/run/flotilla:ro
+    healthcheck: *ops-health
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -390,6 +415,24 @@ services:
       - ${FLOTILLA_CONFIG}/egress-seo-acl.yaml:/etc/smokescreen/acl.yaml:ro
     networks: [flotilla, out, umami]
 
+  # plumbing.call's own egress proxy (profile plumbing): its allowlist (FLOTILLA_CONFIG/egress-plumbing-acl.yaml)
+  # is the plumbing's host alone, and its settings (smokescreen-plumbing.yaml) allow only the plumbing network's
+  # range. It is on the plumbing network and no other way out.
+  egress-plumbing:
+    <<: *hardening
+    profiles: [plumbing]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-egress-plumbing
+    mem_limit: 128m
+    cpus: 0.25
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    environment:
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS_PLUMBING:-}
+    volumes:
+      - ${FLOTILLA_CONFIG}/smokescreen-plumbing.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/egress-plumbing-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [flotilla, plumbing]
+
 # Named so that a compose project rename can never strand them. TRIAGE_STATE_VOLUME picks the
 # triage fleet's state: a shadow copy beside fleetd, or the live state after the switch.
 volumes:
@@ -437,6 +480,10 @@ volumes:
   worker-marketing-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-marketing-secrets
     external: true
+  # the plumbing worker's token and the callbacks' secrets (profile plumbing), filled by secrets.sh
+  worker-plumbing-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-plumbing-secrets
+    external: true
   # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
   triage-candidate-state:
     name: ${TRIAGE_CANDIDATE_STATE_VOLUME:-flotilla-triage-state-candidate}
@@ -467,7 +514,8 @@ networks:
     name: ${NET_LANGFUSE:-langfuse_default}
     external: true
   # RFC-0014: the plumbing tool's network (n8n on the installation), owned by its compose project and internal,
-  # so it gives flotillad no route out. Only flotillad joins: the hook it serves, the callbacks it is called back on.
+  # so it gives flotillad no route out. flotillad joins it for the hooks it serves; plumbing.call's egress proxy
+  # (profile plumbing) for the callbacks its worker sends. Nothing else of flotilla's.
   plumbing:
     name: ${NET_PLUMBING:-plumbing}
     external: true

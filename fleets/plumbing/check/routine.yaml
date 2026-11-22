@@ -1,0 +1,13 @@
+fleet: plumbing
+routine: check
+description: >-
+  Checks a sent plumbing.* plan (plumbing/call.py): asks the same callback, signed, whether the plan's
+  delivery is done in the system behind it; flotillad escalates the case if it is not within the check's
+  window.
+enabled: true
+worker: plumbing
+trigger:
+  check: {verify: plumbing_confirmed}
+autonomy: record
+budget:
+  day_usd: 0

@@ -1,0 +1,7 @@
+fleet: plumbing
+description: >-
+  plumbing.call (RFC-0014 §4.6): flotilla as the governed step in a business process, without a connector of
+  its own. Each approved plumbing.* plan is posted, signed, to the installation's plumbing tool (n8n on the
+  reference installation), which writes it where it belongs: tasks in the tracker, decisions on a page, a
+  reply or a post in chat, a retraction. The check asks the plumbing whether the delivery is done there.
+  The callbacks' URLs and secrets are the installation's; this fleet carries none.

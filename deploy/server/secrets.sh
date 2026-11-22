@@ -109,6 +109,17 @@ if [ -s "$FLOTILLA_CONFIG/worker-marketing.token" ]; then
     fi
   done
 fi
+# plumbing.call's worker (compose profile plumbing, RFC-0014 §4.6), where its token exists, and each callback's
+# signing secret, $FLOTILLA_CONFIG/plumbing/<name>.secret (worker-plumbing.env names it as
+# /run/flotilla/plumbing-<name>.secret), shared with the plumbing tool that verifies the callback
+if [ -s "$FLOTILLA_CONFIG/worker-plumbing.token" ]; then
+  put $V-flotillad-secrets worker-plumbing.token 65532 "$FLOTILLA_CONFIG/worker-plumbing.token"
+  put $V-worker-plumbing-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-plumbing.token"
+  for f in "$FLOTILLA_CONFIG"/plumbing/*.secret; do
+    [ -e "$f" ] || continue
+    put $V-worker-plumbing-secrets "plumbing-$(basename "$f")" 10001 "$f"
+  done
+fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"

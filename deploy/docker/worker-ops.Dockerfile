@@ -1,12 +1,13 @@
 # The ops worker (ADR-0005 decision 5: workers per role): one image, run as two services, ops-read (the
 # monitors) and ops-act-host (the acting routines; it holds no host key: flotillad signs executions,
 # ADR-0006). Python stdlib only. The registry's declaration is in the image so the acting routine reads
-# its preconditions from the same file flotillad does.
+# its preconditions from the same file flotillad does. The plumbing worker (RFC-0014 §4.6) is a third service of it.
 FROM python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker
 COPY worker /opt/flotilla/worker
 COPY ops /opt/flotilla/ops
 COPY business /opt/flotilla/business
+COPY plumbing /opt/flotilla/plumbing
 COPY seo /opt/flotilla/seo
 COPY fleets /opt/flotilla/fleets
 COPY host/registry.json /opt/flotilla/host/registry.json

@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/plumbing/call.py execute
+  workdir: .
+  timeout: 2m

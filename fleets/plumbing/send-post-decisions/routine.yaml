@@ -1,0 +1,13 @@
+fleet: plumbing
+routine: send-post-decisions
+description: >-
+  Carries out an approved plumbing.post_decisions plan (plumbing/call.py): checks the plan's hash is the approved one
+  and the payload's shape, then posts it once, signed, to the installation's plumbing.post_decisions callback, and
+  reports what the plumbing says it made. It never retries: a call that timed out may have been delivered.
+enabled: true
+worker: plumbing
+trigger:
+  execute: {action: plumbing.post_decisions}
+autonomy: propose
+budget:
+  day_usd: 0
