@@ -325,9 +325,16 @@ lookup first", which the first replays of case 1 measure.
   - **One shared sender.** Each action's execute routine is a small spec around one shared
     `plumbing/call.py`: it signs the payload with HMAC-SHA256 and posts it to the callback. The
     callback's URL and its secret file are an installation setting keyed by the action's name, never
-    in the spec. One execute routine per action, as ADR-0017 has it (`internal/spec/spec.go:231-233`).
-  - **A worker of its own.** The callback secrets live in that worker's environment, and its proxy
-    ACL admits only the plumbing's host.
+    in the spec. One execute routine per action (the spec's comment, `internal/spec/spec.go:228-230`;
+    nothing enforces it yet: the dispatcher takes the first).
+  - **A worker of its own.** The callback secrets live in that worker's own secrets volume (named in
+    its environment, filled by `secrets.sh`), and its proxy, `egress-plumbing`, admits only the
+    plumbing's host; that proxy and flotillad are the only services of flotilla's on the plumbing
+    network (built 2026-11-22, `deploy/compose/README.md`).
+  - **The check asks the plumbing** (decided 2026-11-22). The send's answer names what it made
+    (`{"ref"}`); the check sends `{"mode": "status"}` for the same delivery (`plan-<hash16>`) and the
+    plumbing answers done or not, found from the delivery id it wrote into what it made. Every
+    callback flow answers both.
 - **What a chat post may earn** (decided 2026-11-22). Today the cap reads only `reversible`
   (`internal/policy/policy.go:214-216`, `internal/registry/registry.go:93-98`); `risk` only picks
   where a person approves (`internal/api/slack.go:50-56`). Two changes, both with the build:

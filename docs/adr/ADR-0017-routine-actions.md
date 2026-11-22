@@ -62,6 +62,21 @@ routine_actions:
 - The recorded reason says which ceiling applied: `host ceiling` (unchanged wording) for a host action,
   `routine-action ceiling` for a routine action, none for a repo change.
 
+## Amendment, 2026-11-22: what `reversible` means, and `risk: high` (RFC-0014 §4.6)
+
+- **`reversible` says whether the executor can take the action back.** A chat post can: the bot edits
+  or deletes its own message and posts a correction (`plumbing.retract`). So `plumbing.reply` and
+  `plumbing.post` are `reversible: yes`, and a person may approve them in Slack. A sent email stays
+  `no`: nothing recalls it. Before an installation declares a chat post `yes`, it checks that its bot
+  token can edit and delete its own messages in every channel kind it posts to.
+- **`risk: high` also caps at propose,** however reversible: a message to a customer or the public is
+  declared high, and a person approves each. Policy records `high risk: at most propose`, and
+  `MaxAutonomy` returns propose; Slack already refused high. No action was declared high, so no past
+  decision changes (the ceiling replay passes unchanged).
+- **A routine action's check may ask the system it wrote to**, when flotilla has no read of its own:
+  plumbing.call's check asks the callback, signed, whether the plan's delivery (`plan-<hash16>`) is
+  done there. The plumbing finds it from the delivery id it wrote into what it made.
+
 ## Consequences
 
 - The business examples (`fleets/crm`, `campaigns`, `outbound`, `renewals`) declare six routine actions
