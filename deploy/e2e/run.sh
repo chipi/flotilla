@@ -64,7 +64,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # E2E_SECTIONS=a,b runs only those sections (the build, the config and `up` always run); unset runs all. `noeffect` is versions, hostagent,
 # versionscase, shadows, stations and matrix: the no-effect proof (docs/wip/v2-design.md section 4) and the sections whose state it reads (the
 # shadow monitor's pairs count the case that versionscase leaves open on the host agent's target, which needs versions' routine). The other sections
-# lean on each other as well (ui before remote); name those together.
+# lean on each other as well (ui reads the shadows' and stations' pairs, hooks uses ui's admin, remote comes after ui); name those together.
 sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui hooks remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
