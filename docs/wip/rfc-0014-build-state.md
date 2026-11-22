@@ -37,12 +37,12 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
 
 ## Open in the code
 
-- Nothing enforces one execute routine per action (the dispatcher takes the first match): a
-  `-check`/load rule, and whether it needs an ADR-0017 line.
+- ~~Nothing enforces one execute routine per action~~: a second one is a load error now, a disabled
+  one included (`spec.Load`, `TestOneExecutorPerAction`, ADR-0017's 2026-11-22 amendment).
 - `plumbing.reply` cannot earn auto until its remaining gates exist: the asker in the directory
   (step 4), a citation matching a recorded read (step 5), the thread from the case (case 1), and a
   retracted answer counted as a failed execution.
-- No `docs/history` entry for this arc yet.
+- ~~No `docs/history` entry for this arc yet~~: [0008](../history/0008-rfc-0014-hook-and-plumbing-call.md).
 - flotillad in its container spends 5 to 10 times the CPU the same code needs natively (the pairs
   page: 4.5 s live against 0.15 s natively on the same store), and 12 to 14 % CPU idle; not
   explained. Finding it needs a CPU profile of the running process (an opt-in loopback pprof

@@ -22,6 +22,8 @@ parallel decision log.
   catalogue, `run_tokens: required`, and the no-effect matrix as a required check.
 - `0007-folder-move-rerecord.md` — 2026-11-20: a live flat routine moves to the folder layout in one
   deploy, re-recorded at the start when every recorded key and file is equal.
+- `0008-rfc-0014-hook-and-plumbing-call.md` — 2026-11-22: RFC-0014 written and decided, its step 1
+  (the hook, live) and step 2 (`plumbing.call`, its example fleet and worker).
 - `decisions.md` — *(optional, not started)* append-only decision log (D-NNNN
   entries). Newer decisions at the top. Use this if you make operational
   decisions worth grep-finding later (port picks, image bumps, tooling
