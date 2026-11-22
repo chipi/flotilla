@@ -58,3 +58,4 @@ landed on an answer.
   2026-11-15)
 - [RFC-0013 — The clarifier: answering "needs info" before the fix](RFC-0013-bugfix-clarifier.md) (Accepted,
   2026-11-16)
+- [RFC-0014 — The visual plane and mashups](RFC-0014-visual-plane-and-mashups.md) (Draft, 2026-11-22)

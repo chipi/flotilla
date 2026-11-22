@@ -125,6 +125,7 @@ nav:
     - RFC-0011 — Remote workers: rfc/RFC-0011-remote-workers.md
     - RFC-0012 — The SEO fleet: rfc/RFC-0012-seo-fleet.md
     - RFC-0013 — The bugfix clarifier: rfc/RFC-0013-bugfix-clarifier.md
+    - RFC-0014 — The visual plane and mashups: rfc/RFC-0014-visual-plane-and-mashups.md
   - In progress:
     - Overview: wip/README.md
     - "Routine versions, stations and harnesses (design)": wip/v2-design.md
