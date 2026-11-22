@@ -29,6 +29,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/chipi/flotilla/internal/hook"
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/policy"
 	"github.com/chipi/flotilla/internal/registry"
@@ -163,6 +164,8 @@ type Server struct {
 	RoutineActionMax string
 	// Examples is the examples catalogue (flotillad.yaml examples_dir), or nil. Only the status and the UI read it; no routine is named by it.
 	Examples *spec.Catalogue
+	// Hooks are flotillad.yaml's hooks: by name (RFC-0014 §4.2); nil or empty: POST /hooks/{name} answers 404.
+	Hooks map[string]*hook.Hook
 }
 
 type ctxKey struct{}

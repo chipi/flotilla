@@ -90,7 +90,7 @@ func TestAStoreBeforeRoutineSnapshotsMigratesAndReadsAsNoSnapshot(t *testing.T) 
 	if got, err := s.RecordRoutineFields(context.Background(), map[string]map[string]string{"a/b": fieldsOfBudget("1")}, "flotillad"); err != nil || len(got) != 1 || !got[0].First {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if read, err = ReadRoutineFields(p); err != nil || read.Schema != FieldsSchema || len(read.Fields) != 1 {
+	if read, err = ReadRoutineFields(p); err != nil || read.Schema != len(schema) || len(read.Fields) != 1 {
 		t.Fatalf("after the migration: %+v %v", read, err)
 	}
 }

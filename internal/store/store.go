@@ -495,6 +495,15 @@ var schema = []string{
 		fields TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	// RFC-0014 §4.2: the delivery ids a hook has accepted, so a retry or a replay inside the signature's window opens no second
+	// case. A row is dropped once it is older than twice the window; the case it opened stays.
+	`CREATE TABLE hook_deliveries (
+		hook TEXT NOT NULL,
+		delivery TEXT NOT NULL,
+		at TEXT NOT NULL,
+		case_id TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (hook, delivery)
+	);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

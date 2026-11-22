@@ -29,6 +29,7 @@ import (
 	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/casetimer"
 	"github.com/chipi/flotilla/internal/dispatch"
+	"github.com/chipi/flotilla/internal/hook"
 	"github.com/chipi/flotilla/internal/hostalert"
 	"github.com/chipi/flotilla/internal/hostca"
 	"github.com/chipi/flotilla/internal/hostlink"
@@ -56,6 +57,9 @@ type Config struct {
 	// Optional: where workers' routines reach their ledger (RFC-0002 §9 step 5). It serves the ledger
 	// routes and nothing else, so `listen` can stay on loopback.
 	WorkerListen string `yaml:"worker_listen"`
+	// Optional: where the plumbing tool calls the hooks (RFC-0014 §4.2). It serves POST /hooks/{name} and /healthz and
+	// nothing else, so the plumbing's network reaches no other route; required when hooks: is set.
+	HooksListen string `yaml:"hooks_listen"`
 	// Optional: the operator UI's listener and the one Host it answers (ADR-0014): the pages for people
 	// with a session, and /v1 for people's tokens only. Only the UI's proxy reaches it.
 	UIListen      string `yaml:"ui_listen"`
@@ -74,6 +78,8 @@ type Config struct {
 	BriefAt string `yaml:"brief_at"`
 	// approvals in Slack through one host's connector (G9, internal/api/slack.go); empty = none
 	Slack *api.SlackConfig `yaml:"slack"`
+	// RFC-0014 §4.2: signed inbound webhooks, each opening one case of its declared kind; empty = none
+	Hooks []*hook.Hook `yaml:"hooks"`
 	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
 	ErrorsDSNFile string `yaml:"errors_dsn_file"`
 	// Optional: a DSN file for the errors of shadow runs, a GlitchTip project of their own (its slug ends in -shadow, which the
@@ -296,6 +302,10 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Environment == "" {
 		errs = append(errs, errors.New("environment is required (the installation label: operations)"))
+	}
+	errs = append(errs, hook.Check(c.Hooks)...)
+	if len(c.Hooks) > 0 && c.HooksListen == "" {
+		errs = append(errs, errors.New("hooks need hooks_listen: their own listener, the only one the plumbing tool reaches"))
 	}
 	if c.UIListen != "" && c.UIHost == "" {
 		errs = append(errs, errors.New("ui_listen needs ui_host: the one Host the UI answers (flotilla.<tailnet>)"))
@@ -570,6 +580,9 @@ func main() {
 		fmt.Printf("run tokens: %s (every run has its own token for the workers' listener%s)\n", cfg.RunTokens,
 			map[bool]string{true: "; a worker's own token opens nothing there", false: "; a worker's own token still opens it"}[cfg.RunTokens == RunTokensRequired])
 		fmt.Println(routineActionsLine(cfg))
+		for _, line := range hookLines(cfg, routines) {
+			fmt.Println(line)
+		}
 		for _, line := range shadowCheckLines(cfg, routines) {
 			fmt.Println(line)
 		}
@@ -681,7 +694,7 @@ func main() {
 	runTokens := runtoken.New()
 	s.RunTokens = runTokens
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir,
-		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy, Examples: examples}
+		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy, Examples: examples, Hooks: hooksByName(cfg.Hooks)}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
 	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}
@@ -701,6 +714,17 @@ func main() {
 			log.Info("flotillad listening for workers (the ledger)", "addr", cfg.WorkerListen)
 			if err := wsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("worker listen", "err", err)
+				stop()
+			}
+		}()
+	}
+	var hsrv *http.Server
+	if cfg.HooksListen != "" {
+		hsrv = &http.Server{Addr: cfg.HooksListen, ReadHeaderTimeout: 10 * time.Second, Handler: apiSrv.HooksHandler()}
+		go func() {
+			log.Info("flotillad listening for hooks", "addr", cfg.HooksListen, "hooks", len(cfg.Hooks))
+			if err := hsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("hooks listen", "err", err)
 				stop()
 			}
 		}()
@@ -818,6 +842,9 @@ func main() {
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
+	if hsrv != nil {
+		_ = hsrv.Shutdown(sctx)
+	}
 	if wsrv != nil {
 		_ = wsrv.Shutdown(sctx)
 	}

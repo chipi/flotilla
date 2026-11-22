@@ -205,10 +205,12 @@ outside service, so it signs.
 - **`POST /hooks/<name>`**, signed with HMAC-SHA256 over the timestamp and the body. A timestamp
   outside a five-minute window is refused, and so is a delivery id already seen (a nonce table that
   expires). The body is capped in size and the hook in rate.
-- **Where it listens.** On the API listener (`listen`), the one route there that takes a signature
-  instead of a bearer token; not on the UI listener (sessions) or the workers' listener (run
-  tokens). The plumbing joins the docker network that reaches the API listener, and nothing outside
-  the installation's network does (§5). The e2e stack's stub plumbing calls it the same way.
+- **Where it listens.** On a listener of its own, `hooks_listen`, which serves `POST /hooks/<name>`
+  and `/healthz` and nothing else; `hooks:` without it fails the config. Not the API listener: that
+  one can stay on loopback, and the plumbing's network would otherwise reach every route behind a
+  bearer token. flotillad joins the plumbing's internal network, and nothing outside the
+  installation's network reaches the listener (§5). The e2e stack's stub plumbing calls it the same
+  way.
 - **It opens one case and nothing else.** The case's kind starts its acting routine under the kind's
   case limits and canonical-key dedupe (`internal/spec/spec.go:210-226`, `internal/store/cases.go:108-126`),
   as every case does. There is no "start a routine": a bare run would skip both and leave no case.
