@@ -65,7 +65,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # versionscase, shadows, stations and matrix: the no-effect proof (docs/wip/v2-design.md section 4) and the sections whose state it reads (the
 # shadow monitor's pairs count the case that versionscase leaves open on the host agent's target, which needs versions' routine). The other sections
 # lean on each other as well (ui before remote); name those together.
-sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui remote hardening"
+sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui hooks remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
   local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
@@ -1804,6 +1804,7 @@ done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 fi
+if want hooks; then   # needs ui's admin ($ADMIN): name them together
 echo "== hooks (RFC-0014 §4.2): the stub plumbing on the plumbing network calls them, signed"
 hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # an admin exists by now: the callers-file operator token is refused
 HK="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
@@ -1835,6 +1836,7 @@ HEV="$(hcli events -n 200 2>&1)"
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^WARNING hook meeting: opens meeting cases, and no enabled routine acts on that kind" && echo "$OUT" | grep >/dev/null "^hook smoke: .*closes it on arrival" \
   && ok "-check lists the hooks, and warns on a kind no routine acts on" || bad "-check hooks: $(echo "$OUT" | grep -i hook)"
+fi
 
 echo "== hardening"
 if want remote; then
