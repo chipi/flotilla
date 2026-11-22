@@ -163,3 +163,12 @@ func TestAllowCountsPerMinute(t *testing.T) {
 		t.Fatal("the next minute was refused")
 	}
 }
+
+// The signing vector plumbing/test_call.py asserts too: the Go verifier of inbound hooks and the Python signer of outbound
+// callbacks (plumbing/call.py) cannot drift apart.
+func TestTheSharedSigningVector(t *testing.T) {
+	got := Sign([]byte(testSecret), "1795356651", "plan-0123456789abcdef", []byte(`{"probe":"x"}`))
+	if want := "sha256=123685c603afba91ed5362b46c17afd047c90bba06b58b45a6731572cd7da414"; got != want {
+		t.Fatalf("Sign = %s, want %s", got, want)
+	}
+}
