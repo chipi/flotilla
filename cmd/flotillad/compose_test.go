@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -255,6 +256,20 @@ func TestFlotilladWaitsForEveryWorkerItMayName(t *testing.T) {
 		}
 		if len(s.Profiles) > 0 && (d.Required == nil || *d.Required) {
 			t.Errorf("%s is in profile %v, so flotillad's dependency on it needs required: false", name, s.Profiles)
+		}
+	}
+}
+
+// RFC-0014: the plumbing tool's network carries the hook into flotillad and the callbacks out of it. A worker or a proxy on it would let the
+// plumbing reach a routine's process, or a routine reach the plumbing past its action's policy.
+func TestOnlyFlotilladIsOnThePlumbingNetwork(t *testing.T) {
+	for name, s := range loadCompose(t) {
+		on := slices.Contains(s.Networks, "plumbing")
+		if name == "flotillad" && !on {
+			t.Error("flotillad is not on the plumbing network")
+		}
+		if name != "flotillad" && on {
+			t.Errorf("%s is on the plumbing network: only flotillad joins it", name)
 		}
 	}
 }

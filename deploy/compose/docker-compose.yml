@@ -59,7 +59,7 @@ services:
       - ${FLOTILLA_CONFIG}/callers.yaml:/etc/flotilla/callers.yaml:ro
       - flotillad-secrets:/run/flotilla:ro
       - state:/var/lib/flotilla
-    networks: [flotilla, ui, shadow]
+    networks: [flotilla, ui, shadow, plumbing]   # plumbing: the installation's plumbing tool (RFC-0014 §4.7), flotillad alone
     depends_on:
       egress: {condition: service_started}
       worker-triage: {condition: service_healthy}   # the first run starts at boot: the worker must be listening
@@ -465,6 +465,11 @@ networks:
     external: true
   langfuse:
     name: ${NET_LANGFUSE:-langfuse_default}
+    external: true
+  # RFC-0014: the plumbing tool's network (n8n on the installation), owned by its compose project and internal,
+  # so it gives flotillad no route out. Only flotillad joins: the hook it serves, the callbacks it is called back on.
+  plumbing:
+    name: ${NET_PLUMBING:-plumbing}
     external: true
   umami:   # the seo proxy reaches Umami there (RFC-0012)
     name: ${NET_UMAMI:-umami_default}

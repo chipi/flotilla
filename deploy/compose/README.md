@@ -46,7 +46,7 @@ FLOTILLA_ADMIN_TOKEN_FILE=<admin token file>          # deploy_fleets.sh pauses 
 TRIAGE_FILING_GATE=<filing_gate.py>                    # the private fleets repo's triage/filing/scripts/filing_gate.py; unset: the deploy fails unless SF_FILING_GATE_ACCEPT says why
 # FLOTILLA_BACKUPS_KEEP=10                             # optional: how many store snapshots deploy.sh keeps
 # the services' Docker networks, when they are not the defaults
-# NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default
+# NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default NET_PLUMBING=plumbing
 ```
 
 A shadow state volume is seeded once from the live fleet's folder, without its secrets file and STOP

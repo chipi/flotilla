@@ -32,7 +32,7 @@ $D version >/dev/null 2>&1 || { echo "no Docker context '${DOCKER_CONTEXT_DEV:-d
 P=flotilla-e2e
 TAG=e2e-local
 LABEL=flotilla.e2e=1
-NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse"
+NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse e2e-plumbing"
 PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
 # the model contract check measures real models; against the stand-in gateway it can only fail: off in the demo
@@ -79,7 +79,7 @@ fi
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
   COMPOSE_PROFILES=candidate,ops,bugfix,shadow TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
-  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui
+  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui NET_PLUMBING=e2e-plumbing
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 # E2E_MUTANT=matrix-live-write gives the ops-read worker and its shadow worker one folder in common, which a generated shadow version then writes to
 COMPOSE_MUT=()
