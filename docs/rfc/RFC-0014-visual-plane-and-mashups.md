@@ -1,8 +1,9 @@
 # RFC-0014 — The visual plane and mashups: flotilla seen live, and as the governed step in business processes
 
-**Status:** Draft, for the operator's review. Nothing is built from it until the open questions are
-decided. The boundaries in §2 were decided on 2026-11-22; a first review (an advisor's, the same
-day) found where the first draft did not match the code, and this version follows it.
+**Status:** Draft, for the operator's review. The boundaries in §2 and the mashups' design were
+decided on 2026-11-22; a first review (an advisor's, the same day) found where the first draft did
+not match the code, and this version follows it. Open: the visual plane's look, spend and history,
+and the installation's directory service (§6). Nothing is built until the operator says so.
 **Builds on:** [the two ideas](../wip/ideas-2026-11-19.md) (2026-11-19), [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one binary, server-rendered UI), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (approvals outside the
 UI), [RFC-0002](RFC-0002-job-runtime.md) §5 and §7 (data between delimiters; external knowledge), the
@@ -37,9 +38,13 @@ and how they are governed.
 | M2 a business process | A fleet; its steps are case stages (what bugfix and ops already do). No flow engine. |
 | M3 knowledge | As the knowledge plan says: the platform's knowledge volume and its lookup tools, each step only after the one before it shows a measured effect (§4.4). |
 | M4 the strategy | Three layers (records, plumbing, flotilla) meeting at three points: in, out, read (§4.0). |
-| M5 the check | Four end-to-end cases carry the design (§4.5). |
+| M5 the check | Four end-to-end cases carry the design (§4.5); cases 1-3 are each built as an example fleet with an end-to-end acceptance test (§7). |
+| M6 where flotilla stops | In and out through the plumbing (A); reads live, through read-only MCP tools (C, read-only); no connectors of flotilla's own (B never) (§4.1, §4.8). |
+| M7 the plumbing | n8n, run by the installation's operations; flotilla takes no dependency on it (§4.7). |
+| M8 people | From the company's directory, read-only; an installation without one runs a small directory service of its own (§4.6). |
+| M9 order | The hook first, then the cases 3, 1, 2 in turn, then the visual plane (§8). |
 | Docs | Updated last, in full, architecture and diagrams included (§8). |
-| Open | Where flotilla stops and a plumbing tool starts (§4.1); chat events (§4.3); the rest of §6. |
+| Open | Chat events (§4.3); the visual plane's look, spend and history (§6). |
 
 ## 3. The visual plane
 
@@ -131,14 +136,14 @@ shadows, evaluated and budgeted.
 2. **Out:** a routine's outward effect is an action: done by flotilla itself where it has the
    effect (opening a pull request today), or asked of the plumbing through a signed callback, so
    flotilla never needs a Jira or a wiki connector of its own (§4.6).
-3. **Read:** the plumbing exports what the company knows (wiki spaces, folders, task projects, chat
-   digests) to files on a schedule; flotilla's knowledge volume serves them to routines, read-only,
-   with their sources (§4.4).
+3. **Read:** a routine reads what the company knows (wiki pages, documents, tasks, chat threads) live,
+   through read-only MCP tools it declares, each read recorded with its source (§4.8). Code docs stay
+   in flotilla's knowledge volume (§4.4).
 
 People rarely open flotilla: they ask, approve and read results in their own tools. The operator and
 staff use flotilla's pages for the ledger, the approvals and the live view (§3).
 
-### 4.1 Where flotilla stops (open)
+### 4.1 Where flotilla stops (decided: A for in and out, C read-only for reads, B never)
 
 **A. flotilla is the governed agent step; plumbing tools keep the plumbing.**
 
@@ -170,8 +175,9 @@ staff use flotilla's pages for the ledger, the approvals and the live view (§3)
 - Against: an MCP server's quality and permissions are its maker's; each one is a new credential, a
   new egress rule and a new source of injected text to review.
 
-**Recommendation (for review):** A now. C later, as its own RFC, read-only tools first, when one
-example fleet needs a tool A cannot give. B not at all.
+**Decided (operator, 2026-11-22):** A for what comes in and what goes out. C for reads, read-only,
+in this RFC (§4.8): a second brain answering from last night's copy is not good enough. A writing MCP
+tool stays out; every write is `plumbing.call` (§4.6). B not at all.
 
 ### 4.2 The inbound webhook
 
@@ -214,11 +220,11 @@ maps miss). Its order holds: bug fixing reads docs first and must show an effect
 then triage. A knowledge desk (§4.5) is a consumer of that volume, not a second store.
 
 **Beyond code repos.** The plan's sources are each project's repo. A second brain needs the
-company's other knowledge too: the plumbing exports wiki spaces, folders, task projects and chat
-digests to files (a folder or a git repo of its own) on a schedule, and the volume takes that export
-as one more declared source, with its own VERSION (the export's time). The same rules hold:
-declared, never discovered; read-only; data, never rules; and each new source only after a replay
-shows it helps.
+company's other knowledge too, and that changes during the day, so it is read live (§4.8), not copied
+into the volume. A nightly export into the volume stays possible later, for one source that live
+lookups prove too slow or too costly to search; it would be one more declared source with its own
+VERSION (the export's time), under the same rules: declared, never discovered; read-only; data, never
+rules; added only after a replay shows it helps.
 
 ### 4.5 End-to-end cases
 
@@ -232,8 +238,8 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | --- | --- | --- |
 | Someone asks a question in the chat's `#ask` channel. | R | |
 | The plumbing sees the message and calls the hook `ask` (the text, the asker's chat id, the thread). | P | hook: missing (§4.2) |
-| The hook opens a case of kind `question`; its text is data. | F | cases: yes |
-| `knowledge-desk/answer` reads the knowledge volume (wiki and folder exports, code docs) and drafts an answer with its sources. | F | the volume: planned (§4.4); exports: missing |
+| The hook opens a case of kind `question`; its text is data. The asker's chat id is looked up in the directory: a known person, or "unknown". | F | cases: yes; the directory: missing (§4.6) |
+| `knowledge-desk/answer` searches and reads the wiki, the documents and the tasks live through its read-only tools, and the code docs in the knowledge volume, and drafts an answer citing each source with its link and time. | F (reads R) | live reads: missing (§4.8); the volume: planned (§4.4) |
 | Its action `reply` starts at `propose`: a person approves the first answers in chat. | F | approvals in chat: yes (ADR-0005); the action: missing (§4.6) |
 | flotilla calls the plumbing back; the reply lands in the thread. | F to P to R | callback: missing (§4.6) |
 | The question, the sources read, the answer and who approved it are in the ledger; the answers are scored (sources cited, approved as sent). | F | ledger, evaluation: yes |
@@ -244,7 +250,8 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | Step | Layer | Today |
 | --- | --- | --- |
 | A schedule in flotilla starts `team/brief` each morning. | F | yes |
-| It reads the code host directly (merged changes, reviews) and last night's task and chat exports from the volume. | F (reads R through P's export) | code reads: yes; exports: missing |
+| It reads the code host directly (merged changes, reviews), and the tasks and chat threads of the last day live through its read-only tools. | F (reads R) | code reads: yes; live reads: missing (§4.8) |
+| Each name in the brief is a person from the directory, the same person across the code host, the tracker and chat. | F | the directory: missing (§4.6) |
 | It writes the brief: what moved, what is stuck, who is waiting on whom. | F | a brief: yes (the operator's) |
 | Its action `post` to the team's channel starts at `propose`, then earns `auto`. | F to P to R | the action: missing (§4.6) |
 
@@ -257,7 +264,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | `meetings/notes` extracts the decisions and the follow-ups. | F | |
 | Each follow-up becomes a case of its own at `propose` (who, what, by when). | F | case stages: yes |
 | A person approves a follow-up in chat; its action asks the plumbing to create the task. | F to P to R | approvals: yes; the action: missing |
-| The decisions go to the next export, so the second brain remembers them. | F to P | missing |
+| The decisions are written to the wiki's decisions page through `plumbing.call`, so the second brain finds them on its next live read. | F to P to R | the action: missing |
 
 **Case 4. Code, as today** (triage and bugfix).
 
@@ -271,10 +278,10 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 Case 4 is the proof that the core already works: cases, stages, approvals, earned autonomy, shadows,
 the ledger. Cases 1-3 add the three meeting points around it.
 
-**What the cases leave open:** whether nightly exports are fresh enough for a second brain, or some
-reads must be live (§4.1 C, read-only tools); how a chat user maps to a person flotilla knows (for
-approvals and for "who asked"); how large a company's documents get against the knowledge plan's
-"cheapest lookup first".
+**Decided for the cases (2026-11-22):** all three are built, in the order 3, 1, 2 (§8), each as an
+example fleet with its acceptance test (§7). Reads are live (§4.8); people come from the directory
+(§4.6). **Still open:** how large a company's documents get against the knowledge plan's "cheapest
+lookup first", which the first replays of case 1 measure.
 
 ### 4.6 What flotilla must add for them
 
@@ -283,9 +290,26 @@ approvals and for "who asked"); how large a company's documents get against the 
   declares (an n8n webhook, say), with a fixed name and payload shape per declared callback, its risk
   and reversibility in the action registry, at `propose` until earned. It is how a routine creates a
   task, posts a reply or files a page without flotilla owning a connector.
-- **Exports as a knowledge source** (§4.4).
-- **People across tools:** a declared map from a chat user to a person flotilla knows, so approvals
-  and "who asked" mean the same person everywhere.
+- **Live reads** through read-only MCP tools (§4.8).
+- **People from the directory.** A chat user, a code-host login and a tracker account mean the same
+  person everywhere, for "who asked", for names in a brief, and for who approved:
+  - **The source is the company's directory, read-only:** Google Workspace's directory, Microsoft
+    Entra, or an LDAP directory. flotillad pulls it on a schedule with a read-only credential and
+    keeps a copy, so a directory outage never stops a case. Each person is keyed by their email, with
+    their ids in each tool as attributes (a custom schema in Google, extension attributes in Entra,
+    custom attributes in LDAP); where a tool gives the email itself, the match is by email.
+  - **No directory, then a small one.** A company without one (this installation) runs a small
+    directory service of its own. For the installation, a light LDAP server on the mini, run by its
+    operations; lldap is the candidate (users with custom attributes, a web page to edit them, a
+    GraphQL API), to confirm with them. Functionally it is a declared list of people, kept in a
+    service instead of in flotilla's config.
+  - **Who someone is, never what they may do.** The directory names people; what a person may
+    approve stays in flotilla's roles and ADR-0005's pinned users. A person the directory does not
+    know may ask a question but approves nothing. Each sync's changes are in the ledger; a person
+    removed from the directory has their open approvals voided.
+  - **One reader per source kind,** in Go on the standard library where the source speaks HTTP and
+    JSON (Google, Entra, lldap's GraphQL); a plain LDAP reader would be a dependency decision of its
+    own, made only when a company brings an LDAP-only directory.
 
 ### 4.7 The plumbing for the installation's own test
 
@@ -300,10 +324,34 @@ story ever pairs with a plumbing tool. Running it is the installation's operatio
 dependency on it, because the hook and `plumbing.call` speak plain signed HTTP that any plumbing tool
 can send and receive.
 
+### 4.8 Live reads (option C, read-only)
+
+A routine reads the company's tools while it works, through MCP servers it declares as tools. Reads
+only: every write is `plumbing.call` (§4.6), so a read tool can never have an effect.
+
+- **Declared per routine** in its spec: the server, the tools it may call (each by name, each one a
+  read), and a read-only credential of its own, a mode-600 file the host config names. A tool that is
+  not declared is refused before the call; a server that offers a writing tool is rejected at load
+  unless the routine's list leaves it out.
+- **Which servers.** For the installation: n8n's MCP server trigger first, so the tools' credentials
+  stay in the plumbing and one server fronts the wiki, the documents and the tracker (to confirm when
+  n8n is set up); a tool maker's own MCP server where one is better, each declared in the same way.
+- **Through the one runtime.** The runtime gains an MCP client (the streamable HTTP transport, which
+  the standard library can speak; a library is a dependency decision). Each call is recorded as a tool
+  call of the model call that made it, with the server, the tool, the arguments and the result.
+- **The result is data.** Between delimiters (RFC-0002 §5), never as rules; scrubbed before the
+  store; capped in size per call and in calls per run.
+- **Replays.** A live read gives another answer tomorrow, so the recording is the replay's source:
+  a replay serves each recorded result again instead of calling the server. A shadow calls the same
+  read tools live, with the same read-only credential, since a read has no effect; the shadow proxy
+  admits the declared servers' hosts.
+- **Egress.** Each declared server's host is in the routine's egress allowlist, and nothing else.
+- **Spend.** Calls and their time count against the routine's budget like model calls.
+
 ## 5. Not in scope
 
 - A flow engine or a visual flow editor (M2).
-- A connector catalogue (unless §4.1 says otherwise).
+- A connector catalogue, and MCP tools that write (§4.1).
 - The visual plane as a control surface.
 - A wall screen in a shared room, until it is wanted (§3.6).
 - More than one installation on one flotilla.
@@ -312,21 +360,24 @@ can send and receive.
 
 ## 6. Ideas to bounce, and open questions
 
-1. **§4.1:** A, B, C or a mix? Is the recommendation (A now, C later read-only) right?
-2. **The look (§3.5):** the sea and fleets, or another world? Which moments should catch the eye: an
+**Open:**
+
+1. **The look (§3.5):** the sea and fleets, or another world? Which moments should catch the eye: an
    approval waiting, a shadow disagreeing, a routine late?
-3. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
-4. **History:** only "now", or also a slow replay of the day?
-5. **The first hook:** which outside service would call it, and what case kind it opens. A real first
-   caller in the installation, so the hook has recorded calls to replay its decisions against before
-   it ships (project rule 3).
-6. **Which case first** (§4.5)? Case 1 (the second brain) exercises all three meeting points; case 3
-   needs no knowledge volume.
-7. **The plumbing** (§4.7): decided, n8n.
-8. **Fresh enough?** Nightly exports for the second brain, or some reads live from the start (§4.1 C,
-   read-only)?
-9. **People across tools** (§4.6): where the map from a chat user to a person lives, and who keeps it.
-10. **The order** (§8): the visual plane first, then the hook? Or the hook first?
+2. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
+3. **History:** only "now", or also a slow replay of the day?
+4. **The directory service** for the installation (§4.6): lldap, or another, as its operations judge.
+
+**Decided (2026-11-22):**
+
+- **§4.1:** A for in and out, C read-only for reads, B never (M6).
+- **The first hook caller:** n8n, for case 3: a meeting transcript landing in a folder opens a case
+  of kind `meeting`. Its first recorded calls are the replay set for the hook (project rule 3).
+- **The cases:** all three, in the order 3, 1, 2, each with an acceptance test (§7).
+- **The plumbing:** n8n (§4.7).
+- **Freshness:** reads are live (§4.8); no nightly export to begin with.
+- **People:** from the directory; an installation without one runs a small one (§4.6).
+- **The order:** the hook first, the visual plane after the cases (§8).
 
 ## 7. How we would know it works
 
@@ -337,21 +388,44 @@ can send and receive.
 - **The hook:** an e2e of a signed call opening one case; the same delivery id opening none; an
   unsigned, stale or oversized call refused; a payload naming another kind, title or target ignored;
   a payload carrying instructions kept as data.
-- **Mashups:** one example fleet run end to end through a hook, its decisions in the ledger and every
-  outward step approved.
+- **`plumbing.call`:** an e2e of an approved action reaching a declared callback signed, with its
+  fixed name and payload shape; an undeclared callback or a payload outside its shape refused; an
+  action at `propose` never sent before its approval.
+- **Live reads:** an e2e of a declared read tool called and recorded; an undeclared tool refused
+  before the call; a server offering an undeclared writing tool rejected at load; a replay served
+  from the recording with the server down.
+- **The directory:** an e2e of a sync adding, changing and removing a person, each change in the
+  ledger; a removed person's open approval voided; an unknown chat user's approval refused.
 
-## 8. Order of work (proposed)
+**The cases' acceptance.** Each case is accepted twice: an e2e in the e2e stack, run in CI against a
+stub plumbing, stub read tools and a stub directory that speak the same HTTP as the real ones (no
+model server: the model's answers recorded); and a live run on the installation with n8n, the real
+tools and the directory service, its ledger read back by a script. A case is done when both pass.
 
-1. The hub at the write sites, and `/live`: the snapshot and the stream, the freshness mark, the safe
-   controls; the mockup pass first, as the contract.
-2. The hook: `hooks:` config, the signature, window, nonce, caps and rate, the §7 e2e, with a first
-   real caller.
-3. `plumbing.call` (§4.6) and the map of people across tools.
-4. The plumbing on the installation (§4.7), run by its operations, and the first case end to end
-   (§6 Q6), then the others; exports as a knowledge source when a case needs them, after the
-   knowledge plan's step before it has shown an effect.
-5. §4.1's option C as its own RFC, if a case needs live reads.
-6. The wall screen (§3.6), when one is wanted.
-7. **The docs, last and in full:** the architecture pages and their diagrams (the three layers, the
+| Case | The e2e passes when | The live run passes when |
+| --- | --- | --- |
+| 3. Meeting to follow-ups | A signed `meeting` call opens one case; its decisions and follow-ups are extracted from a recorded transcript; each follow-up is its own case at `propose`; approving one sends one `plumbing.call` `create_task` with the fixed shape; rejecting one sends nothing; the decisions go to `post_decisions`; the same delivery again opens nothing. | A real meeting note landing in the folder ends with its follow-ups as tasks in the tracker, each approved in chat, and its decisions on the wiki page; every step in the ledger with its actor. |
+| 1. Ask the second brain | A signed `ask` call opens a `question` case; the asker resolves to a person or to "unknown"; the routine's read-tool calls are recorded with their sources; the drafted answer cites at least one source with its link; the `reply` waits for approval and, approved, sends one `plumbing.call`; an unknown asker's approval is refused; a replay with the tools stubbed out gives the same answer. | Ten real questions in `#ask` get answers in their threads, each citing its sources, each approved before it was sent; their scores (sources cited, approved as sent) are on the routine's evaluation. |
+| 2. Who did what yesterday | A scheduled run reads the recorded code-host, tracker and chat results; every name in the brief is a directory person; a person with three accounts appears once; the `post` waits for approval and, approved, sends one `plumbing.call`. | Five mornings' briefs posted to the team's channel after approval, each name a real person once, each claim traceable in the ledger to the read that supports it. |
+| 4. Code, as today | The existing triage and bugfix e2e suites stay green. | The live fleets keep running through the whole build (project rule 7). |
+
+## 8. Order of work (decided 2026-11-22)
+
+0. The installation's side, by its operations, alongside: n8n (asked 2026-11-22), then the directory
+   service (§4.6).
+1. The hook: `hooks:` config, the signature, window, nonce, caps and rate, and its §7 e2e.
+2. `plumbing.call` (§4.6) and its §7 e2e.
+3. **Case 3**, the meeting to follow-ups: the example fleet, its n8n flows on the installation, and
+   its acceptance (§7).
+4. The directory reader (§4.6) and its §7 e2e.
+5. Live reads (§4.8) and their §7 e2e.
+6. **Case 1**, the second brain: the example fleet, the knowledge volume's code docs as the knowledge
+   plan has them by then, and its acceptance.
+7. **Case 2**, the team brief, and its acceptance.
+8. The visual plane: the hub at the write sites, and `/live` (the snapshot and the stream, the
+   freshness mark, the safe controls), the mockup pass first, as the contract; after §6's open
+   questions are answered.
+9. The wall screen (§3.6), when one is wanted.
+10. **The docs, last and in full:** the architecture pages and their diagrams (the three layers, the
    three meeting points, the live page's hub), the concepts page, the README and the examples' guide,
    so what is described is what was built.
