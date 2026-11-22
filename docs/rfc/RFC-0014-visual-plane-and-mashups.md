@@ -3,8 +3,9 @@
 **Status:** Draft, for the operator's review. The boundaries in §2 and the mashups' design were
 decided on 2026-11-22; a first review (an advisor's, the same day) found where the first draft did
 not match the code, and this version follows it; a second review (2026-11-22) found six blockers,
-four fixed here and two left as questions. Open: the visual plane's look, spend and history, a chat
-post's reversibility, a meeting's follow-ups (§6). Nothing is built until the operator says so.
+four fixed by it and two decided by the operator (a chat post's reversibility, a meeting's
+follow-ups). Open: the visual plane's look, spend and history (§6). Nothing is built until the
+operator says so.
 **Builds on:** [the two ideas](../wip/ideas-2026-11-19.md) (2026-11-19), [ADR-0001](../adr/ADR-0001-platform-foundations.md)
 (one binary, server-rendered UI), [ADR-0005](../adr/ADR-0005-agent-pipeline.md) (approvals outside the
 UI), [RFC-0002](RFC-0002-job-runtime.md) §5 and §7 (data between delimiters; external knowledge), the
@@ -250,7 +251,8 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | Its action `reply` starts at `propose`: a person approves the first answers in chat. | F | approvals in chat: yes (ADR-0005); the action: missing (§4.6) |
 | flotilla calls the plumbing back; the reply lands in the thread. | F to P to R | callback: missing (§4.6) |
 | The question, the sources read, the answer and who approved it are in the ledger; the answers are scored (sources cited, approved as sent). | F | ledger, evaluation: yes |
-| After enough approved answers, `reply` earns `auto` (autonomy is per action, not per kind), if a chat post is declared reversible (§6, open). | F | earned autonomy: yes |
+| After enough approved answers, the operator promotes `reply` to `auto` (autonomy is per action, not per kind; a chat post is reversible, §4.6), under the gates in §4.6: the asker's thread only, a known asker, a source cited from the run's own reads, three a day per asker. | F | earned autonomy: yes; the gates: missing |
+| Someone marks an auto answer wrong; a correction case runs `plumbing.retract`, and the retraction counts as a failed execution, so `reply` drops back to `propose`. | F to P to R | the breaker: yes (`internal/policy/policy.go:221-223`); retract: missing |
 
 **Case 2. Who did what yesterday** (a team brief).
 
@@ -260,7 +262,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | It reads the code host directly (merged changes, reviews), and the tasks and chat threads of the last day live through its read-only tools. | F (reads R) | code reads: yes; live reads: missing (§4.8) |
 | Each name in the brief is a person from the directory, the same person across the code host, the tracker and chat. | F | the directory: missing (§4.6) |
 | It writes the brief: what moved, what is stuck, who is waiting on whom. | F | a brief: yes (the operator's) |
-| Its action `post` to the team's channel starts at `propose`, and may earn `auto` on the same terms as `reply` (§6, open). | F to P to R | the action: missing (§4.6) |
+| Its action `post` to the team's channel (fixed in the declaration, one a day, labelled) starts at `propose`. It is reversible like `reply`, but many read it unasked, so it is promoted later, on its own score. | F to P to R | the action: missing (§4.6) |
 
 **Case 3. A meeting into decisions and follow-ups.**
 
@@ -269,9 +271,9 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | A meeting's transcript lands in a shared folder. | R | |
 | The plumbing sees the new file and calls the hook `meeting` (the file's text). | P | hook: missing |
 | `meetings/notes` extracts the decisions and the follow-ups. | F | |
-| Each follow-up becomes a case of its own at `propose` (who, what, by when), or a task proposed in the meeting's own case (§6, open). | F | missing: a routine on a case cannot open cases (`internal/spec/spec.go:783`) |
-| A person approves a follow-up in chat; its action asks the plumbing to create the task. | F to P to R | approvals: yes; the action: missing |
-| The decisions are written to the wiki's decisions page through `plumbing.call`, so the second brain finds them on its next live read. | F to P to R | the action: missing |
+| The meeting stays one case. Its first stage plans `plumbing.create_tasks`: the list of follow-ups (who, what, by when), at `propose`. A follow-up is a task a person does in the tracker, not a flotilla case: flotilla has no work on it once it exists. | F | case stages: yes; the action: missing |
+| A person approves the list once in chat; the plumbing creates the tasks. A wrong item is closed in the tracker. | F to P to R | approvals: yes |
+| Its second stage plans `plumbing.post_decisions`, at `propose`: the decisions go to the wiki's decisions page once approved, so the second brain finds them on its next live read. | F to P to R | the action: missing |
 
 **Case 4. Code, as today** (triage and bugfix).
 
@@ -297,9 +299,12 @@ lookup first", which the first replays of case 1 measure.
   routine creates a task, posts a reply or files a page without flotilla owning a connector.
   - **One action per callback,** never one generic action: risk, reversibility, the kinds it serves,
     its limits and its earned autonomy all belong to one action name (`internal/registry/registry.go:70-82`;
-    autonomy per action name, `internal/api/plans.go:21`), so `plumbing.create_task`,
-    `plumbing.post_decisions`, `plumbing.reply` and `plumbing.post` are four actions with four
-    ladders. Each is an `executor: routine` action (ADR-0017) whose params are the callback's payload
+    autonomy per action name, `internal/api/plans.go:21`), so `plumbing.create_tasks`,
+    `plumbing.post_decisions`, `plumbing.reply`, `plumbing.post` and `plumbing.retract` are five
+    actions with five ladders. A list (`create_tasks`' follow-ups) travels as one `text` param of
+    bounded size whose shape (at most N items, each who, what and by when) the execute routine
+    checks before sending; a list kind joins the registry's params only when a second action needs
+    one. Each is an `executor: routine` action (ADR-0017) whose params are the callback's payload
     shape (enums, text with a maximum), so policy refuses a payload outside it before anything is
     sent (`internal/policy/policy.go:173-176`).
   - **One shared sender.** Each action's execute routine is a small spec around one shared
@@ -308,6 +313,30 @@ lookup first", which the first replays of case 1 measure.
     in the spec. One execute routine per action, as ADR-0017 has it (`internal/spec/spec.go:231-233`).
   - **A worker of its own.** The callback secrets live in that worker's environment, and its proxy
     ACL admits only the plumbing's host.
+- **What a chat post may earn** (decided 2026-11-22). Today the cap reads only `reversible`
+  (`internal/policy/policy.go:214-216`, `internal/registry/registry.go:93-98`); `risk` only picks
+  where a person approves (`internal/api/slack.go:50-56`). Two changes, both with the build:
+  - **`reversible` means "the executor can take it back".** A chat post can: the bot edits or deletes
+    its own message and posts a correction, through `plumbing.retract`. So `reply` and `post` are
+    `reversible: yes`, and a person can approve them in Slack (which refuses `no`,
+    `slack.go:54-56`). A sent email stays `no`: nothing recalls it. ADR-0017 decision 3 is amended
+    to say so. Before declaring it, the installation checks that its chat's bot token can edit and
+    delete its own messages in every channel kind it posts to (shared channels with other companies
+    included).
+  - **`risk: high` also caps at `propose`,** forever, at the same three places. A message to a
+    customer or the public is declared high. No action is declared high today, so no past decision
+    changes (replayed as ADR-0017's amendment was).
+  - **The gates for `reply` at auto,** deterministic, after the model, in the execute routine's
+    pre-check: the thread and channel come from the case, never from the plan; the asker resolves in
+    the directory (an "unknown" asker keeps that plan at `propose`); a fixed agent label leads the
+    text; at least one citation, each matching a read this run recorded (§4.8); a maximum length;
+    no `@channel`, `@here` or mention outside the thread; `limits.per_target_per_day: 3`, the asker
+    being the target. A retracted auto answer is recorded as a failed execution, so the breaker
+    (`policy.go:221-223`) drops `reply` back to `propose`; there is no score-driven demotion in the
+    code today, and none is added.
+  - **Rejected:** a per-action override of the cap (a declaration that needs one is wrong, and it
+    would be a second control beside the registry), and keeping chat at `propose` forever (it takes
+    the second brain's value away).
 - **Live reads** through read-only MCP tools (§4.8).
 - **People from the directory.** A chat user, a code-host login and a tracker account mean the same
   person everywhere, for "who asked", for names in a brief, and for who approved:
@@ -403,13 +432,6 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
    approval waiting, a shadow disagreeing, a routine late?
 2. **Spend:** shown as a fill against the budget, as money, or both (staff may see money today)?
 3. **History:** only "now", or also a slow replay of the day?
-4. **Can a chat post earn auto?** The registry keeps an action declared `reversible: no` at
-   `propose` forever (`internal/registry/registry.go:93-98`; ADR-0017 counts a sent email as
-   irreversible). A chat reply is read the moment it lands. Decide `reply` and `post`'s
-   reversibility, and with it whether cases 1 and 2 ever send without a person.
-5. **A meeting's follow-ups:** a flotilla case each (opened through the plumbing calling a hook once
-   per item, or by a routine allowed to open cases), or only tasks in the tracker, proposed from the
-   meeting's own case? It turns on whether flotilla does any work on a follow-up after it exists.
 
 **Decided (2026-11-22):**
 
@@ -422,6 +444,11 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
 - **People:** from the directory; an installation without one keeps a people file in its host
   config, read as a directory source (§4.6). No directory service on the installation.
 - **The order:** the hook first, the visual plane after the cases (§8).
+- **A chat post's reversibility:** `yes`, with `plumbing.retract`; `risk: high` caps at `propose`;
+  `reply` may earn auto under its gates (§4.6).
+- **A meeting's follow-ups:** tasks in the tracker, proposed as one list from the meeting's own case,
+  not flotilla cases. A follow-up becomes a case only if flotilla is later meant to work on it
+  (chasing its owner, say); then the plumbing would open it through a hook, one call per item.
 
 ## 7. How we would know it works
 
@@ -434,7 +461,10 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
   a payload carrying instructions kept as data.
 - **`plumbing.call`:** an e2e of an approved action reaching its callback, signed, with its payload
   shape; a payload outside the action's params refused by policy before anything is sent; an action
-  at `propose` never sent before its approval; two callback actions keeping separate autonomy.
+  at `propose` never sent before its approval; two callback actions keeping separate autonomy; a
+  `risk: high` action refused auto; `reply` at auto refused by each of its gates (a thread not the
+  case's, an unknown asker, no recorded citation, `@channel`, the fourth of a day); a retraction
+  dropping `reply` back to `propose`.
 - **Live reads:** an e2e of a declared read tool called and recorded in full (a result above 8192
   characters included); an undeclared tool refused before the call; a replay served from the record
   with the server down; a shadow of the routine served the live run's record, calling no server.
@@ -451,7 +481,7 @@ is done when both pass.
 
 | Case | The e2e passes when | The live run passes when |
 | --- | --- | --- |
-| 3. Meeting to follow-ups | A signed `meeting` call opens one case; its decisions and follow-ups are extracted from a recorded transcript; each follow-up is its own case at `propose`; approving one sends one `plumbing.call` `create_task` with the fixed shape; rejecting one sends nothing; the decisions go to `post_decisions`; the same delivery again opens nothing. | A real meeting note landing in the folder ends with its follow-ups as tasks in the tracker, each approved in chat, and its decisions on the wiki page; every step in the ledger with its actor. |
+| 3. Meeting to follow-ups | A signed `meeting` call opens one case; its decisions and follow-ups are extracted from a scripted transcript; the first stage plans one `plumbing.create_tasks` with the list in its fixed shape; approving it sends one callback, rejecting it sends nothing; the second stage plans `plumbing.post_decisions`, sent only on its own approval; no other case is opened; the same delivery again opens nothing. | A real meeting note landing in the folder ends with its follow-ups as tasks in the tracker and its decisions on the wiki page, each list approved once in chat; every step in the ledger with its actor. |
 | 1. Ask the second brain | A signed `ask` call opens a `question` case; the asker resolves to a person or to "unknown"; the routine's read-tool calls are recorded with their sources; the drafted answer cites at least one source with its link; the `reply` waits for approval and, approved, sends one `plumbing.call`; an unknown asker's approval is refused; a replay with the tools stubbed out gives the same answer. | Ten real questions in `#ask` get answers in their threads, each citing its sources, each approved before it was sent; their scores (sources cited, approved as sent) are on the routine's evaluation. |
 | 2. Who did what yesterday | A scheduled run reads the recorded code-host, tracker and chat results; every name in the brief is a directory person; a person with three accounts appears once; the `post` waits for approval and, approved, sends one `plumbing.call`. | Five mornings' briefs posted to the team's channel after approval, each name a real person once, each claim traceable in the ledger to the read that supports it. |
 | 4. Code, as today | The existing triage and bugfix e2e suites stay green. | The live fleets keep running through the whole build (project rule 7). |
