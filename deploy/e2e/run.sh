@@ -1823,8 +1823,8 @@ HCASE="$(echo "$HK" | awk '$1 == "opened" {print $3}' | python3 -c 'import json,
 [ "$(hcli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 1 ] \
   && ok "the refused calls opened no case: one meeting case in all" || bad "meeting cases: $(hcli case list --all 2>&1 | awk '$2 == "meeting"')"
 HSHOW="$(hcli case show "$HCASE" 2>&1)"
-echo "$HSHOW" | grep >/dev/null "A meeting's notes arrived" && ! echo "$HSHOW" | grep >/dev/null '"kind":"bugfix"' \
-  && ok "the case's title is the hook's wording, and a payload field the hook does not declare (kind) was not kept" || bad "hook case: $HSHOW"
+echo "$HSHOW" | grep >/dev/null " hook:meeting=standup-2026-11-22.md$" && echo "$HSHOW" | grep >/dev/null "fields not declared, ignored: kind" && echo "$HSHOW" | grep >/dev/null "by detector  detected->handed_over" \
+  && ok "the case is in the hook's own key space, a payload field the hook does not declare (kind) was ignored and recorded, the hook handed it over" || bad "hook case: $HSHOW"
 SCASE="$(echo "$HK" | awk '$1 == "smoke" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
 [ "$(hk smoke)" = 202 ] && hcli case list --all 2>&1 | grep "^$SCASE " | grep >/dev/null "closed" \
   && ok "the smoke hook's case closed on arrival ($SCASE)" || bad "smoke: $(hk smoke) $(hcli case list --all 2>&1 | grep "^$SCASE ")"
