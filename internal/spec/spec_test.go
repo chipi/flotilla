@@ -231,6 +231,26 @@ func TestCheckTrigger(t *testing.T) {
 	}
 }
 
+// An executing routine (ADR-0017): one per action, a disabled one included, so the dispatcher never
+// picks between two by load order.
+func TestOneExecutorPerAction(t *testing.T) {
+	onExecute := strings.Replace(strings.Replace(good, "trigger: {every: 10m}", "trigger: {execute: {action: github.open_pr}}", 1),
+		"freshness: 35m\n", "", 1)
+	d := t.TempDir()
+	write(t, d, "bugfix/open-pr.yaml", strings.NewReplacer("fleet: triage", "fleet: bugfix", "routine: cycle", "routine: open-pr").Replace(onExecute))
+	routines, err := Load(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := routines[0]; j.OnExecute() != "github.open_pr" {
+		t.Fatalf("an executing routine: execute %q", j.OnExecute())
+	}
+	write(t, d, "ops/open-pr.yaml", strings.NewReplacer("fleet: triage", "fleet: ops", "routine: cycle", "routine: open-pr", "enabled: true", "enabled: false").Replace(onExecute))
+	if _, err := Load(d); err == nil || !strings.Contains(err.Error(), "already has an executing routine") {
+		t.Fatalf("two executing routines for one action: %v", err)
+	}
+}
+
 func TestEmptyDir(t *testing.T) {
 	if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "no routine specs") {
 		t.Fatalf("got %v", err)

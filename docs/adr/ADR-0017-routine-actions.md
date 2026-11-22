@@ -76,6 +76,10 @@ routine_actions:
 - **A routine action's check may ask the system it wrote to**, when flotilla has no read of its own:
   plumbing.call's check asks the callback, signed, whether the plan's delivery (`plan-<hash16>`) is
   done there. The plumbing finds it from the delivery id it wrote into what it made.
+- **One executing routine per action.** A second routine with the same `execute:` action is a load
+  error (`flotillad -check` fails), a disabled one included, as a second check routine for one verify
+  condition already was: the dispatcher took the first match in load order, so which one ran depended
+  on the folder names.
 
 ## Consequences
 

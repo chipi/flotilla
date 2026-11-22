@@ -541,6 +541,13 @@ func LoadVersions(dir string) ([]*Routine, error) {
 			}
 			seen["check:"+v] = p
 		}
+		if a := j.OnExecute(); a != "" {
+			if prev, dup := seen["execute:"+a]; dup {
+				errs = append(errs, fmt.Errorf("%s: %s already has an executing routine in %s", p, a, prev))
+				continue
+			}
+			seen["execute:"+a] = p
+		}
 		routines = append(routines, j)
 	}
 	sort.SliceStable(routines, func(a, b int) bool { return routines[a].Path < routines[b].Path })
