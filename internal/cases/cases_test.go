@@ -26,6 +26,7 @@ var diagram = map[[2]string][]string{
 	{Executing, Escalated}:         {ByAct, ByTimer},
 	{Checking, Closed}:             {ByCheck},
 	{Checking, Escalated}:          {ByCheck, ByTimer},
+	{Checking, HandedOver}:         {ByCheck},
 	{Escalated, HandedOver}:        {ByOperator},
 	{Escalated, Closed}:            {ByOperator, BySync},
 }

@@ -21,6 +21,11 @@
 // status the spec lists, the next one is handed FLOTILLA_RESUME (the run and its status), and the case's
 // timeline says so (run.started per run, run.resumed with the prior run).
 //
+// A plan may name what follows it once its check verifies it, instead of closing the case (RFC-0013 §2,
+// amended 2026-11-22):
+//
+//	{"outcome": "plan", "action": "plumbing.create_tasks", "params": {...}, "then": {"stage": "decisions", "data": {...}}}
+//
 // A plan moves the case to planned (by the run's routine) and goes to policy. Anything else (a failed
 // run, no file, a bad file, an unknown outcome, another case's id) leaves the case handed over with a
 // run.no_decision event, and the case waits out the backoff before it is tried again; the stuck-state
@@ -123,6 +128,15 @@ type Decision struct {
 	Ref     string            `json:"ref,omitempty"` // an executing run's: what it made (a PR, owner/repo#n)
 	// hand_over (RFC-0013 §2): the stage the case goes to and what its routine should read
 	Stage string          `json:"stage,omitempty"`
+	Data  json.RawMessage `json:"data,omitempty"`
+	// a plan's: the stage the case goes to once the plan's check verifies it, instead of closing (RFC-0013
+	// §2, amended 2026-11-22)
+	Then *Then `json:"then,omitempty"`
+}
+
+// Then is what follows a verified plan: the stage whose routine acts next, and what it reads as stage_data.
+type Then struct {
+	Stage string          `json:"stage"`
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
@@ -426,6 +440,13 @@ func (d *Dispatcher) check(ctx context.Context, c store.Case, j *spec.Routine, c
 	}
 	switch dec.Outcome {
 	case "verified":
+		stage, data, then, err := st.PlanThen(ctx, c.ID, p.RunID)
+		if err != nil {
+			return err
+		}
+		if then {
+			return d.handOnVerified(ctx, c, j, r.ID, dec.Detail, stage, data)
+		}
 		if err := st.MoveCase(ctx, c.ID, cases.Closed, cases.ByCheck, cases.Verified, j.ID(), strings.TrimSpace("run "+r.ID+": "+dec.Detail)); err != nil {
 			return err
 		}
@@ -793,9 +814,26 @@ func (d *Dispatcher) run(ctx context.Context, c store.Case, j *spec.Routine) err
 	}
 	switch dec.Outcome {
 	case "plan":
+		var thenData string
+		if t := dec.Then; t != nil {
+			if t.Stage == "" || t.Stage == c.Stage || !stageRe.MatchString(t.Stage) || actingRoutine(d.API.Sched.Routines(), c.Kind, t.Stage) == nil {
+				return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: the plan's then names stage %q, which no enabled routine of %s acts on after %q", r.ID, t.Stage, c.Kind, c.Stage))
+			}
+			data, ok := detectionData(t.Data)
+			if !ok {
+				return d.noDecision(ctx, c.ID, j.ID(), fmt.Sprintf("run %s: the plan's then data is not a JSON object of at most %d bytes", r.ID, maxData))
+			}
+			thenData = data
+		}
 		// the re-check's numbers go on the case with the move: the plan cites them (RFC-0004 §5.1)
 		if err := st.MoveCase(ctx, c.ID, cases.Planned, cases.ByAct, "", j.ID(), strings.TrimSpace("run "+r.ID+": "+dec.Detail)); err != nil {
 			return err
+		}
+		// before policy: an automatic plan's check must find it
+		if t := dec.Then; t != nil {
+			if err := st.SetPlanThen(ctx, c.ID, r.ID, j.ID(), t.Stage, thenData); err != nil {
+				return err
+			}
 		}
 		pd, pid, err := d.API.DecidePlan(ctx, policy.Plan{CaseID: c.ID, RunID: r.ID, Action: dec.Action, Params: dec.Params})
 		if err != nil {
@@ -901,6 +939,27 @@ func (d *Dispatcher) handOver(ctx context.Context, c store.Case, j *spec.Routine
 	}
 	if err == nil {
 		d.Log.Info("case handed on", "case", c.ID, "run_id", runID, "from", c.Stage, "to", dec.Stage)
+	}
+	return err
+}
+
+// handOnVerified hands a case its check verified on to the stage its plan's then named. A stage no enabled
+// routine acts on any more, or a case past MaxStageChanges, escalates it: the plan was carried out, what was
+// to follow was not.
+func (d *Dispatcher) handOnVerified(ctx context.Context, c store.Case, j *spec.Routine, runID, detail, stage, data string) error {
+	st := d.API.Store
+	why := strings.TrimSpace("run " + runID + ": " + detail)
+	if actingRoutine(d.API.Sched.Routines(), c.Kind, stage) == nil {
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByCheck, "", j.ID(),
+			fmt.Sprintf("verified (%s), but no enabled routine of %s acts on its then, stage %q", why, c.Kind, stage))
+	}
+	err := st.HandOnVerified(ctx, c.ID, stage, j.ID(), why, data)
+	if errors.Is(err, store.ErrStageLimit) {
+		return st.MoveCase(ctx, c.ID, cases.Escalated, cases.ByCheck, "", j.ID(),
+			fmt.Sprintf("verified (%s), but its then, stage %q, is past the %d stage changes a case may have", why, stage, store.MaxStageChanges))
+	}
+	if err == nil {
+		d.Log.Info("case verified and handed on", "case", c.ID, "run_id", runID, "from", c.Stage, "to", stage)
 	}
 	return err
 }

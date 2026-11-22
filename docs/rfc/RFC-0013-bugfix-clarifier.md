@@ -231,3 +231,14 @@ questions; the intent the simulated reporter supplied comes only from §4.
   missing import), a computed name, a name only in a test, a doc or a generated file. The cases it
   was for, #651 and #659, are dev errors that intake (`is_dev`) and triage already leave out. Step
   one now notes on the chain what main has of the names the error calls missing.
+- 2026-11-22 — §2 amended (operator, for RFC-0014's case 3): a plan may name what follows it,
+  `"then": {"stage": ..., "data": {...}}`. It is kept on the case's timeline with the run that
+  planned it (`plan.then`); when the plan's check verifies it, the case goes from `checking` back to
+  `handed_over` at that stage (a move only the check makes) instead of closing, with a `case.staged`
+  event carrying the data, and that stage's routine plans the next action. It counts towards the two
+  stage changes; past them, or with no enabled routine for the stage by then, the verified case is
+  escalated. A then to the first stage, to the stage the case is at, or with data that is not an
+  object is no decision. A rejected or failed plan never reaches its then. No plan had a then
+  before, so no past decision changes. Not covered: earned autonomy and the per-action counts read a
+  case's resolution, so in a case with two plans, the second plan's rejection or failure also counts
+  against the first; no such action is above propose today.

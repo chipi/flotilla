@@ -177,6 +177,120 @@ func TestLimitIsPerBugAcrossCases(t *testing.T) {
 	}
 }
 
+// A plan may name what follows it (RFC-0013 §2, amended 2026-11-22): its `then` is kept with the run that
+// planned it, and policy decides the plan as any other.
+func TestPlanThenIsRecorded(t *testing.T) {
+	f := setup(t)
+	withClarify(f)
+	id := f.handOver(t, "")
+	f.decide(`{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"},
+		"then": {"stage": "clarify", "data": {"decisions": ["rerun nightly"]}}}`)
+	f.pass(t)
+	plans, err := f.st.Plans(context.Background(), id)
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("plans %v %v", plans, err)
+	}
+	stage, data, ok, err := f.st.PlanThen(context.Background(), id, plans[0].RunID)
+	if err != nil || !ok || stage != "clarify" || !strings.Contains(data, "rerun nightly") {
+		t.Fatalf("then: stage %q data %q ok %v err %v", stage, data, ok, err)
+	}
+	if _, _, ok, _ := f.st.PlanThen(context.Background(), id, "another-run"); ok {
+		t.Fatal("a then is another run's")
+	}
+}
+
+// A then to a stage no enabled routine acts on, or with data that is not an object, is no decision: the
+// plan is not made.
+func TestPlanThenRefused(t *testing.T) {
+	for name, then := range map[string]string{
+		"no routine for the stage": `{"stage": "nobody"}`,
+		"a malformed stage":        `{"stage": "Clarify; rm"}`,
+		"the first stage":          `{"stage": ""}`,
+		"data not an object":       `{"stage": "clarify", "data": [1, 2]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := setup(t)
+			withClarify(f)
+			id := f.handOver(t, "")
+			f.decide(`{"outcome": "plan", "action": "backup.rerun", "params": {"host": "host-01"}, "then": ` + then + `}`)
+			f.pass(t)
+			if c := f.cs(t, id); c.Status != cases.HandedOver {
+				t.Fatalf("%s", c.Status)
+			}
+			if e := lastEvent(t, f, id); e.Kind != "run.no_decision" || !strings.Contains(e.Detail, "then") {
+				t.Fatalf("event %+v", e)
+			}
+		})
+	}
+}
+
+// A verified check of a plan with a then hands the case on to that stage instead of closing it: the
+// stage's routine acts next and reads the then's data; the target stays the case's. The verification is on
+// the timeline.
+func TestVerifiedThenHandsOn(t *testing.T) {
+	f := setup(t)
+	withClarify(f)
+	ctx := context.Background()
+	id := f.checking(t, "#then")
+	if err := f.st.SetPlanThen(ctx, id, "r1", "ops/rerun", "clarify", `{"decisions":["rerun nightly"]}`); err != nil {
+		t.Fatal(err)
+	}
+	f.result(`{"outcome": "verified", "detail": "backup at 10:42"}`)
+	f.pass(t)
+	c := f.cs(t, id)
+	if c.Status != cases.HandedOver || c.Stage != "clarify" || c.StageChanges != 1 || c.Holder != "" {
+		t.Fatalf("case %s stage %q changes %d holder %q", c.Status, c.Stage, c.StageChanges, c.Holder)
+	}
+	evs, _ := f.st.CaseEvents(ctx, id)
+	var moved, staged bool
+	for _, e := range evs {
+		if e.Kind == "case.handed_over" && e.From == cases.Checking && e.By == cases.ByCheck && strings.Contains(e.Detail, "verified") && strings.Contains(e.Detail, "backup at 10:42") {
+			moved = true
+		}
+		if e.Kind == "case.staged" && e.To == "clarify" && strings.Contains(e.Data, "rerun nightly") {
+			staged = true
+		}
+	}
+	if !moved || !staged {
+		t.Fatalf("handed on %v, staged %v: %+v", moved, staged, evs)
+	}
+	if h := f.holder(t); h != id {
+		t.Fatalf("the target's lock is %q, want the case's", h)
+	}
+
+	f.now = f.now.Add(time.Hour)
+	f.decide(`{"outcome": "resolved_itself", "detail": "nothing to add"}`)
+	f.pass(t)
+	got := f.w.got[len(f.w.got)-1]
+	var cj caseJSON
+	if err := json.Unmarshal([]byte(got.Env["FLOTILLA_CASE"]), &cj); err != nil {
+		t.Fatal(err)
+	}
+	if got.Routine != "ops/clarify" || cj.Stage != "clarify" || !strings.Contains(string(cj.StageData), "rerun nightly") {
+		t.Fatalf("the next stage's run: routine %s case %+v", got.Routine, cj)
+	}
+}
+
+// A then to a stage whose routine is gone by the time the check verifies escalates the verified case: what
+// was to follow did not happen, and a person decides (the stage limit: the store's TestHandOnVerified).
+func TestVerifiedThenCannotHandOn(t *testing.T) {
+	f := setup(t)
+	withClarify(f)
+	id := f.checking(t, "#gone")
+	if err := f.st.SetPlanThen(context.Background(), id, "r1", "ops/rerun", "clarify", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	f.d.API.Sched.SetRoutines(f.d.API.Sched.Routines()[:3])
+	f.result(`{"outcome": "verified", "detail": "done"}`)
+	f.pass(t)
+	if c := f.cs(t, id); c.Status != cases.Escalated {
+		t.Fatalf("%s stage %q", c.Status, c.Stage)
+	}
+	if e := lastEvent(t, f, id); !strings.Contains(e.Detail, "verified") || !strings.Contains(e.Detail, "clarify") {
+		t.Fatalf("the escalation says %q", e.Detail)
+	}
+}
+
 // not_reproducible is its own close (RFC-0013, decision 2): never existed on main, not "went away".
 func TestNotReproducibleCloses(t *testing.T) {
 	f := setup(t)

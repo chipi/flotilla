@@ -32,6 +32,7 @@ stateDiagram-v2
     executing --> escalated: failed or unknown
     checking --> closed: verified
     checking --> escalated: not verified
+    checking --> handed_over: verified, and its plan's then names the next stage
     escalated --> handed_over: the operator reassigns it
     escalated --> closed: operator or an issue resolves it
     closed --> [*]
@@ -39,6 +40,13 @@ stateDiagram-v2
 
 The transition table in flotillad enforces these; events (an outcome days later, a recurrence, a
 reopened issue) may still be added to a closed case.
+
+A plan may name what follows it: `{"outcome": "plan", ..., "then": {"stage": "decisions", "data":
+{...}}}`. When its check verifies it, the case goes back to `handed_over` at that stage instead of
+closing, and that stage's routine plans the next action, reading the data as `stage_data`
+([RFC-0013](../rfc/RFC-0013-bugfix-clarifier.md) §2, amended 2026-11-22). The `meetings`
+example plans a meeting's follow-ups this way, then its decisions. Each hand-on counts towards the
+case's two stage changes; past them, or with no routine for the stage, the verified case escalates.
 
 ## An example: an overnight backup that failed
 

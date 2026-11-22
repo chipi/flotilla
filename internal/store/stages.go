@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -48,6 +49,96 @@ func (s *Store) StageCase(ctx context.Context, id, stage, holder, detail, data s
 	}
 	ev := CaseEvent{CaseID: id, At: s.now().Format(ts), Kind: "case.staged", Actor: holder, By: cases.ByAct,
 		From: stageName(from), To: stageName(stage), Detail: detail, Data: data}
+	if err := addCaseEvent(ctx, tx, ev); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+const planThenEvent = "plan.then"
+
+type planThen struct {
+	Stage string          `json:"stage"`
+	Data  json.RawMessage `json:"data"`
+}
+
+// SetPlanThen records what follows the plan the run made (RFC-0013 §2, amended 2026-11-22): once its
+// check verifies it, the case goes to `stage`, whose routine reads `data`. It is kept on the case's
+// timeline with the run, so a later plan of the same case has its own or none.
+func (s *Store) SetPlanThen(ctx context.Context, id, runID, actor, stage, data string) error {
+	if data == "" {
+		data = "{}"
+	}
+	doc, err := json.Marshal(planThen{Stage: stage, Data: json.RawMessage(data)})
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	ev := CaseEvent{CaseID: id, At: s.now().Format(ts), Kind: planThenEvent, Actor: actor, By: cases.ByAct,
+		To: stageName(stage), Detail: "run " + runID + ": then " + stageName(stage), Data: string(doc)}
+	if err := addCaseEvent(ctx, tx, ev); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// PlanThen is what follows the plan the run made, if it named anything.
+func (s *Store) PlanThen(ctx context.Context, id, runID string) (stage, data string, ok bool, err error) {
+	var doc string
+	err = s.db.QueryRowContext(ctx, `SELECT data FROM case_events WHERE case_id = ? AND kind = ? AND detail LIKE ? ESCAPE '\'
+		ORDER BY seq DESC LIMIT 1`, id, planThenEvent, likeEscape("run "+runID+":")+"%").Scan(&doc)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	} else if err != nil {
+		return "", "", false, err
+	}
+	var t planThen
+	if err := json.Unmarshal([]byte(doc), &t); err != nil {
+		return "", "", false, fmt.Errorf("case %s: plan.then: %w", id, err)
+	}
+	return t.Stage, string(t.Data), true, nil
+}
+
+// HandOnVerified moves a case its check verified on to the stage its plan named, instead of closing it:
+// checking -> handed_over by the check (the move's event says verified, and why), then a case.staged event
+// with the data, counted against MaxStageChanges. Only a checking case held by `holder` moves. The target
+// stays the case's: the next stage plans for the same case.
+func (s *Store) HandOnVerified(ctx context.Context, id, stage, holder, detail, data string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var status, from, held string
+	var changes int
+	err = tx.QueryRowContext(ctx, `SELECT status, stage, holder, stage_changes FROM cases WHERE id = ?`, id).Scan(&status, &from, &held, &changes)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNoSuchCase
+	} else if err != nil {
+		return err
+	}
+	switch {
+	case status != cases.Checking:
+		return fmt.Errorf("%w: case %s is %s, not checking", ErrBadTransition, id, status)
+	case held != holder:
+		return fmt.Errorf("%w: case %s is held by %q, not %q", ErrBadTransition, id, held, holder)
+	case stage == from:
+		return fmt.Errorf("%w: case %s is already at stage %q", ErrBadTransition, id, stage)
+	case changes >= MaxStageChanges:
+		return ErrStageLimit
+	}
+	if err := s.moveCase(ctx, tx, id, cases.HandedOver, cases.ByCheck, "", holder, "verified: "+detail); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE cases SET stage = ?, stage_changes = stage_changes + 1 WHERE id = ?`, stage, id); err != nil {
+		return err
+	}
+	ev := CaseEvent{CaseID: id, At: s.now().Format(ts), Kind: "case.staged", Actor: holder, By: cases.ByCheck,
+		From: stageName(from), To: stageName(stage), Detail: "the verified plan's then: " + detail, Data: data}
 	if err := addCaseEvent(ctx, tx, ev); err != nil {
 		return err
 	}

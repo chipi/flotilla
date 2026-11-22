@@ -80,8 +80,11 @@ var table = map[move]struct {
 	// closes only as resolved itself
 	{Executing, Closed}: {by: []string{ByAct, ByOperator}, resolutions: []string{ResolvedItself, Verified},
 		only: map[string][]string{ByAct: {ResolvedItself}, ByOperator: {Verified}}},
-	{Executing, Escalated}:  {by: []string{ByAct, ByTimer}},
-	{Checking, Closed}:      {by: []string{ByCheck}, resolutions: []string{Verified}},
+	{Executing, Escalated}: {by: []string{ByAct, ByTimer}},
+	{Checking, Closed}:     {by: []string{ByCheck}, resolutions: []string{Verified}},
+	// a verified plan that names what follows it hands the case on to that stage (RFC-0013 §2, amended
+	// 2026-11-22): a meeting's follow-ups made, its decisions planned next
+	{Checking, HandedOver}:  {by: []string{ByCheck}},
 	{Checking, Escalated}:   {by: []string{ByCheck, ByTimer}},
 	{Escalated, HandedOver}: {by: []string{ByOperator}},
 	{Escalated, Closed}:     {by: []string{ByOperator, BySync}, resolutions: []string{OperatorResolved, IssueResolved}},
