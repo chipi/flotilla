@@ -210,7 +210,9 @@ outside service, so it signs.
   one can stay on loopback, and the plumbing's network would otherwise reach every route behind a
   bearer token. flotillad joins the plumbing's internal network, and nothing outside the
   installation's network reaches the listener (§5). The e2e stack's stub plumbing calls it the same
-  way.
+  way. Not covered: the workers' listener and the UI listener bind every interface of flotillad's,
+  so the plumbing's network reaches them too; each still takes its own credential (a run's token, a
+  session), and nothing there opens without one.
 - **It opens one case and nothing else.** The case's kind starts its acting routine under the kind's
   case limits and canonical-key dedupe (`internal/spec/spec.go:210-226`, `internal/store/cases.go:108-126`),
   as every case does. There is no "start a routine": a bare run would skip both and leave no case.
