@@ -366,6 +366,11 @@ table.data td.empty { padding: 24px var(--space-lg); color: var(--slate); }
 .wrongbox li a .go { font-size: 13px; color: var(--signal-blue); font-weight: 600; padding-left: 16px; }
 .wrongbox li a:hover .go { color: var(--signal-blue-deep); text-decoration: underline; }
 .wrongbox__more summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; border-top: 1px solid var(--divider); font-size: 14px; font-weight: 600; color: var(--signal-blue); }
+/* One fold for every long list (the operator, 2026-11-23): a few shown, the rest behind "Show all N". */
+details.fold { margin-top: 8px; }
+details.fold > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: var(--signal-blue); list-style: none; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold[open] > summary { color: var(--slate); }
 .wrongbox > p { border-top: 1px solid var(--divider); padding-top: var(--space-sm); font-size: 13px; line-height: 1.5; color: var(--slate); }
 .queue { margin-top: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); }
 .queue h2 { font-size: 16px; margin: 0; }
@@ -393,7 +398,7 @@ table.data td.empty { padding: 24px var(--space-lg); color: var(--slate); }
 .casecard__top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) 10px; font-size: 13px; color: var(--slate); }
 .casecard__top .age { margin-left: auto; }
 .casecard strong { font-size: 15px; font-weight: 600; line-height: 1.35; }
-.casecard__why { font-size: 14px; line-height: 1.45; color: var(--slate); }
+.casecard__why { font-size: 14px; line-height: 1.45; color: var(--slate); display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .handled { background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--rounded-card); overflow: hidden; }
 .handled__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-xs) var(--space-md); padding: 11px 18px; border-bottom: 1px solid var(--divider); }
 .handled__row:nth-child(even) { background: var(--sunken); }
@@ -1296,3 +1301,4 @@ table.data td.n { font-family: var(--font-exact); font-variant-numeric: tabular-
 .side__detail, .side__note { overflow-wrap: anywhere; font-size: 13px; }
 .side__note { color: var(--wait-ink); }
 @media (max-width: 640px) { .sides { grid-template-columns: 1fr; } .pair__who { flex-basis: 4.5em; } }
+ul.plainlist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

@@ -48,6 +48,7 @@ type routineData struct {
 	Caps                              [][2]string
 	Sel                               *rBlock
 	Runs                              []rRun
+	RunsCounted                       bool // a last run decided, recurred or called a model: without one those three columns are all zero, so they are left out
 	SpecURL, Back                     string
 	Routine                           *api.RoutineStatus
 	Counted                           string // the counts' window, as words
@@ -500,6 +501,7 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 		}
 		pr := perRun[x.ID]
 		d.Runs = append(d.Runs, rRun{ID: x.ID, Start: u.clock(x.StartedAt), Status: x.Status, Chip: chip, Took: t, Decisions: pr[0], Recurrences: pr[1], Calls: realCalls(calls[x.ID])})
+		d.RunsCounted = d.RunsCounted || pr[0] > 0 || pr[1] > 0 || realCalls(calls[x.ID]) > 0
 	}
 	sort.SliceStable(d.Runs, func(a, b int) bool { return d.Runs[a].Start > d.Runs[b].Start })
 	u.render(w, "routine.html", 200, u.pageFor(s, id, "Fleets", r, d))

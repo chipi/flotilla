@@ -73,8 +73,8 @@ func TestActionAutonomyInTheUI(t *testing.T) {
 	if !strings.Contains(page, "recorded plans you judged right: 0 of 5") || !strings.Contains(page, `class="evbar"`) {
 		t.Error("the Autonomy page has no evidence toward the next level")
 	}
-	// G14: the recurrence rule for each kind an action is for
-	if !strings.Contains(page, "same target within 7 days of a close: linked to the earlier case, at most propose after a verified fix; 0 in 30 days") {
+	// G14: the recurrence rule, said once, and each kind's count
+	if !strings.Contains(page, "The same target within 7 days of a close is linked to the earlier case") || !strings.Contains(page, "0 in 30 days") {
 		t.Error("the Autonomy page has no recurrence rule per kind")
 	}
 	vck, vcsrf := f.csrfOf(f.vic)

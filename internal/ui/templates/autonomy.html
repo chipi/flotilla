@@ -35,10 +35,10 @@
       {{end}}{{end}}
     </div>
     {{if .Frozen}}<p class="banner banner--frozen" role="status">Frozen by {{.FrozenBy}} at {{.FrozenAt}}. Every routine runs at record, so nothing outward happens; each keeps its own level for when you unfreeze. A run that started before the freeze keeps the autonomy it started with.</p>{{end}}
-    <div class="changes">
+    {{with .Changes}}<div class="changes">
       <h3>Recent changes</h3>
-      <ul>{{range .Changes}}<li><span class="exact">{{.When}}</span><span>{{.Text}}</span></li>{{else}}<li><span>No autonomy change yet.</span></li>{{end}}</ul>
-    </div>
+      <ul>{{range .}}<li><span class="exact">{{.When}}</span><span>{{.Text}}</span></li>{{end}}</ul>
+    </div>{{end}}
   </section>
 
   <section class="casecards" aria-labelledby="caps">
@@ -46,7 +46,7 @@
     {{$at := .ActT}}
     <div class="filters" role="group" aria-label="Filter actions">
       <nav class="pills" aria-label="Level">
-        {{range .ActTabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+        {{range .ActTabs}}{{if or .On .N (eq .Label "All")}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}{{end}}
       </nav>
       {{template "search" (search $at "actions" "Find" "action, kind")}}
     </div>
@@ -96,7 +96,7 @@
     {{$rt := .RouT}}
     <div class="filters" role="group" aria-label="Filter routines">
       <nav class="pills" aria-label="Runs at">
-        {{range .RouTabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+        {{range .RouTabs}}{{if or .On .N (eq .Label "All")}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}{{end}}
       </nav>
       {{template "search" (search $rt "routines" "Find" "routine")}}
     </div>
@@ -110,7 +110,7 @@
             <td data-label="Set">{{.AutonomySet}}</td>
             <td data-label="Spec default">{{.SpecAutonomy}}</td>
             <td data-label="Cap">{{if .MaxAutonomy}}{{.MaxAutonomy}}{{else}}none{{end}}</td>
-            {{if $act}}<td data-label="Change" class="stack r"><form class="change-cell" method="post" action="/routines/{{.ID}}/autonomy">
+            {{if $act}}<td data-label="Change" class="stack r"><details class="promote"><summary class="btn btn--small">Change…</summary><form class="change-cell" method="post" action="/routines/{{.ID}}/autonomy">
               {{template "csrf" $csrf}}<input type="hidden" name="back" value="/autonomy#routines">
               <div class="actions">
                 <select name="autonomy" aria-label="Autonomy for {{.ID}}" class="btn btn--small">
@@ -121,7 +121,7 @@
                 <input name="reason" aria-label="Why, if it raises {{.ID}}" placeholder="Why, if it raises it">
                 <button class="btn btn--small" type="submit">Set</button>
               </div>
-            </form></td>{{end}}
+            </form></details></td>{{end}}
           </tr>{{else}}<tr><td colspan="6" class="empty">No routine matches these filters.</td></tr>{{end}}
         </tbody>
       </table>
@@ -139,7 +139,8 @@
       <p class="panel-note">A host action stops at its host's cap (one cap for every host until each host's reviewed config comes with the host agent). A routine action has its own cap, set in flotillad.yaml (<span class="exact">routine_actions.max_autonomy</span>, propose unless the installation opts in); it still has to earn auto. A repo change never goes above propose.</p>
       {{range .Hosts}}<div class="kv"><span>Host actions on <strong>{{.Name}}</strong></span><span class="{{level .Cap}}">{{.Cap}}</span></div>{{else}}<div class="kv"><span>Host actions, every host</span><span class="{{level .HostCeiling}}">{{.HostCeiling}}</span></div>{{end}}
       <div class="kv"><span>Routine actions</span><span class="{{level .RoutineCeiling}}">{{.RoutineCeiling}}</span></div>
-      <h2>Recurrence rule per kind</h2>
+      <h2>Recurrences per kind</h2>
+      {{with .Recur}}<p class="panel-note">{{$.Data.RecurRule}}</p>{{end}}
       {{range .Recur}}<div class="kv"><span class="exact">{{.Kind}}</span><span>{{.Rule}}</span></div>{{else}}<p class="panel-note">No action declares a kind yet.</p>{{end}}
     </section>
   </div>

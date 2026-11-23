@@ -49,6 +49,7 @@ type autonomyData struct {
 	HostCeiling, RoutineCeiling string
 	FleetStop                   map[string]bool
 	Recur                       []recurRow
+	RecurRule                   string // the rule, said once: it is the same for every kind
 }
 
 // recurRow is one kind under "Recurrence rule per kind" (G14).
@@ -256,9 +257,9 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 	sort.Strings(kinds)
 	days := int(store.RecurrenceWindow.Hours() / 24)
 	for _, k := range kinds {
-		d.Recur = append(d.Recur, recurRow{Kind: k,
-			Rule: fmt.Sprintf("same target within %d days of a close: linked to the earlier case, at most propose after a verified fix; %d in 30 days", days, rec[k])})
+		d.Recur = append(d.Recur, recurRow{Kind: k, Rule: fmt.Sprintf("%d in 30 days", rec[k])})
 	}
+	d.RecurRule = fmt.Sprintf("The same target within %d days of a close is linked to the earlier case, and its plan is at most propose after a verified fix. The same rule for every kind:", days)
 	u.render(w, "autonomy.html", 200, u.pageFor(s, "Autonomy", "Autonomy", r, d))
 }
 

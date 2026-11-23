@@ -72,6 +72,8 @@ type runsData struct {
 	Rows     []runRow
 	Routines []string
 	Routine  string
+	// Columns empty on every row of the page are left out (the operator, 2026-11-23: on the live store, Cases was "–" and Cost $0.000 on all 50).
+	HasCases, HasModel, HasCost bool
 }
 
 // runChip is a run status's voice (mockup v3's Runs).
@@ -136,8 +138,22 @@ func (u *Server) runsPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 	}
 	_, by := u.specs()
 	d.Routines = sortedKeys(by)
+	for _, x := range d.Rows {
+		d.HasCases = d.HasCases || len(x.Cases) > 0
+		d.HasModel = d.HasModel || x.Model != ""
+		d.HasCost = d.HasCost || x.SpendUSD > 0
+	}
 	d.Heads = []thCell{t.Th("run", "Run"), t.Th("routine", "Routine"), t.Th("trigger", "Trigger"), t.Th("started", "Started"),
-		t.Th("took", "Took"), t.Th("status", "Status"), t.Plain("Cases"), t.Plain("Model"), t.Th("cost", "Cost")}
+		t.Th("took", "Took"), t.Th("status", "Status")}
+	if d.HasCases {
+		d.Heads = append(d.Heads, t.Plain("Cases"))
+	}
+	if d.HasModel {
+		d.Heads = append(d.Heads, t.Plain("Model"))
+	}
+	if d.HasCost {
+		d.Heads = append(d.Heads, t.Th("cost", "Cost"))
+	}
 	u.render(w, "runs.html", 200, u.pageFor(s, "Runs", "Runs", r, d))
 }
 

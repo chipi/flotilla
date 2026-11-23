@@ -73,8 +73,8 @@ func TestHostExecutionsSortFilterAndPage(t *testing.T) {
 			t.Errorf("Executions lacks %q", want)
 		}
 	}
-	if ids := cells(execIDRe, get("&epage=2")); len(ids) != 5 {
-		t.Errorf("page 2 holds %d executions, want 5", len(ids))
+	if ids := cells(execIDRe, get("&epage=3")); len(ids) != 15 {
+		t.Errorf("page 3 holds %d executions, want 15", len(ids))
 	}
 
 	if ids := cells(execIDRe, get("&esort=when")); ids[0] != "exe-01" {
@@ -91,8 +91,8 @@ func TestHostExecutionsSortFilterAndPage(t *testing.T) {
 	}
 
 	ids = cells(execIDRe, get("&eq=disk"))
-	if len(ids) != 28 {
-		t.Errorf("a search for disk finds %d executions, want 28", len(ids))
+	if len(ids) != perPage || !strings.Contains(get("&eq=disk"), "of 28") {
+		t.Errorf("a search for disk shows %d executions, want a page of 28", len(ids))
 	}
 	if ids = cells(execIDRe, get("&eq=case-07")); len(ids) != 1 || ids[0] != "exe-07" {
 		t.Errorf("a search on the case finds %v", ids)

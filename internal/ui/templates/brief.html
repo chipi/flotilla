@@ -29,14 +29,9 @@
       {{range $.Data.Sections}}<section class="brief-sec" aria-label="{{.Title}}">
         <h2>{{.Title}}</h2>
         <ul class="brief-items">
-          {{range .Lines}}<li class="brief-item">
-            <span class="brief-text">{{.Text}}{{if .Case}} <a class="exact" href="{{.Href}}">{{.Case}}</a>{{else if .Href}} <a href="{{.Href}}">Open</a>{{end}}</span>
-            <form method="post" action="/brief/{{$.Data.B.Day}}/mark" class="fb" aria-label="Shape this item">{{template "csrf" $csrf}}<input type="hidden" name="item" value="{{.N}}">
-              <button class="btn btn--small" type="submit" name="mark" value="more" aria-pressed="{{if eq .Mark "more"}}true{{else}}false{{end}}">More like this</button>
-              <button class="btn btn--small" type="submit" name="mark" value="less" aria-pressed="{{if eq .Mark "less"}}true{{else}}false{{end}}">Less</button>
-            </form>
-          </li>{{end}}
+          {{range $i, $l := .Lines}}{{if lt $i 5}}{{template "briefitem" (briefItem $l $.Data.B.Day $csrf)}}{{end}}{{end}}
         </ul>
+        {{if gt (len .Lines) 5}}<details class="fold"><summary>Show all {{len .Lines}}</summary><ul class="brief-items">{{range $i, $l := .Lines}}{{if ge $i 5}}{{template "briefitem" (briefItem $l $.Data.B.Day $csrf)}}{{end}}{{end}}</ul></details>{{end}}
       </section>{{else}}<p class="panel-note">Nothing to report: no case open, none closed, nothing wrong.</p>{{end}}
     </article>
     <aside class="casecards">
@@ -61,3 +56,11 @@
   {{end}}
 </main>
 {{template "foot" .}}
+
+{{define "briefitem"}}<li class="brief-item">
+  <span class="brief-text">{{.Text}}{{if .Case}} <a class="exact" href="{{.Href}}">{{.Case}}</a>{{else if .Href}} <a href="{{.Href}}">Open</a>{{end}}</span>
+  <form method="post" action="/brief/{{.Day}}/mark" class="fb" aria-label="Shape this item">{{template "csrf" .CSRF}}<input type="hidden" name="item" value="{{.N}}">
+    <button class="btn btn--small" type="submit" name="mark" value="more" aria-pressed="{{if eq .Mark "more"}}true{{else}}false{{end}}">More like this</button>
+    <button class="btn btn--small" type="submit" name="mark" value="less" aria-pressed="{{if eq .Mark "less"}}true{{else}}false{{end}}">Less</button>
+  </form>
+</li>{{end}}

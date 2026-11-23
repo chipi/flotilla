@@ -22,6 +22,7 @@ type pairRow struct {
 	Kind, Label, Subject, At string // Kind: differ, same or unpaired
 	LiveText, ShadowText     string
 	Href                     string
+	LiveV, ShadowV           int // the versions compared, for the row on its own
 }
 
 type pairsData struct {
@@ -108,7 +109,7 @@ func (u *Server) pairsFor(r *http.Request, id string, v *api.VersionsView) (*pai
 			d.More = len(shown.Pairs) - maxPairRows
 			break
 		}
-		row := pairRow{Subject: p.Subject, At: u.clock(p.At), Href: fmt.Sprintf("/fleets/%s/pairs/%d/%s?subject=%s", id, n, url.PathEscape(p.InputKey), url.QueryEscape(p.Subject))}
+		row := pairRow{LiveV: all.LiveVersion, ShadowV: n, Subject: p.Subject, At: u.clock(p.At), Href: fmt.Sprintf("/fleets/%s/pairs/%d/%s?subject=%s", id, n, url.PathEscape(p.InputKey), url.QueryEscape(p.Subject))}
 		switch {
 		case p.Live == nil || p.Shadow == nil:
 			row.Kind, row.Label = "unpaired", "unpaired"

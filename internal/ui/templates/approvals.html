@@ -34,16 +34,16 @@
   </section>
   {{end}}
 
-  <section aria-labelledby="recent" class="casecards">
+  {{if .Recent}}<section aria-labelledby="recent" class="casecards">
     <h2 id="recent">Decided {{.SinceAt}}</h2>
     <div class="handled">
       {{range .Recent}}<div class="handled__row">
         <span class="handled__time">{{.When}}</span>
         <span class="handled__text"><a class="exact" href="/cases/{{.ID}}">{{.ID}}</a> <strong>{{.Decision}}</strong> by {{.From}}{{if .Detail}}: {{.Detail}}{{end}}</span>
-      </div>{{else}}<p class="handled__empty">Nobody answered a plan in this time.</p>{{end}}
+      </div>{{end}}
       <a class="handled__more" href="/history?type=decision">All decisions in History</a>
     </div>
-  </section>
+  </section>{{else}}<p class="meta">Nobody answered a plan {{.SinceAt}}. <a href="/history?type=decision">All decisions in History</a></p>{{end}}
   {{end}}
 </main>
 {{template "foot" .}}

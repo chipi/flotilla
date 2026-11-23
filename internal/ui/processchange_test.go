@@ -42,7 +42,7 @@ func TestProcessChangeInTheUI(t *testing.T) {
 	if loc := resp.Header.Get("Location"); !strings.Contains(loc, "record+its+commit") && !strings.Contains(loc, "record%20its%20commit") {
 		t.Fatalf("approving a repo change: %s", loc)
 	}
-	if _, page = f.do("GET", "/cases/"+id, ck, nil, nil); !strings.Contains(page, `action="/cases/`+id+`/applied"`) || !strings.Contains(page, "The change it proposes:") {
+	if _, page = f.do("GET", "/cases/"+id, ck, nil, nil); !strings.Contains(page, `action="/cases/`+id+`/applied"`) || !strings.Contains(page, "The change it proposes</summary>") {
 		t.Fatal("an approved repo change's case does not ask for the commit, or does not show the change")
 	}
 	resp, _ = f.do("POST", "/cases/"+id+"/applied", ck, url.Values{"csrf": {csrf}, "commit": {"1dd224c"}}, nil)

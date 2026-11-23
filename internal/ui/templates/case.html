@@ -80,8 +80,8 @@
         {{range .Levels}}<div class="kv kv--tight"><span>{{.What}}</span><span class="level-text level-text--{{.Level}}">{{.Level}}</span></div>{{end}}
         <p class="panel-note">Plan <span class="exact">{{hash .Plan.PlanHash}}</span>, decided {{.Decided}}. Policy's result: <strong>{{.Result}}</strong>. Every reason is kept with the plan:</p>
         <ul class="changes">{{range .Plan.Reasons}}<li><span>{{.}}</span></li>{{end}}</ul>
-        {{with index .Plan.Params "change"}}<p class="panel-note">The change it proposes:</p><pre class="log">{{.}}</pre>{{end}}
-        {{with index .Plan.Params "diff"}}<p class="panel-note">The diff it opens as a draft PR:</p><pre class="log">{{.}}</pre>{{end}}
+        {{with index .Plan.Params "change"}}<details class="fold"><summary>The change it proposes</summary><pre class="log">{{.}}</pre></details>{{end}}
+        {{with index .Plan.Params "diff"}}<details class="fold"><summary>The diff it opens as a draft PR</summary><pre class="log">{{.}}</pre></details>{{end}}
         {{if .Record}}<a href="/autonomy">{{.Record}}</a>{{end}}
         {{else}}
         <p class="panel-note">No plan yet: policy has not decided anything on this case.</p>
@@ -89,12 +89,12 @@
       </section>
       <section class="card card--edge" aria-labelledby="looked">
         <h2 id="looked">What the agent read</h2>
-        {{range .RunsRead}}<div class="casecards">
-          <span class="exact"><a href="/runs/{{.Run}}">{{short .Run 40}}</a></span>
-          {{if .Read}}{{template "readlist" .Read}}
-          {{if .Untrusted}}<span class="panel-note">{{plural .Untrusted "untrusted item" "untrusted items"}} entered this run, read as data.</span>{{else}}<span class="ok-note">Nothing untrusted entered this run.</span>{{end}}
-          {{else}}<span class="panel-note">{{if .Models}}called {{.Models}} ({{.Tokens}} tokens); it recorded nothing it read{{else}}code only: no model call, so nothing was read but the run's own checks{{end}}</span>{{end}}
-        </div>{{else}}<p class="panel-note">No run has worked on this case yet.</p>{{end}}
+        {{range $i, $r := .RunsRead}}{{if lt $i 3}}{{template "runread" $r}}{{end}}{{end}}
+        {{if gt (len .RunsRead) 3}}<details class="fold"><summary>Show all {{len .RunsRead}}</summary>{{range $i, $r := .RunsRead}}{{if ge $i 3}}{{template "runread" $r}}{{end}}{{end}}</details>{{end}}
+        {{with .CodeOnly}}<details class="fold"><summary>{{plural (len .) "run" "runs"}} code only: no model call, nothing read</summary>
+          <ul class="plainlist">{{range .}}<li class="exact"><a href="/runs/{{.}}">{{short . 40}}</a></li>{{end}}</ul>
+        </details>{{end}}
+        {{if not (or .RunsRead .CodeOnly)}}<p class="panel-note">No run has worked on this case yet.</p>{{end}}
       </section>
       <section class="card card--edge" aria-labelledby="fb">
         <h2 id="fb">After the check: was the diagnosis right?</h2>
@@ -120,3 +120,10 @@
   {{end}}
 </main>
 {{template "foot" .}}
+
+{{define "runread"}}<div class="casecards">
+  <span class="exact"><a href="/runs/{{.Run}}">{{short .Run 40}}</a></span>
+  {{if .Read}}{{template "readlist" .Read}}
+  {{if .Untrusted}}<span class="panel-note">{{plural .Untrusted "untrusted item" "untrusted items"}} entered this run, read as data.</span>{{else}}<span class="ok-note">Nothing untrusted entered this run.</span>{{end}}
+  {{else}}<span class="panel-note">called {{.Models}} ({{.Tokens}} tokens); it recorded nothing it read</span>{{end}}
+</div>{{end}}

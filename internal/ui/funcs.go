@@ -52,10 +52,11 @@ var funcs = template.FuncMap{
 	"search": func(t tableQ, id, label, placeholder string) searchBox {
 		return searchBox{T: t, ID: id, Label: label, Placeholder: placeholder}
 	},
-	"noteCard": func(n noteRow, act bool, csrf string) noteCard { return noteCard{noteRow: n, Act: act, CSRF: csrf} },
-	"gap":      func(id, text string) gapNote { return gapNote{ID: id, Text: text} },
-	"instcard": func(i instruments, key string) instCard { return instCard{I: i, Key: key} },
-	"pivot":    pivotHref,
+	"noteCard":  func(n noteRow, act bool, csrf string) noteCard { return noteCard{noteRow: n, Act: act, CSRF: csrf} },
+	"briefItem": func(l briefLine, day, csrf string) briefItem { return briefItem{briefLine: l, Day: day, CSRF: csrf} },
+	"gap":       func(id, text string) gapNote { return gapNote{ID: id, Text: text} },
+	"instcard":  func(i instruments, key string) instCard { return instCard{I: i, Key: key} },
+	"pivot":     pivotHref,
 	// level is an autonomy level's chip class.
 	"level": func(l string) string { return "level level--" + l },
 	// bar is the width, out of 100, of a progress bar drawn as SVG (the CSP allows no inline style).

@@ -291,7 +291,7 @@ func TestSinceYouLooked(t *testing.T) {
 	}
 }
 
-// Every table pages: 120 runs are 50 a page, with Next and the range.
+// Every table pages: 120 runs are 20 a page, with Next and the range.
 func TestRunsPage(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -308,10 +308,10 @@ func TestRunsPage(t *testing.T) {
 	}
 	ck := f.signin(f.vic)
 	_, p1 := f.do("GET", "/runs", ck, nil, nil)
-	if !strings.Contains(p1, "1–50 of 120") || !strings.Contains(p1, "triage-cycle-119") || strings.Contains(p1, ">triage-cycle-069<") {
-		t.Fatal("page 1 is not the newest 50 of 120")
+	if !strings.Contains(p1, "1–20 of 120") || !strings.Contains(p1, "triage-cycle-119") || strings.Contains(p1, ">triage-cycle-099<") {
+		t.Fatal("page 1 is not the newest 20 of 120")
 	}
-	_, p3 := f.do("GET", "/runs?page=3", ck, nil, nil)
+	_, p3 := f.do("GET", "/runs?page=6", ck, nil, nil)
 	if !strings.Contains(p3, "101–120 of 120") || !strings.Contains(p3, ">triage-cycle-000<") {
 		t.Fatal("page 3 is not the oldest 20")
 	}

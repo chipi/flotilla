@@ -230,6 +230,12 @@ type briefLine struct {
 	Mark string
 }
 
+// briefItem is a line with what its mark form needs, so the brief's shown and folded items share one template.
+type briefItem struct {
+	briefLine
+	Day, CSRF string
+}
+
 type briefSec struct {
 	Title string
 	Lines []briefLine

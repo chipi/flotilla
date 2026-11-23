@@ -475,6 +475,7 @@ type caseData struct {
 	Decided    string
 	Verdicts   []store.Feedback
 	RunsRead   []caseRunRead // the case's runs: what each called (G1) and read (G7), for "What the agent read"
+	CodeOnly   []string      // the case's runs that called no model and read nothing: one line, not one row each
 	Mine       string        // the signed-in person's verdict
 	Notes      []store.Note
 }
@@ -603,6 +604,10 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 	}
 	for _, id := range runIDs {
 		m, tok := modelText(calls[id])
+		if m == "" && len(ld[id]) == 0 {
+			d.CodeOnly = append(d.CodeOnly, id)
+			continue
+		}
 		d.RunsRead = append(d.RunsRead, caseRunRead{Run: id, Models: m, Tokens: tok, Read: ld[id], Untrusted: countUntrusted(ld[id])})
 	}
 	if d.Verdicts, err = u.API.Store.CaseFeedback(ctx, c.ID); err != nil {

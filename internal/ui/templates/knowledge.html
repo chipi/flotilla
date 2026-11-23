@@ -24,6 +24,7 @@
   </section>
   <section class="casecards" aria-labelledby="active">
     <h2 id="active">Active notes</h2>
+    {{if eq .ActiveAll 0}}<p class="meta">No active note yet. A note becomes active once you activate a proposed one.</p>{{else}}
     {{$nt := .NoteT}}
     <div class="filters" role="group" aria-label="Filter active notes">
       {{template "search" (search $nt "notes" "Find" "text, scope")}}
@@ -43,7 +44,7 @@
         </tbody>
       </table>
     </div>
-    {{template "pager" $nt}}
+    {{template "pager" $nt}}{{end}}
     {{template "gap" (gap "G7" "Agents do not read notes yet, and the harness does not report what a run read, so a note's use count is not drawn. Activating a note records your decision for when they do.")}}
     {{if .Dropped}}<p class="footnote">{{plural .Dropped "note was" "notes were"}} dropped.</p>{{end}}
   </section>

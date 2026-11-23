@@ -18,17 +18,12 @@
       </div>
       {{with .First}}{{template "decision" (decisionCtx . $csrf $act "/")}}{{end}}
       {{if .Needs}}<ul class="casecards">
-        {{range .Needs}}<li><a class="casecard" href="/cases/{{.ID}}">
-          <span class="casecard__top">
-            <span class="{{.Chip}}">{{.StatusText}}</span>
-            <span class="exact">{{.ID}}</span>
-            <span>{{kindWords .Kind}}{{if .FleetName}} · {{.FleetName}}{{end}}</span>
-            <span class="age">{{.Age}}</span>
-          </span>
-          <strong>{{.Title}}</strong>
-          <span class="casecard__why">{{whyWaiting .}}</span>
-        </a></li>{{end}}
-      </ul>{{else}}{{if not (or .First .Earned .Judge)}}<p class="card">Nothing needs you. Routines keep running at their own autonomy; anything that needs a person appears here and in Approvals.</p>{{end}}{{end}}
+        {{range $i, $n := .Needs}}{{if lt $i 5}}{{template "needcard" $n}}{{end}}{{end}}
+      </ul>
+      {{if gt (len .Needs) 5}}<details class="fold">
+        <summary>Show all {{len .Needs}}</summary>
+        <ul class="casecards">{{range $i, $n := .Needs}}{{if ge $i 5}}{{template "needcard" $n}}{{end}}{{end}}</ul>
+      </details>{{end}}{{else}}{{if not (or .First .Earned .Judge)}}<p class="card">Nothing needs you. Routines keep running at their own autonomy; anything that needs a person appears here and in Approvals.</p>{{end}}{{end}}
       {{range .Earned}}<p class="card earned"><span class="earned__text">{{.Line}}</span> <a href="/autonomy#action-{{.Name}}">Review it on Autonomy</a></p>{{end}}
       {{if .Judge}}<section class="card judge" aria-labelledby="judge-h">
         <div class="row-head"><h3 id="judge-h">Would these plans have been right?</h3><span class="meta">{{if gt .JudgeTotal (len .Judge)}}{{len .Judge}} of {{.JudgeTotal}} waiting{{else}}{{.JudgeTotal}} waiting{{end}}</span></div>
@@ -124,4 +119,15 @@
   <span class="wrongbox__what"><span class="lamp lamp--stop" aria-hidden="true"></span><strong>{{.What}}</strong></span>
   <span class="detail">{{.Detail}}</span>
   <span class="go">{{.Go}} →</span>
+</a></li>{{end}}
+
+{{define "needcard"}}<li><a class="casecard" href="/cases/{{.ID}}">
+  <span class="casecard__top">
+    <span class="{{.Chip}}">{{.StatusText}}</span>
+    <span class="exact">{{.ID}}</span>
+    <span>{{kindWords .Kind}}{{if .FleetName}} · {{.FleetName}}{{end}}</span>
+    <span class="age">{{.Age}}</span>
+  </span>
+  <strong>{{.Title}}</strong>
+  <span class="casecard__why">{{whyWaiting .}}</span>
 </a></li>{{end}}

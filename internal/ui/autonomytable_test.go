@@ -42,10 +42,13 @@ func TestAutonomyTablesSortFilterAndPage(t *testing.T) {
 		t.Fatalf("the first page holds %d actions, want %d", len(all), autonomyPer)
 	}
 	for _, want := range []string{`href="/autonomy?sort=action#caps"`, `href="/autonomy?rsort=at#routines"`, `name="rq"`, `name="q"`,
-		`href="/autonomy?level=ready#caps"`, `href="/autonomy?rlevel=propose#routines"`, `rel="next"`} {
+		`href="/autonomy?rlevel=propose#routines"`, `rel="next"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("Autonomy lacks %q", want)
 		}
+	}
+	if strings.Contains(page, `href="/autonomy?level=ready#caps"`) {
+		t.Error("Autonomy shows a Ready chip with nothing ready")
 	}
 
 	_, page = f.do("GET", "/autonomy?sort=action&dir=desc", ck, nil, nil)

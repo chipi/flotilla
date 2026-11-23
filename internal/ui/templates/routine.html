@@ -153,26 +153,22 @@
       <span class="pairs__count">{{.Paired}} pairs · {{.Differ}} differ</span>
     </div>
     <nav class="pairs__filter" aria-label="Show pairs">{{range .Choices}}<a class="chip chip--small {{if .On}}chip--info{{else}}chip--neutral{{end}}" href="{{.Href}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}{{range .Versions}}<a class="chip chip--small {{if .On}}chip--info{{else}}chip--neutral{{end}} pairs__ver" href="{{.Href}}">{{.Label}}</a>{{end}}</nav>
-    <ul class="pairs__list">{{range .Rows}}
-      <li><a class="pair pair--{{.Kind}}" href="{{.Href}}">
-        <span class="pair__head"><span class="pair__mark">● {{.Label}}</span><span class="pair__subject">{{.Subject}}</span><span class="pair__at">{{.At}}</span></span>
-        <span class="pair__line"><span class="pair__who">live v{{$.Data.Pairs.Live}}</span><span class="pair__text">{{.LiveText}}</span></span>
-        <span class="pair__line"><span class="pair__who">v{{$.Data.Pairs.N}}</span><span class="pair__text">{{.ShadowText}}</span></span>
-      </a></li>{{else}}
+    <ul class="pairs__list">{{range $i, $p := .Rows}}{{if lt $i 10}}{{template "pairrow" $p}}{{end}}{{else}}
       <li class="pairs__none">{{if eq .Show "all"}}No pair yet: a shadow's decision lands here beside the live version's on the same input.{{else}}Nothing under "{{.Show}}".{{end}}</li>{{end}}
     </ul>
+    {{if gt (len .Rows) 10}}<details class="fold"><summary>Show all {{len .Rows}}</summary><ul class="pairs__list">{{range $i, $p := .Rows}}{{if ge $i 10}}{{template "pairrow" $p}}{{end}}{{end}}</ul></details>{{end}}
     {{if .More}}<p class="meta">{{.More}} more: narrow the list, or read them all as JSON (<span class="exact">flotilla pairs {{.Routine}} v{{.N}} --json</span>).</p>{{end}}
   </section>{{end}}
 
   <section class="card" aria-labelledby="runs-h">
     <h2 id="runs-h">Last runs</h2>
     <div class="table-box"><table class="data data--small">
-      <thead><tr><th scope="col">Started</th><th scope="col">Status</th><th scope="col">Took</th><th scope="col">Decisions</th><th scope="col">Recurrences</th><th scope="col">Model calls</th></tr></thead>
+      <thead><tr><th scope="col">Started</th><th scope="col">Status</th><th scope="col">Took</th>{{if $.Data.RunsCounted}}<th scope="col">Decisions</th><th scope="col">Recurrences</th><th scope="col">Model calls</th>{{end}}</tr></thead>
       <tbody>{{range .Runs}}<tr>
         <td data-label="Started"><a class="exact" href="/runs/{{.ID}}">{{.Start}}</a></td>
         <td data-label="Status"><span class="chip chip--small {{.Chip}}">{{.Status}}</span></td>
-        <td data-label="Took">{{.Took}}</td><td data-label="Decisions">{{.Decisions}}</td>
-        <td data-label="Recurrences">{{.Recurrences}}</td><td data-label="Model calls">{{if .Calls}}{{.Calls}}{{else}}–{{end}}</td>
+        <td data-label="Took">{{.Took}}</td>{{if $.Data.RunsCounted}}<td data-label="Decisions">{{.Decisions}}</td>
+        <td data-label="Recurrences">{{.Recurrences}}</td><td data-label="Model calls">{{if .Calls}}{{.Calls}}{{else}}–{{end}}</td>{{end}}
       </tr>{{else}}<tr><td colspan="6">No run yet.</td></tr>{{end}}</tbody>
     </table></div>
   </section>
@@ -186,3 +182,9 @@
   {{if .Nums}}<span class="node__nums"><span>{{.Nums}}</span></span>{{end}}
   {{template "nums" .Extra}}
 {{if .Href}}</a>{{else}}</span>{{end}}{{end}}
+
+{{define "pairrow"}}<li><a class="pair pair--{{.Kind}}" href="{{.Href}}">
+  <span class="pair__head"><span class="pair__mark">● {{.Label}}</span><span class="pair__subject">{{.Subject}}</span><span class="pair__at">{{.At}}</span></span>
+  <span class="pair__line"><span class="pair__who">live v{{.LiveV}}</span><span class="pair__text">{{.LiveText}}</span></span>
+  <span class="pair__line"><span class="pair__who">v{{.ShadowV}}</span><span class="pair__text">{{.ShadowText}}</span></span>
+</a></li>{{end}}

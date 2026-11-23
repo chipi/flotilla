@@ -49,7 +49,7 @@ func TestOpenPRInTheUI(t *testing.T) {
 	if strings.Contains(page, `action="/cases/`+id+`/applied"`) {
 		t.Fatal("a PR its routine opens asks a person for the commit")
 	}
-	if !strings.Contains(page, "The diff it opens as a draft PR:") {
+	if !strings.Contains(page, "The diff it opens as a draft PR</summary>") {
 		t.Fatal("the case page does not show the diff")
 	}
 }

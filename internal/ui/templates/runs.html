@@ -36,10 +36,10 @@
           <td data-label="Started" class="soft nowrap">{{.Start}}</td>
           <td data-label="Took" class="soft nowrap">{{.Took}}</td>
           <td data-label="Status"><span class="{{.Chip}}">{{.Status}}</span></td>
-          <td data-label="Cases">{{range .Cases}}<a class="exact" href="/cases/{{.}}">{{short . 24}}</a> {{else}}<span class="soft">–</span>{{end}}</td>
-          <td data-label="Model">{{if .Model}}<a href="/models?tab=spend">{{.Model}}</a> <span class="meta">{{.Tokens}}</span>{{else}}<span class="soft">none recorded</span>{{end}}</td>
-          <td data-label="Cost" class="nowrap"><a href="/models?tab=spend">{{.Cost}}</a></td>
-        </tr>{{else}}<tr><td colspan="9" class="empty">No run matches these filters.</td></tr>{{end}}
+          {{if $.Data.HasCases}}<td data-label="Cases">{{range .Cases}}<a class="exact" href="/cases/{{.}}">{{short . 24}}</a> {{else}}<span class="soft">–</span>{{end}}</td>{{end}}
+          {{if $.Data.HasModel}}<td data-label="Model">{{if .Model}}<a href="/models?tab=spend">{{.Model}}</a> <span class="meta">{{.Tokens}}</span>{{else}}<span class="soft">none recorded</span>{{end}}</td>{{end}}
+          {{if $.Data.HasCost}}<td data-label="Cost" class="nowrap"><a href="/models?tab=spend">{{.Cost}}</a></td>{{end}}
+        </tr>{{else}}<tr><td colspan="{{len $.Data.Heads}}" class="empty">No run matches these filters.</td></tr>{{end}}
       </tbody>
     </table>
   </div>

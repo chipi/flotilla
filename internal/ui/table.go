@@ -10,7 +10,7 @@ import (
 // Every table has sortable headers, filters and pages (the operator, 2026-11-14), on the server: the
 // state is the URL, so a page can be linked, reloaded and used without JavaScript.
 
-const perPage = 50
+const perPage = 20
 
 type tableQ struct {
 	Path        string

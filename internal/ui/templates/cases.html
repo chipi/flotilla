@@ -14,7 +14,7 @@
 
   <section class="filters" aria-label="Filters">
     <nav class="pills" aria-label="Status">
-      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+      {{range .Tabs}}{{if or .On .N (eq .Label "All")}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}{{end}}
     </nav>
     {{template "search" (search $t "cases" "Filter" "id, problem, kind, target")}}
   </section>
