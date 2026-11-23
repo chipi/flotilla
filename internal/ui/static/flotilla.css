@@ -649,6 +649,10 @@ tr.row--ready > td { background: var(--signal-blue-wash); }
   table.data td.stack, table.data tbody tr:first-child td.stack { display: block; text-align: left; }
   table.data td.stack::before { display: block; max-width: none; margin-bottom: var(--space-xxs); }
   table.data td.empty { display: block; text-align: left; }
+  /* A secondary column is left out of the phone card (the operator, 2026-11-23: a 10-row table was 2500px on a phone); the desktop table and the row's own page keep it. */
+  table.data td.minor { display: none !important; }
+  .scoreline { display: grid; grid-template-columns: 1fr 1fr; }
+  .scoreline__delta { display: none; }
   table.data td a { display: inline-flex; align-items: center; min-height: var(--target); }
   table.cases tbody tr { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-md); align-items: center; }
   table.cases td, table.cases tbody tr:first-child td { display: block; text-align: left; }

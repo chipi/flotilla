@@ -11,11 +11,13 @@ import (
 	"testing"
 
 	"github.com/chipi/flotilla/internal/api"
+	"github.com/chipi/flotilla/internal/models"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 	"github.com/chipi/flotilla/internal/worker"
+	"gopkg.in/yaml.v3"
 )
 
 // TestRealDataPages renders every page from a copy of an installation's store and its fleets, for a review of how the
@@ -48,6 +50,26 @@ func TestRealDataPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &sched.Scheduler{Store: st, Workers: map[string]sched.Runner{}}
+	// UI_REALDATA_CONFIG (optional): the installation's flotillad.yaml, for its models section; without it every alias
+	// reads "not in the config now".
+	if p := os.Getenv("UI_REALDATA_CONFIG"); p != "" {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg struct {
+			Models *models.Config `yaml:"models"`
+		}
+		if err := yaml.Unmarshal(raw, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Models != nil {
+			if s.ModelsJSON, err = cfg.Models.JSON(); err != nil {
+				t.Fatal(err)
+			}
+			s.Models = cfg.Models
+		}
+	}
 	s.SetRoutines(routines)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	a := &api.Server{Sched: s, Store: st, Workers: map[string]*worker.Client{}, Version: "review", Log: log, Registry: reg}

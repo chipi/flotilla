@@ -58,7 +58,7 @@
             <td data-label="Action" class="exact">{{.Name}}</td>
             <td data-label="For kinds" class="exact soft">{{.Kinds}}</td>
             <td data-label="Risk">{{.Risk}}</td>
-            <td data-label="Reversible">{{.Rev}}</td>
+            <td data-label="Reversible" class="minor">{{.Rev}}</td>
             <td data-label="Level"><span class="{{if $.Data.Frozen}}level level--frozen{{else}}{{level .Autonomy}}{{end}}">{{if and $.Data.Frozen (ne .Autonomy "record")}}{{.Autonomy}} → record (frozen){{else}}{{.Autonomy}}{{end}}</span></td>
             <td data-label="Evidence toward the next level" class="stack"><span class="evidence"><span>{{.Evidence}}</span>
               <svg class="evbar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="evbar-track" width="100" height="6" rx="3"></rect>{{if .Pct}}<rect class="evbar-fill{{if ge .Pct 100}} evbar-fill--full{{end}}" width="{{.Pct}}" height="6" rx="3"></rect>{{end}}</svg>
@@ -107,8 +107,8 @@
           {{range .Routines}}<tr>
             <td data-label="Routine"><a class="exact" href="/fleets/{{.Fleet}}?sel={{.ID}}">{{.ID}}</a>{{if not .Enabled}} <span class="chip chip--neutral chip--small">disabled</span>{{end}}</td>
             <td data-label="Runs at"><span class="{{level .Autonomy}}">{{.Autonomy}}</span></td>
-            <td data-label="Set">{{.AutonomySet}}</td>
-            <td data-label="Spec default">{{.SpecAutonomy}}</td>
+            <td data-label="Set" class="minor">{{.AutonomySet}}</td>
+            <td data-label="Spec default" class="minor">{{.SpecAutonomy}}</td>
             <td data-label="Cap">{{if .MaxAutonomy}}{{.MaxAutonomy}}{{else}}none{{end}}</td>
             {{if $act}}<td data-label="Change" class="stack r"><details class="promote"><summary class="btn btn--small">Change…</summary><form class="change-cell" method="post" action="/routines/{{.ID}}/autonomy">
               {{template "csrf" $csrf}}<input type="hidden" name="back" value="/autonomy#routines">

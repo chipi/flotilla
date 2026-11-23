@@ -32,7 +32,7 @@
         {{range .Rows}}<tr>
           <td data-label="Run"><a class="exact" href="/runs/{{.ID}}">{{short .ID 36}}</a></td>
           <td data-label="Routine"><a class="exact" href="/fleets/{{.Fleet}}?sel={{.Routine}}">{{.Routine}}</a> <span class="meta">v{{.Version}}</span></td>
-          <td data-label="Trigger" class="soft">{{.Trigger}}{{if ne .Actor "flotillad"}} · {{.Actor}}{{end}}</td>
+          <td data-label="Trigger" class="soft minor">{{.Trigger}}{{if ne .Actor "flotillad"}} · {{.Actor}}{{end}}</td>
           <td data-label="Started" class="soft nowrap">{{.Start}}</td>
           <td data-label="Took" class="soft nowrap">{{.Took}}</td>
           <td data-label="Status"><span class="{{.Chip}}">{{.Status}}</span></td>

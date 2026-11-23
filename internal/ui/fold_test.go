@@ -79,3 +79,35 @@ func TestRunsLeaveOutEmptyColumns(t *testing.T) {
 		t.Fatal("the run is not listed")
 	}
 }
+
+// The case timer's escalation reads in words on Now, not as a Go duration and a timestamp.
+func TestStuckCaseInWords(t *testing.T) {
+	for in, want := range map[string]string{"24h0m0s": "24h", "1h30m0s": "1h30m", "30m0s": "30m", "30s": "30s", "90m0s": "1h30m", "x": "x"} {
+		if got := durWords(in); got != want {
+			t.Errorf("durWords(%q) = %q, want %q", in, got, want)
+		}
+	}
+	c := caseRow{Case: store.Case{Status: cases.Escalated}}
+	c.Last.Detail = "handed over since 2026-11-15T20:05:30Z, longer than 24h0m0s"
+	if got := whyWaiting(c); got != "It stayed handed over longer than 24h, so it needs a person. Reassign it, or close it with a reason." {
+		t.Errorf("%q", got)
+	}
+}
+
+// On a phone a secondary column is left out of the row's card, and the counters sit two to a line.
+func TestPhoneDropsMinorColumns(t *testing.T) {
+	css, err := Static.ReadFile("static/flotilla.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"table.data td.minor { display: none !important; }", ".scoreline { display: grid; grid-template-columns: 1fr 1fr; }"} {
+		if !strings.Contains(string(css), want) {
+			t.Errorf("the phone styles lack %q", want)
+		}
+	}
+	f := setup(t)
+	ck := f.signin(f.admin)
+	if _, page := f.do("GET", "/autonomy", ck, nil, nil); !strings.Contains(page, `data-label="Spec default" class="minor"`) {
+		t.Error("Autonomy's Spec default is not marked minor")
+	}
+}

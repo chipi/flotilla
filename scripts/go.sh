@@ -13,5 +13,5 @@ REL="${PWD#"$ROOT"}"
 BIN=go
 if [ "${1:-}" = gofmt ]; then BIN=gofmt; shift; fi
 exec docker --context "${DOCKER_CONTEXT_DEV:-dev}" run --rm --user "$(id -u):$(id -g)" \
-  -e HOME=/tmp -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOFLAGS="${GOFLAGS:-}" ${UI_SNAPSHOT_DIR:+-e UI_SNAPSHOT_DIR} ${UI_REALDATA_DB:+-e UI_REALDATA_DB} ${UI_REALDATA_FLEETS:+-e UI_REALDATA_FLEETS} \
+  -e HOME=/tmp -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOFLAGS="${GOFLAGS:-}" ${UI_SNAPSHOT_DIR:+-e UI_SNAPSHOT_DIR} ${UI_REALDATA_DB:+-e UI_REALDATA_DB} ${UI_REALDATA_FLEETS:+-e UI_REALDATA_FLEETS} ${UI_REALDATA_CONFIG:+-e UI_REALDATA_CONFIG} \
   -v flotilla-gocache:/cache -v "$ROOT":/src -w "/src$REL" --memory 2g --init "$IMG" "$BIN" "$@"

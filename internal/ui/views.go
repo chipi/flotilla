@@ -353,6 +353,9 @@ func whyWaiting(c caseRow) string {
 	case cases.AwaitingApproval:
 		return "A plan waits for your answer. Open it to see what would run."
 	case cases.Escalated:
+		if m := stuckRe.FindStringSubmatch(c.Last.Detail); m != nil {
+			return "It stayed " + m[1] + " longer than " + durWords(m[2]) + ", so it needs a person. Reassign it, or close it with a reason."
+		}
 		if c.Last.Detail != "" {
 			return c.Last.Detail
 		}
@@ -410,4 +413,24 @@ func (u *Server) agoText(s string) string {
 		return a
 	}
 	return a + " ago"
+}
+
+// stuckRe reads the case timer's escalation ("handed over since <time>, longer than 24h0m0s", internal/casetimer), which
+// the ledger keeps as written; the page says it in words (the operator, 2026-11-23).
+var stuckRe = regexp.MustCompile(`^(detected|handed over) since \S+, longer than (\S+)$`)
+
+// durWords is a Go duration as a person writes it: "24h0m0s" is "24h", "1h30m0s" is "1h30m".
+func durWords(s string) string {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return s
+	}
+	out := d.String()
+	if strings.HasSuffix(out, "m0s") {
+		out = strings.TrimSuffix(out, "0s")
+	}
+	if strings.HasSuffix(out, "h0m") {
+		out = strings.TrimSuffix(out, "0m")
+	}
+	return out
 }
