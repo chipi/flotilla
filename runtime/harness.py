@@ -82,10 +82,11 @@ def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=Non
         import recorded
         rep = recorded.from_env()
         served = rep.wrap(station, tool)
-        if read_names:
+        if read_names and os.environ.get("FLOTILLA_OFFLINE") != "1":
             # The record of a live run holds its reads only. A shadow of a station with reads runs the fleet's own tools live, on its
             # read credentials, as it always did: a name the record has nothing under goes to the fleet's tool, and only a read (or a
-            # tool the record does have) is answered from the record, a miss failing the run.
+            # tool the record does have) is answered from the record, a miss failing the run. An offline run (runtime/offline_run.py
+            # sets FLOTILLA_OFFLINE) never goes live: every tool answers from its recordings.
             tool = lambda name, args: served(name, args) if name in read_names or rep.knows(station, name) else fleet_tool(name, args)
         else:
             tool = served

@@ -153,7 +153,7 @@ def build_env(contract_env, models_json, out, home, api_url, token_file, proxy_u
     for k in NEUTRAL:
         if k in caller_env:
             env[k] = caller_env[k]
-    env.update({"FLOTILLA_SHADOW": "1", "FLOTILLA_MODELS": models_json, "HOME": home, "FLOTILLA_API_URL": api_url,
+    env.update({"FLOTILLA_SHADOW": "1", "FLOTILLA_OFFLINE": "1", "FLOTILLA_MODELS": models_json, "HOME": home, "FLOTILLA_API_URL": api_url,
                 "FLOTILLA_API_TOKEN_FILE": token_file, "FLOTILLA_CALLS_FILE": os.path.join(out, "calls.jsonl"),
                 "FLOTILLA_LOADED_FILE": os.path.join(out, "loaded.jsonl"), "HTTP_PROXY": proxy_url, "HTTPS_PROXY": proxy_url,
                 "NO_PROXY": ",".join(sorted({"127.0.0.1", "localhost"} | allowed_hosts))})

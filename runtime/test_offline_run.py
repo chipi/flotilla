@@ -120,6 +120,8 @@ class Offline(unittest.TestCase):
         self.assertTrue(any("evil.invalid" in r["target"] for r in w.lines("refused.jsonl")))
         env = off.build_env({}, "{}", w.out, "/h", "u", "t", "http://127.0.0.1:9", {"gateway.example"}, "", {})
         self.assertIn("gateway.example", env["NO_PROXY"], "a model host is reached directly, not through the refusing proxy")
+        env = off.build_env({"FLOTILLA_OFFLINE": "0"}, "{}", w.out, "/h", "u", "t", "http://127.0.0.1:9", set(), "", {})
+        self.assertEqual(env["FLOTILLA_OFFLINE"], "1", "the contract cannot unmark an offline run: its tools never go live")
 
     def test_recorded_tool_results_reach_the_child_as_a_file_and_not_when_the_input_has_none(self):
         w = World(self)

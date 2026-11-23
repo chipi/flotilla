@@ -354,6 +354,14 @@ class ShadowReplay(InTheLoop):
         self.assertEqual([t["result"] for t in r.trace], ["page 7", "LIVE"])
         live.assert_called_once_with("probe", {"fp": "a"})
 
+    def test_an_offline_run_of_a_station_with_reads_never_goes_live(self):
+        live = mock.Mock(return_value="LIVE")
+        self.step([ASK_READ, DECIDE], DOC, live)
+        env = dict(self.record_of(self.lines()), FLOTILLA_OFFLINE="1")
+        with self.assertRaises(recorded.RecordedMiss):
+            self.step([ASK_READ, ASK_PROBE, DECIDE], DOC, live, env=env)
+        live.assert_not_called()
+
     def test_a_station_without_reads_still_answers_every_tool_from_the_record(self):
         path = os.path.join(os.path.dirname(self.file), "none.json")
         with open(path, "w") as f:

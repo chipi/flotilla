@@ -104,9 +104,9 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
   record holds reads only, and a shadow runs the fleet's own tools live on its read credentials.
   For a station with reads, a name the record has nothing for (`Replayer.knows`) goes to the
   fleet's tool; a read, or a tool the record does hold, is answered from the record. A station
-  without reads is as before (every tool recorded). Not covered: an offline run (`offline_run.py`)
-  of a station with reads whose scenario lacks a probe now reaches the live probe (behind its
-  refusing proxy) instead of a miss.
+  without reads is as before (every tool recorded). Only a shadow does this: an offline run
+  (`offline_run.py` sets `FLOTILLA_OFFLINE=1`, which its contract cannot unset) answers every tool
+  from its recordings, a miss failing it, as before.
 - A shadow of a version with reads whose live version declares none is not run (no row), rather
   than run and missing every read.
 
