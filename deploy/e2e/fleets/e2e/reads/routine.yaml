@@ -1,0 +1,16 @@
+fleet: e2e
+routine: reads
+description: >-
+  The e2e's check of live reads (RFC-0014 section 4.8), never shipped: a routine whose one station declares reads from an MCP server (the e2e's
+  stub, deploy/e2e/mcp_stub.py). v1 is live on the reads worker and reads a page and a long log (and asks for a write tool its station does not
+  declare); v2 is a shadow that asks for the same reads, so it is served the live run's record; v3 is a shadow that asks for a read the live run
+  never made, which must fail as a miss. Held in the e2e's config until the reads section, then run by hand. It reports no detection.
+enabled: true
+worker: reads
+shadow_worker: triage-shadow
+trigger:
+  every: 8760h
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 9000h

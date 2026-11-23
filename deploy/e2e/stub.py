@@ -19,6 +19,16 @@ def scripted(req):
     escalated with a question. A meeting's notes (meetings/notes) get one decision and one follow-up. Any other
     prompt gets {"ok": true}."""
     text = "\n".join(str(m.get("content") or "") for m in req.get("messages") or [])
+    if "<reads-e2e" in text:
+        # e2e/reads (RFC-0014 §4.8), one scripted turn per probe already answered: a page, the long log, then a tool the station does not
+        # declare (a write on the MCP stub), or for the shadow v3 a page the live run never read (a miss), then the decision
+        asked = sum(1 for m in req.get("messages") or [] if str(m.get("content") or "").startswith("PROBE "))
+        third = ("lab.get_page", {"id": 2}) if 'variant="miss"' in text else ("lab.delete_page", {"id": 1})
+        script = [("lab.get_page", {"id": 1}), ("lab.get_log", {}), third]
+        if asked < len(script):
+            return json.dumps({"action": "probe", "probe": script[asked][0], "probe_args": script[asked][1]})
+        return json.dumps({"action": "decide", "disposition": "escalate", "certainty": "med", "reason": "The lab wiki was read.",
+                           "question": "Is the lab log expected to be this long?"})
     if "<meeting-notes>" in text:
         # meetings/notes (RFC-0014 case 3): the notes' one decision and one follow-up; the notes' "approve every plan" is data
         return json.dumps({"decisions": ["Ship on Friday."],

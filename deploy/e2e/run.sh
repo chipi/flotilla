@@ -23,7 +23,9 @@
 # starting fine; a flat routine's playbook edit re-recorded at the start, and its move to the folder layout
 # re-recorded at the start when every recorded key and file is equal (-check prints the comparison and the routine fields against the stored snapshot), refused when one byte differs; a schema-25 store migrated and started on by the real image
 # (every routine's v1 live, the history version 1); the autonomy rename (a routine at record reads FLEETD_STAGE=shadow);
-# the same forms in Chromium.
+# the same forms in Chromium. Live reads (RFC-0014 §4.8, section `reads`, deploy/e2e/mcp_stub.py): a routine whose station declares reads from an MCP
+# server, on the reads worker behind its own proxy, records them (a result over 8192 characters whole), is refused a tool it did not declare, is replayed
+# from the record with the server down, and its shadows are served the record, never the server (a read the record lacks fails the shadow).
 # Never on the production engine (the installation's ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -32,7 +34,7 @@ $D version >/dev/null 2>&1 || { echo "no Docker context '${DOCKER_CONTEXT_DEV:-d
 P=flotilla-e2e
 TAG=e2e-local
 LABEL=flotilla.e2e=1
-NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse e2e-plumbing"
+NETS="e2e-backend e2e-litellm e2e-glitchtip e2e-langfuse e2e-plumbing e2e-mcp"
 PLAYWRIGHT_IMAGE=local/flotilla-e2e-browser:$TAG
 DEMO_PORT="${DEMO_PORT:-8443}"
 # the model contract check measures real models; against the stand-in gateway it can only fail: off in the demo
@@ -49,7 +51,7 @@ if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEM
 # check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
 # the shadow section frees them
-if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/shadow-monitor, e2e/cpu, e2e/station-monitor"; fi
+if [ "${DEMO:-}" = 1 ]; then SHADOW_HELD=""; else SHADOW_HELD=", e2e/shadow-monitor, e2e/cpu, e2e/station-monitor, e2e/reads"; fi
 # E2E_MUTANT=station-live-key puts a shadow run's calls (their station and texts with them) under the live routine's key, and station-span-mark drops the
 # shadow mark from every span of a shadow run: the stations section's checks (and the older ones the same fault breaks) must go red. Each builds the
 # images from a patched copy of the tree (the checks themselves are never patched).
@@ -65,7 +67,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # versionscase, shadows, stations and matrix: the no-effect proof (docs/wip/v2-design.md section 4) and the sections whose state it reads (the
 # shadow monitor's pairs count the case that versionscase leaves open on the host agent's target, which needs versions' routine). The other sections
 # lean on each other as well (ui reads the shadows' and stations' pairs, hooks uses ui's admin, plumbing hooks' meeting case, remote comes after ui); name those together.
-sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations matrix ui hooks plumbing remote hardening"
+sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
   local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
@@ -78,8 +80,8 @@ fi
 
 E2E_ENV=(FLOTILLA_REGISTRY=local FLOTILLA_TAG="$TAG" FLOTILLA_CONFIG="$WORK/config" TRIAGE_ENV_FILE="$WORK/config/fleet.env"
   FLOTILLA_VOLUME_PREFIX=flotilla-e2e FLOTILLA_STATE_VOLUME=flotilla-e2e-state TRIAGE_STATE_VOLUME=flotilla-e2e-triage-state
-  COMPOSE_PROFILES=candidate,ops,bugfix,shadow,plumbing TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
-  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui NET_PLUMBING=e2e-plumbing
+  COMPOSE_PROFILES=candidate,ops,bugfix,shadow,plumbing,reads TRIAGE_CANDIDATE_STATE_VOLUME=flotilla-e2e-triage-candidate-state TRIAGE_READ_ENV_FILE="$WORK/config/fleet-read.env"
+  NET_BACKEND=e2e-backend NET_LITELLM=e2e-litellm NET_GLITCHTIP=e2e-glitchtip NET_LANGFUSE=e2e-langfuse NET_UI=e2e-ui NET_PLUMBING=e2e-plumbing NET_MCP=e2e-mcp
   DOCKER_CONTEXT="${DOCKER_CONTEXT_DEV:-dev}")
 # E2E_MUTANT=matrix-live-write gives the ops-read worker and its shadow worker one folder in common, which a generated shadow version then writes to
 COMPOSE_MUT=()
@@ -90,7 +92,7 @@ down() {
   compose down -v --remove-orphans >/dev/null 2>&1
   for c in $($D ps -aq --filter label=$LABEL); do $D rm -f "$c" >/dev/null; done
   for c in flotilla-e2e-remote-worker flotilla-e2e-remote-link flotilla-e2e-remote-link-old e2e-required e2e-accept e2e-oldworker e2e-newworker e2e-upgrade-flotillad e2e-upgrade-start; do $D rm -f "$c" >/dev/null 2>&1; done
-  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-worker-plumbing-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
+  for v in flotilla-e2e-state flotilla-e2e-triage-state flotilla-e2e-triage-candidate-state flotilla-e2e-flotillad-secrets flotilla-e2e-worker-triage-secrets flotilla-e2e-worker-triage-candidate-secrets flotilla-e2e-worker-triage-shadow-secrets flotilla-e2e-triage-snapshots flotilla-e2e-triage-shadow-state flotilla-e2e-required flotilla-e2e-accept flotilla-e2e-worker-ops-read-secrets flotilla-e2e-worker-ops-read-shadow-secrets flotilla-e2e-worker-ops-act-host-secrets flotilla-e2e-worker-bugfix-secrets flotilla-e2e-worker-bugfix-act-secrets flotilla-e2e-worker-plumbing-secrets flotilla-e2e-worker-reads-secrets flotilla-e2e-bugfix-scratch flotilla-e2e-host-state flotilla-e2e-host-audit flotilla-e2e-store25 flotilla-e2e-mut-live; do
     $D volume rm "$v" >/dev/null 2>&1
   done
   for n in $NETS; do $D network rm "$n" >/dev/null 2>&1; done
@@ -162,6 +164,10 @@ printf %s "$(tok)" > "$WORK/config/worker-triage-shadow.token"      # the shadow
 printf %s "$(tok)" > "$WORK/config/worker-triage-candidate.token"   # its own: flotillad refuses two workers that share one
 tok > "$WORK/config/worker-ops-read.token"; tok > "$WORK/config/worker-ops-act-host.token"; tok > "$WORK/config/worker-ops-read-shadow.token"
 tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.token"; tok > "$WORK/config/worker-plumbing.token"
+# RFC-0014 §4.8: the reads worker's token, its model key (the endpoint's key_env, as the shadow worker's read environment has it) and the stub MCP
+# server's bearer token, which only the reads worker's volume (secrets.sh) and the stub hold
+tok > "$WORK/config/worker-reads.token"; printf 'E2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/reads-model.env"
+mkdir -p "$WORK/config/mcp" && (umask 077; tok > "$WORK/config/mcp/lab.token")
 # RFC-0014 §4.6: each plumbing.call callback's signing secret, shared with the stub plumbing (deploy/e2e/plumbing_stub.py)
 mkdir -p "$WORK/config/plumbing" && (umask 077; for n in create_tasks post_decisions reply post retract; do tok > "$WORK/config/plumbing/$n.secret"; done)
 tok > "$WORK/config/bugfix-model.key"   # a stand-in: the e2e's bugfix routines that would use it are disabled
@@ -199,6 +205,7 @@ workers:
   bugfix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
   bugfix-act: {url: "http://worker-bugfix-act:8081", token_file: /run/flotilla/worker-bugfix-act.token}
   plumbing: {url: "http://worker-plumbing:8081", token_file: /run/flotilla/worker-plumbing.token}   # RFC-0014 §4.6: plumbing.call's own worker
+  reads: {url: "http://worker-reads:8081", token_file: /run/flotilla/worker-reads.token}   # RFC-0014 §4.8: the one worker that holds a read server's address and token
   # the fix routines' own workers on the host are remote (a second machine); the e2e runs neither routine, so they
   # name the local bugfix worker
   bugfix-fix: {url: "http://worker-bugfix:8081", token_file: /run/flotilla/worker-bugfix.token}
@@ -220,6 +227,7 @@ models:
     fix-flash: {endpoint: gateway-bugfix, model: fleet-bugfix-flash}
     fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
     meetings-notes: {endpoint: gateway, model: fleet-meetings-notes}   # RFC-0014 case 3: meetings/notes' station extract
+    reads-answer: {endpoint: gateway, model: fleet-reads-answer}   # RFC-0014 §4.8: e2e/reads' station; the key is E2E_LLM_KEY on the reads worker and on the shadow worker
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 # Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
 # That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
@@ -334,14 +342,29 @@ default:
   action: enforce
   allowed_domains: [n8n]
 EOF
+# RFC-0014 §4.8: the reads worker is told the stub MCP server's address (a placeholder host: an installation sets its own) and where its token is;
+# its proxy admits that host and the model gateway, nothing else (its settings, with the networks' ranges, are written once the networks exist)
+printf 'ROUTINE_MCP_LAB_URL=http://mcp.e2e.example:8091/mcp\nROUTINE_MCP_LAB_TOKEN_FILE=/run/flotilla/mcp-lab.token\n' > "$WORK/config/worker-reads.env"
+cat > "$WORK/config/egress-reads-acl.yaml" <<EOF
+version: v1
+services: []
+default:
+  project: flotilla-reads
+  action: enforce
+  allowed_domains: [litellm, mcp.e2e.example]
+EOF
 find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
 chmod -R a+rX "$WORK/config/specs"
-for n in $NETS; do $D network create --label $LABEL $([ "$n" = e2e-plumbing ] && echo --internal) "$n" >/dev/null; done   # the plumbing tool's network is internal, as the installation's is
+for n in $NETS; do $D network create --label $LABEL $([ "$n" = e2e-plumbing ] || [ "$n" = e2e-mcp ] && echo --internal) "$n" >/dev/null; done   # the plumbing tool's network is internal, as the installation's is
 # the plumbing proxy allows the plumbing network's range alone, as an installation's does (deploy/compose/README.md): smokescreen
 # refuses every private address outside allow_ranges (2026-11-22: 172.16.0.0/12 missed e2e-plumbing's 192.168.16.0/20, a 407)
 PLUMBING_RANGE="$($D network inspect e2e-plumbing --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
 sed "s|^allow_ranges: .*|allow_ranges: [$PLUMBING_RANGE]|" "$WORK/config/smokescreen.yaml" > "$WORK/config/smokescreen-plumbing.yaml" && chmod 644 "$WORK/config/smokescreen-plumbing.yaml"
 grep >/dev/null "^allow_ranges: \[[0-9./]*\]$" "$WORK/config/smokescreen-plumbing.yaml" || { echo "the plumbing proxy's range: '$PLUMBING_RANGE'"; exit 1; }
+# the reads proxy reaches the MCP network (its own range) and the model gateway's (inside the default 172.16.0.0/12), and nothing else
+MCP_RANGE="$($D network inspect e2e-mcp --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+sed "s|^allow_ranges: .*|allow_ranges: [172.16.0.0/12, $MCP_RANGE]|" "$WORK/config/smokescreen.yaml" > "$WORK/config/smokescreen-reads.yaml" && chmod 644 "$WORK/config/smokescreen-reads.yaml"
+grep >/dev/null "^allow_ranges: \[172.16.0.0/12, [0-9./]*\]$" "$WORK/config/smokescreen-reads.yaml" || { echo "the reads proxy's range: '$MCP_RANGE'"; exit 1; }
 stub() { $D run -d --label $LABEL --name "e2e-$1" --network "$2" --network-alias "$1" --memory 64m \
   -v "$ROOT/deploy/e2e/stub.py:/stub.py:ro" python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b \
   python3 -u /stub.py "$1" >/dev/null; }
@@ -353,6 +376,11 @@ $D run -d --label $LABEL --name e2e-n8n --network e2e-plumbing --network-alias n
   -v "$ROOT/deploy/e2e/plumbing_stub.py:/plumbing_stub.py:ro" -v "$WORK/config/plumbing:/secrets:ro" \
   python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b python3 -u /plumbing_stub.py 8090 >/dev/null \
   || { echo "the stub plumbing did not start"; exit 1; }
+# RFC-0014 §4.8: the stub MCP server (n8n's MCP Server Trigger's stand-in) on its own internal network, under a placeholder host name
+$D run -d --label $LABEL --name e2e-mcp --network e2e-mcp --network-alias mcp.e2e.example --memory 64m \
+  -v "$ROOT/deploy/e2e/mcp_stub.py:/mcp_stub.py:ro" -v "$WORK/config/mcp:/secrets:ro" \
+  python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b python3 -u /mcp_stub.py 8091 >/dev/null \
+  || { echo "the stub MCP server did not start"; exit 1; }
 WORLD_ALIASES="$(for h in $WORLD_HOSTS; do printf -- '--alias %s ' "$h"; done)"
 $D run -d --label $LABEL --name e2e-world --network e2e-backend $(echo "$WORLD_ALIASES" | sed 's/--alias/--network-alias/g') \
   --memory 64m -v "$ROOT/deploy/e2e/world.py:/world.py:ro" -v "$W:/w:ro" \
@@ -548,6 +576,11 @@ seen flotilla-egress "forbidden" && ok "the proxy logged the refused host" || ba
 [ -z "$($D logs e2e-forbidden 2>&1)" ] && ok "the refused host never received a request" || bad "the refused host was reached: $($D logs e2e-forbidden 2>&1 | head -2)"
 cli status | grep -E "^platform/heartbeat" | grep >/dev/null -E " false " && ok "status: heartbeat not stale" || bad "status: heartbeat stale"
 
+free_routine() {  # take a routine off disabled_routines and restart flotillad: its first run is at start, and starts its shadows
+  sed "s|, $1||" "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-free.yaml" && cat "$WORK/config/flotillad-free.yaml" > "$WORK/config/flotillad.yaml"
+  $D restart flotillad >/dev/null
+  for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
+}
 if want model; then
 echo "== the model client (runtime/), from the heartbeat's model step"
 L="$($D logs flotilla-worker-triage 2>&1)"
@@ -1436,11 +1469,6 @@ if want shadows; then
 echo "== shadow versions (v2 step 2): a shadow runs beside the live version on its own worker, its decisions are paired, and it can do no harm"
 # shadows are off until now; turn them on in flotillad's config and restart
 printf 'shadows: {enabled: true}\n' >> "$WORK/config/flotillad.yaml"   # appended in place: the bind mount keeps its file
-free_routine() {  # take a routine off disabled_routines and restart flotillad: its first run is at start, and starts its shadows
-  sed "s|, $1||" "$WORK/config/flotillad.yaml" > "$WORK/config/flotillad-free.yaml" && cat "$WORK/config/flotillad-free.yaml" > "$WORK/config/flotillad.yaml"
-  $D restart flotillad >/dev/null
-  for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
-}
 SHCHK="$($D run --rm --read-only --tmpfs /tmp --user 65532:65532 -v "$WORK/config/flotillad.yaml:/etc/flotilla/flotillad.yaml:ro" -v "$WORK/config/callers.yaml:/etc/flotilla/callers.yaml:ro" \
   -v flotilla-e2e-flotillad-secrets:/run/flotilla:ro -v "$WORK/config/specs:/etc/flotilla/specs:ro" -v "$WORK/config/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro" \
   "local/flotilla-flotillad:$TAG" -config /etc/flotilla/flotillad.yaml -check 2>&1; echo "rc=$?")"
@@ -1787,6 +1815,124 @@ sys.exit(0 if r["exit_code"] == 0 and "HEARTBEAT PASS" in out and c["routine"] =
 off_clean
 
 fi
+if want reads && [ "${DEMO:-}" != 1 ]; then
+echo "== live reads (RFC-0014 section 4.8): the reads worker reads through its own proxy, the reads are recorded, a replay is served the record, a shadow too"
+# e2e/reads (deploy/e2e/fleets/e2e/reads): v1 is live on the reads worker, whose station declares reads from the stub MCP server (deploy/e2e/mcp_stub.py:
+# n8n's stand-in, on its own internal network); v2 and v3 are shadows on the triage shadow worker, which has no route to that server and no address
+# or token for it. A shadow waits for its live run and is served its record: v2 asks for the same reads, v3 for one the live run never made.
+grep >/dev/null '^shadows:' "$WORK/config/flotillad.yaml" || printf 'shadows: {enabled: true}\n' >> "$WORK/config/flotillad.yaml"   # appended in place: the bind mount keeps its file
+mcplog() { $D logs e2e-mcp 2>&1; }
+RC="python3 $ROOT/deploy/e2e/reads_check.py"
+# the reads worker alone holds the server's address and token; the shadow worker and the live triage worker hold none (names only: no value is read)
+RW_ENV="$($D exec flotilla-worker-reads env 2>&1 | grep -c '^ROUTINE_MCP_LAB_\(URL\|TOKEN_FILE\)=')"
+OTHER_ENV="$(for w in flotilla-worker-triage-shadow flotilla-worker-triage flotilla-worker-ops-read; do $D exec $w env 2>&1; done | grep -c 'MCP_')"
+[ "$RW_ENV" = 2 ] && [ "$OTHER_ENV" = 0 ] && ok "the reads worker holds the stub server's address and token file; the shadow worker, the live triage worker and ops-read hold no MCP_* setting" \
+  || bad "MCP settings: reads worker $RW_ENV of 2, the others $OTHER_ENV"
+NW="$($D inspect flotilla-worker-reads --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"; NP="$($D inspect flotilla-egress-reads --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
+NM="$($D network inspect e2e-mcp --format '{{range $k, $v := .Containers}}{{$v.Name}} {{end}}' 2>&1 | tr ' ' '\n' | grep . | sort | tr '\n' ' ')"
+[ "$NW" = "${P}_flotilla " ] && echo "$NP" | grep >/dev/null "e2e-mcp" && [ "$NM" = "e2e-mcp flotilla-egress-reads " ] \
+  && ok "the reads worker is on the internal flotilla network alone; the MCP network holds the stub server and the reads proxy, nothing else" || bad "reads networks: worker '$NW' proxy '$NP' mcp network '$NM'"
+# the proxy's allowlist is the stub server and the model gateway: a host it can reach on the gateway's network but that is not listed is refused
+PXA="$($D exec flotilla-worker-reads python3 -c 'import urllib.request as u
+p = u.ProxyHandler({"http": "http://egress-reads:4750"})
+try:
+    print(u.build_opener(p).open("http://www.example.com/", timeout=10).status)
+except Exception as e:
+    print(getattr(e, "code", type(e).__name__))' 2>&1)"
+[ "$PXA" = 407 ] || [ "$PXA" = 403 ] && ok "the reads proxy refuses a host off its list (www.example.com: $PXA)" || bad "the reads proxy let www.example.com through: $PXA"
+free_routine e2e/reads
+for i in $(seq 1 45); do cli runs e2e/reads 2>&1 | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 2; done
+cli runs e2e/reads 2>&1 | grep >/dev/null " ok " && ok "the live run of e2e/reads v1 ended ok on the reads worker" || bad "e2e/reads live run: $(cli runs e2e/reads 2>&1 | head -3) $($D logs flotilla-worker-reads 2>&1 | tail -5)"
+RID="$(cli runs e2e/reads -json -n 5 | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runs"] or [] if x["status"] == "ok"]; print(r[0]["id"] if r else "")')"
+reads_snap() { $D run --rm --network none --user 65532:65532 -e STORE_DIR=/v -v flotilla-e2e-state:/v -v "$ROOT/deploy/server/store_snapshot.py:/s.py:ro" \
+  "local/flotilla-worker-triage:$TAG" python3 /s.py backup > "$WORK/reads.db" 2> "$WORK/reads.err"; }
+# the record is written after the run ends (the input is frozen at dispatch, before the reads happen): wait for it
+RCHK=""
+for _ in $(seq 1 15); do reads_snap; RCHK="$($RC record "$WORK/reads.db" "$RID" 2>&1)"; [ "${RCHK%% *}" = PASS ] && break; sleep 2; done
+[ "${RCHK%% *}" = PASS ] && ok "a live run records its reads in input_reads, keyed by its id: ${RCHK#PASS }" || bad "the live run's record: $RCHK"
+cli input show "$RID" 2>&1 | python3 -c '
+import json, sys
+e = json.load(sys.stdin)["envelope"]
+a = (e.get("recorded_tool_results") or {}).get("answer") or []
+sys.exit(0 if [x["tool"] for x in a] == ["lab.get_page", "lab.get_log"] and len(a[1]["result"]) == 12000 and all(x.get("ok") for x in a) else 1)' \
+  && ok "the run's input carries the reads as recorded_tool_results of its station (answer), the long result whole: what a replay is served" || bad "input show: $(cli input show "$RID" 2>&1 | head -c 300)"
+MC1="$(mcplog | $RC mcpcalls)"
+[ "$MC1" = "PASS CALLS get_page,get_log UNAUTH 0 NOSESSION initialize" ] \
+  && ok "the stub server was asked for the page and the log, each with the bearer token from the token file and, after initialize, its session id ($MC1)" || bad "the stub server's requests: $MC1"
+RWL="$($D logs flotilla-worker-reads 2>&1 | grep "\"run_id\": \"$RID\"")"
+echo "$RWL" | grep >/dev/null 'probe\[3\] lab.delete_page -> <unknown probe: lab.delete_page>' && ! echo "$MC1" | grep >/dev/null delete_page \
+  && ok "lab.delete_page, a tool the station does not declare, was refused before any call: the stub server never saw it, and it is not in the record" || bad "the undeclared tool: $(echo "$RWL" | grep -o 'probe\[3\][^"]*') / $MC1"
+seen flotilla-egress-reads "mcp.e2e.example" && ok "the reads proxy logged the stub server's host" || bad "the reads proxy has no record of the stub server's host"
+# the shadows (v2: the same reads, v3: one the live run never made) wait for the live run and are served its record
+S2=""; S3=""
+for _ in $(seq 1 45); do
+  reads_snap; S2="$($RC shadow "$WORK/reads.db" e2e/reads 2 2>&1)"; S3="$($RC shadow "$WORK/reads.db" e2e/reads 3 2>&1)"
+  echo "$S2" | grep >/dev/null -E "status=(done|not_run)" && echo "$S3" | grep >/dev/null -E "status=(done|not_run)" && break; sleep 2
+done
+SR2="$(echo "$S2" | sed -n 's/.* run=\([^ ]*\) .*/\1/p')"
+probes() { grep -o '"line": "PROBE [^"]*"' | sed 's/^"line": "//; s/"$//'; }
+LIVEP="$(echo "$RWL" | probes)"; SHP2="$($D logs flotilla-worker-triage-shadow 2>&1 | grep "\"run_id\": \"$SR2\"" | probes)"
+echo "$S2" | grep >/dev/null -E "^PASS status=done run=[^ ]+ run_status=ok exit=0 reason_chars=0 input_reads_rows=0 " && [ "$(echo "$LIVEP" | grep -c .)" = 3 ] && [ "$SHP2" = "$LIVEP" ] \
+  && ok "the shadow v2 ran on the shadow worker and ended ok on the live run's record: its 3 PROBE lines (lengths, hashes, heads) are the live run's, the long log included, and it wrote no input_reads" \
+  || bad "shadow v2: $S2 / live: $LIVEP / shadow: $SHP2"
+MC2="$(mcplog | $RC mcpcalls)"
+[ "$MC2" = "$MC1" ] && ok "the stub server saw no request from either shadow (its log is as the live run left it)" || bad "the stub server's requests after the shadows: $MC2 (before: $MC1)"
+SW="$($D exec flotilla-worker-triage-shadow python3 -c 'import socket
+try:
+    socket.create_connection(("mcp.e2e.example", 8091), timeout=3)
+    print("connected")
+except OSError as e:
+    print("unreachable", type(e).__name__)' 2>&1)"
+[ "${SW%% *}" = unreachable ] && ok "the shadow worker has no route to the stub server at all ($SW)" || bad "the shadow worker reached the stub server: $SW"
+echo "$S3" | grep >/dev/null -E "^PASS status=done run=[^ ]+ run_status=error exit=1 " && echo "$S3" | grep >/dev/null 'detail_last=recorded.RecordedMiss: no recorded result for station .answer. tool .lab.get_page. with arguments {"id":2}$' \
+  && ok "the shadow v3 asked for a page the live run never read: its run failed as a miss (RecordedMiss), and nothing was sent to the server" || bad "shadow v3: $S3"
+# a replay of the same input with the stub server down: flotillad -stations prints the contract, runtime/offline_run.py serves the record
+echo "-- a replay of that input with the stub server down (flotillad -stations, then runtime/offline_run.py in the worker image)"
+OFR="$WORK/offline-reads"
+reads_off_clean() {  # the replay's folders hold files owned by the worker's uid: removed by that uid, then the folder by us
+  [ -d "$OFR" ] && $D run --rm --user 10001:10001 -v "$OFR:/x" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'rm -rf /x/out /x/out-miss' >/dev/null 2>&1
+  rm -rf "$OFR"
+}
+reads_off_clean; mkdir -p "$OFR"; chmod 777 "$OFR"
+printf 'e2e-eval-key' > "$OFR/eval.key"
+cat > "$OFR/models.json" <<EOF
+{"endpoints": {"gw": {"base_url": "http://litellm:8080/v1", "kind": "litellm", "key_file": "/work/eval.key", "defaults": {"tools": "native", "json": "object", "cost": "reported"}}},
+ "aliases": {"reads-answer": {"endpoint": "gw", "model": "fleet-reads-answer"}}}
+EOF
+cli input export "$RID" --to "/var/lib/flotilla/exports/reads-$RID" >/dev/null 2>&1 && $D cp "flotillad:/var/lib/flotilla/exports/reads-$RID" "$OFR/in" >/dev/null 2>&1 && chmod -R a+rX "$OFR/in"
+for v in 1 3; do
+  $D run --rm --network none --user 65532:65532 -v "$OFR:/work" -v "$WORK/config/specs:/etc/flotilla/specs:ro" "local/flotilla-flotillad:$TAG" \
+    -stations /etc/flotilla/specs/e2e/reads/v$v -models /work/models.json > "$OFR/contract-v$v.json" 2> "$OFR/contract-v$v.err"
+done
+python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))
+e = c["env"]
+st = json.loads(e["FLOTILLA_STATIONS"])["stations"]["answer"]
+sys.exit(0 if st["reads"][0]["server"] == "lab" and st["reads"][0]["tools"] == ["get_page", "get_log"] and not any("MCP_" in k for k in e) else 1)' "$OFR/contract-v1.json" \
+  && ok "flotillad -stations printed v1's contract: the station's reads, and no MCP_* setting in its environment (the server's address and token are the reads worker's)" || bad "-stations: $(head -c 300 "$OFR/contract-v1.json") $(cat "$OFR/contract-v1.err")"
+$D stop e2e-mcp >/dev/null
+$D run --rm --network e2e-litellm --user 10001:10001 -v "$OFR:/work" -v "$WORK/config/specs/e2e:/opt/flotilla/fleets/e2e:ro" "local/flotilla-worker-triage:$TAG" \
+  python3 /opt/flotilla/runtime/offline_run.py --contract /work/contract-v1.json --input /work/in/input.json --models /work/models.json --out /work/out --forbid /opt/flotilla/fleets > "$OFR/offline.out" 2>&1; ORC=$?
+OFFP="$(grep '^PROBE ' "$OFR/out/output.txt" 2>/dev/null)"
+python3 -c '
+import json, sys
+sys.exit(0 if json.load(open(sys.argv[1] + "/result.json"))["exit_code"] == 0 else 1)' "$OFR/out" && [ "$ORC" = 0 ] && [ "$OFFP" = "$LIVEP" ] \
+  && ok "with the stub server stopped, the offline run of the live run's input succeeded from the record: the same 3 PROBE lines as the live run, the long log whole" \
+  || bad "offline run rc=$ORC: $(tail -c 400 "$OFR/offline.out") out: $(tail -c 400 "$OFR/out/output.txt" 2>/dev/null)"
+$D run --rm --network e2e-litellm --user 10001:10001 -v "$OFR:/work" -v "$WORK/config/specs/e2e:/opt/flotilla/fleets/e2e:ro" "local/flotilla-worker-triage:$TAG" \
+  python3 /opt/flotilla/runtime/offline_run.py --contract /work/contract-v3.json --input /work/in/input.json --models /work/models.json --out /work/out-miss --forbid /opt/flotilla/fleets > "$OFR/offline-miss.out" 2>&1
+python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1] + "/result.json"))
+out = open(sys.argv[1] + "/output.txt").read()
+sys.exit(0 if r["exit_code"] != 0 and "RecordedMiss" in out and "is not set" not in out and "read failed" not in out else 1)' "$OFR/out-miss" \
+  && ok "the offline run of v3 (a read the record lacks) failed as a miss, and no read was attempted: nothing was sent live" || bad "offline miss: $(tail -c 300 "$OFR/out-miss/output.txt" 2>/dev/null) $(tail -c 200 "$OFR/offline-miss.out")"
+$D start e2e-mcp >/dev/null
+MC3="$(mcplog | $RC mcpcalls)"
+[ "$MC3" = "$MC1" ] && ok "the stub server's log is still the live run's two calls after the replays" || bad "the stub server's requests after the replays: $MC3"
+reads_off_clean
+fi
 if want matrix; then
 echo "== the no-effect matrix (docs/wip/v2-design.md section 4): every example routine on the ops-read worker, shadowed, promoted, rolled back, on extended state"
 if [ "${DEMO:-}" != 1 ]; then
@@ -2006,11 +2152,11 @@ $D rm -f flotilla-e2e-remote-worker >/dev/null
 
 fi
 if want hardening; then
-for w in flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act; do
+for w in flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act flotilla-worker-reads; do
   NW="$($D inspect $w --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>&1)"
   [ "$NW" = "${P}_flotilla " ] && ok "$w is on the internal network only" || bad "$w networks: '$NW'"
 done
-for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-triage-shadow flotilla-egress-shadow flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act flotilla-egress flotilla-egress-bugfix; do
+for c in flotillad flotilla-worker-triage flotilla-worker-triage-candidate flotilla-worker-triage-shadow flotilla-egress-shadow flotilla-worker-ops-read flotilla-worker-ops-act-host flotilla-worker-bugfix flotilla-worker-bugfix-act flotilla-worker-reads flotilla-egress flotilla-egress-bugfix flotilla-egress-reads; do
   RO=$($D inspect "$c" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.Config.User}}')
   case "$RO" in "true [ALL] "*) ok "$c: read-only root, all capabilities dropped, user ${RO##* }" ;; *) bad "$c hardening: $RO" ;; esac
 done

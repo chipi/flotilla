@@ -1,0 +1,20 @@
+run:
+  command: python3 /opt/flotilla/fleets/e2e/reads/v2/run.py
+  workdir: .
+  timeout: 2m
+stations:
+  answer:
+    harness: flotilla
+    model: reads-answer
+    prompts: {system: system.md, task: task.md}
+    tools: all
+    tool_names: [note]
+    gates: []
+    reads:
+      - server: lab
+        tools: [get_page, get_log]
+        max_calls: 5
+        max_result_chars: 20000
+        timeout: 10s
+    limits: {max_turns: 4, timeout: 1m}
+limits: {e2e: 1}

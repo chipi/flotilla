@@ -50,7 +50,7 @@ services:
     environment:
       HTTP_PROXY: http://egress:4750
       HTTPS_PROXY: http://egress:4750
-      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,worker-plumbing,egress,localhost,127.0.0.1
+      NO_PROXY: worker-triage,worker-triage-candidate,worker-triage-shadow,worker-ops-read,worker-ops-act-host,worker-bugfix,worker-bugfix-act,worker-marketing,worker-plumbing,worker-reads,egress,localhost,127.0.0.1
       FLOTILLA_URL: http://127.0.0.1:8484
       FLOTILLA_TOKEN_FILE: /run/flotilla/cli.token
       FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_FLOTILLAD:-}   # deploy.sh: a changed config recreates it
@@ -72,6 +72,7 @@ services:
       worker-bugfix-act: {condition: service_healthy, required: false}
       worker-marketing: {condition: service_healthy, required: false}
       worker-plumbing: {condition: service_healthy, required: false}
+      worker-reads: {condition: service_healthy, required: false}
     healthcheck:
       test: ["CMD", "/usr/local/bin/flotilla", "health"]
       interval: 60s
@@ -365,6 +366,34 @@ services:
     healthcheck: *ops-health
     networks: [flotilla]
 
+  # The reads worker (profile reads, RFC-0014 §4.8): the one worker that holds a read server's address and token
+  # (MCP_<SERVER>_URL and MCP_<SERVER>_TOKEN_FILE, set as ROUTINE_MCP_* in FLOTILLA_CONFIG/worker-reads.env; the token files are in its own
+  # volume), so a routine whose stations declare `reads:` is assigned to it (`worker: reads`). The triage image, which carries runtime/
+  # (the harness, the MCP client). No shadow worker is given them: a shadow of such a routine is served the live run's record, and a shadow
+  # worker refuses a run whose environment holds an MCP_* setting. Its model key is the read-only one the endpoint names (key_env, in
+  # model.env). It reaches the read servers and the model gateway only through its own proxy.
+  worker-reads:
+    <<: *hardening
+    profiles: [reads]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-worker-triage:${FLOTILLA_TAG}
+    container_name: flotilla-worker-reads
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=32m", "/home/worker:size=32m,uid=10001,gid=10001,mode=0700"]
+    env_file: ["${FLOTILLA_CONFIG}/worker-reads.env"]   # ROUTINE_MCP_<SERVER>_URL and ROUTINE_MCP_<SERVER>_TOKEN_FILE; no secrets in it
+    environment:
+      FLOTILLA_WORKER: reads
+      FLOTILLA_WORKER_TOKEN_FILE: /run/flotilla/worker.token
+      FLOTILLA_ENV_FILES: /run/flotilla/model.env
+      FLOTILLA_WORKER_LISTEN: 0.0.0.0:8081
+      ROUTINE_HTTP_PROXY: http://egress-reads:4750
+      ROUTINE_HTTPS_PROXY: http://egress-reads:4750
+      ROUTINE_NO_PROXY: flotillad
+    volumes:
+      - worker-reads-secrets:/run/flotilla:ro
+    healthcheck: *ops-health
+    networks: [flotilla]
+
   egress:
     <<: *hardening
     image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
@@ -433,6 +462,24 @@ services:
       - ${FLOTILLA_CONFIG}/egress-plumbing-acl.yaml:/etc/smokescreen/acl.yaml:ro
     networks: [flotilla, plumbing]
 
+  # The reads worker's own egress proxy (profile reads): its allowlist (FLOTILLA_CONFIG/egress-reads-acl.yaml) is the read servers' hosts
+  # and the model gateway's, and its settings (smokescreen-reads.yaml) allow_ranges only those networks' ranges. It is on the MCP network
+  # and the gateway's, and no other way out.
+  egress-reads:
+    <<: *hardening
+    profiles: [reads]
+    image: ${FLOTILLA_REGISTRY:-ghcr.io/chipi}/flotilla-smokescreen:${FLOTILLA_TAG}
+    container_name: flotilla-egress-reads
+    mem_limit: 128m
+    cpus: 0.25
+    command: ["--config-file", "/etc/smokescreen/smokescreen.yaml", "--expose-prometheus-metrics"]
+    environment:
+      FLOTILLA_CONFIG_HASH: ${FLOTILLA_CONFIG_HASH_EGRESS_READS:-}
+    volumes:
+      - ${FLOTILLA_CONFIG}/smokescreen-reads.yaml:/etc/smokescreen/smokescreen.yaml:ro
+      - ${FLOTILLA_CONFIG}/egress-reads-acl.yaml:/etc/smokescreen/acl.yaml:ro
+    networks: [flotilla, mcp, litellm]
+
 # Named so that a compose project rename can never strand them. TRIAGE_STATE_VOLUME picks the
 # triage fleet's state: a shadow copy beside fleetd, or the live state after the switch.
 volumes:
@@ -484,6 +531,10 @@ volumes:
   worker-plumbing-secrets:
     name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-plumbing-secrets
     external: true
+  # the reads worker's token, model key file and the read servers' bearer tokens (profile reads), filled by secrets.sh
+  worker-reads-secrets:
+    name: ${FLOTILLA_VOLUME_PREFIX:-flotilla}-worker-reads-secrets
+    external: true
   # seeded by secrets.sh --seed-state from the live state before a comparison; never the live volume
   triage-candidate-state:
     name: ${TRIAGE_CANDIDATE_STATE_VOLUME:-flotilla-triage-state-candidate}
@@ -521,4 +572,9 @@ networks:
     external: true
   umami:   # the seo proxy reaches Umami there (RFC-0012)
     name: ${NET_UMAMI:-umami_default}
+    external: true
+  # RFC-0014 §4.8: the network of the MCP servers the reads worker reads (the plumbing tool's n8n, on the reference installation), owned by
+  # its compose project and internal. Only egress-reads of flotilla's joins it.
+  mcp:
+    name: ${NET_MCP:-mcp}
     external: true

@@ -20,6 +20,7 @@ type composeService struct {
 	CPUs        float64           `yaml:"cpus"`
 	CPUShares   int               `yaml:"cpu_shares"`
 	Environment map[string]string `yaml:"environment"`
+	EnvFile     []string          `yaml:"env_file"`
 	Volumes     []string          `yaml:"volumes"`
 	Networks    []string          `yaml:"networks"`
 	DependsOn   map[string]struct {
@@ -278,5 +279,54 @@ func TestOnlyFlotilladAndThePlumbingProxyAreOnThePlumbingNetwork(t *testing.T) {
 	}
 	if w := cs["worker-plumbing"]; !slices.Equal(w.Networks, []string{"flotilla"}) {
 		t.Errorf("worker-plumbing's networks %v: the flotilla network alone, the plumbing through egress-plumbing", w.Networks)
+	}
+}
+
+// RFC-0014 §4.8: a read server's address and token are the reads worker's alone (worker-reads.env, its own secrets volume), its egress goes through
+// a proxy of its own, and that proxy is the only service of flotilla's on the MCP network. A shadow worker is given none of it: it is served the live
+// run's record.
+func TestOnlyTheReadsWorkerHoldsAReadServerAndOnlyItsProxyIsOnTheMcpNetwork(t *testing.T) {
+	cs, vols := loadComposeFile(t)
+	for name, s := range cs {
+		for k := range s.Environment {
+			if strings.HasPrefix(k, "ROUTINE_MCP_") || strings.HasPrefix(k, "MCP_") {
+				t.Errorf("%s sets %s in the compose file: a read server's settings are worker-reads.env's, host config", name, k)
+			}
+		}
+		has := slices.ContainsFunc(s.EnvFile, func(f string) bool { return strings.Contains(f, "worker-reads.env") })
+		if has != (name == "worker-reads") {
+			t.Errorf("%s: reads env_file %v, want it on worker-reads only", name, has)
+		}
+		if on, want := slices.Contains(s.Networks, "mcp"), name == "egress-reads"; on != want {
+			t.Errorf("%s: on the mcp network %v, want %v (only egress-reads joins it)", name, on, want)
+		}
+		if name != "worker-reads" {
+			if n, _ := volumeNames(s); slices.Contains(n, "worker-reads-secrets") {
+				t.Errorf("%s mounts worker-reads-secrets, which hold the read servers' tokens", name)
+			}
+		}
+	}
+	w, p := cs["worker-reads"], cs["egress-reads"]
+	if !slices.Equal(w.Profiles, []string{"reads"}) || !slices.Equal(p.Profiles, []string{"reads"}) {
+		t.Errorf("worker-reads %v and egress-reads %v are profile reads: an installation without reads is unchanged", w.Profiles, p.Profiles)
+	}
+	if !slices.Equal(w.Networks, []string{"flotilla"}) {
+		t.Errorf("worker-reads' networks %v: the flotilla network alone, the servers through egress-reads", w.Networks)
+	}
+	for _, k := range []string{"ROUTINE_HTTP_PROXY", "ROUTINE_HTTPS_PROXY"} {
+		if w.Environment[k] != "http://egress-reads:4750" {
+			t.Errorf("worker-reads %s = %q, want its own proxy", k, w.Environment[k])
+		}
+	}
+	for _, n := range []string{"backend", "glitchtip", "langfuse", "out", "plumbing"} {
+		if slices.Contains(p.Networks, n) {
+			t.Errorf("egress-reads is on %q: its ways out are the MCP network and the model gateway's", n)
+		}
+	}
+	if !vols["worker-reads-secrets"].External {
+		t.Error("worker-reads-secrets is not external")
+	}
+	if !slices.Contains(strings.Split(cs["flotillad"].Environment["NO_PROXY"], ","), "worker-reads") {
+		t.Error("flotillad's NO_PROXY lacks worker-reads: it would reach the worker through the proxy")
 	}
 }

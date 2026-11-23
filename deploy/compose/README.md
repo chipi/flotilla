@@ -47,7 +47,7 @@ FLOTILLA_ADMIN_TOKEN_FILE=<admin token file>          # deploy_fleets.sh pauses 
 TRIAGE_FILING_GATE=<filing_gate.py>                    # the private fleets repo's triage/filing/scripts/filing_gate.py; unset: the deploy fails unless SF_FILING_GATE_ACCEPT says why
 # FLOTILLA_BACKUPS_KEEP=10                             # optional: how many store snapshots deploy.sh keeps
 # the services' Docker networks, when they are not the defaults
-# NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default NET_PLUMBING=plumbing
+# NET_BACKEND=backend_default NET_LITELLM=litellm_default NET_GLITCHTIP=glitchtip_default NET_LANGFUSE=langfuse_default NET_PLUMBING=plumbing NET_MCP=mcp
 ```
 
 A shadow state volume is seeded once from the live fleet's folder, without its secrets file and STOP
@@ -194,6 +194,33 @@ of flotilla's on the plumbing network besides flotillad. Every callback answers 
 with `{"done": true|false, "ref": ...}`, found from the delivery id (`plan-<hash16>`) it wrote into
 what it made. A host that mounts its own fleets over the image's has none of this until its fleets
 name the worker.
+
+## The reads worker: a station's live reads (RFC-0014 §4.8)
+
+A routine whose stations declare `reads:` (`fleets/README.md`) is read-only toward the company's tools,
+through MCP servers (streamable HTTP; n8n's MCP Server Trigger on the reference installation). One
+worker, `worker-reads` (profile `reads`, the triage image), holds each server's address and bearer
+token; its proxy, `egress-reads`, admits those servers' hosts and the model gateway's, nothing else.
+An installation without reads leaves the profile off and is unchanged.
+
+- **Run it:** add `reads` to `COMPOSE_PROFILES`; create `config/worker-reads.token` (32+ random
+  characters); `config/reads-model.env` (`KEY=value`: the read-only model key the endpoint's `key_env`
+  names); per server, `config/mcp/<server>.token` (the bearer token, alone in its file, mode 600) and
+  in `config/worker-reads.env`, `ROUTINE_MCP_<SERVER>_URL=<the server's MCP URL>` and
+  `ROUTINE_MCP_<SERVER>_TOKEN_FILE=/run/flotilla/mcp-<server>.token` (`<SERVER>` is the `server:` name
+  upper-cased, `-` as `_`); `config/egress-reads-acl.yaml` (`allowed_domains`: the MCP hosts and the
+  gateway's) and `config/smokescreen-reads.yaml` (`allow_ranges`: those two networks' ranges only);
+  `NET_MCP` in `.env` if the MCP servers' network is not named `mcp`; add the worker under `workers`
+  in `flotillad.yaml` (`url: http://worker-reads:8081`, `token_file: /run/flotilla/worker-reads.token`)
+  and name it in the routine (`worker: reads`). `secrets.sh` fills its volume when the token exists.
+- **The shadow's worker never has them.** A shadow of such a routine waits for its live run and is
+  served that run's record; a shadow worker refuses a run whose environment holds an `MCP_*_URL` or
+  `MCP_*_TOKEN_FILE`, and flotillad never sets them. A read the record lacks fails the shadow run.
+- **Bounds:** `max_calls`, `max_result_chars` and `timeout` per `reads:` entry; the run's time limit.
+
+The worker is on flotilla's network alone; `egress-reads` is the only service of flotilla's on the MCP
+network. The e2e's section `reads` (`deploy/e2e/run.sh`, with `deploy/e2e/mcp_stub.py`) proves the
+read, the record and the shadow on a stub server.
 
 ## People: the directory (RFC-0014 §4.6)
 

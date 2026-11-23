@@ -120,6 +120,19 @@ if [ -s "$FLOTILLA_CONFIG/worker-plumbing.token" ]; then
     put $V-worker-plumbing-secrets "plumbing-$(basename "$f")" 10001 "$f"
   done
 fi
+# the reads worker (compose profile reads, RFC-0014 §4.8), where its token exists: its token, the model key it calls with
+# ($FLOTILLA_CONFIG/reads-model.env, KEY=value lines: the key the model endpoint's key_env names, a read-only one) and each MCP
+# server's bearer token, $FLOTILLA_CONFIG/mcp/<server>.token (worker-reads.env names it as ROUTINE_MCP_<SERVER>_TOKEN_FILE=/run/flotilla/mcp-<server>.token).
+# Only this worker's volume holds them: no shadow worker is given a read server's token.
+if [ -s "$FLOTILLA_CONFIG/worker-reads.token" ]; then
+  put $V-flotillad-secrets worker-reads.token 65532 "$FLOTILLA_CONFIG/worker-reads.token"
+  put $V-worker-reads-secrets worker.token 10001 "$FLOTILLA_CONFIG/worker-reads.token"
+  put $V-worker-reads-secrets model.env 10001 "$FLOTILLA_CONFIG/reads-model.env"
+  for f in "$FLOTILLA_CONFIG"/mcp/*.token; do
+    [ -e "$f" ] || continue
+    put $V-worker-reads-secrets "mcp-$(basename "$f")" 10001 "$f"
+  done
+fi
 # optional: flotillad's GlitchTip DSN (flotillad.yaml errors_dsn_file: /run/flotilla/errors.env)
 if [ -n "${FLOTILLA_ERRORS_DSN_FILE:-}" ]; then
   put $V-flotillad-secrets errors.env 65532 "$FLOTILLA_ERRORS_DSN_FILE"

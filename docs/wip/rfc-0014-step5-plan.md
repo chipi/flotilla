@@ -85,9 +85,10 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
      only with reads) and the replay looks up (`recorded.key(station, tool, args)`);
      `ShadowReplay` in `runtime/test_reads.py` replays a live run's own lines through the loop,
      and a different argument misses.
-5. **Compose and the e2e**: `worker-reads` behind its own proxy (`egress-reads`), the shadow's
-   worker without it; a stub MCP server in `deploy/e2e` (a result over 8192 characters, an
-   undeclared tool, the server down for a replay, a shadow served the record); the section `reads`.
+5. **Compose and the e2e** (done, 2026-11-23): `worker-reads` behind its own proxy (`egress-reads`),
+   the shadow's worker without it; a stub MCP server in `deploy/e2e` (a result over 8192 characters,
+   an undeclared tool, the server down for a replay, a shadow served the record); the section
+   `reads`. Built as the "Step 5 as built" section below says.
 6. **Docs**: RFC-0014 §4.8 amended (the three points above), `fleets/README.md`.
 
 ## Needs the operator
@@ -95,6 +96,22 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
 - n8n's MCP Server Trigger (which transport it speaks), its read-only workflows and credentials,
   separate from the `plumbing.call` flows'.
 - The new worker, its proxy ACL with the real host, the token file, and `flotillad.yaml`'s `mcp:`.
+  Concretely, on the host (`deploy/compose/README.md`, "The reads worker"):
+  - n8n's MCP Server Trigger URL for each read server, in `config/worker-reads.env` as
+    `ROUTINE_MCP_<SERVER>_URL=<url>` (`<SERVER>` the `server:` name upper-cased, `-` as `_`), with
+    `ROUTINE_MCP_<SERVER>_TOKEN_FILE=/run/flotilla/mcp-<server>.token`;
+  - the bearer token, alone in `config/mcp/<server>.token` (mode 600); the worker's own
+    `config/worker-reads.token`; and `config/reads-model.env` (`KEY=value`: the read-only model
+    key the endpoint's `key_env` names; the shadow worker needs the same key in its read
+    environment, because the shadow of a station with reads calls the model too);
+  - the proxy host: `config/egress-reads-acl.yaml` (`allowed_domains`: the n8n host and the model
+    gateway's) and `config/smokescreen-reads.yaml` (`allow_ranges`: the n8n network's range and the
+    gateway's only); `NET_MCP` in `.env` if n8n's Docker network is not named `mcp`;
+  - `COMPOSE_PROFILES` gains `reads`; `flotillad.yaml` gains the worker (`reads: {url:
+    http://worker-reads:8081, token_file: /run/flotilla/worker-reads.token}`) and a model alias for
+    the station, and the routine says `worker: reads` (and a `shadow_worker`);
+  - n8n's side (above): the read-only workflows and credentials behind the trigger, and the check of
+    which transport it speaks (the client speaks streamable HTTP only).
 
 ## Deviations (step 4)
 
@@ -109,6 +126,69 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
   from its recordings, a miss failing it, as before.
 - A shadow of a version with reads whose live version declares none is not run (no row), rather
   than run and missing every read.
+
+## Step 5 as built (2026-11-23)
+
+- **Compose** (`deploy/compose/docker-compose.yml`, profile `reads`, off by default):
+  `worker-reads` (the triage image, which carries `runtime/`; `FLOTILLA_WORKER: reads`; its own
+  secrets volume `worker-reads-secrets`; env_file `worker-reads.env` holding
+  `ROUTINE_MCP_<SERVER>_URL` and `..._TOKEN_FILE`; `FLOTILLA_ENV_FILES` its model key) and
+  `egress-reads` (the shared smokescreen image, its own ACL and settings files, on the `flotilla`
+  network, the new external `mcp` network (`NET_MCP`) and the gateway's). flotillad gains
+  `depends_on` (`required: false`) and `NO_PROXY` for the worker. `secrets.sh` fills the volume
+  when `worker-reads.token` exists; `deploy.sh` hashes the new files so a changed ACL or token
+  recreates the service. `cmd/flotillad/compose_test.go` checks that only `worker-reads` has
+  `worker-reads.env` or its volume, only `egress-reads` joins the `mcp` network, and no service
+  sets an `MCP_*` variable in the compose file.
+- **The e2e** (`deploy/e2e/run.sh`, section `reads`, after `stations`): `deploy/e2e/mcp_stub.py`
+  (stdlib streamable HTTP, SSE answers, bearer token from a file, a session id, tools `get_page`,
+  `get_log` with 12000 characters, and `delete_page` as a write nothing declares; one JSON log line
+  per request), `deploy/e2e/fleets/e2e/reads/` (v1 live on the reads worker, v2 a shadow with the
+  same reads, v3 a shadow asking for a page the live run never read), the scripted model's turns in
+  `deploy/e2e/stub.py`, `deploy/e2e/reads_check.py` (the store and stub-log checks). Assertions:
+  1. the reads worker holds `MCP_LAB_*`; the shadow worker, the live triage worker and ops-read
+     hold no `MCP_*`; the worker is on the flotilla network alone, and the `mcp` network holds
+     only the stub and `egress-reads`; the reads proxy refuses a host off its list (407);
+  2. a live run ended ok and its `input_reads` row is complete, with the two reads in order and
+     `get_log` whole (12000 characters, `chars` equal, not cut, not hashed at 8192); `flotilla input
+     show` carries them as `recorded_tool_results.answer`;
+  3. the stub saw `get_page` and `get_log` only, every request authorised, every request after
+     `initialize` with its session id; `lab.delete_page` (undeclared) was refused before any call and
+     the stub never saw it; the reads proxy logged the stub's host;
+  4. shadow v2 ran on the shadow worker and ended ok with the same three `PROBE` lines (lengths,
+     hashes) as the live run and no `input_reads` row; the stub's log is unchanged after both
+     shadows; the shadow worker cannot resolve the stub at all;
+  5. shadow v3 failed as a miss (`RecordedMiss ... {"id":2}`, run status error);
+  6. with the stub stopped, `flotillad -stations` and `runtime/offline_run.py` run the live run's
+     exported input and print the same three `PROBE` lines; v3 offline fails as a miss, with no read
+     attempted; the stub's log is still the live run's two calls after the replays.
+- **Run:** `E2E_SECTIONS=reads deploy/e2e/run.sh` (the build, the config and `up` always run; the section
+  needs nothing of the others). A full local run (2026-11-23): 421 PASS, 2 FAIL, both the browser
+  check "the cases page lists the chain's case"; the tree without this change fails the same two
+  (401 PASS) on this machine, and the check passes in `E2E_SECTIONS=cases,ui`: cause not found.
+
+### Deviations (step 5)
+
+- **The proxy's ACL admits the model gateway as well as the MCP hosts.** The station's model call
+  goes through the worker's only proxy, so an ACL of the MCP hosts alone would stop the run. The
+  worker has the gateway through `egress-reads` and nothing else; no write host, no GitHub, no
+  GlitchTip, no Langfuse.
+- **The worker uses the triage image,** not the ops image: the harness, the model client and the MCP
+  client are in `runtime/`, which only the triage image carries.
+- **The model key is the endpoint's `key_env`,** read from `model.env` in the worker's volume
+  (`FLOTILLA_ENV_FILES`), the same shape as the shadow worker's read environment; a key file
+  (`key_file`) would leave the shadow worker, which also calls the model, without the key.
+- **`reads` is not in the `noeffect` group** of `E2E_SECTIONS` (CI's no-effect workflow runs that group
+  only; the full `make test-integration` run includes `reads`). Adding it is the operator's call:
+  it adds a section and a worker's start to that workflow's five builds.
+- **`free_routine` moved** out of the `shadows` section to the helpers above `model`, unchanged, so
+  `E2E_SECTIONS=reads` can use it; `reads` appends `shadows: {enabled: true}` itself when the `shadows`
+  section did not.
+- **Not mutation-tested:** the section's assertions were seen to fail once for real (a first run in
+  which the stub could not find its token file recorded `unauthorised (401)` results and the record
+  check refused them); none of the mutation checks of `no-effect.yml` was extended to a shadow
+  holding an MCP setting (the worker refuses it, unit-tested in `worker/test_worker.py`).
+- **Telemetry:** the e2e routine does not call `telemetry.setup()`; its reads are not traced.
 
 ## Not covered
 
