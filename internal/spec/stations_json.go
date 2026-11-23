@@ -17,6 +17,7 @@ type stationJSON struct {
 	Gates     []string               `json:"gates"`
 	Hooks     *HarnessHooks          `json:"hooks"`
 	Skills    []string               `json:"skills"`
+	Reads     []readJSON             `json:"reads,omitempty"` // left out without reads, so a version without them keeps its document
 }
 
 // StationsJSON is what a run gets in FLOTILLA_STATIONS, or "" for a version without stations: per station its harness, model alias, tools,
@@ -43,6 +44,9 @@ func (j *Routine) StationsJSON() string {
 		}
 		if s.Gates != nil {
 			sj.Gates = *s.Gates
+		}
+		for _, r := range s.Reads {
+			sj.Reads = append(sj.Reads, r.resolved())
 		}
 		if sj.Skills == nil {
 			sj.Skills = []string{}

@@ -206,3 +206,75 @@ func TestHooksOnAHarnessWithoutThemAreRefused(t *testing.T) {
 		t.Fatalf("hooks on a harness that has them: %v", err)
 	}
 }
+
+const readsStation = `run: {command: "python3 x.py", workdir: signal-fleet/mvp, timeout: 20m}
+stations:
+  answer:
+    harness: flotilla
+    model: plan-flash
+    prompts: {task: task.md}
+    tools: all
+    tool_names: [probe]
+    gates: []
+    reads:
+      - {server: wiki, tools: [search_pages, get_page], max_calls: 5}
+      - {server: tasks-v2, tools: [list_tasks], max_result_chars: 1000, timeout: 30s}
+`
+
+func TestReadsAreRefused(t *testing.T) {
+	rd := func(old, new string) string { return strings.Replace(readsStation, old, new, 1) }
+	cases := map[string]struct{ version, want string }{
+		"on pi":              {"run: {command: x, workdir: w, timeout: 1m}\nstations:\n  a:\n    harness: pi\n    model: m\n    tools: read\n    reads: [{server: wiki, tools: [t]}]\n", "stations.a.reads: only harness flotilla reads"},
+		"tools none":         {rd("tools: all", "tools: none"), "a station with reads is tools: all"},
+		"server name":        {rd("server: wiki", "server: Wiki"), `stations.answer.reads[0].server: "Wiki" is lower-case letters, digits, - and _, at most 40`},
+		"server too long":    {rd("server: wiki", "server: "+strings.Repeat("a", 41)), "at most 40"},
+		"duplicate server":   {rd("server: tasks-v2", "server: wiki"), `stations.answer.reads[1].server: "wiki" is declared twice`},
+		"no tools":           {rd("tools: [list_tasks]", "tools: []"), "stations.answer.reads[1].tools: at least one tool"},
+		"wildcard":           {rd("get_page", `"get_*"`), `"get_*" is a tool's exact name`},
+		"tool too long":      {rd("get_page", strings.Repeat("a", 65)), "is a tool's exact name"},
+		"duplicate tool":     {rd("get_page", "search_pages"), `"search_pages" is listed twice`},
+		"max_calls high":     {rd("max_calls: 5", "max_calls: 101"), "max_calls: 101 is 1..100"},
+		"max_calls negative": {rd("max_calls: 5", "max_calls: -1"), "max_calls: -1 is 1..100"},
+		"chars high":         {rd("max_result_chars: 1000", "max_result_chars: 262145"), "max_result_chars: 262145 is 1..262144"},
+		"timeout low":        {rd("timeout: 30s", "timeout: 500ms"), `timeout: "500ms" is a duration from 1s to 60s`},
+		"timeout high":       {rd("timeout: 30s", "timeout: 2m"), `timeout: "2m" is a duration from 1s to 60s`},
+		"timeout not":        {rd("timeout: 30s", "timeout: soon"), `timeout: "soon" is a duration`},
+		"dotted tool name":   {rd("tool_names: [probe]", "tool_names: [probe, wiki.get_page]"), `tool_names: "wiki.get_page" has a dot`},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(stationsTree(t, c.version))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want %q, got %v", c.want, err)
+			}
+		})
+	}
+}
+
+func TestReadsReachTheRuntimeWithTheirDefaults(t *testing.T) {
+	rs, err := Load(stationsTree(t, readsStation))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Stations map[string]map[string]json.RawMessage `json:"stations"`
+	}
+	if err := json.Unmarshal([]byte(rs[0].StationsJSON()), &doc); err != nil {
+		t.Fatal(err)
+	}
+	const want = `[{"server":"wiki","tools":["search_pages","get_page"],"max_calls":5,"max_result_chars":65536,"timeout_s":15},` +
+		`{"server":"tasks-v2","tools":["list_tasks"],"max_calls":10,"max_result_chars":1000,"timeout_s":30}]`
+	if got := string(doc.Stations["answer"]["reads"]); got != want {
+		t.Fatalf("reads in FLOTILLA_STATIONS:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestAStationWithoutReadsKeepsItsDocument(t *testing.T) {
+	rs, err := Load(stationsTree(t, stationsGood))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rs[0].StationsJSON(), `"reads"`) {
+		t.Fatalf("no reads key without reads: %s", rs[0].StationsJSON())
+	}
+}

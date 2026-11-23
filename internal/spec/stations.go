@@ -25,6 +25,7 @@ type Station struct {
 	Gates     *[]string     `yaml:"gates" json:"-"`
 	Hooks     *HarnessHooks `yaml:"hooks" json:"-"`
 	Skills    []string      `yaml:"skills" json:"-"`
+	Reads     []StationRead `yaml:"reads" json:"-"`
 }
 
 // StationLimits are per episode.
@@ -171,9 +172,17 @@ func (j *Routine) validateStations(bad func(string, ...any), vf *versionFile, vd
 			if s.Tools == "none" && s.ToolNames != nil && len(*s.ToolNames) > 0 {
 				bad("%s: tools: none with tool_names", at)
 			}
+			if s.ToolNames != nil {
+				for _, t := range *s.ToolNames {
+					if strings.Contains(t, ".") {
+						bad("%s.tool_names: %q has a dot; a dotted name is a read tool, declared in reads:", at, t)
+					}
+				}
+			}
 		} else if s.ToolNames != nil || s.Gates != nil || s.Hooks != nil || len(s.Skills) > 0 {
 			bad("%s: tool_names, gates, hooks and skills belong to harness flotilla only", at)
 		}
+		validateReads(bad, at, s.Harness, s.Tools, s.Reads)
 		if s.Hooks != nil && known && !caps.SupportsHooks {
 			bad("%s.hooks: harness %s has no hooks", at, s.Harness)
 		}
