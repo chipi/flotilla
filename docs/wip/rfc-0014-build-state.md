@@ -75,15 +75,16 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   340 ms on the mini's idle dev VM (665 ms at 0.5 CPU), and 9 to 10 s live (the CLI through
   `docker exec`, about 0.7 s of which is the exec). The VM runs QEMU with `accel=hvf`, not
   emulation; the 0.5 CPU cap doubles a request, no more. The rest, about 13 times, happens only in
-  the live process. The suspect, not yet proven: every store read went through the writer's one
-  connection (`SetMaxOpenConns(1)`), behind the scheduler's, the UI's and the metrics' queries.
-  Built, not deployed: reads outside a transaction on their own pool (4 connections,
-  `query_only`), a run's end and its spend in one transaction (`Store.EndRun`, which the read pool
-  showed was not atomic), a cancel of a run the store has ended refused with 404, and
-  `flotilla_store_wait_seconds_total{pool}`. To check after the deploy: the same CLI pairs call
-  (expected under about 1.5 s with the exec) and the read and write waits' rate. If it stays slow,
-  the cause is elsewhere: the production VM's contention (VictoriaMetrics, ClickHouse) or something
-  only a CPU profile shows (an opt-in loopback pprof listener: the operator's call).
+  the live process. The first suspect, every store read behind the writer's one connection, was
+  wrong: with the read pool deployed (1d76a58, 19:49Z) the pairs call took 11 to 13 s and the
+  store had waited 0.18 s for reads (8 waits) and 0.04 s for writes (3) since start. Kept: the read
+  pool, `Store.EndRun` (a run's end and its spend in one transaction, which the pool showed was not
+  atomic), the 404 on cancelling an ended run, and the wait metric, which ruled the store out.
+  The cause is the VM (measured read-only about 20:55): QEMU at 534% of the Mac's 6 cores; the VM's
+  8 CPUs at load 35 (29 to 67 runnable), 68.7% system time, 12.1% user, 13.7% idle; caddy at 110%,
+  ClickHouse and VictoriaLogs at 83%; host folders mounted by sshfs. Handed to the homelab session
+  (the operator, 2026-11-23): which processes make the kernel time, caddy, the sshfs mounts,
+  ClickHouse and VictoriaLogs. Nothing in flotilla's code fixes this; no profile listener needed.
 
 ## Needs the operator
 
