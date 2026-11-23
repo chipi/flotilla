@@ -34,6 +34,23 @@ Order of work: 5 (the metrics ship on it), 1, 3, 4, 2, 6.
 - 6: `ledgerCards` for a fleet with no cases; `flotilla_ledger_decisions_total{fleet,disposition}`
   for the Hub.
 
+## Earned trust (2026-11-23, the operator's second ask)
+
+Asked how to see that an action earned its next level, the Autonomy table alone had four kinds of
+friction: nothing said an action was ready; every row offered the same Promote; a recorded plan
+earned nothing until it was judged on its case page; and a routine's `max_autonomy` or the
+executor's cap could make a promotion do nothing, silently. One reading of each action's record
+(`ui/trust.go`) now serves three places:
+
+| Where | What it adds | What it replaces |
+| --- | --- | --- |
+| Now, Needs you | one line per action that is ready, linking to its row; a card of up to 3 recorded plans nobody judged, with Right and Wrong that post back to Now | the "Nothing needs you" card, while either waits |
+| Autonomy | ready rows first, then the closest; the ready row's reason written from its record and its Promote the primary button; a line on the row when a cap or a routine below the next level holds the promotion | the same blue Promote on every row and an empty reason |
+| The brief | a Trust section: each ready action, and how many recorded plans wait for a verdict | — |
+
+`Store.ActionPlanners` names the live routines that planned an action (their caps apply);
+`Store.UnjudgedRecorded` the recorded plans with no verdict from anyone.
+
 ## Not covered
 
 - The fleet-wide deploy (the mini and every remote worker's machine in one step): an open design
@@ -42,3 +59,7 @@ Order of work: 5 (the metrics ship on it), 1, 3, 4, 2, 6.
   on the worker's next retry, seconds later.
 - The e2e's workers have a writable HOME, so the read-only HOME fault that broke meetings/notes on
   the installation (fixed in `worker/flotilla_worker.py`, unit-tested) is not exercised there.
+- Earned trust: Now asks about recorded plans only. A proposed plan's evidence (approved as it
+  stood, then verified) needs no extra answer. Nothing tells an operator who never opens Now or the
+  brief, and a cap is named, not raised: raising a spec's `max_autonomy` is a change to the fleets
+  repo and a deploy.

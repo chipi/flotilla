@@ -141,6 +141,27 @@ func TestSnapshots(t *testing.T) {
 	recordedID := open("failed_backup", "host:nas", "run ops-backup-monitor-0004: the newest offsite backup is 26.1 hours old (limit 26h)")
 	plan(recordedID, "host:nas", "ops-rerun-backup-0003", "record", "record", "propose", cases.Closed, cases.PlanRecorded, false)
 
+	// An action that earned its next level: five recorded follow-up lists, each judged right.
+	for i := 1; i <= 5; i++ {
+		run, note := fmt.Sprintf("meetings-notes-000%d", i), fmt.Sprintf("2026-11-1%d-weekly-sync", i)
+		k := store.Key{Kind: "hook:meeting", Value: note}
+		id, _, err := st.OpenCase(ctx, store.NewCase{Kind: "meeting", Target: "meeting:" + note, Project: "meetings", Keys: []store.Key{k}, Canonical: k,
+			Title: "Follow-ups from " + note}, "hook/meeting", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = st.StartRun(ctx, store.Run{ID: run, Routine: "meetings/notes", SpecHash: "81e8", Trigger: "case", Actor: "flotillad",
+			Autonomy: "propose", StartedAt: at(time.Duration(30+i) * time.Hour), Status: "running"})
+		_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "hook/meeting", "")
+		_ = st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "meetings/notes", "run "+run+": 3 follow-up(s)")
+		if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: run, Action: "plumbing.create_tasks", Params: map[string]string{"list": "follow-ups"},
+			PlanHash: fmt.Sprintf("7d2e%d", i), Outcome: "record", Autonomy: "record", Would: "propose", Reasons: []string{"autonomy: routine propose, action record"}},
+			cases.Closed, cases.PlanRecorded, "", false); err != nil {
+			t.Fatal(err)
+		}
+		_ = st.SetVerdict(ctx, id, "ada", store.VerdictRight)
+	}
+
 	// A meeting a hook opened (RFC-0014 case 3): its tasks sent and delivered, verified, handed on to decisions, which wait for you.
 	mk := store.Key{Kind: "hook:meeting", Value: "2026-11-23-weekly-sync"}
 	meetID, _, err := st.OpenCase(ctx, store.NewCase{Kind: "meeting", Target: "2026-11-23-weekly-sync", Project: "meetings", Keys: []store.Key{mk}, Canonical: mk},

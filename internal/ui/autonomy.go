@@ -22,6 +22,8 @@ type actionRow struct {
 	Kinds, Rev, Evidence, Record, Up, Down string
 	CanUp, AtMax, Ready                    bool
 	Pct                                    int // the bar toward the next level (G13)
+	Cap, Also, Reason                      string
+	Primary                                bool // ready, nothing holds it, and promotable now: the one promotion the page asks for
 }
 
 type changeRow struct{ When, Text string }
@@ -101,6 +103,15 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		http.Error(w, "answers failed", 500)
 		return
 	}
+	ts, err := u.actionTrust(ctx, routines)
+	if err != nil {
+		http.Error(w, "evidence failed", 500)
+		return
+	}
+	byName := map[string]trust{}
+	for _, t := range ts {
+		byName[t.Name] = t
+	}
 	for _, a := range as {
 		row := actionRow{ActionStatus: a, Kinds: strings.Join(a.ForKinds, ", "), Up: levelUp[a.Autonomy], Down: levelDown[a.Autonomy]}
 		switch a.Reversible {
@@ -120,14 +131,26 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		if v := verdicts[a.Name]; v[0]+v[1] > 0 {
 			row.Record += fmt.Sprintf(" · diagnoses right %d, wrong %d", v[0], v[1])
 		}
-		st, err := u.API.Store.PromotionStreak(ctx, a.Name)
-		if err != nil {
-			http.Error(w, "evidence failed", 500)
-			return
+		t := byName[a.Name]
+		row.Evidence, row.Pct, row.Ready = evidence(a, row.AtMax, t.Streak)
+		row.Cap, row.Also = t.Cap, t.Also
+		row.Primary = row.Ready && row.CanUp && t.Cap == ""
+		if row.Primary {
+			row.Reason = t.Reason
 		}
-		row.Evidence, row.Pct, row.Ready = evidence(a, row.AtMax, st)
 		d.Actions = append(d.Actions, row)
 	}
+	// what is ready first, then what is closest to it; what is at its highest last
+	sort.SliceStable(d.Actions, func(i, j int) bool {
+		a, b := d.Actions[i], d.Actions[j]
+		if a.Ready != b.Ready {
+			return a.Ready
+		}
+		if a.AtMax != b.AtMax {
+			return !a.AtMax
+		}
+		return a.Pct > b.Pct
+	})
 	evs, err := u.API.Store.Events(ctx, 300)
 	if err != nil {
 		http.Error(w, "events failed", 500)

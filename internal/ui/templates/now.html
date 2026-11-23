@@ -41,7 +41,19 @@
           <strong>{{.Title}}</strong>
           <span class="casecard__why">{{whyWaiting .}}</span>
         </a></li>{{end}}
-      </ul>{{else}}{{if not .First}}<p class="card">Nothing needs you. Routines keep running at their own autonomy; anything that needs a person appears here and in Approvals.</p>{{end}}{{end}}
+      </ul>{{else}}{{if not (or .First .Earned .Judge)}}<p class="card">Nothing needs you. Routines keep running at their own autonomy; anything that needs a person appears here and in Approvals.</p>{{end}}{{end}}
+      {{range .Earned}}<p class="card earned"><span class="earned__text">{{.Line}}</span> <a href="/autonomy#action-{{.Name}}">Review it on Autonomy</a></p>{{end}}
+      {{if .Judge}}<section class="card judge" aria-labelledby="judge-h">
+        <div class="row-head"><h3 id="judge-h">Would these plans have been right?</h3><span class="meta">{{if gt .JudgeTotal (len .Judge)}}{{len .Judge}} of {{.JudgeTotal}} waiting{{else}}{{.JudgeTotal}} waiting{{end}}</span></div>
+        <p class="judge__why">They were only recorded: nothing ran. Each one you judge counts toward its action's next level.</p>
+        <ul class="judge__list">{{range .Judge}}<li>
+          <span class="judge__what"><a href="/cases/{{.Case}}">{{.Title}}</a> <span class="exact soft">would have run {{.Action}}</span></span>
+          {{if $act}}<span class="judge__answer">
+            <form method="post" action="/cases/{{.Case}}/right" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="/"><button class="btn btn--small btn--edge" type="submit" aria-label="Right: {{.Title}}">Right</button></form>
+            <form method="post" action="/cases/{{.Case}}/wrong" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="/"><button class="btn btn--small btn--edge" type="submit" aria-label="Wrong: {{.Title}}">Wrong</button></form>
+          </span>{{end}}
+        </li>{{end}}</ul>
+      </section>{{end}}
 
       <div class="row-head row-head--gap">
         <h2>Handled {{.HandledWhen}}</h2>

@@ -122,7 +122,11 @@ func (u *Server) composeBrief(ctx context.Context, now time.Time) (store.Brief, 
 	b.Summary = fmt.Sprintf("In the last 24 hours %s closed without you (%d verified after a fix). %s Runs cost %s.",
 		plural(closed, "case was", "cases were"), verified, map[bool]string{true: "Nothing needs you.", false: plural(len(needs), "case needs", "cases need") + " you."}[len(needs) == 0],
 		usd2(spend))
-	for _, sec := range []store.BriefSection{{Title: "Needs you", Items: needs}, {Title: "Handled overnight", Items: handled}, {Title: "Watch", Items: watch}} {
+	trusted, err := u.trustItems(ctx, routines)
+	if err != nil {
+		return b, err
+	}
+	for _, sec := range []store.BriefSection{{Title: "Needs you", Items: needs}, {Title: "Trust", Items: trusted}, {Title: "Handled overnight", Items: handled}, {Title: "Watch", Items: watch}} {
 		if len(sec.Items) > 0 {
 			b.Sections = append(b.Sections, sec)
 		}

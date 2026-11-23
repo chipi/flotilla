@@ -89,6 +89,8 @@ func safeBack(v, fallback string) string {
 
 type wrongItem struct{ What, Detail, Go, Href string }
 
+type earnedRow struct{ Name, Line string }
+
 type handledRow struct {
 	Time, Text, Href, Outcome string
 	OK                        bool
@@ -106,6 +108,9 @@ type nowData struct {
 	First              *decision
 	Needs              []caseRow
 	PlansLink          string
+	Earned             []earnedRow
+	Judge              []judgeRow
+	JudgeTotal         int
 	Handled            []handledRow
 	HandledTotal       int
 	HandledWhen        string
@@ -172,6 +177,20 @@ func (u *Server) now(w http.ResponseWriter, r *http.Request, s *store.Session, s
 		d.PlansLink = fmt.Sprintf("All %d plans in Approvals", plans)
 	case plans > 0:
 		d.PlansLink = "Approvals"
+	}
+
+	// Trust: an action that earned its next level, and recorded plans that wait for a verdict to earn anything.
+	ts, err := u.actionTrust(ctx, routines)
+	if err != nil {
+		http.Error(w, "evidence failed", 500)
+		return
+	}
+	for _, t := range earned(ts) {
+		d.Earned = append(d.Earned, earnedRow{Name: t.Name, Line: earnedLine(t)})
+	}
+	if d.Judge, d.JudgeTotal, err = u.toJudge(ctx, rows, 3); err != nil {
+		http.Error(w, "plans failed", 500)
+		return
 	}
 
 	// Handled since the last look.

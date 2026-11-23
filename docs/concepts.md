@@ -68,7 +68,9 @@ cannot give itself:
 
 1. **Code decides what leaves.** A station proposes; rules you can read decide.
 2. **Autonomy is earned, one action at a time.** Every action starts at record, moves to propose, and
-   only then to auto, each step on its record of plans judged right.
+   only then to auto, each step on its record of plans judged right. Now asks you to judge recorded
+   plans, says when an action has earned its next level, and Autonomy shows that action first, with
+   anything else that would hold the promotion back (a routine's cap, the executor's).
 3. **A person approves what cannot be undone.** A sent email, a merge, a launch.
 4. **Everything is recorded.** Every decision, model call and approval, with who and why.
 5. **Changes are tried before they ship,** as shadow versions (below).

@@ -73,3 +73,50 @@ func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, err
 	}
 	return st, rows.Err()
 }
+
+// ActionPlanners is, for each action, the live routines whose runs have planned it, sorted: the routines whose own levels
+// and caps a promotion of the action has to get past. A shadow's plan never reaches policy, so it names no planner.
+func (s *Store) ActionPlanners(ctx context.Context) (map[string][]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT p.action, r.routine FROM plans p JOIN runs r ON r.id = p.run_id WHERE r.`+liveRuns+`
+		ORDER BY p.action, r.routine`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var action, routine string
+		if err := rows.Scan(&action, &routine); err != nil {
+			return nil, err
+		}
+		out[action] = append(out[action], routine)
+	}
+	return out, rows.Err()
+}
+
+// UnjudgedRecorded is the recorded plans (a case closed plan_recorded) nobody has judged yet, newest first, at most limit,
+// and how many there are in all: a record-level action earns nothing until a person says Right or Wrong.
+func (s *Store) UnjudgedRecorded(ctx context.Context, limit int) ([]PlanRecord, int, error) {
+	const q = `FROM plans p JOIN cases c ON c.id = p.case_id
+		WHERE c.status = 'closed' AND c.resolution = 'plan_recorded' AND p.outcome = 'record'
+		AND p.id = (SELECT MAX(id) FROM plans WHERE case_id = p.case_id)
+		AND NOT EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id)`
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) `+q).Scan(&n); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.case_id, p.run_id, p.action, p.decided_at `+q+` ORDER BY p.decided_at DESC, p.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []PlanRecord
+	for rows.Next() {
+		var p PlanRecord
+		if err := rows.Scan(&p.ID, &p.CaseID, &p.RunID, &p.Action, &p.DecidedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, p)
+	}
+	return out, n, rows.Err()
+}
