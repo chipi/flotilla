@@ -18,7 +18,7 @@ func TestCasePath(t *testing.T) {
 	sch.SetRoutines([]*spec.Routine{clarify, fix})
 	u := &Server{API: &api.Server{Sched: sch}}
 	got := u.casePath(store.Case{Kind: "code_bug", Stage: "clarify", StageChanges: 1, SpentUSD: 0.25, SpentS: 1830})
-	want := "At stage clarify (handed on 1 of 2 times). Its runs have spent $0.25 of $1.00 and 30 of 90 minutes."
+	want := "Handed on 1 of 2 times. Its runs have spent $0.25 of $1.00 and 30 of 90 minutes."
 	if got != want {
 		t.Fatalf("got %q", got)
 	}

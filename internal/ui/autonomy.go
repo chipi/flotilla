@@ -96,6 +96,11 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		http.Error(w, "feedback failed", 500)
 		return
 	}
+	answers, err := u.API.Store.AnswersByAction(ctx)
+	if err != nil {
+		http.Error(w, "answers failed", 500)
+		return
+	}
 	for _, a := range as {
 		row := actionRow{ActionStatus: a, Kinds: strings.Join(a.ForKinds, ", "), Up: levelUp[a.Autonomy], Down: levelDown[a.Autonomy]}
 		switch a.Reversible {
@@ -109,6 +114,9 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		row.AtMax = spec.Rank(a.Autonomy) >= spec.Rank(a.Max)
 		row.CanUp = row.Up != "" && !row.AtMax && !fr.Frozen
 		row.Record = fmt.Sprintf("%s · verified %d · failed %d", plural(a.Record.Plans, "plan", "plans"), a.Record.Verified, a.Record.Failed)
+		if v := answers[a.Name]; v[0]+v[1] > 0 { // what you said to its proposals: the evidence a promotion to auto rests on
+			row.Record += fmt.Sprintf(" · you approved %d, rejected %d", v[0], v[1])
+		}
 		if v := verdicts[a.Name]; v[0]+v[1] > 0 {
 			row.Record += fmt.Sprintf(" · diagnoses right %d, wrong %d", v[0], v[1])
 		}

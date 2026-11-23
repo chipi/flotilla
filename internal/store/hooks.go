@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
@@ -89,4 +90,40 @@ func (s *Store) AcceptHookCall(ctx context.Context, c HookCall) (HookResult, err
 		}
 	}
 	return HookResult{CaseID: id, Opened: true}, nil
+}
+
+// HookActivity is one hook's calls since a time, from the events its handler writes (hook.accepted, hook.refused); a call cut off by
+// the rate limit writes none, by design.
+type HookActivity struct {
+	Accepted, Refused int
+	LastAt            string // its last call, either kind
+	LastRefused       string // the reason of its last refusal
+}
+
+// HookActivities returns every hook's activity since a time, by hook name.
+func (s *Store) HookActivities(ctx context.Context, since string) (map[string]HookActivity, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT actor, kind, at, detail FROM events
+		WHERE kind IN ('hook.accepted', 'hook.refused') AND at >= ? ORDER BY seq`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]HookActivity{}
+	for rows.Next() {
+		var actor, kind, at, detail string
+		if err := rows.Scan(&actor, &kind, &at, &detail); err != nil {
+			return nil, err
+		}
+		name := strings.TrimPrefix(actor, "hook:")
+		a := out[name]
+		a.LastAt = at
+		if kind == "hook.accepted" {
+			a.Accepted++
+		} else {
+			a.Refused++
+			a.LastRefused = detail
+		}
+		out[name] = a
+	}
+	return out, rows.Err()
 }

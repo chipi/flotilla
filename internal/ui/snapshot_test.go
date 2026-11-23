@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chipi/flotilla/internal/api"
 	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/hook"
 	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
@@ -105,18 +107,18 @@ func TestSnapshots(t *testing.T) {
 	// Cases: one waiting for approval with its plan, one escalated, one verified, one recorded plan.
 	open := func(kind, target, detail string) string {
 		k := store.Key{Kind: "target", Value: kind + "/" + target}
-		id, _, err := st.OpenCase(ctx, store.NewCase{Kind: kind, Target: target, Project: "ops", Keys: []store.Key{k}, Canonical: k}, "ops/backup-monitor", detail)
+		id, _, err := st.OpenCase(ctx, store.NewCase{Kind: kind, Target: target, Project: "jobs", Keys: []store.Key{k}, Canonical: k}, "jobs/backup-monitor", detail)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "a code detector knows the kind: no diagnosis step")
+		_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "jobs/backup-monitor", "a code detector knows the kind: no diagnosis step")
 		return id
 	}
 	plan := func(id, target, run, outcome, autonomy, would, to, resolution string, lock bool) {
-		_ = st.StartRun(ctx, store.Run{ID: run, Routine: "ops/rerun-backup", SpecHash: "9a1c", Trigger: "case", Actor: "flotillad",
+		_ = st.StartRun(ctx, store.Run{ID: run, Routine: "jobs/rerun-backup", SpecHash: "9a1c", Trigger: "case", Actor: "flotillad",
 			Autonomy: "propose", StartedAt: at(50 * time.Minute), Status: "running"})
 		_ = st.FinishRun(ctx, run, store.StatusOK, nil, 0, 31, "rechecked: the backup is 27h old and not running\nplan: backup.rerun")
-		_ = st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup",
+		_ = st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "jobs/rerun-backup",
 			"run "+run+": backup_age_above(26h): holds (age 27.1h); not_running: holds")
 		if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: run, Action: "backup.rerun",
 			Params: map[string]string{"host": strings.TrimPrefix(target, "host:")}, PlanHash: "4f1c9a20b7d3e8c15d6f20a4b9e7c3d19e07",
@@ -135,9 +137,46 @@ func TestSnapshots(t *testing.T) {
 	plan(okID, "host:vps", "ops-rerun-backup-0002", "propose", "propose", "", cases.AwaitingApproval, "", true)
 	_ = st.MoveCase(ctx, okID, cases.Executing, cases.ByOperator, "", "user:ada", "approved backup.rerun on host:vps (plan 4f1c9a20b7d3)")
 	_ = st.MoveCase(ctx, okID, cases.Checking, cases.ByAct, "", "flotillad", "the host ran it: exit 0")
-	_ = st.MoveCase(ctx, okID, cases.Closed, cases.ByCheck, cases.Verified, "ops/verify-backup", "run ops-verify-backup-0001: a new backup, 3 minutes old")
+	_ = st.MoveCase(ctx, okID, cases.Closed, cases.ByCheck, cases.Verified, "jobs/verify-backup", "run ops-verify-backup-0001: a new backup, 3 minutes old")
 	recordedID := open("failed_backup", "host:nas", "run ops-backup-monitor-0004: the newest offsite backup is 26.1 hours old (limit 26h)")
 	plan(recordedID, "host:nas", "ops-rerun-backup-0003", "record", "record", "propose", cases.Closed, cases.PlanRecorded, false)
+
+	// A meeting a hook opened (RFC-0014 case 3): its tasks sent and delivered, verified, handed on to decisions, which wait for you.
+	mk := store.Key{Kind: "hook:meeting", Value: "2026-11-23-weekly-sync"}
+	meetID, _, err := st.OpenCase(ctx, store.NewCase{Kind: "meeting", Target: "2026-11-23-weekly-sync", Project: "meetings", Keys: []store.Key{mk}, Canonical: mk},
+		"hook:meeting", "delivery 1xsY:2026-11-23T07:47:38Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.MoveCase(ctx, meetID, cases.HandedOver, cases.ByDetector, "", "hook:meeting", "a hook with a known kind")
+	_ = st.MoveCase(ctx, meetID, cases.Planned, cases.ByAct, "", "meetings/notes", "run meetings-notes-0001: 3 follow-ups, 2 decisions")
+	_ = st.SetPlanThen(ctx, meetID, "meetings-notes-0001", "meetings/notes", "decisions", "{}")
+	_ = st.MoveCase(ctx, meetID, cases.AwaitingApproval, cases.ByPolicy, "", "flotillad", "propose: plumbing.create_tasks")
+	_ = st.MoveCase(ctx, meetID, cases.Executing, cases.ByOperator, "", "user:ada", "approved plumbing.create_tasks")
+	_ = st.MoveCase(ctx, meetID, cases.Checking, cases.ByAct, "", "plumbing/send-create-tasks", "run plumbing-send-0001: plumbing.create_tasks sent as plan-9e07")
+	_ = st.AddCaseEvent(ctx, meetID, "action.ref", "plumbing/send-create-tasks", `Google Tasks list "follow-ups": 3 task(s), e.g. MTIzNDU2Nzg5`)
+	if err := st.HandOnVerified(ctx, meetID, "decisions", "", "verified: the plumbing confirmed it", "{}"); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Event(ctx, "hook:meeting", "hook", "hook.accepted", meetID, "opened; delivery 1xsY")
+	_ = st.Event(ctx, "hook:meeting", "hook", "hook.refused", "hook:meeting", "signature: the timestamp is 3600 s old, over 300 s")
+	f.ui.API.Hooks = map[string]*hook.Hook{"meeting": {Name: "meeting", Kind: "meeting", Project: "meetings"}}
+
+	// A remote worker refused for its version, one connected (the bugfix fleet's, on another machine).
+	for _, h := range []string{"w-bugfix-laptop", "w-bugfix-act-laptop"} {
+		if _, err := st.AddEnrolment(ctx, h, "tok-"+h, "user:ada", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.Enrol(ctx, h, "tok-"+h, func() (string, time.Time, error) { return "cert-" + h, now.Add(27 * 24 * time.Hour), nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.ui.API.Remote = func() []api.RemoteWorker {
+		return []api.RemoteWorker{
+			{Worker: "bugfix", Identity: "w-bugfix-laptop", Refused: "version sha-52bfbb9, not flotillad's sha-ff08c18"},
+			{Worker: "bugfix-act", Identity: "w-bugfix-act-laptop", Version: "sha-ff08c18", Connected: true},
+		}
+	}
 
 	// Hosts: backup-01 and model-host connected, vps down for 12 minutes; executions on vps.
 	for _, h := range []string{"backup-01", "model-host", "vps"} {
@@ -161,7 +200,7 @@ func TestSnapshots(t *testing.T) {
 
 	// An autonomy change, for Autonomy's Recent changes.
 	_ = st.SetControlBecause(ctx, "action:backup.rerun", "autonomy", "propose", "user:ada", "ui", "5 recorded plans I agreed with")
-	_ = st.SetControl(ctx, "ops/backup-monitor", "paused", "0", "user:ada", "api")
+	_ = st.SetControl(ctx, "jobs/backup-monitor", "paused", "0", "user:ada", "api")
 
 	op := f.addOperator()
 	ck := f.signin(f.admin)
@@ -174,10 +213,12 @@ func TestSnapshots(t *testing.T) {
 		"now": "/", "approvals": "/approvals", "cases": "/cases", "cases-pivot": "/cases?p=kind%3Afailed_backup&p=target%3Ahost%3Amodel-host",
 		"case": "/cases/" + waitID, "case-escalated": "/cases/" + escID, "case-verified": "/cases/" + okID,
 		"runs": "/runs", "runs-problems": "/runs?f=problems", "run": "/runs/ops-rerun-backup-0001",
-		"fleets": "/fleets", "fleet": "/fleets/ops", "fleet-triage": "/fleets/triage", "fleet-routines": "/fleets/ops?tab=routines",
-		"fleet-stats": "/fleets/ops?tab=stats", "fleet-logs": "/fleets/triage?tab=logs",
+		"fleets": "/fleets", "fleet": "/fleets/jobs", "fleet-triage": "/fleets/triage", "fleet-routines": "/fleets/jobs?tab=routines",
+		"fleet-stats": "/fleets/jobs?tab=stats", "fleet-logs": "/fleets/triage?tab=logs",
 		"routine": "/fleets/triage/cycle", "routine-block": "/fleets/triage/cycle?b=gate.edge", "routine-bugfix": "/fleets/bugfix/fix",
 		"hosts": "/hosts", "host": "/hosts/vps", "host-agent": "/hosts/backup-01?tab=agent", "host-exec": "/hosts/vps?tab=exec",
+		"case-meeting": "/cases/" + meetID, "fleet-meetings": "/fleets/meetings", "fleet-bugfix": "/fleets/bugfix",
+		"fleet-triage-stats": "/fleets/triage?tab=stats", "fleet-meetings-stats": "/fleets/meetings?tab=stats",
 		"autonomy": "/autonomy", "history": "/history?period=all", "history-ledger": "/history?type=ledger&period=all",
 		"account": "/account", "users": "/users", "models": "/models", "models-spend": "/models?tab=spend&period=30d",
 		"run-triage": "/runs/" + firstTriage(st, t), "signin": "/signin"}

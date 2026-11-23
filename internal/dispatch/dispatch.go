@@ -632,11 +632,13 @@ func (d *Dispatcher) execute(ctx context.Context, c store.Case, j *spec.Routine,
 	detail := strings.TrimSpace("run " + r.ID + ": " + dec.Detail)
 	switch dec.Outcome {
 	case "executed":
-		if dec.Ref != "" {
-			detail += " (" + dec.Ref + ")"
-		}
 		if err := st.MoveCase(ctx, c.ID, cases.Checking, cases.ByAct, "", j.ID(), detail); err != nil {
 			return err
+		}
+		if dec.Ref != "" { // where the send landed (a PR, a Google Task): its own line on the timeline, not words in the move's
+			if err := st.AddCaseEvent(ctx, c.ID, "action.ref", j.ID(), dec.Ref); err != nil {
+				d.Log.Error("record an execution's ref", "case", c.ID, "run_id", r.ID, "ref", dec.Ref, "err", err)
+			}
 		}
 		d.Log.Info("repo action executed", "case", c.ID, "run_id", r.ID, "action", p.Action, "ref", dec.Ref)
 		return nil

@@ -507,6 +507,13 @@ var schema = []string{
 	// A pairs answer reads the live run's decisions per input by run_id (pairs.go liveSides); with no index that was a scan of the whole
 	// ledger per input (2026-11-22, the installation's store, 204 inputs: 3.3 s natively and past the CLI's 30 s in the container; 0.15 s with it).
 	`CREATE INDEX ledger_entries_run ON ledger_entries(run_id, kind, seq);`,
+	// A case's fleet, kept when it opens (cases.go caseFleetOf) so the UI and the metrics read one answer: the opening routine's
+	// fleet, or for a case a hook opened (no slash in its actor) its project. Back-filled by the same rule.
+	`ALTER TABLE cases ADD COLUMN fleet TEXT NOT NULL DEFAULT '';
+	UPDATE cases SET fleet = COALESCE((SELECT CASE WHEN instr(e.actor, '/') > 0 THEN substr(e.actor, 1, instr(e.actor, '/') - 1) ELSE '' END
+		FROM case_events e WHERE e.case_id = cases.id AND e.kind = 'case.detected' ORDER BY e.seq LIMIT 1), '');
+	UPDATE cases SET fleet = project WHERE fleet = '';
+	CREATE INDEX events_kind_at ON events(kind, at);`, // the hooks' activity (hooks.go HookActivity) reads events by kind and time
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

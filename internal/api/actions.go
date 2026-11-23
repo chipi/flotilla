@@ -121,7 +121,26 @@ func (s *Server) Status(ctx context.Context) ([]RoutineStatus, map[string]any, e
 			workers[name] = h
 		}
 	}
+	if s.Remote != nil {
+		for _, r := range s.Remote() {
+			w := map[string]any{"ok": r.Connected, "remote": true, "identity": r.Identity, "version": r.Version}
+			switch {
+			case r.Refused != "":
+				w["ok"], w["error"] = false, "refused: its "+r.Refused
+			case !r.Connected:
+				w["error"] = "not connected"
+			}
+			workers[r.Worker] = w
+		}
+	}
 	return routines, workers, nil
+}
+
+// RemoteWorker is a remote worker's link as flotillad's host endpoint knows it: a configured one never seen yet has only its name and
+// identity. Refused is why its last connection was refused (its version against flotillad's).
+type RemoteWorker struct {
+	Worker, Identity, Version, Refused string
+	Connected                          bool
 }
 
 func (s *Server) routineByID(id string) (*spec.Routine, error) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/chipi/flotilla/internal/cases"
 )
 
 // A person's verdict on a case's diagnosis (G8), and notes: what a person proposes agents should know.
@@ -160,6 +162,41 @@ func (s *Store) Notes(ctx context.Context, status string) ([]Note, error) {
 			return nil, err
 		}
 		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// AnswersByAction counts the operator's answers to proposals by the action proposed: [approved, rejected]. An answer is the
+// operator's move off awaiting_approval (to executing: approved; to escalated: rejected), and it belongs to the case's latest plan
+// decided before it, so a case that proposed two actions in turn (a meeting's tasks, then its decisions) counts each answer once.
+func (s *Store) AnswersByAction(ctx context.Context) (map[string][2]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT (SELECT p.action FROM plans p WHERE p.case_id = e.case_id AND p.decided_at <= e.at ORDER BY p.id DESC LIMIT 1),
+			e.to_status, COUNT(*)
+		FROM case_events e
+		WHERE e.from_status = ? AND e.by_role = ? AND e.to_status IN (?, ?)
+		GROUP BY 1, 2`, cases.AwaitingApproval, cases.ByOperator, cases.Executing, cases.Escalated)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][2]int{}
+	for rows.Next() {
+		var action sql.NullString
+		var to string
+		var n int
+		if err := rows.Scan(&action, &to, &n); err != nil {
+			return nil, err
+		}
+		if !action.Valid {
+			continue
+		}
+		v := out[action.String]
+		if to == cases.Executing {
+			v[0] += n
+		} else {
+			v[1] += n
+		}
+		out[action.String] = v
 	}
 	return out, rows.Err()
 }

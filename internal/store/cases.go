@@ -46,6 +46,7 @@ type Case struct {
 	Target       string  `json:"target"`
 	CanonicalKey string  `json:"canonical_key"`
 	Project      string  `json:"project"`
+	Fleet        string  `json:"fleet"` // the opening routine's fleet, or a hook's case's project (caseFleetOf)
 	Urgency      int     `json:"urgency"`
 	Status       string  `json:"status"`
 	Resolution   string  `json:"resolution"`
@@ -133,6 +134,15 @@ func (s *Store) OpenCase(ctx context.Context, n NewCase, actor, detail string) (
 	return id, true, tx.Commit()
 }
 
+// caseFleetOf is the fleet a new case belongs to: the fleet of the routine whose detection opened it ("bugfix/intake" -> bugfix), or
+// for a case a hook opened ("hook:meeting", no slash) the project the hook declares.
+func caseFleetOf(actor, project string) string {
+	if i := strings.Index(actor, "/"); i > 0 {
+		return actor[:i]
+	}
+	return project
+}
+
 // insertCase writes a new case at detected, with its keys and its first event.
 func insertCase(ctx context.Context, tx *sql.Tx, n NewCase, now time.Time, actor, detail string) (string, error) {
 	id, err := newCaseID(now.Format("20060102"))
@@ -140,8 +150,9 @@ func insertCase(ctx context.Context, tx *sql.Tx, n NewCase, now time.Time, actor
 		return "", err
 	}
 	at := now.Format(ts)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at, title)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, n.Kind, n.Target, n.Canonical.String(), n.Project, n.Urgency, cases.Detected, at, at, n.Title); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at, title, fleet)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, n.Kind, n.Target, n.Canonical.String(), n.Project, n.Urgency, cases.Detected, at, at, n.Title,
+		caseFleetOf(actor, n.Project)); err != nil {
 		return "", err
 	}
 	for _, k := range n.Keys {
@@ -325,13 +336,13 @@ func addCaseEvent(ctx context.Context, tx *sql.Tx, e CaseEvent) error {
 	return err
 }
 
-const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of, repeats, repeat_at, stage, stage_changes, spent_usd, spent_s`
+const caseCols = `id, kind, target, canonical_key, project, urgency, status, resolution, holder, opened_at, status_at, closed_at, title, recurrence_of, repeats, repeat_at, stage, stage_changes, spent_usd, spent_s, fleet`
 
 func scanCase(sc interface{ Scan(...any) error }) (Case, error) {
 	var c Case
 	var closed sql.NullString
 	err := sc.Scan(&c.ID, &c.Kind, &c.Target, &c.CanonicalKey, &c.Project, &c.Urgency, &c.Status, &c.Resolution, &c.Holder,
-		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf, &c.Repeats, &c.RepeatAt, &c.Stage, &c.StageChanges, &c.SpentUSD, &c.SpentS)
+		&c.OpenedAt, &c.StatusAt, &closed, &c.Title, &c.RecurrenceOf, &c.Repeats, &c.RepeatAt, &c.Stage, &c.StageChanges, &c.SpentUSD, &c.SpentS, &c.Fleet)
 	if closed.Valid {
 		c.ClosedAt = &closed.String
 	}

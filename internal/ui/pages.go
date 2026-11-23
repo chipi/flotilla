@@ -385,12 +385,37 @@ func (u *Server) wrongNow(ctx context.Context, now time.Time, routines []api.Rou
 		}
 	}
 	for _, name := range sortedKeys(workers) {
-		if m, ok := workers[name].(map[string]any); ok && m["ok"] != true {
+		if m, ok := workers[name].(map[string]any); ok && m["ok"] != true && m["remote"] == true {
+			// a remote worker's link: refused (its version is not flotillad's) or gone; its routines skip until it is back
+			what, detail := "worker "+name+" is not connected", "its link to flotillad is down; its routines skip until it is back"
+			if e, _ := m["error"].(string); strings.HasPrefix(e, "refused: ") {
+				what, detail = "worker "+name+" is refused", "flotillad turns its link away: "+strings.TrimPrefix(e, "refused: ")+
+					"; deploy flotillad's version on its machine"
+			}
+			out.Items = append(out.Items, wrongItem{What: what, Detail: detail, Go: "Hosts", Href: "/hosts"})
+		} else if ok && m["ok"] != true {
 			detail := "its health check fails"
 			if e, ok := m["error"].(string); ok && e != "" {
 				detail += ": " + e
 			}
 			out.Items = append(out.Items, wrongItem{What: "worker " + name + " is not healthy", Detail: detail, Go: "Fleets", Href: "/fleets"})
+		}
+	}
+	// a hook that only refused in the last hour: the outside caller (an n8n flow, say) is misconfigured, and no case of its arrives
+	if len(u.API.Hooks) > 0 {
+		acts, err := u.API.Store.HookActivities(ctx, n.Add(-time.Hour).UTC().Format(time.RFC3339))
+		if err != nil {
+			return out, err
+		}
+		for _, name := range sortedKeys(u.API.Hooks) {
+			if a := acts[name]; a.Refused > 0 && a.Accepted == 0 {
+				href := "/history"
+				if p := u.API.Hooks[name].Project; p != "" {
+					href = "/fleets/" + p
+				}
+				out.Items = append(out.Items, wrongItem{What: "hook " + name + " refused " + plural(a.Refused, "call", "calls") + " in the last hour",
+					Detail: "and accepted none; the last: " + a.LastRefused, Go: "its fleet", Href: href})
+			}
 		}
 	}
 	hosts, err := u.API.Store.Hosts(ctx)

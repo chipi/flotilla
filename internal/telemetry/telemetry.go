@@ -245,6 +245,17 @@ func (p *Pusher) Cases(open, moves []Series) {
 	p.push(lines)
 }
 
+// Ledger pushes flotilla_ledger_decisions_total{fleet,disposition}: the live decisions a fleet's routines wrote to the ledger, a
+// counter (increase() over a window). It is what a fleet that files through the ledger (triage) did, as the case series are for the
+// others.
+func (p *Pusher) Ledger(counts []Series) {
+	lines := make([]string, len(counts))
+	for i, s := range counts {
+		lines[i] = p.sample("flotilla_ledger_decisions_total", s.Labels, s.V)
+	}
+	p.push(lines)
+}
+
 // Up says flotillad is alive (pushed every minute).
 func (p *Pusher) Up() {
 	p.push([]string{p.sample("flotilla_up", map[string]string{"version": p.Version}, 1)})

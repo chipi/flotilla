@@ -398,6 +398,7 @@ func (u *Server) caseCards(rows []caseRow, touched map[string]bool, evs []store.
 
 type timelineEvent struct {
 	What, When, Actor, Run, Detail, Dot string
+	Exact                               bool            // its detail is a record to copy (a delivery's ref): the exact face
 	Fold                                []timelineEvent // a run of events that changed nothing, opened on a tap
 	FoldText                            string
 }
@@ -439,7 +440,7 @@ func foldTimeline(ev []store.CaseEvent, rows []timelineEvent, closedAt string) [
 		group, groupEv = nil, nil
 	}
 	for i, e := range ev {
-		if i == 0 || i == len(ev)-1 || e.To != "" {
+		if i == 0 || i == len(ev)-1 || e.To != "" || e.Kind == "action.ref" { // a delivery is never a repeat
 			flush()
 			out = append(out, rows[i])
 			continue
@@ -455,7 +456,8 @@ type policyLevel struct{ What, Level string }
 type caseData struct {
 	EventCount int    // the events before folding
 	Repeats    string // "still reported 18 more times, unchanged; the last 14:46", or ""
-	Path       string // RFC-0013 §2: its stage and what its runs spent of its limit, or ""
+	Path       string // RFC-0013 §2: how often it was handed on and what its runs spent of its limit, or ""
+	Stages     []stageStep
 	Row        caseRow
 	Routine    string
 	Opened     string
@@ -531,7 +533,8 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		if e.By != "" && e.By != e.Actor {
 			actor += " (" + e.By + ")"
 		}
-		d.Events = append(d.Events, timelineEvent{What: what, When: u.clock(e.At), Actor: actor, Run: run, Detail: rest, Dot: eventDot(e)})
+		d.Events = append(d.Events, timelineEvent{What: what, When: u.clock(e.At), Actor: actor, Run: run, Detail: rest, Dot: eventDot(e),
+			Exact: e.Kind == "action.ref"})
 	}
 	closedAt := ""
 	if c.ClosedAt != nil {
@@ -539,6 +542,7 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 	}
 	d.EventCount = len(d.Events)
 	d.Path = u.casePath(c)
+	d.Stages = u.caseStages(c, ev)
 	if c.Repeats > 0 {
 		d.Repeats = fmt.Sprintf("Still reported %s, unchanged; the last %s.", plural(c.Repeats, "more time", "more times"), u.clock(c.RepeatAt))
 	}
@@ -688,12 +692,60 @@ func (u *Server) repoCase(ctx context.Context, id string) bool {
 	return ok && a.Repo()
 }
 
-// casePath is RFC-0013 §2 on the case page: the stage it is at and what its acting runs have spent of
-// the limit its kind's first routine declares ("" when there is neither).
+// stageStep is one stage on a case's strip: done, now (where it is; done too once it closed), or next (the stage its plan hands it
+// to on a verified check).
+type stageStep struct{ Name, Tone, State string }
+
+// caseStages is the stages a case went through, from its timeline (RFC-0013 §2), and the next one its last plan names; nil for a
+// case that never changed stage and has no plan naming one. The first stage is called by its kind's first routine's name.
+func (u *Server) caseStages(c store.Case, ev []store.CaseEvent) []stageStep {
+	var names []string
+	var next string
+	for _, e := range ev {
+		switch e.Kind {
+		case "case.staged":
+			if len(names) == 0 {
+				names = append(names, e.From)
+			}
+			names = append(names, e.To)
+			next = ""
+		case "plan.then":
+			next = e.To
+		}
+	}
+	if len(names) == 0 && next == "" {
+		return nil
+	}
+	if len(names) == 0 {
+		names = []string{"first"}
+	}
+	if names[0] == "first" && u.API.Sched != nil {
+		for _, j := range u.API.Sched.Routines() {
+			if j.OnCase() == c.Kind && j.OnStage() == "" {
+				names[0] = j.Routine
+			}
+		}
+	}
+	out := make([]stageStep, 0, len(names)+1)
+	for i, n := range names {
+		s := stageStep{Name: n, Tone: "ok", State: "done"}
+		if i == len(names)-1 && c.Status != cases.Closed {
+			s.Tone, s.State = "", "now"
+		}
+		out = append(out, s)
+	}
+	if next != "" && c.Status != cases.Closed {
+		out = append(out, stageStep{Name: next, State: "next"})
+	}
+	return out
+}
+
+// casePath is RFC-0013 §2 on the case page: how often it was handed on and what its acting runs have spent of the limit its kind's
+// first routine declares ("" when there is neither); the stages themselves are the strip above it (caseStages).
 func (u *Server) casePath(c store.Case) string {
 	var parts []string
 	if c.Stage != "" {
-		parts = append(parts, fmt.Sprintf("At stage %s (handed on %d of %d times).", c.Stage, c.StageChanges, store.MaxStageChanges))
+		parts = append(parts, fmt.Sprintf("Handed on %d of %d times.", c.StageChanges, store.MaxStageChanges))
 	}
 	var lim *spec.CaseLimit
 	if u.API.Sched != nil {

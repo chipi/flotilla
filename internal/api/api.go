@@ -141,6 +141,8 @@ type Server struct {
 	Sched   *sched.Scheduler
 	Store   *store.Store
 	Workers map[string]*worker.Client
+	// Remote is every configured remote worker's link (their runs go over the host endpoint, so Workers has none of them); nil: none
+	Remote  func() []RemoteWorker
 	Callers []Caller
 	Version string
 	Log     *slog.Logger

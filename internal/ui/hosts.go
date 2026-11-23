@@ -37,6 +37,12 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 	for _, x := range execs {
 		n[x.Host]++
 	}
+	remote := map[string]api.RemoteWorker{}
+	if u.API.Remote != nil {
+		for _, w := range u.API.Remote() {
+			remote[w.Identity] = w
+		}
+	}
 	out := make([]hostRow, 0, len(hosts))
 	for _, h := range hosts {
 		row := hostRow{Host: h, Cap: api.HostExecutorCeiling, Agent: orDash(h.Version), Execs: n[h.Name], Exec24: fmt.Sprint(n[h.Name])}
@@ -46,7 +52,15 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 		case h.EnrolledAt == nil:
 			row.Status, row.Lamp, row.Cert = "not enrolled", "lamp lamp--idle", "–"
 		case hostca.WorkerIdentityRe.MatchString(h.Name):
-			row.Status, row.Lamp = "worker link", "lamp lamp--idle" // its state is on its fleet's page
+			// a remote worker's link: its state is the link's now (the store's row keeps only its last good contact)
+			row.Status, row.Lamp = "worker link, not connected", "lamp lamp--stop"
+			if w, ok := remote[h.Name]; ok && w.Refused != "" {
+				row.Status, row.Agent = "worker link refused", w.Refused // the status stays short; the versions are the agent's column
+			} else if ok && w.Connected {
+				row.Status, row.Lamp, row.Agent = "worker link "+w.Worker+", connected", "lamp", w.Version
+			} else if !ok {
+				row.Status, row.Lamp = "worker link, not configured", "lamp lamp--idle" // enrolled once, no worker names it now
+			}
 		case h.Connected:
 			row.Status, row.Lamp = "connected", "lamp"
 		default:

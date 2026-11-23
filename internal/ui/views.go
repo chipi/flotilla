@@ -214,8 +214,13 @@ func humanKind(k string) string {
 
 // eventWhat is what a case event did, in words.
 func eventWhat(e store.CaseEvent) string {
-	if e.Kind == "case.staged" { // RFC-0013 §2: the status stays; the stage changes
+	switch e.Kind {
+	case "case.staged": // RFC-0013 §2: the status stays; the stage changes
 		return "Handed on to " + e.To
+	case "plan.then": // the plan names the stage its verified check hands the case to
+		return "Planned, then to " + e.To
+	case "action.ref": // where an executed action landed
+		return "Delivered"
 	}
 	if e.To != "" {
 		switch e.To {
@@ -296,6 +301,9 @@ func (u *Server) specs() (map[string]string, map[string]*spec.Routine) {
 
 // caseFleet is the fleet of the routine that acts on the case's kind, else of the routine that opened it.
 func caseFleet(c store.Case, first store.CaseEvent, kinds map[string]string) string {
+	if c.Fleet != "" { // kept when it opened: the answer the metrics give too
+		return c.Fleet
+	}
 	if r, ok := kinds[c.Kind]; ok {
 		return fleetOf(r)
 	}

@@ -15,14 +15,8 @@ type CaseMove struct {
 	N                                     int
 }
 
-// caseFleets names each case's fleet: the fleet of the routine whose detection opened it ("bugfix/intake" -> bugfix), or for a
-// case a hook opened (its actor has no slash) the case's project, as the hook declares it.
-const caseFleets = `WITH opener AS (SELECT case_id, MIN(seq) AS seq FROM case_events WHERE kind = 'case.detected' GROUP BY case_id),
-	f AS (SELECT c.id, c.kind, c.status, c.resolution, CASE
-			WHEN instr(e.actor, '/') > 0 THEN substr(e.actor, 1, instr(e.actor, '/') - 1)
-			WHEN c.project <> '' THEN c.project
-			ELSE 'unknown' END AS fleet
-		FROM cases c LEFT JOIN opener o ON o.case_id = c.id LEFT JOIN case_events e ON e.seq = o.seq)`
+// caseFleets is the cases with the fleet kept on each (caseFleetOf); "unknown" for a hook's case whose hook declared no project.
+const caseFleets = `WITH f AS (SELECT id, kind, status, resolution, CASE WHEN fleet <> '' THEN fleet ELSE 'unknown' END AS fleet FROM cases)`
 
 // CaseMetrics returns the open cases by fleet, kind and status, and every status move cases have made by fleet, kind, from, to and
 // role. Case events are never deleted, so a move's count only grows: a counter, read from the store, that a restart cannot lose.
@@ -63,4 +57,32 @@ func (s *Store) CaseMetrics(ctx context.Context) ([]CaseCount, []CaseMove, error
 		moves = append(moves, m)
 	}
 	return open, moves, rows.Err()
+}
+
+// LedgerCount is how many live decisions one fleet's routines wrote to the ledger with one disposition, since the store began.
+type LedgerCount struct {
+	Fleet, Disposition string
+	N                  int
+}
+
+// LedgerMetrics counts the ledger's live decisions (a shadow's, the ledger's stage "shadow", left out) by fleet, the namespace's
+// routine's, and disposition: what a fleet that files through the ledger, not cases (triage), decided. Entries are never deleted.
+func (s *Store) LedgerMetrics(ctx context.Context) ([]LedgerCount, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT CASE WHEN instr(namespace, '/') > 0 THEN substr(namespace, 1, instr(namespace, '/') - 1)
+			ELSE namespace END, coalesce(json_extract(row, '$.disposition'), ''), COUNT(*)
+		FROM ledger_entries WHERE kind = 'decision' AND coalesce(json_extract(row, '$.stage'), '') <> 'shadow'
+		GROUP BY 1, 2 ORDER BY 1, 2`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LedgerCount
+	for rows.Next() {
+		var c LedgerCount
+		if err := rows.Scan(&c.Fleet, &c.Disposition, &c.N); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }

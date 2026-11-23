@@ -17,6 +17,7 @@
     <section class="main card card--edge" aria-labelledby="tl">
       <h2 id="tl">Timeline</h2>
       {{template "whoacts" "page"}}
+      {{if .Stages}}<div class="path__steps" aria-label="Its stages">{{range $i, $s := .Stages}}{{if $i}}<i class="arr" aria-hidden="true">→</i>{{end}}<span class="pstep{{if eq .Tone "ok"}} pstep--ok{{end}}">{{.Name}}{{if eq .State "now"}} · now{{else if eq .State "next"}} · planned next{{end}}</span>{{end}}</div>{{end}}
       {{if .Path}}<p class="meta">{{.Path}}</p>{{end}}
       {{if .Repeats}}<p class="meta">{{.Repeats}} An unchanged detection is counted here, not added to the timeline.</p>{{end}}
       {{if gt .EventCount (len .Events)}}<p class="meta">{{.EventCount}} events, shown as {{len .Events}} rows: every change of the case stays; runs and signals that changed nothing fold into one row, opened on a tap.</p>{{end}}
@@ -36,7 +37,7 @@
               <span class="when">{{.When}} · {{.Actor}}</span>
               {{if .Run}}<a href="/runs/{{.Run}}">run {{short .Run 28}}</a>{{end}}
             </div>
-            {{if .Detail}}<span class="timeline__text">{{.Detail}}</span>{{end}}{{end}}
+            {{if .Detail}}<span class="timeline__text{{if .Exact}} exact{{end}}">{{.Detail}}</span>{{end}}{{end}}
           </div>
         </li>{{end}}
       </ol>

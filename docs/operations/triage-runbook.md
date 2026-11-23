@@ -327,7 +327,8 @@ Turn each finding into one of three things:
 | flotillad alive | `flotilla_up` |
 | a store write that failed | `flotilla_store_error{op}` |
 | open cases, per fleet | `flotilla_cases_open{fleet, kind, status}` (every minute; a series that empties reads 0; approvals waiting are `status="awaiting_approval"`) |
-| what the fleets' cases did | `flotilla_case_moves_total{fleet, kind, from, to, by, resolution}`, a counter read from the cases' timelines: `increase(...[30d])`; opened is `to="detected"`, closed is `to="closed"` with its `resolution`. A case's fleet is its opening routine's, or a hook's case's project. The triage fleet files to the ledger, not cases, so it has none |
+| what the fleets' cases did | `flotilla_case_moves_total{fleet, kind, from, to, by, resolution}`, a counter read from the cases' timelines: `increase(...[30d])`; opened is `to="detected"`, closed is `to="closed"` with its `resolution`. A case's fleet is its opening routine's, or a hook's case's project, kept on the case when it opens. The triage fleet files to the ledger, not cases, so it has none |
+| what a ledger fleet decided | `flotilla_ledger_decisions_total{fleet, disposition}`, a counter of the ledger's live decisions (a shadow's left out): the triage fleet's `file`, `dismiss`, `escalate`, `cleanup` |
 | the fleet's own | `signal_fleet_disposition{disposition}`, `signal_fleet_cost_usd`, `signal_fleet_tokens`, `signal_fleet_probes`, `signal_fleet_queue_depth{kind}`, `signal_fleet_queue_oldest_age_seconds`, `signal_fleet_escalations_7d`, `signal_fleet_glitchtip_sync{kind}` |
 | alerts | `flotilla-routine-stale` (ADR-0007) and `glitchtip-sync-failing`; the rules are provisioned in the installation's Grafana, not in this repo |
 

@@ -453,8 +453,48 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 				lamp, b, bc = "blamp blamp--idle", "not configured", "soft"
 			} else if m["ok"] != true {
 				lamp, b, bc = "blamp blamp--bad", "not healthy", "bad"
+				if m["remote"] == true {
+					b = "not connected"
+					if e, _ := m["error"].(string); strings.HasPrefix(e, "refused: ") {
+						b = "refused: " + strings.TrimPrefix(strings.TrimPrefix(e, "refused: "), "its ")
+					}
+				}
 			}
-			stages[0].Nodes = append(stages[0].Nodes, boardNode{Label: "worker " + wk, Sub: "the access its routines read through", A: "", B: b, BClass: bc, Lamp: lamp, Arrow: true})
+			sub := "the access its routines read through"
+			if m, _ := workers[wk].(map[string]any); m["remote"] == true {
+				sub = "a remote worker, on another machine"
+			}
+			stages[0].Nodes = append(stages[0].Nodes, boardNode{Label: "worker " + wk, Sub: sub, A: "", B: b, BClass: bc, Lamp: lamp, Arrow: true})
+		}
+		// the hooks whose cases are this fleet's: a source from outside (RFC-0014 §4.2), with what it sent in 24 h
+		var acts map[string]store.HookActivity
+		for _, name := range sortedKeys(u.API.Hooks) {
+			h := u.API.Hooks[name]
+			if h.Project != f.ID {
+				continue
+			}
+			if acts == nil {
+				if acts, err = u.API.Store.HookActivities(ctx, day24); err != nil {
+					http.Error(w, "hooks failed", 500)
+					return
+				}
+			}
+			a := acts[name]
+			// as a routine's node reads ("4 runs  ok"): its calls in the board's 24 h, and their state
+			lamp, b, bc := "blamp", "ok", "soft"
+			switch {
+			case a.Refused > 0 && a.Accepted == 0:
+				lamp, b, bc = "blamp blamp--bad", "all refused", "bad"
+			case a.Refused > 0:
+				b = fmt.Sprint(a.Refused) + " refused"
+			case a.Accepted == 0:
+				lamp, b = "blamp blamp--idle", "idle"
+			}
+			sub := "a hook: an outside caller opens " + h.Kind + " cases"
+			if a.LastAt != "" {
+				sub += ", last " + u.agoText(a.LastAt)
+			}
+			stages[0].Nodes = append(stages[0].Nodes, boardNode{Label: "hook " + name, Sub: sub, A: plural(a.Accepted+a.Refused, "call", "calls"), B: b, BClass: bc, Lamp: lamp, Arrow: true})
 		}
 		for _, x := range f.Routines {
 			j := specsBy[x.ID]
@@ -678,6 +718,23 @@ func tailLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
+// closedCard is the cases closed in the last 24 h, and how the last 7 days' closed, most first ("verified 3 · resolved itself 2"):
+// what the fleet's cases came to, not only the share a check verified.
+func closedCard(closed []float64, how map[string]int) scoreCard {
+	c := countCard("Closed", "last 24h", closed, "", nil)
+	if len(how) == 0 {
+		return c
+	}
+	keys := sortedKeys(how)
+	sort.SliceStable(keys, func(i, j int) bool { return how[keys[i]] > how[keys[j]] })
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("%s %d", strings.ReplaceAll(orDash(k), "_", " "), how[k])
+	}
+	c.Delta, c.Tone, c.Arrow = "7 days: "+strings.Join(parts, " · "), "neutral", "■" // a breakdown, not a trend: no arrow up or down
+	return c
+}
+
 // fleetCards are the Costs and stats tab's eight cards.
 func (u *Server) fleetCards(ctx context.Context, f fleetSum, rows []caseRow) ([]scoreCard, error) {
 	now := u.clockNow()
@@ -691,6 +748,7 @@ func (u *Server) fleetCards(ctx context.Context, f fleetSum, rows []caseRow) ([]
 		idx[d] = i
 	}
 	opened, fixed, spend, runs, failed := make([]float64, 14), make([]float64, 14), make([]float64, 14), make([]float64, 14), make([]float64, 14)
+	closed, how := make([]float64, 14), map[string]int{} // every close, and how the last 7 days closed
 	var closedTimes []time.Duration
 	for _, c := range rows {
 		if c.Fleet != f.ID {
@@ -699,6 +757,16 @@ func (u *Server) fleetCards(ctx context.Context, f fleetSum, rows []caseRow) ([]
 		if t, ok := parseTime(c.OpenedAt); ok {
 			if i, ok := idx[t.UTC().Format("2006-01-02")]; ok {
 				opened[i]++
+			}
+		}
+		if c.ClosedAt != nil {
+			if t, ok := parseTime(*c.ClosedAt); ok {
+				if i, ok := idx[t.UTC().Format("2006-01-02")]; ok {
+					closed[i]++
+				}
+				if now.Sub(t) < 7*24*time.Hour {
+					how[c.Resolution]++
+				}
 			}
 		}
 		if c.ClosedAt != nil && c.Resolution == "verified" {
@@ -767,16 +835,74 @@ func (u *Server) fleetCards(ctx context.Context, f fleetSum, rows []caseRow) ([]
 		}
 	}
 	tokens := countCard("Tokens", "last 24h", tok, tokensText(tok24), nil)
-	return []scoreCard{
+	work := []scoreCard{
 		countCard("Cases opened", "last 24h", opened, fmt.Sprint(f.Cases24), nil),
-		countCard("Fixed and verified", "last 24h", fixed, "", moreIsBetter),
+		closedCard(closed, how),
 		closedWithoutYou(rows, touched, f.ID, now),
 		{Label: "Time to fix", Value: median, Unit: "median, 7 days", Delta: "from opening to a verified close", Tone: "neutral", Arrow: "■", Spark: makeSpark(fixed)},
-		spendCard,
-		tokens,
-		countCard("Runs", "last 24h", runs, fmt.Sprint(f.Runs24), nil),
-		failCard,
-	}, nil
+	}
+	if !fleetHasCases(rows, f.ID) { // a fleet that files through the ledger (triage): its work is its decisions, not cases
+		ledger, err := u.ledgerCards(ctx, f, ds, idx)
+		if err != nil {
+			return nil, err
+		}
+		if ledger != nil {
+			work = ledger
+		}
+	}
+	return append(work, spendCard, tokens, countCard("Runs", "last 24h", runs, fmt.Sprint(f.Runs24), nil), failCard), nil
+}
+
+func fleetHasCases(rows []caseRow, fleet string) bool {
+	for _, c := range rows {
+		if c.Fleet == fleet {
+			return true
+		}
+	}
+	return false
+}
+
+// ledgerCards are a ledger fleet's two work cards: its live decisions, with how the last 7 days' went (file 12 · dismiss 40), and
+// what it filed; nil when its routines wrote no decision.
+func (u *Server) ledgerCards(ctx context.Context, f fleetSum, ds []string, idx map[string]int) ([]scoreCard, error) {
+	ns, err := u.decisionNamespaces(ctx, f)
+	if err != nil || len(ns) == 0 {
+		return nil, err
+	}
+	decs, err := u.API.Store.DecisionsSince(ctx, ns, ds[0])
+	if err != nil {
+		return nil, err
+	}
+	decided, filed := make([]float64, len(ds)), make([]float64, len(ds))
+	how := map[string]int{}
+	weekAgo := ds[max(0, len(ds)-7)]
+	for _, d := range decs {
+		if d.Kind != "decision" || d.Stage == "shadow" || len(d.TS) < 10 {
+			continue
+		}
+		i, ok := idx[d.TS[:10]]
+		if !ok {
+			continue
+		}
+		decided[i]++
+		if d.Disposition == "file" {
+			filed[i]++
+		}
+		if d.TS[:10] >= weekAgo {
+			how[orDash(d.Disposition)]++
+		}
+	}
+	dec := countCard("Decisions", "last 24h", decided, "", nil)
+	if len(how) > 0 {
+		keys := sortedKeys(how)
+		sort.SliceStable(keys, func(i, j int) bool { return how[keys[i]] > how[keys[j]] })
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = fmt.Sprintf("%s %d", k, how[k])
+		}
+		dec.Delta, dec.Tone, dec.Arrow = "7 days: "+strings.Join(parts, " · "), "neutral", "■"
+	}
+	return []scoreCard{dec, countCard("Filed", "last 24h", filed, "", nil)}, nil
 }
 
 func regexpQuote(s string) string { return regexp.QuoteMeta(s) }

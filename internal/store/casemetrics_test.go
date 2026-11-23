@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"github.com/chipi/flotilla/internal/cases"
@@ -51,6 +53,53 @@ func TestCaseMetrics(t *testing.T) {
 	for _, m := range moves {
 		if !want[m] {
 			t.Fatalf("unexpected move %+v in %+v", m, moves)
+		}
+	}
+}
+
+// Schema 36 keeps a case's fleet: a store at 35 back-fills it from the opening routine, and a hook's case from its project.
+func TestMigrationBackfillsCaseFleet(t *testing.T) {
+	if len(schema) < 36 {
+		t.Fatalf("this test is for schema 36, the schema has %d steps", len(schema))
+	}
+	p := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (n INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 35; i++ {
+		if _, err := db.Exec(schema[i]); err != nil {
+			t.Fatalf("step %d: %v", i+1, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (n) VALUES (?)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct{ id, project, actor string }{
+		{"case-a", "example", "seo/site-check"}, {"case-b", "meetings", "hook:meeting"}, {"case-c", "", "hook:smoke"},
+	} {
+		if _, err := db.Exec(`INSERT INTO cases (id, kind, target, canonical_key, project, urgency, status, opened_at, status_at)
+			VALUES (?, 'k', ?, ?, ?, 0, 'detected', '2026-11-20T00:00:00Z', '2026-11-20T00:00:00Z')`, c.id, c.id, "t="+c.id, c.project); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO case_events (case_id, at, kind, actor, to_status) VALUES (?, '2026-11-20T00:00:00Z', 'case.detected', ?, 'detected')`,
+			c.id, c.actor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("migrating a schema-35 database: %v", err)
+	}
+	defer s.Close()
+	for id, want := range map[string]string{"case-a": "seo", "case-b": "meetings", "case-c": ""} {
+		c, err := s.Case(context.Background(), id)
+		if err != nil || c.Fleet != want {
+			t.Errorf("%s: fleet %q, want %q (%v)", id, c.Fleet, want, err)
 		}
 	}
 }

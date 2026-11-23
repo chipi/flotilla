@@ -59,8 +59,8 @@ func TestExecuteRunsOnceAndMovesToChecking(t *testing.T) {
 	if c.Status != cases.Checking || c.Holder != "" {
 		t.Fatalf("after executed: %+v", c)
 	}
-	if e := lastEvent(t, f, id); e.By != cases.ByAct || e.Actor != "bugfix/open-pr" || !strings.Contains(e.Detail, "(chipi/flotilla#7)") {
-		t.Fatalf("the move: %+v", e)
+	if e, ref := executed(t, f, id); e.By != cases.ByAct || e.Actor != "bugfix/open-pr" || ref != "chipi/flotilla#7" || strings.Contains(e.Detail, "#7") {
+		t.Fatalf("the move %+v and its ref %q: the ref is its own line, not words in the move", e, ref)
 	}
 	if f.w.runs() != 1 {
 		t.Fatalf("%d runs, want 1", f.w.runs())
@@ -106,8 +106,8 @@ func TestARoutineActionRunsItsExecutor(t *testing.T) {
 	if c := f.cs(t, id); c.Status != cases.Checking {
 		t.Fatalf("after executed: %+v", c)
 	}
-	if e := lastEvent(t, f, id); e.Actor != "crm/apply-update" || !strings.Contains(e.Detail, "(contact c-101)") {
-		t.Fatalf("the move: %+v", e)
+	if e, ref := executed(t, f, id); e.Actor != "crm/apply-update" || ref != "contact c-101" {
+		t.Fatalf("the move %+v and its ref %q", e, ref)
 	}
 	f.pass(t)
 	if f.w.runs() != 1 {
@@ -229,12 +229,7 @@ func TestExecuteWaitsWhenBusyOrPaused(t *testing.T) {
 	// both ran once and were executed (repo.process_change declares no check, so a case that reached
 	// checking is escalated by the next pass: that is the check step, not the execution)
 	for _, id := range []string{a, b} {
-		evs, _ := f.st.CaseEvents(ctx, id)
-		executed := false
-		for _, e := range evs {
-			executed = executed || (e.Kind == "case."+cases.Checking && strings.Contains(e.Detail, "(o/r#1)"))
-		}
-		if !executed {
+		if _, ref := executed(t, f, id); ref != "o/r#1" {
 			t.Fatalf("approval %s was not executed: %+v", id, lastEvent(t, f, id))
 		}
 	}
@@ -357,4 +352,19 @@ func TestExecuteRefusedRunGivesTheAttemptBack(t *testing.T) {
 	if c := f.cs(t, id); c.Status != cases.Executing || lastEvent(t, f, id).Kind != executeNotStartedEvent {
 		t.Fatalf("a refused run: %+v, %+v", c, lastEvent(t, f, id))
 	}
+}
+
+// executed is a case's move to checking and the ref its execution reported (an action.ref event of its own, after the move).
+func executed(t *testing.T, f *fixture, id string) (move store.CaseEvent, ref string) {
+	t.Helper()
+	ev, _ := f.st.CaseEvents(context.Background(), id)
+	for i, e := range ev {
+		if e.Kind == "case."+cases.Checking {
+			move = e
+			if i+1 < len(ev) && ev[i+1].Kind == "action.ref" {
+				ref = ev[i+1].Detail
+			}
+		}
+	}
+	return move, ref
 }

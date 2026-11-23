@@ -397,7 +397,7 @@ func TestATextKeptWithoutABodyGainsItWhenALaterRunHasIt(t *testing.T) {
 }
 
 func TestAStoreAtTheLatestSchemaReadsOldCallsWithNoStation(t *testing.T) {
-	if len(schema) != 35 {
+	if len(schema) < 35 {
 		t.Fatalf("step 35 is the ledger's run index; the schema has %d steps", len(schema))
 	}
 	s, ctx := pairWorld(t)

@@ -750,6 +750,7 @@ func main() {
 		for id, name := range remotes {
 			log.Info("remote worker expected", "worker", name, "identity", id)
 		}
+		apiSrv.Remote = remoteWorkers(link, remotes)
 		if cfg.Slack != nil {
 			apiSrv.Slack = cfg.Slack
 			link.OnApproval = apiSrv.RelayedApproval
@@ -884,7 +885,26 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 	}
 }
 
-// pushCaseMetrics pushes the open cases and the cases' moves, by fleet (telemetry.Pusher.Cases). An empty label (an opening's
+// remoteWorkers is every configured remote worker's link: what the host endpoint has seen of it, or for one not seen since flotillad
+// started, its name and identity alone.
+func remoteWorkers(link *hostlink.Server, remotes map[string]string) func() []api.RemoteWorker {
+	return func() []api.RemoteWorker {
+		seen := map[string]hostlink.WorkerState{}
+		for _, w := range link.WorkerStates() {
+			seen[w.Worker] = w
+		}
+		out := make([]api.RemoteWorker, 0, len(remotes))
+		for id, name := range remotes {
+			w := seen[name]
+			out = append(out, api.RemoteWorker{Worker: name, Identity: id, Version: w.Version, Refused: w.Refused, Connected: w.Connected})
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Worker < out[j].Worker })
+		return out
+	}
+}
+
+// pushCaseMetrics pushes the open cases and the cases' moves, by fleet (telemetry.Pusher.Cases), and the ledger's live decisions by
+// fleet (Pusher.Ledger), what a fleet that files through the ledger did. An empty label (an opening's
 // from, a non-closing move's resolution) is left off its sample.
 func pushCaseMetrics(ctx context.Context, push *telemetry.Pusher, st *store.Store, log *slog.Logger) {
 	open, moves, err := st.CaseMetrics(ctx)
@@ -912,6 +932,17 @@ func pushCaseMetrics(ctx context.Context, push *telemetry.Pusher, st *store.Stor
 			"resolution", c.Resolution), V: float64(c.N)}
 	}
 	push.Cases(o, m)
+	lc, err := st.LedgerMetrics(ctx)
+	if err != nil {
+		log.Error("ledger metrics", "err", err)
+		push.StoreError("ledger_metrics")
+		return
+	}
+	l := make([]telemetry.Series, len(lc))
+	for i, c := range lc {
+		l[i] = telemetry.Series{Labels: labels("fleet", c.Fleet, "disposition", c.Disposition), V: float64(c.N)}
+	}
+	push.Ledger(l)
 }
 
 // pushRoutineMetrics pushes each enabled routine's freshness and last success: the routines the scheduler holds, and nothing else (the
