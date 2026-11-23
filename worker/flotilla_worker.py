@@ -191,6 +191,7 @@ def spend_report(path):
 
 CALLS_MAX = 5000  # calls-file lines returned per run (model calls and harness steps); a run that writes more reports the first CALLS_MAX and how many it dropped
 LOADED_MAX = 200  # what a run read (runtime/loaded.py), per run
+READS_MAX = 200   # live reads (runtime/reads.py) returned per run; more is an incomplete record, never a silently short one
 
 
 def calls_path(env, run_id, what="calls"):
@@ -232,6 +233,41 @@ def read_calls_counted(path, limit=None):
         except OSError:
             pass
     return out, dropped
+
+
+def read_reads(path):
+    """(the run's live reads, whether the record is complete), then the file removed. The lines are runtime/reads.py's, which a replay
+    serves as they are, so a record with a line missing is not a record: complete is False for a file that cannot be read, a line that
+    is not a JSON object, or more than READS_MAX lines. (None, True) when the run made no read (no file, or an empty one)."""
+    out, complete = [], True
+    try:
+        with open(path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    complete = False
+                    continue
+                if not isinstance(r, dict):
+                    complete = False
+                elif len(out) < READS_MAX:
+                    out.append(r)
+                else:
+                    complete = False
+    except FileNotFoundError:
+        return None, True
+    except (OSError, UnicodeDecodeError):
+        return [], False
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    if not out and complete:
+        return None, True
+    return out, complete
 
 
 PLAN_MAX = 64 * 1024
@@ -578,13 +614,13 @@ def _run_job(req, env, cancel, shadow=False):
         except FileNotFoundError:
             pass
         env["FLOTILLA_PLAN_FILE"] = plan_path
-    calls, loaded = calls_path(env, req["run_id"]), calls_path(env, req["run_id"], "loaded")
-    for f in (calls, loaded):
+    calls, loaded, reads = (calls_path(env, req["run_id"], w) for w in ("calls", "loaded", "reads"))
+    for f in (calls, loaded, reads):
         try:
             os.remove(f)
         except OSError:
             pass
-    env["FLOTILLA_CALLS_FILE"], env["FLOTILLA_LOADED_FILE"] = calls, loaded
+    env["FLOTILLA_CALLS_FILE"], env["FLOTILLA_LOADED_FILE"], env["FLOTILLA_READS_FILE"] = calls, loaded, reads
     timeout = float(req["timeout_s"])
     start = time.monotonic()
     # so a run that gets SIGTERM can tell its own timeout (kill at the deadline) from a cancel or a restart
@@ -629,6 +665,10 @@ def _run_job(req, env, cancel, shadow=False):
            "loaded": read_calls(loaded, LOADED_MAX)}
     if dropped:
         res["calls_dropped"] = dropped
+    # read after the run ended: a run that made no live read leaves no key, so a run without reads reports what it always did
+    live_reads, reads_complete = read_reads(reads)
+    if live_reads is not None:
+        res["reads"], res["reads_complete"] = live_reads, reads_complete
     plan, plan_error = read_plan(plan_path)
     if status == "ok":  # a failed run's plan is not a decision
         if plan is not None:

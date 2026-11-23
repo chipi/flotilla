@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 
@@ -191,6 +192,35 @@ class TestRunJob(unittest.TestCase):
         res = fw.run_job(self.req(cmd), self.environ)
         self.assertEqual([x["kind"] for x in res["loaded"]], ["skill"])
         self.assertFalse(os.path.exists(fw.calls_path({"HOME": self.home}, "r1", "loaded")), "consumed once")
+
+    def test_live_reads_are_returned_with_whether_the_record_is_complete(self):
+        # RFC-0014 4.8: runtime/reads.py appends one line per read to FLOTILLA_READS_FILE; a stale file is not this run's
+        path = fw.calls_path({"HOME": self.home}, "r1", "reads")
+        with open(path, "w") as f:
+            f.write('{"station":"stale"}\n')
+        line = '{"station":"decide","tool":"wiki.get_page","args":{"id":1},"result":"r","ok":true}'
+        res = fw.run_job(self.req("echo '%s' >> \"$FLOTILLA_READS_FILE\"" % line), self.environ)
+        self.assertEqual(res["reads"], [json.loads(line)])
+        self.assertIs(res["reads_complete"], True)
+        self.assertFalse(os.path.exists(path), "consumed once")
+
+    def test_a_reads_line_that_cannot_be_parsed_makes_the_record_incomplete(self):
+        cmd = 'echo \'{"station":"a","tool":"s.t","args":{},"result":"r"}\' >> "$FLOTILLA_READS_FILE"; echo "not json" >> "$FLOTILLA_READS_FILE"'
+        res = fw.run_job(self.req(cmd), self.environ)
+        self.assertEqual(len(res["reads"]), 1)
+        self.assertIs(res["reads_complete"], False)
+
+    def test_more_reads_than_the_cap_is_incomplete_and_an_unreadable_file_is_too(self):
+        with mock.patch.object(fw, "READS_MAX", 1):
+            cmd = 'for i in 1 2; do echo \'{"station":"a","tool":"s.t","args":{},"result":"r"}\' >> "$FLOTILLA_READS_FILE"; done'
+            res = fw.run_job(self.req(cmd), self.environ)
+        self.assertEqual((len(res["reads"]), res["reads_complete"]), (1, False))
+        res = fw.run_job(self.req('printf "\\377\\n" > "$FLOTILLA_READS_FILE"'), self.environ)
+        self.assertEqual((res["reads"], res["reads_complete"]), ([], False))
+
+    def test_a_run_without_reads_has_no_reads_key(self):
+        self.assertNotIn("reads", fw.run_job(self.req("true"), self.environ))
+        self.assertNotIn("reads", fw.run_job(self.req('true > "$FLOTILLA_READS_FILE"'), self.environ), "an empty file is no reads")
 
     def test_spend_file_cannot_leave_home(self):
         with self.assertRaises(ValueError):

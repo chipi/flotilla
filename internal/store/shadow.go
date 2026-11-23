@@ -63,6 +63,10 @@ type Input struct {
 	SnapshotState string          `json:"snapshot_state"`
 	Pinned        bool            `json:"pinned"`
 	SchemaVersion int             `json:"schema_version"`
+	// Reads is what the live run read through MCP servers (input_reads), set by Input and never by NewInput: nil when it recorded
+	// none. ReadsComplete says the record is whole; a replay needs a whole one.
+	Reads         []json.RawMessage `json:"-"`
+	ReadsComplete bool              `json:"-"`
 }
 
 var ErrNoSuchInput = errors.New("no such input")
@@ -128,6 +132,13 @@ func (s *Store) Input(ctx context.Context, key string) (Input, error) {
 	}
 	if err := json.Unmarshal([]byte(paths), &in.SnapshotPaths); err != nil {
 		return Input{}, fmt.Errorf("input %s: snapshot_paths: %w", key, err)
+	}
+	r, ok, err := s.InputReadsOf(ctx, key)
+	if err != nil {
+		return Input{}, fmt.Errorf("input %s: reads: %w", key, err)
+	}
+	if ok {
+		in.Reads, in.ReadsComplete = r.Lines, r.Complete
 	}
 	return in, nil
 }

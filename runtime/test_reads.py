@@ -12,6 +12,7 @@ from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import harness  # noqa: E402
 import loaded  # noqa: E402
 import reads  # noqa: E402
 import recorded  # noqa: E402
@@ -247,6 +248,61 @@ class RecordAndReplay(Reads):
         with mock.patch.object(reads.loaded, "record") as rec:
             got = self.tool("wiki-docs.search", {})
         rec.assert_called_once_with("probe", "untrusted", "wiki-docs.search", "mcp:wiki-docs", hashlib.sha256(got.encode()).hexdigest(), environ=self.env)
+
+
+CFG = {"tools": ["probe"], "limits": {"max_tool_calls": 2, "max_steps": 3},
+       "quirks": {"bad_json_uses_turn": True, "empty_retry": True, "final_decision_call": True, "reply_echo_chars": 600,
+                  "decision_echo_chars": 400, "result_chars": 1800}}
+
+
+class Down(Exception):
+    pass
+
+
+class Later(Exception):
+    pass
+
+
+ERR = {"fatal": (Down,), "defer": Later, "defer_prefix": "x: "}
+ASK_READ = '{"action":"probe","probe":"wiki-docs.get_page","probe_args":{"id":7}}'
+ASK_PROBE = '{"action":"probe","probe":"probe","probe_args":{"fp":"a"}}'
+DECIDE = '{"action":"decide","disposition":"file"}'
+
+
+class InTheLoop(Reads):
+    """The flotilla loop (runtime/harness.py) offers a station's read tools only when the station declares them."""
+
+    def step(self, replies, station_doc, live, env=None):
+        rs = list(replies)
+        with mock.patch.dict(os.environ, dict(self.env, **(env or {}))):
+            if not env:
+                os.environ.pop("FLOTILLA_RECORDED_TOOLS", None)
+            return harness.run_json_step([], lambda m, i: (rs.pop(0), {}), live, CFG, ERR, station="answer", reads=station_doc, log=lambda *a: None)
+
+    def test_a_station_with_reads_gets_the_read_tools_and_the_fleets_own_stay_the_fallback(self):
+        live = mock.Mock(return_value="LIVE")
+        r = self.step([ASK_READ, ASK_PROBE, DECIDE], DOC, live)
+        self.assertEqual([t["result"] for t in r.trace], ["page 7", "LIVE"])
+        live.assert_called_once_with("probe", {"fp": "a"})
+        (line,) = self.lines()
+        self.assertEqual((line["station"], line["tool"], line["args"]), ("answer", "wiki-docs.get_page", {"id": 7}))
+
+    def test_a_station_without_reads_is_unchanged_the_read_name_is_unknown_and_reads_is_never_built(self):
+        for doc in (None, {}, {"reads": []}):
+            live = mock.Mock(return_value="LIVE")
+            with mock.patch.object(reads, "make_tool", side_effect=AssertionError("touched")):
+                r = self.step([ASK_READ, ASK_PROBE, DECIDE], doc, live)
+            self.assertEqual([t["result"] for t in r.trace], [harness.UNKNOWN_TOOL % "wiki-docs.get_page", "LIVE"])
+        self.assertEqual((self.stub.seen, self.lines()), ([], []))
+
+    def test_a_replay_of_a_station_with_reads_answers_from_the_record_and_never_connects(self):
+        with open(os.path.join(os.path.dirname(self.file), "rec.json"), "w") as f:
+            json.dump({"answer": [{"tool": "wiki-docs.get_page", "args": {"id": 7}, "result": "recorded page", "ok": True}]}, f)
+        live = mock.Mock(return_value="LIVE")
+        r = self.step([ASK_READ, DECIDE], DOC, live, env={"FLOTILLA_RECORDED_TOOLS": os.path.join(os.path.dirname(self.file), "rec.json")})
+        self.assertEqual(r.trace[0]["result"], "recorded page")
+        self.assertEqual((self.stub.seen, self.lines()), ([], []))
+        live.assert_not_called()
 
 
 if __name__ == "__main__":

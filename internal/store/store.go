@@ -528,6 +528,13 @@ var schema = []string{
 		email TEXT NOT NULL REFERENCES people(email) ON DELETE CASCADE,
 		PRIMARY KEY (tool, id)
 	);`,
+	// RFC-0014 §4.8: what a live run read through MCP servers, one JSON list of record lines per run, written after the run (the input
+	// is frozen at dispatch, before the reads happen) and merged into the input's recorded_tool_results when the input is read.
+	`CREATE TABLE input_reads (
+		run_id TEXT PRIMARY KEY,
+		lines TEXT NOT NULL DEFAULT '[]',
+		complete INTEGER NOT NULL DEFAULT 1
+	);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

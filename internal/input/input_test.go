@@ -445,3 +445,38 @@ func TestWriteJSONFollowsTheSameFolderRules(t *testing.T) {
 		t.Fatal("a refused document made a folder")
 	}
 }
+
+func TestFromStoreMergesTheLiveRunsReadsIntoRecordedToolResults(t *testing.T) {
+	st, ctx := openStore(t), context.Background()
+	if err := st.NewInput(ctx, store.Input{Key: "live-1", Routine: "triage/cycle", Kind: store.InputTick, StartedAt: "2026-11-19T10:00:00.000000000Z"}); err != nil {
+		t.Fatal(err)
+	}
+	in, _ := st.Input(ctx, "live-1")
+	if e, err := FromStore(in); err != nil || e.RecordedToolResults != nil {
+		t.Fatalf("an input with no reads has no recorded_tool_results: %+v %v", e, err)
+	}
+	lines := []json.RawMessage{
+		json.RawMessage(`{"station":"decide","tool":"wiki.get_page","args":{"id":1},"result":"first","ok":true,"chars":5,"cut":false,"at":"t","duration_s":0.1}`),
+		json.RawMessage(`{"station":"other","tool":"crm.find","args":{},"result":"x","ok":false}`),
+		json.RawMessage(`{"station":"decide","tool":"wiki.get_page","args":{"id":1},"result":"second","ok":true}`),
+	}
+	if err := st.RecordInputReads(ctx, "live-1", lines, true); err != nil {
+		t.Fatal(err)
+	}
+	in, _ = st.Input(ctx, "live-1")
+	e, err := FromStore(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Validate(); err != nil {
+		t.Fatalf("an envelope with reads is valid: %v", err)
+	}
+	want := `{"decide":[{"tool":"wiki.get_page","args":{"id":1},"result":"first","ok":true},{"tool":"wiki.get_page","args":{"id":1},"result":"second","ok":true}],` +
+		`"other":[{"tool":"crm.find","args":{},"result":"x","ok":false}]}`
+	if string(e.RecordedToolResults) != want {
+		t.Fatalf("per station, in the order read, only the envelope's four fields:\n got %s\nwant %s", e.RecordedToolResults, want)
+	}
+	if _, err := RecordedFromReads([]json.RawMessage{json.RawMessage(`{"station":"s","tool":"t.u"}`)}); err == nil {
+		t.Fatal("a line without args and result is not a recorded read")
+	}
+}

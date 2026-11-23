@@ -136,7 +136,42 @@ func FromStore(in store.Input) (Envelope, error) {
 	if len(in.SnapshotPaths) > 0 {
 		e.StateSnapshot = &StateSnapshot{Paths: in.SnapshotPaths}
 	}
+	rec, err := RecordedFromReads(in.Reads)
+	if err != nil {
+		return e, fmt.Errorf("input %s: %w", in.Key, err)
+	}
+	e.RecordedToolResults = rec
 	return e, nil
+}
+
+// RecordedFromReads is a live run's reads as the envelope's recorded_tool_results: per station, each read's tool, args, result and
+// ok, in the order read (a replay answers repeats of one call in order). The record's other fields (chars, cut, at, duration_s)
+// stay in the store. nil for no reads, so an input without reads has no such field.
+func RecordedFromReads(lines []json.RawMessage) (json.RawMessage, error) {
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	type call struct {
+		Tool   string          `json:"tool"`
+		Args   json.RawMessage `json:"args"`
+		Result json.RawMessage `json:"result"`
+		OK     bool            `json:"ok"`
+	}
+	per := map[string][]call{}
+	for i, l := range lines {
+		var r struct {
+			Station string          `json:"station"`
+			Tool    string          `json:"tool"`
+			Args    json.RawMessage `json:"args"`
+			Result  json.RawMessage `json:"result"`
+			OK      bool            `json:"ok"`
+		}
+		if err := json.Unmarshal(l, &r); err != nil || r.Tool == "" || r.Station == "" || len(r.Args) == 0 || len(r.Result) == 0 {
+			return nil, fmt.Errorf("reads[%d] is not a recorded read (station, tool, args and result)", i)
+		}
+		per[r.Station] = append(per[r.Station], call{r.Tool, r.Args, r.Result, r.OK})
+	}
+	return json.Marshal(per)
 }
 
 // WithLedger adds the ledger's rows as of the input's marks: the routine's current filings and its decisions and recurrences, in

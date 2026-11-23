@@ -138,12 +138,13 @@ def install(environ=None):
     triage._client = lambda: (StationClient(client, rendered, call_timeout), alias)
     triage.REPLY_MAX_TOKENS = reply_cap
     triage.PROMPT_SHA = hashlib.sha1(text.encode()).hexdigest()[:8]
-    triage.investigate = lambda signal, max_probes=None, probe_table=None: investigate(signal, text, max_probes, probe_table)
+    triage.investigate = lambda signal, max_probes=None, probe_table=None: investigate(signal, text, max_probes, probe_table, station)
     return text
 
 
-def investigate(signal, system, max_probes=None, probe_table=None):
-    """triage.investigate with the station's system text: the same turns, probes, gates and record."""
+def investigate(signal, system, max_probes=None, probe_table=None, station=None):
+    """triage.investigate with the station's system text: the same turns, probes, gates and record. A station that declares `reads:`
+    (RFC-0014 section 4.8) also offers the model its read tools; one that does not is called exactly as before."""
     n = triage.MAX_PROBES if max_probes is None else max_probes
     triage._exact_start()
     triage._TURNS["key"] = signal.get("fingerprint") or None
@@ -159,13 +160,15 @@ def investigate(signal, system, max_probes=None, probe_table=None):
     cfg = triage._harness_cfg()
     if n != cfg["limits"]["max_tool_calls"]:
         cfg = dict(cfg, limits=dict(cfg["limits"], max_tool_calls=n, max_steps=n + 1))
+    # the station's name is passed only with its reads: without them the recorded-tools key stays what it was
+    live_reads = {"station": STATION, "reads": station} if station and station.get("reads") else {}
     res = harness.run_json_step(
         messages,
         call=lambda m, step: triage._call(m, trace_id=trace_id, step=step),
         tool=lambda name, args: triage._probe(signal, name, args, probe_table),
         cfg=cfg,
         errors={"fatal": (SystemExit, triage.TriagerDown), "defer": triage.TriageDeferred, "defer_prefix": "triager call failed: "},
-        on_quirk=triage._mark_quirk, on_event=triage._on_event, fleet_hooks=triage._HOOKS)
+        on_quirk=triage._mark_quirk, on_event=triage._on_event, fleet_hooks=triage._HOOKS, **live_reads)
     if not res.in_loop:
         d, gates = triage._gate(res.decision, signal, res.trace)
         return triage._finish(signal, d, res.trace, gates, res.usage, t0, trace_id=trace_id)

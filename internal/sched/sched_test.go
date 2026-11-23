@@ -516,3 +516,28 @@ func TestRunRecordsDroppedCallsAndSteps(t *testing.T) {
 		t.Fatalf("a run within the cap has no dropped-calls row: %+v", got[r2.ID])
 	}
 }
+
+// RFC-0014 4.8: the reads a worker returns are kept under the live run's id, after the run, and join its input; a run with none
+// writes nothing, and an incomplete record is kept as incomplete.
+func TestLiveReadsAreKeptUnderTheRunsInput(t *testing.T) {
+	ctx := context.Background()
+	s, fr, _ := setup(t, 2)
+	r, err := s.RunNow(ctx, "triage/cycle", "manual", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.Store.InputReadsOf(ctx, r.ID); ok {
+		t.Fatal("a run without reads keeps no record")
+	}
+	zero, no := 0, false
+	line := json.RawMessage(`{"station":"decide","tool":"wiki.get_page","args":{"id":1},"result":"p","ok":true}`)
+	fr.res = &worker.Result{Status: "ok", ExitCode: &zero, Reads: []json.RawMessage{line}, ReadsComplete: &no}
+	r, err = s.RunNow(ctx, "triage/cycle", "manual", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := s.Store.Input(ctx, r.ID)
+	if err != nil || len(in.Reads) != 1 || string(in.Reads[0]) != string(line) || in.ReadsComplete {
+		t.Fatalf("the run's reads join its input, flagged incomplete: %+v %v", in, err)
+	}
+}

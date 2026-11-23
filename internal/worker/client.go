@@ -83,6 +83,10 @@ type Result struct {
 	CallsDropped int `json:"calls_dropped,omitempty"`
 	// What the run read into a model's context (G7, runtime/loaded.py: its FLOTILLA_LOADED_FILE).
 	Loaded []Loaded `json:"loaded,omitempty"`
+	// The live reads the run made through MCP servers (runtime/reads.py's lines, the worker's FLOTILLA_READS_FILE), and whether the
+	// worker returned them all. Absent for a run with no reads, and from a worker older than the field.
+	Reads         []json.RawMessage `json:"reads,omitempty"`
+	ReadsComplete *bool             `json:"reads_complete,omitempty"`
 }
 
 // Loaded is one thing a run read: a playbook, a skill, a memory or an input, and how far it is trusted

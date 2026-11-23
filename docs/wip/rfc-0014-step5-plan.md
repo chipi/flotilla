@@ -40,8 +40,16 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
    redaction, the cut, the record line per call in `FLOTILLA_READS_FILE`, fail-closed in a shadow
    without a record). Plugs into the harness's `tool` function; the replay path
    (`FLOTILLA_RECORDED_TOOLS`) is unchanged.
-3. **Worker and store**: the worker returns the reads file as `reads`; flotillad stores them
-   (`input_reads`, with a complete flag); the input's export and an offline run carry them.
+3. **Worker and store** (done): The worker sets `FLOTILLA_READS_FILE` (a file beside the calls file,
+   `.flotilla-reads-<run>.jsonl`) and returns its lines as `reads` with `reads_complete` (false for
+   an unreadable file, a line that is not a JSON object, or more than `READS_MAX` 200 lines); no key
+   for a run with none. flotillad writes them after the run to `input_reads(run_id, lines,
+   complete)` (`Store.RecordInputReads`), `Store.Input` joins them (`Input.Reads`, `ReadsComplete`),
+   and `input.FromStore` merges them into `recorded_tool_results` (per station, tool/args/result/ok,
+   in the order read). The harness takes `reads=` and `station=` (`run_json_step`); only the triage
+   `decide` station's entry point passes them, and only when the station declares `reads:` (the
+   recorded-tools key stays "" for one that does not). Deviation: the complete flag is not in the
+   envelope (the schema allows no new field); step 4 reads it from the store.
 4. **Shadow**: a read the record lacks fails the shadow run (the replay path in `runtime/recorded.py`
    must not fall through to `reads.py`, which only refuses without the record); waits for the live
    run; `notRun` without a complete record; the record goes to the

@@ -1,6 +1,6 @@
 """The harness (ADR-0004, RFC-0002 §4): one model-driven step, the same code for every fleet.
 
-  run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print) -> Result
+  run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print, station=None, reads=None) -> Result
 
 The JSON protocol (the first fleet's): each turn the model returns ONE object, either a tool request
 {"action": "probe", "probe": <name>, "probe_args": {...}} or a decision {"action": "decide",
@@ -27,6 +27,10 @@ so a fleet's evaluation can patch them where it always has.
   hooks: {"before_tool": [{"name", "mode"}], "after_tool": [...]}: code run around each tool call (runtime/hooks.py).
          A name no registry knows (runtime/hooks.py's, plus `fleet_hooks`) fails before the first turn.
   errors: {"fatal": (exception classes re-raised as they are), "defer": exception class, "defer_prefix": str}
+
+`reads` is the station's FLOTILLA_STATIONS entry, passed only for a station that declares `reads:` (RFC-0014 section 4.8): its
+`<server>.<tool>` names join the tools the model may call, and those names go to runtime/reads.py (a live MCP read, recorded), the
+rest to `tool`. `station` names the station in the record. Without `reads` nothing of reads.py is imported or on the path.
 
 `on_quirk(name)` is told when a turn hits a quirk, so the caller can mark that turn's record.
 `on_event(kind, **fields)` is told what the harness itself did that no trace entry shows: "tool_unknown"
@@ -66,7 +70,13 @@ def trim(v, n):
     return s if len(s) <= n else s[:n] + f"\n…[truncated {len(s)-n} of {len(s)} chars]"
 
 
-def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print, station=None):
+def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print, station=None, reads=None):
+    read_names = []
+    if reads is not None:
+        import reads as reads_mod
+        read_names = reads_mod.tools_for(reads)
+        if read_names:  # under the recorded wrap below: a replay answers a read from the record and never reaches reads.py
+            tool = reads_mod.make_tool(station or "", reads, tool)
     # FLOTILLA_RECORDED_TOOLS (an offline run, runtime/recorded.py): the tools answer from the recordings, never live. Unset: this line is all.
     if os.environ.get("FLOTILLA_RECORDED_TOOLS"):
         import recorded
@@ -81,6 +91,7 @@ def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=Non
     tools = cfg.get("tools")
     if not isinstance(tools, list) or not tools:
         raise ValueError("harness: cfg needs tools, the names the model may call")
+    tools = tools + [n for n in read_names if n not in tools]
     hooks = hooks_mod.build(cfg.get("hooks"), fleet_hooks)
     echo, decho, rchars = q["reply_echo_chars"], q["decision_echo_chars"], q["result_chars"]
     fatal, defer, prefix = errors["fatal"], errors["defer"], errors["defer_prefix"]
