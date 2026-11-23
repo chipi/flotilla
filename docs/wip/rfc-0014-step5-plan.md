@@ -96,8 +96,15 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
 
 ## Needs the operator
 
-- n8n's MCP Server Trigger (which transport it speaks), its read-only workflows and credentials,
-  separate from the `plumbing.call` flows'.
+- ~~n8n's MCP Server Trigger (which transport it speaks)~~: proven 2026-11-23 by the homelab session,
+  the operator approving. `runtime/mcp_client.py` (at 1d76a58) against n8n 2.48.7's MCP Server
+  Trigger v2.1 with bearer auth, from a throwaway container on the plumbing network: session started
+  on protocol 2025-06-18 with a session id, `tools/list` and `tools/call` (a Code tool `ping`)
+  answered; without a token n8n answers 403 (not 401; the client reads both as unauthorised). The
+  URL is `http://n8n:5678/mcp/<path>`, no `/sse` suffix. The check workflow, its credential and the
+  image were removed. Not covered: a session across an n8n restart, a wrong token, tool arguments.
+- Its read-only workflows and credentials for case 1 (decided: Google Docs and Google Tasks),
+  separate from the `plumbing.call` flows'; built with case 1.
 - The new worker, its proxy ACL with the real host, the token file, and `flotillad.yaml`'s `mcp:`.
   Concretely, on the host (`deploy/compose/README.md`, "The reads worker"):
   - n8n's MCP Server Trigger URL for each read server, in `config/worker-reads.env` as
