@@ -218,7 +218,7 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 	}
 	if tab == "over" {
 		if row.Instance == "" {
-			d.ChartsErr = "flotillad.yaml host_metrics names no metrics instance for " + row.Name
+			d.ChartsErr = "not collected; to see it here, name its node exporter's instance under host_metrics in flotillad.yaml"
 		} else if cs, err := u.hostCharts(r.Context(), row.Instance); err != nil {
 			d.ChartsErr = err.Error()
 		} else {

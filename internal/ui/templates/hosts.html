@@ -24,7 +24,7 @@
           <td data-label="Host"><a href="/hosts/{{.Name}}"><strong>{{.Name}}</strong></a></td>
           <td data-label="Status"><span class="lampline lampline--wrap"><span class="{{.Lamp}}" aria-hidden="true"></span><span>{{.Status}}</span></span></td>
           <td data-label="Host autonomy cap" class="exact">{{.Cap}}</td>
-          {{if $.Data.HasLoad}}<td data-label="CPU · mem · disk" class="exact soft">{{.Load.CPU}} · {{.Load.Mem}} · {{.Load.Disk}}</td>{{end}}
+          {{if $.Data.HasLoad}}{{if .Load.OK}}<td data-label="CPU · mem · disk" class="exact soft">{{.Load.CPU}} · {{.Load.Mem}} · {{.Load.Disk}}</td>{{else}}<td data-label="CPU · mem · disk" class="soft minor">not collected</td>{{end}}{{end}}
           <td data-label="Executions 24h">{{.Exec24}}</td>
           <td data-label="Host agent" class="exact">{{.Agent}}</td>
           <td data-label="Certificate" class="soft">{{.Cert}}</td>

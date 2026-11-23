@@ -15,6 +15,9 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
   with its time. No daily read cap yet.
 - **A shadow asking for a read the live run never made**: the shadow run fails, recorded as a miss
   (like with like).
+- **CI** (2026-11-23): `reads` stays out of `no-effect.yml`'s sections. `e2e.yml` runs the full e2e,
+  `reads` included, on every push to main, and no-effect would only repeat it. Its value there is a
+  mutation that must go red (a shadow reading live, not from the record), added with case 1.
 
 ## Where the RFC and the code differ
 

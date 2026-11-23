@@ -57,8 +57,8 @@ func TestHostLoad(t *testing.T) {
 	if _, agent := f.do("GET", "/hosts/model-host?tab=agent", ck, nil, nil); !strings.Contains(agent, "No allowlist reported.") {
 		t.Error("an agent that reported no allowlist is not named")
 	}
-	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "42% · 42% · 42%") || !strings.Contains(page, "– · – · –") {
-		t.Error("the Hosts column: backup-01's load, model-host's dashes")
+	if _, page := f.do("GET", "/hosts", ck, nil, nil); !strings.Contains(page, "42% · 42% · 42%") || !strings.Contains(page, "not collected") || strings.Contains(page, "– · – · –") {
+		t.Error("the Hosts column: backup-01's load, model-host's in words, not dashes")
 	}
 	// backup-01 was heard from just now
 	if _, page := f.do("GET", "/hosts/backup-01", ck, nil, nil); !strings.Contains(page, "last heard just now ·") {
@@ -70,8 +70,8 @@ func TestHostLoad(t *testing.T) {
 			t.Errorf("the Host page has no %q", want)
 		}
 	}
-	if _, mh := f.do("GET", "/hosts/model-host", ck, nil, nil); !strings.Contains(mh, "host_metrics names no metrics instance for model-host") {
-		t.Error("a host without a metrics instance does not say so")
+	if _, mh := f.do("GET", "/hosts/model-host", ck, nil, nil); !strings.Contains(mh, "No load for model-host:</strong> not collected; to see it here, name its node exporter&#39;s instance under host_metrics") {
+		t.Error("a host without a metrics instance does not say so, and what to set")
 	}
 	found := false
 	for _, q := range queries {
