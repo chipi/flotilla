@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"time"
-
-	"github.com/chipi/flotilla/internal/cases"
 )
 
 // The evidence a level needs (G13, the operator 2026-11-14): an action is ready for its next level
@@ -26,28 +24,52 @@ type Streak struct {
 // Ready is whether the record is enough for the next level.
 func (s Streak) Ready() bool { return s.Clean >= PromotionNeed && !s.Held }
 
+// planWindows gives each plan the stretch of its case's timeline that is its own: from the event its decision
+// wrote (ApplyPlan's detail names "plan <id> <action>:") up to the next plan's, so a rejection, a failed
+// execution or a verification is credited to the plan the case was on when it happened (RFC-0013 amendment, 2026-11-23).
+// A plan whose event cannot be found (a row written by hand) starts at the first event at or after it was
+// decided. It takes the action once (?): only cases that planned it are read.
+const planWindows = `WITH pstart AS (SELECT p.id, p.case_id, p.action, p.outcome, p.decided_at,
+		COALESCE((SELECT MIN(e.seq) FROM case_events e WHERE e.case_id = p.case_id AND instr(e.detail, 'plan ' || p.id || ' ' || p.action || ':') > 0),
+			(SELECT MIN(e.seq) FROM case_events e WHERE e.case_id = p.case_id AND e.at >= p.decided_at), 0) AS s0
+		FROM plans p WHERE p.case_id IN (SELECT case_id FROM plans WHERE action = ?)),
+	pwin AS (SELECT a.*, COALESCE((SELECT MIN(b.s0) FROM pstart b WHERE b.case_id = a.case_id AND b.id > a.id), 9223372036854775807) AS s1 FROM pstart a) `
+
+// What happened to a plan, as events in its window (e is a case_events row, p a pwin row). A verified close
+// is the case's, so its detail starts with the resolution; a check that hands the case on to its plan's then
+// writes "verified:" too, with no resolution, which the case-level reading never counted.
+const (
+	inWindow      = `e.case_id = p.case_id AND e.seq >= p.s0 AND e.seq < p.s1`
+	failedEvent   = `e.kind = 'case.escalated' AND e.from_status = 'executing'`
+	rejectedEvent = `e.kind = 'case.escalated' AND e.from_status = 'awaiting_approval'`
+	verifiedEvent = `e.detail LIKE 'verified:%' AND (e.kind = 'case.closed' OR (e.kind = 'case.handed_over' AND e.by_role = 'check'))`
+)
+
 // PromotionStreak reads an action's plans newest first. A plan is clean when a recorded plan was judged
 // right, or a proposed or automatic one was approved as it stood and verified. It is bad when its
-// diagnosis was judged wrong, its execution failed, or a person rejected it. A plan still open, or a
+// diagnosis was judged wrong, its execution failed, or a person rejected it. Verified, failed and rejected are
+// the plan's own (planWindows), not the case's: in a case of two plans (RFC-0013's then) the second plan's
+// rejection does not count against the first. A verdict is on the case, so it still stands for each of its plans. A plan still open, or a
 // recorded plan nobody judged, neither counts nor breaks the run.
 func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, error) {
 	var st Streak
-	rows, err := s.rdb.QueryContext(ctx, `SELECT p.outcome, p.decided_at, c.resolution,
+	rows, err := s.rdb.QueryContext(ctx, planWindows+`SELECT p.outcome, p.decided_at,
+		EXISTS (SELECT 1 FROM case_events e WHERE `+inWindow+` AND `+verifiedEvent+`),
 		EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id AND f.verdict = ?),
 		EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id AND f.verdict = ?),
-		EXISTS (SELECT 1 FROM case_events e WHERE e.case_id = p.case_id AND e.kind = 'case.escalated' AND e.from_status = ?),
-		EXISTS (SELECT 1 FROM case_events e WHERE e.case_id = p.case_id AND e.kind = 'case.escalated' AND e.from_status = ?)
-		FROM plans p JOIN cases c ON c.id = p.case_id WHERE p.action = ? ORDER BY p.id DESC LIMIT 500`,
-		VerdictWrong, VerdictRight, cases.Executing, cases.AwaitingApproval, action)
+		EXISTS (SELECT 1 FROM case_events e WHERE `+inWindow+` AND `+failedEvent+`),
+		EXISTS (SELECT 1 FROM case_events e WHERE `+inWindow+` AND `+rejectedEvent+`)
+		FROM pwin p WHERE p.action = ? ORDER BY p.id DESC LIMIT 500`,
+		action, VerdictWrong, VerdictRight, action)
 	if err != nil {
 		return st, err
 	}
 	defer rows.Close()
 	cutoff := s.now().Add(-PromotionHold)
 	for rows.Next() {
-		var outcome, at, resolution string
-		var wrong, right, failed, rejected bool
-		if err := rows.Scan(&outcome, &at, &resolution, &wrong, &right, &failed, &rejected); err != nil {
+		var outcome, at string
+		var verified, wrong, right, failed, rejected bool
+		if err := rows.Scan(&outcome, &at, &verified, &wrong, &right, &failed, &rejected); err != nil {
 			return st, err
 		}
 		bad := ""
@@ -66,7 +88,7 @@ func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, err
 			}
 			break
 		}
-		clean := (outcome == "record" && right) || (outcome != "record" && resolution == cases.Verified)
+		clean := (outcome == "record" && right) || (outcome != "record" && verified)
 		if clean && st.Clean < PromotionNeed {
 			st.Clean++
 		}

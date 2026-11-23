@@ -239,6 +239,20 @@ questions; the intent the simulated reporter supplied comes only from §4.
   stage changes; past them, or with no enabled routine for the stage by then, the verified case is
   escalated. A then to the first stage, to the stage the case is at, or with data that is not an
   object is no decision. A rejected or failed plan never reaches its then. No plan had a then
-  before, so no past decision changes. Not covered: earned autonomy and the per-action counts read a
-  case's resolution, so in a case with two plans, the second plan's rejection or failure also counts
-  against the first; no such action is above propose today.
+  before, so no past decision changes. Earned autonomy and the per-action counts first read a
+  case's resolution, so in a case with two plans the second plan's rejection or failure also counted
+  against the first; fixed 2026-11-23 (operator: count each plan's own outcome), below.
+- 2026-11-23 — §2 as built: each plan is credited from its own outcome, not the case's. A plan
+  owns the stretch of its case's timeline from the event its decision wrote up to the next plan's.
+  A rejection (an escalation from awaiting approval), a failed execution (from executing) and a
+  verification (the close, or the check's hand-on to the plan's then, both saying "verified") in
+  that stretch are the plan's. `ActionRecord` (verified, failed) and `PromotionStreak` (clean,
+  rejected, failed) read it that way: a rejection of the second plan is a rejection of the
+  second plan's action only, and the first plan's verified hand-on counts for the first.
+  A case with one plan counts as before (`TestEarnedCountsOnePlanUnchanged`; on a copy of the real
+  store, no case had two plans and the three actions' counts were equal), with one exception: a
+  plan whose check handed the case on to a then counts verified at once, where the resolution
+  reading counted it only when the case closed verified. A verdict (Right, Wrong) is on the case
+  and still stands for each of its plans. Not covered: both meeting actions stay at propose, and
+  no production case has had two live plans yet, so the new counts have not been seen on
+  production data.

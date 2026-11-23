@@ -248,7 +248,7 @@ func (s *Store) Counts(ctx context.Context, action, target, host string, dayStar
 
 // ActionRecord is what an action has done, the evidence a promotion is decided on (RFC-0004 §5.2):
 // its plans by policy's outcome and, at record, by what they would have been; its executions verified
-// and failed or unknown.
+// and failed or unknown, each counted for the plan it happened to (planWindows), not for the case.
 type ActionRecord struct {
 	Plans    int            `json:"plans"`
 	Outcomes map[string]int `json:"outcomes"`
@@ -279,12 +279,11 @@ func (s *Store) ActionRecord(ctx context.Context, action string) (ActionRecord, 
 	if err := rows.Err(); err != nil {
 		return r, err
 	}
-	onAction := `EXISTS (SELECT 1 FROM plans p WHERE p.case_id = c.id AND p.action = ?)`
-	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM cases c WHERE c.resolution = ? AND `+onAction,
-		cases.Verified, action).Scan(&r.Verified); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, planWindows+`SELECT COUNT(*) FROM pwin p WHERE p.action = ?
+		AND EXISTS (SELECT 1 FROM case_events e WHERE `+inWindow+` AND `+verifiedEvent+`)`, action, action).Scan(&r.Verified); err != nil {
 		return r, err
 	}
-	err = s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM case_events e JOIN cases c ON c.id = e.case_id
-		WHERE e.kind = 'case.escalated' AND e.from_status = ? AND `+onAction, cases.Executing, action).Scan(&r.Failed)
+	err = s.rdb.QueryRowContext(ctx, planWindows+`SELECT COUNT(*) FROM pwin p JOIN case_events e ON `+inWindow+`
+		WHERE p.action = ? AND `+failedEvent, action, action).Scan(&r.Failed)
 	return r, err
 }

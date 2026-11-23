@@ -66,9 +66,10 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   (step 4), a citation matching a recorded read (step 5), the thread from the case (case 1), and a
   retracted answer counted as a failed execution.
 - ~~No `docs/history` entry for this arc yet~~: [0008](../history/0008-rfc-0014-hook-and-plumbing-call.md).
-- Earned autonomy and the per-action counts read the case's resolution, so in a two-plan case the
-  second plan's rejection or failure counts against the first too (RFC-0013's 2026-11-22
-  amendment); both meeting actions stay at propose.
+- ~~Earned autonomy and the per-action counts read the case's resolution, so in a two-plan case the
+  second plan's rejection or failure counts against the first too~~: each plan counts its own outcome
+  now (2026-11-23, operator; `ActionRecord`, `PromotionStreak`, RFC-0013's 2026-11-23 amendment,
+  `TestEarnedCountsPerPlan`). Both meeting actions stay at propose.
 - flotillad's slowness in its container, measured 2026-11-23: the pairs answer for `triage/cycle`
   v2 on the 12:00 store copy took 83 ms on the workstation (140 ms at the container's 0.5 CPU),
   340 ms on the mini's idle dev VM (665 ms at 0.5 CPU), and 9 to 10 s live (the CLI through
