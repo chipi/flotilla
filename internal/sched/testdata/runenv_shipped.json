@@ -358,6 +358,45 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "e2e/reads@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"reads-answer\":{\"endpoint\":\"gw\",\"model\":\"m-reads-answer\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/reads",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"e2e\":1},\"stations\":{\"answer\":{\"harness\":\"flotilla\",\"model\":\"reads-answer\",\"tools\":\"all\",\"limits\":{\"max_turns\":4,\"timeout\":\"1m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"reads/v1/system.md\",\"sha256\":\"fe4724896a291ea7623ae4eb2f35473aa6e28eafe831a6d13248b3a6ca5ac6f5\"},\"task\":{\"path\":\"reads/v1/task.md\",\"sha256\":\"0c791aa0736709595677caa79b223cfd36e1b116288dabcf6b45433962067539\"}},\"tool_names\":[\"note\"],\"gates\":[],\"hooks\":null,\"skills\":[],\"reads\":[{\"server\":\"lab\",\"tools\":[\"get_page\",\"get_log\"],\"max_calls\":5,\"max_result_chars\":20000,\"timeout_s\":10}]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
+  "e2e/reads@v2": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"reads-answer\":{\"endpoint\":\"gw\",\"model\":\"m-reads-answer\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/reads",
+    "FLOTILLA_ROUTINE_VERSION": "2",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"e2e\":1},\"stations\":{\"answer\":{\"harness\":\"flotilla\",\"model\":\"reads-answer\",\"tools\":\"all\",\"limits\":{\"max_turns\":4,\"timeout\":\"1m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"reads/v2/system.md\",\"sha256\":\"22942d335fa32b83f123c8fa374cfacb66102347380d8ce1b19db08ce0eabb85\"},\"task\":{\"path\":\"reads/v2/task.md\",\"sha256\":\"0c791aa0736709595677caa79b223cfd36e1b116288dabcf6b45433962067539\"}},\"tool_names\":[\"note\"],\"gates\":[],\"hooks\":null,\"skills\":[],\"reads\":[{\"server\":\"lab\",\"tools\":[\"get_page\",\"get_log\"],\"max_calls\":5,\"max_result_chars\":20000,\"timeout_s\":10}]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
+  "e2e/reads@v3": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"reads-answer\":{\"endpoint\":\"gw\",\"model\":\"m-reads-answer\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "e2e/reads",
+    "FLOTILLA_ROUTINE_VERSION": "3",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{\"e2e\":1},\"stations\":{\"answer\":{\"harness\":\"flotilla\",\"model\":\"reads-answer\",\"tools\":\"all\",\"limits\":{\"max_turns\":4,\"timeout\":\"1m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"reads/v3/system.md\",\"sha256\":\"51563616fb1ebe06a59a31b25116d6af9b2fd36dc1051b4dc4c90f8e904b1e3d\"},\"task\":{\"path\":\"reads/v3/task.md\",\"sha256\":\"0c791aa0736709595677caa79b223cfd36e1b116288dabcf6b45433962067539\"}},\"tool_names\":[\"note\"],\"gates\":[],\"hooks\":null,\"skills\":[],\"reads\":[{\"server\":\"lab\",\"tools\":[\"get_page\",\"get_log\"],\"max_calls\":5,\"max_result_chars\":20000,\"timeout_s\":10}]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "e2e/remote-echo@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",

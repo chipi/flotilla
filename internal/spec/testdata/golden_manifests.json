@@ -261,6 +261,39 @@
       "spec.yaml": "e0e25cf52618e198c617f1002422d8e60b8ad1903dc08d75126a0e3f74cb1853"
     }
   },
+  "e2e/reads@v1": {
+    "routine_hash": "b68b6b2f0222",
+    "version_hash": "018dd1ae999d691113ccb4c18123b43ac9fc23a1903bbedbba8162582ef3fde1",
+    "legacy": false,
+    "manifest": {
+      "run.py": "1eb83ff5091bc0c5b4763868e4e706c01766d3e63950625a4e8b6da1881e57b2",
+      "spec.yaml": "3d3c21a4df8910a76fe26e786e5ebea0eecf880b02f4c87f7fe67d75ecfdd705",
+      "system.md": "fe4724896a291ea7623ae4eb2f35473aa6e28eafe831a6d13248b3a6ca5ac6f5",
+      "task.md": "0c791aa0736709595677caa79b223cfd36e1b116288dabcf6b45433962067539"
+    }
+  },
+  "e2e/reads@v2": {
+    "routine_hash": "7d75c4e60de6",
+    "version_hash": "2c305d74bbd68a9e27b58a9e482ef3b644e6a553d83ce2f3afbac0d180d9a6a1",
+    "legacy": false,
+    "manifest": {
+      "run.py": "1eb83ff5091bc0c5b4763868e4e706c01766d3e63950625a4e8b6da1881e57b2",
+      "spec.yaml": "209cc3ff676613fb9a2cb7146a6792fd5b77ad572eea0aba6337796f84f71ffb",
+      "system.md": "22942d335fa32b83f123c8fa374cfacb66102347380d8ce1b19db08ce0eabb85",
+      "task.md": "0c791aa0736709595677caa79b223cfd36e1b116288dabcf6b45433962067539"
+    }
+  },
+  "e2e/reads@v3": {
+    "routine_hash": "fd791ace9d85",
+    "version_hash": "a8a996134c587fb49935f24dab0020b124781147b0ea0f3d8dfd47557ee92f5a",
+    "legacy": false,
+    "manifest": {
+      "run.py": "1eb83ff5091bc0c5b4763868e4e706c01766d3e63950625a4e8b6da1881e57b2",
+      "spec.yaml": "a48e2a10af4956635193bc5baeebb74f73b0d41fff3c9c33b6193bdd3e7414f9",
+      "system.md": "51563616fb1ebe06a59a31b25116d6af9b2fd36dc1051b4dc4c90f8e904b1e3d",
+      "task.md": "0c791aa0736709595677caa79b223cfd36e1b116288dabcf6b45433962067539"
+    }
+  },
   "e2e/remote-echo@v1": {
     "routine_hash": "eb2856f2a6af",
     "version_hash": "5234ba4f46daaed398aea494504c74c8c3f856026151d268a6cd3cf04518aed5",
