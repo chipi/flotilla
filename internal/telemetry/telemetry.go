@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -70,6 +71,9 @@ type Pusher struct {
 	// the waits between attempts; nil: 2 s, then 5 s
 	Backoff []time.Duration
 	Sleep   func(time.Duration)
+
+	mu       sync.Mutex
+	openSeen map[string]map[string]string // every flotilla_cases_open series pushed, by its name and labels
 }
 
 func (p *Pusher) push(lines []string) {
@@ -203,6 +207,42 @@ func (p *Pusher) Freshness(routine string, d time.Duration) {
 		return
 	}
 	p.push([]string{p.sample("flotilla_routine_freshness_seconds", map[string]string{"routine": routine}, d.Seconds())})
+}
+
+// Series is one sample's labels and value.
+type Series struct {
+	Labels map[string]string
+	V      float64
+}
+
+// Cases pushes the cases' two series (pushed every minute): flotilla_cases_open{fleet,kind,status}, the open cases now, and
+// flotilla_case_moves_total{fleet,kind,from,to,by,resolution}, every status move cases have made, a counter (increase() over a
+// window: cases opened are the moves to detected). An open series that empties keeps being pushed at 0 for the life of the
+// process, so a fleet's card reads 0, not a gap; after a restart it is simply absent, which a query reads as 0 too.
+func (p *Pusher) Cases(open, moves []Series) {
+	p.mu.Lock()
+	if p.openSeen == nil {
+		p.openSeen = map[string]map[string]string{}
+	}
+	now := map[string]bool{}
+	lines := make([]string, 0, len(open)+len(moves))
+	for _, s := range open {
+		l := p.sample("flotilla_cases_open", s.Labels, s.V)
+		key := l[:strings.LastIndex(l, " ")]
+		now[key] = true
+		p.openSeen[key] = s.Labels
+		lines = append(lines, l)
+	}
+	for key, labels := range p.openSeen {
+		if !now[key] {
+			lines = append(lines, p.sample("flotilla_cases_open", labels, 0))
+		}
+	}
+	p.mu.Unlock()
+	for _, s := range moves {
+		lines = append(lines, p.sample("flotilla_case_moves_total", s.Labels, s.V))
+	}
+	p.push(lines)
 }
 
 // Up says flotillad is alive (pushed every minute).

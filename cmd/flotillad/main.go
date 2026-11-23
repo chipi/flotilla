@@ -871,6 +871,7 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 		}
 		push.Up()
 		pushRoutineMetrics(ctx, push, s, st)
+		pushCaseMetrics(ctx, push, st, log)
 		if err := casetimer.Run(ctx, st, s.Clock(), timers, log, s.CaseHold); err != nil {
 			log.Error("case timers", "err", err)
 		}
@@ -881,6 +882,36 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 		case <-t.C:
 		}
 	}
+}
+
+// pushCaseMetrics pushes the open cases and the cases' moves, by fleet (telemetry.Pusher.Cases). An empty label (an opening's
+// from, a non-closing move's resolution) is left off its sample.
+func pushCaseMetrics(ctx context.Context, push *telemetry.Pusher, st *store.Store, log *slog.Logger) {
+	open, moves, err := st.CaseMetrics(ctx)
+	if err != nil {
+		log.Error("case metrics", "err", err)
+		push.StoreError("case_metrics")
+		return
+	}
+	labels := func(kv ...string) map[string]string {
+		l := map[string]string{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			if kv[i+1] != "" {
+				l[kv[i]] = kv[i+1]
+			}
+		}
+		return l
+	}
+	o := make([]telemetry.Series, len(open))
+	for i, c := range open {
+		o[i] = telemetry.Series{Labels: labels("fleet", c.Fleet, "kind", c.Kind, "status", c.Status), V: float64(c.N)}
+	}
+	m := make([]telemetry.Series, len(moves))
+	for i, c := range moves {
+		m[i] = telemetry.Series{Labels: labels("fleet", c.Fleet, "kind", c.Kind, "from", c.From, "to", c.To, "by", c.By,
+			"resolution", c.Resolution), V: float64(c.N)}
+	}
+	push.Cases(o, m)
 }
 
 // pushRoutineMetrics pushes each enabled routine's freshness and last success: the routines the scheduler holds, and nothing else (the

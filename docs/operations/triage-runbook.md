@@ -326,6 +326,8 @@ Turn each finding into one of three things:
 | freshness | `flotilla_routine_last_success_timestamp_seconds{routine}` and `flotilla_routine_freshness_seconds{routine}` (the declared freshness, so the stale alert needs no per-routine threshold) |
 | flotillad alive | `flotilla_up` |
 | a store write that failed | `flotilla_store_error{op}` |
+| open cases, per fleet | `flotilla_cases_open{fleet, kind, status}` (every minute; a series that empties reads 0; approvals waiting are `status="awaiting_approval"`) |
+| what the fleets' cases did | `flotilla_case_moves_total{fleet, kind, from, to, by, resolution}`, a counter read from the cases' timelines: `increase(...[30d])`; opened is `to="detected"`, closed is `to="closed"` with its `resolution`. A case's fleet is its opening routine's, or a hook's case's project. The triage fleet files to the ledger, not cases, so it has none |
 | the fleet's own | `signal_fleet_disposition{disposition}`, `signal_fleet_cost_usd`, `signal_fleet_tokens`, `signal_fleet_probes`, `signal_fleet_queue_depth{kind}`, `signal_fleet_queue_oldest_age_seconds`, `signal_fleet_escalations_7d`, `signal_fleet_glitchtip_sync{kind}` |
 | alerts | `flotilla-routine-stale` (ADR-0007) and `glitchtip-sync-failing`; the rules are provisioned in the installation's Grafana, not in this repo |
 

@@ -38,6 +38,29 @@ func TestPushFormat(t *testing.T) {
 	}
 }
 
+// An open-cases series that empties is pushed at 0, not dropped; the moves are pushed as read.
+func TestCasesPushesAnEmptiedSeriesAtZero(t *testing.T) {
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+	}))
+	defer ts.Close()
+	p := &Pusher{URL: ts.URL, Env: "operations", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	waiting := Series{Labels: map[string]string{"fleet": "ops", "kind": "failed_backup", "status": "awaiting_approval"}, V: 1}
+	opened := Series{Labels: map[string]string{"fleet": "ops", "kind": "failed_backup", "to": "detected"}, V: 3}
+	p.Cases([]Series{waiting}, []Series{opened})
+	p.Cases(nil, []Series{opened})
+	open := `flotilla_cases_open{environment="operations",fleet="ops",kind="failed_backup",service="flotillad",status="awaiting_approval"}`
+	moved := `flotilla_case_moves_total{environment="operations",fleet="ops",kind="failed_backup",service="flotillad",to="detected"} 3`
+	if len(bodies) != 2 || !strings.Contains(bodies[0], open+" 1") || !strings.Contains(bodies[0], moved) {
+		t.Fatalf("first push: %q", bodies)
+	}
+	if !strings.Contains(bodies[1], open+" 0") || !strings.Contains(bodies[1], moved) {
+		t.Fatalf("second push, the case no longer waiting: %q", bodies[1])
+	}
+}
+
 func TestPushRetriesTransientFailures(t *testing.T) {
 	for name, c := range map[string]struct {
 		codes    []int
