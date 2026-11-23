@@ -35,6 +35,7 @@ So when this page says routine, read agent; a fleet is a team of agents speciali
 | **case** | one piece of work a routine handles, from detection to close, with its whole timeline |
 | **autonomy** | what a routine's plans may do: **record** (write down what it would do), **propose** (a person approves each), **auto** (act alone, within its limits) |
 | **shadow** | a version running beside the live one, on the same inputs, with no effect on the system |
+| **ledger** | every record flotilla keeps, as written and never deleted: the platform's own (who changed what, through which door), each case's timeline, the fleets' decisions. Record → Ledger explores it, and each case, run, routine, fleet, host, action and user links to its records there |
 
 ## A routine: code, with stations where judgement is needed
 

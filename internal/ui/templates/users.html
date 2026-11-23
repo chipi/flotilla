@@ -26,7 +26,7 @@
       <thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Added</th><th scope="col">State</th><th scope="col">Change</th></tr></thead>
       <tbody>
         {{range .Users}}{{$last := and (eq .Role "admin") (not .RevokedAt) (eq $admins 1)}}<tr>
-          <td data-label="Name" class="exact">{{.Name}}{{if eq .Name $me}} (you){{end}}</td>
+          <td data-label="Name" class="exact">{{.Name}}{{if eq .Name $me}} (you){{end}} <a class="meta" href="{{ledgerHref (printf "user:%s" .Name)}}">ledger</a></td>
           <td data-label="Role">{{.Role}}</td>
           <td data-label="Added" class="nowrap">{{when .CreatedAt}}</td>
           <td data-label="State">{{if .RevokedAt}}<span class="chip chip--stop">revoked {{when .RevokedAt}}</span>{{else}}active{{end}}</td>

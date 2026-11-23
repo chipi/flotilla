@@ -87,7 +87,8 @@ func TestRealDataPages(t *testing.T) {
 	pages := map[string]string{"now": "/", "approvals": "/approvals", "cases": "/cases", "runs": "/runs", "runs-problems": "/runs?f=problems",
 		"fleets": "/fleets", "hosts": "/hosts", "autonomy": "/autonomy", "models": "/models", "models-spend": "/models?tab=spend&period=30d",
 		"knowledge": "/knowledge", "history": "/history", "history-ledger": "/history?type=ledger", "brief": "/brief", "brief-archive": "/brief/archive",
-		"account": "/account", "users": "/users", "examples": "/examples"}
+		"account": "/account", "users": "/users", "examples": "/examples",
+		"ledger": "/ledger", "ledger-fleet": "/ledger?stream=ledger", "ledger-text": "/ledger?q=grafana", "ledger-follow": "/ledger?ref=case-20261121-5cb1fb734c"}
 	for _, r := range routines {
 		pages["fleet-"+r.Fleet] = "/fleets/" + r.Fleet
 		pages["fleet-"+r.Fleet+"-stats"] = "/fleets/" + r.Fleet + "?tab=stats"

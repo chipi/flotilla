@@ -6,7 +6,7 @@
   <section class="head">
     <div>
       <h1>run · <a class="exact" href="{{$r.RoutineHref}}">{{$r.Routine}}</a></h1>
-      <p class="meta">{{$r.Start}} · {{$r.Took}} · <span class="{{$r.Chip}}">{{$r.Status}}</span>{{range $r.Cases}} · case <a class="exact" href="/cases/{{.}}">{{.}}</a>{{end}} · autonomy {{$r.Autonomy}} · {{$r.Cost}} · {{$r.Trigger}} by {{$r.Actor}}</p>
+      <p class="meta">{{$r.Start}} · {{$r.Took}} · <span class="{{$r.Chip}}">{{$r.Status}}</span>{{range $r.Cases}} · case <a class="exact" href="/cases/{{.}}">{{.}}</a>{{end}} · autonomy {{$r.Autonomy}} · {{$r.Cost}} · {{$r.Trigger}} by {{$r.Actor}} · {{template "ledgerlink" $r.ID}}</p>
     </div>
   </section>
 

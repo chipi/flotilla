@@ -1306,3 +1306,11 @@ table.data td.n { font-family: var(--font-exact); font-variant-numeric: tabular-
 .side__note { color: var(--wait-ink); }
 @media (max-width: 640px) { .sides { grid-template-columns: 1fr; } .pair__who { flex-basis: 4.5em; } }
 ul.plainlist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ledger__form { flex-wrap: wrap; gap: var(--space-xs); }
+.ledger__rec summary { font-weight: 400; color: var(--slate); min-height: 0; display: block; }
+.ledger__rec pre.log { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+table.ledger { table-layout: fixed; }
+table.ledger td { overflow-wrap: anywhere; }
+table.ledger td.stack { word-break: break-word; }
+table.ledger th:nth-child(1) { width: 7em; } table.ledger th:nth-child(2) { width: 8em; } table.ledger th:nth-child(3) { width: 13em; } table.ledger th:nth-child(4) { width: 12em; } table.ledger th:nth-child(5) { width: 15em; }
+.ledgerlink { font-size: 13px; white-space: nowrap; }

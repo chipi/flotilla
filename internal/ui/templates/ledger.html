@@ -1,0 +1,62 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}{{$t := .T}}
+  <section class="head">
+    <div>
+      <h1>Ledger</h1>
+      <p class="sub">Every record flotilla keeps, as written: the platform's own (who changed what, and through which door), each case's timeline, and the fleets' ledgers. The place of last resort: read only, nothing here is deleted.</p>
+    </div>
+    <a class="btn btn--small" href="{{.Export}}">Export this view (JSON)</a>
+  </section>
+
+  <section class="filters" aria-label="Filters">
+    <nav class="pills" aria-label="Stream">
+      {{range .Streams}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
+    <nav class="pills" aria-label="Period">
+      {{range .Periods}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
+    <form class="select ledger__form" method="get" action="/ledger">
+      {{range $t.Hidden "kind" "from" "to" "period"}}<input type="hidden" name="{{.K}}" value="{{.V}}">{{end}}
+      <label for="kind-f">Kind</label>
+      <select id="kind-f" name="kind" data-autosubmit>
+        {{range .Kinds}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      <label for="from-f">From</label><input id="from-f" type="date" name="from" value="{{.From}}">
+      <label for="to-f">To</label><input id="to-f" type="date" name="to" value="{{.To}}">
+      <button class="btn btn--quiet" type="submit">Show</button>
+    </form>
+    {{template "search" (search $t "ledger" "Find" "any text: id, kind, actor, detail, record")}}
+  </section>
+
+  {{if .Pivots}}<section class="pivots" aria-label="Filters on">
+    <span class="pivots__text">Showing rows where</span>
+    {{range .Pivots}}<span class="pivot">{{.Field}} = <strong>{{.Value}}</strong><a href="{{.Remove}}" aria-label="Remove this filter">×</a></span>{{end}}
+    <a class="clear" href="{{.Clear}}">Clear all</a>
+  </section>{{end}}
+
+  <div class="table-box">
+    <table class="data ledger">
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}</tr></thead>
+      <tbody>
+        {{range .Rows}}<tr>
+          <td data-label="When" class="nowrap soft">{{.When}}</td>
+          <td data-label="Stream" class="soft minor">{{.StreamLabel}}</td>
+          <td data-label="Kind"><a class="exact" href="{{.KindHref}}">{{.Kind}}</a></td>
+          <td data-label="Actor"><a class="exact" href="{{.ActorHref}}">{{short .Actor 32}}</a>{{if and .Via (ne .Via .Actor)}} <span class="meta">via {{.Via}}</span>{{end}}</td>
+          <td data-label="Subject">{{if .FollowHref}}<a class="exact" href="{{.FollowHref}}" title="Every row naming {{.Subject}}">{{short .Subject 40}}</a>{{end}}
+            {{if .Open}}<a class="meta" href="{{.Open}}">{{.OpenLabel}}</a>{{end}}
+            {{if .RunFollow}}<a class="meta" href="{{.RunFollow}}">its run</a>{{end}}</td>
+          <td data-label="Detail" class="stack">{{if or .Raw (gt (len .Detail) 140)}}<details class="fold ledger__rec"><summary>{{short .Detail 140}}{{if not .Detail}}the record{{end}}</summary>
+            {{if .Detail}}<pre class="log">{{.Detail}}</pre>{{end}}{{if .Raw}}<pre class="log">{{.Raw}}</pre>{{end}}
+            <span class="meta exact">{{.Stream}} #{{.Seq}} · {{.At}}</span></details>{{else}}{{.Detail}}{{end}}</td>
+        </tr>{{else}}<tr><td colspan="{{len $.Data.Heads}}" class="empty">No record matches these filters.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{template "pager" $t}}
+  <p class="footnote">Runs and model calls have their own pages (<a href="/runs">Runs</a>, <a href="/models?tab=spend">Models and spend</a>). A subject follows that thing through every stream.</p>
+  {{end}}
+</main>
+{{template "foot" .}}

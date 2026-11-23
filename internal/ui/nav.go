@@ -30,7 +30,7 @@ func nav(active string, waiting int) []navGroup {
 			{Label: "Fleets", Href: "/fleets"}, {Label: "Hosts", Href: "/hosts"}}},
 		{Label: "Govern", Pages: []navPage{{Label: "Autonomy", Href: "/autonomy"}, {Label: "Models and spend", Href: "/models"},
 			{Label: "Knowledge", Href: "/knowledge"}}},
-		{Label: "Record", Pages: []navPage{{Label: "Brief", Href: "/brief"}, {Label: "History", Href: "/history"}}},
+		{Label: "Record", Pages: []navPage{{Label: "Brief", Href: "/brief"}, {Label: "History", Href: "/history"}, {Label: "Ledger", Href: "/ledger"}}},
 	}
 	for i := range groups {
 		groups[i].Href, groups[i].Icon = groups[i].Pages[0].Href, groupIcons[groups[i].Label]

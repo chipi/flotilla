@@ -7,7 +7,7 @@
   <section class="head">
     <div>
       <h1>{{$c.Title}}</h1>
-      <p class="meta"><span class="exact">{{$c.ID}}</span> · opened {{.Opened}}{{if $c.FleetName}} · {{$c.FleetName}} fleet{{end}}{{if .Routine}}, routine <a class="exact" href="/fleets/{{$c.Fleet}}?sel={{.Routine}}">{{.Routine}}</a>{{end}} · <span class="{{$c.Chip}}">{{$c.StatusText}}</span>{{if $c.Resolution}} {{$c.Resolution}}{{end}}{{if $c.RecurrenceOf}} · recurs <a class="exact" href="/cases/{{$c.RecurrenceOf}}">{{$c.RecurrenceOf}}</a>{{end}}</p>
+      <p class="meta"><span class="exact">{{$c.ID}}</span> · opened {{.Opened}}{{if $c.FleetName}} · {{$c.FleetName}} fleet{{end}}{{if .Routine}}, routine <a class="exact" href="/fleets/{{$c.Fleet}}?sel={{.Routine}}">{{.Routine}}</a>{{end}} · <span class="{{$c.Chip}}">{{$c.StatusText}}</span>{{if $c.Resolution}} {{$c.Resolution}}{{end}}{{if $c.RecurrenceOf}} · recurs <a class="exact" href="/cases/{{$c.RecurrenceOf}}">{{$c.RecurrenceOf}}</a>{{end}} · {{template "ledgerlink" $c.ID}}</p>
     </div>
   </section>
 

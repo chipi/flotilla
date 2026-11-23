@@ -36,9 +36,9 @@
     </div>
     {{if .Frozen}}<p class="banner banner--frozen" role="status">Frozen by {{.FrozenBy}} at {{.FrozenAt}}. Every routine runs at record, so nothing outward happens; each keeps its own level for when you unfreeze. A run that started before the freeze keeps the autonomy it started with.</p>{{end}}
     {{with .Changes}}<div class="changes">
-      <h3>Recent changes</h3>
+      <h3>Recent changes <a class="meta" href="/ledger?kind=control.autonomy">all of them in the ledger</a></h3>
       <ul>{{range .}}<li><span class="exact">{{.When}}</span><span>{{.Text}}</span></li>{{end}}</ul>
-    </div>{{end}}
+    </div>{{else}}<p class="meta">No autonomy change yet; each one will be in the <a href="/ledger?kind=control.autonomy">ledger</a>.</p>{{end}}
   </section>
 
   <section class="casecards" aria-labelledby="caps">
@@ -55,7 +55,7 @@
         <thead><tr>{{range .ActHeads}}{{template "th" .}}{{end}}{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
         <tbody>
           {{range .Actions}}<tr id="action-{{.Name}}"{{if .Primary}} class="row--ready"{{end}}>
-            <td data-label="Action" class="exact">{{.Name}}</td>
+            <td data-label="Action" class="exact">{{.Name}} <a class="meta" href="{{ledgerHref (printf "action:%s" .Name)}}">ledger</a></td>
             <td data-label="For kinds" class="exact soft">{{.Kinds}}</td>
             <td data-label="Risk">{{.Risk}}</td>
             <td data-label="Reversible" class="minor">{{.Rev}}</td>

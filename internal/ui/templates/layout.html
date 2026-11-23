@@ -91,3 +91,5 @@
   <dt>{{.Label}}</dt>
   <dd><strong>{{.Value}}</strong>{{if .Unit}} <span class="scoreline__unit">{{.Unit}}</span>{{end}}{{if .Delta}} <span class="scoreline__delta">{{.Arrow}} {{.Delta}}</span>{{end}}</dd>
 </div>{{end}}</dl>{{end}}
+
+{{define "ledgerlink"}}<a class="ledgerlink" href="{{ledgerHref .}}">See in the ledger</a>{{end}}

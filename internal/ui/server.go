@@ -101,6 +101,8 @@ func (u *Server) Handler() http.Handler {
 	m.Handle("GET /brief/archive", u.session(u.briefPage))
 	m.Handle("POST /brief/{day}/mark", u.session(u.briefMark))
 	m.Handle("GET /history", u.session(u.historyPage))
+	m.Handle("GET /ledger", u.session(u.ledgerPage))
+	m.Handle("GET /ledger.json", u.session(u.ledgerExport))
 	m.Handle("GET /account", u.session(u.accountPage))
 	m.Handle("GET /users", u.session(u.usersPage))
 	m.Handle("POST /users", u.session(u.userAdd))
