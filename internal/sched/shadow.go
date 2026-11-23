@@ -463,7 +463,8 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 	}
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	if err := s.Store.FinishRun(fctx, runID, status, exit, spend, dur, detail); err != nil {
+	total, err := s.Store.EndRun(fctx, runID, status, exit, spend, dur, detail, day, key)
+	if err != nil {
 		log.Error("a shadow run's end", "run_id", runID, "err", err)
 		fail(store.ShadowCancelled, "the run's end was not recorded")
 		return
@@ -499,12 +500,6 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 			log.Error("recording what the shadow run read", "run_id", runID, "err", err)
 			// unmarked on purpose: flotillad's own store failing is not a shadow's signal, and must alert
 			s.StoreError("run_loaded")
-		}
-	}
-	total := spent
-	if spend > 0 {
-		if total, err = s.Store.AddSpend(fctx, day, key, spend); err != nil {
-			log.Error("a shadow run's spend", "run_id", runID, "err", err)
 		}
 	}
 	span.SetAttributes(attribute.String("flotilla.status", status), attribute.Float64("flotilla.spend_usd", spend))

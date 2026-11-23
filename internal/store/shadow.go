@@ -113,7 +113,7 @@ func nonNil(s []string) []string {
 func (s *Store) Input(ctx context.Context, key string) (Input, error) {
 	var in Input
 	var handed, keys, paths string
-	err := s.db.QueryRowContext(ctx, `SELECT `+inputCols+` FROM run_inputs WHERE input_key = ?`, key).Scan(&in.Key, &in.Routine, &in.Kind,
+	err := s.rdb.QueryRowContext(ctx, `SELECT `+inputCols+` FROM run_inputs WHERE input_key = ?`, key).Scan(&in.Key, &in.Routine, &in.Kind,
 		&in.Version, &in.Trigger, &in.Actor, &in.StartedAt, &handed, &in.MarkFilings, &in.MarkEntries, &keys, &in.CommitRepo, &in.CommitSHA,
 		&paths, &in.SnapshotState, &in.Pinned, &in.SchemaVersion)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -163,10 +163,10 @@ func oneInput(res sql.Result, err error, key string) error {
 // LedgerMark is a ledger namespace's high-water mark: the newest seq of its filings and of its entries (0 for none). Seqs are
 // global and only grow, so a row written after the mark has a larger seq whatever namespace it is in.
 func (s *Store) LedgerMark(ctx context.Context, ns string) (filings, entries int64, err error) {
-	if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM ledger_filings WHERE namespace = ?`, ns).Scan(&filings); err != nil {
+	if err = s.rdb.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM ledger_filings WHERE namespace = ?`, ns).Scan(&filings); err != nil {
 		return
 	}
-	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM ledger_entries WHERE namespace = ?`, ns).Scan(&entries)
+	err = s.rdb.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM ledger_entries WHERE namespace = ?`, ns).Scan(&entries)
 	return
 }
 
@@ -181,7 +181,7 @@ func (s *Store) OpenCaseKeys(ctx context.Context, kinds []string) ([]string, err
 	for i, k := range kinds {
 		args[i] = k
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT canonical_key FROM cases WHERE status <> 'closed' AND kind IN (`+ph+`) ORDER BY canonical_key`, args...)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT canonical_key FROM cases WHERE status <> 'closed' AND kind IN (`+ph+`) ORDER BY canonical_key`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *Store) FilingsAsOf(ctx context.Context, liveNS, ownNS string, mark int6
 		q += ` AND f.seq IN (SELECT filing_seq FROM ledger_keys WHERE ` + strings.Join(match, " OR ") + `)`
 	}
 	q += ` ORDER BY f.seq`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (s *Store) EntriesAsOf(ctx context.Context, liveNS, ownNS string, mark, aft
 		q += ` LIMIT ?`
 		args = append(args, limit)
 	}
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +397,7 @@ func (s *Store) ShadowRuns(ctx context.Context, f ShadowRunFilter) ([]ShadowRun,
 	if f.Status != "" {
 		q, args = q+` AND status = ?`, append(args, f.Status)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id`, args...)
+	rows, err := s.rdb.QueryContext(ctx, q+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func (s *Store) ShadowRecords(ctx context.Context, f ShadowRecordFilter) ([]Shad
 	if f.Until != "" {
 		q, args = q+` AND created_at < ?`, append(args, f.Until)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id`, args...)
+	rows, err := s.rdb.QueryContext(ctx, q+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +529,7 @@ var ErrShadowRun = errors.New("a shadow run never decides a plan or sends an act
 func (s *Store) RunIsShadow(ctx context.Context, runID string) (bool, error) {
 	var n int
 	// shadow-ok: this is the check itself, by run id
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(shadow), 0) FROM runs WHERE id = ?`, runID).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, `SELECT COALESCE(MAX(shadow), 0) FROM runs WHERE id = ?`, runID).Scan(&n)
 	return n != 0, err
 }
 
@@ -537,14 +537,14 @@ func (s *Store) RunIsShadow(ctx context.Context, runID string) (bool, error) {
 func (s *Store) planIsShadows(ctx context.Context, planID int64) (bool, error) {
 	var n int
 	// shadow-ok: this is the check itself, by plan id
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(r.shadow), 0) FROM plans p JOIN runs r ON r.id = p.run_id WHERE p.id = ?`, planID).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, `SELECT COALESCE(MAX(r.shadow), 0) FROM plans p JOIN runs r ON r.id = p.run_id WHERE p.id = ?`, planID).Scan(&n)
 	return n != 0, err
 }
 
 // ShadowRunsActive is how many of an input's shadow runs are still queued or running.
 func (s *Store) ShadowRunsActive(ctx context.Context, inputKey string) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM shadow_runs WHERE input_key = ? AND status IN ('queued', 'running')`, inputKey).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM shadow_runs WHERE input_key = ? AND status IN ('queued', 'running')`, inputKey).Scan(&n)
 	return n, err
 }
 
@@ -567,7 +567,7 @@ func (s *Store) ExpireShadowRuns(ctx context.Context, reason string) (int64, err
 
 // HeldSnapshots lists the inputs whose state snapshot is still on a live worker, oldest first.
 func (s *Store) HeldSnapshots(ctx context.Context) ([]Input, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT input_key FROM run_inputs WHERE snapshot_state = ? ORDER BY started_at`, SnapshotHeld)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT input_key FROM run_inputs WHERE snapshot_state = ? ORDER BY started_at`, SnapshotHeld)
 	if err != nil {
 		return nil, err
 	}

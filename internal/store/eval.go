@@ -60,7 +60,7 @@ func scanEvals(rows *sql.Rows) ([]EvalResult, error) {
 
 // LatestEval is, for each metric measured for a routine, prompt and model, its newest result (by metric name).
 func (s *Store) LatestEval(ctx context.Context, routine, promptSHA, model string) ([]EvalResult, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+evalCols+` FROM eval_results WHERE id IN (
+	rows, err := s.rdb.QueryContext(ctx, `SELECT `+evalCols+` FROM eval_results WHERE id IN (
 		SELECT MAX(id) FROM eval_results WHERE routine = ? AND prompt_sha = ? AND model = ? GROUP BY metric)
 		ORDER BY metric`, routine, promptSHA, model)
 	if err != nil {
@@ -76,7 +76,7 @@ func (s *Store) Evals(ctx context.Context, routine string, limit int) ([]EvalRes
 		q += ` WHERE routine = ?`
 		args = append(args, routine)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id DESC LIMIT ?`, append(args, limit)...)
+	rows, err := s.rdb.QueryContext(ctx, q+` ORDER BY id DESC LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}

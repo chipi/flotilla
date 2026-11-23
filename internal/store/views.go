@@ -87,7 +87,7 @@ func (s *Store) RunsPage(ctx context.Context, q RunQuery) ([]Run, int, error) {
 	}
 	var total int
 	// shadow-ok: where starts with liveRuns unless q.IncludeShadow
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs`+where, args...).Scan(&total); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs`+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	col, ok := runSorts[q.Sort]
@@ -103,7 +103,7 @@ func (s *Store) RunsPage(ctx context.Context, q RunQuery) ([]Run, int, error) {
 		limit = 50
 	}
 	// shadow-ok: where starts with liveRuns unless q.IncludeShadow
-	rows, err := s.db.QueryContext(ctx, `SELECT `+runCols+` FROM runs`+where+` ORDER BY `+col+dir+`, started_at DESC LIMIT ? OFFSET ?`,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT `+runCols+` FROM runs`+where+` ORDER BY `+col+dir+`, started_at DESC LIMIT ? OFFSET ?`,
 		append(args, limit, q.Offset)...)
 	if err != nil {
 		return nil, 0, err
@@ -128,7 +128,7 @@ type RoutineDay struct {
 
 // RunDays counts runs per routine and day since a time.
 func (s *Store) RunDays(ctx context.Context, since string) ([]RoutineDay, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT routine, substr(started_at, 1, 10), COUNT(*),
+	rows, err := s.rdb.QueryContext(ctx, `SELECT routine, substr(started_at, 1, 10), COUNT(*),
 		SUM(CASE WHEN status IN (?, ?, ?) THEN 1 ELSE 0 END), COALESCE(SUM(spend_usd), 0), MAX(started_at)
 		FROM runs WHERE started_at >= ? AND `+liveRuns+` GROUP BY routine, substr(started_at, 1, 10) ORDER BY 2`,
 		StatusError, StatusTimeout, StatusInterrupted, since)
@@ -154,7 +154,7 @@ type CaseEnds struct {
 
 // CaseEventEnds returns every case's first and newest events.
 func (s *Store) CaseEventEnds(ctx context.Context) (map[string]CaseEnds, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data FROM case_events
+	rows, err := s.rdb.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data FROM case_events
 		WHERE seq IN (SELECT MIN(seq) FROM case_events GROUP BY case_id) OR seq IN (SELECT MAX(seq) FROM case_events GROUP BY case_id)
 		ORDER BY seq`)
 	if err != nil {
@@ -179,7 +179,7 @@ func (s *Store) CaseEventEnds(ctx context.Context) (map[string]CaseEnds, error) 
 
 // CaseEventsSince returns every case's events since a time, newest first, at most limit.
 func (s *Store) CaseEventsSince(ctx context.Context, since string, limit int) ([]CaseEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data
+	rows, err := s.rdb.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data
 		FROM case_events WHERE at >= ? ORDER BY seq DESC LIMIT ?`, since, limit)
 	if err != nil {
 		return nil, err
@@ -207,7 +207,7 @@ func (s *Store) RunCases(ctx context.Context, runIDs []string) (map[string][]str
 	for i, id := range runIDs {
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT run_id, case_id FROM plans WHERE run_id IN (`+ph+`) ORDER BY id`, args...)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT DISTINCT run_id, case_id FROM plans WHERE run_id IN (`+ph+`) ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *Store) RunCases(ctx context.Context, runIDs []string) (map[string][]str
 
 // HostExecutionsSince returns every host's executions sent since a time, newest first.
 func (s *Store) HostExecutionsSince(ctx context.Context, since string) ([]HostExecution, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, status, exit_code, output_sha256,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, status, exit_code, output_sha256,
 		detail, chain_head, sent_at, ended_at FROM host_executions WHERE sent_at >= ? ORDER BY sent_at DESC`, since)
 	if err != nil {
 		return nil, err
@@ -254,7 +254,7 @@ const visitGap = time.Hour
 // within a visit keeps the same answer.
 func (s *Store) SeenNow(ctx context.Context, user string) (string, error) {
 	var seen, since string
-	if err := s.db.QueryRowContext(ctx, `SELECT now_seen_at, now_since FROM users WHERE name = ?`, user).Scan(&seen, &since); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT now_seen_at, now_since FROM users WHERE name = ?`, user).Scan(&seen, &since); err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil
 		}
@@ -271,7 +271,7 @@ func (s *Store) SeenNow(ctx context.Context, user string) (string, error) {
 // LastLook is the end of a user's previous visit to Now, as SeenNow last answered it, without recording a look.
 func (s *Store) LastLook(ctx context.Context, user string) (string, error) {
 	var since string
-	err := s.db.QueryRowContext(ctx, `SELECT now_since FROM users WHERE name = ?`, user).Scan(&since)
+	err := s.rdb.QueryRowContext(ctx, `SELECT now_since FROM users WHERE name = ?`, user).Scan(&since)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

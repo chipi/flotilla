@@ -69,10 +69,20 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
 - Earned autonomy and the per-action counts read the case's resolution, so in a two-plan case the
   second plan's rejection or failure counts against the first too (RFC-0013's 2026-11-22
   amendment); both meeting actions stay at propose.
-- flotillad in its container spends 5 to 10 times the CPU the same code needs natively (the pairs
-  page: 4.5 s live against 0.15 s natively on the same store), and 12 to 14 % CPU idle; not
-  explained. Finding it needs a CPU profile of the running process (an opt-in loopback pprof
-  listener: the operator's call).
+- flotillad's slowness in its container, measured 2026-11-23: the pairs answer for `triage/cycle`
+  v2 on the 12:00 store copy took 83 ms on the workstation (140 ms at the container's 0.5 CPU),
+  340 ms on the mini's idle dev VM (665 ms at 0.5 CPU), and 9 to 10 s live (the CLI through
+  `docker exec`, about 0.7 s of which is the exec). The VM runs QEMU with `accel=hvf`, not
+  emulation; the 0.5 CPU cap doubles a request, no more. The rest, about 13 times, happens only in
+  the live process. The suspect, not yet proven: every store read went through the writer's one
+  connection (`SetMaxOpenConns(1)`), behind the scheduler's, the UI's and the metrics' queries.
+  Built, not deployed: reads outside a transaction on their own pool (4 connections,
+  `query_only`), a run's end and its spend in one transaction (`Store.EndRun`, which the read pool
+  showed was not atomic), a cancel of a run the store has ended refused with 404, and
+  `flotilla_store_wait_seconds_total{pool}`. To check after the deploy: the same CLI pairs call
+  (expected under about 1.5 s with the exec) and the read and write waits' rate. If it stays slow,
+  the cause is elsewhere: the production VM's contention (VictoriaMetrics, ClickHouse) or something
+  only a CPU profile shows (an opt-in loopback pprof listener: the operator's call).
 
 ## Needs the operator
 

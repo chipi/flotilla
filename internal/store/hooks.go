@@ -102,7 +102,7 @@ type HookActivity struct {
 
 // HookActivities returns every hook's activity since a time, by hook name.
 func (s *Store) HookActivities(ctx context.Context, since string) (map[string]HookActivity, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT actor, kind, at, detail FROM events
+	rows, err := s.rdb.QueryContext(ctx, `SELECT actor, kind, at, detail FROM events
 		WHERE kind IN ('hook.accepted', 'hook.refused') AND at >= ? ORDER BY seq`, since)
 	if err != nil {
 		return nil, err

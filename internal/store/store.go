@@ -543,7 +543,8 @@ const (
 )
 
 type Store struct {
-	db  *sql.DB
+	db  *sql.DB // the one writer, and every transaction
+	rdb *sql.DB // reads outside a transaction: query_only, readConns at once
 	now func() time.Time
 }
 
@@ -609,7 +610,35 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// Reads outside a transaction get their own connections (2026-11-23): with every read queued on the one writer's
+	// connection, a page's reads waited behind the scheduler's and each other (the pairs answer, 83 ms natively on the
+	// installation's store, took 9 s live). WAL lets readers run beside the writer, each seeing the last commit;
+	// query_only makes a write sent here an error rather than a second writer.
+	rdb, err := sql.Open("sqlite", "file:"+path+"?_pragma=query_only(1)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=temp_store(2)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	rdb.SetMaxOpenConns(readConns)
+	s.rdb = rdb
 	return s, nil
+}
+
+// readConns is how many reads run at once beside the writer.
+const readConns = 4
+
+// PoolStats is how long reads and writes have waited for a connection since start: the wait the read pool removes.
+type PoolStats struct {
+	ReadWaits, WriteWaits         int64
+	ReadWaitSec, WriteWaitSec     float64
+	ReadInUse, ReadOpen, WriteUse int
+}
+
+// Pools reads both pools' counters (database/sql's own).
+func (s *Store) Pools() PoolStats {
+	r, w := s.rdb.Stats(), s.db.Stats()
+	return PoolStats{ReadWaits: r.WaitCount, WriteWaits: w.WaitCount, ReadWaitSec: r.WaitDuration.Seconds(), WriteWaitSec: w.WaitDuration.Seconds(),
+		ReadInUse: r.InUse, ReadOpen: r.OpenConnections, WriteUse: w.InUse}
 }
 
 // errNewer is the refusal of a store ahead of this binary. deploy.sh reads the "(N)" for the newest
@@ -644,7 +673,12 @@ func CheckSchema(path string) error {
 	return nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	if s.rdb != nil {
+		s.rdb.Close()
+	}
+	return s.db.Close()
+}
 
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (n INTEGER NOT NULL)`); err != nil {
@@ -687,7 +721,7 @@ func (s *Store) Event(ctx context.Context, actor, via, kind, subject, detail str
 // LatestEvent is the newest event of kind on subject, or nil.
 func (s *Store) LatestEvent(ctx context.Context, kind, subject string) (*Event, error) {
 	var e Event
-	err := s.db.QueryRowContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events WHERE kind = ? AND subject = ?
+	err := s.rdb.QueryRowContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events WHERE kind = ? AND subject = ?
 		ORDER BY seq DESC LIMIT 1`, kind, subject).Scan(&e.Seq, &e.At, &e.Actor, &e.Via, &e.Kind, &e.Subject, &e.Detail)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -699,7 +733,7 @@ func (s *Store) LatestEvent(ctx context.Context, kind, subject string) (*Event, 
 }
 
 func (s *Store) Events(ctx context.Context, limit int) ([]Event, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events ORDER BY seq DESC LIMIT ?`, limit)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events ORDER BY seq DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +782,7 @@ func (s *Store) SetControlBecause(ctx context.Context, subject, key, value, acto
 // ControlAt is one control's value and when it was last set ("", "" when it was never set).
 func (s *Store) ControlAt(ctx context.Context, subject, key string) (string, string, error) {
 	var v, at string
-	err := s.db.QueryRowContext(ctx, `SELECT value, at FROM controls WHERE subject = ? AND key = ?`, subject, key).Scan(&v, &at)
+	err := s.rdb.QueryRowContext(ctx, `SELECT value, at FROM controls WHERE subject = ? AND key = ?`, subject, key).Scan(&v, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", nil
 	}
@@ -758,7 +792,7 @@ func (s *Store) ControlAt(ctx context.Context, subject, key string) (string, str
 // Control returns one control's value, or "" when it was never set.
 func (s *Store) Control(ctx context.Context, subject, key string) (string, error) {
 	var v string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM controls WHERE subject = ? AND key = ?`, subject, key).Scan(&v)
+	err := s.rdb.QueryRowContext(ctx, `SELECT value FROM controls WHERE subject = ? AND key = ?`, subject, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -766,7 +800,7 @@ func (s *Store) Control(ctx context.Context, subject, key string) (string, error
 }
 
 func (s *Store) Controls(ctx context.Context) ([]Control, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT subject, key, value, actor, at FROM controls ORDER BY subject, key`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT subject, key, value, actor, at FROM controls ORDER BY subject, key`)
 	if err != nil {
 		return nil, err
 	}
@@ -804,6 +838,39 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, exitCode *int,
 	return nil
 }
 
+// EndRun is FinishRun and AddSpend in one transaction: a reader never sees a run ended without its spend in the day's
+// total (another run's budget check, the UI, a test waiting for the end). A spend of 0 adds nothing. It returns the day's
+// total for subject.
+func (s *Store) EndRun(ctx context.Context, id, status string, exitCode *int, spend, durationS float64, detail, day, subject string) (float64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	// shadow-ok: by run id; a shadow run ends the same way, and its spend subject carries @v
+	res, err := tx.ExecContext(ctx, `UPDATE runs SET ended_at = ?, status = ?, exit_code = ?, spend_usd = ?, duration_s = ?, detail = ?
+		WHERE id = ? AND status = ?`,
+		s.now().Format(ts), status, exitCode, spend, durationS, detail, id, StatusRunning)
+	if err != nil {
+		return 0, err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return 0, fmt.Errorf("run %s is not running", id)
+	}
+	if spend > 0 {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO spend (day, subject, usd) VALUES (?, ?, ?)
+			ON CONFLICT(day, subject) DO UPDATE SET usd = usd + excluded.usd`, day, subject, spend); err != nil {
+			return 0, err
+		}
+	}
+	var total float64
+	// shadow-ok: keyed by subject; a live routine's key never matches a shadow's
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT usd FROM spend WHERE day = ? AND subject = ?), 0)`, day, subject).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, tx.Commit()
+}
+
 // SkippedRun records a trigger that did not start a run, with the reason, so a skip is visible.
 func (s *Store) SkippedRun(ctx context.Context, r Run) error {
 	now := s.now().Format(ts)
@@ -821,7 +888,7 @@ type RunRef struct{ ID, Routine, StartedAt string }
 // left in flight, read before MarkInterrupted closes them. Shadow runs are in it: a restart orphans them too.
 func (s *Store) RunningRuns(ctx context.Context) ([]RunRef, error) {
 	// shadow-ok: every orphaned run must be found and cancelled, a shadow's included
-	rows, err := s.db.QueryContext(ctx, `SELECT id, routine, started_at FROM runs WHERE status = ? ORDER BY started_at`, StatusRunning)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, routine, started_at FROM runs WHERE status = ? ORDER BY started_at`, StatusRunning)
 	if err != nil {
 		return nil, err
 	}
@@ -863,7 +930,7 @@ func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, err
 	}
 	q += ` ORDER BY started_at DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -873,7 +940,7 @@ func (s *Store) Runs(ctx context.Context, routine string, limit int) ([]Run, err
 // LastSuccess is the end time of the routine's newest ok run, zero when it has none.
 func (s *Store) LastSuccess(ctx context.Context, routine string) (time.Time, error) {
 	var at sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT MAX(ended_at) FROM runs WHERE routine = ? AND status = ? AND `+liveRuns, routine, StatusOK).Scan(&at); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT MAX(ended_at) FROM runs WHERE routine = ? AND status = ? AND `+liveRuns, routine, StatusOK).Scan(&at); err != nil {
 		return time.Time{}, err
 	}
 	if !at.Valid {
@@ -896,7 +963,7 @@ func (s *Store) AddSpend(ctx context.Context, day, subject string, usd float64) 
 func (s *Store) Spend(ctx context.Context, day, subject string) (float64, error) {
 	var v float64
 	// shadow-ok: keyed by subject; a live routine's key never matches a shadow's
-	err := s.db.QueryRowContext(ctx, `SELECT usd FROM spend WHERE day = ? AND subject = ?`, day, subject).Scan(&v)
+	err := s.rdb.QueryRowContext(ctx, `SELECT usd FROM spend WHERE day = ? AND subject = ?`, day, subject).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}

@@ -41,7 +41,7 @@ func linkRecurrence(ctx context.Context, tx *sql.Tx, id string, n NewCase, now t
 
 // Recurrences is how many cases of each kind came back within the window, since the given time.
 func (s *Store) Recurrences(ctx context.Context, since string) (map[string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, COUNT(*) FROM cases WHERE recurrence_of <> '' AND opened_at >= ? GROUP BY kind`, since)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT kind, COUNT(*) FROM cases WHERE recurrence_of <> '' AND opened_at >= ? GROUP BY kind`, since)
 	if err != nil {
 		return nil, err
 	}

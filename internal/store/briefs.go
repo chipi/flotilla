@@ -67,7 +67,7 @@ func (s *Store) SaveBrief(ctx context.Context, b Brief) error {
 // BriefOn is a day's brief, or nil.
 func (s *Store) BriefOn(ctx context.Context, day string) (*Brief, error) {
 	var body string
-	err := s.db.QueryRowContext(ctx, `SELECT body FROM briefs WHERE day = ?`, day).Scan(&body)
+	err := s.rdb.QueryRowContext(ctx, `SELECT body FROM briefs WHERE day = ?`, day).Scan(&body)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -80,7 +80,7 @@ func (s *Store) BriefOn(ctx context.Context, day string) (*Brief, error) {
 
 // Briefs is every brief, newest first, at most limit.
 func (s *Store) Briefs(ctx context.Context, limit int) ([]Brief, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT body FROM briefs ORDER BY day DESC LIMIT ?`, limit)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT body FROM briefs ORDER BY day DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *Store) MarkBriefItem(ctx context.Context, day string, item int, user, m
 
 // BriefMarks is a person's marks on a day's brief, by item.
 func (s *Store) BriefMarks(ctx context.Context, day, user string) (map[int]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT item, mark FROM brief_marks WHERE day = ? AND user_name = ?`, day, user)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT item, mark FROM brief_marks WHERE day = ? AND user_name = ?`, day, user)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (s *Store) BriefMarks(ctx context.Context, day, user string) (map[int]strin
 
 // MarksByKind counts everyone's marks per item kind since a time: [more, less].
 func (s *Store) MarksByKind(ctx context.Context, since string) (map[string][2]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, mark, COUNT(*) FROM brief_marks WHERE at >= ? GROUP BY kind, mark`, since)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT kind, mark, COUNT(*) FROM brief_marks WHERE at >= ? GROUP BY kind, mark`, since)
 	if err != nil {
 		return nil, err
 	}

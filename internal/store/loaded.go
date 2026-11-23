@@ -57,7 +57,7 @@ func (s *Store) RecordLoaded(ctx context.Context, items []Loaded) error {
 func (s *Store) RunLoaded(ctx context.Context, runIDs []string) (map[string][]Loaded, error) {
 	out := map[string][]Loaded{}
 	for _, id := range runIDs {
-		rows, err := s.db.QueryContext(ctx, `SELECT run_id, routine, at, kind, trust, title, source, sha256, version FROM run_loaded
+		rows, err := s.rdb.QueryContext(ctx, `SELECT run_id, routine, at, kind, trust, title, source, sha256, version FROM run_loaded
 			WHERE run_id = ? ORDER BY id`, id)
 		if err != nil {
 			return nil, err

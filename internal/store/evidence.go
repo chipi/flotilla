@@ -32,7 +32,7 @@ func (s Streak) Ready() bool { return s.Clean >= PromotionNeed && !s.Held }
 // recorded plan nobody judged, neither counts nor breaks the run.
 func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, error) {
 	var st Streak
-	rows, err := s.db.QueryContext(ctx, `SELECT p.outcome, p.decided_at, c.resolution,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT p.outcome, p.decided_at, c.resolution,
 		EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id AND f.verdict = ?),
 		EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id AND f.verdict = ?),
 		EXISTS (SELECT 1 FROM case_events e WHERE e.case_id = p.case_id AND e.kind = 'case.escalated' AND e.from_status = ?),
@@ -77,7 +77,7 @@ func (s *Store) PromotionStreak(ctx context.Context, action string) (Streak, err
 // ActionPlanners is, for each action, the live routines whose runs have planned it, sorted: the routines whose own levels
 // and caps a promotion of the action has to get past. A shadow's plan never reaches policy, so it names no planner.
 func (s *Store) ActionPlanners(ctx context.Context) (map[string][]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT p.action, r.routine FROM plans p JOIN runs r ON r.id = p.run_id WHERE r.`+liveRuns+`
+	rows, err := s.rdb.QueryContext(ctx, `SELECT DISTINCT p.action, r.routine FROM plans p JOIN runs r ON r.id = p.run_id WHERE r.`+liveRuns+`
 		ORDER BY p.action, r.routine`)
 	if err != nil {
 		return nil, err
@@ -102,10 +102,10 @@ func (s *Store) UnjudgedRecorded(ctx context.Context, limit int) ([]PlanRecord, 
 		AND p.id = (SELECT MAX(id) FROM plans WHERE case_id = p.case_id)
 		AND NOT EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id)`
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) `+q).Scan(&n); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) `+q).Scan(&n); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.case_id, p.run_id, p.action, p.decided_at `+q+` ORDER BY p.decided_at DESC, p.id DESC LIMIT ?`, limit)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT p.id, p.case_id, p.run_id, p.action, p.decided_at `+q+` ORDER BY p.decided_at DESC, p.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/chipi/flotilla/internal/sched"
 	"github.com/chipi/flotilla/internal/spec"
+	"github.com/chipi/flotilla/internal/store"
 )
 
 // ADR-0014 decision 2: one path for every action. The HTTP handlers and the UI's handlers both call
@@ -248,6 +249,11 @@ func (s *Server) CancelRun(ctx context.Context, c Caller, via, runID, reason str
 	}
 	if routine == "" {
 		return problem(404, "run %s is not in flight", runID)
+	}
+	// The scheduler lets go of a run after its end is recorded and its calls kept, so a run can be ended in the store and
+	// still in the scheduler's list for a moment: ended in the store is not in flight.
+	if r, err := s.Store.Run(ctx, runID); err == nil && r != nil && r.Status != store.StatusRunning {
+		return problem(404, "run %s is not in flight: it ended %s", runID, r.Status)
 	}
 	if err := s.cancelRun(ctx, c, via, routine, reason); err != nil {
 		if errors.Is(err, sched.ErrNotRunning) {

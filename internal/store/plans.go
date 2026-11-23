@@ -89,7 +89,7 @@ func (s *Store) ApplyPlan(ctx context.Context, p PlanRecord, to, resolution, tar
 
 // Plans is a case's plans, oldest first.
 func (s *Store) Plans(ctx context.Context, caseID string) ([]PlanRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at, version,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, case_id, run_id, action, params, plan_hash, outcome, autonomy, would, reasons, decided_at, version,
 		COALESCE(rolled_back_at, ''), COALESCE(rolled_back_by, '') FROM plans WHERE case_id = ? ORDER BY id`, caseID)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (s *Store) Plans(ctx context.Context, caseID string) ([]PlanRecord, error) 
 // LockHolder is the case holding the target's lock, "" when free.
 func (s *Store) LockHolder(ctx context.Context, target string) (string, error) {
 	var id string
-	err := s.db.QueryRowContext(ctx, `SELECT case_id FROM target_locks WHERE target = ?`, target).Scan(&id)
+	err := s.rdb.QueryRowContext(ctx, `SELECT case_id FROM target_locks WHERE target = ?`, target).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -189,7 +189,7 @@ func (s *Store) Holds(ctx context.Context, now time.Time, all bool) ([]Hold, err
 		q += ` WHERE lifted_at IS NULL AND until > ?`
 		args = append(args, now.UTC().Format(ts))
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id DESC LIMIT 200`, args...)
+	rows, err := s.rdb.QueryContext(ctx, q+` ORDER BY id DESC LIMIT 200`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ func (s *Store) Counts(ctx context.Context, action, target, host string, dayStar
 	var c ExecutionCounts
 	hour := now.Add(-time.Hour).UTC().Format(ts)
 	q := func(dst *int, query string, args ...any) error {
-		return s.db.QueryRowContext(ctx, query, args...).Scan(dst)
+		return s.rdb.QueryRowContext(ctx, query, args...).Scan(dst)
 	}
 	hostTarget := "host:" + host
 	if err := q(&c.TargetToday, `SELECT COUNT(*) FROM case_events e JOIN cases c ON c.id = e.case_id
@@ -259,7 +259,7 @@ type ActionRecord struct {
 
 func (s *Store) ActionRecord(ctx context.Context, action string) (ActionRecord, error) {
 	r := ActionRecord{Outcomes: map[string]int{}, Would: map[string]int{}}
-	rows, err := s.db.QueryContext(ctx, `SELECT outcome, would, COUNT(*) FROM plans WHERE action = ? GROUP BY outcome, would`, action)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT outcome, would, COUNT(*) FROM plans WHERE action = ? GROUP BY outcome, would`, action)
 	if err != nil {
 		return r, err
 	}
@@ -280,11 +280,11 @@ func (s *Store) ActionRecord(ctx context.Context, action string) (ActionRecord, 
 		return r, err
 	}
 	onAction := `EXISTS (SELECT 1 FROM plans p WHERE p.case_id = c.id AND p.action = ?)`
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cases c WHERE c.resolution = ? AND `+onAction,
+	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM cases c WHERE c.resolution = ? AND `+onAction,
 		cases.Verified, action).Scan(&r.Verified); err != nil {
 		return r, err
 	}
-	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM case_events e JOIN cases c ON c.id = e.case_id
+	err = s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM case_events e JOIN cases c ON c.id = e.case_id
 		WHERE e.kind = 'case.escalated' AND e.from_status = ? AND `+onAction, cases.Executing, action).Scan(&r.Failed)
 	return r, err
 }

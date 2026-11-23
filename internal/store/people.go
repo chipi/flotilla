@@ -122,7 +122,7 @@ func (s *Store) SyncPeople(ctx context.Context, people []Person, actor string) (
 func (s *Store) PersonBy(ctx context.Context, tool, id string) (Person, bool, error) {
 	var p Person
 	var ids string
-	err := s.db.QueryRowContext(ctx, `SELECT p.email, p.name, p.ids FROM person_ids i JOIN people p ON p.email = i.email WHERE i.tool = ? AND i.id = ?`,
+	err := s.rdb.QueryRowContext(ctx, `SELECT p.email, p.name, p.ids FROM person_ids i JOIN people p ON p.email = i.email WHERE i.tool = ? AND i.id = ?`,
 		tool, id).Scan(&p.Email, &p.Name, &ids)
 	if err == sql.ErrNoRows {
 		return Person{}, false, nil
@@ -136,7 +136,7 @@ func (s *Store) PersonBy(ctx context.Context, tool, id string) (Person, bool, er
 
 // People is the directory's copy, by email.
 func (s *Store) People(ctx context.Context) ([]Person, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT email, name, ids FROM people ORDER BY email`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT email, name, ids FROM people ORDER BY email`)
 	if err != nil {
 		return nil, err
 	}

@@ -464,7 +464,8 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 	// a cancelled flotillad must still record the run it ran
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	if err := s.Store.FinishRun(fctx, runID, status, exit, spend, dur, detail); err != nil {
+	total, err := s.Store.EndRun(fctx, runID, status, exit, spend, dur, detail, day, id)
+	if err != nil {
 		return nil, nil, err
 	}
 	if callErr == nil && len(res.Calls) > 0 {
@@ -505,12 +506,6 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 		if err := s.Store.RecordLoaded(fctx, items); err != nil {
 			s.Log.Error("recording what the run read", "run_id", runID, "err", err)
 			s.StoreError("run_loaded")
-		}
-	}
-	total := spent
-	if spend > 0 {
-		if total, err = s.Store.AddSpend(fctx, day, id, spend); err != nil {
-			return nil, nil, err
 		}
 	}
 	span.SetAttributes(attribute.String("flotilla.status", status), attribute.Float64("flotilla.spend_usd", spend))

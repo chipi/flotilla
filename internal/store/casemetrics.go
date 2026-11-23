@@ -21,7 +21,7 @@ const caseFleets = `WITH f AS (SELECT id, kind, status, resolution, CASE WHEN fl
 // CaseMetrics returns the open cases by fleet, kind and status, and every status move cases have made by fleet, kind, from, to and
 // role. Case events are never deleted, so a move's count only grows: a counter, read from the store, that a restart cannot lose.
 func (s *Store) CaseMetrics(ctx context.Context) ([]CaseCount, []CaseMove, error) {
-	rows, err := s.db.QueryContext(ctx, caseFleets+`
+	rows, err := s.rdb.QueryContext(ctx, caseFleets+`
 		SELECT fleet, kind, status, COUNT(*) FROM f WHERE status <> 'closed' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`)
 	if err != nil {
 		return nil, nil, err
@@ -39,7 +39,7 @@ func (s *Store) CaseMetrics(ctx context.Context) ([]CaseCount, []CaseMove, error
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	rows, err = s.db.QueryContext(ctx, caseFleets+`
+	rows, err = s.rdb.QueryContext(ctx, caseFleets+`
 		SELECT f.fleet, f.kind, e.from_status, e.to_status, e.by_role, CASE WHEN e.to_status = 'closed' THEN f.resolution ELSE '' END, COUNT(*)
 		FROM case_events e JOIN f ON f.id = e.case_id
 		WHERE e.kind LIKE 'case.%' AND e.to_status <> ''
@@ -68,7 +68,7 @@ type LedgerCount struct {
 // LedgerMetrics counts the ledger's live decisions (a shadow's, the ledger's stage "shadow", left out) by fleet, the namespace's
 // routine's, and disposition: what a fleet that files through the ledger, not cases (triage), decided. Entries are never deleted.
 func (s *Store) LedgerMetrics(ctx context.Context) ([]LedgerCount, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT CASE WHEN instr(namespace, '/') > 0 THEN substr(namespace, 1, instr(namespace, '/') - 1)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT CASE WHEN instr(namespace, '/') > 0 THEN substr(namespace, 1, instr(namespace, '/') - 1)
 			ELSE namespace END, coalesce(json_extract(row, '$.disposition'), ''), COUNT(*)
 		FROM ledger_entries WHERE kind = 'decision' AND coalesce(json_extract(row, '$.stage'), '') <> 'shadow'
 		GROUP BY 1, 2 ORDER BY 1, 2`)

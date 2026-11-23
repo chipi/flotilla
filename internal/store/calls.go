@@ -271,7 +271,7 @@ func (s *Store) RunCalls(ctx context.Context, runIDs []string) (map[string][]Mod
 		ph += "?"
 	}
 	// shadow-ok: the calls of the runs named, whichever kind they are
-	rows, err := s.db.QueryContext(ctx, `SELECT `+callCols+` FROM run_calls WHERE run_id IN (`+ph+`) ORDER BY id`, args...)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT `+callCols+` FROM run_calls WHERE run_id IN (`+ph+`) ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (s *Store) RunCalls(ctx context.Context, runIDs []string) (map[string][]Mod
 // CallsSince returns every live model call since a time, oldest first (a shadow's calls, keyed "<fleet>/<routine>@v<n>",
 // are not in it). Harness steps are left out: this is what aggregates of calls, tokens and cost are made from.
 func (s *Store) CallsSince(ctx context.Context, since string) ([]ModelCall, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+callCols+` FROM run_calls WHERE at >= ? AND kind <> 'step' AND `+liveCalls+` ORDER BY id`, since)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT `+callCols+` FROM run_calls WHERE at >= ? AND kind <> 'step' AND `+liveCalls+` ORDER BY id`, since)
 	if err != nil {
 		return nil, err
 	}

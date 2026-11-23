@@ -712,7 +712,7 @@ const EvidenceSchema = 29
 // ok before its cancel lands).
 func (s *Store) RunVersionRolledBack(ctx context.Context, runID string) (at, by string, rolledBack bool, err error) {
 	// shadow-ok: joined on the exact routine key and version; a run by id
-	err = s.db.QueryRowContext(ctx, `SELECT rv.state_at, rv.state_by FROM routine_versions rv JOIN runs r ON r.routine = rv.routine AND r.version = rv.version
+	err = s.rdb.QueryRowContext(ctx, `SELECT rv.state_at, rv.state_by FROM routine_versions rv JOIN runs r ON r.routine = rv.routine AND r.version = rv.version
 		WHERE r.id = ? AND rv.state = 'retired' AND rv.retired_kind = ?`, runID, RetiredRolledBack).Scan(&at, &by)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", false, nil

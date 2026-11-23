@@ -122,7 +122,7 @@ func ReadRoutineFields(path string) (FieldsRead, error) {
 
 // RoutineChanges is the newest routine.update events of one routine, newest first: what its own fields changed to, with when and by whom.
 func (s *Store) RoutineChanges(ctx context.Context, routine string, limit int) ([]Event, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events WHERE kind = 'routine.update' AND subject = ?
+	rows, err := s.rdb.QueryContext(ctx, `SELECT seq, at, actor, via, kind, subject, detail FROM events WHERE kind = 'routine.update' AND subject = ?
 		ORDER BY seq DESC LIMIT ?`, routine, limit)
 	if err != nil {
 		return nil, err

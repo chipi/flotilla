@@ -159,14 +159,14 @@ func (s *Store) HostCertCurrent(ctx context.Context, host, cert string) (bool, e
 		return false, nil
 	}
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts WHERE name = ? AND cert_sha256 = ?`,
+	err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts WHERE name = ? AND cert_sha256 = ?`,
 		host, cert).Scan(&n)
 	return n == 1, err
 }
 
 // Hosts lists every host.
 func (s *Store) Hosts(ctx context.Context) ([]Host, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT name, cert_sha256, cert_not_after, created_at, enrolled_at, revoked_at,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT name, cert_sha256, cert_not_after, created_at, enrolled_at, revoked_at,
 		connected, version, connected_at, last_contact, clock_offset_ms, chain_head, ceiling, allowlist FROM hosts ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -271,7 +271,7 @@ func (s *Store) EndHostExecution(ctx context.Context, id, status string, exitCod
 // HostExecution returns an execution by id, or nil.
 func (s *Store) HostExecution(ctx context.Context, id string) (*HostExecution, error) {
 	var x HostExecution
-	err := s.db.QueryRowContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, envelope, status, exit_code, output_sha256, detail,
+	err := s.rdb.QueryRowContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, envelope, status, exit_code, output_sha256, detail,
 		chain_head, sent_at, ended_at FROM host_executions WHERE id = ?`, id).Scan(&x.ID, &x.CaseID, &x.PlanID, &x.Host, &x.Action,
 		&x.Approved, &x.Envelope, &x.Status, &x.ExitCode, &x.OutputSHA256, &x.Detail, &x.ChainHead, &x.SentAt, &x.EndedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -282,7 +282,7 @@ func (s *Store) HostExecution(ctx context.Context, id string) (*HostExecution, e
 
 // HostExecutions lists flotillad's record of a host's executions, oldest first (`flotilla host audit`).
 func (s *Store) HostExecutions(ctx context.Context, host string) ([]HostExecution, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, status, exit_code, output_sha256,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, case_id, plan_id, host, action, approved, status, exit_code, output_sha256,
 		detail, chain_head, sent_at, ended_at FROM host_executions WHERE host = ? ORDER BY sent_at, id`, host)
 	if err != nil {
 		return nil, err
@@ -303,7 +303,7 @@ func (s *Store) HostExecutions(ctx context.Context, host string) ([]HostExecutio
 // RecoverHostExecutions marks every execution left sent by the last flotillad unknown (its result, if
 // any, was lost with it) and returns them: their cases escalate, their targets stay held.
 func (s *Store) RecoverHostExecutions(ctx context.Context) ([]HostExecution, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, case_id, host FROM host_executions WHERE status = ?`, ExecSent)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, case_id, host FROM host_executions WHERE status = ?`, ExecSent)
 	if err != nil {
 		return nil, err
 	}

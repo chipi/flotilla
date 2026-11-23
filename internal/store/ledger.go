@@ -111,7 +111,7 @@ func (s *Store) Filings(ctx context.Context, ns string, keys map[string]string) 
 		q += ` AND f.seq IN (SELECT filing_seq FROM ledger_keys WHERE namespace = ? AND (` + strings.Join(match, " OR ") + `))`
 	}
 	q += ` ORDER BY f.seq`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (s *Store) Entries(ctx context.Context, ns string, afterSeq int64, limit in
 		q += ` LIMIT ?`
 		args = append(args, limit)
 	}
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ type LedgerCounts struct {
 
 func (s *Store) LedgerCounts(ctx context.Context, ns string) (LedgerCounts, error) {
 	var c LedgerCounts
-	err := s.db.QueryRowContext(ctx, `SELECT
+	err := s.rdb.QueryRowContext(ctx, `SELECT
 		(SELECT COUNT(DISTINCT fingerprint) FROM ledger_filings WHERE namespace = ?),
 		(SELECT COUNT(*) FROM ledger_entries WHERE namespace = ? AND kind = 'decision'),
 		(SELECT COUNT(*) FROM ledger_entries WHERE namespace = ? AND kind = 'recurrence')`, ns, ns, ns).
@@ -255,7 +255,7 @@ type RunDecision struct {
 // DecisionsOfRun are the decisions (not recurrences) a run wrote, in time order. ledger_entries
 // has no run_id index: a scan of the table, which a run page can afford.
 func (s *Store) DecisionsOfRun(ctx context.Context, runID string) ([]RunDecision, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT
+	rows, err := s.rdb.QueryContext(ctx, `SELECT
 		coalesce(json_extract(row, '$.ts'), ''), coalesce(json_extract(row, '$.fingerprint'), ''),
 		coalesce(json_extract(row, '$.alertname'), ''), coalesce(json_extract(row, '$.disposition'), ''),
 		coalesce(json_extract(row, '$.gates'), ''), coalesce(json_extract(row, '$.certainty'), ''),
@@ -295,7 +295,7 @@ func (s *Store) DecisionsSince(ctx context.Context, namespaces []string, since s
 		args = append(args, ns)
 	}
 	args = append(args, since)
-	rows, err := s.db.QueryContext(ctx, `SELECT kind,
+	rows, err := s.rdb.QueryContext(ctx, `SELECT kind,
 		coalesce(json_extract(row, '$.ts'), ''), coalesce(json_extract(row, '$.disposition'), ''),
 		coalesce(json_extract(row, '$.stage'), ''), coalesce(json_extract(row, '$.gates'), ''),
 		coalesce(json_extract(row, '$.fingerprint'), ''), coalesce(json_extract(row, '$.prompt_sha'), ''),

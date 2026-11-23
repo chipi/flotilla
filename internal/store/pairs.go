@@ -111,7 +111,7 @@ func (s *Store) Pairs(ctx context.Context, q PairQuery) (PairSet, error) {
 	if q.Until != "" {
 		qr, args = qr+` AND i.started_at < ?`, append(args, q.Until)
 	}
-	rows, err := s.db.QueryContext(ctx, qr+` ORDER BY i.started_at DESC`, args...)
+	rows, err := s.rdb.QueryContext(ctx, qr+` ORDER BY i.started_at DESC`, args...)
 	if err != nil {
 		return out, err
 	}
@@ -274,7 +274,7 @@ func (s *Store) liveSides(ctx context.Context, inputKey, routine string, version
 	}
 	mk := func(at string) *PairSide { return &PairSide{Version: version, Hash: hash, RunID: inputKey, At: at} }
 	// ledger decisions of the run, in a live namespace
-	rows, err := s.db.QueryContext(ctx, `SELECT `+entrySubject+`, e.row, e.written_at FROM ledger_entries e WHERE e.run_id = ? AND e.kind = 'decision' AND instr(e.namespace, '@v') = 0 ORDER BY e.seq`, inputKey)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT `+entrySubject+`, e.row, e.written_at FROM ledger_entries e WHERE e.run_id = ? AND e.kind = 'decision' AND instr(e.namespace, '@v') = 0 ORDER BY e.seq`, inputKey)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func (s *Store) liveSides(ctx context.Context, inputKey, routine string, version
 	}
 	rows.Close()
 	// plans of the run, and whether each was sent to a host
-	rows, err = s.db.QueryContext(ctx, `SELECT p.case_id, p.action, p.params, p.outcome, p.decided_at,
+	rows, err = s.rdb.QueryContext(ctx, `SELECT p.case_id, p.action, p.params, p.outcome, p.decided_at,
 		(SELECT COUNT(*) FROM host_executions h WHERE h.plan_id = p.id) FROM plans p WHERE p.run_id = ? ORDER BY p.id`, inputKey)
 	if err != nil {
 		return nil, err
@@ -317,7 +317,7 @@ func (s *Store) liveSides(ctx context.Context, inputKey, routine string, version
 	}
 	rows.Close()
 	// what the run did to a case, or to the case a detection key names: "run <id>: ..." on its timeline, and an incident cleared in its window
-	rows, err = s.db.QueryContext(ctx, `SELECT c.id, c.canonical_key, e.kind, e.to_status, e.detail, e.at FROM case_events e JOIN cases c ON c.id = e.case_id
+	rows, err = s.rdb.QueryContext(ctx, `SELECT c.id, c.canonical_key, e.kind, e.to_status, e.detail, e.at FROM case_events e JOIN cases c ON c.id = e.case_id
 		WHERE e.detail LIKE ? ESCAPE '\' ORDER BY e.seq`, "run "+likeEscape(inputKey)+":%")
 	if err != nil {
 		return nil, err
@@ -354,7 +354,7 @@ func (s *Store) liveSides(ctx context.Context, inputKey, routine string, version
 		}
 		var at string
 		// shadow-ok: the live run of the input, by its id, for the window its incident was cleared in
-		err := s.db.QueryRowContext(ctx, `SELECT e.at FROM case_events e JOIN cases c ON c.id = e.case_id JOIN run_inputs i ON i.input_key = ?
+		err := s.rdb.QueryRowContext(ctx, `SELECT e.at FROM case_events e JOIN cases c ON c.id = e.case_id JOIN run_inputs i ON i.input_key = ?
 			WHERE c.canonical_key = ? AND e.kind = ? AND e.actor = i.routine AND e.at >= i.started_at
 			AND e.at <= COALESCE((SELECT ended_at FROM runs WHERE id = i.input_key), e.at) ORDER BY e.seq LIMIT 1`, inputKey, sub, incidentCleared).Scan(&at)
 		if err == nil {
@@ -369,7 +369,7 @@ func (s *Store) liveSides(ctx context.Context, inputKey, routine string, version
 // stations is what each role of a run used (the gateway's cost), for one run id. Steps are not calls.
 func (s *Store) stations(ctx context.Context, runID string) ([]PairStation, error) {
 	// shadow-ok: the calls of one run by id, whichever kind it is
-	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(station, ''), role), COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0), COALESCE(SUM(cost_usd), 0)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT COALESCE(NULLIF(station, ''), role), COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0), COALESCE(SUM(cost_usd), 0)
 		FROM run_calls WHERE run_id = ? AND kind <> 'step' GROUP BY 1 ORDER BY 1`, runID)
 	if err != nil {
 		return nil, err
@@ -396,7 +396,7 @@ func (s *Store) stations(ctx context.Context, runID string) ([]PairStation, erro
 // kept for its hash (nil when it was over the cap).
 func (s *Store) stationTexts(ctx context.Context, runID string, sts []PairStation) error {
 	// shadow-ok: the calls of one run by id, whichever kind it is
-	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(station, ''), role), texts FROM run_calls WHERE run_id = ? AND kind <> 'step' AND texts <> '' ORDER BY id`, runID)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT COALESCE(NULLIF(station, ''), role), texts FROM run_calls WHERE run_id = ? AND kind <> 'step' AND texts <> '' ORDER BY id`, runID)
 	if err != nil {
 		return err
 	}
@@ -431,7 +431,7 @@ func (s *Store) stationTexts(ctx context.Context, runID string, sts []PairStatio
 			var body sql.NullString
 			var over bool
 			// shadow-ok: a text body is reached only through a run's calls (its hash comes from them, read by run id): the shadow rule is theirs
-			err := s.db.QueryRowContext(ctx, `SELECT text, over_cap FROM call_texts WHERE sha256 = ?`, t.SHA256).Scan(&body, &over)
+			err := s.rdb.QueryRowContext(ctx, `SELECT text, over_cap FROM call_texts WHERE sha256 = ?`, t.SHA256).Scan(&body, &over)
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}

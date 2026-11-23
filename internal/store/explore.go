@@ -110,7 +110,7 @@ func (q ExploreQuery) where(withKind bool) (string, []any) {
 func (s *Store) Explore(ctx context.Context, q ExploreQuery) ([]ExploreRow, int, []KindCount, error) {
 	where, args := q.where(true)
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM (`+exploreUnion+`)`+where, args...).Scan(&total); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT count(*) FROM (`+exploreUnion+`)`+where, args...).Scan(&total); err != nil {
 		return nil, 0, nil, err
 	}
 	col, ok := ExploreSorts[q.Sort]
@@ -125,7 +125,7 @@ func (s *Store) Explore(ctx context.Context, q ExploreQuery) ([]ExploreRow, int,
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT stream, seq, at, kind, actor, via, subject, detail, raw, case_id, run_id FROM (`+exploreUnion+`)`+where+
+	rows, err := s.rdb.QueryContext(ctx, `SELECT stream, seq, at, kind, actor, via, subject, detail, raw, case_id, run_id FROM (`+exploreUnion+`)`+where+
 		fmt.Sprintf(" ORDER BY %s %s, at %s, seq %s LIMIT ? OFFSET ?", col, dir, dir, dir), append(args, limit, q.Offset)...)
 	if err != nil {
 		return nil, 0, nil, err
@@ -144,7 +144,7 @@ func (s *Store) Explore(ctx context.Context, q ExploreQuery) ([]ExploreRow, int,
 		return nil, 0, nil, err
 	}
 	kwhere, kargs := q.where(false)
-	krows, err := s.db.QueryContext(ctx, `SELECT stream, kind, count(*) FROM (`+exploreUnion+`)`+kwhere+` GROUP BY stream, kind ORDER BY stream, count(*) DESC, kind`, kargs...)
+	krows, err := s.rdb.QueryContext(ctx, `SELECT stream, kind, count(*) FROM (`+exploreUnion+`)`+kwhere+` GROUP BY stream, kind ORDER BY stream, count(*) DESC, kind`, kargs...)
 	if err != nil {
 		return nil, 0, nil, err
 	}

@@ -74,7 +74,7 @@ type MonitorCase struct{ ID, Kind, Key, Holder string }
 
 // HandedOverBy lists the handed-over cases whose case.detected event the monitor wrote.
 func (s *Store) HandedOverBy(ctx context.Context, monitor string) ([]MonitorCase, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT c.id, c.kind, c.canonical_key, c.holder FROM cases c WHERE c.status = ?
+	rows, err := s.rdb.QueryContext(ctx, `SELECT c.id, c.kind, c.canonical_key, c.holder FROM cases c WHERE c.status = ?
 		AND EXISTS (SELECT 1 FROM case_events d WHERE d.case_id = c.id AND d.kind = 'case.detected' AND d.actor = ?)
 		ORDER BY c.id`, cases.HandedOver, monitor)
 	if err != nil {

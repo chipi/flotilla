@@ -351,14 +351,14 @@ func scanCase(sc interface{ Scan(...any) error }) (Case, error) {
 
 // Case returns one case with its keys.
 func (s *Store) Case(ctx context.Context, id string) (Case, error) {
-	c, err := scanCase(s.db.QueryRowContext(ctx, `SELECT `+caseCols+` FROM cases WHERE id = ?`, id))
+	c, err := scanCase(s.rdb.QueryRowContext(ctx, `SELECT `+caseCols+` FROM cases WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Case{}, ErrNoSuchCase
 	}
 	if err != nil {
 		return Case{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, value FROM case_keys WHERE case_id = ? ORDER BY kind, value`, id)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT kind, value FROM case_keys WHERE case_id = ? ORDER BY kind, value`, id)
 	if err != nil {
 		return Case{}, err
 	}
@@ -402,7 +402,7 @@ func (s *Store) Cases(ctx context.Context, f CaseFilter) ([]Case, error) {
 	}
 	q += ` ORDER BY status_at DESC, id LIMIT ?`
 	args = append(args, f.Limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +420,7 @@ func (s *Store) Cases(ctx context.Context, f CaseFilter) ([]Case, error) {
 
 // CaseEvents is a case's timeline, oldest first.
 func (s *Store) CaseEvents(ctx context.Context, id string) ([]CaseEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data, version
+	rows, err := s.rdb.QueryContext(ctx, `SELECT seq, case_id, at, kind, actor, by_role, from_status, to_status, detail, data, version
 		FROM case_events WHERE case_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return nil, err

@@ -13,7 +13,7 @@ import (
 func (s *Store) Run(ctx context.Context, id string) (*Run, error) {
 	var r Run
 	// shadow-ok: one run by id, whichever kind it is (a run page, a token's run)
-	err := s.db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs WHERE id = ?`, id).
+	err := s.rdb.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs WHERE id = ?`, id).
 		Scan(&r.ID, &r.Routine, &r.SpecHash, &r.Trigger, &r.Actor, &r.Autonomy, &r.StartedAt, &r.EndedAt,
 			&r.Status, &r.ExitCode, &r.SpendUSD, &r.DurationS, &r.TraceID, &r.Detail, &r.Version, &r.Shadow, &r.InputKey)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -28,7 +28,7 @@ func (s *Store) Run(ctx context.Context, id string) (*Run, error) {
 // Namespaces lists the ledger's live namespaces (a routine's: live and a candidate never share one). A shadow version's own
 // namespace ("<fleet>/<routine>@v<n>") is not one: it is read as a pair, never as a ledger of its own.
 func (s *Store) Namespaces(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT namespace FROM ledger_entries WHERE instr(namespace, '@v') = 0 GROUP BY namespace
+	rows, err := s.rdb.QueryContext(ctx, `SELECT namespace FROM ledger_entries WHERE instr(namespace, '@v') = 0 GROUP BY namespace
 		UNION SELECT namespace FROM ledger_filings WHERE instr(namespace, '@v') = 0 GROUP BY namespace ORDER BY namespace`)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (s *Store) RecentDecisions(ctx context.Context, ns string, before int64, li
 	}
 	q += ` ORDER BY e.seq DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

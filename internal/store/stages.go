@@ -89,7 +89,7 @@ func (s *Store) SetPlanThen(ctx context.Context, id, runID, actor, stage, data s
 // PlanThen is what follows the plan the run made, if it named anything.
 func (s *Store) PlanThen(ctx context.Context, id, runID string) (stage, data string, ok bool, err error) {
 	var doc string
-	err = s.db.QueryRowContext(ctx, `SELECT data FROM case_events WHERE case_id = ? AND kind = ? AND detail LIKE ? ESCAPE '\'
+	err = s.rdb.QueryRowContext(ctx, `SELECT data FROM case_events WHERE case_id = ? AND kind = ? AND detail LIKE ? ESCAPE '\'
 		ORDER BY seq DESC LIMIT 1`, id, planThenEvent, likeEscape("run "+runID+":")+"%").Scan(&doc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", false, nil
@@ -167,7 +167,7 @@ func (s *Store) AddCaseSpend(ctx context.Context, id string, usd, seconds float6
 // the store has no run-to-case link (ADR-0019).
 func (s *Store) CaseOfRun(ctx context.Context, runID string) (string, error) {
 	var id string
-	err := s.db.QueryRowContext(ctx, `SELECT case_id FROM case_events WHERE kind = 'run.started' AND detail = ? ORDER BY seq DESC LIMIT 1`, "run "+runID).Scan(&id)
+	err := s.rdb.QueryRowContext(ctx, `SELECT case_id FROM case_events WHERE kind = 'run.started' AND detail = ? ORDER BY seq DESC LIMIT 1`, "run "+runID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -178,7 +178,7 @@ func (s *Store) CaseOfRun(ctx context.Context, runID string) (string, error) {
 // for the next one ("" when it was never handed on).
 func (s *Store) StageData(ctx context.Context, id string) (string, error) {
 	var data string
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM case_events WHERE case_id = ? AND kind = 'case.staged' ORDER BY seq DESC LIMIT 1`, id).Scan(&data)
+	err := s.rdb.QueryRowContext(ctx, `SELECT data FROM case_events WHERE case_id = ? AND kind = 'case.staged' ORDER BY seq DESC LIMIT 1`, id).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -189,7 +189,7 @@ func (s *Store) StageData(ctx context.Context, id string) (string, error) {
 // together (RFC-0013 §2): the case limit holds for the bug, not for one case, so closing a case and the
 // next detection opening a new one does not start the limit over.
 func (s *Store) KeySpend(ctx context.Context, key, since string) (usd, seconds float64, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(spent_usd), 0), COALESCE(SUM(spent_s), 0) FROM cases
+	err = s.rdb.QueryRowContext(ctx, `SELECT COALESCE(SUM(spent_usd), 0), COALESCE(SUM(spent_s), 0) FROM cases
 		WHERE canonical_key = ? AND opened_at >= ?`, key, since).Scan(&usd, &seconds)
 	return usd, seconds, err
 }

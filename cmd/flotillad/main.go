@@ -894,6 +894,8 @@ func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, 
 			watchHosts(ctx, st, hostWatch, s.Clock(), log)
 		}
 		push.Up()
+		ps := st.Pools()
+		push.StorePools(ps.ReadWaits, ps.WriteWaits, ps.ReadWaitSec, ps.WriteWaitSec)
 		pushRoutineMetrics(ctx, push, s, st)
 		pushCaseMetrics(ctx, push, st, log)
 		if err := casetimer.Run(ctx, st, s.Clock(), timers, log, s.CaseHold); err != nil {

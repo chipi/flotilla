@@ -49,7 +49,7 @@ func (s *Store) SlackAskByNonce(ctx context.Context, nonce string) (SlackAsk, er
 
 func (s *Store) slackAsk(ctx context.Context, q string, args ...any) (SlackAsk, error) {
 	var a SlackAsk
-	err := s.db.QueryRowContext(ctx, q, args...).Scan(&a.Nonce, &a.CaseID, &a.PlanHash, &a.AskedAt, &a.SentAt, &a.DecidedAt, &a.DecidedBy, &a.Outcome)
+	err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&a.Nonce, &a.CaseID, &a.PlanHash, &a.AskedAt, &a.SentAt, &a.DecidedAt, &a.DecidedBy, &a.Outcome)
 	return a, err
 }
 
@@ -75,13 +75,13 @@ func (s *Store) UseAsk(ctx context.Context, nonce, by, outcome string) error {
 // SlackApprovalsSince counts the plans approved from Slack since a time, for the daily cap.
 func (s *Store) SlackApprovalsSince(ctx context.Context, since string) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM slack_asks WHERE outcome = 'approved' AND decided_at >= ?`, since).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM slack_asks WHERE outcome = 'approved' AND decided_at >= ?`, since).Scan(&n)
 	return n, err
 }
 
 // UnsentAsks are asks the connector has not posted yet, oldest first.
 func (s *Store) UnsentAsks(ctx context.Context) ([]SlackAsk, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT nonce, case_id, plan_hash, asked_at, sent_at, decided_at, decided_by, outcome FROM slack_asks
+	rows, err := s.rdb.QueryContext(ctx, `SELECT nonce, case_id, plan_hash, asked_at, sent_at, decided_at, decided_by, outcome FROM slack_asks
 		WHERE sent_at = '' AND decided_at = '' ORDER BY asked_at`)
 	if err != nil {
 		return nil, err

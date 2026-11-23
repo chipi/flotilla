@@ -36,6 +36,14 @@ func TestPushFormat(t *testing.T) {
 	if !strings.Contains(bodies[2], `flotilla_store_error{environment="operations",op="case_spend",service="flotillad"} 1`) {
 		t.Fatalf("store error sample: %s", bodies[2])
 	}
+	p.StorePools(3, 7, 0.25, 1.5)
+	for _, want := range []string{`flotilla_store_wait_seconds_total{environment="operations",pool="read",service="flotillad"} 0.25`,
+		`flotilla_store_wait_seconds_total{environment="operations",pool="write",service="flotillad"} 1.5`,
+		`flotilla_store_waits_total{environment="operations",pool="write",service="flotillad"} 7`} {
+		if !strings.Contains(bodies[3], want) {
+			t.Fatalf("pool sample lacks %s: %s", want, bodies[3])
+		}
+	}
 }
 
 // An open-cases series that empties is pushed at 0, not dropped; the moves are pushed as read.

@@ -39,7 +39,7 @@ func activeAdmins(ctx context.Context, tx *sql.Tx) (int, error) {
 // ActiveAdmins counts the admins who are not revoked.
 func (s *Store) ActiveAdmins(ctx context.Context) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = ? AND revoked_at IS NULL`, UserAdmin).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = ? AND revoked_at IS NULL`, UserAdmin).Scan(&n)
 	return n, err
 }
 
@@ -194,7 +194,7 @@ func (s *Store) RotateToken(ctx context.Context, name, tokenSHA256, actor, via s
 // UserByToken returns the active user whose token hash this is, or nil.
 func (s *Store) UserByToken(ctx context.Context, tokenSHA256 string) (*User, error) {
 	var u User
-	err := s.db.QueryRowContext(ctx, `SELECT name, role, created_at FROM users WHERE token_sha256 = ? AND revoked_at IS NULL`,
+	err := s.rdb.QueryRowContext(ctx, `SELECT name, role, created_at FROM users WHERE token_sha256 = ? AND revoked_at IS NULL`,
 		tokenSHA256).Scan(&u.Name, &u.Role, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -207,7 +207,7 @@ func (s *Store) UserByToken(ctx context.Context, tokenSHA256 string) (*User, err
 
 // Users lists every user, revoked ones too, by name.
 func (s *Store) Users(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT name, role, created_at, revoked_at FROM users ORDER BY name`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT name, role, created_at, revoked_at FROM users ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}

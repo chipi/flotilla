@@ -49,7 +49,7 @@ func (s *Store) StartSession(ctx context.Context, idSHA256, user, csrf string) e
 func (s *Store) SessionByID(ctx context.Context, idSHA256 string) (*Session, error) {
 	var x Session
 	var created, seen string
-	err := s.db.QueryRowContext(ctx, `SELECT s.user_name, u.role, s.csrf, s.created_at, s.last_seen
+	err := s.rdb.QueryRowContext(ctx, `SELECT s.user_name, u.role, s.csrf, s.created_at, s.last_seen
 		FROM sessions s JOIN users u ON u.name = s.user_name
 		WHERE s.id_sha256 = ? AND u.revoked_at IS NULL`, idSHA256).Scan(&x.User, &x.Role, &x.CSRF, &created, &seen)
 	if errors.Is(err, sql.ErrNoRows) {

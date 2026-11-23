@@ -63,7 +63,7 @@ func (s *Store) SetVerdict(ctx context.Context, caseID, user, verdict string) er
 
 // CaseFeedback is everyone's verdict on a case.
 func (s *Store) CaseFeedback(ctx context.Context, caseID string) ([]Feedback, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT case_id, user_name, verdict, at FROM case_feedback WHERE case_id = ? ORDER BY at`, caseID)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT case_id, user_name, verdict, at FROM case_feedback WHERE case_id = ? ORDER BY at`, caseID)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (s *Store) CaseFeedback(ctx context.Context, caseID string) ([]Feedback, er
 
 // VerdictsByAction counts the verdicts on the cases each action planned (an action's record, G8).
 func (s *Store) VerdictsByAction(ctx context.Context) (map[string][2]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.action, f.verdict, COUNT(*) FROM case_feedback f
+	rows, err := s.rdb.QueryContext(ctx, `SELECT p.action, f.verdict, COUNT(*) FROM case_feedback f
 		JOIN (SELECT DISTINCT case_id, action FROM plans) p ON p.case_id = f.case_id GROUP BY p.action, f.verdict`)
 	if err != nil {
 		return nil, err
@@ -147,9 +147,9 @@ func (s *Store) Notes(ctx context.Context, status string) ([]Note, error) {
 	var rows *sql.Rows
 	var err error
 	if status != "" {
-		rows, err = s.db.QueryContext(ctx, q+` WHERE status = ? ORDER BY id DESC`, status)
+		rows, err = s.rdb.QueryContext(ctx, q+` WHERE status = ? ORDER BY id DESC`, status)
 	} else {
-		rows, err = s.db.QueryContext(ctx, q+` ORDER BY id DESC`)
+		rows, err = s.rdb.QueryContext(ctx, q+` ORDER BY id DESC`)
 	}
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func (s *Store) Notes(ctx context.Context, status string) ([]Note, error) {
 // operator's move off awaiting_approval (to executing: approved; to escalated: rejected), and it belongs to the case's latest plan
 // decided before it, so a case that proposed two actions in turn (a meeting's tasks, then its decisions) counts each answer once.
 func (s *Store) AnswersByAction(ctx context.Context) (map[string][2]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT (SELECT p.action FROM plans p WHERE p.case_id = e.case_id AND p.decided_at <= e.at ORDER BY p.id DESC LIMIT 1),
+	rows, err := s.rdb.QueryContext(ctx, `SELECT (SELECT p.action FROM plans p WHERE p.case_id = e.case_id AND p.decided_at <= e.at ORDER BY p.id DESC LIMIT 1),
 			e.to_status, COUNT(*)
 		FROM case_events e
 		WHERE e.from_status = ? AND e.by_role = ? AND e.to_status IN (?, ?)
