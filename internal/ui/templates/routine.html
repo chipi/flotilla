@@ -29,12 +29,9 @@
     </div>{{end}}
   </section>
 
-  <section class="scores scores--wide" aria-label="Today">{{range .Cards}}{{template "score" .}}{{end}}</section>
+  <section aria-label="Today">{{template "scoreline" .Cards}}</section>
 
-  {{with .Inst}}<section class="card inst" aria-labelledby="inst-h">
-    <div class="inst__head"><h2 id="inst-h">Instruments</h2><span class="meta">grey is normal · amber: outside its usual range or past 70% of a limit · red: a limit crossed</span></div>
-    {{template "instruments" .}}
-  </section>{{end}}
+  {{with .Inst}}{{template "instcard" (instcard . "grey is normal · amber: outside its usual range or past 70% of a limit · red: a limit crossed")}}{{end}}
 
   <section class="board rboard" aria-label="The routine, drawn from its spec">
     <div class="board__head"><strong>{{.ID}} · drawn from its spec</strong><span>counts: {{.Counted}} · open a block for what it does</span></div>
