@@ -569,6 +569,9 @@ def _run_job(req, env, cancel, shadow=False):
     workdir = resolve(CODE_ROOT, req.get("workdir"))
     spend_path = resolve(env.get("HOME", "/"), req["spend_file"]) if req.get("spend_file") else ""
     plan_path = resolve(env.get("HOME", "/"), req["plan_file"]) if req.get("plan_file") else ""
+    if plan_path and not os.access(os.path.dirname(plan_path), os.W_OK):
+        # a read-only HOME (the triage worker's): the plan goes where the calls do (calls_path), or the run cannot report
+        plan_path = os.path.join(env.get("TMPDIR") or tempfile.gettempdir(), os.path.basename(plan_path))
     if plan_path:  # a plan left by an earlier run must never be read as this run's
         try:
             os.remove(plan_path)

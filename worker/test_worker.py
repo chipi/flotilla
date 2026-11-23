@@ -230,6 +230,17 @@ class TestRunJob(unittest.TestCase):
                 self.assertNotIn("plan", res)
                 self.assertIn(want, res.get("plan_error", ""))
 
+    def test_a_read_only_home_gets_its_plan_in_the_temp_directory(self):
+        # 2026-11-23: meetings/notes on the triage worker, whose HOME is read-only, failed with "[Errno 30] Read-only file system"
+        # writing its plan; the calls file had the same fault until 2026-11-14 (calls_path)
+        os.chmod(self.home, 0o555)
+        try:
+            res = self.planned('echo \'{"outcome": "plan", "action": "a.b"}\' > "$FLOTILLA_PLAN_FILE"')
+        finally:
+            os.chmod(self.home, 0o755)
+        self.assertEqual(res.get("plan"), {"outcome": "plan", "action": "a.b"}, res.get("plan_error") or res.get("detail"))
+        self.assertFalse(os.path.exists(os.path.join(tempfile.gettempdir(), "plan.json")), "consumed once")
+
     def test_plan_file_cannot_leave_home(self):
         with self.assertRaises(ValueError):
             self.planned("true", plan_file="../../etc/x")
