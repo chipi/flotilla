@@ -137,6 +137,11 @@ if [ -d "$FLOTILLA_CONFIG/hooks" ]; then
     put $V-flotillad-secrets "hook-$(basename "$f")" 65532 "$f"
   done
 fi
+# optional: the people file (RFC-0014 §4.6; flotillad.yaml directory: {source: file, path: /run/flotilla/people.yaml}):
+# who each person is, by email, with their id in each tool; never in git
+if [ -f "$FLOTILLA_CONFIG/people.yaml" ]; then
+  put $V-flotillad-secrets people.yaml 65532 "$FLOTILLA_CONFIG/people.yaml"
+fi
 # optional: the host agents' intermediate CA (flotillad.yaml hosts.ca_dir: /run/flotilla), from
 # `flotilla ca intermediate ROOTDIR $FLOTILLA_CONFIG/host-ca`; the root's key is never among them
 if [ -s "$FLOTILLA_CONFIG/host-ca/intermediate.key" ]; then

@@ -80,6 +80,8 @@ type Config struct {
 	Slack *api.SlackConfig `yaml:"slack"`
 	// RFC-0014 §4.2: signed inbound webhooks, each opening one case of its declared kind; empty = none
 	Hooks []*hook.Hook `yaml:"hooks"`
+	// RFC-0014 §4.6: who people are, read from a source on a schedule into the store's copy; empty = no directory, everyone unknown
+	Directory *DirectoryConfig `yaml:"directory"`
 	// a file holding the GlitchTip DSN (or SENTRY_DSN=...); empty = errors stay in the logs only
 	ErrorsDSNFile string `yaml:"errors_dsn_file"`
 	// Optional: a DSN file for the errors of shadow runs, a GlitchTip project of their own (its slug ends in -shadow, which the
@@ -376,6 +378,16 @@ func loadConfig(path string) (*Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("routine_actions.max_autonomy %q: propose (the default) or auto", c.RoutineActions.MaxAutonomy))
 	}
+	if d := c.Directory; d != nil {
+		if d.Source != "file" || d.Path == "" {
+			errs = append(errs, fmt.Errorf("directory: source file (the only kind yet, RFC-0014 §4.6) and a path, got %q %q", d.Source, d.Path))
+		}
+		if d.Every == 0 {
+			d.Every = time.Hour
+		} else if d.Every < time.Minute {
+			errs = append(errs, fmt.Errorf("directory.every %s: at least 1m", d.Every))
+		}
+	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
 	}
@@ -586,6 +598,14 @@ func main() {
 		for _, line := range shadowCheckLines(cfg, routines) {
 			fmt.Println(line)
 		}
+		dirLines, err := directoryCheckLines(cfg)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "directory:", err)
+			os.Exit(1)
+		}
+		for _, line := range dirLines {
+			fmt.Println(line)
+		}
 		fmt.Printf("CHECK PASS: %d routines, %d callers, %d workers, %d model aliases, %d actions\n", len(routines), len(callers), len(clients), n, len(reg.Actions()))
 		return
 	}
@@ -697,6 +717,9 @@ func main() {
 		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy, Examples: examples, Hooks: hooksByName(cfg.Hooks)}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
+	if cfg.Directory != nil {
+		go runDirectory(ctx, cfg.Directory, st, log)
+	}
 	disp := &dispatch.Dispatcher{API: apiSrv, Log: log}
 	s.AfterRun = disp.Detected
 	srv := &http.Server{Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second, Handler: apiSrv.Handler()}

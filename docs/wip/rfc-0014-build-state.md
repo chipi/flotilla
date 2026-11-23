@@ -41,11 +41,21 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
 
 ## Next, in §8's order
 
-1. **Step 3, case 3's live run on the installation** (operator's tools, 2026-11-22: the notes from a
-   Google Drive folder, the follow-ups into Google Tasks, the decisions appended to one Google Doc):
-   the deploy, the installation's config (the `meeting` hook, `meetings-notes`, the plumbing worker),
-   the n8n flows (the homelab session's), the Google credential (the operator's), then §7's live run.
-2. Step 4, the directory reader (`file` source first, the people file in host config).
+1. ~~**Step 3, case 3's live run on the installation**~~: done 2026-11-23. The operator promoted
+   `plumbing.create_tasks` and `plumbing.post_decisions` to propose and edited the test Doc;
+   `case-20261123-083d19eb2f` opened at 12:36:28Z, both plans were approved, n8n created 3 tasks and
+   appended the decisions once (read back from Google by n8n's status calls), and the case closed
+   verified at 12:39:24Z.
+2. **Step 4, the directory reader**: built, not deployed. `internal/directory` (the `file` source:
+   mode 600, known fields only, an id names one person), `store.SyncPeople` and `PersonBy` (the
+   `people` and `person_ids` tables; each change a `person.added`, `person.changed` or
+   `person.removed` event, actor `directory:file`), flotillad's `directory:` section (sync at start
+   and every `every`, default 1h; an unreadable file keeps the copy), `-check`'s count and its
+   warning on a pinned Slack user not in the file, and `secrets.sh` copying `config/people.yaml`.
+   The installation's people file is on the host (the operator alone: email, name, `github`,
+   `flotilla`). At the deploy: add `directory: {source: file, path: /run/flotilla/people.yaml}` to
+   flotillad.yaml after the new image, since the running flotillad refuses an unknown field.
+   Nothing reads a person yet: the asker of a `question` case (case 1) is the first lookup.
 3. Step 5, live reads (read-only MCP tools), then case 1, case 2, the visual plane, the wall screen.
 
 ## Open in the code

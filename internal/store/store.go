@@ -514,6 +514,20 @@ var schema = []string{
 		FROM case_events e WHERE e.case_id = cases.id AND e.kind = 'case.detected' ORDER BY e.seq LIMIT 1), '');
 	UPDATE cases SET fleet = project WHERE fleet = '';
 	CREATE INDEX events_kind_at ON events(kind, at);`, // the hooks' activity (hooks.go HookActivity) reads events by kind and time
+	// RFC-0014 §4.6: the directory's copy, so a directory outage never stops a case. A person is keyed by email; person_ids maps
+	// each tool's id (a Slack user, a code-host login) to that email, one person per id. Who someone is, never what they may do.
+	`CREATE TABLE people (
+		email TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		ids TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE person_ids (
+		tool TEXT NOT NULL,
+		id TEXT NOT NULL,
+		email TEXT NOT NULL REFERENCES people(email) ON DELETE CASCADE,
+		PRIMARY KEY (tool, id)
+	);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

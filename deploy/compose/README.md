@@ -19,6 +19,7 @@ installation lives on the host, outside git. Placeholders below are in `<angle b
     worker-triage.env       the installation's overrides for routines (ROUTINE_*); no secrets
     smokescreen.yaml        the proxy: listen address, which private ranges it may reach
     egress-acl.yaml         the proxy: which host names routines may reach
+    people.yaml             optional, 600: who each person is (RFC-0014 §4.6), copied by secrets.sh on each deploy
   deployed.tsv              written by deploy/server/deploy.sh
   backups/                  the store's snapshots, one folder per deploy or rollback (see "Roll back")
 ```
@@ -193,6 +194,27 @@ of flotilla's on the plumbing network besides flotillad. Every callback answers 
 with `{"done": true|false, "ref": ...}`, found from the delivery id (`plan-<hash16>`) it wrote into
 what it made. A host that mounts its own fleets over the image's has none of this until its fleets
 name the worker.
+
+## People: the directory (RFC-0014 §4.6)
+
+Who a chat user, a code-host login or a tracker account is, the same person everywhere. An
+installation with no company directory keeps a people file, `config/people.yaml`, mode 600 and never
+in git:
+
+```yaml
+people:
+  - email: <email>
+    name: <full name>
+    ids: {slack: <U…>, github: <login>}   # a tool is a short lowercase word; an id names one person
+```
+
+In `flotillad.yaml`: `directory: {source: file, path: /run/flotilla/people.yaml}` (`every:`, default
+1h). `deploy/server/secrets.sh` copies the file into flotillad's secret volume on each deploy; flotillad
+reads it at start and on its schedule, and each person added, changed or removed is an event in the
+ledger (`person.added`, `person.changed`, `person.removed`, actor `directory:file`). A file it cannot
+read keeps the copy as it was. `flotillad -check` counts the people and warns on a pinned Slack user
+the file does not name. The directory says who someone is, never what they may do: roles and
+ADR-0005's pinned users decide that.
 
 ## The deploy stand-down (RFC-0004 §5.1)
 
