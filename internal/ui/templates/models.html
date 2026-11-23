@@ -8,14 +8,17 @@
       <h1>Models and spend</h1>
       <p class="sub">Every model alias flotilla's routines use, where it runs, how its last call went, and what it costs.</p>
     </div>
+  </section>
+
+  {{if .Down}}<p class="band band--stop" role="status"><span class="lamp lamp--stop" aria-hidden="true"></span><strong>{{if eq (len .Down) 1}}1 model alias is down:{{else}}{{len .Down}} model aliases are down:{{end}}</strong> <span class="exact">{{range $i, $n := .Down}}{{if $i}}, {{end}}<a href="?tab=inv&amp;period={{$.Data.Period}}&amp;alias={{$n}}">{{$n}}</a>{{end}}</span>. Its last contract check (or, without one, its last call) failed; routines on it fail until it answers.</p>{{end}}
+
+  <section class="filters" aria-label="Period">
     <nav class="pills" aria-label="Period">
       {{range .Periods}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
     </nav>
   </section>
 
-  <section class="scores" aria-label="Totals">
-    {{range .Cards}}{{template "score" .}}{{end}}
-  </section>
+  <section aria-label="Totals">{{template "scoreline" .Cards}}</section>
 
   <nav class="utabs" aria-label="Views">
     {{range .Tabs}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}

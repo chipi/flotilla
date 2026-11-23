@@ -22,14 +22,13 @@
       <tbody>
         {{range .Rows}}<tr>
           <td data-label="Host"><a href="/hosts/{{.Name}}"><strong>{{.Name}}</strong></a></td>
-          <td data-label="Status" class="nowrap"><span class="actions"><span class="{{.Lamp}}" aria-hidden="true"></span>{{.Status}}</span></td>
-          <td data-label="Roles" class="soft">–</td>
+          <td data-label="Status"><span class="lampline lampline--wrap"><span class="{{.Lamp}}" aria-hidden="true"></span><span>{{.Status}}</span></span></td>
           <td data-label="Host autonomy cap" class="exact">{{.Cap}}</td>
-          <td data-label="CPU · mem · disk" class="exact soft">{{.Load.CPU}} · {{.Load.Mem}} · {{.Load.Disk}}</td>
+          {{if $.Data.HasLoad}}<td data-label="CPU · mem · disk" class="exact soft">{{.Load.CPU}} · {{.Load.Mem}} · {{.Load.Disk}}</td>{{end}}
           <td data-label="Executions 24h">{{.Exec24}}</td>
           <td data-label="Host agent" class="exact">{{.Agent}}</td>
           <td data-label="Certificate" class="soft">{{.Cert}}</td>
-        </tr>{{else}}<tr><td colspan="8" class="empty">{{if eq $.Data.All 0}}No host is enrolled yet, so no execution can run anywhere. An admin mints an enrolment with <code>flotilla host enrol NAME</code> and installs flotilla-host on that machine.{{else}}No host matches these filters.{{end}}</td></tr>{{end}}
+        </tr>{{else}}<tr><td colspan="{{len $.Data.Heads}}" class="empty">{{if eq $.Data.All 0}}No host is enrolled yet, so no execution can run anywhere. An admin mints an enrolment with <code>flotilla host enrol NAME</code> and installs flotilla-host on that machine.{{else}}No host matches these filters.{{end}}</td></tr>{{end}}
       </tbody>
     </table>
   </div>

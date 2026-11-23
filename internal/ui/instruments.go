@@ -232,3 +232,19 @@ func instSay(rows []instRow, focus *dayStat, in instInput, cpdDays int) (string,
 	}
 	return "All within limits.", strings.Join(rest, " ")
 }
+
+// Worry is whether a row is off its usual or past a limit: the card opens itself only then, and is one line otherwise.
+func (in instruments) Worry() bool {
+	for _, r := range in.Rows {
+		if r.Level != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// instCard is the Instruments card's data: the rows and what their colours mean on this page.
+type instCard struct {
+	I   instruments
+	Key string
+}

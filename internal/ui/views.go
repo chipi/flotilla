@@ -257,6 +257,9 @@ func eventWhat(e store.CaseEvent) string {
 // eventShort is a case's newest event for a table cell: "policy: waiting for you".
 func eventShort(e store.CaseEvent) string {
 	if e.Kind == "case.staged" {
+		if e.Actor == "" {
+			return "handed on to " + e.To
+		}
 		return e.Actor + ": handed on to " + e.To
 	}
 	if e.To != "" {

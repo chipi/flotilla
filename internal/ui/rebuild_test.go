@@ -385,9 +385,12 @@ func TestContractChecksOnModels(t *testing.T) {
 	if strings.Count(page, "json_object, tools · pass") != 2 {
 		t.Error("the selected alias does not list both of its check runs")
 	}
-	if !strings.Contains(page, `<span class="score__label">Models down</span>
-  <div class="score__value"><strong>1</strong><span>of 2 with calls</span>`) {
+	if !strings.Contains(page, `<dt>Models down</dt>
+  <dd><strong>1</strong> <span class="scoreline__unit">of 2 with calls</span>`) {
 		t.Error("Models down does not count the alias whose last check failed")
+	}
+	if !strings.Contains(page, `class="band band--stop" role="status"`) || !strings.Contains(page, "1 model alias is down:") {
+		t.Error("the alias that is down is not named in the band above the numbers")
 	}
 }
 

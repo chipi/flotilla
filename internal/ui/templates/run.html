@@ -13,10 +13,7 @@
 
   {{with .Flow}}
   <p class="say"><b>In short:</b> {{.Say}}</p>
-  <section class="card inst" aria-labelledby="inst-h">
-    <div class="inst__head"><h2 id="inst-h">Instruments</h2><span class="meta">grey is normal · amber: off its usual · red: a limit crossed</span></div>
-    {{template "instruments" .Inst}}
-  </section>
+  {{template "instcard" (instcard .Inst "grey is normal · amber: off its usual · red: a limit crossed")}}
   <section class="card" aria-labelledby="flow-h">
     <h2 id="flow-h">The flow, role by role</h2>
     <div class="swim-box">{{template "swim" .Swim}}</div>
@@ -66,25 +63,6 @@
     {{if .More}}<p class="ttab-more"><a href="{{.AllHref}}">show all turns</a></p>{{end}}
   </section>{{end}}
   {{end}}
-  {{with .Trace}}{{if .Spans}}
-  <div class="split split--tight">
-    <section class="main trace" aria-label="Spans">
-      <div class="trace__head"><span>Span</span><span class="trace__ticks">{{range .Ticks}}<span>{{.}}</span>{{end}}</span><span>took</span></div>
-      {{range .Spans}}<a class="trace__row{{if .On}} is-on{{end}}" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">
-        <span class="trace__name depth-{{.Depth}}"><span class="swatch kind--{{.Kind}}" aria-hidden="true"></span>{{.Name}}{{if .Call}}<span class="trace__call{{if .CallBad}} trace__call--bad{{end}}">{{.Call}}</span>{{end}}</span>
-        <svg class="trace__bar" viewBox="0 0 1000 14" preserveAspectRatio="none" aria-hidden="true"><rect x="{{printf "%.1f" .X}}" y="2" width="{{printf "%.1f" .W}}" height="10" rx="2" class="kind--{{.Kind}}"></rect></svg>
-        <span class="trace__took">{{.Took}}</span>
-      </a>{{end}}
-    </section>
-    {{with .Sel}}<aside class="card selaside" aria-label="Span details">
-      <h2>{{.Name}}</h2>
-      <p>{{.Service}} · starts at {{.StartText}} · {{.Took}}</p>
-      <dl class="facts facts--plain">{{range .Attrs}}<div><dt class="exact">{{index . 0}}</dt><dd>{{short (index . 1) 200}}</dd></div>{{end}}</dl>
-    </aside>{{end}}
-  </div>
-  <p class="footnote">{{len .Spans}} spans in {{.Total}} from {{range $i, $s := .Services}}{{if $i}}, {{end}}{{$s}}{{end}}. A routine that sends no spans of its own shows only flotillad's run span.{{if $.Data.CallsInSpans}} Each model call is on its span: alias, the check it served, tokens, cost.{{end}}</p>
-  {{template "whoacts" "page"}}
-  {{else}}<p class="gap"><strong>No spans.</strong> {{.Err}}</p>{{end}}{{end}}
 
   {{if .Decisions}}
   <section class="card" aria-labelledby="dec-h">
@@ -101,7 +79,13 @@
   {{end}}
 
   <div class="split split--tight">
-    {{if or (not .CallsInSpans) .Flow}}{{$calls := $r.Calls}}{{with .Flow}}{{$calls = .Calls}}{{end}}<section class="main card{{if .Flow}} card--wide{{end}}" aria-labelledby="calls-h">
+    <section class="main card" aria-labelledby="rep-h">
+      <h2 id="rep-h">What it reported</h2>
+      {{if .Detail}}<pre class="log">{{.Detail}}</pre>{{else}}<p class="panel-note">The run reported nothing.</p>{{end}}
+      <h2>What it printed</h2>
+      {{if .Printed}}<pre class="log">{{.Printed}}</pre>{{else if .PrintedErr}}<p class="gap"><strong>No lines from VictoriaLogs:</strong> {{.PrintedErr}}.</p>{{else}}<p class="panel-note">VictoriaLogs has no line for this run (it keeps logs for a limited time).</p>{{end}}
+    </section>
+    {{if or (not .CallsInSpans) .Flow}}{{$calls := $r.Calls}}{{with .Flow}}{{$calls = .Calls}}{{end}}<section class="main card card--wide" aria-labelledby="calls-h">
       <h2 id="calls-h">Model calls</h2>
       {{with .Flow}}<div class="pills" role="navigation" aria-label="Filter by role">{{range .Roles}}<a class="pill" href="{{.Href}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>{{end}}
       {{if $r.Calls}}<div class="table-box">
@@ -129,12 +113,6 @@
       {{if .Untrusted}}<p class="panel-note">{{plural .Untrusted "untrusted item" "untrusted items"}} entered this run: outside data, read as data and never as instructions.</p>{{else}}<p class="ok-note">Nothing untrusted entered this run.</p>{{end}}
       {{else}}<p class="panel-note">This run recorded nothing it read into a model (a code-only routine, or a run from before 2026-11-15).</p>{{end}}
     </section>
-    <section class="main card" aria-labelledby="rep-h">
-      <h2 id="rep-h">What it printed</h2>
-      {{if .Printed}}<pre class="log">{{.Printed}}</pre>{{else if .PrintedErr}}<p class="gap"><strong>No lines from VictoriaLogs:</strong> {{.PrintedErr}}.</p>{{else}}<p class="panel-note">VictoriaLogs has no line for this run (it keeps logs for a limited time).</p>{{end}}
-      <h2>What it reported</h2>
-      {{if .Detail}}<pre class="log">{{.Detail}}</pre>{{else}}<p class="panel-note">The run reported nothing.</p>{{end}}
-    </section>
     <aside class="aside aside--narrow">
       <section class="card" aria-labelledby="facts-h">
         <h2 id="facts-h">The run</h2>
@@ -152,6 +130,25 @@
       </section>
     </aside>
   </div>
+  {{with .Trace}}{{if .Spans}}
+  <div class="split split--tight">
+    <section class="main trace" aria-label="Spans">
+      <div class="trace__head"><span>Span</span><span class="trace__ticks">{{range .Ticks}}<span>{{.}}</span>{{end}}</span><span>took</span></div>
+      {{range .Spans}}<a class="trace__row{{if .On}} is-on{{end}}" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">
+        <span class="trace__name depth-{{.Depth}}"><span class="swatch kind--{{.Kind}}" aria-hidden="true"></span>{{.Name}}{{if .Call}}<span class="trace__call{{if .CallBad}} trace__call--bad{{end}}">{{.Call}}</span>{{end}}</span>
+        <svg class="trace__bar" viewBox="0 0 1000 14" preserveAspectRatio="none" aria-hidden="true"><rect x="{{printf "%.1f" .X}}" y="2" width="{{printf "%.1f" .W}}" height="10" rx="2" class="kind--{{.Kind}}"></rect></svg>
+        <span class="trace__took">{{.Took}}</span>
+      </a>{{end}}
+    </section>
+    {{with .Sel}}<aside class="card selaside" aria-label="Span details">
+      <h2>{{.Name}}</h2>
+      <p>{{.Service}} · starts at {{.StartText}} · {{.Took}}</p>
+      <dl class="facts facts--plain">{{range .Attrs}}<div><dt class="exact">{{index . 0}}</dt><dd>{{short (index . 1) 200}}</dd></div>{{end}}</dl>
+    </aside>{{end}}
+  </div>
+  <p class="footnote">{{len .Spans}} spans in {{.Total}} from {{range $i, $s := .Services}}{{if $i}}, {{end}}{{$s}}{{end}}. A routine that sends no spans of its own shows only flotillad's run span.{{if $.Data.CallsInSpans}} Each model call is on its span: alias, the check it served, tokens, cost.{{end}}</p>
+  {{template "whoacts" "page"}}
+  {{else}}<p class="gap"><strong>No spans.</strong> {{.Err}}</p>{{end}}{{end}}
   {{end}}
 </main>
 {{template "foot" .}}

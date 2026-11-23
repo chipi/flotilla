@@ -62,3 +62,9 @@
   </div>{{end}}
   <p class="meta">The last {{.Runs}} runs that made an agent call. Steps: blue an agent, red a refusal, green an approval, amber changes asked for.</p>
 </section>{{end}}
+
+{{define "instcard"}}<details class="card inst inst--fold" aria-labelledby="inst-h"{{if .I.Worry}} open{{end}}>
+  <summary class="inst__head"><h2 id="inst-h">Instruments</h2><span class="inst__lead">{{.I.Lead}}</span></summary>
+  <p class="meta">{{.Key}}</p>
+  {{template "instruments" .I}}
+</details>{{end}}

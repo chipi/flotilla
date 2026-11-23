@@ -10,9 +10,7 @@
     <a href="/history?type=case+closed&amp;period=all">All past cases in History</a>
   </section>
 
-  <section class="scores" aria-label="Case volume">
-    {{range .Cards}}{{template "score" .}}{{end}}
-  </section>
+  <section aria-label="Case volume">{{template "scoreline" .Cards}}</section>
 
   <section class="filters" aria-label="Filters">
     <nav class="pills" aria-label="Status">

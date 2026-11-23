@@ -7,12 +7,12 @@
       <h1>Runs</h1>
       <p class="sub">Every routine execution. Click a run for what it reported, a routine for its block on its fleet's workflow, a case for its story.</p>
     </div>
-    <nav class="pills" aria-label="Filter">
-      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
-    </nav>
   </section>
 
   <section class="filters" aria-label="Filters">
+    <nav class="pills" aria-label="Filter">
+      {{range .Tabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    </nav>
     <form class="select" method="get" action="/runs">
       {{range $t.Hidden "routine"}}<input type="hidden" name="{{.K}}" value="{{.V}}">{{end}}
       <label for="routine-f">Routine</label>

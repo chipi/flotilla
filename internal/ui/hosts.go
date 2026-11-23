@@ -94,11 +94,12 @@ func (u *Server) hostRows(r *http.Request) ([]hostRow, error) {
 }
 
 type hostsData struct {
-	T     tableQ
-	Tabs  []pillLink
-	Heads []thCell
-	Rows  []hostRow
-	All   int
+	HasLoad bool // a host reports its load: without one the column is all dashes, so it is left out
+	T       tableQ
+	Tabs    []pillLink
+	Heads   []thCell
+	Rows    []hostRow
+	All     int
 	// RoutineCeiling is shown in the footnote: a host's cap does not apply to routine actions, which have their own.
 	RoutineCeiling string
 }
@@ -150,8 +151,15 @@ func (u *Server) hostsPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 	})
 	d.Rows = window(out, &t)
 	d.T = t
-	d.Heads = []thCell{t.Th("host", "Host"), t.Th("status", "Status"), t.Plain("Roles"), t.Plain("Host autonomy cap"), t.Plain("CPU · mem · disk"),
-		t.Th("exec", "Executions 24h"), t.Th("agent", "Host agent"), t.Th("cert", "Certificate")}
+	for _, h := range rows {
+		d.HasLoad = d.HasLoad || h.Load.OK
+	}
+	d.Heads = []thCell{t.Th("host", "Host"), t.Th("status", "Status"), t.Plain("Host autonomy cap")}
+	if d.HasLoad {
+		d.Heads = append(d.Heads, t.Plain("CPU · mem · disk"))
+	}
+	d.Heads = append(d.Heads,
+		t.Th("exec", "Executions 24h"), t.Th("agent", "Host agent"), t.Th("cert", "Certificate"))
 	u.render(w, "hosts.html", 200, u.pageFor(s, "Hosts", "Hosts", r, d))
 }
 

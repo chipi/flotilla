@@ -309,6 +309,16 @@ table.data td.empty { padding: 24px var(--space-lg); color: var(--slate); }
 .score__delta { font-size: 12px; font-weight: 600; color: var(--muted); }
 .score__delta--good { color: var(--ok-mid); }
 .score__delta--bad { color: var(--stop-red); }
+.band { display: block; margin: 0 0 var(--space-md); padding: var(--space-sm) var(--space-md); border-radius: var(--rounded-card); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.band--stop { background: var(--stop-band); border: 1px solid var(--stop-wash); color: var(--stop-ink); }
+.band--stop a { color: var(--stop-ink); }
+.band .lamp { margin-right: var(--space-xs); vertical-align: middle; }
+.scoreline { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); margin: 0 0 var(--space-md); padding: var(--space-sm) 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.scoreline__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.scoreline dt { font-size: 12px; color: var(--muted); }
+.scoreline dd { margin: 0; font-size: 13px; color: var(--slate); }
+.scoreline dd strong { font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.scoreline__unit, .scoreline__delta { font-size: 12px; color: var(--muted); }
 
 /* navigation: night chrome, four groups, the pages of the active group */
 .nav { background: var(--ink); color: var(--paper); }
@@ -690,6 +700,7 @@ ul.changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 .engine strong { flex: 0 0 56px; text-align: right; }
 .swatch { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border-radius: 2px; background: var(--slate); }
 .lampline { display: inline-flex; align-items: center; gap: var(--space-xs); white-space: nowrap; }
+.lampline--wrap { white-space: normal; align-items: baseline; }
 
 /* the run's trace (mockup v3's Trace page) */
 .trace { background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--rounded-card); overflow-x: auto; }
@@ -813,6 +824,12 @@ a.node.is-on { border-color: var(--board-focus); background: var(--board-node-on
 .inst { padding: 14px 18px; }
 .inst__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 10px; }
 .inst__head h2 { margin: 0; font-size: 16px; }
+.inst--fold > summary { list-style: none; cursor: pointer; margin-bottom: 0; }
+.inst--fold > summary::-webkit-details-marker { display: none; }
+.inst--fold > summary h2::after { content: " ▸"; color: var(--muted); font-size: 13px; }
+.inst--fold[open] > summary { margin-bottom: 10px; }
+.inst--fold[open] > summary h2::after { content: " ▾"; }
+.inst__lead { font-size: 14px; color: var(--slate); }
 .inst__say { margin: 0 0 12px; font-size: 14px; color: var(--ink); }
 .inst__rows { display: grid; gap: 10px; }
 .irow { display: grid; grid-template-columns: minmax(130px, 190px) 1fr minmax(150px, 220px); gap: 4px 14px; align-items: center; }

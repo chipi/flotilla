@@ -6,7 +6,7 @@
   <nav class="crumb" aria-label="Breadcrumb"><a href="/fleets">Fleets</a> / {{$f.Name}}</nav>
   <section class="head">
     <div>
-      <div class="actions"><span class="{{$f.Lamp}} lamp--big" aria-hidden="true"></span><h1>{{$f.Name}}</h1><span class="{{$f.Chip}}">{{$f.Note}}</span></div>
+      <div class="actions"><span class="{{$f.Lamp}} lamp--big" aria-hidden="true"></span><h1>{{$f.Name}}</h1>{{if eq $f.Status "needs you"}}<a class="{{$f.Chip}}" href="/cases?p=fleet%3A{{$f.ID}}">{{$f.Note}}</a>{{else}}<span class="{{$f.Chip}}">{{$f.Note}}</span>{{end}}</div>
       <p class="sub">{{$f.Purpose}} · {{if $f.Workers}}workers {{range $i, $w := $f.Workers}}{{if $i}}, {{end}}<span class="exact">{{$w}}</span>{{end}} · {{end}}budget {{printf "$%.2f" $f.Budget}} a day.</p>
       {{if $f.Pack}}<p class="meta">Pack <span class="exact">{{$f.ID}} · sha256:{{hash $f.Pack}}</span>, the hash of its routines' specs; each spec is in git, linked from its block.</p>{{end}}
     </div>
@@ -24,7 +24,7 @@
     {{else}}
     <form method="post" action="/fleets/{{$f.ID}}/stop" class="inline">
       {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{$back}}">
-      <button class="btn" type="submit">Pause fleet (STOP)</button>
+      <button class="btn btn--stop-outline" type="submit">STOP this fleet</button>
     </form>
     {{end}}{{end}}
   </section>

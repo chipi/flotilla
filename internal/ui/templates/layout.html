@@ -86,3 +86,8 @@
   <span><b>State</b></span><span><i class="lp" aria-hidden="true"></i>ok</span><span><i class="lp lp--wait" aria-hidden="true"></i>waiting</span>
   <span><i class="lp lp--bad" aria-hidden="true"></i>failing</span><span><i class="lp lp--idle" aria-hidden="true"></i>idle, no action</span>
 </div>{{end}}
+
+{{define "scoreline"}}<dl class="scoreline">{{range .}}<div class="scoreline__item">
+  <dt>{{.Label}}</dt>
+  <dd><strong>{{.Value}}</strong>{{if .Unit}} <span class="scoreline__unit">{{.Unit}}</span>{{end}}{{if .Delta}} <span class="scoreline__delta">{{.Arrow}} {{.Delta}}</span>{{end}}</dd>
+</div>{{end}}</dl>{{end}}

@@ -187,7 +187,7 @@ func (u *Server) casesPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 	var pv []pivot
 	for i, p := range ps {
 		f, v, ok := strings.Cut(p, ":")
-		if !ok || (f != "status" && f != "kind" && f != "target") {
+		if !ok || (f != "status" && f != "kind" && f != "target" && f != "fleet") {
 			continue
 		}
 		pv = append(pv, pivot{Field: f, Value: v, Remove: withPivots(t, without(ps, i))})
@@ -209,6 +209,8 @@ func (u *Server) casesPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 				keep = keep && c.Status == p.Value
 			case "kind":
 				keep = keep && c.Kind == p.Value
+			case "fleet":
+				keep = keep && c.Fleet == p.Value
 			case "target":
 				keep = keep && c.Target == p.Value
 			}

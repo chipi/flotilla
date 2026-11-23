@@ -103,6 +103,7 @@ type modelsData struct {
 	Periods, Tabs []pillLink
 	Tab           string
 	Cards         []scoreCard
+	Down          []string // aliases whose last contract check (or, without one, last call) failed
 	Inventory     []invRow
 	Sel           *invRow
 	SelRoutines   []string
@@ -303,22 +304,25 @@ func (u *Server) modelsPage(w http.ResponseWriter, r *http.Request, s *store.Ses
 	for _, runs := range checks {
 		sort.Slice(runs, func(i, j int) bool { return runs[i].At > runs[j].At })
 	}
-	down := 0
+	var downNames []string
 	for n, a := range byAlias {
 		if runs := checks[n]; len(runs) > 0 && len(runs[0].Failed) > 0 || len(runs) == 0 && a.last.Error != "" {
-			down++
+			downNames = append(downNames, n)
 		}
 	}
+	down := len(downNames)
+	sort.Strings(downNames)
+	d.Down = downNames
 	perCase := "–"
 	if closed > 0 {
 		perCase = usd2(cloud / float64(closed))
 	}
 	d.Cards = []scoreCard{
 		{Label: "All tokens", Value: tokensText(tok), Unit: unit, Delta: delta(float64(tok), float64(prevTok), false), Tone: "neutral", Arrow: "■", Spark: makeSpark(tokSeries)},
-		{Label: "Local share", Value: fmt.Sprintf("%.0f%%", share(float64(localTok), float64(tok))), Unit: "aliases declared cost: zero", Delta: "of the tokens in the period", Tone: "neutral", Arrow: "■", Spark: makeSpark(shareSeries)},
+		{Label: "Local share", Value: fmt.Sprintf("%.0f%%", share(float64(localTok), float64(tok))), Unit: "of the tokens; local costs zero", Tone: "neutral", Arrow: "■", Spark: makeSpark(shareSeries)},
 		{Label: "Cloud spend", Value: usd2(cloud), Unit: unit, Delta: delta(cloud, prevCloud, true), Tone: "neutral", Arrow: "■", Spark: makeSpark(cloudSeries)},
-		{Label: "Cost per closed case", Value: perCase, Unit: plural(closed, "case closed", "cases closed"), Delta: "cloud spend over the cases closed in the period", Tone: "neutral", Arrow: "■", Spark: makeSpark(cloudSeries)},
-		{Label: "Models down", Value: fmt.Sprint(down), Unit: fmt.Sprintf("of %d with calls", len(byAlias)), Delta: "an alias whose last contract check (or, without one, last call) failed", Tone: map[bool]string{true: "bad", false: "neutral"}[down > 0], Arrow: "■", Spark: makeSpark(nil)},
+		{Label: "Cost per closed case", Value: perCase, Unit: plural(closed, "case closed", "cases closed"), Tone: "neutral", Arrow: "■", Spark: makeSpark(cloudSeries)},
+		{Label: "Models down", Value: fmt.Sprint(down), Unit: fmt.Sprintf("of %d with calls", len(byAlias)), Tone: map[bool]string{true: "bad", false: "neutral"}[down > 0], Arrow: "■", Spark: makeSpark(nil)},
 	}
 
 	// Inventory: every configured alias, plus any alias a call named that the config no longer has.
