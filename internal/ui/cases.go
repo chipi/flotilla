@@ -636,13 +636,12 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 	var ok string
 	switch r.PathValue("action") {
 	case "approve":
-		var hash string
-		hash, err = u.API.ApprovePlan(r.Context(), caller(s), "ui", id, r.PostFormValue("plan"), r.PostFormValue("note"))
-		ok = "Approved plan " + shortHash(hash) + " on " + id + ": flotillad signs it and sends it to the host."
+		_, err = u.API.ApprovePlan(r.Context(), caller(s), "ui", id, r.PostFormValue("plan"), r.PostFormValue("note"))
+		ok = "Approved the plan on " + id + ": flotillad signs it and sends it to the host."
 		if ex := u.repoExecutor(r.Context(), id); ex != "" {
-			ok = "Approved plan " + shortHash(hash) + " on " + id + ": " + ex + " opens it as a draft PR; you merge it."
+			ok = "Approved the plan on " + id + ": " + ex + " opens it as a draft PR; you merge it."
 		} else if u.repoCase(r.Context(), id) {
-			ok = "Approved plan " + shortHash(hash) + " on " + id + ": apply the change, then record its commit on the case."
+			ok = "Approved the plan on " + id + ": apply the change, then record its commit on the case."
 		}
 	case "reject":
 		err, ok = u.API.RejectCase(r.Context(), caller(s), "ui", id, why), "Rejected the plan on "+id+": nothing ran, and the case is escalated."

@@ -40,8 +40,8 @@
     </section>
 
     <div class="decision__hash">
-      <span>Plan <span class="exact">{{$d.Short}}</span>. Your answer binds to this plan only.</span>
-      <button class="btn" type="button" data-copy="{{$d.Hash}}" hidden>Copy the hash</button>
+      <span>Your answer binds to this exact plan: if the routine changes it, you are asked again.</span>
+      <button class="btn" type="button" data-copy="{{$d.Hash}}" hidden>Copy the plan hash (for the CLI)</button>
     </div>
 
     {{if .CanAct}}{{if $d.CLI}}
@@ -52,7 +52,7 @@
       <button class="btn" type="button" data-copy="{{$d.CLICommand}}" hidden>Copy the command</button>
     </div>
     {{else}}
-    <form id="approve-{{$d.ID}}" class="decision__form" method="post" action="/cases/{{$d.ID}}/approve" data-hold="Sending your approval of plan {{$d.Short}}">
+    <form id="approve-{{$d.ID}}" class="decision__form" method="post" action="/cases/{{$d.ID}}/approve" data-hold="Sending your approval">
       {{template "csrf" .CSRF}}
       <input type="hidden" name="plan" value="{{$d.Hash}}">
       <input type="hidden" name="back" value="{{.Back}}">
@@ -61,19 +61,19 @@
       </label>
     </form>
     <div class="decision__answers">
-      <button class="btn btn--primary" type="submit" form="approve-{{$d.ID}}">Approve plan {{$d.Short}}</button>
+      <button class="btn btn--primary" type="submit" form="approve-{{$d.ID}}">Approve this plan</button>
       <details class="decision__rejectwrap">
         <summary class="btn btn--reject">Reject…</summary>
-        <form class="decision__reject" method="post" action="/cases/{{$d.ID}}/reject" data-hold="Sending your rejection of plan {{$d.Short}}" role="group" aria-labelledby="rej-{{$d.ID}}">
+        <form class="decision__reject" method="post" action="/cases/{{$d.ID}}/reject" data-hold="Sending your rejection" role="group" aria-labelledby="rej-{{$d.ID}}">
           {{template "csrf" .CSRF}}
           <input type="hidden" name="back" value="{{.Back}}">
-          <strong id="rej-{{$d.ID}}">Reject plan {{$d.Short}}?</strong>
+          <strong id="rej-{{$d.ID}}">Reject this plan?</strong>
           <span>Nothing runs. The case is escalated to you, and {{$d.ActionName}} goes back to the record level.</span>
           <label class="field field--strong">Why (kept with the case and shown to the worker)
             <textarea name="reason" rows="2" required data-needs placeholder="For example: it keeps recurring, it needs a real fix"></textarea>
           </label>
           <div class="actions">
-            <button class="btn btn--stop" type="submit">Reject plan {{$d.Short}}</button>
+            <button class="btn btn--stop" type="submit">Reject this plan</button>
             <button class="btn" type="button" data-close hidden>Cancel</button>
           </div>
         </form>

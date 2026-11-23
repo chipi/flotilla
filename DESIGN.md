@@ -200,7 +200,7 @@ every time it appears.
 
 ### Primary
 
-- **Signal Blue** (`signal-blue`): the primary action (Approve plan), links, focus rings, and
+- **Signal Blue** (`signal-blue`): the primary action (Approve this plan), links, focus rings, and
   progress that is on track. Its deeper shade is the hover and pressed state; its wash marks a
   selected or hovered row.
 
@@ -338,8 +338,10 @@ only 2px border is the brakes panel when autonomy is frozen.
 
 - **Shape:** 8px corners; the primary 10px.
 - **Primary** (Signal Blue, white text, 48px tall): one per decision, and it names what it does
-  with its object ("Approve plan 4f1c…9e07"), never a bare "Approve".
-- **Secondary** (white, `control-edge` border, ink text, 44px): Reject…, Copy the hash, Cancel.
+  with its object in words ("Approve this plan", inside the plan's own box), never a bare
+  "Approve" and never a hash: a hash is cut off and says nothing to a person. The form carries the
+  plan's hash, so the answer still binds to that exact plan.
+- **Secondary** (white, `control-edge` border, ink text, 44px): Reject…, Copy the plan hash, Cancel.
 - **Stop** (`stop-red`, white text): only the confirm of a rejection or an unfreeze, after a
   reason has been given; disabled until then (`chip-neutral` fill, `muted` text).
 - **Focus:** a 3px Signal Blue outline with 2px offset on every interactive element.
@@ -393,7 +395,8 @@ button, the optional note, and the two answers.
 
 ### Do
 
-- **Do** name the object on every action button ("Approve plan 4f1c…9e07", "Reject plan …").
+- **Do** name the object on every action button in words ("Approve this plan", "Reject this
+  plan"); keep hashes where they are read in full (the CLI, a copy button, the timeline).
 - **Do** set hashes, commands and ids in JetBrains Mono, and give the full value wherever it can
   be copied.
 - **Do** pair every status colour with its word.

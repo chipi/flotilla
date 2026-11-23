@@ -247,7 +247,7 @@ func TestApproveBindsToThePlanShown(t *testing.T) {
 	op := f.addOperator()
 	ck, csrf := f.csrfOf(op)
 	_, page := f.do("GET", "/cases/"+id, ck, nil, nil)
-	if !strings.Contains(page, `name="plan" value="4f1c9a20b7d3e8c1"`) || !strings.Contains(page, "Approve plan 4f1c…e8c1") {
+	if !strings.Contains(page, `name="plan" value="4f1c9a20b7d3e8c1"`) || !strings.Contains(page, "Approve this plan") || strings.Contains(page, "Approve plan 4f1c") || strings.Contains(page, "Reject plan 4f1c") {
 		t.Fatal("the Decision box does not carry the plan it shows")
 	}
 	vck := f.signin(f.vic)

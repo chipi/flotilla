@@ -116,7 +116,7 @@ func TestApprovalsFoldAllButTheFirstPlan(t *testing.T) {
 	if !strings.Contains(page, "2 more plans wait") {
 		t.Error("the fold does not say how many more wait")
 	}
-	if first := strings.Index(page, `<details class="queue__item"`); first < 0 || strings.Count(page[:first], "Approve plan") != 1 {
+	if first := strings.Index(page, `<details class="queue__item"`); first < 0 || strings.Count(page[:first], "Approve this plan") != 1 {
 		t.Error("the first plan is not open above the fold")
 	}
 }
