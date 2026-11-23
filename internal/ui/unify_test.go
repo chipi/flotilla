@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chipi/flotilla/internal/cases"
+	"github.com/chipi/flotilla/internal/spec"
 	"github.com/chipi/flotilla/internal/store"
 )
 
@@ -69,6 +71,53 @@ func TestEventShortWithoutActor(t *testing.T) {
 	}
 	if got := eventShort(store.CaseEvent{Kind: "case.staged", Actor: "meetings/notes", To: "decisions"}); got != "meetings/notes: handed on to decisions" {
 		t.Errorf("%q", got)
+	}
+}
+
+// A fleet's board draws the host agents only when an action on its case kinds runs on one: backup.rerun (a host action)
+// for failed_backup, not plumbing.create_tasks (a routine's) for meeting.
+func TestHostAgentsOnlyOnFleetsThatUseThem(t *testing.T) {
+	rerun := &spec.Routine{Fleet: "jobs", Routine: "rerun-backup", Description: "d", Enabled: true, Worker: "w", Autonomy: "record",
+		Run: spec.Run{Command: "true"}, Limit: time.Minute, Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}}
+	notes := &spec.Routine{Fleet: "meetings", Routine: "notes", Description: "d", Enabled: true, Worker: "w", Autonomy: "record",
+		Run: spec.Run{Command: "true"}, Limit: time.Minute, Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "meeting"}}}
+	f := setupWith(t, []*spec.Routine{rerun, notes})
+	ck := f.signin(f.admin)
+	if _, page := f.do("GET", "/fleets/jobs", ck, nil, nil); !strings.Contains(page, "host agents") {
+		t.Error("jobs, whose backup.rerun runs on a host agent, does not draw the host agents")
+	}
+	if _, page := f.do("GET", "/fleets/meetings", ck, nil, nil); strings.Contains(page, "host agents") {
+		t.Error("meetings, whose actions run by routine, draws the host agents")
+	}
+}
+
+// Approvals opens the first waiting plan; the rest are one line each, folded, each opening to its full decision.
+func TestApprovalsFoldAllButTheFirstPlan(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	for _, h := range []string{"backup-01", "backup-02", "backup-03"} {
+		k := store.Key{Kind: "target", Value: "failed_backup/host:" + h}
+		id, _, err := f.st.OpenCase(ctx, store.NewCase{Kind: "failed_backup", Target: "host:" + h, Keys: []store.Key{k}, Canonical: k, Title: "old backup on " + h}, "ops/backup-monitor", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = f.st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "ops/backup-monitor", "")
+		_ = f.st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun-backup", "")
+		if _, err := f.st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r-" + h, Action: "backup.rerun", Params: map[string]string{"host": h},
+			PlanHash: "hash-" + h, Outcome: "propose", Autonomy: "propose", Reasons: []string{"ok"}}, cases.AwaitingApproval, "", "host:"+h, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ck := f.signin(f.admin)
+	_, page := f.do("GET", "/approvals", ck, nil, nil)
+	if n := strings.Count(page, `<details class="queue__item"`); n != 2 {
+		t.Errorf("%d folded plans, want 2 (all but the first)", n)
+	}
+	if !strings.Contains(page, "2 more plans wait") {
+		t.Error("the fold does not say how many more wait")
+	}
+	if first := strings.Index(page, `<details class="queue__item"`); first < 0 || strings.Count(page[:first], "Approve plan") != 1 {
+		t.Error("the first plan is not open above the fold")
 	}
 }
 

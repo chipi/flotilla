@@ -42,7 +42,9 @@ func TestHandedOverWithoutARoutineNeedsYou(t *testing.T) {
 // A remote worker's link enrols like a host (RFC-0011) but is not a host agent: Watch does not say it is
 // down, and the Hosts page calls it a worker link; a host agent that is down is still said so.
 func TestWorkerLinkIsNotAHostAgent(t *testing.T) {
-	f := setup(t)
+	rerun := &spec.Routine{Fleet: "jobs", Routine: "rerun-backup", Description: "d", Enabled: true, Worker: "w", Autonomy: "record",
+		Run: spec.Run{Command: "true"}, Limit: time.Minute, Trigger: spec.Trigger{Case: &spec.CaseTrigger{Kind: "failed_backup"}}}
+	f := setupWith(t, []*spec.Routine{rerun})
 	ctx := context.Background()
 	for _, h := range []string{"w-bugfix-omarchy", "model-host"} {
 		if _, err := f.st.AddEnrolment(ctx, h, "t-"+h, "user:ada", "test"); err != nil {
@@ -70,7 +72,8 @@ func TestWorkerLinkIsNotAHostAgent(t *testing.T) {
 		t.Fatal("the Hosts page does not call the link a worker link")
 	}
 	// the fleet page's host agents card counts model-host alone (it said "2 down" with a second machine's links, 2026-11-16)
-	if _, page := f.do("GET", "/fleets/triage", ck, nil, nil); !strings.Contains(page, "1 down") || strings.Contains(page, "2 down") {
+	// (on jobs: it runs backup.rerun on a host agent, and only a fleet that uses host agents draws them, 2026-11-23)
+	if _, page := f.do("GET", "/fleets/jobs", ck, nil, nil); !strings.Contains(page, "1 down") || strings.Contains(page, "2 down") {
 		t.Fatal("the fleet page counts a worker link as a host agent that is down")
 	}
 }

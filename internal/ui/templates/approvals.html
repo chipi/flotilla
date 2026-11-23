@@ -11,20 +11,21 @@
   </section>
 
   {{if .Items}}
-  <nav class="card card--edge" aria-labelledby="queue-h">
-    <h2 id="queue-h" class="label">Jump to a plan</h2>
-    <ul class="casecards">
-      {{range .Items}}<li><a class="fleetline" href="#dec-{{.ID}}">
-        <span class="exact">{{.ID}}</span>
-        <span class="risk risk--{{.Risk}}">{{.Risk}}</span>
-        <span class="name">{{.Title}}</span>
-        <span class="note">{{if .CLI}}laptop only{{else}}answer here{{end}} · waiting {{.Waiting}}</span>
-      </a></li>{{end}}
-    </ul>
-  </nav>
   <section aria-label="Waiting for you" class="casecards">
-    {{range .Items}}{{template "decision" (decisionCtx . $csrf $act "/approvals")}}{{end}}
+    {{range $i, $d := .Items}}{{if eq $i 0}}{{template "decision" (decisionCtx $d $csrf $act "/approvals")}}{{end}}{{end}}
   </section>
+  {{if gt (len .Items) 1}}<section class="queue" aria-labelledby="queue-h">
+    <h2 id="queue-h">{{plural (len (slice .Items 1)) "more plan waits" "more plans wait"}}</h2>
+    {{range $i, $d := .Items}}{{if gt $i 0}}<details class="queue__item" id="plan-{{$d.ID}}">
+      <summary>
+        <span class="exact">{{$d.ID}}</span>
+        <span class="risk risk--{{$d.Risk}}">{{$d.Risk}}</span>
+        <span class="queue__title">{{$d.Title}}</span>
+        <span class="queue__note">{{if $d.CLI}}laptop only{{else}}answer here{{end}} · waiting {{$d.Waiting}}</span>
+      </summary>
+      {{template "decision" (decisionCtx $d $csrf $act "/approvals")}}
+    </details>{{end}}{{end}}
+  </section>{{end}}
   {{else}}
   <section class="card card--edge">
     <h2>Nothing needs you.</h2>

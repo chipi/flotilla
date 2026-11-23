@@ -223,6 +223,25 @@ func TestSnapshots(t *testing.T) {
 	_ = st.SetControlBecause(ctx, "action:backup.rerun", "autonomy", "propose", "user:ada", "ui", "5 recorded plans I agreed with")
 	_ = st.SetControl(ctx, "jobs/backup-monitor", "paused", "0", "user:ada", "api")
 
+	// Knowledge: three active notes and five proposed, so the proposed fold shows; the brief, written now.
+	for i, n := range []string{"The offsite backup runs at 02:00; an age under 26h at 09:00 is normal.", "vps is rebooted on Sundays; a host agent down then is expected.",
+		"A meeting's follow-ups go to the follow-ups list, never the decisions doc.", "The NAS backup is slower on the first of the month (a full run).",
+		"triage: a TypeError in the scrubber is the timeline bug, filed once.", "bugfix: orrery's flaky e2e test is known; do not fix it.",
+		"seo: the sitemap is regenerated hourly; a missing URL can wait an hour.", "plumbing: the Tasks list is shared with a person; keep titles short."} {
+		id, err := st.ProposeNote(ctx, []string{"jobs", "jobs", "meetings", "jobs", "triage", "bugfix", "seo", "plumbing"}[i], n, "", "ada")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i < 3 {
+			_ = st.DecideNote(ctx, id, store.NoteActive, "ada")
+		}
+	}
+	if b, err := f.ui.composeBrief(ctx, now); err == nil {
+		_ = st.SaveBrief(ctx, b)
+	} else {
+		t.Fatal(err)
+	}
+
 	op := f.addOperator()
 	ck := f.signin(f.admin)
 	ock := f.signin(op)
@@ -242,7 +261,8 @@ func TestSnapshots(t *testing.T) {
 		"fleet-triage-stats": "/fleets/triage?tab=stats", "fleet-meetings-stats": "/fleets/meetings?tab=stats",
 		"autonomy": "/autonomy", "history": "/history?period=all", "history-ledger": "/history?type=ledger&period=all",
 		"account": "/account", "users": "/users", "models": "/models", "models-spend": "/models?tab=spend&period=30d",
-		"run-triage": "/runs/" + firstTriage(st, t), "signin": "/signin"}
+		"run-triage": "/runs/" + firstTriage(st, t), "signin": "/signin",
+		"knowledge": "/knowledge", "brief": "/brief", "brief-archive": "/brief/archive", "examples": "/examples"}
 	snap := func(name, p, cookie string) {
 		resp, body := f.do("GET", p, cookie, nil, nil)
 		if resp.StatusCode != 200 {

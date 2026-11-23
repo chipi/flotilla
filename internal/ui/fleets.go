@@ -542,7 +542,10 @@ func (u *Server) fleetPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		case down > 0:
 			ha.B, ha.BClass, ha.Lamp = fmt.Sprintf("%d down", down), "bad", "blamp blamp--bad"
 		}
-		stages[3].Nodes = []boardNode{pol, ha}
+		stages[3].Nodes = []boardNode{pol}
+		if u.fleetUsesHostAgents(f) {
+			stages[3].Nodes = append(stages[3].Nodes, ha)
+		}
 		for i := range stages {
 			if len(stages[i].Nodes) == 0 {
 				stages[i].None = "None in this fleet."
@@ -906,3 +909,30 @@ func (u *Server) ledgerCards(ctx context.Context, f fleetSum, ds []string, idx m
 }
 
 func regexpQuote(s string) string { return regexp.QuoteMeta(s) }
+
+// fleetUsesHostAgents is whether an action on a case kind this fleet acts on runs on a host agent: only then do the
+// host agents belong on its board, so one host that is down is not drawn on every fleet.
+func (u *Server) fleetUsesHostAgents(f *fleetSum) bool {
+	if u.API.Registry == nil {
+		return false
+	}
+	kinds := map[string]bool{}
+	_, by := u.specs()
+	for _, r := range f.Routines {
+		if j := by[r.ID]; j != nil && j.OnCase() != "" {
+			kinds[j.OnCase()] = true
+		}
+	}
+	for _, name := range u.API.Registry.Actions() {
+		a, _ := u.API.Registry.Action(name)
+		if a.ByRoutine() {
+			continue
+		}
+		for _, k := range a.ForKinds {
+			if kinds[k] {
+				return true
+			}
+		}
+	}
+	return false
+}
