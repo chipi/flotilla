@@ -444,6 +444,26 @@ only: every write is `plumbing.call` (§4.6), so a read tool can never have an e
   own, whose ACL admits the declared servers' hosts and nothing else.
 - **Spend.** Calls and their time count against the routine's budget like model calls.
 
+**As built (2026-11-23,** `docs/wip/rfc-0014-step5-plan.md`**).** Where the code differs from the
+above:
+
+- **The declaration** is per station: `reads: [{server, tools, max_calls, max_result_chars,
+  timeout}]` on a `harness: flotilla` station with `tools: all` (the harness serves only `all` and
+  `none`; a `read` value would be a new harness seam). The model sees `<server>.<tool>`. The calls are
+  capped per server across the run's stations. The server's address and token file are host config
+  (`MCP_<SERVER>_URL`, `MCP_<SERVER>_TOKEN_FILE`), never the spec's.
+- **The record is a second write.** The input is frozen at dispatch, before any read happens, so the
+  worker returns the run's reads after it ends and flotillad keeps them beside the input, keyed by the
+  live run id, with a flag for a record that is not complete. Reading the input merges them into
+  `recorded_tool_results`.
+- **Over the cap** a result is cut visibly (`…[cut at N of M chars]`), the same text to the model and
+  the record. Credentials are masked once, before both. A read that cannot be recorded is not served.
+- **A shadow of a routine with reads waits for its live run to end,** whatever `shadows.after_live`
+  says, and is not run without a complete record. A read the record lacks fails the shadow run, as a
+  miss.
+- **Spend:** the budget is in dollars and a read costs nothing, so the bound is the per-run call cap,
+  the per-call timeout and the run's time limit. Each read's time is in its record.
+
 ## 5. Not in scope
 
 - A flow engine or a visual flow editor (M2).

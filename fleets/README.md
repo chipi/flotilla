@@ -99,6 +99,25 @@ autonomy level is `record`; a spec that still says `autonomy: shadow` (or `max_a
 read as `record`, and `-check` says so. The value a run reads in `FLEETD_STAGE` is `shadow` for
 `record`, as before.
 
+A `harness: flotilla` station with `tools: all` may read the company's tools live through MCP servers
+it declares (RFC-0014 §4.8):
+
+```yaml
+stations:
+  answer:
+    harness: flotilla
+    tools: all
+    reads:
+      - server: wiki                       # MCP_WIKI_URL and MCP_WIKI_TOKEN_FILE on the worker
+        tools: [search_pages, get_page]    # the allowlist, each by its exact name
+        max_calls: 5                       # per run, this server, all stations (default 10)
+        max_result_chars: 65536            # per call; over it the result is cut visibly
+        timeout: 15s
+```
+
+The model calls `wiki.get_page`. Reads only: every write is `plumbing.call`. Each read is recorded
+with the run and a replay or a shadow is served the record; a read the record lacks fails it.
+
 ## Seeing the examples on an installation
 
 The flotillad image carries these fleets a second time at `/opt/flotilla/examples`, where an
