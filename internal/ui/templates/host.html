@@ -25,14 +25,19 @@
       <span class="meta">{{.Note}}</span>
     </div>{{end}}
   </section>
-  <section class="casecards" aria-labelledby="ct">
-    <h2 id="ct">Containers{{if .Containers}} ({{len .Containers}}){{end}}</h2>
-    {{if .Containers}}<div class="table-box">
+  <section class="casecards" id="containers" aria-labelledby="ct">
+    <h2 id="ct">Containers{{if .ContAll}} ({{.ContAll}}){{end}}</h2>
+    {{if .ContAll}}{{$ct := .CT}}
+    <div class="filters" role="group" aria-label="Filter containers">
+      {{template "search" (search $ct "containers" "Find" "container name")}}
+    </div>
+    <div class="table-box">
       <table class="data data--small">
-        <thead><tr><th scope="col">Container</th><th scope="col">Up</th><th scope="col">CPU</th><th scope="col">Memory</th></tr></thead>
-        <tbody>{{range .Containers}}<tr><td data-label="Container" class="exact">{{.Name}}</td><td data-label="Up">{{.Up}}</td><td data-label="CPU">{{.CPU}}</td><td data-label="Memory">{{.Mem}}</td></tr>{{end}}</tbody>
+        <thead><tr>{{range .CHeads}}{{template "th" .}}{{end}}</tr></thead>
+        <tbody>{{range .Containers}}<tr><td data-label="Container" class="exact">{{.Name}}</td><td data-label="Up">{{.Up}}</td><td data-label="CPU">{{.CPU}}</td><td data-label="Memory">{{.Mem}}</td></tr>{{else}}<tr><td colspan="4" class="empty">No container matches these filters.</td></tr>{{end}}</tbody>
       </table>
-    </div>{{else}}<p class="gap"><strong>No container metrics for {{$h.Name}}.</strong> This host runs no cAdvisor; its containers' numbers are not collected.</p>{{end}}
+    </div>
+    {{template "pager" $ct}}{{else}}<p class="gap"><strong>No container metrics for {{$h.Name}}.</strong> This host runs no cAdvisor; its containers' numbers are not collected.</p>{{end}}
   </section>
   {{else}}<p class="gap"><strong>No load for {{$h.Name}}:</strong> {{.ChartsErr}}.</p>{{end}}
   {{end}}
@@ -59,9 +64,12 @@
   {{end}}
 
   {{if eq .Tab "exec"}}{{$t := .T}}
-  <div class="table-box">
+  <div class="filters" role="group" aria-label="Filter executions">
+    {{template "search" (search $t "executions" "Find" "action, case")}}
+  </div>
+  <div class="table-box" id="executions">
     <table class="data">
-      <thead><tr><th scope="col">When ▼</th><th scope="col">Execution</th><th scope="col">Case</th><th scope="col">Action</th><th scope="col">Approved by</th><th scope="col">Result</th></tr></thead>
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}</tr></thead>
       <tbody>
         {{range .Execs}}<tr>
           <td data-label="When" class="nowrap">{{.SentAt}}</td>
@@ -70,7 +78,7 @@
           <td data-label="Action" class="exact">{{.Action}}</td>
           <td data-label="Approved by">{{.Approved}}</td>
           <td data-label="Result">{{.Status}}{{if .Detail}}: {{.Detail}}{{end}}</td>
-        </tr>{{else}}<tr><td colspan="6" class="empty">Nothing has run on {{$h.Name}}.</td></tr>{{end}}
+        </tr>{{else}}<tr><td colspan="6" class="empty">{{if eq .ExecAll 0}}Nothing has run on {{$h.Name}}.{{else}}No execution matches these filters.{{end}}</td></tr>{{end}}
       </tbody>
     </table>
   </div>

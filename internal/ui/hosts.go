@@ -172,6 +172,11 @@ type hostData struct {
 	Tabs       []pillLink
 	Execs      []store.HostExecution
 	T          tableQ
+	Heads      []thCell
+	ExecAll    int
+	CT         tableQ
+	CHeads     []thCell
+	ContAll    int
 	Clock      func(string) string
 	// the agent's own lines, as flotillad logged them on arrival ("host log"), from VictoriaLogs
 	Level   string
@@ -218,7 +223,7 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 			d.ChartsErr = err.Error()
 		} else {
 			d.Charts = cs
-			d.Containers = u.containers(r.Context(), row.Instance)
+			d.containerTable(r, u.containers(r.Context(), row.Instance))
 		}
 	}
 	if tab == "exec" {
@@ -227,10 +232,7 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 			http.Error(w, "executions failed", 500)
 			return
 		}
-		sort.Slice(xs, func(i, j int) bool { return xs[i].SentAt > xs[j].SentAt })
-		t := readTable(r, "", false, func(string) bool { return false })
-		d.Execs = window(xs, &t)
-		d.T = t
+		d.execTable(r, xs)
 		for i := range d.Execs {
 			d.Execs[i].SentAt = u.clock(d.Execs[i].SentAt)
 		}
@@ -251,6 +253,76 @@ func (u *Server) hostPage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		}
 	}
 	u.render(w, "host.html", 200, u.pageFor(s, "Host "+row.Name, "Hosts", r, d))
+}
+
+var execSorts = map[string]bool{"when": true, "action": true, "result": true}
+
+// execTable filters, sorts and pages a host's executions, newest first; its keys are prefixed "e" so the tab keeps state apart from the containers' "c".
+func (d *hostData) execTable(r *http.Request, xs []store.HostExecution) {
+	t := readTableAs(r, "e", "when", true, func(c string) bool { return execSorts[c] })
+	t.Anchor = "executions"
+	q := strings.ToLower(t.Get("q"))
+	var out []store.HostExecution
+	for _, x := range xs {
+		if q == "" || strings.Contains(strings.ToLower(x.Action+" "+x.CaseID), q) {
+			out = append(out, x)
+		}
+	}
+	less := func(a, b store.HostExecution) bool {
+		switch t.Sort {
+		case "action":
+			return a.Action < b.Action
+		case "result":
+			return a.Status < b.Status
+		}
+		return a.SentAt < b.SentAt || (a.SentAt == b.SentAt && a.ID < b.ID)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if t.Desc {
+			return less(out[j], out[i])
+		}
+		return less(out[i], out[j])
+	})
+	d.ExecAll = len(xs)
+	d.Execs = window(out, &t)
+	d.T = t
+	d.Heads = []thCell{t.Th("when", "When"), t.Plain("Execution"), t.Plain("Case"), t.Th("action", "Action"), t.Plain("Approved by"), t.Th("result", "Result")}
+}
+
+var containerSorts = map[string]bool{"name": true, "up": true, "cpu": true, "mem": true}
+
+// containerTable filters, sorts and pages a host's containers, the biggest in memory first; its keys are prefixed "c".
+func (d *hostData) containerTable(r *http.Request, cs []containerRow) {
+	t := readTableAs(r, "c", "mem", true, func(c string) bool { return containerSorts[c] })
+	t.Anchor, t.Per = "containers", 20
+	q := strings.ToLower(t.Get("q"))
+	var out []containerRow
+	for _, c := range cs {
+		if q == "" || strings.Contains(strings.ToLower(c.Name), q) {
+			out = append(out, c)
+		}
+	}
+	less := func(a, b containerRow) bool {
+		switch t.Sort {
+		case "name":
+			return a.Name < b.Name
+		case "up":
+			return a.UpSec < b.UpSec
+		case "cpu":
+			return a.CPUPct < b.CPUPct
+		}
+		return a.MemBytes < b.MemBytes
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if t.Desc {
+			return less(out[j], out[i])
+		}
+		return less(out[i], out[j])
+	})
+	d.ContAll = len(cs)
+	d.Containers = window(out, &t)
+	d.CT = t
+	d.CHeads = []thCell{t.Th("name", "Container"), t.Th("up", "Up"), t.Th("cpu", "CPU"), t.Th("mem", "Memory")}
 }
 
 type allowedRow struct {

@@ -10,6 +10,7 @@
   <section class="card" aria-label="Every brief">
     {{range .All}}<div class="kv"><a href="{{.Href}}"><strong>{{.Date}}</strong></a><span>{{.Headline}}</span></div>{{else}}<p class="panel-note">No brief has been written yet.</p>{{end}}
   </section>
+  {{template "pager" .T}}
   {{else}}
   {{with .B}}
   <div class="split">

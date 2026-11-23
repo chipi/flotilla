@@ -52,6 +52,7 @@ var funcs = template.FuncMap{
 	"search": func(t tableQ, id, label, placeholder string) searchBox {
 		return searchBox{T: t, ID: id, Label: label, Placeholder: placeholder}
 	},
+	"noteCard": func(n noteRow, act bool, csrf string) noteCard { return noteCard{noteRow: n, Act: act, CSRF: csrf} },
 	"gap":      func(id, text string) gapNote { return gapNote{ID: id, Text: text} },
 	"instcard": func(i instruments, key string) instCard { return instCard{I: i, Key: key} },
 	"pivot":    pivotHref,

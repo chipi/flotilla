@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,7 @@ type rVersion struct {
 	State, Chip, Label      string
 	Hash, FullHash          string
 	Deployed, Live, By, Why string
+	DeployedAt              string // as stored, for the sort
 	Pairs                   string
 	HasPairs                bool // it has compared pairs: its Pairs cell links to them
 	Detail                  []string
@@ -37,6 +39,32 @@ type versionsData struct {
 	CanRollBack bool
 	Previous    int
 	Live        int
+	T           tableQ
+	Heads       []thCell
+}
+
+var versionSorts = map[string]bool{"version": true, "when": true}
+
+// table sorts and pages the versions, the newest first; a promote or retire form on each row makes 10 a page. Its keys are prefixed "v".
+func (d *versionsData) table(r *http.Request) {
+	t := readTableAs(r, "v", "version", true, func(c string) bool { return versionSorts[c] })
+	t.Anchor, t.Per = "versions", 10
+	rows := append([]rVersion(nil), d.Rows...)
+	less := func(a, b rVersion) bool {
+		if t.Sort == "when" && a.DeployedAt != b.DeployedAt {
+			return a.DeployedAt < b.DeployedAt
+		}
+		return a.N < b.N
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if t.Desc {
+			return less(rows[j], rows[i])
+		}
+		return less(rows[i], rows[j])
+	})
+	d.Rows = window(rows, &t)
+	d.T = t
+	d.Heads = []thCell{t.Th("version", "Version"), t.Plain("State"), t.Plain("Hash"), t.Th("when", "Deployed"), t.Plain("Live since"), t.Plain("By and why"), t.Plain("Pairs and results")}
 }
 
 // pairsText is a version's compared pairs, linked to its list when it has any.
@@ -62,7 +90,7 @@ func (u *Server) versionsFor(ctx context.Context, id string, st *api.RoutineStat
 	}
 	for _, x := range v.Versions {
 		r := rVersion{N: x.Version, State: x.State, Chip: versionChip[x.State], FullHash: x.Hash, Hash: x.Hash, Pairs: pairsText(x.Pairs), HasPairs: x.Pairs > 0,
-			Deployed: u.clock(x.DeployedAt), By: strings.TrimPrefix(x.StateBy, "user:"), Why: x.StateWhy}
+			Deployed: u.clock(x.DeployedAt), DeployedAt: x.DeployedAt, By: strings.TrimPrefix(x.StateBy, "user:"), Why: x.StateWhy}
 		if len(r.Hash) > 7 {
 			r.Hash = r.Hash[:7]
 		}

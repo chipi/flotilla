@@ -26,6 +26,12 @@ func (okWorker) Run(ctx context.Context, r worker.Request) (*worker.Result, erro
 // versionedFixture is the UI over triage/cycle as a routine folder with v1 live, v2 and v3 shadows.
 func versionedFixture(t *testing.T, extra string) *fixture {
 	t.Helper()
+	return versionedFixtureN(t, extra, 3)
+}
+
+// versionedFixtureN is versionedFixture with n version folders, v1 live and the rest shadows.
+func versionedFixtureN(t *testing.T, extra string, n int) *fixture {
+	t.Helper()
 	d := t.TempDir()
 	put := func(rel, body string) {
 		p := filepath.Join(d, rel)
@@ -37,7 +43,8 @@ func versionedFixture(t *testing.T, extra string) *fixture {
 		}
 	}
 	put("triage/cycle/routine.yaml", "fleet: triage\nroutine: cycle\ndescription: one pass\nenabled: true\nworker: triage\ntrigger: {every: 10m}\nautonomy: record\nfreshness: 35m\n"+extra)
-	for _, v := range []string{"v1", "v2", "v3"} {
+	for i := 1; i <= n; i++ {
+		v := "v" + strconv.Itoa(i)
 		put("triage/cycle/"+v+"/spec.yaml", "run: {command: \"echo "+v+"\", timeout: 20m}\n")
 	}
 	rs, err := spec.LoadVersions(d)

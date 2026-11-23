@@ -91,7 +91,7 @@
     <h2 id="versions-h">Versions</h2>
     <p class="meta">Live: v{{.Live}}. A new version arrives as a shadow and goes live only on your word; rolling back makes the previous one live at once. A promote needs: <span class="exact">{{.Acceptance}}</span>.</p>
     <div class="table-box"><table class="data data--small">
-      <thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Hash</th><th scope="col">Deployed</th><th scope="col">Live since</th><th scope="col">By and why</th><th scope="col">Pairs and results</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
+      <thead><tr>{{range .Heads}}{{template "th" .}}{{end}}{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
       <tbody>{{range .Rows}}<tr>
         <td data-label="Version" class="exact">v{{.N}}</td>
         <td data-label="State" class="stack"><span class="chip chip--small {{.Chip}}">{{.State}}</span>{{if .Label}}<span class="soft">{{.Label}}</span>{{end}}{{if .Note}}<span class="soft">{{.Note}}</span>{{end}}</td>
@@ -147,6 +147,7 @@
         </td>{{end}}
       </tr>{{else}}<tr><td colspan="8">No version is recorded yet.</td></tr>{{end}}</tbody>
     </table></div>
+    {{template "pager" .T}}
   </section>{{end}}
 
   {{with .Pairs}}<section class="card pairs" id="pairs" aria-labelledby="pairs-h">

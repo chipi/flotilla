@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -175,9 +174,11 @@ func (u *Server) hostCharts(ctx context.Context, instance string) ([]hostChart, 
 
 type containerRow struct {
 	Name, Up, CPU, Mem string
+	UpSec, CPUPct      float64 // what the Up and CPU columns sort by
+	MemBytes           float64
 }
 
-// containers are a host's containers from cAdvisor, by memory; none when the host runs no cAdvisor.
+// containers are a host's containers from cAdvisor; none when the host runs no cAdvisor.
 func (u *Server) containers(ctx context.Context, instance string) []containerRow {
 	sel := `instance="` + instance + `",name!=""`
 	mem, err := u.vm(ctx, "/api/v1/query", url.Values{"query": {`max by (name)(container_memory_usage_bytes{` + sel + `})`}})
@@ -197,24 +198,16 @@ func (u *Server) containers(ctx context.Context, instance string) []containerRow
 			startBy[r.Metric["name"]] = f
 		}
 	}
-	type row struct {
-		containerRow
-		mem float64
-	}
-	var rows []row
+	var out []containerRow
 	for _, r := range mem {
 		f, _ := sampleFloat(r.Value)
 		n := r.Metric["name"]
-		c := containerRow{Name: n, CPU: fmt.Sprintf("%.1f%%", cpuBy[n]), Mem: fmt.Sprintf("%.0f MB", f/1e6), Up: "–"}
+		c := containerRow{Name: n, CPU: fmt.Sprintf("%.1f%%", cpuBy[n]), CPUPct: cpuBy[n], Mem: fmt.Sprintf("%.0f MB", f/1e6), MemBytes: f, Up: "–"}
 		if s := startBy[n]; s > 0 {
-			c.Up = age(u.clockNow().Sub(time.Unix(int64(s), 0)))
+			up := u.clockNow().Sub(time.Unix(int64(s), 0))
+			c.Up, c.UpSec = age(up), up.Seconds()
 		}
-		rows = append(rows, row{c, f})
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].mem > rows[j].mem })
-	out := make([]containerRow, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.containerRow)
+		out = append(out, c)
 	}
 	return out
 }

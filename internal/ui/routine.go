@@ -381,6 +381,7 @@ func (u *Server) routinePage(w http.ResponseWriter, r *http.Request, s *store.Se
 		http.Error(w, "versions failed", 500)
 		return
 	}
+	d.Versions.table(r)
 	if es, err := u.API.Store.RoutineChanges(ctx, id, 5); err != nil {
 		http.Error(w, "field changes failed", 500)
 		return

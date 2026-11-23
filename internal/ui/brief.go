@@ -244,6 +244,7 @@ type briefData struct {
 	Next     string
 	Archive  bool
 	All      []briefLink
+	T        tableQ
 	Marks    []string // this week's marks per kind
 }
 
@@ -269,6 +270,12 @@ func (u *Server) briefPage(w http.ResponseWriter, r *http.Request, s *store.Sess
 		if d.B != nil && len(d.Earlier) < 2 && x.Day < d.B.Day {
 			d.Earlier = append(d.Earlier, link)
 		}
+	}
+	if d.Archive {
+		t := readTable(r, "", false, func(string) bool { return false })
+		t.Per = 30
+		d.All = window(d.All, &t)
+		d.T = t
 	}
 	h, m := u.briefAt()
 	d.Next = fmt.Sprintf("%02d:%02d", h, m)

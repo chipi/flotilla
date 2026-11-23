@@ -16,31 +16,34 @@
   {{if eq .Tab "memory"}}
   <section class="casecards" aria-labelledby="notes">
     <h2 id="notes">Notes waiting for you</h2>
-    {{range .Proposed}}<article class="card card--edge">
-      <span class="meta">N-{{.ID}} · scope <span class="exact">{{.Scope}}</span> · from {{if .FromCase}}<a class="exact" href="/cases/{{.FromCase}}">{{.FromCase}}</a>, {{end}}{{.By}} at {{.When}}</span>
-      <strong>{{.Text}}</strong>
-      {{if $act}}<div class="actions">
-        <form method="post" action="/notes/{{.ID}}/activate" class="inline">{{template "csrf" $csrf}}<button class="btn btn--blue" type="submit">Activate</button></form>
-        <form method="post" action="/notes/{{.ID}}/drop" class="inline">{{template "csrf" $csrf}}<button class="btn btn--small" type="submit">Drop</button></form>
-      </div>{{end}}
-    </article>{{else}}<p class="card">No note waits. A note comes from a case: "Add a note" under "After the check: was the diagnosis right?".</p>{{end}}
+    {{range $i, $n := .Proposed}}{{if lt $i 3}}{{template "proposednote" (noteCard $n $act $csrf)}}{{end}}{{else}}<p class="card">No note waits. A note comes from a case: "Add a note" under "After the check: was the diagnosis right?".</p>{{end}}
+    {{if gt (len .Proposed) 3}}<details class="wrongbox__more">
+      <summary>Show all {{len .Proposed}}</summary>
+      {{range $i, $n := .Proposed}}{{if ge $i 3}}{{template "proposednote" (noteCard $n $act $csrf)}}{{end}}{{end}}
+    </details>{{end}}
   </section>
   <section class="casecards" aria-labelledby="active">
     <h2 id="active">Active notes</h2>
+    {{$nt := .NoteT}}
+    <div class="filters" role="group" aria-label="Filter active notes">
+      {{template "search" (search $nt "notes" "Find" "text, scope")}}
+    </div>
     <div class="table-box">
       <table class="data">
-        <thead><tr><th scope="col">Note</th><th scope="col">Text</th><th scope="col">Scope</th><th scope="col">Activated</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
+        <thead><tr>{{range .NoteHeads}}{{template "th" .}}{{end}}{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
         <tbody>
           {{range .Active}}<tr>
             <td data-label="Note" class="exact">N-{{.ID}}</td>
             <td data-label="Text" class="stack">{{.Text}}</td>
             <td data-label="Scope" class="exact">{{.Scope}}</td>
-            <td data-label="Activated" class="nowrap">{{.Decided}} by {{.DecidedBy}}</td>
+            <td data-label="Activated" class="nowrap">{{.Decided}}</td>
+            <td data-label="By">{{.DecidedBy}}</td>
             {{if $act}}<td data-label="Change" class="r"><form method="post" action="/notes/{{.ID}}/drop" class="inline">{{template "csrf" $csrf}}<button class="btn btn--small" type="submit">Drop</button></form></td>{{end}}
-          </tr>{{else}}<tr><td colspan="5" class="empty">No active note.</td></tr>{{end}}
+          </tr>{{else}}<tr><td colspan="6" class="empty">{{if eq .ActiveAll 0}}No active note.{{else}}No note matches these filters.{{end}}</td></tr>{{end}}
         </tbody>
       </table>
     </div>
+    {{template "pager" $nt}}
     {{template "gap" (gap "G7" "Agents do not read notes yet, and the harness does not report what a run read, so a note's use count is not drawn. Activating a note records your decision for when they do.")}}
     {{if .Dropped}}<p class="footnote">{{plural .Dropped "note was" "notes were"}} dropped.</p>{{end}}
   </section>
@@ -69,3 +72,11 @@
   {{end}}
 </main>
 {{template "foot" .}}
+{{define "proposednote"}}<article class="card card--edge">
+  <span class="meta">N-{{.ID}} · scope <span class="exact">{{.Scope}}</span> · from {{if .FromCase}}<a class="exact" href="/cases/{{.FromCase}}">{{.FromCase}}</a>, {{end}}{{.By}} at {{.When}}</span>
+  <strong>{{.Text}}</strong>
+  {{if .Act}}<div class="actions">
+    <form method="post" action="/notes/{{.ID}}/activate" class="inline">{{template "csrf" .CSRF}}<button class="btn btn--blue" type="submit">Activate</button></form>
+    <form method="post" action="/notes/{{.ID}}/drop" class="inline">{{template "csrf" .CSRF}}<button class="btn btn--small" type="submit">Drop</button></form>
+  </div>{{end}}
+</article>{{end}}

@@ -21,17 +21,27 @@ type noteRow struct {
 	When, Decided string
 }
 
+// noteCard is a proposed note with what its Activate and Drop forms need, so the card is one template for the shown and the folded.
+type noteCard struct {
+	noteRow
+	Act  bool
+	CSRF string
+}
+
 type sourceRow struct {
 	Fleet, Source, Kind, Version string
 }
 
 type knowledgeData struct {
-	Tab      string
-	Tabs     []pillLink
-	Proposed []noteRow
-	Active   []noteRow
-	Dropped  int
-	Sources  []sourceRow
+	Tab       string
+	Tabs      []pillLink
+	Proposed  []noteRow
+	Active    []noteRow
+	NoteT     tableQ
+	NoteHeads []thCell
+	ActiveAll int
+	Dropped   int
+	Sources   []sourceRow
 }
 
 func (u *Server) knowledgePage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
@@ -64,10 +74,47 @@ func (u *Server) knowledgePage(w http.ResponseWriter, r *http.Request, s *store.
 				d.Dropped++
 			}
 		}
+		d.noteTable(r)
 	} else {
 		d.Sources = u.sources()
 	}
 	u.render(w, "knowledge.html", 200, u.pageFor(s, "Knowledge", "Knowledge", r, d))
+}
+
+var noteSorts = map[string]bool{"note": true, "scope": true, "when": true, "by": true}
+
+// noteTable filters, sorts and pages the active notes, the latest activated first; each row carries a Drop form, so 10 a page.
+func (d *knowledgeData) noteTable(r *http.Request) {
+	t := readTable(r, "when", true, func(c string) bool { return noteSorts[c] })
+	t.Anchor, t.Per = "active", 10
+	q := strings.ToLower(t.Get("q"))
+	var out []noteRow
+	for _, n := range d.Active {
+		if q == "" || strings.Contains(strings.ToLower(n.Text+" "+n.Scope), q) {
+			out = append(out, n)
+		}
+	}
+	less := func(a, b noteRow) bool {
+		switch t.Sort {
+		case "note":
+			return a.ID < b.ID
+		case "scope":
+			return a.Scope < b.Scope || (a.Scope == b.Scope && a.ID < b.ID)
+		case "by":
+			return a.DecidedBy < b.DecidedBy || (a.DecidedBy == b.DecidedBy && a.ID < b.ID)
+		}
+		return a.DecidedAt < b.DecidedAt || (a.DecidedAt == b.DecidedAt && a.ID < b.ID)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if t.Desc {
+			return less(out[j], out[i])
+		}
+		return less(out[i], out[j])
+	})
+	d.ActiveAll = len(d.Active)
+	d.Active = window(out, &t)
+	d.NoteT = t
+	d.NoteHeads = []thCell{t.Th("note", "Note"), t.Plain("Text"), t.Th("scope", "Scope"), t.Th("when", "Activated"), t.Th("by", "By")}
 }
 
 // sources are the playbooks and skills under each fleet's folder, as the image carries them.
