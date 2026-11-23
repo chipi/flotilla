@@ -188,7 +188,8 @@ with sync_playwright() as pw:
           "resume with a reason from the fleet page")
 
     # the backup chain's case (run.sh's cases section ran first; the business examples close theirs too): its page, reached from the list
-    page.goto(BASE + "/cases?status=closed")
+    # filtered as an operator would: a full e2e closes more cases than a page holds (20), and the chain's is not the newest
+    page.goto(BASE + "/cases?status=closed&q=backup")
     # the closed one: flotillad restarts during the e2e and its monitor runs again, opening a newer case
     link = page.locator("tr", has_text="plan recorded").filter(has_text=re.compile("backup")).locator("a[href^='/cases/case-']").first
     case_path = link.get_attribute("href") if link.count() else ""
