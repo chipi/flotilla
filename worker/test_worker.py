@@ -498,6 +498,33 @@ class TestHTTP(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(self.call("/v1/runs", dict(base, **extra))[0], 400)
 
+    def test_a_shadow_runs_record_of_reads_is_a_file_named_in_its_env_and_removed_after(self):
+        w = fw
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        code = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, code, True)
+        patch = mock.patch.object(fw, "CODE_ROOT", code)
+        patch.start()
+        self.addCleanup(patch.stop)
+        rec = {"decide": [{"tool": "wiki.get", "args": {"id": 1}, "result": "r", "ok": True}]}
+        environ = {"PATH": os.environ["PATH"], "HOME": d, "TMPDIR": d, "FLOTILLA_WORKER_MODE": "shadow"}
+        for given in (rec, {}):
+            req = {"run_id": "sh1", "routine": "t/j", "command": 'cat "$FLOTILLA_RECORDED_TOOLS"', "workdir": ".", "timeout_s": 10,
+                   "shadow": True, "recorded_tools": given}
+            res = w.run_job(req, environ)
+            self.assertEqual(res["status"], "ok", res)
+            self.assertEqual(json.loads(res["output_tail"]), given)
+            self.assertFalse(os.path.exists(w.recorded_tools_path({"TMPDIR": d}, "sh1")))
+        req = {"run_id": "sh2", "routine": "t/j", "command": 'test -z "$FLOTILLA_RECORDED_TOOLS"', "workdir": ".", "timeout_s": 10, "shadow": True}
+        self.assertEqual(w.run_job(req, environ)["status"], "ok", "no record: the variable is not set")
+
+    def test_a_live_run_with_recorded_tools_is_refused(self):
+        req = {"run_id": "l1", "routine": "t/j", "command": "true", "timeout_s": 5, "recorded_tools": {}}
+        with self.assertRaises(fw.Refused):
+            fw.prepare_env(req, {"PATH": "/usr/bin", "HOME": "/home/w"})
+        self.assertEqual(self.call("/v1/runs", dict(req, recorded_tools=[1]))[0], 400)
+
     def test_a_run_with_a_token_gets_the_file_and_the_token_is_not_logged(self):
         import contextlib
         import io
@@ -652,6 +679,23 @@ class TestEnvSplit(unittest.TestCase):
                 fw.worker_mode({"FLOTILLA_WORKER_MODE": v})
         self.assertEqual(fw.worker_mode({}), "live")
         self.assertEqual(fw.worker_mode({"FLOTILLA_WORKER_MODE": ""}), "live")
+
+    def test_a_shadow_run_is_never_given_a_read_servers_address_or_token(self):
+        base = {"run_id": "s1", "routine": "t/j", "command": "true", "workdir": ".", "timeout_s": 5, "shadow": True}
+        cases = {
+            "the request's URL": (dict(base, env={"MCP_WIKI_DOCS_URL": "http://mcp.example:1/mcp"}), self.shadow, "MCP_WIKI_DOCS_URL"),
+            "the request's token file": (dict(base, env={"MCP_WIKI_DOCS_TOKEN_FILE": "/run/t"}), self.shadow, "MCP_WIKI_DOCS_TOKEN_FILE"),
+            "a ROUTINE_ override": (dict(base), dict(self.shadow, ROUTINE_MCP_X_URL="http://mcp.example:1/mcp"), "MCP_X_URL"),
+        }
+        for name, (req, environ, key) in cases.items():
+            with self.subTest(name):
+                with self.assertRaises(fw.Refused) as cm:
+                    fw.prepare_env(req, environ)
+                self.assertIn(key, str(cm.exception))
+                self.assertNotIn("example", str(cm.exception), "names, never values")
+        # a live run keeps them: it is the reads worker's job to hold them
+        live = {"PATH": "/usr/bin", "HOME": "/home/w", "ROUTINE_MCP_X_URL": "http://mcp.example:1/mcp"}
+        self.assertEqual(fw.prepare_env({"run_id": "l1", "routine": "t/j", "command": "true", "timeout_s": 5}, live)["MCP_X_URL"], "http://mcp.example:1/mcp")
 
     def test_a_shadow_run_with_a_write_credential_in_its_environment_is_refused(self):
         base = {"run_id": "s1", "routine": "t/j", "command": "true", "workdir": ".", "timeout_s": 5, "shadow": True}

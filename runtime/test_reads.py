@@ -305,5 +305,64 @@ class InTheLoop(Reads):
         live.assert_not_called()
 
 
+class ShadowReplay(InTheLoop):
+    """A shadow of a station with reads (RFC-0014 section 4.8): its reads are answered from the live run's record, a read the record
+    lacks fails the run, and the fleet's own tools stay live. The record is the live run's own lines, keyed by the station's name."""
+
+    def record_of(self, live_lines):
+        by_station = {}
+        for l in live_lines:
+            by_station.setdefault(l["station"], []).append(l)
+        path = os.path.join(os.path.dirname(self.file), "rec.json")
+        with open(path, "w") as f:
+            json.dump(by_station, f)
+        return {"FLOTILLA_RECORDED_TOOLS": path, "FLOTILLA_SHADOW": "1"}
+
+    def test_the_live_runs_lines_replay_under_the_same_station_name_and_the_server_is_never_reached(self):
+        live = mock.Mock(return_value="LIVE")
+        self.step([ASK_READ, DECIDE], DOC, live)                         # the live run: one read, recorded under "answer"
+        env = self.record_of(self.lines())
+        n = len(self.stub.seen)
+        r = self.step([ASK_READ, DECIDE], DOC, live, env=env)
+        self.assertEqual(r.trace[0]["result"], "page 7")
+        self.assertEqual(len(self.stub.seen), n)
+
+    def test_a_read_the_record_lacks_fails_the_run_and_nothing_is_sent(self):
+        live = mock.Mock(return_value="LIVE")
+        self.step([ASK_READ, DECIDE], DOC, live)
+        env = self.record_of(self.lines())
+        n = len(self.stub.seen)
+        other = '{"action":"probe","probe":"wiki-docs.get_page","probe_args":{"id":8}}'
+        with self.assertRaises(recorded.RecordedMiss):
+            self.step([other, DECIDE], DOC, live, env=env)
+        self.assertEqual(len(self.stub.seen), n)
+        live.assert_not_called()
+
+    def test_an_empty_record_misses_every_read(self):
+        path = os.path.join(os.path.dirname(self.file), "empty.json")
+        with open(path, "w") as f:
+            json.dump({}, f)
+        with self.assertRaises(recorded.RecordedMiss):
+            self.step([ASK_READ, DECIDE], DOC, mock.Mock(), env={"FLOTILLA_RECORDED_TOOLS": path, "FLOTILLA_SHADOW": "1"})
+        self.assertEqual(self.stub.seen, [])
+
+    def test_the_fleets_own_tool_the_record_has_nothing_for_stays_live_in_a_station_with_reads(self):
+        live = mock.Mock(return_value="LIVE")
+        self.step([ASK_READ, DECIDE], DOC, live)
+        env = self.record_of(self.lines())
+        r = self.step([ASK_READ, ASK_PROBE, DECIDE], DOC, live, env=env)
+        self.assertEqual([t["result"] for t in r.trace], ["page 7", "LIVE"])
+        live.assert_called_once_with("probe", {"fp": "a"})
+
+    def test_a_station_without_reads_still_answers_every_tool_from_the_record(self):
+        path = os.path.join(os.path.dirname(self.file), "none.json")
+        with open(path, "w") as f:
+            json.dump({"answer": []}, f)
+        live = mock.Mock(return_value="LIVE")
+        with self.assertRaises(recorded.RecordedMiss):
+            self.step([ASK_PROBE, DECIDE], None, live, env={"FLOTILLA_RECORDED_TOOLS": path})
+        live.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

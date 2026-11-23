@@ -15,6 +15,7 @@ import json
 import os
 import time
 import unittest
+from unittest import mock
 
 os.environ.setdefault("SF_OBSERV_DISABLED", "1")
 
@@ -2518,6 +2519,29 @@ class TestOverturnNow(unittest.TestCase):
     def test_a_dismissal_after_a_filing_is_overturned(self):
         self._ledger(("2026-11-10T10:00:00+00:00", "file"), ("2026-11-10T11:00:00+00:00", "dismiss"))
         self.assertTrue(self._now())
+
+
+class TestAShadowsRecordedMissFailsTheCycle(unittest.TestCase):
+    """RFC-0014 section 4.8: a shadow asking for a read its live run never made fails the run. run_poll isolates a source pass that
+    crashes (one failing source never sinks the cycle), which would turn the miss into an exit 0: a miss is not a source failure."""
+
+    def _poll(self, which):
+        import orchestrator
+        import recorded
+        boom = mock.Mock(side_effect=recorded.RecordedMiss("no recorded result for station 'decide' tool 'wiki.get'"))
+        quiet = mock.Mock(return_value=[])
+        with mock.patch.object(orchestrator, "run_grafana", boom if which == "grafana" else quiet), \
+                mock.patch.object(orchestrator, "run_glitchtip", boom if which == "glitchtip" else quiet), \
+                mock.patch.dict(os.environ, {"FLEETD_STAGE": "shadow"}):
+            orchestrator.run_poll(dry_run=True)
+
+    def test_a_miss_in_either_pass_ends_the_cycle_with_the_miss(self):
+        import orchestrator  # noqa: F401  (puts the runtime on the path)
+        import recorded
+        for which in ("grafana", "glitchtip"):
+            with self.subTest(which):
+                with self.assertRaises(recorded.RecordedMiss):
+                    self._poll(which)
 
 
 if __name__ == "__main__":

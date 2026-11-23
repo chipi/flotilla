@@ -50,10 +50,41 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
    `decide` station's entry point passes them, and only when the station declares `reads:` (the
    recorded-tools key stays "" for one that does not). Deviation: the complete flag is not in the
    envelope (the schema allows no new field); step 4 reads it from the store.
-4. **Shadow**: a read the record lacks fails the shadow run (the replay path in `runtime/recorded.py`
-   must not fall through to `reads.py`, which only refuses without the record); waits for the live
-   run; `notRun` without a complete record; the record goes to the
-   shadow worker as a file; a shadow worker never holds a read server's address or token.
+4. **Shadow** (done): a version whose stations declare `reads:` (`sched.DeclaresReads`) waits for
+   its live run's end, whatever `shadows.after_live` says (`shadowTask.reads`; the wait is the
+   `liveDone` channel, closed after the record is written; a queue behind it waits too, as under
+   `after_live`), then runs from the record or is not run (`liveReadsRecord`). The record goes to
+   the shadow worker as `worker.Request.RecordedTools` (`{"<station>": [{tool, args, result,
+   ok}]}`, the envelope's `recorded_tool_results`): the worker writes it mode 600 to
+   `.flotilla-recorded-<run>.json` in its temp directory, names it in `FLOTILLA_RECORDED_TOOLS`,
+   and removes it after the run; a live run with `recorded_tools` is refused. A shadow worker
+   refuses a run whose built environment holds `MCP_*_URL` or `MCP_*_TOKEN_FILE`
+   (`check_no_mcp_endpoint`), and flotillad never sets them (tested on the live and the shadow
+   request).
+   - **What is chosen** (the operator's decision: a read the record lacks fails the shadow,
+     recorded as a miss):
+     - the live run ended ok with reads, complete: the shadow runs from them;
+     - ended ok, read nothing: the shadow runs with `{}`; any read it asks for is a miss. For this
+       to be told from a record that was not kept, `RunWithin` now writes an `input_reads` row
+       (empty, complete) for every live run that returned no error and whose version declares
+       reads, not only for one with reads or an incomplete one;
+     - a record with `complete = false`, a live run that did not end ok (any status but ok, or not
+       found), no row (the write failed, or the live version declares no reads while the shadow's
+       does), or lines a replay cannot serve: not run, with the reason in the shadow row ("the
+       live run's reads are not complete", "the live run did not end ok (error): ...", "the live
+       run's reads were not recorded ...");
+     - a store error reading the record or the run: not run, "the live run's reads could not be
+       read", logged.
+   - **A miss fails the run end to end.** `runtime/recorded.py` raises `RecordedMiss` from the
+     tool call, and `harness.run_json_step` does not catch it. The triage cycle did:
+     `orchestrator.run_poll` isolates a source pass that crashes and exits 0 below two failures,
+     which turned a miss into a passing run. `run_poll` now re-raises `RecordedMiss` from both
+     passes. Without that, a shadow that asked for an unrecorded read exited 0 (the new
+     `TestAShadowsRecordedMissFailsTheCycle`).
+   - **The station key** is the one `reads.py` writes (`station` = `decide` for triage, passed
+     only with reads) and the replay looks up (`recorded.key(station, tool, args)`);
+     `ShadowReplay` in `runtime/test_reads.py` replays a live run's own lines through the loop,
+     and a different argument misses.
 5. **Compose and the e2e**: `worker-reads` behind its own proxy (`egress-reads`), the shadow's
    worker without it; a stub MCP server in `deploy/e2e` (a result over 8192 characters, an
    undeclared tool, the server down for a replay, a shadow served the record); the section `reads`.
@@ -64,6 +95,20 @@ decisions; RFC-0014 §4.8 is amended where the code differs (below).
 - n8n's MCP Server Trigger (which transport it speaks), its read-only workflows and credentials,
   separate from the `plumbing.call` flows'.
 - The new worker, its proxy ACL with the real host, the token file, and `flotillad.yaml`'s `mcp:`.
+
+## Deviations (step 4)
+
+- **The harness's recorded wrap now covers a reads station's reads, and the fleet's own tools only
+  where the record has them.** The wrap sat over every tool of the station, so a shadow of the
+  triage `decide` station (reads plus `probe`) would have missed on its first probe: a live run's
+  record holds reads only, and a shadow runs the fleet's own tools live on its read credentials.
+  For a station with reads, a name the record has nothing for (`Replayer.knows`) goes to the
+  fleet's tool; a read, or a tool the record does hold, is answered from the record. A station
+  without reads is as before (every tool recorded). Not covered: an offline run (`offline_run.py`)
+  of a station with reads whose scenario lacks a probe now reaches the live probe (behind its
+  refusing proxy) instead of a miss.
+- A shadow of a version with reads whose live version declares none is not run (no row), rather
+  than run and missing every read.
 
 ## Not covered
 

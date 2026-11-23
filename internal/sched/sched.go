@@ -508,8 +508,9 @@ func (s *Scheduler) RunWithin(ctx context.Context, id, trigger, actor string, ca
 			s.StoreError("run_loaded")
 		}
 	}
-	// the reads are a second write after the run: the input was frozen at dispatch, before they happened
-	if callErr == nil && (len(res.Reads) > 0 || (res.ReadsComplete != nil && !*res.ReadsComplete)) {
+	// the reads are a second write after the run: the input was frozen at dispatch, before they happened. A version that declares
+	// reads writes a row even for a run that read nothing (a shadow runs from it, with nothing to answer), so no row means not kept.
+	if callErr == nil && (len(res.Reads) > 0 || (res.ReadsComplete != nil && !*res.ReadsComplete) || DeclaresReads(j.Stations)) {
 		if err := s.Store.RecordInputReads(fctx, runID, res.Reads, res.ReadsComplete == nil || *res.ReadsComplete); err != nil {
 			s.Log.Error("recording the run's live reads", "run_id", runID, "err", err)
 			s.StoreError("input_reads")

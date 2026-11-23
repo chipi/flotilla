@@ -71,7 +71,7 @@ def trim(v, n):
 
 
 def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=None, fleet_hooks=None, log=print, station=None, reads=None):
-    read_names = []
+    read_names, fleet_tool = [], tool
     if reads is not None:
         import reads as reads_mod
         read_names = reads_mod.tools_for(reads)
@@ -80,7 +80,15 @@ def run_json_step(messages, call, tool, cfg, errors, on_quirk=None, on_event=Non
     # FLOTILLA_RECORDED_TOOLS (an offline run, runtime/recorded.py): the tools answer from the recordings, never live. Unset: this line is all.
     if os.environ.get("FLOTILLA_RECORDED_TOOLS"):
         import recorded
-        tool = recorded.from_env().wrap(station, tool)
+        rep = recorded.from_env()
+        served = rep.wrap(station, tool)
+        if read_names:
+            # The record of a live run holds its reads only. A shadow of a station with reads runs the fleet's own tools live, on its
+            # read credentials, as it always did: a name the record has nothing under goes to the fleet's tool, and only a read (or a
+            # tool the record does have) is answered from the record, a miss failing the run.
+            tool = lambda name, args: served(name, args) if name in read_names or rep.knows(station, name) else fleet_tool(name, args)
+        else:
+            tool = served
     lim, q = cfg["limits"], cfg["quirks"]
     n, steps = lim["max_tool_calls"], lim["max_steps"]
     if steps != n + 1:

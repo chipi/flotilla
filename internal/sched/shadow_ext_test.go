@@ -193,10 +193,27 @@ func newWorld(t *testing.T, routineExtra string) *world {
 
 func newWorldT(t *testing.T, trigger, routineExtra string) *world {
 	t.Helper()
+	return newWorldSpecs(t, trigger, routineExtra, "run: {command: \"echo v1\", timeout: 5m}\n", "run: {command: \"echo v2\", timeout: 5m}\n")
+}
+
+// stationSpec is a version with one flotilla station, reading from a wiki server when withReads.
+func stationSpec(cmd string, withReads bool) string {
+	reads := ""
+	if withReads {
+		reads = "    reads:\n      - {server: wiki, tools: [get_page]}\n"
+	}
+	return "run: {command: \"" + cmd + "\", timeout: 5m}\nstations:\n  decide:\n    harness: flotilla\n    model: plan-flash\n    prompts: {task: task.md}\n    tools: all\n    tool_names: [probe]\n    gates: []\n" + reads
+}
+
+func newWorldSpecs(t *testing.T, trigger, routineExtra, v1, v2 string) *world {
+	t.Helper()
 	d := t.TempDir()
 	put(t, d, "ops/rerun/routine.yaml", "fleet: ops\nroutine: rerun\ndescription: reruns\nenabled: true\nworker: ops\ntrigger: "+trigger+"\nautonomy: record\nbudget: {day_usd: 1}\nfreshness: 35m\n"+routineExtra)
-	put(t, d, "ops/rerun/v1/spec.yaml", "run: {command: \"echo v1\", timeout: 5m}\n")
-	put(t, d, "ops/rerun/v2/spec.yaml", "run: {command: \"echo v2\", timeout: 5m}\n")
+	put(t, d, "ops/rerun/v1/spec.yaml", v1)
+	put(t, d, "ops/rerun/v2/spec.yaml", v2)
+	for _, v := range []string{"v1", "v2"} {
+		put(t, d, "ops/rerun/"+v+"/task.md", "the task {{x}}\n")
+	}
 	rs, err := spec.LoadVersions(d)
 	if err != nil {
 		t.Fatal(err)
@@ -787,5 +804,161 @@ func TestShadowRunOnAGivenInput(t *testing.T) {
 	}
 	if _, err := w.s.ShadowRunOn(ctx, "ops/rerun", 2, r.ID); !errors.Is(err, store.ErrShadowRunExists) {
 		t.Fatalf("a second shadow run of the same version on the input: %v", err)
+	}
+}
+
+// ---- RFC-0014 step 5 part 4: a shadow of a version with reads runs from the live run's record
+
+func readsWorld(t *testing.T) *world {
+	t.Helper()
+	return newWorldSpecs(t, "{every: 10m}", "", stationSpec("echo v1", true), stationSpec("echo v2", true))
+}
+
+func readLine(tool, args, result string) json.RawMessage {
+	return json.RawMessage(`{"station":"decide","tool":"` + tool + `","args":` + args + `,"result":"` + result + `","ok":true,"chars":4,"cut":false}`)
+}
+
+// The shadow queues at the live run's start, and with reads it must not start until the live run's record is written.
+func TestAShadowWithReadsWaitsForItsLiveRunsEndWhateverAfterLiveSays(t *testing.T) {
+	w := readsWorld(t)
+	w.s.Shadows.AfterLive = false
+	w.live.hold = make(chan struct{})
+	w.live.res.Reads = []json.RawMessage{readLine("wiki.get_page", `{"id":7}`, "page 7")}
+	done := make(chan struct{})
+	go func() { w.runLive("schedule", nil); close(done) }()
+	time.Sleep(300 * time.Millisecond)
+	if len(w.shadow.requests()) != 0 {
+		t.Fatal("the shadow started while its live run was running")
+	}
+	close(w.live.hold)
+	<-done
+	w.s.ShadowWait()
+	reqs := w.shadow.requests()
+	if len(reqs) != 1 {
+		t.Fatalf("the shadow did not run after its live run: %d", len(reqs))
+	}
+	if got := string(reqs[0].RecordedTools); got != `{"decide":[{"tool":"wiki.get_page","args":{"id":7},"result":"page 7","ok":true}]}` {
+		t.Fatalf("recorded tools: %s", got)
+	}
+}
+
+func TestAShadowWithoutReadsStillQueuesAtTheLiveRunsStartAndGetsNoRecord(t *testing.T) {
+	w := newWorld(t, "")
+	w.live.hold = make(chan struct{})
+	done := make(chan struct{})
+	go func() { w.runLive("schedule", nil); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(w.shadow.requests()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(w.shadow.requests()) != 1 {
+		t.Fatal("a shadow without reads starts with its live run, as before")
+	}
+	close(w.live.hold)
+	<-done
+	w.s.ShadowWait()
+	if w.shadow.requests()[0].RecordedTools != nil {
+		t.Fatalf("no record without reads: %s", w.shadow.requests()[0].RecordedTools)
+	}
+}
+
+func TestAShadowOfAVersionWithReadsIsNotRunWithoutAWholeRecord(t *testing.T) {
+	no := false
+	cases := map[string]struct {
+		res  func(*worker.Result)
+		want string
+	}{
+		"incomplete": {func(r *worker.Result) {
+			r.Reads, r.ReadsComplete = []json.RawMessage{readLine("wiki.get_page", `{"id":7}`, "page 7")}, &no
+		}, "the live run's reads are not complete"},
+		"live run failed": {func(r *worker.Result) {
+			r.Status = "error"
+			r.Reads = []json.RawMessage{readLine("wiki.get_page", `{"id":7}`, "page 7")}
+		}, "the live run did not end ok (error)"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			w := readsWorld(t)
+			c.res(w.live.res)
+			w.runLive("schedule", nil)
+			w.s.ShadowWait()
+			rows := w.shadowRuns()
+			if len(rows) != 1 || rows[0].Status != store.ShadowNotRun || !strings.Contains(rows[0].Reason, c.want) {
+				t.Fatalf("%+v", rows)
+			}
+			if len(w.shadow.requests()) != 0 {
+				t.Fatal("it ran")
+			}
+		})
+	}
+}
+
+// A record that was not kept is not an empty one: RunWithin writes a row for every live run of a version that declares reads.
+func TestAShadowIsNotRunWhenTheRecordWasNotKept(t *testing.T) {
+	w := readsWorld(t)
+	w.live.hold = make(chan struct{})
+	done := make(chan struct{})
+	go func() { w.runLive("schedule", nil); close(done) }()
+	time.Sleep(300 * time.Millisecond)
+	// the live run's write failed or never happened: nothing in input_reads when it ends
+	raw, err := sql.Open("sqlite", "file:"+w.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(`DROP TABLE input_reads`); err != nil {
+		t.Fatal(err)
+	}
+	close(w.live.hold)
+	<-done
+	w.s.ShadowWait()
+	if rows := w.shadowRuns(); len(rows) != 1 || rows[0].Status != store.ShadowNotRun {
+		t.Fatalf("%+v", rows)
+	}
+	if len(w.shadow.requests()) != 0 {
+		t.Fatal("it ran")
+	}
+}
+
+// A live run that ended ok and read nothing leaves an empty record: the shadow runs, and any read it asks for is a miss.
+func TestAShadowRunsFromAnEmptyRecordOfALiveRunThatReadNothing(t *testing.T) {
+	w := readsWorld(t)
+	w.runLive("schedule", nil)
+	w.s.ShadowWait()
+	reqs := w.shadow.requests()
+	if len(reqs) != 1 || string(reqs[0].RecordedTools) != "{}" {
+		t.Fatalf("%d requests; recorded tools %q", len(reqs), func() string {
+			if len(reqs) == 0 {
+				return ""
+			}
+			return string(reqs[0].RecordedTools)
+		}())
+	}
+	rec, ok, err := w.st.InputReadsOf(context.Background(), w.shadowRuns()[0].InputKey)
+	if err != nil || !ok || !rec.Complete || len(rec.Lines) != 0 {
+		t.Fatalf("the empty record is a row: %+v %v %v", rec, ok, err)
+	}
+}
+
+// A shadow never carries a read server's address or token, whatever the live run had.
+func TestAShadowRunCarriesNoMCPServerSettings(t *testing.T) {
+	w := readsWorld(t)
+	w.runLive("schedule", nil)
+	w.s.ShadowWait()
+	reqs := w.shadow.requests()
+	if len(reqs) != 1 {
+		t.Fatal("no shadow run")
+	}
+	for k := range reqs[0].Env {
+		if strings.HasPrefix(k, "MCP_") {
+			t.Fatalf("a shadow's request carries %s", k)
+		}
+	}
+	for _, r := range w.live.reqs {
+		for k := range r.Env {
+			if strings.HasPrefix(k, "MCP_") {
+				t.Fatalf("flotillad hands %s to a worker: only the reads worker's own config holds it", k)
+			}
+		}
 	}
 }

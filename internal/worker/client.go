@@ -58,6 +58,10 @@ type Request struct {
 	InputKey   string   `json:"input_key,omitempty"`
 	SnapshotOf string   `json:"snapshot_of,omitempty"`
 	State      []string `json:"state,omitempty"`
+	// RecordedTools is a shadow run's record of its live run's reads ({"<station>": [{tool, args, result, ok}]}, the input envelope's
+	// recorded_tool_results): the worker writes it to a file in the run's temp directory and names it in FLOTILLA_RECORDED_TOOLS, so
+	// the run's reads are answered from it and never reach a server. nil is no record; {} is a record of no reads.
+	RecordedTools json.RawMessage `json:"recorded_tools,omitempty"`
 }
 
 // Result is what the worker reports. Status is ok, error, timeout or cancelled (a cancel stopped it); anything that keeps the

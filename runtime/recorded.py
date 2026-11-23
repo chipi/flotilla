@@ -49,6 +49,11 @@ class Replayer:
                     raise ValueError(f"a recorded call of {station!r} needs tool, args and result")
                 self.answers.setdefault(key(station, c["tool"], c.get("args") or {}), []).append(c["result"])
 
+    def knows(self, station, tool):
+        """Whether anything is recorded for this tool of this station, under any arguments."""
+        t, st = _norm(tool), station or ""
+        return any(k[0] == st and k[1] == t for k in self.answers)
+
     def answer(self, station, tool, args):
         k = key(station, tool, args)
         got = self.answers.get(k)

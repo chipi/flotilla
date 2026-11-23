@@ -18,6 +18,7 @@ import config
 import correlate
 import sources
 import triage
+import recorded   # flotilla runtime/, on the path once triage is imported
 
 SYNTHETIC = {
     "fingerprint": "grafana:synthetic-shop-stale",
@@ -306,6 +307,8 @@ def run_poll(limit=10, dry_run=True):
         disps += run_grafana(limit=limit, dry_run=dry_run)   # ALL non-meta Grafana alerts
     except triage.TriagerDown as e:
         triager_down = str(e)
+    except recorded.RecordedMiss:
+        raise   # a shadow asked for a read its live run never made: the run fails, not one source pass
     except Exception as e:  # noqa: BLE001
         failures += 1
         print("  grafana pass error:", e)
@@ -314,6 +317,8 @@ def run_poll(limit=10, dry_run=True):
             disps += run_glitchtip(limit=limit, dry_run=dry_run)   # GlitchTip errors
         except triage.TriagerDown as e:
             triager_down = str(e)
+        except recorded.RecordedMiss:
+            raise
         except Exception as e:  # noqa: BLE001
             failures += 1
             print("  glitchtip pass error:", e)

@@ -3,7 +3,7 @@
 The worker holds the fleet's secrets (its env files) and its code; flotillad holds neither. flotillad
 says what to run and when; the worker runs it and reports. Python stdlib only.
 
-  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, plan_file, env, api_token, shadow}  -> the
+  POST /v1/runs   {run_id, routine, command, workdir, timeout_s, spend_file, plan_file, env, api_token, shadow, recorded_tools}  -> the
                   result, when done. api_token is this run's own token for flotillad's workers' listener: the worker writes it
                   to a file in the run's temp directory (mode 0600), names the file in FLOTILLA_API_TOKEN_FILE (over any
                   ROUTINE_ value) and removes it when the run ends; it is never in the run's environment or the worker's log.
@@ -342,6 +342,33 @@ def check_mode(req, environ=None):
         raise Refused("this is a shadow worker: it runs shadow runs only")
 
 
+MCP_ENDPOINT_RE = re.compile(r"^MCP_.+_(URL|TOKEN_FILE)$")
+
+
+def check_no_mcp_endpoint(env):
+    """A shadow run is never given a read server's address or token (RFC-0014 section 4.8): it reads the live run's record, and only
+    the dedicated reads worker holds MCP_<SERVER>_URL and MCP_<SERVER>_TOKEN_FILE. Names only, never values."""
+    held = sorted(k for k in env if MCP_ENDPOINT_RE.match(k))
+    if held:
+        raise Refused("a shadow run's environment holds MCP server settings (" + ", ".join(held) + "): a shadow reads the live run's record, never the servers")
+
+
+def recorded_tools_path(env, run_id):
+    """Where a shadow run's record of its live run's reads is: its temp directory, beside the calls file, one per run."""
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)[:120]
+    return os.path.join(env.get("TMPDIR") or tempfile.gettempdir(), f".flotilla-recorded-{safe}.json")
+
+
+def write_recorded_tools(path, recorded):
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(recorded, f)
+
+
 def check_no_write_credential(env, environ=None):
     leaked = sorted(write_keys(environ) & set(env))
     if leaked:
@@ -563,6 +590,7 @@ def prepare_env(req, environ=None):
     env = build_env(req.get("env"), environ)
     if req.get("shadow"):
         check_no_write_credential(env, environ)
+        check_no_mcp_endpoint(env)
         env["FLOTILLA_SHADOW"], env["FLEETD_STAGE"] = "1", "shadow"
         if not shutil.which("nice", path=env.get("PATH")):
             raise Refused("nice is not on this worker's PATH: a shadow runs at a lower priority than the live run, or not at all")
@@ -572,6 +600,8 @@ def prepare_env(req, environ=None):
                 raise Refused("a shadow run with state paths needs snapshot_of: the live run whose snapshot it starts from")
             if not os.path.isdir(snapshot_path(sid)):
                 raise Refused(f"no snapshot of {sid} here (deleted, never taken, or not on this host)")
+    if req.get("recorded_tools") is not None and not req.get("shadow"):
+        raise Refused("recorded_tools is a shadow run's record of its live run's reads: a live run reads live")
     return env
 
 
@@ -586,6 +616,11 @@ def run_job(req, environ=None, cancel=None):
         token_file = token_path(env, req["run_id"])
         write_run_token(token_file, req["api_token"])
         env["FLOTILLA_API_TOKEN_FILE"] = token_file   # over a ROUTINE_ value: the run's own token, not the worker's
+    recorded_file = ""
+    if req.get("recorded_tools") is not None:
+        recorded_file = recorded_tools_path(env, req["run_id"])
+        write_recorded_tools(recorded_file, req["recorded_tools"])
+        env["FLOTILLA_RECORDED_TOOLS"] = recorded_file   # a miss in it fails the run (runtime/recorded.py)
     try:
         if req.get("shadow"):
             restore_state(req, env, environ)
@@ -593,11 +628,12 @@ def run_job(req, environ=None, cancel=None):
     finally:
         if marks:
             _marks.pop(req["run_id"], None)
-        if token_file:
-            try:
-                os.remove(token_file)
-            except OSError:
-                pass
+        for f in (token_file, recorded_file):
+            if f:
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
 
 
 def _run_job(req, env, cancel, shadow=False):
@@ -835,6 +871,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(req["state"], list):
                     raise ValueError("state must be a list of paths")
                 req["state"] = [clean_state_path(p) for p in req["state"]]
+            if "recorded_tools" in req and not isinstance(req["recorded_tools"], dict):
+                raise ValueError("recorded_tools must be an object: station -> list of recorded calls")
             if "input_key" in req and not isinstance(req["input_key"], str):
                 raise ValueError("input_key must be a string")
             resolve(CODE_ROOT, req.get("workdir"))

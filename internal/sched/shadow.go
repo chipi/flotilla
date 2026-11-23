@@ -2,6 +2,7 @@ package sched
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -68,6 +69,7 @@ type shadowTask struct {
 	version                                 int
 	rowID                                   int64
 	liveDone                                <-chan struct{}
+	reads                                   bool // the version's stations declare reads: it waits for the live run's end and runs from its record
 }
 
 type shadowQueues struct {
@@ -248,7 +250,7 @@ func (s *Scheduler) enqueueOne(ctx context.Context, j *spec.Routine, in store.In
 		return
 	}
 	q.queues[wname] = append(q.queues[wname], &shadowTask{inputKey: in.Key, routineID: j.ID(), kind: in.Kind, hash: v.Hash, worker: wname,
-		version: v.Version, rowID: id, liveDone: liveDone})
+		version: v.Version, rowID: id, liveDone: liveDone, reads: DeclaresReads(sv.Stations)})
 	if !q.running[wname] {
 		q.running[wname] = true
 		q.wg.Add(1)
@@ -325,7 +327,9 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 			log.Error("a shadow run's ending was not recorded", "input", t.inputKey, "err", err)
 		}
 	}
-	if s.Shadows.AfterLive {
+	// A version with reads runs from the live run's record, which is written after that run ends (RunWithin): it waits whatever
+	// after_live says. A queue behind it waits too, as it does under after_live.
+	if s.Shadows.AfterLive || t.reads {
 		select {
 		case <-t.liveDone:
 		case <-ctx.Done():
@@ -356,6 +360,20 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 	if err != nil {
 		fail(store.ShadowNotRun, "the input is not recorded: "+err.Error())
 		return
+	}
+	var recorded json.RawMessage
+	if t.reads {
+		why, rec, err := s.liveReadsRecord(ctx, t.inputKey)
+		if err != nil {
+			log.Error("shadow reads record", "routine", key, "input", t.inputKey, "err", err)
+			fail(store.ShadowNotRun, "the live run's reads could not be read")
+			return
+		} else if why != "" {
+			log.Info("shadow run skipped", "routine", key, "input", t.inputKey, "why", why)
+			fail(store.ShadowNotRun, why)
+			return
+		}
+		recorded = rec
 	}
 	if why, err := s.shadowSkip(ctx, sj, key, runner); err != nil {
 		log.Error("shadow skip rules", "routine", key, "err", err)
@@ -439,7 +457,7 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 	log.Info("shadow run start", "routine", key, "run_id", runID, "input", t.inputKey, "worker", t.worker, "trace_id", rec.TraceID)
 	res, callErr := runner.Run(ctx, worker.Request{RunID: runID, Routine: key, Command: sj.Run.Command, Workdir: sj.Run.Workdir,
 		TimeoutS: sj.Limit.Seconds(), SpendFile: sj.Run.SpendFile, PlanFile: planFile, Env: env, APIToken: apiToken, Shadow: true,
-		InputKey: t.inputKey, SnapshotOf: snapshotOf, State: sj.State})
+		InputKey: t.inputKey, SnapshotOf: snapshotOf, State: sj.State, RecordedTools: recorded})
 
 	status, detail, spend, dur := store.StatusError, "", 0.0, 0.0
 	var exit *int
@@ -527,6 +545,52 @@ func (s *Scheduler) runShadow(ctx context.Context, t *shadowTask) {
 	if err := s.Store.ShadowRunStep(fctx, t.rowID, end, detail, ""); err != nil {
 		log.Error("a shadow run's ending was not recorded", "input", t.inputKey, "err", err)
 	}
+}
+
+// DeclaresReads: some station declares `reads:` (RFC-0014 section 4.8), so its runs read live and a shadow of it runs from the record.
+func DeclaresReads(stations map[string]*spec.Station) bool {
+	for _, st := range stations {
+		if st != nil && len(st.Reads) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// liveReadsRecord is why a shadow of a version with reads cannot run from its live run's record ("" when it can) and, when it can, the
+// record as the worker's recorded tools (station -> calls; {} for a live run that read nothing: any read the shadow asks for is then
+// a miss and fails it). Not run: the live run did not end ok, there is no record (RunWithin writes one, empty or not, for every
+// live run of a version that declares reads, so none means it was not kept, or the live version declares none), or it is incomplete.
+func (s *Scheduler) liveReadsRecord(ctx context.Context, liveID string) (string, json.RawMessage, error) {
+	run, err := s.Store.Run(ctx, liveID)
+	if err != nil {
+		return "", nil, err
+	}
+	if run == nil || run.Status != store.StatusOK {
+		st := "not found"
+		if run != nil {
+			st = run.Status
+		}
+		return "the live run did not end ok (" + st + "): its reads are not a record to run from", nil, nil
+	}
+	rec, ok, err := s.Store.InputReadsOf(ctx, liveID)
+	if err != nil {
+		return "", nil, err
+	}
+	if !ok {
+		return "the live run's reads were not recorded (not kept, or its version declares no reads)", nil, nil
+	}
+	if !rec.Complete {
+		return "the live run's reads are not complete", nil, nil
+	}
+	recorded, err := input.RecordedFromReads(rec.Lines)
+	if err != nil {
+		return "the live run's reads are not a record a replay can serve: " + err.Error(), nil, nil
+	}
+	if recorded == nil {
+		recorded = json.RawMessage("{}")
+	}
+	return "", recorded, nil
 }
 
 // afterShadowTerminal deletes an input's state snapshot once every shadow run on it has ended, unless the input is pinned.
