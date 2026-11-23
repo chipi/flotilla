@@ -43,9 +43,16 @@
 
   <section class="casecards" aria-labelledby="caps">
     <h2 id="caps">Actions</h2>
+    {{$at := .ActT}}
+    <div class="filters" role="group" aria-label="Filter actions">
+      <nav class="pills" aria-label="Level">
+        {{range .ActTabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+      </nav>
+      {{template "search" (search $at "actions" "Find" "action, kind")}}
+    </div>
     <div class="table-box">
       <table class="data">
-        <thead><tr><th scope="col">Action</th><th scope="col">For kinds</th><th scope="col">Risk</th><th scope="col">Reversible</th><th scope="col">Level</th><th scope="col">Evidence toward the next level</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
+        <thead><tr>{{range .ActHeads}}{{template "th" .}}{{end}}{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
         <tbody>
           {{range .Actions}}<tr id="action-{{.Name}}"{{if .Primary}} class="row--ready"{{end}}>
             <td data-label="Action" class="exact">{{.Name}}</td>
@@ -58,29 +65,44 @@
               <span class="soft">{{.Record}}</span>
               {{if .Cap}}<span class="evidence__held">Promoting it changes nothing yet: {{.Cap}}.</span>{{else if .Also}}<span class="evidence__held">{{.Also}} runs below {{.Up}}: promote it as well, under Routines.</span>{{end}}</span></td>
             {{if $act}}<td data-label="Change" class="stack r"><div class="change-cell">
-              {{if .CanUp}}<form method="post" action="/actions/{{.Name}}/autonomy">
+              {{if .Primary}}<form method="post" action="/actions/{{.Name}}/autonomy">
                 {{template "csrf" $csrf}}<input type="hidden" name="autonomy" value="{{.Up}}">
-                <input name="reason" required data-needs aria-label="Why promote {{.Name}} to {{.Up}}" placeholder="Why: what its record shows"{{if .Reason}} value="{{.Reason}}"{{end}}>
-                <button class="btn {{if .Primary}}btn--blue{{else}}btn--small{{end}}" type="submit">Promote to {{.Up}}</button>
-              </form>{{else}}<button class="btn btn--small" type="button" disabled>{{if .AtMax}}{{if eq .Rev "no"}}Never auto{{else}}At {{.Autonomy}}{{end}}{{else}}After unfreeze{{end}}</button>{{end}}
+                <input name="reason" required data-needs aria-label="Why promote {{.Name}} to {{.Up}}" placeholder="Why: what its record shows" value="{{.Reason}}">
+                <button class="btn btn--blue" type="submit">Promote to {{.Up}}</button>
+              </form>{{else if .CanUp}}<details class="promote">
+                <summary class="btn btn--small">Promote to {{.Up}}…</summary>
+                <form method="post" action="/actions/{{.Name}}/autonomy">
+                  {{template "csrf" $csrf}}<input type="hidden" name="autonomy" value="{{.Up}}">
+                  <input name="reason" required data-needs aria-label="Why promote {{.Name}} to {{.Up}}" placeholder="Why: what its record shows">
+                  <button class="btn btn--small" type="submit">Promote</button>
+                </form>
+              </details>{{else}}<button class="btn btn--small" type="button" disabled>{{if .AtMax}}{{if eq .Rev "no"}}Never auto{{else}}At {{.Autonomy}}{{end}}{{else}}After unfreeze{{end}}</button>{{end}}
               {{if .Down}}<form method="post" action="/actions/{{.Name}}/autonomy">
                 {{template "csrf" $csrf}}<input type="hidden" name="autonomy" value="{{.Down}}">
                 <button class="btn btn--small" type="submit">Demote to {{.Down}}</button>
               </form>{{end}}
             </div></td>{{end}}
-          </tr>{{else}}<tr><td colspan="7" class="empty">No action is declared in the registry.</td></tr>{{end}}
+          </tr>{{else}}<tr><td colspan="7" class="empty">{{if eq .ActAll 0}}No action is declared in the registry.{{else}}No action matches these filters.{{end}}</td></tr>{{end}}
         </tbody>
       </table>
     </div>
+    {{template "pager" $at}}
     <p class="footnote">An action is ready for its next level after 5 clean plans in a row (a recorded plan you judged right; a proposed one approved as it stood and verified) and no wrong verdict, failed execution or rejection in the last 7 days. Ready actions come first, with their record written in as the reason; Now and the brief say when one is ready. You still promote, one step at a time.</p>
   </section>
 
   <section class="casecards" aria-labelledby="routines">
     <h2 id="routines">Routines</h2>
     <p class="meta">A routine's own level caps every action it plans. Raising it needs a reason; while the freeze holds every routine runs at record whatever is set.</p>
+    {{$rt := .RouT}}
+    <div class="filters" role="group" aria-label="Filter routines">
+      <nav class="pills" aria-label="Runs at">
+        {{range .RouTabs}}<a class="pill" href="{{.Href}}" aria-current="{{if .On}}true{{else}}false{{end}}">{{.Label}} <span class="n">{{.N}}</span></a>{{end}}
+      </nav>
+      {{template "search" (search $rt "routines" "Find" "routine")}}
+    </div>
     <div class="table-box">
       <table class="data">
-        <thead><tr><th scope="col">Routine</th><th scope="col">Runs at</th><th scope="col">Set</th><th scope="col">Spec default</th><th scope="col">Cap</th>{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
+        <thead><tr>{{range .RouHeads}}{{template "th" .}}{{end}}{{if $act}}<th scope="col" class="r">Change</th>{{end}}</tr></thead>
         <tbody>
           {{range .Routines}}<tr>
             <td data-label="Routine"><a class="exact" href="/fleets/{{.Fleet}}?sel={{.ID}}">{{.ID}}</a>{{if not .Enabled}} <span class="chip chip--neutral chip--small">disabled</span>{{end}}</td>
@@ -100,10 +122,11 @@
                 <button class="btn btn--small" type="submit">Set</button>
               </div>
             </form></td>{{end}}
-          </tr>{{end}}
+          </tr>{{else}}<tr><td colspan="6" class="empty">No routine matches these filters.</td></tr>{{end}}
         </tbody>
       </table>
     </div>
+    {{template "pager" $rt}}
   </section>
 
   <div class="cards2">

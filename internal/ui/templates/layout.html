@@ -52,10 +52,10 @@
   </nav>{{end}}
 </div>{{end}}
 
-{{define "search"}}<form class="search" method="get" action="{{.T.Path}}" role="search">
+{{define "search"}}<form class="search" method="get" action="{{.T.Action}}" role="search">
   {{range .T.Hidden "q"}}<input type="hidden" name="{{.K}}" value="{{.V}}">{{end}}
   <label for="q-{{.ID}}">{{.Label}}</label>
-  <input id="q-{{.ID}}" type="search" name="q" value="{{.T.Get "q"}}" placeholder="{{.Placeholder}}">
+  <input id="q-{{.ID}}" type="search" name="{{.T.Key "q"}}" value="{{.T.Get "q"}}" placeholder="{{.Placeholder}}">
 </form>{{end}}
 
 {{define "score"}}<div class="score">

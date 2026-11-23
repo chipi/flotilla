@@ -51,6 +51,21 @@ executor's cap could make a promotion do nothing, silently. One reading of each 
 `Store.ActionPlanners` names the live routines that planned an action (their caps apply);
 `Store.UnjudgedRecorded` the recorded plans with no verdict from anyone.
 
+## Page weight (2026-11-23, the operator's review of the screenshots)
+
+- **Now:** "Wrong right now" took the top half of the page with 17 lines, above what needs a
+  decision. It is now a card at the head of the side column: its count, the first 3 items, the rest
+  behind "Show all N", and the one-line normal summary. Needs you leads the page; on a phone the
+  card follows it.
+- **Autonomy:** both tables sort, filter and page like every other table (the operator's rule since
+  2026-11-14, missed here). Actions: level pills with Ready, a search on action and kind, sortable
+  Action, Risk, Reversible, Level and Evidence (the default: ready first). Routines: level pills,
+  search, every column sortable. 10 rows a page, since each row carries its forms. The two tables
+  keep their own keys (`tableQ.Prefix`, "r" for Routines) and their links return to their table
+  (`tableQ.Anchor`). A row that is not ready folds its reason box behind "Promote to X…".
+- **Phone tables:** the first row of a stacked table never stacked its `td.stack` cells (the
+  first-row rule outranked it); fixed for every table.
+
 ## Not covered
 
 - The fleet-wide deploy (the mini and every remote worker's machine in one step): an open design

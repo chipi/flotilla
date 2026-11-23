@@ -19,16 +19,23 @@ type tableQ struct {
 	Desc        bool
 	Page, Total int
 	Per         int
+	Prefix      string // the keys' prefix when a page has two tables, so each keeps its own sort, filters and page
+	Anchor      string // the table's id on the page: its links come back to it, not to the top
 }
 
 // readTable reads sort, dir and page from the request, with the table's default order.
 func readTable(r *http.Request, defSort string, defDesc bool, sortable func(string) bool) tableQ {
+	return readTableAs(r, "", defSort, defDesc, sortable)
+}
+
+// readTableAs is readTable for a table whose keys carry prefix ("r" reads rsort, rdir, rpage, rq).
+func readTableAs(r *http.Request, prefix, defSort string, defDesc bool, sortable func(string) bool) tableQ {
 	v := r.URL.Query()
-	t := tableQ{Path: r.URL.Path, vals: v, Sort: defSort, Desc: defDesc, Page: 1, Per: perPage}
-	if s := v.Get("sort"); s != "" && sortable(s) {
-		t.Sort, t.Desc = s, v.Get("dir") == "desc"
+	t := tableQ{Path: r.URL.Path, vals: v, Sort: defSort, Desc: defDesc, Page: 1, Per: perPage, Prefix: prefix}
+	if s := v.Get(prefix + "sort"); s != "" && sortable(s) {
+		t.Sort, t.Desc = s, v.Get(prefix+"dir") == "desc"
 	}
-	if p, err := strconv.Atoi(v.Get("page")); err == nil && p > 1 {
+	if p, err := strconv.Atoi(v.Get(prefix + "page")); err == nil && p > 1 {
 		t.Page = p
 	}
 	return t
@@ -36,11 +43,14 @@ func readTable(r *http.Request, defSort string, defDesc bool, sortable func(stri
 
 func (t tableQ) Offset() int { return (t.Page - 1) * t.Per }
 
+// Key is a key's name in the URL for this table.
+func (t tableQ) Key(k string) string { return t.Prefix + k }
+
 // Get is a filter's current value.
-func (t tableQ) Get(k string) string { return t.vals.Get(k) }
+func (t tableQ) Get(k string) string { return t.vals.Get(t.Key(k)) }
 
 // href is this table's URL with the given changes; an empty value removes the key. Any change other
-// than the page goes back to page 1.
+// than the page goes back to page 1. Another table's keys on the page are kept as they are.
 func (t tableQ) href(kv ...string) string {
 	v := url.Values{}
 	for k, vs := range t.vals {
@@ -52,18 +62,18 @@ func (t tableQ) href(kv ...string) string {
 			keepPage = true
 		}
 		if kv[i+1] == "" {
-			v.Del(kv[i])
+			v.Del(t.Key(kv[i]))
 		} else {
-			v.Set(kv[i], kv[i+1])
+			v.Set(t.Key(kv[i]), kv[i+1])
 		}
 	}
 	if !keepPage {
-		v.Del("page")
+		v.Del(t.Key("page"))
 	}
 	if len(v) == 0 {
-		return t.Path
+		return t.Path + t.frag()
 	}
-	return t.Path + "?" + v.Encode()
+	return t.Path + "?" + v.Encode() + t.frag()
 }
 
 // With is the URL with one filter set ("" clears it).
@@ -74,9 +84,9 @@ func (t tableQ) With2(k1, v1, k2, v2 string) string { return t.href(k1, v1, k2, 
 
 // Hidden are the hidden inputs a filter form keeps, so a search keeps the other filters and the sort.
 func (t tableQ) Hidden(except ...string) []struct{ K, V string } {
-	skip := map[string]bool{"page": true}
+	skip := map[string]bool{t.Key("page"): true}
 	for _, e := range except {
-		skip[e] = true
+		skip[t.Key(e)] = true
 	}
 	var out []struct{ K, V string }
 	for k, vs := range t.vals {
@@ -158,3 +168,13 @@ func window[T any](rows []T, t *tableQ) []T {
 	}
 	return rows[t.Offset():min(t.Offset()+t.Per, len(rows))]
 }
+
+func (t tableQ) frag() string {
+	if t.Anchor == "" {
+		return ""
+	}
+	return "#" + t.Anchor
+}
+
+// Action is the URL a table's search form submits to.
+func (t tableQ) Action() string { return t.Path + t.frag() }

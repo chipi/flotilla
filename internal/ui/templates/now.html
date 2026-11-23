@@ -10,19 +10,6 @@
     </div>
   </section>
 
-  <section class="wrongbox" aria-labelledby="status-h">
-    <h2 id="status-h">Wrong right now, not a decision</h2>
-    {{if .Wrong}}<ul>
-      {{range .Wrong}}<li><a href="{{.Href}}">
-        <span class="lamp lamp--stop" aria-hidden="true"></span>
-        <strong>{{.What}}</strong>
-        <span class="detail">{{.Detail}}</span>
-        <span class="go">{{.Go}}</span>
-      </a></li>{{end}}
-    </ul>{{end}}
-    <p>{{.Normal}} The numbers are in <a href="/cases">Cases</a> and <a href="/runs">Runs</a>.</p>
-  </section>
-
   <div class="split">
     <section class="main" aria-labelledby="needs">
       <div class="row-head">
@@ -70,6 +57,17 @@
     </section>
 
     <aside class="aside">
+      <section class="card wrongbox" aria-labelledby="status-h">
+        <div class="row-head"><h2 id="status-h">Wrong right now</h2>{{if .Wrong}}<span class="wrongbox__n">{{len .Wrong}}</span>{{end}}</div>
+        {{if .Wrong}}<ul>
+          {{range $i, $w := .Wrong}}{{if lt $i 3}}{{template "wrongitem" $w}}{{end}}{{end}}
+        </ul>
+        {{if gt (len .Wrong) 3}}<details class="wrongbox__more">
+          <summary>Show all {{len .Wrong}}</summary>
+          <ul>{{range $i, $w := .Wrong}}{{if ge $i 3}}{{template "wrongitem" $w}}{{end}}{{end}}</ul>
+        </details>{{end}}{{end}}
+        <p>{{.Normal}} The numbers are in <a href="/cases">Cases</a> and <a href="/runs">Runs</a>.</p>
+      </section>
       <section class="card" aria-labelledby="topo">
         <div class="row-head"><h2 id="topo">Hosts</h2><a href="/hosts">All hosts</a></div>
         <div class="topo">
@@ -122,3 +120,8 @@
   {{end}}
 </main>
 {{template "foot" .}}
+{{define "wrongitem"}}<li><a href="{{.Href}}">
+  <span class="wrongbox__what"><span class="lamp lamp--stop" aria-hidden="true"></span><strong>{{.What}}</strong></span>
+  <span class="detail">{{.Detail}}</span>
+  <span class="go">{{.Go}} →</span>
+</a></li>{{end}}

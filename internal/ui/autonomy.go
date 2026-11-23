@@ -31,13 +31,19 @@ type changeRow struct{ When, Text string }
 type guard struct{ What, Value string }
 
 type autonomyData struct {
-	Frozen                      bool
-	FrozenBy                    string
-	FrozenAt                    string
-	Line                        string
-	Changes                     []changeRow
-	Actions                     []actionRow
-	Routines                    []api.RoutineStatus
+	Frozen   bool
+	FrozenBy string
+	FrozenAt string
+	Line     string
+	Changes  []changeRow
+	Actions  []actionRow
+	Routines []api.RoutineStatus
+	// both tables sort, filter and page like every other (the operator, 2026-11-14 and again 2026-11-23)
+	ActT, RouT                  tableQ
+	ActTabs, RouTabs            []pillLink
+	ActHeads                    []thCell
+	RouHeads                    []thCell
+	ActAll, RouAll              int
 	Guards                      []guard
 	Hosts                       []hostRow
 	HostCeiling, RoutineCeiling string
@@ -151,6 +157,8 @@ func (u *Server) autonomyPage(w http.ResponseWriter, r *http.Request, s *store.S
 		}
 		return a.Pct > b.Pct
 	})
+	d.actionTable(r)
+	d.routineTable(r)
 	evs, err := u.API.Store.Events(ctx, 300)
 	if err != nil {
 		http.Error(w, "events failed", 500)
@@ -349,4 +357,116 @@ func shortDay(at string) string {
 		return t.UTC().Format("2006-01-02")
 	}
 	return at
+}
+
+// autonomyPer is the rows a page of either table holds: each row carries its own forms, so a page of 50 is a wall.
+const autonomyPer = 10
+
+var actionSorts = map[string]bool{"action": true, "risk": true, "rev": true, "level": true, "evidence": true}
+
+var riskRank = map[string]int{"low": 1, "medium": 2, "high": 3}
+
+// actionTable filters, sorts and pages the Actions table. Its default order, "evidence", is the order actions are built
+// in: ready first, then the closest to ready, those at their highest last.
+func (d *autonomyData) actionTable(r *http.Request) {
+	t := readTableAs(r, "", "evidence", false, func(c string) bool { return actionSorts[c] })
+	t.Anchor, t.Per = "caps", autonomyPer
+	lv, q := t.Get("level"), strings.ToLower(t.Get("q"))
+	count := map[string]int{}
+	rank := map[string]int{}
+	var out []actionRow
+	for i, a := range d.Actions {
+		rank[a.Name] = i
+		count[a.Autonomy]++
+		if a.Ready {
+			count["ready"]++
+		}
+		if (lv == "" || lv == a.Autonomy || (lv == "ready" && a.Ready)) && (q == "" || strings.Contains(strings.ToLower(a.Name+" "+a.Kinds), q)) {
+			out = append(out, a)
+		}
+	}
+	for _, p := range [][2]string{{"", "All"}, {"ready", "Ready"}, {"record", "record"}, {"propose", "propose"}, {"auto", "auto"}} {
+		n := count[p[0]]
+		if p[0] == "" {
+			n = len(d.Actions)
+		}
+		d.ActTabs = append(d.ActTabs, pillLink{Label: p[1], Href: t.With("level", p[0]), N: n, HasN: true, On: lv == p[0]})
+	}
+	less := func(a, b actionRow) bool {
+		switch t.Sort {
+		case "action":
+			return a.Name < b.Name
+		case "risk":
+			return riskRank[a.Risk] < riskRank[b.Risk]
+		case "rev":
+			return a.Rev < b.Rev
+		case "level":
+			return spec.Rank(a.Autonomy) < spec.Rank(b.Autonomy)
+		}
+		return rank[a.Name] < rank[b.Name]
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if t.Desc {
+			return less(out[j], out[i])
+		}
+		return less(out[i], out[j])
+	})
+	d.ActAll = len(d.Actions)
+	d.Actions = window(out, &t)
+	d.ActT = t
+	d.ActHeads = []thCell{t.Th("action", "Action"), t.Plain("For kinds"), t.Th("risk", "Risk"), t.Th("rev", "Reversible"), t.Th("level", "Level"),
+		t.Th("evidence", "Evidence toward the next level")}
+}
+
+var routineSorts = map[string]bool{"routine": true, "at": true, "set": true, "spec": true, "cap": true}
+
+// routineTable filters, sorts and pages the Routines table, its keys prefixed "r" so it keeps its own state beside Actions.
+func (d *autonomyData) routineTable(r *http.Request) {
+	t := readTableAs(r, "r", "routine", false, func(c string) bool { return routineSorts[c] })
+	t.Anchor, t.Per = "routines", autonomyPer
+	lv, q := t.Get("level"), strings.ToLower(t.Get("q"))
+	count := map[string]int{}
+	var out []api.RoutineStatus
+	for _, rt := range d.Routines {
+		count[rt.Autonomy]++
+		if (lv == "" || lv == rt.Autonomy) && (q == "" || strings.Contains(strings.ToLower(rt.ID), q)) {
+			out = append(out, rt)
+		}
+	}
+	for _, p := range [][2]string{{"", "All"}, {"record", "record"}, {"propose", "propose"}, {"auto", "auto"}} {
+		n := count[p[0]]
+		if p[0] == "" {
+			n = len(d.Routines)
+		}
+		d.RouTabs = append(d.RouTabs, pillLink{Label: p[1], Href: t.With("level", p[0]), N: n, HasN: true, On: lv == p[0]})
+	}
+	capRank := func(c string) int {
+		if c == "" {
+			return 9 // no cap sorts above every level
+		}
+		return spec.Rank(c)
+	}
+	less := func(a, b api.RoutineStatus) bool {
+		switch t.Sort {
+		case "at":
+			return spec.Rank(a.Autonomy) < spec.Rank(b.Autonomy)
+		case "set":
+			return spec.Rank(a.AutonomySet) < spec.Rank(b.AutonomySet)
+		case "spec":
+			return spec.Rank(a.SpecAutonomy) < spec.Rank(b.SpecAutonomy)
+		case "cap":
+			return capRank(a.MaxAutonomy) < capRank(b.MaxAutonomy)
+		}
+		return a.ID < b.ID
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if t.Desc {
+			return less(out[j], out[i])
+		}
+		return less(out[i], out[j])
+	})
+	d.RouAll = len(d.Routines)
+	d.Routines = window(out, &t)
+	d.RouT = t
+	d.RouHeads = []thCell{t.Th("routine", "Routine"), t.Th("at", "Runs at"), t.Th("set", "Set"), t.Th("spec", "Spec default"), t.Th("cap", "Cap")}
 }
