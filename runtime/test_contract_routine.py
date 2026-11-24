@@ -20,16 +20,19 @@ MODELS = {"endpoints": {"gw": {"base_url": "http://gw/v1", "kind": "openai",
 
 class Endpoint:
     """Answers like an OpenAI endpoint: JSON for a JSON-mode call, a tool call when tools are offered (but
-    not for m-notools), max_tokens honoured, 404 for an unknown model."""
+    not for m-notools), max_tokens honoured, and a model list on GET /models (listing: None serves none, "extra" adds a name)."""
 
-    def __init__(self):
-        self.sent = []
+    def __init__(self, listing=("m-good", "m-notools", "m-reasons"), status=200):
+        self.sent, self.gets, self.listing, self.status = [], [], listing, status
 
     def __call__(self, url, data, headers, timeout):
+        if data is None:
+            self.gets.append(url)
+            if self.listing is None or self.status != 200:
+                return self.status if self.listing is not None else 404, {}, "{}"
+            return 200, {}, json.dumps({"object": "list", "data": [{"id": m, "object": "model"} for m in self.listing]})
         body = json.loads(data)
         self.sent.append(body)
-        if body["model"] == "no-such-model-contract-check":
-            return 404, {}, json.dumps({"error": {"message": "model not found"}})
         msg = {"content": '{"ok": true}'}
         if body.get("tools") and body["model"] != "m-notools":
             msg = {"content": None, "tool_calls": [{"id": "1", "type": "function",
@@ -61,10 +64,10 @@ class Routine(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         got = {(x["alias"], x["check"]): x["check_ok"] for x in lines}
         self.assertEqual(got, {("good", "json_object"): True, ("good", "tools"): True, ("good", "max_tokens"): True,
-                               ("good", "unknown_model"): True, ("notools", "json_object"): True,
+                               ("good", "unknown_model_not_offered"): True, ("notools", "json_object"): True,
                                ("notools", "tools"): False, ("notools", "max_tokens"): True,
-                               ("notools", "unknown_model"): True, ("reasons", "json_object"): True, ("reasons", "tools"): True,
-                               ("reasons", "max_tokens"): True, ("reasons", "unknown_model"): True})
+                               ("notools", "unknown_model_not_offered"): True, ("reasons", "json_object"): True, ("reasons", "tools"): True,
+                               ("reasons", "max_tokens"): True, ("reasons", "unknown_model_not_offered"): True})
         reasoning = [x for x in lines if x["alias"] == "reasons" and x["check"] == "max_tokens"][0]
         self.assertIn("all reasoning", reasoning["detail"])
         bad = [x for x in lines if not x["check_ok"]][0]
@@ -73,7 +76,44 @@ class Routine(unittest.TestCase):
         self.assertEqual(float(spend), 0.0)
         for x in lines:
             self.assertEqual(x["alias"], x["alias"].strip())
-            self.assertNotIn(x["alias"], ("main", "plain", "bogus"), "a check line names the real alias")
+            self.assertNotIn(x["alias"], ("main", "plain"), "a check line names the real alias")
+
+    def run_with(self, endpoint):
+        out = io.StringIO()
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        calls = os.path.join(d, "calls.jsonl")
+        with contextlib.redirect_stdout(out):
+            cr.main([], environ={"FLOTILLA_MODELS": json.dumps(MODELS), "FLOTILLA_CALLS_FILE": calls}, transport=endpoint)
+        with open(calls) as f:
+            return [json.loads(x) for x in f if "unknown_model_not_offered" in x]
+
+    def test_the_gateway_is_never_called_with_a_model_that_does_not_exist(self):
+        ep = Endpoint()
+        self.run_with(ep)
+        self.assertNotIn("no-such-model-contract-check", [b["model"] for b in ep.sent])
+        self.assertEqual(ep.gets, ["http://gw/v1/models"] * 3)
+
+    def test_an_endpoint_without_a_list_is_not_checked_not_failed(self):
+        lines = self.run_with(Endpoint(listing=None))
+        self.assertEqual([x["check_ok"] for x in lines], [True] * 3)
+        self.assertIn("not checked: the endpoint lists no models", lines[0]["detail"])
+
+    def test_the_fake_name_offered_fails(self):
+        lines = self.run_with(Endpoint(listing=("m-good", "m-notools", "m-reasons", "no-such-model-contract-check")))
+        self.assertEqual([x["check_ok"] for x in lines], [False] * 3)
+        self.assertIn("is offered", lines[0]["detail"])
+
+    def test_the_aliases_own_model_missing_fails(self):
+        lines = {x["alias"]: x for x in self.run_with(Endpoint(listing=("m-good",)))}
+        self.assertTrue(lines["good"]["check_ok"])
+        self.assertFalse(lines["notools"]["check_ok"])
+        self.assertIn("'m-notools' is not offered", lines["notools"]["detail"])
+
+    def test_a_refused_list_fails(self):
+        lines = self.run_with(Endpoint(status=401))
+        self.assertEqual([x["check_ok"] for x in lines], [False] * 3)
+        self.assertIn("AuthOrBilling", lines[0]["detail"])
 
     def test_a_span_per_check_call(self):
         """2026-11-16: a model-contract run made 8 calls and sent 1 span (the run's): the routine built its
@@ -85,7 +125,7 @@ class Routine(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             cr.main([], environ={"FLOTILLA_MODELS": json.dumps(MODELS)}, transport=Endpoint(), tracer=tracer)
         names = {sp.name for sp in tracer.spans}
-        self.assertGreaterEqual(len(tracer.spans), 12, "one span per check call: 3 aliases x 4 checks")
+        self.assertGreaterEqual(len(tracer.spans), 9, "one span per model call: 3 aliases x 3 checks (the model list is no chat)")
         self.assertEqual(names, {"model.chat"})
 
     def test_checks_are_not_logged_twice(self):

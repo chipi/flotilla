@@ -62,8 +62,11 @@ func loadByID(t *testing.T, dir string) map[string]*Routine {
 // stepFiveChanges is what step 5 changed on purpose, so the test does not hide it: a routine that was folded into
 // another, and a version a routine gained. Each is named with its reason; anything else that differs fails.
 var (
-	stepFiveRemoved = map[string]string{"triage/cycle-shadow": "now v2 of triage/cycle, a candidate version (TestTriageCycleIsAStationVersionOfTheSameRoutine)"}
-	stepFiveAdded   = map[string]string{
+	// laterDescriptions are routines whose description was reworded after the move; routine.yaml is outside the
+	// version folder, so no version changes with it. Every other field must still equal the flat spec.
+	laterDescriptions = map[string]string{"platform/model-contract": "2026-11-24: its unknown-model check reads the model list instead of calling the gateway with a fake model"}
+	stepFiveRemoved   = map[string]string{"triage/cycle-shadow": "now v2 of triage/cycle, a candidate version (TestTriageCycleIsAStationVersionOfTheSameRoutine)"}
+	stepFiveAdded     = map[string]string{
 		// RFC-0014 §4.6 (step 2): plumbing.call's execute routines and its check, new routines, not moved ones
 		"plumbing/send-create-tasks": "RFC-0014 step 2", "plumbing/send-post-decisions": "RFC-0014 step 2", "plumbing/send-reply": "RFC-0014 step 2",
 		"plumbing/send-post": "RFC-0014 step 2", "plumbing/send-retract": "RFC-0014 step 2", "plumbing/check": "RFC-0014 step 2",
@@ -126,7 +129,11 @@ func TestMovedRoutinesAreEquivalentToTheirFlatSpecs(t *testing.T) {
 			continue
 		}
 		for _, ov := range o.Versions {
-			if diff := differingFields(movedRoutine(t, n, ov.Number), movedRoutine(t, o, ov.Number)); len(diff) > 0 {
+			mn, mo := movedRoutine(t, n, ov.Number), movedRoutine(t, o, ov.Number)
+			if laterDescriptions[id] != "" {
+				mn.Description, mo.Description = "", ""
+			}
+			if diff := differingFields(mn, mo); len(diff) > 0 {
 				t.Errorf("%s v%d: the moved routine is not equal to its flat spec: %s", id, ov.Number, strings.Join(diff, "; "))
 			}
 			nv := n.VersionNamed(ov.Number)

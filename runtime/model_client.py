@@ -146,9 +146,9 @@ class _Response:
 
 
 def _urllib_transport(url, data, headers, timeout):
-    """POST; returns (status, {lower-case header: value}, body text). HTTP errors are returned, not raised.
+    """POST (GET when there is no body); returns (status, {lower-case header: value}, body text). HTTP errors are returned, not raised.
     The proxy comes from the environment (HTTPS_PROXY/HTTP_PROXY/NO_PROXY), as the worker sets it."""
-    req = urllib.request.Request(url, data=data, method="POST")
+    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET")
     for k, v in headers.items():
         req.add_header(k, v)
 
@@ -334,16 +334,12 @@ class Client:
             rec["attempts"], rec["fallback"] = attempts, i > 0
             return rec
 
-    def _call(self, a, body, timeout):
-        request = json.dumps(body)
-        rec = {"alias": a.name, "request": request, "model_id": None}
-        headers = {"Content-Type": "application/json"}
-        key = self._key(a)
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
+    def _send(self, a, path, data, headers, timeout, rec):
+        """One request through the transport; fills rec, raises the typed error for a transport failure or a
+        non-200 answer, returns (status, headers, text)."""
         t0 = self.clock()
         try:
-            status, rh, text = self.transport(a.base_url + "/chat/completions", request.encode(), headers, timeout)
+            status, rh, text = self.transport(a.base_url + path, data, headers, timeout)
         except Exception as e:  # noqa: BLE001 — a timeout, a refused connection, an oversized response
             rec.update(error=f"{type(e).__name__}: {e}"[:300], latency_s=round(self.clock() - t0, 3))
             raise Transient(f"{a.name}: {rec['error']}", rec) from e
@@ -353,6 +349,37 @@ class Client:
             cls = (AuthOrBilling if status in (401, 402, 403) else
                    Transient if status == 429 or status >= 500 else RequestRejected)
             raise cls(f"{a.name}: HTTP {status}: {text[:200]}", rec)   # the endpoint's words: a 403 can mean "this key may not use this model"
+        return status, rh, text
+
+    def list_models(self, alias, timeout=30):
+        """The model ids the alias's endpoint offers this key (GET <base_url>/models, the key and proxy a chat
+        call uses). None when the endpoint serves no list (404 or 405). Other failures raise as chat's do."""
+        a = self._alias(alias)
+        headers = {}
+        key = self._key(a)
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        rec = {"alias": a.name, "request": "GET /models", "model_id": None}
+        try:
+            _, _, text = self._send(a, "/models", None, headers, timeout, rec)
+        except RequestRejected as e:
+            if e.record.get("status") in (404, 405):
+                return None
+            raise
+        try:
+            return [str(m["id"]) for m in json.loads(text)["data"]]
+        except (ValueError, KeyError, TypeError) as e:
+            rec["error"] = f"unparseable model list: {text[:200]}"
+            raise Transient(f"{a.name}: {rec['error']}", rec) from e
+
+    def _call(self, a, body, timeout):
+        request = json.dumps(body)
+        rec = {"alias": a.name, "request": request, "model_id": None}
+        headers = {"Content-Type": "application/json"}
+        key = self._key(a)
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        status, rh, text = self._send(a, "/chat/completions", request.encode(), headers, timeout, rec)
         try:
             resp = json.loads(text)
             msg = (resp.get("choices") or [{}])[0].get("message") or {}

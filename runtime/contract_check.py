@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Check what a real endpoint does against what an alias's capabilities claim (RFC-0002 §11: verified
-before an alias is marked native or object). Four small calls; prints what each did; never the key.
+before an alias is marked native or object). Four small checks; prints what each did; never the key.
 
   python3 runtime/contract_check.py --base-url http://127.0.0.1:4001/v1 --model fleet-triage-flash \\
       --kind litellm --key-env OPENROUTER_API_KEY --cost reported
@@ -8,7 +8,8 @@ before an alias is marked native or object). Four small calls; prints what each 
 
 Checks: json_object gives parseable JSON, with usage, and cost as the alias's cost says (reported: a
 number from the endpoint; zero: 0); native tools give a tool call (skipped with --tools none); max_tokens
-is honoured; an unknown model is a typed error, not a transient one. Ends CONTRACT PASS / FAIL.
+is honoured; the endpoint's model list (GET /models) offers the alias's model and not a made-up one
+(no call to the gateway with a model that does not exist: it reports each refusal as an error). Ends CONTRACT PASS / FAIL.
 Verified 2026-11-09: the host's LiteLLM (fleet-triage-flash) and the second machine's Ollama (qwen3 30b) both PASS.
 The same checks run daily on every configured alias as platform/model-contract (contract_routine.py).
 """
@@ -24,9 +25,12 @@ TOOL = [{"type": "function", "function": {"name": "get_metric", "description": "
          "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}}]
 
 
-def run_checks(c, tools="native", cost="unknown", timeout=120, main="m", plain="m-plain", bogus="bogus", json_mode="object"):
-    """The four checks on a client whose aliases main (as configured), plain (json none) and bogus (a model
-    that does not exist) share one endpoint. An alias without JSON mode is not held to JSON output.
+UNKNOWN_MODEL = "no-such-model-contract-check"
+
+
+def run_checks(c, tools="native", cost="unknown", timeout=120, main="m", plain="m-plain", unknown_model=UNKNOWN_MODEL, json_mode="object"):
+    """The four checks on a client whose aliases main (as configured) and plain (json none) share one endpoint;
+    unknown_model is a name that must not be in the endpoint's model list. An alias without JSON mode is not held to JSON output.
     Returns [{check, ok, detail, rec}], rec being the call's record (None when the call raised)."""
     out = []
 
@@ -75,13 +79,23 @@ def run_checks(c, tools="native", cost="unknown", timeout=120, main="m", plain="
     except mc.ModelError as e:
         add("max_tokens", [f"{type(e).__name__}: {e}"], e.record)
 
+    # Asks the endpoint what this key may use rather than calling it with a model that does not exist: the
+    # gateway reports each such refusal as an error of its own. That an unknown model fails as an error and is
+    # not retried is proven offline (test_model_client.py).
     try:
-        r = c.chat(bogus, [{"role": "user", "content": "hi"}], max_tokens=1, timeout=timeout)
-        add("unknown_model", ["an unknown model was answered"], r)
-    except mc.Transient as e:
-        add("unknown_model", [f"an unknown model is Transient (would be retried forever): {e}"], e.record)
+        offered = c.list_models(main, timeout=timeout)
+        want = c.aliases[main].model
+        if offered is None:
+            add("unknown_model_not_offered", [], None, "not checked: the endpoint lists no models")
+        else:
+            fails = []
+            if want not in offered:
+                fails.append(f"the alias's own model {want!r} is not offered to this key")
+            if unknown_model in offered:
+                fails.append(f"{unknown_model!r} is offered, though it does not exist")
+            add("unknown_model_not_offered", fails, None, f"{len(offered)} models offered, {want!r} among them")
     except mc.ModelError as e:
-        add("unknown_model", [], None, f"{type(e).__name__} (HTTP {e.record.get('status')})")
+        add("unknown_model_not_offered", [f"{type(e).__name__}: {e}"], e.record)
     return out
 
 
@@ -108,8 +122,7 @@ def main():
     if a.key_env:
         ep["key_env"] = a.key_env
     cfg = {"endpoints": {"e": ep}, "aliases": {"m": {"endpoint": "e", "model": a.model},
-                                               "m-plain": {"endpoint": "e", "model": a.model, "json": "none"},
-                                               "bogus": {"endpoint": "e", "model": "no-such-model-contract-check"}}}
+                                               "m-plain": {"endpoint": "e", "model": a.model, "json": "none"}}}
     c = mc.Client(mc.load(cfg), tracer=None)
     results = run_checks(c, tools=a.tools, cost=a.cost, timeout=a.timeout)
     for r in results:

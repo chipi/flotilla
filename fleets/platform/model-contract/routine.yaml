@@ -3,7 +3,7 @@ routine: model-contract
 description: >-
   Contract checks (G15): every model alias named below, once a day and on demand from Models and
   spend; an alias added to flotillad.yaml is checked once it is named here. Does it still give JSON, call a tool when it claims native tools, honour max_tokens, report
-  its cost as its alias says, and fail an unknown model as an error rather than a retry? Each result
+  its cost as its alias says, and does its endpoint offer the alias's model and not a made-up one (asked of its model list, never by calling it with a model that does not exist)? Each result
   is kept on the run; Models and spend shows the last checks.
 enabled: true
 worker: triage

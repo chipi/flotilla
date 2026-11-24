@@ -322,6 +322,8 @@ class Chat(unittest.TestCase):
     def test_typed_errors(self):
         cases = [((401, {}, "no"), mc.AuthOrBilling), ((402, {}, "pay"), mc.AuthOrBilling), ((403, {}, "no"), mc.AuthOrBilling),
                  ((429, {}, "slow"), mc.Transient), ((503, {}, "busy"), mc.Transient), ((400, {}, "bad"), mc.RequestRejected),
+                 ((404, {}, '{"error":{"message":"model not found"}}'), mc.RequestRejected),
+                 ((401, {}, '{"error":{"message":"key not allowed to access model"}}'), mc.AuthOrBilling),
                  (TimeoutError("timed out"), mc.Transient), ((200, {}, "<html>"), mc.Transient),
                  (ok(content=""), mc.EmptyCompletion), (ok(content=None), mc.EmptyCompletion)]
         for answer, err in cases:
@@ -330,6 +332,33 @@ class Chat(unittest.TestCase):
                 with self.assertRaises(err) as cm:
                     c.chat("triage-default", [])
                 self.assertIn("request", cm.exception.record)
+
+    def test_an_unknown_model_is_an_error_and_is_not_retried(self):
+        """The check that called the gateway with a model that does not exist is gone (it filled GlitchTip);
+        this is what proves the behaviour instead: one request, an error that is not Transient."""
+        for status, err in ((400, mc.RequestRejected), (404, mc.RequestRejected), (401, mc.AuthOrBilling)):
+            with self.subTest(status=status):
+                c, t = client((status, {}, '{"error":{"message":"model not allowed or not found"}}'))
+                with self.assertRaises(err) as cm:
+                    c.chat("triage-default", [])
+                self.assertNotIsInstance(cm.exception, mc.Transient)
+                self.assertEqual(len(t.sent), 1)
+                c, t = client((status, {}, "x"), ok())
+                with self.assertRaises(err):
+                    c.chat_policy({"model": "triage-default", "fallback": ["no-cost"]}, [])
+                self.assertEqual(len(t.sent), 1, "chat_policy's default does not fall back on it either")
+
+    def test_list_models(self):
+        body = json.dumps({"object": "list", "data": [{"id": "a"}, {"id": "b"}]})
+        c, t = client((200, {}, body))
+        self.assertEqual(c.list_models("triage-default"), ["a", "b"])
+        self.assertEqual((t.sent[0]["url"], t.sent[0]["data"], t.sent[0]["headers"]),
+                         ("http://litellm:4000/v1/models", None, {"Authorization": "Bearer sk-test"}))
+        for status in (404, 405):
+            self.assertIsNone(client((status, {}, "no"))[0].list_models("triage-default"))
+        for answer, err in (((403, {}, "no"), mc.AuthOrBilling), ((503, {}, "busy"), mc.Transient), ((200, {}, "<html>"), mc.Transient)):
+            with self.assertRaises(err):
+                client(answer)[0].list_models("triage-default")
 
     def test_tools(self):
         tools = [{"type": "function", "function": {"name": "metric", "parameters": {}}}]

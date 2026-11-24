@@ -504,7 +504,7 @@
     }
   },
   "platform/model-contract@v1": {
-    "routine_hash": "57345104bec7",
+    "routine_hash": "de6cf6bd408b",
     "version_hash": "232b658d1c09d1a55c6a48efa67ea516a7b5624140dabcd9a43713942ab7c3a3",
     "legacy": false,
     "manifest": {

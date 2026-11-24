@@ -20,13 +20,11 @@ import model_client as mc  # noqa: E402
 
 
 def alias_config(cfg, name):
-    """A models config holding one real alias three ways: as it is, without JSON mode, and a model that
-    does not exist, all on its own endpoint."""
+    """A models config holding one real alias two ways: as it is and without JSON mode, on its own endpoint."""
     a = dict(cfg["aliases"][name])
     ep_name = a["endpoint"]
     out = {"endpoints": {ep_name: cfg["endpoints"][ep_name]},
-           "aliases": {"main": a, "plain": dict(a, json="none"),
-                       "bogus": {"endpoint": ep_name, "model": "no-such-model-contract-check"}}}
+           "aliases": {"main": a, "plain": dict(a, json="none")}}
     if name in (cfg.get("prices") or {}):
         out["prices"] = {"main": cfg["prices"][name], "plain": cfg["prices"][name]}
     return out
@@ -64,7 +62,7 @@ def main(argv=None, environ=None, transport=None, tracer="default"):
         m = aliases["main"]
         c = mc.Client(aliases, environ=environ, transport=transport, tracer=tracer)
         results = cc.run_checks(c, tools=m.tools, cost=m.cost, json_mode=m.json_mode, timeout=a.timeout,
-                                main="main", plain="plain", bogus="bogus")
+                                main="main", plain="plain")
         for r in results:
             spend += (r["rec"] or {}).get("cost_usd") or 0.0
             print(f"{name} {r['check']}: {'pass' if r['ok'] else 'FAIL'}{' (' + r['detail'] + ')' if r['detail'] else ''}")
