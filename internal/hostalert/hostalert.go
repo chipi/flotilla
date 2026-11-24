@@ -23,6 +23,9 @@ type Limits struct {
 	NotConnected time.Duration
 	ClockSkew    time.Duration
 	CertExpiry   time.Duration
+	// Intermittent names hosts whose link drops whenever their machine sleeps or restarts (a laptop's remote worker): their not_connected
+	// raises nothing; the Hosts page still shows them not connected, and every other kind still raises.
+	Intermittent map[string]bool
 }
 
 // Defaults: 5 minutes unreachable; the 30 seconds of ADR-0006 §4; 7 days of certificate left.
@@ -46,7 +49,7 @@ func Check(hosts []store.Host, now time.Time, l Limits) []Alert {
 		if h.EnrolledAt == nil || h.RevokedAt != nil {
 			continue
 		}
-		if !h.Connected {
+		if !h.Connected && !l.Intermittent[h.Name] {
 			since, ok := parse(h.LastContact)
 			what := "last contact"
 			if !ok { // enrolled, never connected

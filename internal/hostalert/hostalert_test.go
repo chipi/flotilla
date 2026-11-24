@@ -74,3 +74,20 @@ func TestWatcher(t *testing.T) {
 		t.Fatalf("all cleared: %v %v", s, c)
 	}
 }
+
+// An intermittent host (a laptop's remote worker link, which drops whenever the laptop sleeps) raises no
+// not_connected, and still raises every other kind.
+func TestIntermittentHostRaisesNoNotConnected(t *testing.T) {
+	hosts := []store.Host{
+		host("laptop", func(h *store.Host) { h.Connected = false; h.LastContact = at(-6 * time.Hour) }),
+		host("laptop-skewed", func(h *store.Host) { h.ClockOffsetMS = 31000; h.CertNotAfter = at(time.Hour) }),
+		host("server", func(h *store.Host) { h.Connected = false; h.LastContact = at(-6 * time.Hour) }),
+	}
+	l := Defaults
+	l.Intermittent = map[string]bool{"laptop": true, "laptop-skewed": true}
+	got := kinds(Check(hosts, now, l))
+	want := "laptop-skewed:clock_skew laptop-skewed:certificate_expiring server:not_connected"
+	if got != want {
+		t.Fatalf("alerts:\n %s\nwant:\n %s", got, want)
+	}
+}

@@ -84,6 +84,14 @@ type Server struct {
 	runs   map[string]*remoteRun
 	// orphans: runs of a worker that the previous flotillad left in flight, to be cancelled when its link connects
 	orphans map[string][]string
+	// refusedPair is, per remote worker identity, the (its version / flotillad's) pair last refused and logged: a refusal logs at ERROR
+	// only when the pair is new, and the next acceptance logs once that it is accepted again
+	refusedPair map[string]string
+	// closing and active: Close stops accepting, closes every live connection and waits for their handlers (wg), which write the
+	// store through OnContact; the store is closed after it
+	closing bool
+	active  map[*tls.Conn]struct{}
+	wg      sync.WaitGroup
 }
 
 type conn struct {
@@ -127,7 +135,10 @@ func (s *Server) Serve(ln net.Listener) error {
 		if err != nil {
 			return err
 		}
-		go s.handle(tls.Server(nc, cfg))
+		if !s.spawn(tls.Server(nc, cfg), s.handle) {
+			nc.Close()
+			return net.ErrClosed
+		}
 	}
 }
 
@@ -366,12 +377,52 @@ func (s *Server) Execute(ctx context.Context, host, executionID string, envelope
 	}
 }
 
-// CloseAll drops every connection (flotillad stopping); the agents reconnect.
+// spawn runs h on tc in its own goroutine, tracked so Close can wait for it; false (nothing started) once Close has begun.
+func (s *Server) spawn(tc *tls.Conn, h func(*tls.Conn)) bool {
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		return false
+	}
+	if s.active == nil {
+		s.active = map[*tls.Conn]struct{}{}
+	}
+	s.active[tc] = struct{}{}
+	s.wg.Add(1)
+	s.mu.Unlock()
+	go func() {
+		defer s.wg.Done()
+		defer func() { s.mu.Lock(); delete(s.active, tc); s.mu.Unlock() }()
+		h(tc)
+	}()
+	return true
+}
+
+// closeWait is how long Close waits for the handlers: they end on their closed connections, bar a store write in flight.
+const closeWait = 10 * time.Second
+
+// CloseAll drops every connection, workers' links included; the agents reconnect. The endpoint keeps accepting.
 func (s *Server) CloseAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, c := range s.conns {
-		c.tc.Close()
+	for tc := range s.active {
+		tc.Close()
+	}
+}
+
+// Close is flotillad stopping: it stops accepting, drops every connection and returns once their handlers are done, so none
+// writes the store (OnContact) after the caller closes it. The agents and the links reconnect to the next flotillad.
+func (s *Server) Close() {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	s.CloseAll()
+	done := make(chan struct{})
+	go func() { s.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(closeWait):
+		s.Log.Warn("host endpoint: handlers still running after close", "wait", closeWait)
 	}
 }
 

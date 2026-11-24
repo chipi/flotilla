@@ -142,7 +142,11 @@ func workerCapLines(ctx context.Context, cfg *Config, clients map[string]*worker
 		c := clients[n]
 		switch {
 		case cfg.Workers[n].Remote != "":
-			out = append(out, fmt.Sprintf("worker %s: remote; its agent's run-token capability is checked when it connects", n))
+			line := fmt.Sprintf("worker %s: remote; its agent's run-token capability is checked when it connects", n)
+			if cfg.Workers[n].Intermittent {
+				line = fmt.Sprintf("worker %s: remote, intermittent (not_connected raises no host alert); its agent's run-token capability is checked when it connects", n)
+			}
+			out = append(out, line)
 		case c == nil:
 		default:
 			h, err := c.Health(ctx)
@@ -277,6 +281,9 @@ type WorkerConfig struct {
 	// Remote is a remote worker's identity (RFC-0011): the certificate name its link connects under,
 	// w-<worker>-<node>. A remote worker has no url or token: it dials the host endpoint.
 	Remote string `yaml:"remote"`
+	// Intermittent marks a remote worker's link as one that drops whenever its machine sleeps or a deploy restarts things: its
+	// not_connected raises no host alert (no ERROR log); the Hosts page still shows it. Other alert kinds still raise. Remote only.
+	Intermittent bool `yaml:"intermittent"`
 }
 
 var remoteIdentityRe = hostca.WorkerIdentityRe
@@ -351,6 +358,9 @@ func loadConfig(path string) (*Config, error) {
 			seenIdentity[w.Remote] = name
 		case w.URL == "" || w.TokenFile == "":
 			errs = append(errs, fmt.Errorf("worker %s: url and token_file are required (or remote)", name))
+		}
+		if w.Intermittent && w.Remote == "" {
+			errs = append(errs, fmt.Errorf("worker %s: intermittent marks a remote worker's link; this worker has none", name))
 		}
 	}
 	if c.CaseTimers.DetectedAlert < 0 || c.CaseTimers.HandedOverEscalate < 0 {
@@ -489,6 +499,7 @@ func main() {
 	workerTokens := map[string]string{} // every worker's token: what flotillad calls it with
 	var link *hostlink.Server           // the host endpoint, made here so remote workers can be its runners
 	remotes := map[string]string{}
+	intermittent := map[string]bool{} // remote identities whose not_connected raises no host alert
 	if cfg.Hosts.Listen != "" {
 		link = &hostlink.Server{}
 	}
@@ -496,6 +507,9 @@ func main() {
 		if w.Remote != "" {
 			runners[name] = hostlink.RemoteRunner{S: link, Worker: name}
 			remotes[w.Remote] = name
+			if w.Intermittent {
+				intermittent[w.Remote] = true
+			}
 			continue
 		}
 		tok, err := readToken(w.TokenFile)
@@ -806,7 +820,7 @@ func main() {
 				stop()
 			}
 		}()
-		defer link.CloseAll()
+		defer link.Close()
 	}
 	var usrv *http.Server
 	briefDone := make(chan struct{})
@@ -852,7 +866,10 @@ func main() {
 		os.Exit(1)
 	}
 	hbDone := make(chan struct{})
-	go func() { defer close(hbDone); heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, hostWatch, log) }()
+	go func() {
+		defer close(hbDone)
+		heartbeat(ctx, push, s, st, cfg.StateDir, cfg.CaseTimers, hostWatch, intermittent, log)
+	}()
 	dispDone := make(chan struct{})
 	go func() { defer close(dispDone); disp.Loop(ctx, 15*time.Second) }()
 
@@ -877,6 +894,9 @@ func main() {
 	}
 	if hostLn != nil {
 		hostLn.Close()
+		// the links' handlers record their drop in the store: they end here, before the deferred st.Close ("host contact: the store":
+		// sql: database is closed, 24 ERRORs at deploys)
+		link.Close()
 	}
 	_ = st.Event(context.Background(), "flotillad", "flotillad", "stop", version, "")
 	log.Info("flotillad exit")
@@ -886,12 +906,12 @@ func main() {
 // cases against their stuck-state limits, and takes one backup of the store per day
 // (state_dir/backup/flotilla-<day>.db, the last 7 kept).
 func heartbeat(ctx context.Context, push *telemetry.Pusher, s *sched.Scheduler, st *store.Store, stateDir string, timers casetimer.Config,
-	hostWatch *hostalert.Watcher, log *slog.Logger) {
+	hostWatch *hostalert.Watcher, intermittent map[string]bool, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
 		if hostWatch != nil {
-			watchHosts(ctx, st, hostWatch, s.Clock(), log)
+			watchHosts(ctx, st, hostWatch, s.Clock(), intermittent, log)
 		}
 		push.Up()
 		ps := st.Pools()

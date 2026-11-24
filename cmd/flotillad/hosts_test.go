@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,5 +118,31 @@ func TestWorkerLinkContactClearsNotConnected(t *testing.T) {
 	recordContact(st, slog.New(slog.NewTextHandler(io.Discard, nil)))(hostlink.HostState{Host: id, Connected: true, Version: "v1", ConnectedAt: at, LastContact: at})
 	if a := check(at.Add(time.Minute)); len(a) != 0 {
 		t.Fatalf("contact recorded: %+v", a)
+	}
+}
+
+// A host marked intermittent in flotillad.yaml is not logged at ERROR (GlitchTip's "host alert", ~20 a day from the laptop's links) for
+// not_connected; an unmarked one still is.
+func TestWatchHostsSkipsIntermittentNotConnected(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "flotilla.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for _, id := range []string{"w-bugfix-omarchy", "w-ops-server"} {
+		if _, err := st.AddEnrolment(ctx, id, "tok-"+id, "test", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.Enrol(ctx, id, "tok-"+id, func() (string, time.Time, error) { return "cert", time.Now().Add(90 * 24 * time.Hour), nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	watchHosts(ctx, st, &hostalert.Watcher{}, time.Now().Add(time.Hour), map[string]bool{"w-bugfix-omarchy": true}, log)
+	out := buf.String()
+	if !strings.Contains(out, "host=w-ops-server kind=not_connected") || strings.Contains(out, "w-bugfix-omarchy") {
+		t.Fatalf("alerts logged:\n%s", out)
 	}
 }

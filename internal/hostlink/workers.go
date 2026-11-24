@@ -75,10 +75,22 @@ func (s *Server) handleWorker(ctx context.Context, tc *tls.Conn, cert string, id
 	}
 	if s.Version != "" && hello.Version != s.Version {
 		st.Refused = fmt.Sprintf("version %s, not flotillad's %s", hello.Version, s.Version)
+		pair := hello.Version + " / " + s.Version
+		first := s.refusedPair[identity] != pair
+		if s.refusedPair == nil {
+			s.refusedPair = map[string]string{}
+		}
+		s.refusedPair[identity] = pair
 		s.mu.Unlock()
-		// loud: a worker that never runs must not look like one that is only quiet (RFC-0011 §8)
-		s.Log.Error("remote worker refused: its version is not flotillad's", "worker", name, "identity", identity,
-			"version", hello.Version, "flotillad", s.Version)
+		// loud, once: a worker that never runs must not look like one that is only quiet (RFC-0011 §8), but its link retries every few
+		// seconds until it is updated (3,592 ERRORs in one deploy window, 2026-11-24); the repeats stay on the worker's status.
+		if first {
+			s.Log.Error("remote worker refused: its version is not flotillad's", "worker", name, "identity", identity,
+				"version", hello.Version, "flotillad", s.Version)
+		} else {
+			s.Log.Debug("remote worker refused again: its version is not flotillad's", "worker", name, "identity", identity,
+				"version", hello.Version, "flotillad", s.Version)
+		}
 		refuse(tc, "refused: version "+hello.Version+", flotillad runs "+s.Version)
 		return
 	}
@@ -101,10 +113,15 @@ func (s *Server) handleWorker(ctx context.Context, tc *tls.Conn, cert string, id
 	}
 	s.wconns[name] = c
 	*st = WorkerState{Worker: name, Identity: identity, Connected: true, Version: hello.Version, ConnectedAt: at, LastContact: at}
+	_, wasRefused := s.refusedPair[identity]
+	delete(s.refusedPair, identity)
 	orphans := s.orphans[name]
 	delete(s.orphans, name)
 	s.mu.Unlock()
 	s.Log.Info("remote worker connected", "worker", name, "identity", identity, "version", hello.Version)
+	if wasRefused {
+		s.Log.Info("remote worker accepted again: its version is flotillad's", "worker", name, "identity", identity, "version", hello.Version)
+	}
 	s.reportWorker(name)
 	defer s.dropWorker(name, c)
 	s.cancelOrphans(name, c, orphans)

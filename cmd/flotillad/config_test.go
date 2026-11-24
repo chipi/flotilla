@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,5 +126,26 @@ func TestRunTokensConfig(t *testing.T) {
 		if _, err := load(t, bad); err == nil || !strings.Contains(err.Error(), "run_tokens") {
 			t.Errorf("%q: %v", bad, err)
 		}
+	}
+}
+
+// intermittent marks a remote worker's link as one that drops whenever its machine sleeps: its not_connected raises no host alert. Only a
+// remote worker has a link to mark.
+func TestIntermittentWorkerConfig(t *testing.T) {
+	hosts := "hosts: {listen: ':8487', ca_dir: /ca, server_names: [f]}\n"
+	c, err := load(t, hosts+"workers:\n  bugfix: {remote: w-bugfix-worker-host, intermittent: true}\n  ops: {remote: w-ops-server}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Workers["bugfix"].Intermittent || c.Workers["ops"].Intermittent {
+		t.Fatalf("parsed: %+v", c.Workers)
+	}
+	if _, err := load(t, "workers:\n  ops: {url: 'http://o:8081', token_file: /t, intermittent: true}\n"); err == nil || !strings.Contains(err.Error(), "intermittent") {
+		t.Fatalf("intermittent on a local worker: %v", err)
+	}
+	cfg := &Config{Workers: map[string]WorkerConfig{"bugfix": {Remote: "w-bugfix-worker-host", Intermittent: true}, "ops": {Remote: "w-ops-server"}}}
+	lines := strings.Join(workerCapLines(context.Background(), cfg, nil), "\n")
+	if !strings.Contains(lines, "worker bugfix: remote, intermittent (not_connected raises no host alert)") || strings.Contains(lines, "worker ops: remote, intermittent") {
+		t.Fatalf("-check:\n%s", lines)
 	}
 }

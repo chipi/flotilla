@@ -100,14 +100,16 @@ func loadHostCA(dir string) (*hostca.CA, *x509.Certificate, error) {
 }
 
 // watchHosts logs a host alert once when it starts (an ERROR, which reaches GlitchTip) and once when it
-// clears (ADR-0006 §10).
-func watchHosts(ctx context.Context, st *store.Store, w *hostalert.Watcher, now time.Time, log *slog.Logger) {
+// clears (ADR-0006 §10). A host in intermittent (flotillad.yaml: a remote worker with intermittent: true) never alerts for not_connected.
+func watchHosts(ctx context.Context, st *store.Store, w *hostalert.Watcher, now time.Time, intermittent map[string]bool, log *slog.Logger) {
 	hs, err := st.Hosts(ctx)
 	if err != nil {
 		log.Error("host alerts: the store", "err", err)
 		return
 	}
-	started, cleared := w.Update(hostalert.Check(hs, now, hostalert.Defaults))
+	limits := hostalert.Defaults
+	limits.Intermittent = intermittent
+	started, cleared := w.Update(hostalert.Check(hs, now, limits))
 	for _, a := range started {
 		log.Error("host alert", "host", a.Host, "kind", a.Kind, "detail", a.Detail)
 	}

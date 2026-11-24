@@ -82,6 +82,11 @@ On the machine, as the operator's user, in `FLOTILLA_REMOTE` (for example `~/flo
    w-bugfix-fix-<host>}}`, and the `gateway-bugfix-fix` endpoint's `base_url` the gateway as this
    machine reaches it (`http://<gateway-host>:4001/v1`). Drop `bugfix` from the control-plane host's
    `COMPOSE_PROFILES`.
+   A link that drops whenever its machine sleeps (a laptop) can say so: `bugfix: {remote:
+   w-bugfix-<host>, intermittent: true}`. Its `not_connected` then raises no host alert (no ERROR
+   log, no GlitchTip issue); Hosts and the host page still show it not connected, and its other
+   alerts (clock skew, certificate expiry) still raise. `flotillad -check` prints `intermittent`
+   on its line.
 8. **Up**, from the deploy checkout: `docker compose --env-file ~/flotilla-remote/.env -f
    deploy/remote/docker-compose.yml up -d` (a user unit can run it).
 
@@ -96,7 +101,9 @@ The tailnet must let this machine reach `flotilla-hosts:8487` (the tailnet's pol
 
 ## Troubleshooting
 
-- **`remote worker refused: its version is not flotillad's`:** set `FLOTILLA_TAG` to flotillad's.
+- **`remote worker refused: its version is not flotillad's`:** set `FLOTILLA_TAG`
+  to flotillad's. It logs at ERROR once per (worker version, flotillad version) pair, and once at
+  INFO when the worker is accepted again; the Hosts page shows the mismatch as long as it lasts.
 - **No connection:** from the machine, `bash -c 'echo > /dev/tcp/flotilla-hosts.<tailnet>/8487'`;
   refused means the tailnet ACL.
 - **A routine's network denied:** `docker logs flotilla-remote-egress | grep '"allow":false'`; add the
