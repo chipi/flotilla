@@ -1453,9 +1453,15 @@ for i in $(seq 1 30); do [ "$(hostlog | grep -c '"msg":"connected to flotillad"'
 cli host revoke e2e-host >/dev/null
 seen flotillad '"msg":"host cut off".*"host":"e2e-host"' && ok "revoked: flotillad cut the connected host off at its next heartbeat" \
   || bad "revoke: $($D logs flotillad 2>&1 | grep '"host' | tail -3)"
-sleep 3
-seen flotillad '"msg":"host endpoint: refused"' && hostlog | grep >/dev/null 'flotillad refused: refused' \
-  && ok "its reconnects are refused" || bad "after revoke: $(hostlog | tail -3)"
+# the agent's next try comes after its backoff (1 s doubling to 60 s, plus up to half again, internal/hostagent Run), which resets
+# only after a session of a minute: after this section's restarts it can be 30 to 90 s away (no-effect on 649d659: retry_in 45 s,
+# past a 33 s wait), so wait out the longest one
+refused=""
+for _ in $(seq 1 100); do
+  $D logs flotillad 2>&1 | grep >/dev/null '"msg":"host endpoint: refused"' && hostlog | grep >/dev/null 'flotillad refused: refused' && { refused=1; break; }
+  sleep 1
+done
+[ -n "$refused" ] && ok "its reconnects are refused" || bad "after revoke: $(hostlog | tail -3)"
 cli host list | grep >/dev/null "^e2e-host  *no .* -  *[0-9-]*T[0-9:.]*Z " && ok "host list shows it revoked, not connected, no certificate" || bad "host list after revoke: $(cli host list 2>&1)"
 hx flotilla-e2e-host sh -c 'pkill -u _flotilla flotilla-host; true'
 OUT="$(hx flotilla-e2e-host bash /stage/remote-install.sh /stage remove 2>&1)"
