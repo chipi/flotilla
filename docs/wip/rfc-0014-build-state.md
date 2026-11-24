@@ -85,6 +85,12 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   ClickHouse and VictoriaLogs at 83%; host folders mounted by sshfs. Handed to the homelab session
   (the operator, 2026-11-23): which processes make the kernel time, caddy, the sshfs mounts,
   ClickHouse and VictoriaLogs. Nothing in flotilla's code fixes this; no profile listener needed.
+  **Fixed 2026-11-24** (the homelab session, the operator's go): the VM's kernel had marked tsc
+  unstable on 11-21 21:31 after one slow watchdog read-back and fallen back to the emulated hpet, so
+  every clock read exited to QEMU. `tsc=reliable` on the VM's kernel line and a VM restart (07:20 to
+  07:26Z): the VM's load fell from 42 to about 2, its system time from 71.7% to 3.6%, QEMU from
+  580% to 203%. The pairs call: 1.20 to 1.28 s (the exec 0.11 s), from 11 to 13 s; the store's
+  waits since start 0.006 s for reads. The homelab session watches the NTP offset for the hour after.
 
 ## Needs the operator
 
