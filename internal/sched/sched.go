@@ -112,6 +112,10 @@ type Scheduler struct {
 	running map[string]string // routine id -> run id
 	cancels map[string]string // run id -> "cancelled: <who>, <why>", while a cancel of it is pending
 
+	// snapMu makes a snapshot's release one step (read its state, delete it, record that): shadows of one input ending together
+	// otherwise each read it held and each deleted it
+	snapMu sync.Mutex
+
 	shadowQ      *shadowQueues
 	shadowCtx    context.Context   // what shadow runs run under: flotillad's, set by Loop
 	shadowRunner map[string]Runner // shadow run id -> the shadow worker running it

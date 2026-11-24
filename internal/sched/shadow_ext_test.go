@@ -37,6 +37,8 @@ type liveWorker struct {
 	commitErr error
 	deleted   []string
 	hold      chan struct{} // when set, a run waits for it
+	// deleteDelay: how long DeleteSnapshot takes
+	deleteDelay time.Duration
 }
 
 func (w *liveWorker) Run(ctx context.Context, r worker.Request) (*worker.Result, error) {
@@ -61,6 +63,7 @@ func (w *liveWorker) TakeSnapshot(ctx context.Context, runID string, paths []str
 }
 
 func (w *liveWorker) DeleteSnapshot(ctx context.Context, runID string) (bool, error) {
+	time.Sleep(w.deleteDelay) // a real worker's delete takes a moment: the window two releases raced in
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.deleted = append(w.deleted, runID)
@@ -706,6 +709,38 @@ func TestTheStartupSweep(t *testing.T) {
 	}
 	close(w.shadow.hold)
 	w.s.ShadowWait()
+}
+
+// Releases that race (two shadows of one input ending together, an unpin beside them) delete its snapshot once: the read of its
+// state and the delete are one step. ci-fast on 5166d33 deleted one twice in TestALiveRunStartsItsShadowOnTheShadowWorker.
+func TestASnapshotIsDeletedOnceWhenReleasesRace(t *testing.T) {
+	w := newWorld(t, "state: [st]\n")
+	ctx := context.Background()
+	w.shadow.hold = make(chan struct{})
+	w.shadow.started = make(chan string, 4)
+	b := w.runLive("schedule", nil)
+	<-w.shadow.started
+	if err := w.st.PinInput(ctx, b.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	close(w.shadow.hold)
+	w.s.ShadowWait()
+	if in, _ := w.st.Input(ctx, b.ID); in.SnapshotState != store.SnapshotHeld {
+		t.Fatalf("pinned, its snapshot is held: %s", in.SnapshotState)
+	}
+	w.st.PinInput(ctx, b.ID, false)
+	w.live.deleteDelay = 50 * time.Millisecond
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() { defer wg.Done(); w.s.ReleaseSnapshot(ctx, b.ID) }()
+	}
+	wg.Wait()
+	w.live.mu.Lock()
+	defer w.live.mu.Unlock()
+	if len(w.live.deleted) != 1 {
+		t.Fatalf("eight racing releases deleted the snapshot %d times: %v", len(w.live.deleted), w.live.deleted)
+	}
 }
 
 // Q7: a shadow version of an acting routine: its plan is a record "would run <action>", and the action is never enqueued, never decided

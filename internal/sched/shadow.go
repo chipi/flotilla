@@ -613,6 +613,8 @@ func (s *Scheduler) ReleaseSnapshot(ctx context.Context, inputKey string) {
 }
 
 func (s *Scheduler) releaseSnapshot(ctx context.Context, inputKey string) {
+	s.snapMu.Lock()
+	defer s.snapMu.Unlock()
 	in, err := s.Store.Input(ctx, inputKey)
 	if err != nil || in.SnapshotState != store.SnapshotHeld || in.Pinned {
 		return
