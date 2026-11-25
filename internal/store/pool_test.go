@@ -3,23 +3,23 @@ package store
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// Reads outside a transaction run on their own pool, which refuses a write: a write sent there is an error, never a second writer.
-func TestReadPoolRefusesAWrite(t *testing.T) {
+// Reads run on the writer's one connection (2026-11-25): one connection in all, so a read never runs between a writer's steps.
+func TestReadsShareTheWritersConnection(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "p.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
-	_, err = st.rdb.ExecContext(context.Background(), `INSERT INTO events (at, actor, via, kind, subject, detail) VALUES ('x', 'a', 'v', 'k', 's', '')`)
-	if err == nil || !strings.Contains(err.Error(), "readonly") {
-		t.Fatalf("a write on the read pool: %v", err)
+	if st.rdb != st.db || st.db.Stats().MaxOpenConnections != 1 {
+		t.Fatalf("reads on their own handle, or more than one connection: %+v", st.db.Stats())
 	}
-	if st.Pools().ReadOpen > readConns {
-		t.Errorf("%d read connections open, at most %d", st.Pools().ReadOpen, readConns)
+	if _, err := st.Events(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("closing the one connection once: %v", err)
 	}
 }
 

@@ -617,35 +617,27 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	// Reads outside a transaction get their own connections (2026-11-23): with every read queued on the one writer's
-	// connection, a page's reads waited behind the scheduler's and each other (the pairs answer, 83 ms natively on the
-	// installation's store, took 9 s live). WAL lets readers run beside the writer, each seeing the last commit;
-	// query_only makes a write sent here an error rather than a second writer.
-	rdb, err := sql.Open("sqlite", "file:"+path+"?_pragma=query_only(1)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=temp_store(2)")
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	rdb.SetMaxOpenConns(readConns)
-	s.rdb = rdb
+	// Reads run on the writer's one connection, as before 2026-11-23 (the operator, 2026-11-25). A read pool beside it (3904abb)
+	// was built for a slow pairs answer that turned out to be the VM's clock (fixed 2026-11-24), and it let reads run between a
+	// writer's steps, exposing check-then-act races that the one connection had serialised (a snapshot deleted twice, a case
+	// escalated in CI). rdb stays the name the readers use, so the pool can return once those races are fixed and the wait
+	// metric shows reads queueing.
+	s.rdb = db
 	return s, nil
 }
 
-// readConns is how many reads run at once beside the writer.
-const readConns = 4
-
-// PoolStats is how long reads and writes have waited for a connection since start: the wait the read pool removes.
+// PoolStats is how long the store's work has waited for its connection since start, and how often (database/sql's
+// counters). Reads and writes share one connection, so the wait is reported once, as the write pool's.
 type PoolStats struct {
 	ReadWaits, WriteWaits         int64
 	ReadWaitSec, WriteWaitSec     float64
 	ReadInUse, ReadOpen, WriteUse int
 }
 
-// Pools reads both pools' counters (database/sql's own).
+// Pools reads the connection's counters.
 func (s *Store) Pools() PoolStats {
-	r, w := s.rdb.Stats(), s.db.Stats()
-	return PoolStats{ReadWaits: r.WaitCount, WriteWaits: w.WaitCount, ReadWaitSec: r.WaitDuration.Seconds(), WriteWaitSec: w.WaitDuration.Seconds(),
-		ReadInUse: r.InUse, ReadOpen: r.OpenConnections, WriteUse: w.InUse}
+	w := s.db.Stats()
+	return PoolStats{WriteWaits: w.WaitCount, WriteWaitSec: w.WaitDuration.Seconds(), WriteUse: w.InUse}
 }
 
 // errNewer is the refusal of a store ahead of this binary. deploy.sh reads the "(N)" for the newest
@@ -681,7 +673,7 @@ func CheckSchema(path string) error {
 }
 
 func (s *Store) Close() error {
-	if s.rdb != nil {
+	if s.rdb != nil && s.rdb != s.db {
 		s.rdb.Close()
 	}
 	return s.db.Close()

@@ -91,6 +91,10 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
   07:26Z): the VM's load fell from 42 to about 2, its system time from 71.7% to 3.6%, QEMU from
   580% to 203%. The pairs call: 1.20 to 1.28 s (the exec 0.11 s), from 11 to 13 s; the store's
   waits since start 0.006 s for reads. The homelab session watches the NTP offset for the hour after.
+  **The read pool is reverted (2026-11-25, the operator):** reads share the writer's one connection
+  again. It had no load left to serve, and it exposed check-then-act races: a snapshot deleted
+  twice (fixed with a mutex, 3c06e93), a case escalated in CI (TestExecuteRunsOnceAndMovesToChecking
+  on 3c06e93, not reproduced locally). Kept: `Store.EndRun`, the cancel 404, the wait metric.
 
 ## Needs the operator
 

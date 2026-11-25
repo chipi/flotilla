@@ -257,8 +257,9 @@ func (p *Pusher) Ledger(counts []Series) {
 }
 
 // StorePools pushes how long the store's reads and writes have waited for a connection since start, and how many waits
-// (flotilla_store_wait_seconds_total and flotilla_store_waits_total, pool read or write): with rate() they say whether a
-// page's reads queue behind the writer (the read pool, 2026-11-23).
+// (flotilla_store_wait_seconds_total and flotilla_store_waits_total, pool read or write): with rate() they say whether the
+// store's work queues for its connection. Reads share the writer's one connection since 2026-11-25, so pool="write" carries
+// it all and pool="read" stays 0 until a read pool returns.
 func (p *Pusher) StorePools(readWaits, writeWaits int64, readWaitSec, writeWaitSec float64) {
 	p.push([]string{
 		p.sample("flotilla_store_wait_seconds_total", map[string]string{"pool": "read"}, readWaitSec),
