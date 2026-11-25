@@ -1,4 +1,4 @@
-# RFC-0014 build: where it stands (2026-11-22)
+# RFC-0014 build: where it stands (2026-11-25)
 
 The hand-off for the next session on RFC-0014 (the visual plane and mashups). The order of work is
 §8; this note says which steps are done, what is open, and what needs the operator.
@@ -46,17 +46,23 @@ The hand-off for the next session on RFC-0014 (the visual plane and mashups). Th
    `case-20261123-083d19eb2f` opened at 12:36:28Z, both plans were approved, n8n created 3 tasks and
    appended the decisions once (read back from Google by n8n's status calls), and the case closed
    verified at 12:39:24Z.
-2. **Step 4, the directory reader**: built, not deployed. `internal/directory` (the `file` source:
+2. ~~**Step 4, the directory reader**~~: deployed in sha-1d76a58 (2026-11-23), the `directory:`
+   section added to flotillad.yaml then. `internal/directory` (the `file` source:
    mode 600, known fields only, an id names one person), `store.SyncPeople` and `PersonBy` (the
    `people` and `person_ids` tables; each change a `person.added`, `person.changed` or
    `person.removed` event, actor `directory:file`), flotillad's `directory:` section (sync at start
    and every `every`, default 1h; an unreadable file keeps the copy), `-check`'s count and its
    warning on a pinned Slack user not in the file, and `secrets.sh` copying `config/people.yaml`.
    The installation's people file is on the host (the operator alone: email, name, `github`,
-   `flotilla`). At the deploy: add `directory: {source: file, path: /run/flotilla/people.yaml}` to
-   flotillad.yaml after the new image, since the running flotillad refuses an unknown field.
-   Nothing reads a person yet: the asker of a `question` case (case 1) is the first lookup.
-3. Step 5, live reads (read-only MCP tools), then case 1, case 2, the visual plane, the wall screen.
+   `flotilla`), named as `directory: {source: file, path: /run/flotilla/people.yaml}`. Nothing
+   reads a person yet: the asker of a `question` case (case 1) is the first lookup.
+3. ~~Step 5, live reads~~: built and live in sha-7ee5e53 (2026-11-25), off on the installation (the
+   `reads` profile is not set); [`rfc-0014-step5-plan.md`](rfc-0014-step5-plan.md) has it as built.
+   History: [0009](../history/0009-rfc-0014-case3-to-live-reads.md).
+4. **Case 1, the second brain** (next): the first user of live reads and of the directory, reading
+   Google Docs and Google Tasks (the operator, 2026-11-23). Needs on the installation: n8n's MCP
+   servers for both, the reads worker's secrets, `reads` in `COMPOSE_PROFILES`; then case 2, the
+   visual plane, the wall screen.
 
 ## Open in the code
 

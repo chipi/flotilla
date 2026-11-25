@@ -24,6 +24,9 @@ parallel decision log.
   deploy, re-recorded at the start when every recorded key and file is equal.
 - `0008-rfc-0014-hook-and-plumbing-call.md` — 2026-11-22: RFC-0014 written and decided, its step 1
   (the hook, live) and step 2 (`plumbing.call`, its example fleet and worker).
+- `0009-rfc-0014-case3-to-live-reads.md` — 2026-11-22 to 25: case 3 live, the directory reader, live
+  reads, the UI pass over real data, the mini VM's clock fixed and the read pool reverted, and four
+  GlitchTip noise fixes.
 - `decisions.md` — *(optional, not started)* append-only decision log (D-NNNN
   entries). Newer decisions at the top. Use this if you make operational
   decisions worth grep-finding later (port picks, image bumps, tooling
