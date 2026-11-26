@@ -51,6 +51,19 @@ action starts. The rungs:
 | 5 | DGX memory and GPU overcommit | DGX | about 36 (mem 27, GPU 8, NVRM 15) | memory and GPU alerts | stop or swap a model container (`gpu-mode-swap.sh`); the known cause is `vllm-translate` co-resident since 2026-09-29 | 2 |
 | 6 | Podcast pipeline, ingestion or enrichment failed | VPS | about 40 (jobs 14, ingestion 5, enricher 8, recap 11) | pipeline metrics and logs | diagnose; rerun the job when the cause is transient; a code fault goes to bugfix | 0, rerun at 2 |
 | 7 | flotilla's own workers stale | X3 | 15 stale, 1 silent (11-11 to 11-21) | flotilla's staleness rules | update the X3 workers to flotillad's version | 2 |
+| 8 | DGX not in prod mode when prod needs it | DGX | the operator's case (2026-11-26); likely behind some of case 6's pipeline failures, to be checked | prod's calls to the DGX failing, and `gpu-mode-swap.sh status` not `prod` | `gpu-mode-swap.sh prod`; verify with `status` and one call; roll back to the mode it was in | 2 |
+
+**Case 8 in detail.** The DGX has one GPU, and `gpu-mode-swap.sh` (homelab's `infra/dgx/bin`)
+decides which model owns it.
+
+- `prod` runs prod-vllm on :8003, plus translate: production serving and the nightly need it.
+- The other modes are `ollama`, `research-vllm`, `research-ollama`, `code`, `judging`, `robotics`
+  and `free`.
+- When prod needs the DGX and the mode is not `prod`, the fix is the swap. The swap stops what
+  holds the GPU: a research run, a judge, a training job. So it starts at rung 2: the operator
+  approves, seeing what will be stopped.
+- An SOP can later make it automatic inside prod's own window (the nightly), or when the mode
+  holds nothing running.
 
 **Out, because no host fix exists:**
 
@@ -198,7 +211,7 @@ installation may use another chat app, so no answer is Slack's.
    - the prod backups (case 1);
    - pipeline diagnosis and rerun (case 6);
    - OOM diagnosis and the limit PR (case 4).
-4. **The DGX:** its host agent, and the model-container swap (case 5).
+4. **The DGX:** its host agent; the model-container swap (case 5); the switch to prod mode (case 8).
 5. **The X3:** its workers' version (case 7), and a host agent if a case needs one.
 
 The rename (`ops` to `operator`: the fleet folder, its routines, and the mini's config) ships with
