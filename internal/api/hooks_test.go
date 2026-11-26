@@ -163,3 +163,67 @@ func TestTheHooksListenerServesHooksOnly(t *testing.T) {
 		t.Fatalf("a hook on the API listener: %d, want 404", code)
 	}
 }
+
+func askHookServer(t *testing.T) (*httptest.Server, *store.Store) {
+	t.Helper()
+	srv := newServer(t, func(*spec.Routine) {})
+	p := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(p, []byte(hookSecret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ask := &hook.Hook{Name: "ask", SecretFile: p, Kind: "question", Title: "A question for the second brain", Project: "knowledge",
+		Target: "thread", TargetPattern: `[0-9.]{1,32}`, Asker: &hook.Asker{Field: "user", Tool: "slack"},
+		Fields: map[string]hook.Field{"thread": {Type: "text", Max: 32}, "user": {Type: "text", Max: 32}, "text": {Type: "text", Max: 2000}}}
+	if errs := hook.Check([]*hook.Hook{ask}); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	srv.Hooks = map[string]*hook.Hook{"ask": ask}
+	ts := httptest.NewServer(srv.HooksHandler())
+	t.Cleanup(ts.Close)
+	return ts, srv.Store
+}
+
+func caseData(t *testing.T, st *store.Store, id string) map[string]string {
+	t.Helper()
+	ev, err := st.CaseEvents(context.Background(), id)
+	if err != nil || len(ev) == 0 {
+		t.Fatalf("events of %s: %v %v", id, ev, err)
+	}
+	var d map[string]string
+	if err := json.Unmarshal([]byte(ev[0].Data), &d); err != nil {
+		t.Fatalf("data of %s: %q %v", id, ev[0].Data, err)
+	}
+	return d
+}
+
+// RFC-0014 case 1: the asker is looked up in the directory when the case opens, and the answer (a person, or "unknown") is a
+// fact in the case's data with an event, never the payload's or a model's.
+func TestTheAskerIsResolvedWhenTheCaseOpens(t *testing.T) {
+	ts, st := askHookServer(t)
+	ctx := context.Background()
+	if _, err := st.SyncPeople(ctx, []store.Person{{Email: "ada@example.org", Name: "Ada", IDs: map[string]string{"slack": "U1"}}}, "directory:file"); err != nil {
+		t.Fatal(err)
+	}
+	_, out := postHook(t, ts, "ask", "q-1", `{"thread":"1.1","user":"U1","text":"what did we decide about retries?"}`, signed, time.Now())
+	known, _ := out["case"].(string)
+	if d := caseData(t, st, known); d["asker"] != "ada@example.org" || d["asker_name"] != "Ada" || d["user"] != "U1" {
+		t.Fatalf("a known asker: %v", d)
+	}
+	_, out = postHook(t, ts, "ask", "q-2", `{"thread":"2.2","user":"U9","text":"who are you?","asker":"ada@example.org","asker_name":"Ada"}`, signed, time.Now())
+	stranger, _ := out["case"].(string)
+	if d := caseData(t, st, stranger); d["asker"] != "unknown" || d["asker_name"] != "" {
+		t.Fatalf("an unknown asker, whatever the payload says: %v", d)
+	}
+	if _, err := st.SyncPeople(ctx, nil, "directory:file"); err != nil {
+		t.Fatal(err)
+	}
+	_, out = postHook(t, ts, "ask", "q-3", `{"thread":"3.3","user":"U1","text":"and now?"}`, signed, time.Now())
+	removed, _ := out["case"].(string)
+	if d := caseData(t, st, removed); d["asker"] != "unknown" {
+		t.Fatalf("a person removed from the directory resolves to unknown: %v", d)
+	}
+	ev := hookEvents(t, st, "hook.asker")
+	if len(ev) != 3 || ev[0].Subject == "" || !strings.Contains(ev[len(ev)-1].Detail+ev[0].Detail, "unknown") {
+		t.Fatalf("each lookup is an event: %+v", ev)
+	}
+}

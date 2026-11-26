@@ -172,3 +172,29 @@ func TestTheSharedSigningVector(t *testing.T) {
 		t.Fatalf("Sign = %s, want %s", got, want)
 	}
 }
+
+// The asker names one of the hook's fields and a directory tool; the case's asker keys are flotillad's alone.
+func TestAnAskerIsCheckedAgainstTheFields(t *testing.T) {
+	for _, c := range []struct {
+		asker *Asker
+		extra string
+		want  string
+	}{
+		{&Asker{Field: "user", Tool: "slack"}, "", ""},
+		{&Asker{Field: "nobody", Tool: "slack"}, "", "asker: field"},
+		{&Asker{Field: "user", Tool: "Slack!"}, "", "asker: tool"},
+		{&Asker{Field: "user", Tool: "slack"}, "asker", "reserved"},
+		{&Asker{Field: "user", Tool: "slack"}, "asker_name", "reserved"},
+	} {
+		h := meeting(t)
+		h.Fields["user"] = Field{Type: "text", Max: 32}
+		if c.extra != "" {
+			h.Fields[c.extra] = Field{Type: "text", Max: 32}
+		}
+		h.Asker = c.asker
+		err := h.check()
+		if (c.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%+v %q: %v, want %q", c.asker, c.extra, err, c.want)
+		}
+	}
+}

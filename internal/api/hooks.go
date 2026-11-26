@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -66,6 +67,10 @@ func (s *Server) hookCall(w http.ResponseWriter, r *http.Request) {
 		refuse(400, err.Error())
 		return
 	}
+	asked := ""
+	if a := h.Asker; a != nil {
+		asked = s.resolveAsker(r.Context(), a, p.Data)
+	}
 	data, err := json.Marshal(p.Data)
 	if err != nil {
 		refuse(400, "the payload could not be kept")
@@ -95,10 +100,36 @@ func (s *Server) hookCall(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.Event(r.Context(), actor, "hook", "hook.accepted", res.CaseID, how+"; "+detail); err != nil {
 		s.Log.Error("record an accepted hook call", "hook", name, "err", err)
 	}
+	if asked != "" && !res.Replay {
+		if err := s.Store.Event(r.Context(), actor, "hook", "hook.asker", res.CaseID, asked); err != nil {
+			s.Log.Error("record a hook call's asker", "hook", name, "err", err)
+		}
+	}
 	s.Log.Info("hook call", "hook", name, "delivery", delivery, "case", res.CaseID, "how", how)
 	code := 202
 	if res.Replay {
 		code = 200
 	}
 	writeJSON(w, code, map[string]any{"case": res.CaseID, "how": how})
+}
+
+// resolveAsker looks the call's sender up in the directory and writes who it is into data: the person's email and name, or
+// hook.Unknown. A lookup that fails is an unknown asker, never a refused call: the question still opens its case, and nothing
+// it may earn (an auto reply) is open to an unknown asker. It returns the event's detail.
+func (s *Server) resolveAsker(ctx context.Context, a *hook.Asker, data map[string]string) string {
+	id := data[a.Field]
+	data[hook.AskerKey], data[hook.AskerNameKey] = hook.Unknown, ""
+	if id == "" {
+		return "unknown: no " + a.Field + " in the call"
+	}
+	p, ok, err := s.Store.PersonBy(ctx, a.Tool, id)
+	switch {
+	case err != nil:
+		s.Log.Error("hook asker lookup", "tool", a.Tool, "err", err)
+		return "unknown: the directory lookup failed"
+	case !ok:
+		return "unknown: " + a.Tool + " id " + id + " is not in the directory"
+	}
+	data[hook.AskerKey], data[hook.AskerNameKey] = p.Email, p.Name
+	return "known: " + p.Email + " (" + a.Tool + " id " + id + ")"
 }

@@ -73,3 +73,27 @@ func TestHooksNeedTheirOwnListener(t *testing.T) {
 		t.Fatalf("hooks without hooks_listen: %v", err)
 	}
 }
+
+// A hook's asker is looked up in the directory; -check warns when there is none to look in.
+func TestAHooksAskerNeedsADirectory(t *testing.T) {
+	p := hookSecretFile(t)
+	ask := `hooks_listen: 0.0.0.0:8488
+hooks:
+  - {name: ask, secret_file: ` + p + `, kind: question, title: t, target: thread, target_pattern: '[0-9.]{1,32}',
+     asker: {field: user, tool: slack}, fields: {thread: {type: text, max: 32}, user: {type: text, max: 32}}}
+`
+	c, err := load(t, ask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := hookLines(c, nil); len(lines) != 2 || !strings.HasPrefix(lines[1], "WARNING hook ask: its asker") {
+		t.Fatalf("no directory: %q", lines)
+	}
+	c.Directory = &DirectoryConfig{}
+	if lines := hookLines(c, nil); !strings.HasPrefix(lines[1], "hook ask: its asker is the slack id in user") {
+		t.Fatalf("with a directory: %q", lines)
+	}
+	if _, err := load(t, strings.Replace(ask, "field: user", "field: nobody", 1)); err == nil || !strings.Contains(err.Error(), "asker: field") {
+		t.Fatalf("an asker field that is not a field: %v", err)
+	}
+}

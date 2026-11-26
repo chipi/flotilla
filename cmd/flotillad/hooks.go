@@ -37,6 +37,13 @@ func hookLines(cfg *Config, routines []*spec.Routine) []string {
 			sort.Strings(rs)
 			out = append(out, fmt.Sprintf("hook %s: opens a %s case for %v (POST /hooks/%s, signed)", h.Name, h.Kind, rs, h.Name))
 		}
+		if a := h.Asker; a != nil {
+			if cfg.Directory == nil {
+				out = append(out, fmt.Sprintf("WARNING hook %s: its asker (the %s id in %s) is looked up in the directory, and none is configured: every asker is unknown", h.Name, a.Tool, a.Field))
+			} else {
+				out = append(out, fmt.Sprintf("hook %s: its asker is the %s id in %s, looked up in the directory when the case opens", h.Name, a.Tool, a.Field))
+			}
+		}
 	}
 	return out
 }

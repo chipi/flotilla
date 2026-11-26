@@ -226,6 +226,13 @@ outside service, so it signs.
 - **Its own key space.** The canonical key's kind is `hook:<name>`, so an outsider can never match a
   key another fleet uses. The delivery id makes a retry open no second case; the canonical key folds
   a storm into one open case.
+- **Who asked is flotillad's fact, not the payload's.** A hook may name the field that carries its
+  sender's id and the directory tool it belongs to (`asker: {field: user, tool: slack}`). When the
+  case opens, flotillad looks that id up in the directory (§4.6) and writes the person's email and
+  name into the case's data as `asker` and `asker_name`, or `asker: unknown`; a hook may not
+  declare fields with those names, and the lookup is a `hook.asker` event. A failed lookup is an
+  unknown asker, never a refused call. `flotillad -check` warns on a hook with an asker and no
+  directory.
 - **Recorded.** Every call, accepted or refused, is in the ledger with its hook, and an accepted one
   shows on the visual plane as a case arriving.
 
@@ -263,7 +270,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | --- | --- | --- |
 | Someone asks a question in the chat's `#ask` channel. | R | |
 | The plumbing sees the message and calls the hook `ask` (the text, the asker's chat id, the thread). | P | hook: missing (§4.2) |
-| The hook opens a case of kind `question`; its text is data. The asker's chat id is looked up in the directory: a known person, or "unknown". | F | cases: yes; the directory: missing (§4.6) |
+| The hook opens a case of kind `question`; its text is data. The asker's chat id is looked up in the directory: a known person, or "unknown". | F | cases: yes; the directory: built; the asker at the hook: built (§4.2) |
 | `knowledge-desk/answer` searches and reads the wiki, the documents and the tasks live through its read-only tools, and the code docs in the knowledge volume, and drafts an answer citing each source with its link and time. | F (reads R) | live reads: missing (§4.8); the volume: planned (§4.4) |
 | Its action `reply` starts at `propose`: a person approves the first answers in chat. | F | approvals in chat: yes (ADR-0005); the action: missing (§4.6) |
 | flotilla calls the plumbing back; the reply lands in the thread. | F to P to R | callback: missing (§4.6) |
@@ -277,7 +284,7 @@ work. Each becomes a disabled example fleet once its missing parts exist.
 | --- | --- | --- |
 | A schedule in flotilla starts `team/brief` each morning. | F | yes |
 | It reads the code host directly (merged changes, reviews), and the tasks and chat threads of the last day live through its read-only tools. | F (reads R) | code reads: yes; live reads: missing (§4.8) |
-| Each name in the brief is a person from the directory, the same person across the code host, the tracker and chat. | F | the directory: missing (§4.6) |
+| Each name in the brief is a person from the directory, the same person across the code host, the tracker and chat. | F | the directory: built (§4.6) |
 | It writes the brief: what moved, what is stuck, who is waiting on whom. | F | a brief: yes (the operator's) |
 | Its action `post` to the team's channel (fixed in the declaration, one a day, labelled) starts at `propose`. It is reversible like `reply`, but many read it unasked, so it is promoted later, on its own score. | F to P to R | the action: missing (§4.6) |
 

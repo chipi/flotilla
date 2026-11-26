@@ -54,6 +54,22 @@ type Field struct {
 	Enum []string `yaml:"enum"`
 }
 
+// Asker is the field a hook's sender is in, and the directory tool its ids belong to.
+type Asker struct {
+	Field string `yaml:"field"`
+	Tool  string `yaml:"tool"`
+}
+
+// The case-data keys flotillad writes for a hook with an asker: the person's email, or Unknown, and their name. No hook may
+// declare a field with either name, so the payload never sets them.
+const (
+	AskerKey     = "asker"
+	AskerNameKey = "asker_name"
+	Unknown      = "unknown"
+)
+
+var toolRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
 // Hook is one entry of flotillad.yaml's hooks:.
 type Hook struct {
 	Name       string `yaml:"name"`
@@ -72,6 +88,9 @@ type Hook struct {
 	// CloseOnArrival closes the case as soon as it opens: the smoke hook, which proves the path end to end
 	// without leaving work for a routine.
 	CloseOnArrival bool `yaml:"close_on_arrival"`
+	// Asker names the field holding who sent the call, as an id in one of the directory's tools (RFC-0014 case 1): flotillad
+	// looks it up when the case opens and writes the answer into the case's data as AskerKey and AskerNameKey.
+	Asker *Asker `yaml:"asker"`
 
 	secret   []byte
 	targetRe *regexp.Regexp
@@ -133,6 +152,19 @@ func (h *Hook) check() error {
 	}
 	if _, ok := h.Fields[h.Target]; !ok {
 		return fmt.Errorf("target: %q is not one of the fields", h.Target)
+	}
+	if h.Asker != nil {
+		if _, ok := h.Fields[h.Asker.Field]; !ok {
+			return fmt.Errorf("asker: field %q is not one of the fields", h.Asker.Field)
+		}
+		if !toolRe.MatchString(h.Asker.Tool) {
+			return fmt.Errorf("asker: tool %q: a directory tool, a short lowercase word", h.Asker.Tool)
+		}
+		for _, k := range []string{AskerKey, AskerNameKey} {
+			if _, ok := h.Fields[k]; ok {
+				return fmt.Errorf("fields: %s is reserved for the asker flotillad resolves", k)
+			}
+		}
 	}
 	if h.TargetPattern == "" {
 		return errors.New("target_pattern: required (a target reaches the case's key and its pages)")

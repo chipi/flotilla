@@ -44,7 +44,7 @@ and the decisions it needs. RFC-0014 is amended where the build differs.
 Everything in steps 1 to 4 is built and proven in the e2e stack against stubs, with nothing on the
 installation. Step 5 needs the installation's side; step 6 is for later.
 
-1. **The asker at the hook.** A hook may name one field as its asker, with the tool its ids belong
+1. **The asker at the hook** (built 2026-11-26: `internal/hook` `Asker`, `internal/api/hooks.go` `resolveAsker`, a `hook.asker` event; the data is two flat keys, `asker` and `asker_name`). A hook may name one field as its asker, with the tool its ids belong
    to (`asker: {field: user, tool: slack}`). When the case opens, flotillad looks the id up in the
    directory and writes `asker: {email, name}` or `asker: unknown` into the case's data, with an
    event. It is a fact recorded once, so every later step and its replay read the same answer, and
