@@ -24,7 +24,8 @@ has been run yet.
 4. **Triage opens no flotilla cases.** Its escalations are GitHub issues.
 5. **Slack is not configured on the installation.**
    - `flotillad.yaml` has no `slack:` block.
-   - No connector is attached to the mini's host agent.
+   - No connector is attached to the mini's host agent: its `/etc/flotilla-host/config.json` has no
+     `slack` block (`grep -c '"slack"'` returned 0, exit 1, 2026-11-26).
 6. **Slack approvals resolve the actor through the `slack.users` pin,** not the directory.
 7. **The connector wire knows only plan approval.**
    - `hostwire` has `notify`, `approval` and `answered`.
