@@ -60,7 +60,8 @@ reversible:
    - It is limited to low and medium risk, under the daily cap.
    - ADR-0006's second instance, under its own user, comes when an operator action is promoted
      past `propose`.
-4. **SOPs are skills:** `fleets/operator/skills/<id>/SKILL.md`, with JSON-valued front matter.
+4. **SOPs are skills:** `fleets/operator/sops/<id>/SKILL.md`, with JSON-valued front matter,
+   declared as the fleet's knowledge in its `fleet.yaml` (C6b).
    - This reuses the skills loader, its hash and `-check`.
    - It needs no YAML dependency in the Python runtime.
 5. **Until the X3's workers are fixed** (case 7), an accepted SOP proposal is committed to the
@@ -137,6 +138,8 @@ POST /v1/cases/{id}/answers
 
 ### SOP file
 
+In `fleets/operator/sops/<id>/SKILL.md`, declared in `fleet.yaml` under `knowledge:`.
+
 ```text
 ---
 name: backup-stale
@@ -167,6 +170,7 @@ The human steps, and why.
 | C4 | Slack: any answer, notices, directory resolution | Go slack tests; e2e host frame |
 | C5 | `routed:operator` label and the operator intake | `make replay` on the host before it ships |
 | C6 | `runtime/sops.py`, the SOP-aware act routine, investigate, the SOP draft | new e2e `sops`; installation-facts lint |
+| C6b | fleet knowledge: `knowledge:` in `fleet.yaml` (`internal/spec` strict load, `-check`, the fleet's version hash), a Knowledge tab per declaring fleet with its fields and use, proposals with Accept and Reject | spec tests; UI tests; e2e fleet with and without knowledge |
 | C7 (private) | the rename, `on_record: watch`, the first SOP | `deploy_fleets.sh --check`, the drain check, one deploy |
 
 ## Tests that prove it

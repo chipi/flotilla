@@ -119,6 +119,32 @@ towards promotion (2 to 1). A failed verification or a rollback sets it back.
 lives in the private fleets repo, seeded from homelab's runbooks (the colima runbook among them),
 and is read by the operator fleet like triage's playbooks.
 
+**A fleet brings its own knowledge** (the operator, 2026-11-26). The core knows nothing of SOPs:
+a fleet declares its knowledge in its `fleet.yaml`, and flotilla shows it while the fleet is
+installed.
+
+```yaml
+knowledge:
+  - name: sops
+    title: Standard operating procedures
+    path: sops/                      # inside the fleet's folder
+    format: skill                    # skill (folders with SKILL.md) | markdown (pages)
+    fields: [applies_to, fix, rung]  # front-matter keys the UI shows as columns
+    proposals: true                  # the fleet may propose new or changed items
+```
+
+- **Checked at load:** a missing path, or an item that does not parse, is refused at `-check`.
+- **Versioned:** the knowledge's hash joins the fleet's version.
+- **Shown in the UI:**
+  - The Knowledge page has a tab per fleet that declares knowledge. A removed fleet's tab goes
+    with it, and a fleet that declares nothing adds nothing.
+  - Each item shows its declared fields, and which runs and cases loaded it.
+- **Proposals:** a fleet with `proposals: true` proposes additions and changes as cases. They
+  wait on its tab for Accept or Reject, like notes, and accepting writes them to the fleet's repo,
+  reviewed and versioned (rule 3).
+- **Operator is the first fleet to use it.** triage's playbooks and hint skills follow, declared
+  the same way.
+
 **It applies to every operator case** (the operator, 2026-11-26): all seven cases above, and any
 case added later, go through match, follow or investigate, and the proposed SOP. The case table's
 fixes are the first SOPs to write, each one from its incidents.
