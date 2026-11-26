@@ -1,6 +1,6 @@
 # The operator fleet: a plan backed by what broke (2026-11-26)
 
-**Decision (the operator, 2026-11-26):** the ops fleet becomes **operator**. Its job is to diagnose
+**Decisions (the operator, 2026-11-26):** the order below, and the ops fleet becomes **operator**. Its job is to diagnose
 and fix what can be fixed through service management, networking and configuration management, on
 every host: the mini, the VPS (prod), the DGX and the X3. Its work comes from the monitors' alerts
 and from triage's escalations. Every case below is backed by incidents in the 60 days to
@@ -76,13 +76,50 @@ action starts. The rungs:
 - **Each action earns its rung:** a count of plans the operator agreed with, then promotion, as
   the backup rerun's gate (5 agreed plans) already says.
 
+## The knowledge base: standard operating procedures that grow
+
+The operator's model (2026-11-26):
+
+1. **Match.** For each case, the agent looks for a standard operating procedure (SOP) that matches
+   it: the alert, the host, the symptoms.
+2. **Follow.** If one matches, it follows it. An SOP holds:
+   - when it applies;
+   - the diagnosis steps (read-only commands);
+   - the fix (allowlisted host actions only);
+   - how to verify;
+   - how to roll back.
+
+   It runs at the rung the SOP has earned.
+3. **Investigate.** If none matches, the agent investigates on its own, read-only (logs, metrics,
+   the host's state), writes down what it found, and proposes a fix. The fix is at rung 2: the
+   operator approves it.
+4. **Grow.** After every fix, the agent drafts the SOP, a new one or an update to the one it used,
+   with the case as its evidence.
+   - Under rule 3 (nothing rewrites its own playbooks at runtime) the draft is a proposal: the
+     operator accepts it with one tap, and only then does it join the knowledge base.
+   - A wrong diagnosis cannot become a procedure that later runs on its own.
+
+**An SOP earns its rung:** each run the operator agreed with, and each verified fix, counts
+towards promotion (2 to 1). A failed verification or a rollback sets it back.
+
+**Where it lives:** the knowledge base is the installation's (host names, paths, services). It
+lives in the private fleets repo, seeded from homelab's runbooks (the colima runbook among them),
+and is read by the operator fleet like triage's playbooks.
+
+**It applies to every operator case** (the operator, 2026-11-26): all seven cases above, and any
+case added later, go through match, follow or investigate, and the proposed SOP. The case table's
+fixes are the first SOPs to write, each one from its incidents.
+
 ## Proposed order
 
-1. **The platform gap:** never silent, plus Slack approvals. Without it, nothing below is safe to
-   rely on.
-2. **The mini:**
+1. **The platform gap:**
+   - never silent, plus Slack approvals;
+   - the knowledge base's loop (match, follow, investigate, propose).
+
+   Without it, nothing below is safe to rely on.
+2. **The mini, disk first** (the most frequent need, the operator, 2026-11-26):
+   - disk diagnosis and its first SOP (case 2);
    - the backup rerun to rung 2 (case 1);
-   - disk diagnosis (case 2);
    - confirming the colima watchdog's recoveries (case 3).
    - Also find why the backup was missed on 2026-11-21: a fault in the backup job, found by an
      operator reading its logs.
