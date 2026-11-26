@@ -1,10 +1,10 @@
 # The operator fleet: a plan backed by what broke (2026-11-26)
 
-**Decisions (the operator, 2026-11-26):** the order below, and the ops fleet becomes **operator**. Its job is to diagnose
-and fix what can be fixed through service management, networking and configuration management, on
-every host: the mini, the VPS (prod), the DGX and the X3. Its work comes from the monitors' alerts
-and from triage's escalations. Every case below is backed by incidents in the 60 days to
-2026-11-26; a case with no incident behind it stays out.
+**Decisions (the operator, 2026-11-26):** the order below, and the ops fleet becomes
+**operator**. Its job is to diagnose and fix what can be fixed through service management,
+networking and configuration management, on every host: the mini, the VPS (prod), the DGX and the
+X3. Its work comes from the monitors' alerts and from triage's escalations. Every case below is
+backed by incidents in the 60 days to 2026-11-26; a case with no incident behind it stays out.
 
 Sources: Grafana's alert annotations on the mini (524 firing transitions across 62 rules,
 2026-09-27 to 2026-11-26), the 127 alert rules in homelab's
