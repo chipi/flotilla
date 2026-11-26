@@ -93,7 +93,7 @@ var table = map[move]struct {
 	{Watching, Closed}:      {by: []string{ByDetector}, resolutions: []string{ResolvedItself}},
 	{Watching, HandedOver}:  {by: []string{ByOperator}},
 	{Escalated, HandedOver}: {by: []string{ByOperator}},
-	{Escalated, Closed}:     {by: []string{ByOperator, BySync}, resolutions: []string{OperatorResolved, IssueResolved}},
+	{Escalated, Closed}:     {by: []string{ByOperator, BySync}, resolutions: []string{OperatorResolved, IssueResolved, Dismissed}},
 }
 
 // Statuses lists every status, in lifecycle order.

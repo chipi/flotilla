@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/hostwire"
@@ -159,43 +158,38 @@ func (s *Server) RelayedApproval(ctx context.Context, host string, b hostwire.Ap
 	if len(plans) == 0 || plans[len(plans)-1].PlanHash != ask.PlanHash {
 		return ans(false, "refused: the plan changed since this message; open the case")
 	}
-	p := plans[len(plans)-1]
-	c := Caller{Name: "user:" + u.Name, Role: u.Role, User: true}
+	actor, err := s.resolveSlackActor(ctx, b.User, name)
+	if err != nil {
+		if pr := AsProblem(err); pr != nil {
+			return ans(false, "refused: %s", pr.Msg)
+		}
+		return ans(false, "refused: %v", err)
+	}
+	c := Caller{Name: "user:" + actor, Role: u.Role, User: true}
 	switch b.Action {
-	case "approve":
-		if ok, why := s.SlackApprovable(p.Action); !ok {
-			return ans(false, "refused: %s", why)
-		}
-		loc := time.UTC
-		if s.Sched != nil && s.Sched.Location != nil {
-			loc = s.Sched.Location
-		}
-		now := time.Now()
-		if s.Sched != nil {
-			now = s.Sched.Clock()
-		}
-		n := now.In(loc)
-		day := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc)
-		used, err := s.Store.SlackApprovalsSince(ctx, day.UTC().Format(store.TimeFormat))
+	case AnsApprove:
+		cs, err := s.Store.Case(ctx, ask.CaseID)
 		if err != nil {
 			return ans(false, "refused: %v", err)
 		}
-		if used >= s.Slack.Cap() {
-			return ans(false, "refused: Slack's daily cap (%d) is used; answer in the UI or the CLI", s.Slack.Cap())
+		if ok, why, err := s.answerPolicy(ctx, cs, c, "slack", AnsApprove, AnswerIn{Plan: ask.PlanHash}); err != nil {
+			return ans(false, "refused: %v", err)
+		} else if !ok {
+			return ans(false, "refused: %s", why)
 		}
 		if err := s.Store.UseAsk(ctx, b.Nonce, c.Name, "approved"); err != nil {
 			return ans(false, "refused: %v", err)
 		}
-		if _, err := s.ApprovePlan(ctx, c, "slack", ask.CaseID, ask.PlanHash, "from Slack"); err != nil {
+		if _, err := s.give(ctx, c, "slack", ask.CaseID, AnsApprove, AnswerIn{Plan: ask.PlanHash, Note: "from Slack"}); err != nil {
 			_ = s.Store.ReopenAsk(ctx, b.Nonce)
 			return ans(false, "not approved: %v", err)
 		}
 		return ans(true, "approved by %s in Slack; it runs now", u.Name)
-	case "reject":
+	case AnsReject:
 		if err := s.Store.UseAsk(ctx, b.Nonce, c.Name, "rejected"); err != nil {
 			return ans(false, "refused: %v", err)
 		}
-		if err := s.RejectCase(ctx, c, "slack", ask.CaseID, "rejected in Slack"); err != nil {
+		if _, err := s.give(ctx, c, "slack", ask.CaseID, AnsReject, AnswerIn{Reason: "rejected in Slack"}); err != nil {
 			_ = s.Store.ReopenAsk(ctx, b.Nonce)
 			return ans(false, "not rejected: %v", err)
 		}

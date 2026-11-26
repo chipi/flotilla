@@ -707,6 +707,17 @@ WSHOW="$(cli case show "$WC" 2>&1)"
 [ "$(echo "$WSHOW" | grep -c "notice.due")" = 1 ] && echo "$WSHOW" | grep >/dev/null "notice.due .*flotillad" \
   && ok "the case timer recorded one notice.due (the notice at once), not one per detection" || bad "notice.due: $(echo "$WSHOW" | grep -E 'notice|watching')"
 status_is "$WC" watching && ok "the notice moved nothing: the case is still watching" || bad "after the notice: $(cli case list --all 2>&1 | grep e2e_watching)"
+OUT="$(cli case answers "$WC" 2>&1)"
+echo "$OUT" | grep >/dev/null "(notice)" && echo "$OUT" | grep >/dev/null "acknowledge" \
+  && ok "the answers of a watching case: a notice, offering acknowledge" || bad "case answers (watching): $OUT"
+OUT="$(cli case answer "$WC" acknowledge 2>&1)"
+echo "$OUT" | grep >/dev/null "acknowledged_by" && cli case show "$WC" 2>&1 | grep >/dev/null "notice.acked" \
+  && ok "acknowledging the notice recorded notice.acked on the case" || bad "case answer acknowledge: $OUT"
+status_is "$WC" watching && ok "the acknowledgement moved nothing: the case is still watching" || bad "after the ack: $(cli case list --all 2>&1 | grep e2e_watching)"
+OUT="$(cli case answer "$WC" acknowledge 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409" && ok "a second acknowledgement of the same notice is refused (409)" || bad "second ack: $OUT"
+OUT="$(cli case answer "$WC" mute 2>&1)"
+echo "$OUT" | grep >/dev/null "HTTP 409.*not an answer this case offers" && ok "an answer no case kind declares is refused (409)" || bad "case answer mute: $OUT"
 $D exec flotilla-worker-ops-read touch $WFLAG
 wmon
 status_is "$WC" closed && cli case list --all 2>&1 | grep "^$WC " | grep >/dev/null "resolved_itself" \
@@ -1428,8 +1439,10 @@ echo "$OUT" | grep >/dev/null "HTTP 409.*no previous" && ok "with no previous ve
 # v1 plans again (the previous version, on this image): the same case waits again, a v1 plan
 status_is "$VC" awaiting_approval && [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(r[0]["version"], r[0]["status"])')" = "1 ok" ] \
   && ok "the live version (v1, the previous one on this image) planned the case again: its run recorded version 1" || bad "re-plan by v1: $(cli case list --all 2>&1 | grep e2e_versioned) $(runs_json e2e/versioned | head -c 200)"
-cli case reject "$VC" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC" closed \
-  && ok "the case was rejected and closed by the operator (the target is released)" || bad "closing the versions case: $(cli case show "$VC" 2>&1 | tail -2)"
+cli case reject "$VC" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case answers "$VC" 2>&1 | grep >/dev/null "dismiss" \
+  && cli case answer "$VC" dismiss --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC" closed \
+  && cli case list --all 2>&1 | grep "^$VC " | grep >/dev/null "dismissed" \
+  && ok "the case was rejected and dismissed by the operator through its answers (closed as dismissed, the target is released)" || bad "closing the versions case: $(cli case show "$VC" 2>&1 | tail -2)"
 cli action autonomy host.vtrue propose --reason "e2e: back to propose after the rejection's demotion" >/dev/null 2>&1
 # a run in flight at promote finishes with the version it started with (e2e/hang's pattern: a hold file in the worker makes the run last)
 $D exec flotilla-worker-ops-act-host touch /tmp/e2e-versioned-hold >/dev/null 2>&1 || bad "cannot create the hold file in the ops-act-host worker"

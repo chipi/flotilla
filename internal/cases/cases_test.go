@@ -78,6 +78,21 @@ func TestResolutions(t *testing.T) {
 	}
 }
 
+// An escalated case is dismissed by a person only: no detector, timer or policy rules it away (ADR-0023).
+func TestDismissedMove(t *testing.T) {
+	if err := Check(Escalated, Closed, ByOperator, Dismissed); err != nil {
+		t.Fatal(err)
+	}
+	for _, by := range []string{ByDetector, ByDiagnose, ByAct, ByCheck, ByPolicy, ByTimer} {
+		if Check(Escalated, Closed, by, Dismissed) == nil {
+			t.Errorf("%s dismissed an escalated case", by)
+		}
+	}
+	if Check(AwaitingApproval, Closed, ByOperator, Dismissed) == nil || Check(Watching, Closed, ByOperator, Dismissed) == nil {
+		t.Error("dismissed outside escalated")
+	}
+}
+
 // A watched case closes only as resolved itself, and only by the detector: the policy that put it
 // there and the operator who answers it never close it (ADR-0023).
 func TestWatchingMoves(t *testing.T) {

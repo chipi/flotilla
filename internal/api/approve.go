@@ -27,6 +27,8 @@ func (s *Server) caseRoutes(m *http.ServeMux) {
 	m.Handle("POST /v1/cases/{id}/applied", s.auth(ActApprove, s.caseApplied))
 	m.Handle("POST /v1/cases/{id}/notes", s.auth(ActNotePropose, s.caseNote))
 	m.Handle("POST /v1/cases/{id}/reassign", s.auth(ActApprove, s.caseReassign))
+	m.Handle("GET /v1/cases/{id}/answers", s.auth(ActApprove, s.caseAnswers))
+	m.Handle("POST /v1/cases/{id}/answers", s.auth(ActApprove, s.caseAnswer))
 }
 
 // escalated is a person's move out of escalated (RFC-0004 §3.5): with a reason, on an escalated case.
@@ -78,6 +80,19 @@ func (s *Server) ReassignCase(ctx context.Context, c Caller, via, id, why string
 	return nil
 }
 
+// DismissCase is a person ruling an escalated case not worth acting on (escalated -> closed, dismissed), with
+// the caller's reason. It releases the target like a close does; the resolution tells the two apart.
+func (s *Server) DismissCase(ctx context.Context, c Caller, via, id, why string) error {
+	if err := s.escalated(ctx, c, id, why, "dismissing"); err != nil {
+		return err
+	}
+	if err := s.Store.MoveCase(ctx, id, cases.Closed, cases.ByOperator, cases.Dismissed, c.Name, why); err != nil {
+		return err
+	}
+	s.Log.Info("case dismissed", "case", id, "by", c.Name, "reason", why, "via", via)
+	return nil
+}
+
 func (s *Server) awaiting(ctx context.Context, id string) (store.Case, error) {
 	c, err := s.Store.Case(ctx, id)
 	if errors.Is(err, store.ErrNoSuchCase) {
@@ -108,20 +123,8 @@ func (s *Server) ApprovePlan(ctx context.Context, c Caller, via, id, planHash, n
 	if err != nil {
 		return "", err
 	}
-	if frozen, err := s.Sched.Frozen(ctx); err != nil {
+	if err := s.approveBlock(ctx, cs); err != nil {
 		return "", err
-	} else if frozen {
-		return "", problem(409, "the installation is frozen: nothing starts, approved or not")
-	}
-	holds, err := s.Store.Holds(ctx, s.Sched.Clock(), false)
-	if err != nil {
-		return "", err
-	}
-	host := policy.HostOf(cs.Target)
-	for _, h := range holds {
-		if h.Scope == cs.Target || (host != "" && h.Scope == "host:"+host) {
-			return "", problem(409, "held: %s", h.String())
-		}
 	}
 	plans, err := s.Store.Plans(ctx, id)
 	if err != nil {
@@ -146,6 +149,26 @@ func (s *Server) ApprovePlan(ctx context.Context, c Caller, via, id, planHash, n
 	}
 	s.Log.Info("case approved", "case", id, "by", c.Name, "action", p.Action, "target", cs.Target, "via", via)
 	return p.PlanHash, nil
+}
+
+// approveBlock is what stops any approval of the case now: the installation frozen, or a hold on its target or host.
+func (s *Server) approveBlock(ctx context.Context, cs store.Case) error {
+	if frozen, err := s.Sched.Frozen(ctx); err != nil {
+		return err
+	} else if frozen {
+		return problem(409, "the installation is frozen: nothing starts, approved or not")
+	}
+	holds, err := s.Store.Holds(ctx, s.Sched.Clock(), false)
+	if err != nil {
+		return err
+	}
+	host := policy.HostOf(cs.Target)
+	for _, h := range holds {
+		if h.Scope == cs.Target || (host != "" && h.Scope == "host:"+host) {
+			return problem(409, "held: %s", h.String())
+		}
+	}
+	return nil
 }
 
 // RejectCase escalates a proposed case, with the caller's reason; the store releases the target and
@@ -186,23 +209,23 @@ func (s *Server) caseApprove(w http.ResponseWriter, r *http.Request, c Caller) {
 		Plan string `json:"plan"`
 	}
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
-	hash, err := s.ApprovePlan(r.Context(), c, "api", r.PathValue("id"), strings.TrimSpace(body.Plan), "")
-	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "approved_by": c.Name, "plan_hash": hash})
+	out, err := s.Answer(r.Context(), c, "api", r.PathValue("id"), "approve", AnswerIn{Plan: strings.TrimSpace(body.Plan)})
+	writeAction(w, err, 200, out)
 }
 
 func (s *Server) caseReject(w http.ResponseWriter, r *http.Request, c Caller) {
-	err := s.RejectCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
-	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "rejected_by": c.Name})
+	out, err := s.Answer(r.Context(), c, "api", r.PathValue("id"), "reject", AnswerIn{Reason: reason(r, w)})
+	writeAction(w, err, 200, out)
 }
 
 func (s *Server) caseClose(w http.ResponseWriter, r *http.Request, c Caller) {
-	err := s.CloseCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
-	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "closed_by": c.Name})
+	out, err := s.Answer(r.Context(), c, "api", r.PathValue("id"), "close", AnswerIn{Reason: reason(r, w)})
+	writeAction(w, err, 200, out)
 }
 
 func (s *Server) caseReassign(w http.ResponseWriter, r *http.Request, c Caller) {
-	err := s.ReassignCase(r.Context(), c, "api", r.PathValue("id"), reason(r, w))
-	writeAction(w, err, 200, map[string]string{"case": r.PathValue("id"), "reassigned_by": c.Name})
+	out, err := s.Answer(r.Context(), c, "api", r.PathValue("id"), "reassign", AnswerIn{Reason: reason(r, w)})
+	writeAction(w, err, 200, out)
 }
 
 var commitRe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)

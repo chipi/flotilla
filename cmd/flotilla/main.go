@@ -16,6 +16,8 @@
 //	flotilla cancel RUN_ID --reason "..."               (operator: one run in flight)
 //	flotilla start fleet --reason "..."                 (operator)
 //	flotilla case approve ID [--plan HASH] | reject ID --reason "..." (operator: a proposed plan)
+//	flotilla case answers ID                            (operator: what the case asks now, and the answers it offers)
+//	flotilla case answer ID ANSWER [--plan HASH] [--reason "..."]  (operator: approve, reject, dismiss, close, reassign or acknowledge)
 //	flotilla case close ID --reason "..."               (operator: an escalated case; releases its target)
 //	flotilla case reassign ID --reason "..."            (operator: an escalated case back to its routine)
 //	flotilla user add NAME --role admin|operator|viewer (admin; the first admin with the host's operator token)
@@ -207,7 +209,7 @@ func main() {
 		need(args, 1, `start fleet --reason "..."`)
 		post("/v1/fleets/"+args[0]+"/start", map[string]string{"reason": reason})
 	case "case":
-		if len(args) > 0 && (args[0] == "approve" || args[0] == "reject" || args[0] == "close" || args[0] == "reassign") {
+		if len(args) > 0 && (args[0] == "approve" || args[0] == "reject" || args[0] == "close" || args[0] == "reassign" || args[0] == "answer" || args[0] == "answers") {
 			caseDecision(args, reason)
 			return
 		}
@@ -234,7 +236,33 @@ func main() {
 // back to its acting routine.
 func caseDecision(args []string, reason string) {
 	plan := flagValue(&args, "--plan")
-	need(args, 2, `case approve ID [--plan HASH] | case reject|close|reassign ID --reason "..."`)
+	if len(args) > 0 && args[0] == "answers" {
+		need(args, 2, `case answers ID`)
+		var set struct {
+			Case, Kind string
+			Question   struct{ Title, Text string }
+			Answers    []struct {
+				ID, Label, Why string
+				Allowed        bool
+			}
+		}
+		get("/v1/cases/"+args[1]+"/answers", &set)
+		fmt.Printf("%s (%s): %s\n", set.Case, set.Kind, set.Question.Title)
+		for _, a := range set.Answers {
+			if a.Allowed {
+				fmt.Printf("  %s\n", a.ID)
+			} else {
+				fmt.Printf("  %s (not now: %s)\n", a.ID, a.Why)
+			}
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "answer" {
+		need(args, 3, `case answer ID ANSWER [--plan HASH] [--reason "..."]`)
+		post("/v1/cases/"+args[1]+"/answers", map[string]string{"answer": args[2], "plan": plan, "reason": reason})
+		return
+	}
+	need(args, 2, `case approve ID [--plan HASH] | case reject|close|reassign ID --reason "..." | case answers ID | case answer ID ANSWER [--plan HASH] [--reason "..."]`)
 	if args[0] == "approve" {
 		post("/v1/cases/"+args[1]+"/approve", map[string]string{"plan": plan})
 		return
@@ -534,7 +562,7 @@ func flagValue(args *[]string, name string) string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | versions ROUTINE | versions shadow-run ROUTINE vN --input KEY | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R | pairs ROUTINE vN [--since T] [--until T] [--show differ|unpaired] [--json] | pairs export ROUTINE vN --to DIR | input show|pin|unpin KEY | input export KEY --to DIR [--with-ledger] [--with-state] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
+	fmt.Fprintln(os.Stderr, "usage: flotilla status | runs [routine] [-n N] | events [-n N] | run|pause ROUTINE | resume ROUTINE --reason R | autonomy ROUTINE LEVEL [--reason R] | autonomy freeze | autonomy unfreeze --reason R | case list [--all] | case show ID | case approve ID [--plan HASH] | case reject|close|reassign ID --reason R | case answers ID | case answer ID ANSWER [--plan HASH] [--reason R] | hold SCOPE DURATION --reason R | hold list | hold lift ID --reason R | action list | action autonomy NAME LEVEL [--reason R] | versions ROUTINE | versions shadow-run ROUTINE vN --input KEY | promote ROUTINE vN --autonomy L --reason R [--no-pairs] [--gate NAME=pass|fail[@REF]]... [--eval RUN_ID=pass|fail]... | rollback ROUTINE --autonomy L --reason R | retire ROUTINE vN --reason R | pairs ROUTINE vN [--since T] [--until T] [--show differ|unpaired] [--json] | pairs export ROUTINE vN --to DIR | input show|pin|unpin KEY | input export KEY --to DIR [--with-ledger] [--with-state] | stop FLEET | cancel RUN_ID --reason R | start FLEET --reason R | eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT] | eval list [--routine R] | user add|list|role|rotate|revoke | hash-token")
 	os.Exit(2)
 }
 

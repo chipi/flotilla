@@ -48,7 +48,23 @@
         <label class="field field--strong">Commit<input name="commit" required pattern="[0-9a-fA-F]{7,40}" spellcheck="false" placeholder="1dd224c"></label>
         <div class="actions"><button class="btn btn--blue" type="submit">Record the commit</button></div>
       </form>{{end}}
+      {{if .CanAck}}<form class="confirm" method="post" action="/cases/{{$c.ID}}/acknowledge">
+        {{template "csrf" $csrf}}
+        <strong>Acknowledge the notice?</strong>
+        <p>The case stays watched; the next notice is held back for a day.</p>
+        <div class="actions"><button class="btn btn--blue" type="submit">Acknowledge</button></div>
+      </form>{{end}}
       {{if .CanFix}}<div class="actions">
+        {{if .CanDismiss}}<details class="decision__rejectwrap">
+          <summary class="btn btn--small">Dismiss it…</summary>
+          <form class="confirm" method="post" action="/cases/{{$c.ID}}/dismiss">
+            {{template "csrf" $csrf}}
+            <strong>Dismiss {{$c.ID}}?</strong>
+            <p>The target is released and the case is closed as dismissed: not worth acting on.</p>
+            <label class="field field--strong">Why (kept with the case)<textarea name="reason" rows="2" required data-needs></textarea></label>
+            <div class="actions"><button class="btn btn--blue" type="submit">Dismiss the case</button></div>
+          </form>
+        </details>{{end}}
         <details class="decision__rejectwrap">
           <summary class="btn btn--small">Hand back to its routine…</summary>
           <form class="confirm" method="post" action="/cases/{{$c.ID}}/reassign">

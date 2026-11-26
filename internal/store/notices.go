@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -61,4 +63,42 @@ func (s *Store) DueNotice(ctx context.Context, caseID, kind string, n int, dueAt
 		return err
 	}
 	return tx.Commit()
+}
+
+// ErrNoNotice and ErrNoticeAcked are AckNotice's refusals: nothing has fallen due yet, or the newest notice is answered.
+var (
+	ErrNoNotice    = errors.New("the case has no notice to acknowledge")
+	ErrNoticeAcked = errors.New("the newest notice is already acknowledged")
+)
+
+// AckNotice acknowledges the case's newest notice as actor: acked_by and acked_at on its row, and a notice.acked event,
+// in one transaction. The case timer's snooze reads acked_at.
+func (s *Store) AckNotice(ctx context.Context, caseID, actor string) (Notice, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Notice{}, err
+	}
+	defer tx.Rollback()
+	var n Notice
+	err = tx.QueryRowContext(ctx, `SELECT id, case_id, kind, n, due_at, sent_at, acked_by, acked_at FROM notices WHERE case_id = ? ORDER BY id DESC LIMIT 1`,
+		caseID).Scan(&n.ID, &n.CaseID, &n.Kind, &n.N, &n.DueAt, &n.SentAt, &n.AckedBy, &n.AckedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Notice{}, ErrNoNotice
+	}
+	if err != nil {
+		return Notice{}, err
+	}
+	if n.AckedAt != "" {
+		return n, ErrNoticeAcked
+	}
+	at := s.now().Format(ts)
+	if _, err := tx.ExecContext(ctx, `UPDATE notices SET acked_by = ?, acked_at = ? WHERE id = ?`, actor, at, n.ID); err != nil {
+		return Notice{}, err
+	}
+	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: caseID, At: at, Kind: "notice.acked", Actor: actor,
+		Detail: fmt.Sprintf("%s notice %d acknowledged", n.Kind, n.N)}); err != nil {
+		return Notice{}, err
+	}
+	n.AckedBy, n.AckedAt = actor, at
+	return n, tx.Commit()
 }

@@ -470,6 +470,8 @@ type caseData struct {
 	Result     string
 	Record     string
 	CanFix     bool // escalated: an operator may close or reassign it
+	CanDismiss bool // escalated: the answers list offers dismiss (ADR-0023)
+	CanAck     bool // watching: the answers list offers acknowledge
 	CanApply   bool // an approved repo change: an operator records the commit that applied it (ADR-0016)
 	PlanCount  int
 	Decided    string
@@ -511,6 +513,16 @@ func (u *Server) casePage(w http.ResponseWriter, r *http.Request, s *store.Sessi
 		Chip: caseChip(c.Status), Age: u.ago(c.StatusAt), Last: last, LastWhen: u.clock(last.At), LastWhat: eventShort(last), Opener: first.Actor}
 	d := caseData{Row: row, Routine: kinds[c.Kind], Opened: u.clock(c.OpenedAt), PlanCount: len(plans),
 		CanFix: c.Status == cases.Escalated && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin)}
+	if set, err := u.API.Answers(ctx, caller(s), "ui", c.ID); err == nil {
+		for _, a := range set.Answers {
+			switch a.ID {
+			case api.AnsDismiss:
+				d.CanDismiss = a.Allowed
+			case api.AnsAcknowledge:
+				d.CanAck = a.Allowed
+			}
+		}
+	}
 	d.CanApply = c.Status == cases.Executing && (s.Role == api.RoleOperator || s.Role == api.RoleAdmin) && u.repoCase(ctx, c.ID) &&
 		u.repoExecutor(ctx, c.ID) == "" // a routine carries it out (RFC-0010 §3): nothing for a person to record
 	if d.Routine == "" && strings.Contains(first.Actor, "/") {
@@ -652,6 +664,10 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 		err, ok = u.API.RejectCase(r.Context(), caller(s), "ui", id, why), "Rejected the plan on "+id+": nothing ran, and the case is escalated."
 	case "close":
 		err, ok = u.API.CloseCase(r.Context(), caller(s), "ui", id, why), "Closed "+id+"."
+	case "dismiss":
+		err, ok = u.API.DismissCase(r.Context(), caller(s), "ui", id, why), "Dismissed "+id+"."
+	case "acknowledge":
+		err, ok = u.API.AckNotice(r.Context(), caller(s), "ui", id), "Acknowledged the notice on "+id+": the next one is held back."
 	case "reassign":
 		err, ok = u.API.ReassignCase(r.Context(), caller(s), "ui", id, why), "Handed "+id+" back to its routine."
 	case "right", "wrong":
