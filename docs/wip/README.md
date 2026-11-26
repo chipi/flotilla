@@ -21,6 +21,8 @@ prioritized task lists. Promotion targets:
   the overrides and the data gaps.
 - [The UI, next](ui-next-plan.md): the operator's three buckets; the first two largely built.
 - [Bugfix phase B brief](bugfix-phase-b-brief.md): the handover for the bugfix fleet's evaluation.
+- [Fleets to working](fleets-to-working.md): keep every fleet and make each work (the operator,
+  2026-11-26); where each stands and what to settle first.
 
 Closed notes are listed in their history entry ([0003](../history/0003-wip-notes-closed.md)).
 
