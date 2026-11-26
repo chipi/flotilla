@@ -276,7 +276,7 @@ func TestPlanReportRefusesWhatDetectedRefuses(t *testing.T) {
 
 // The redirect's guard: the shadow path (this package's shadow.go, the scheduler's and the API's shadow files) never names a function
 // that changes the live system. A new call of one is a failed test, not a review comment.
-var liveWrites = regexp.MustCompile(`\.(DecidePlan|MoveCase|StageCase|LeaseCase|ReleaseCase|AddCaseSpend|AddCaseEvent|OpenCase|DetectIncident|ClearIncidents|` +
+var liveWrites = regexp.MustCompile(`\.(DecidePlan|MoveCase|StageCase|LeaseCase|ReleaseCase|AddCaseSpend|AddCaseEvent|OpenCase|DetectIncident|ClearIncidents|DueNotice|` +
 	`ApplyPlan|SaveBrief|AskInSlack|StartHostExecution|EndHostExecution|ActionRecord|LastSuccess|Freshness|SetControl|SetControlBecause|ProposeNote|` +
 	`Event|AddSummary|ImportLedger|WriteFiling|AppendEntry|Promote|Rollback|Retire)\(`)
 

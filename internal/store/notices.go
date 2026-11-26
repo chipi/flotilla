@@ -1,0 +1,64 @@
+package store
+
+import (
+	"context"
+	"fmt"
+)
+
+// NoticeWatching is the notice kind of a watched case (ADR-0023).
+const NoticeWatching = "watching"
+
+// Notice is one prompt to the operator about a case. Sending it is a connector's job; the store keeps when it fell due,
+// when it was sent and who acknowledged it.
+type Notice struct {
+	ID      int64  `json:"id"`
+	CaseID  string `json:"case_id"`
+	Kind    string `json:"kind"`
+	N       int    `json:"n"` // 1 for the first notice of a watching period
+	DueAt   string `json:"due_at"`
+	SentAt  string `json:"sent_at"`
+	AckedBy string `json:"acked_by"`
+	AckedAt string `json:"acked_at"`
+}
+
+// Notices is a case's notices, oldest first.
+func (s *Store) Notices(ctx context.Context, caseID string) ([]Notice, error) {
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, case_id, kind, n, due_at, sent_at, acked_by, acked_at FROM notices WHERE case_id = ? ORDER BY id`, caseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Notice
+	for rows.Next() {
+		var n Notice
+		if err := rows.Scan(&n.ID, &n.CaseID, &n.Kind, &n.N, &n.DueAt, &n.SentAt, &n.AckedBy, &n.AckedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// DueNotice records that notice n of a case fell due at dueAt: the row and its notice.due event, in one transaction.
+func (s *Store) DueNotice(ctx context.Context, caseID, kind string, n int, dueAt string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var found int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM cases WHERE id = ?`, caseID).Scan(&found); err != nil {
+		return err
+	}
+	if found == 0 {
+		return ErrNoSuchCase
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO notices (case_id, kind, n, due_at) VALUES (?, ?, ?, ?)`, caseID, kind, n, dueAt); err != nil {
+		return err
+	}
+	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: caseID, At: s.now().Format(ts), Kind: "notice.due", Actor: "flotillad",
+		Detail: fmt.Sprintf("%s notice %d is due", kind, n)}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

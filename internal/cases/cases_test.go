@@ -14,6 +14,7 @@ var diagram = map[[2]string][]string{
 	{HandedOver, Closed}:           {ByAct, ByDetector},
 	{HandedOver, Escalated}:        {ByAct, ByPolicy, ByTimer},
 	{Planned, Closed}:              {ByPolicy},
+	{Planned, Watching}:            {ByPolicy},
 	{Planned, AwaitingApproval}:    {ByPolicy},
 	{Planned, Executing}:           {ByPolicy},
 	{Planned, HandedOver}:          {ByPolicy},
@@ -27,6 +28,8 @@ var diagram = map[[2]string][]string{
 	{Checking, Closed}:             {ByCheck},
 	{Checking, Escalated}:          {ByCheck, ByTimer},
 	{Checking, HandedOver}:         {ByCheck},
+	{Watching, Closed}:             {ByDetector},
+	{Watching, HandedOver}:         {ByOperator},
 	{Escalated, HandedOver}:        {ByOperator},
 	{Escalated, Closed}:            {ByOperator, BySync},
 }
@@ -72,5 +75,24 @@ func TestResolutions(t *testing.T) {
 	}
 	if Check(Closed, HandedOver, ByOperator, "") == nil {
 		t.Fatal("a closed case reopened")
+	}
+}
+
+// A watched case closes only as resolved itself, and only by the detector: the policy that put it
+// there and the operator who answers it never close it (ADR-0023).
+func TestWatchingMoves(t *testing.T) {
+	if err := Check(Watching, Closed, ByDetector, ResolvedItself); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ by, res string }{{ByDetector, PlanRecorded}, {ByDetector, OperatorResolved}, {ByOperator, ResolvedItself}, {ByTimer, ResolvedItself}, {ByPolicy, ResolvedItself}} {
+		if Check(Watching, Closed, c.by, c.res) == nil {
+			t.Errorf("%s closed a watching case as %s", c.by, c.res)
+		}
+	}
+	if Check(Planned, Watching, ByPolicy, "") != nil || Check(Planned, Watching, ByPolicy, PlanRecorded) == nil {
+		t.Error("planned -> watching carries no resolution")
+	}
+	if Check(Watching, HandedOver, ByOperator, "") != nil || Check(Watching, HandedOver, ByTimer, "") == nil {
+		t.Error("watching -> handed_over is the operator's alone")
 	}
 }

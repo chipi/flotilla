@@ -76,7 +76,7 @@ workers:
   triage: {url: "http://worker-triage:8081", token_file: /run/flotilla/worker-triage.token}   # from the secrets volume
 disabled_routines: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a routine whose worker is missing
 examples_dir: /opt/flotilla/examples        # optional: the image's example fleets, listed as examples (flotilla status, the Examples page), never run
-case_timers: {detected_alert: 30m, handed_over_escalate: 24h}   # optional, these are the defaults: a case detected that long alerts, handed over that long escalates
+case_timers: {detected_alert: 30m, handed_over_escalate: 24h, watch_notify: [4h, 24h], watch_ack_snooze: 24h}   # optional, these are the defaults: a case detected that long alerts, handed over that long escalates; a watching case is due a notice at once, at each watch_notify step, then daily (at most 7), and an acknowledged one holds the next back for watch_ack_snooze
 models:                                 # optional (ADR-0004): the aliases routines name; every run gets it as FLOTILLA_MODELS
   endpoints:
     gateway:

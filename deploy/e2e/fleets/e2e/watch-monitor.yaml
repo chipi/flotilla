@@ -1,0 +1,24 @@
+fleet: e2e
+routine: watch-monitor
+description: >-
+  The watching e2e's monitor (ADR-0023), never shipped: run by hand, it reports one e2e_watching
+  detection with unchanged data, until a flag file on the ops-read worker says the condition is
+  clear, and then reports nothing.
+enabled: false
+worker: ops-read
+trigger:
+  every: 60m
+detects: [e2e_watching]
+run:
+  command: >-
+    if [ -e /tmp/flotilla-example/e2e-watch-clear ]; then
+    printf '{"outcome": "detections", "detections": []}' > "$FLOTILLA_PLAN_FILE";
+    else
+    printf '{"outcome": "detections", "detections": [{"kind": "e2e_watching", "target": "host:e2e-watch", "detail": "e2e", "data": {"name": "e2e_age", "value": 1}}]}' > "$FLOTILLA_PLAN_FILE";
+    fi
+  workdir: .
+  timeout: 1m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

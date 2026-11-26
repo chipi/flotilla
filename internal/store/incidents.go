@@ -13,7 +13,8 @@ import (
 // new case. Instead a case closed as a recorded plan stays the incident's case until the monitor
 // that opened it reports its key clear (an incident.cleared event); detections in between are absorbed
 // into it. Any other close (resolved itself, verified, by an operator) ends the incident: the next
-// detection is a new case, which is what the recurrence rule counts.
+// detection is a new case, which is what the recurrence rule counts. A case whose routine records under on_record: watch
+// stays open as watching instead (ADR-0023): detections attach to it as repeats, and its monitor's clear closes it.
 
 // How a detection landed.
 const (
@@ -95,7 +96,8 @@ func (s *Store) HandedOverBy(ctx context.Context, monitor string) ([]MonitorCase
 // ClearIncidents ends the incidents a monitor opened whose keys its latest successful run no longer
 // reports: each case it opened, closed as a recorded plan and not cleared, whose key is not in present,
 // gets an incident.cleared event (a kind the monitor stopped detecting is no longer reported, so its
-// incidents clear too). It returns the cases it cleared.
+// incidents clear too). A watching case it opened whose key is absent closes as resolved itself (ADR-0023). It returns the
+// cases it cleared.
 func (s *Store) ClearIncidents(ctx context.Context, monitor string, present map[string]bool) ([]string, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -135,5 +137,40 @@ func (s *Store) ClearIncidents(ctx context.Context, monitor string, present map[
 		}
 		cleared = append(cleared, o.id)
 	}
+	watched, err := watchedBy(ctx, tx, monitor)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range watched {
+		if present[o.key] {
+			continue
+		}
+		if err := s.moveCase(ctx, tx, o.id, cases.Closed, cases.ByDetector, cases.ResolvedItself, monitor, "the monitor no longer reports it"); err != nil {
+			return nil, err
+		}
+		cleared = append(cleared, o.id)
+	}
 	return cleared, tx.Commit()
+}
+
+type keyedCase struct{ id, key string }
+
+// watchedBy is the watching cases whose case.detected event the monitor wrote.
+func watchedBy(ctx context.Context, tx *sql.Tx, monitor string) ([]keyedCase, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT c.id, c.canonical_key FROM cases c WHERE c.status = ?
+		AND EXISTS (SELECT 1 FROM case_events d WHERE d.case_id = c.id AND d.kind = 'case.detected' AND d.actor = ?)
+		ORDER BY c.id`, cases.Watching, monitor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []keyedCase
+	for rows.Next() {
+		var o keyedCase
+		if err := rows.Scan(&o.id, &o.key); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
 }

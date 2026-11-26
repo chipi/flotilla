@@ -77,7 +77,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # `ask` (RFC-0014 case 1) needs nothing but the first admin (its approvals), which it makes if ui does not; it opens its own cases and approves its own
 # plans. Its shadows need flotillad's `shadows:` (reads adds it, ask adds it, and restarts flotillad, when it is not there).
 # It reads second-brain's real read server from a checkout: SB_DIR (default /work/second-brain/main; a CI job checks it out).
-sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing ask remote hardening"
+sections_known="model telemetry cases watching business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing ask remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
   local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
@@ -516,9 +516,9 @@ echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 
 fi
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
-  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 17 actions$" \
+  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 18 actions$" \
   && echo "$OUT" | grep >/dev/null "^action crm.merge$" && echo "$OUT" | grep >/dev/null "^action email.send$" \
-  && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent)" || bad "-check: $OUT"
+  && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent, host.watch)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep >/dev/null " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
@@ -673,6 +673,47 @@ echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*[^_[:alnum:]]plan_reco
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
   && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
+
+fi
+if want watching; then
+echo "== never silent (ADR-0023): a recorded plan under on_record: watch keeps its case open until the monitor reports it clear"
+WFLAG=/tmp/flotilla-example/e2e-watch-clear
+$D exec flotilla-worker-ops-read rm -f $WFLAG >/dev/null 2>&1
+wmon() {  # run e2e/watch-monitor once and wait until that run has ended
+  local n0 n
+  n0="$(runs_json e2e/watch-monitor | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["runs"] or []))')"
+  cli run e2e/watch-monitor >/dev/null
+  for _ in $(seq 1 30); do
+    n="$(runs_json e2e/watch-monitor | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"] or []; print(len(r) if r and r[0]["status"] != "running" else -1)')"
+    [ "$n" -gt "$n0" ] && break; sleep 1
+  done
+  sleep 1
+}
+wmon
+WC=""
+for _ in $(seq 1 45); do
+  WC="$(cli case list --all 2>&1 | awk '$2 == "e2e_watching" {print $1; exit}')"
+  [ -n "$WC" ] && status_is "$WC" watching && break; sleep 2
+done
+[ -n "$WC" ] && status_is "$WC" watching \
+  && ok "the recorded plan kept the case open: $WC is watching, not closed as plan_recorded" || bad "the watching case: $(cli case list --all 2>&1 | grep e2e_watching)"
+for _ in 1 2 3; do wmon; done
+WSHOW="$(cli case show "$WC" 2>&1)"
+echo "$WSHOW" | grep >/dev/null "case.watching .*flotillad .*by policy" && ok "case.watching names its actor (flotillad, by policy)" || bad "case show (watching): $WSHOW"
+echo "$WSHOW" | grep >/dev/null "^repeated 3 times unchanged" && [ "$(cli case list --all 2>&1 | grep -c e2e_watching)" = 1 ] \
+  && ok "three unchanged detections attached to the open case as repeats: one case" || bad "repeats: $(echo "$WSHOW" | grep -E 'repeated|signal')"
+for _ in $(seq 1 40); do cli case show "$WC" 2>&1 | grep >/dev/null "notice.due" && break; sleep 3; done
+WSHOW="$(cli case show "$WC" 2>&1)"
+[ "$(echo "$WSHOW" | grep -c "notice.due")" = 1 ] && echo "$WSHOW" | grep >/dev/null "notice.due .*flotillad" \
+  && ok "the case timer recorded one notice.due (the notice at once), not one per detection" || bad "notice.due: $(echo "$WSHOW" | grep -E 'notice|watching')"
+status_is "$WC" watching && ok "the notice moved nothing: the case is still watching" || bad "after the notice: $(cli case list --all 2>&1 | grep e2e_watching)"
+$D exec flotilla-worker-ops-read touch $WFLAG
+wmon
+status_is "$WC" closed && cli case list --all 2>&1 | grep "^$WC " | grep >/dev/null "resolved_itself" \
+  && ok "the monitor's clear closed it as resolved_itself" || bad "after the clear: $(cli case list --all 2>&1 | grep e2e_watching)"
+cli case show "$WC" 2>&1 | grep >/dev/null "case.closed .*e2e/watch-monitor .*by detector .*resolved_itself" \
+  && ok "the close names the monitor and its role (detector)" || bad "case show (clear): $(cli case show "$WC" 2>&1 | tail -3)"
+$D exec flotilla-worker-ops-read rm -f $WFLAG >/dev/null 2>&1
 
 fi
 if want business; then

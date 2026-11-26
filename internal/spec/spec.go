@@ -214,7 +214,16 @@ type CaseTrigger struct {
 	Kind  string     `yaml:"kind"`
 	Stage string     `yaml:"stage"`
 	Limit *CaseLimit `yaml:"limit"`
+	// OnRecord is what a plan recorded at the record level does to its case: close it (the default) or keep it
+	// open as watching until its monitor reports the key clear (ADR-0023).
+	OnRecord string `yaml:"on_record"`
 }
+
+// What a recorded plan does to its case (CaseTrigger.OnRecord).
+const (
+	OnRecordClose = "close"
+	OnRecordWatch = "watch"
+)
 
 // CaseLimit is what all of a case's acting runs may spend together, in dollars and in minutes (RFC-0013
 // §2). It is declared on the kind's first-stage routine; a case past either is escalated instead of run
@@ -762,6 +771,9 @@ func (j *Routine) validateRoutine(bad func(string, ...any)) {
 		}
 		if st := j.Trigger.Case.Stage; st != "" && !caseFieldRe.MatchString(st) {
 			bad("trigger.case.stage %q: a stage name such as clarify", st)
+		}
+		if r := j.Trigger.Case.OnRecord; r != "" && r != OnRecordClose && r != OnRecordWatch {
+			bad("trigger.case.on_record %q: close or watch", r)
 		}
 		if l := j.Trigger.Case.Limit; l != nil {
 			if j.Trigger.Case.Stage != "" {

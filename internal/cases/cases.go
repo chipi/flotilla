@@ -14,6 +14,7 @@ const (
 	AwaitingApproval = "awaiting_approval"
 	Executing        = "executing"
 	Checking         = "checking"
+	Watching         = "watching" // a recorded plan under on_record: watch (ADR-0023): open until its monitor reports it clear
 	Escalated        = "escalated"
 	Closed           = "closed"
 )
@@ -66,6 +67,7 @@ var table = map[move]struct {
 		only: map[string][]string{ByDetector: {ResolvedItself}}},
 	{HandedOver, Escalated}:       {by: []string{ByAct, ByPolicy, ByTimer}},
 	{Planned, Closed}:             {by: []string{ByPolicy}, resolutions: []string{PlanRecorded}},
+	{Planned, Watching}:           {by: []string{ByPolicy}},
 	{Planned, AwaitingApproval}:   {by: []string{ByPolicy}},
 	{Planned, Executing}:          {by: []string{ByPolicy}},
 	{Planned, HandedOver}:         {by: []string{ByPolicy}},
@@ -84,14 +86,18 @@ var table = map[move]struct {
 	{Checking, Closed}:     {by: []string{ByCheck}, resolutions: []string{Verified}},
 	// a verified plan that names what follows it hands the case on to that stage (RFC-0013 §2, amended
 	// 2026-11-22): a meeting's follow-ups made, its decisions planned next
-	{Checking, HandedOver}:  {by: []string{ByCheck}},
-	{Checking, Escalated}:   {by: []string{ByCheck, ByTimer}},
+	{Checking, HandedOver}: {by: []string{ByCheck}},
+	{Checking, Escalated}:  {by: []string{ByCheck, ByTimer}},
+	// the monitor that opened it reports the key clear; an operator hands it back for a replan once the
+	// action's autonomy is raised (ADR-0023)
+	{Watching, Closed}:      {by: []string{ByDetector}, resolutions: []string{ResolvedItself}},
+	{Watching, HandedOver}:  {by: []string{ByOperator}},
 	{Escalated, HandedOver}: {by: []string{ByOperator}},
 	{Escalated, Closed}:     {by: []string{ByOperator, BySync}, resolutions: []string{OperatorResolved, IssueResolved}},
 }
 
 // Statuses lists every status, in lifecycle order.
-var Statuses = []string{Detected, Diagnosed, HandedOver, Planned, AwaitingApproval, Executing, Checking, Escalated, Closed}
+var Statuses = []string{Detected, Diagnosed, HandedOver, Planned, AwaitingApproval, Executing, Checking, Watching, Escalated, Closed}
 
 // Check refuses a status change the table does not allow: an unknown move, a role that may not make
 // it, or a close without one of the move's resolutions (and a resolution on any other move).

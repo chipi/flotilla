@@ -1,0 +1,20 @@
+fleet: e2e
+routine: watch-act
+description: >-
+  The watching e2e's acting routine (ADR-0023), never shipped: plans host.watch for an e2e_watching
+  case. It only records (autonomy and cap at record), and on_record: watch keeps the case open
+  as watching instead of closing it.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: e2e_watching, on_record: watch}
+run:
+  command: >-
+    printf '{"outcome": "plan", "action": "host.watch", "params": {"host": "e2e-watch"}, "detail": "e2e: plan host.watch"}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: record
+max_autonomy: record
+budget:
+  day_usd: 0

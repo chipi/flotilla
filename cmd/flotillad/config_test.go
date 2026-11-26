@@ -41,6 +41,22 @@ func TestCaseTimersConfig(t *testing.T) {
 	}
 }
 
+// ADR-0023: the watching notice schedule and its acknowledge snooze.
+func TestWatchTimersConfig(t *testing.T) {
+	c, err := load(t, "case_timers: {watch_notify: [2h, 12h], watch_ack_snooze: 6h}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.CaseTimers.WatchNotify) != 2 || c.CaseTimers.WatchNotify[1] != 12*time.Hour || c.CaseTimers.WatchAckSnooze != 6*time.Hour {
+		t.Fatalf("case_timers: %+v", c.CaseTimers)
+	}
+	for _, bad := range []string{"{watch_notify: [24h, 4h]}", "{watch_notify: [0s]}", "{watch_ack_snooze: -1h}"} {
+		if _, err := load(t, "case_timers: "+bad+"\n"); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+}
+
 // G9 and G11: the slack section needs the host endpoint, the pins and the UI's address; brief_at is HH:MM.
 func TestSlackAndBriefConfig(t *testing.T) {
 	hosts := "hosts: {listen: ':8487', ca_dir: /ca, server_names: [f]}\n"

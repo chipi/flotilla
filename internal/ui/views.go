@@ -145,7 +145,7 @@ func statusLabel(s string) string {
 // caseChip is a case status's voice (mockup v3's Cases).
 func caseChip(s string) string {
 	switch s {
-	case cases.HandedOver, cases.Planned, cases.Executing, cases.Checking:
+	case cases.HandedOver, cases.Planned, cases.Executing, cases.Checking, cases.Watching:
 		return "chip chip--info"
 	case cases.AwaitingApproval:
 		return "chip chip--wait"
@@ -241,6 +241,8 @@ func eventWhat(e store.CaseEvent) string {
 			return "Approved, executing"
 		case cases.Checking:
 			return "Executed, checking"
+		case cases.Watching:
+			return "Recorded, watching"
 		case cases.Escalated:
 			if strings.HasPrefix(e.Detail, "rejected") {
 				return "Rejected, escalated"

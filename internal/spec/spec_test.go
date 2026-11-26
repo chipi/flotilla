@@ -180,7 +180,7 @@ func TestCaseStages(t *testing.T) {
 			"trigger: {every: 10m}", "trigger: "+trigger, "freshness: 35m\n", "").Replace(good)
 	}
 	d := t.TempDir()
-	write(t, d, "ops/fix.yaml", onCase("fix", "{case: {kind: code_bug, limit: {usd: 1, minutes: 90}}}"))
+	write(t, d, "ops/fix.yaml", onCase("fix", "{case: {kind: code_bug, on_record: watch, limit: {usd: 1, minutes: 90}}}"))
 	write(t, d, "ops/clarify.yaml", onCase("clarify", "{case: {kind: code_bug, stage: clarify}}"))
 	routines, err := Load(d)
 	if err != nil {
@@ -189,6 +189,9 @@ func TestCaseStages(t *testing.T) {
 	for _, j := range routines {
 		if j.ID() == "ops/clarify" && (j.OnCase() != "code_bug" || j.OnStage() != "clarify") {
 			t.Fatalf("clarify acts on %q at %q", j.OnCase(), j.OnStage())
+		}
+		if j.ID() == "ops/fix" && j.Trigger.Case.OnRecord != OnRecordWatch {
+			t.Fatalf("fix on_record %q", j.Trigger.Case.OnRecord)
 		}
 		if j.ID() == "ops/fix" && (j.Trigger.Case.Limit == nil || j.Trigger.Case.Limit.Minutes != 90) {
 			t.Fatalf("fix's limit %+v", j.Trigger.Case.Limit)
@@ -199,6 +202,7 @@ func TestCaseStages(t *testing.T) {
 		"a limit on a later stage": {"{case: {kind: code_bug, stage: verify, limit: {usd: 1, minutes: 9}}}", "first-stage routine"},
 		"a zero limit":             {"{case: {kind: other_bug, limit: {usd: 0, minutes: 9}}}", "both above 0"},
 		"a bad stage name":         {"{case: {kind: code_bug, stage: Clarify}}", "a stage name"},
+		"an unknown on_record":     {"{case: {kind: code_bug, on_record: ignore}}", "close or watch"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d2 := t.TempDir()

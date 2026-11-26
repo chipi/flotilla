@@ -366,6 +366,15 @@ func loadConfig(path string) (*Config, error) {
 	if c.CaseTimers.DetectedAlert < 0 || c.CaseTimers.HandedOverEscalate < 0 {
 		errs = append(errs, errors.New("case_timers: a limit cannot be negative (leave it out for the default)"))
 	}
+	if c.CaseTimers.WatchAckSnooze < 0 {
+		errs = append(errs, errors.New("case_timers: watch_ack_snooze cannot be negative (leave it out for the default)"))
+	}
+	for i, d := range c.CaseTimers.WatchNotify {
+		if d <= 0 || (i > 0 && d <= c.CaseTimers.WatchNotify[i-1]) {
+			errs = append(errs, errors.New("case_timers: watch_notify is increasing durations above 0, from the day the case began to be watched, such as [4h, 24h]"))
+			break
+		}
+	}
 	if c.Models != nil {
 		if err := c.Models.Validate(); err != nil {
 			errs = append(errs, err)

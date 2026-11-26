@@ -41,7 +41,8 @@ const incidentWindow = 15 * time.Minute
 
 // DecidePlan gathers the state for a plan on a planned case, asks policy, and applies its decision in one
 // transaction (ADR-0005 decision 4): refuse escalates, defer hands the case back, record closes it with
-// the plan recorded, propose awaits approval and auto executes, those two holding the target's lock.
+// the plan recorded (a routine with on_record: watch keeps it watching instead), propose awaits approval and auto
+// executes, those two holding the target's lock.
 func (s *Server) DecidePlan(ctx context.Context, p policy.Plan) (policy.Decision, int64, error) {
 	if shadow, err := s.Store.RunIsShadow(ctx, p.RunID); err != nil {
 		return policy.Decision{}, 0, err
@@ -102,6 +103,15 @@ func (s *Server) applyDecision(ctx context.Context, c store.Case, p policy.Plan,
 		to = cases.HandedOver
 	case policy.Record:
 		to, resolution = cases.Closed, cases.PlanRecorded
+		// Never silent (ADR-0023): the routine that opted in keeps the case open, so its monitor's later
+		// detections attach to it and the operator is told.
+		j, err := s.plannerRoutine(ctx, c, p)
+		if err != nil {
+			return 0, err
+		}
+		if j != nil && j.Trigger.Case != nil && j.Trigger.Case.OnRecord == spec.OnRecordWatch {
+			to, resolution = cases.Watching, ""
+		}
 	case policy.Propose:
 		to, lock = cases.AwaitingApproval, true
 	case policy.Auto:
@@ -113,15 +123,12 @@ func (s *Server) applyDecision(ctx context.Context, c store.Case, p policy.Plan,
 		PlanHash: d.PlanHash, Outcome: d.Outcome, Autonomy: d.Autonomy, Would: d.Would, Reasons: d.Reasons}, to, resolution, c.Target, lock)
 }
 
-func (s *Server) planState(ctx context.Context, c store.Case, p policy.Plan) (policy.State, error) {
-	st := policy.State{CaseKind: c.Kind, CaseTarget: c.Target, HostExecutorCeiling: hostExecutorCeiling, RoutineCeiling: s.RoutineActionCeiling(), ActionAutonomy: spec.AutonomyRecord}
-	if s.Registry != nil {
-		st.Action, st.ActionFound = s.Registry.Action(p.Action)
-	}
-	// The plan cites the run that moved the case to planned: that run's routine is the acting routine.
+// plannerRoutine is the acting routine of a plan: the plan cites the run that moved the case to planned, and that
+// run's routine is it. nil when the run is not the one that planned the case, or the routine is no longer loaded.
+func (s *Server) plannerRoutine(ctx context.Context, c store.Case, p policy.Plan) (*spec.Routine, error) {
 	ev, err := s.Store.CaseEvents(ctx, c.ID)
 	if err != nil {
-		return st, err
+		return nil, err
 	}
 	planner := ""
 	for _, e := range ev {
@@ -131,11 +138,22 @@ func (s *Server) planState(ctx context.Context, c store.Case, p policy.Plan) (po
 	}
 	run, err := s.Store.Run(ctx, p.RunID) // nil when there is no such run
 	if err != nil {
-		return st, err
+		return nil, err
 	}
-	var j *spec.Routine
-	if run != nil && run.Routine == planner {
-		j = s.Sched.Routine(run.Routine)
+	if run == nil || run.Routine != planner {
+		return nil, nil
+	}
+	return s.Sched.Routine(run.Routine), nil
+}
+
+func (s *Server) planState(ctx context.Context, c store.Case, p policy.Plan) (policy.State, error) {
+	st := policy.State{CaseKind: c.Kind, CaseTarget: c.Target, HostExecutorCeiling: hostExecutorCeiling, RoutineCeiling: s.RoutineActionCeiling(), ActionAutonomy: spec.AutonomyRecord}
+	if s.Registry != nil {
+		st.Action, st.ActionFound = s.Registry.Action(p.Action)
+	}
+	j, err := s.plannerRoutine(ctx, c, p)
+	if err != nil {
+		return st, err
 	}
 	st.RunOnRecord = j != nil
 	if j != nil {

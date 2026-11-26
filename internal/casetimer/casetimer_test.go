@@ -142,3 +142,129 @@ func TestHeldCaseIsNotEscalated(t *testing.T) {
 		t.Fatal("not escalated 25 hours after the release")
 	}
 }
+
+func watching(t *testing.T, st *store.Store, target string) store.Case {
+	t.Helper()
+	ctx := context.Background()
+	id := open(t, st, target)
+	_ = st.MoveCase(ctx, id, cases.HandedOver, cases.ByDetector, "", "m", "")
+	_ = st.MoveCase(ctx, id, cases.Planned, cases.ByAct, "", "ops/rerun", "")
+	if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: id, RunID: "r", Action: "a.b", Params: map[string]string{}, Outcome: "record", Autonomy: "record"},
+		cases.Watching, "", target, false); err != nil {
+		t.Fatal(err)
+	}
+	c, err := st.Case(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func notices(t *testing.T, st *store.Store, id string) []store.Notice {
+	t.Helper()
+	ns, err := st.Notices(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ns
+}
+
+// ADR-0023: a notice at once, then at 4 hours and 24 hours, then every 24 hours; one per pass at most, never a repeat
+// of the same hour, and the case stays watching.
+func TestWatchNoticeSchedule(t *testing.T) {
+	ctx := context.Background()
+	st, _, log := setup(t)
+	c := watching(t, st, "host:host-01")
+	start, _ := time.Parse(time.RFC3339Nano, c.StatusAt)
+	at := func(h float64) time.Time { return start.Add(time.Duration(h * float64(time.Hour))) }
+	// each pass: how long after the watching began, and how many notices there are then
+	for _, p := range []struct {
+		hours float64
+		want  int
+	}{{0, 1}, {0.5, 1}, {3.9, 1}, {4.1, 2}, {5, 2}, {23.9, 2}, {24.1, 3}, {40, 3}, {48.1, 4}, {72.1, 5}, {96.1, 6}, {120.1, 7}, {144.1, 7}, {500, 7}} {
+		if err := Run(ctx, st, at(p.hours), Config{}, log, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(notices(t, st, c.ID)); got != p.want {
+			t.Fatalf("%.1fh after it began: %d notices, want %d", p.hours, got, p.want)
+		}
+	}
+	if status(t, st, c.ID) != cases.Watching {
+		t.Fatal("a notice moved the case")
+	}
+	ns := notices(t, st, c.ID)
+	for i, n := range ns {
+		if n.N != i+1 || n.Kind != store.NoticeWatching || n.SentAt != "" {
+			t.Fatalf("notice %d: %+v", i, n)
+		}
+	}
+	ev, _ := st.CaseEvents(ctx, c.ID)
+	due := 0
+	for _, e := range ev {
+		if e.Kind == "notice.due" {
+			due++
+		}
+	}
+	if due != 7 {
+		t.Fatalf("%d notice.due events, want 7", due)
+	}
+}
+
+// At most 7 notices: a case watched for weeks is told 7 times, not once a day for ever.
+func TestNoticeCap(t *testing.T) {
+	start := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	if got := NoticeDue(start, 7, DefaultWatchNotify).Sub(start); got != 120*time.Hour {
+		t.Fatalf("the 7th notice is due %s after the start, want 120h", got)
+	}
+	c := Config{}.withDefaults()
+	if n := nextNotice(start, start.Add(400*24*time.Hour), &store.Notice{N: MaxNotices}, c); n != 0 {
+		t.Fatalf("notice %d after the cap", n)
+	}
+}
+
+// A timer that was down skips to the latest notice due: one notice, not the ones it missed.
+func TestNoticeAfterAnOutageIsOne(t *testing.T) {
+	start := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	c := Config{}.withDefaults()
+	if n := nextNotice(start, start.Add(60*time.Hour), &store.Notice{N: 1}, c); n != 4 {
+		t.Fatalf("after 60h with one sent, the next is %d, want 4 (due at 48h)", n)
+	}
+}
+
+// Acknowledging a notice holds the next back for the snooze, however much of the schedule has passed.
+func TestAckSnoozesTheNextNotice(t *testing.T) {
+	start := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	c := Config{}.withDefaults()
+	acked := &store.Notice{N: 1, AckedAt: start.Add(3 * time.Hour).Format(store.TimeFormat), AckedBy: "user:ada"}
+	if n := nextNotice(start, start.Add(5*time.Hour), acked, c); n != 0 {
+		t.Fatalf("notice %d inside the snooze", n)
+	}
+	if n := nextNotice(start, start.Add(27*time.Hour+time.Minute), acked, c); n != 3 {
+		t.Fatalf("after the snooze the next is %d, want 3", n)
+	}
+}
+
+// A case handed back and watched again is a new watching period: its notices start from the first.
+func TestWatchedAgainStartsAnew(t *testing.T) {
+	ctx := context.Background()
+	st, _, log := setup(t)
+	c := watching(t, st, "host:host-01")
+	start, _ := time.Parse(time.RFC3339Nano, c.StatusAt)
+	_ = Run(ctx, st, start, Config{}, log, nil)
+	if len(notices(t, st, c.ID)) != 1 {
+		t.Fatal("setup: the first notice")
+	}
+	if err := st.MoveCase(ctx, c.ID, cases.HandedOver, cases.ByOperator, "", "user:ada", "replan"); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.MoveCase(ctx, c.ID, cases.Planned, cases.ByAct, "", "ops/rerun", "")
+	if _, err := st.ApplyPlan(ctx, store.PlanRecord{CaseID: c.ID, RunID: "r2", Action: "a.b", Params: map[string]string{}, Outcome: "record", Autonomy: "record"},
+		cases.Watching, "", "host:host-01", false); err != nil {
+		t.Fatal(err)
+	}
+	_ = Run(ctx, st, time.Now().Add(time.Minute), Config{}, log, nil)
+	ns := notices(t, st, c.ID)
+	if len(ns) != 2 || ns[1].N != 1 {
+		t.Fatalf("%+v", ns)
+	}
+}

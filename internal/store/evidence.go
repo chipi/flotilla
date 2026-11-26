@@ -116,11 +116,13 @@ func (s *Store) ActionPlanners(ctx context.Context) (map[string][]string, error)
 	return out, rows.Err()
 }
 
-// UnjudgedRecorded is the recorded plans (a case closed plan_recorded) nobody has judged yet, newest first, at most limit,
-// and how many there are in all: a record-level action earns nothing until a person says Right or Wrong.
+// UnjudgedRecorded is the recorded plans (a case's latest plan, whose outcome is record) nobody has judged yet, newest first,
+// at most limit, and how many there are in all: a record-level action earns nothing until a person says Right or Wrong. It
+// reads the plan's outcome, not the case's resolution: a watched case (ADR-0023) is still watching, or closed as resolved
+// itself, and counts as the plan it recorded.
 func (s *Store) UnjudgedRecorded(ctx context.Context, limit int) ([]PlanRecord, int, error) {
 	const q = `FROM plans p JOIN cases c ON c.id = p.case_id
-		WHERE c.status = 'closed' AND c.resolution = 'plan_recorded' AND p.outcome = 'record'
+		WHERE c.status IN ('closed', 'watching') AND p.outcome = 'record'
 		AND p.id = (SELECT MAX(id) FROM plans WHERE case_id = p.case_id)
 		AND NOT EXISTS (SELECT 1 FROM case_feedback f WHERE f.case_id = p.case_id)`
 	var n int

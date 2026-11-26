@@ -412,6 +412,22 @@
       "spec.yaml": "35e610dd87c04d9b3a4de1e4930752d1be60ca630566300c0935c8821fa2cf04"
     }
   },
+  "e2e/watch-act@v1": {
+    "routine_hash": "cd1ac556d312",
+    "version_hash": "b43643b776d5f1f6ea5dedc63c5a201fa2a152df4314a14f957aa7dbe8f76559",
+    "legacy": true,
+    "manifest": {
+      "run": "cfe4f402b2cf1e469ce5ba326564d4af6bd945d0761e5fe93d69fbccaca32d4b"
+    }
+  },
+  "e2e/watch-monitor@v1": {
+    "routine_hash": "63f47e07d7d1",
+    "version_hash": "cf689fbc27a976446e4362aa21e0d634217f7e7a0a79f3666e47fa4e21abba60",
+    "legacy": true,
+    "manifest": {
+      "run": "08569174637e325ef6fab1e4b21cfbca2e805b54c861ac46feea5f7ce0816664"
+    }
+  },
   "jobs/backup-monitor@v1": {
     "routine_hash": "6e18f70e123a",
     "version_hash": "118eaa684c9b5eeacc2d54e1e659c1a19c58975da312b77e8bf109211a1ad26f",

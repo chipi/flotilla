@@ -535,6 +535,19 @@ var schema = []string{
 		lines TEXT NOT NULL DEFAULT '[]',
 		complete INTEGER NOT NULL DEFAULT 1
 	);`,
+	// ADR-0023: a watched case's notices to the operator. A row is a notice that fell due (the case timer writes it with
+	// its notice.due event); sent_at is when a connector told the operator, acked_* who acknowledged it and when.
+	`CREATE TABLE notices (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		case_id TEXT NOT NULL REFERENCES cases(id),
+		kind TEXT NOT NULL,
+		n INTEGER NOT NULL,
+		due_at TEXT NOT NULL,
+		sent_at TEXT NOT NULL DEFAULT '',
+		acked_by TEXT NOT NULL DEFAULT '',
+		acked_at TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX notices_case ON notices(case_id, id);`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run
