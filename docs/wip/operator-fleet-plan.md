@@ -45,7 +45,7 @@ action starts. The rungs:
 | # | Case | Host | 60 days | Detected by | Fix | Starts at |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Backup stale | mini (2 cases, off-box fail); VPS (Postgres, player, operator, corpus) | mini 2; VPS 7 (5 days) | backup-monitor; Grafana 26h/30h | rerun the backup job; check that a new one landed | 2, then 1 after evidence |
-| 2 | Disk low or critical | mini (31), macbook (23) | 54 (10 days) | disk alerts | diagnose what grew, then a named cleanup (old logs, a known cache, images unused for N days) | 0 (diagnose), then 2 |
+| 2 | Disk low or critical | any host: mini (31) and the operator's MacBook (23) so far | 54 (10 days) | disk alerts | diagnose what grew, then a named cleanup (old logs, a known cache, images unused for N days) | 0 (diagnose), then 2 |
 | 3 | Docker VM forward or egress broken | mini | 29 (8 days) | forward and egress heartbeats | the watchdog already restarts colima; the operator fleet confirms recovery, and escalates when it does not recover | 0, with a restart at 2 |
 | 4 | Prod OOM kill or crashloop | VPS | 15 OOM (7 days), 4 crashloop, 2 limit hits | OOM classifier, restart counter | diagnose; a memory-limit change as a PR to the infra repo; a restart of the crashlooping container | 3 (PR), 2 (restart) |
 | 5 | DGX memory and GPU overcommit | DGX | about 36 (mem 27, GPU 8, NVRM 15) | memory and GPU alerts | stop or swap a model container (`gpu-mode-swap.sh`); the known cause is `vllm-translate` co-resident since 2026-09-29 | 2 |
@@ -118,7 +118,8 @@ fixes are the first SOPs to write, each one from its incidents.
 
    Without it, nothing below is safe to rely on.
 2. **The mini, disk first** (the most frequent need, the operator, 2026-11-26):
-   - disk diagnosis and its first SOP (case 2);
+   - disk diagnosis and its first SOP, for any host (case 2): the mini first, then the operator's
+     MacBook (it needs a host agent), and every host the operator fleet reaches;
    - the backup rerun to rung 2 (case 1);
    - confirming the colima watchdog's recoveries (case 3).
    - Also find why the backup was missed on 2026-11-21: a fault in the backup job, found by an
