@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: chipi/second-brain   # a public repo; facts: allow
-          ref: f24b163286dd45133741410faf05318b4c5260da
+          ref: a272fbc7ab909d469f76dd2d7822ac88a2a81bab
           path: second-brain
 
       # the hosted runner has only the default Docker context (see e2e.yml)
