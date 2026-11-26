@@ -68,7 +68,7 @@ action starts. The rungs:
     operator is told in Slack. It closes only when the condition clears.
   - Slack approval buttons for operator actions. The host agent's Slack connector exists
     (ADR-0006): this is wiring and policy.
-  - Alerts from Grafana as a source of operator cases, beside the code detectors.
+  - Operator cases from triage (the bridge below), beside the code detectors.
 - **Host agents on the VPS and the DGX** (the X3 later), installed with `deploy/host/install.sh`,
   each with its own allowlist of exact commands (ADR-0006).
 - **New precondition kinds in `internal/hostexec/check.go`.** Today it knows only
@@ -109,6 +109,31 @@ and is read by the operator fleet like triage's playbooks.
 **It applies to every operator case** (the operator, 2026-11-26): all seven cases above, and any
 case added later, go through match, follow or investigate, and the proposed SOP. The case table's
 fixes are the first SOPs to write, each one from its incidents.
+
+## The bridge from triage
+
+Today the bugfix bridge is manual:
+
+1. Triage files a GitHub issue and suggests the label `triage-fleet/routed:bugfix`.
+2. The operator adds it.
+3. `bugfix/intake` polls GitHub hourly and opens a `code_bug` case.
+
+The operator bridge keeps that path and adds a direct one:
+
+- **The manual path:** the label `triage-fleet/routed:operator`, picked up by an
+  `operator/intake` routine, for an escalation the operator judges to be operational.
+- **The direct path:** triage already receives every firing Grafana alert. When it classifies a
+  signal as operational and an SOP matches it, the triage cycle reports a detection. flotillad
+  opens the operator case at once, as `ops/backup-monitor` does today: no hourly GitHub poll. The
+  issue is still filed and linked as the record.
+- **Unsure stays manual:** a signal with no matching SOP escalates as today, and the operator
+  routes it by label. Each automatic route the operator agrees with counts as evidence for the
+  routing.
+- **One front door:** the monitors feed triage, and triage decides code, operations or noise. The
+  operator fleet needs no alert reader of its own. The same direct path can later replace the
+  bugfix label.
+- **Replayed before it ships:** this changes triage's decisions, so it is replayed against
+  triage's recorded cases first (rule 3).
 
 ## Proposed order
 
