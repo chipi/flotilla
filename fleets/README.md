@@ -120,20 +120,21 @@ with the run and a replay or a shadow is served the record; a read the record la
 
 ## Never silent: `trigger.case.on_record`
 
-An acting routine's `trigger.case` block may say what a plan recorded at the record level does to its case
-([ADR-0023](../docs/adr/ADR-0023-never-silent-and-answers-in-the-core.md)):
+An acting routine's `trigger.case` block may say what a plan recorded at the record level does to
+its case ([ADR-0023](../docs/adr/ADR-0023-never-silent-and-answers-in-the-core.md)):
 
 ```yaml
 trigger: {case: {kind: failed_backup, on_record: watch}}
 ```
 
-- **`close`** (the default, and what a spec without the field gets): the case closes as `plan_recorded`,
-  as before.
-- **`watch`**: the case moves to `watching` and stays open. The monitor's later detections of the same key
-  attach to it as repeats. The operator gets a notice at once, at 4 hours, at 24 hours, then every 24
-  hours, at most 7 (`case_timers`: `watch_notify`, `watch_ack_snooze`). The case closes as
-  `resolved_itself` when the monitor's next successful run no longer reports the key. A failed run
-  clears nothing.
+- **`close`** (the default, and what a spec without the field gets): the case closes as
+  `plan_recorded`, as before.
+- **`watch`**: the case moves to `watching` and stays open.
+  - The monitor's later detections of the same key attach to it as repeats.
+  - The operator gets a notice at once, at 4 hours, at 24 hours, then every 24 hours, at most 7
+    (`case_timers`: `watch_notify`, `watch_ack_snooze`).
+  - The case closes as `resolved_itself` when the monitor's next successful run no longer reports
+    the key. A failed run clears nothing.
 - Any other value is refused when the spec loads.
 
 ## Seeing the examples on an installation
