@@ -436,6 +436,16 @@
       "spec.yaml": "4614d24e57237be0d291e14796f784da8e472e1933844ff0bb481b473608515b"
     }
   },
+  "knowledge/answer@v1": {
+    "routine_hash": "68403b375503",
+    "version_hash": "332095754dbe83483fcea8170d4246166e5e8cc9b4fad80880355f10475a9f42",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "be19351726a85a69e03fdd6e52b172a5a544bf27b92f9dc653cfa99de8dab35d",
+      "system.md": "7a967ea022154d376a62b16ca567e3a8054aeb8d5937d2a31e24acaa1f8db771",
+      "task.md": "036840a21aead7be13a91ee5ee49d514beca392d86fc5e5b426928a85513417d"
+    }
+  },
   "meetings/decisions@v1": {
     "routine_hash": "e6487739c421",
     "version_hash": "249c85cdcc89807755a35ef733c492609077fae063603dfb60e9efc010ec6244",

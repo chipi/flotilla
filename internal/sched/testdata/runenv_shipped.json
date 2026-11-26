@@ -588,6 +588,19 @@
     "FLOTILLA_RUN_ID": "run-1",
     "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
   },
+  "knowledge/answer@v1": {
+    "FLEETD_BUDGET_LEFT": "1.5000",
+    "FLEETD_CYCLE_ID": "run-1",
+    "FLEETD_STAGE": "shadow",
+    "FLOTILLA_ENVIRONMENT": "test",
+    "FLOTILLA_MODELS": "{\"endpoints\":{\"gw\":{\"base_url\":\"http://gw/v1\",\"defaults\":{}}},\"aliases\":{\"knowledge-answer\":{\"endpoint\":\"gw\",\"model\":\"m-knowledge-answer\"}}}",
+    "FLOTILLA_OTLP_TRACES_URL": "http://otlp.example/v1/traces",
+    "FLOTILLA_ROUTINE": "knowledge/answer",
+    "FLOTILLA_ROUTINE_VERSION": "1",
+    "FLOTILLA_RUN_ID": "run-1",
+    "FLOTILLA_STATIONS": "{\"schema_version\":1,\"version_limits\":{},\"stations\":{\"answer\":{\"harness\":\"flotilla\",\"model\":\"knowledge-answer\",\"tools\":\"all\",\"limits\":{\"max_turns\":8,\"timeout\":\"4m\",\"max_output_tokens\":0},\"texts\":{\"system\":{\"path\":\"answer/v1/system.md\",\"sha256\":\"7a967ea022154d376a62b16ca567e3a8054aeb8d5937d2a31e24acaa1f8db771\"},\"task\":{\"path\":\"answer/v1/task.md\",\"sha256\":\"036840a21aead7be13a91ee5ee49d514beca392d86fc5e5b426928a85513417d\"}},\"tool_names\":[],\"gates\":[],\"hooks\":null,\"skills\":[],\"reads\":[{\"server\":\"docs\",\"tools\":[\"search\",\"read\"],\"max_calls\":6,\"max_result_chars\":20000,\"timeout_s\":20},{\"server\":\"tasks\",\"tools\":[\"list\"],\"max_calls\":2,\"max_result_chars\":20000,\"timeout_s\":20},{\"server\":\"library\",\"tools\":[\"search\",\"read\",\"paper\"],\"max_calls\":6,\"max_result_chars\":20000,\"timeout_s\":20}]}}}",
+    "TRACEPARENT": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  },
   "meetings/decisions@v1": {
     "FLEETD_BUDGET_LEFT": "1.5000",
     "FLEETD_CYCLE_ID": "run-1",

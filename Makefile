@@ -59,7 +59,7 @@ lint: ## gofmt check + go vet (both modules), byte-compile every Python file, ll
 	@out="$$($(GOFMT) -l cmd internal fleetd)"; test -z "$$out" || { echo "lint FAIL: gofmt would change:"; echo "$$out"; exit 1; }
 	@$(GO) vet ./...
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
-	@python3 -m compileall -q -x "/fleets/" signal-fleet worker deploy runtime bugfix business plumbing meetings >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+	@python3 -m compileall -q -x "/fleets/" signal-fleet worker deploy runtime bugfix business plumbing meetings knowledge >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@python3 scripts/llms_txt.py --check >/dev/null || { echo "lint FAIL: llms.txt"; python3 scripts/llms_txt.py --check; exit 1; }
 	@python3 scripts/installation_facts.py >$${TMPDIR:-/var/tmp}/flotilla-installation-facts.log 2>&1 || { echo "lint FAIL: installation facts in the code (vision plan step 7):"; cat $${TMPDIR:-/var/tmp}/flotilla-installation-facts.log; exit 1; }
 	@echo "lint PASS"
@@ -85,6 +85,7 @@ test-unit-run: ## go test -race (root module) and go test (fleetd), the worker's
 	@python3 business/test_business.py >$${TMPDIR:-/var/tmp}/flotilla-test_business.log 2>&1 && echo "PASS business/test_business.py" || { echo "FAIL business/test_business.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_business.log; exit 1; }
 	@python3 -W error::ResourceWarning plumbing/test_call.py >$${TMPDIR:-/var/tmp}/flotilla-test_call.log 2>&1 && echo "PASS plumbing/test_call.py" || { echo "FAIL plumbing/test_call.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_call.log; exit 1; }
 	@python3 meetings/test_meetings.py >$${TMPDIR:-/var/tmp}/flotilla-test_meetings.log 2>&1 && echo "PASS meetings/test_meetings.py" || { echo "FAIL meetings/test_meetings.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_meetings.log; exit 1; }
+	@python3 knowledge/test_answer.py >$${TMPDIR:-/var/tmp}/flotilla-test_answer.log 2>&1 && echo "PASS knowledge/test_answer.py" || { echo "FAIL knowledge/test_answer.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_answer.log; exit 1; }
 	@timeout 300 python3 bugfix/test_fix.py >$${TMPDIR:-/var/tmp}/flotilla-test_fix.log 2>&1 && echo "PASS bugfix/test_fix.py" || { echo "FAIL bugfix/test_fix.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_fix.log; exit 1; }
 	@timeout 240 python3 bugfix/test_spend.py >$${TMPDIR:-/var/tmp}/flotilla-test_spend.log 2>&1 && echo "PASS bugfix/test_spend.py" || { echo "FAIL bugfix/test_spend.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_spend.log; exit 1; }
 	@python3 bugfix/test_declared_prompts.py >$${TMPDIR:-/var/tmp}/flotilla-test_declared_prompts.log 2>&1 && echo "PASS bugfix/test_declared_prompts.py" || { echo "FAIL bugfix/test_declared_prompts.py"; tail -30 $${TMPDIR:-/var/tmp}/flotilla-test_declared_prompts.log; exit 1; }

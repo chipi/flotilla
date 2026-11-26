@@ -1,0 +1,29 @@
+run:
+  command: python3 /opt/flotilla/knowledge/answer.py answer
+  workdir: .
+  timeout: 5m
+stations:
+  answer:
+    harness: flotilla
+    model: knowledge-answer
+    prompts: {system: system.md, task: task.md}
+    tools: all
+    tool_names: []
+    gates: []
+    reads:
+      - server: docs                       # the documents folder: MCP_DOCS_URL, MCP_DOCS_TOKEN_FILE on the worker
+        tools: [search, read]
+        max_calls: 6
+        max_result_chars: 20000
+        timeout: 20s
+      - server: tasks                      # the task list
+        tools: [list]
+        max_calls: 2
+        max_result_chars: 20000
+        timeout: 20s
+      - server: library                    # second-brain's read server: papers by vertical
+        tools: [search, read, paper]
+        max_calls: 6
+        max_result_chars: 20000
+        timeout: 20s
+    limits: {max_turns: 8, timeout: 4m}

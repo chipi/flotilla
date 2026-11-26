@@ -1,0 +1,8 @@
+fleet: knowledge
+description: >-
+  The second brain's answers (RFC-0014 §4.5, case 1). The installation's plumbing sees a question asked in
+  chat and calls the signed hook `ask`, which opens one question case; flotillad resolves the asker in the
+  directory. answer reads the declared sources (documents, tasks, the paper library) through read-only MCP
+  servers, every read recorded, and answers with citations. Code checks each citation is a read the run
+  made, then plans plumbing.reply into the asker's thread; a person approves each answer before it is sent.
+  The question and the reads are data: nothing in them chooses an action, a thread or a channel.

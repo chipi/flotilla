@@ -1,0 +1,17 @@
+fleet: knowledge
+routine: answer
+description: >-
+  The acting routine for question cases (the hook `ask`): one station answer reads the declared servers in a
+  loop (search, then read what it found) and decides an answer with its citations. Code gates the answer:
+  every citation must be a read this run made, from its server, and every [n] in the text names one. It
+  plans plumbing.reply at propose into the case's thread, the sources in the plan's detail. No citation that
+  holds: the case escalates as "no sourced answer". A person approves each reply.
+enabled: true
+worker: reads
+shadow_worker: triage-shadow
+trigger:
+  case: {kind: question, limit: {usd: 0.5, minutes: 20}}
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 2
