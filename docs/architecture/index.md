@@ -16,6 +16,7 @@ plane, a model host and a production VPS as other hosts).
 | [Context](context.md) | Who uses flotilla, and what it talks to |
 | [Components](components.md) | What flotillad, the workers, the runtime and the host agents are made of |
 | [A case, end to end](run-lifecycle.md) | What happens from a signal to a verified, recorded result |
+| [AI and LLM patterns](patterns.md) | How flotilla does retrieval, tool use, agents, guardrails and evaluation, and what is built |
 | [Data](data.md) | What is stored where: specs, config, state, cases, memory, knowledge |
 | [Deployment](deployment.md) | How it is deployed: the control plane, the workers, the host agents, the keys |
 | [Security](../security.md) | The threat model and the controls |

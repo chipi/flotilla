@@ -59,3 +59,4 @@ landed on an answer.
 - [RFC-0013 — The clarifier: answering "needs info" before the fix](RFC-0013-bugfix-clarifier.md) (Accepted,
   2026-11-16)
 - [RFC-0014 — The visual plane and mashups](RFC-0014-visual-plane-and-mashups.md) (Draft, 2026-11-22)
+- [RFC-0015 — The library in flotilla](RFC-0015-the-library.md) (Draft, 2026-11-26)
