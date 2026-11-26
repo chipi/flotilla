@@ -135,11 +135,30 @@ The operator bridge keeps that path and adds a direct one:
 - **Replayed before it ships:** this changes triage's decisions, so it is replayed against
   triage's recorded cases first (rule 3).
 
+**Routing answers an escalation** (the operator, 2026-11-26). When triage escalates, the operator's
+answer can hand the problem to a fleet that acts on it:
+
+| Answer | On the issue | Then |
+| --- | --- | --- |
+| Operator | label `triage-fleet/routed:operator` | an operator case: an SOP, or an investigation and a proposed fix |
+| Bugfix | label `triage-fleet/routed:bugfix` | a code fix as a PR (as today) |
+| Dismiss | close the issue | dismissed |
+| Mute | label `triage-fleet/muted` | never again |
+| Comment | a comment | triage re-triages with it |
+
+- **The same answers as Slack buttons** on each escalation in `#ops-triage` (Operator, Bugfix,
+  Dismiss, Mute), built with step 1's Slack approvals.
+- **Each route teaches the routing:** a route is a labelled example. Once a kind of signal has been
+  routed the same way a few times, and the fix it led to was verified, triage routes that kind
+  directly and stops escalating it. That change is a proposal the operator accepts, replayed first,
+  like an SOP.
+
 ## Proposed order
 
 1. **The platform gap:**
    - never silent, plus Slack approvals;
    - the knowledge base's loop (match, follow, investigate, propose).
+   - routing as the answer to an escalation, with Slack buttons (Operator, Bugfix, Dismiss, Mute).
 
    Without it, nothing below is safe to rely on.
 2. **The mini, disk first** (the most frequent need, the operator, 2026-11-26):
