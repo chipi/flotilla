@@ -153,12 +153,37 @@ answer can hand the problem to a fleet that acts on it:
   directly and stops escalating it. That change is a proposal the operator accepts, replayed first,
   like an SOP.
 
+## Answers are the core's; chat apps are connectors
+
+A design rule for the answers above and for approvals (the operator, 2026-11-26): another
+installation may use another chat app, so no answer is Slack's.
+
+- **The core** (flotillad, its API):
+  - the answers a case offers, per case kind (Approve and Reject for a plan; Operator, Bugfix,
+    Dismiss and Mute for an escalation);
+  - who may give which answer, and which risk a chat answer may approve (ADR-0005's limits);
+  - who answered: the person, resolved through the directory, which maps one person to an id per
+    tool.
+
+  The UI and the CLI are two clients of that API. A chat app is a third.
+- **A connector** per app does two things:
+  - shows a case's question with its answers;
+  - sends a choice back as "this person chose this answer on this case".
+
+  It holds the app's tokens, as the host agent's Slack connector does (ADR-0006). Slack is the
+  first. Others follow when an installation needs them: Teams, Discord, Mattermost, email with
+  reply links. GitHub labels already work as one, for triage.
+- **Without a connector:** an installation can wire any app n8n reaches through the plumbing
+  pattern (a signed hook in, a signed callback out).
+- **An ADR** records this when step 1 builds it, since it shapes flotilla's API.
+
 ## Proposed order
 
 1. **The platform gap:**
    - never silent, plus Slack approvals;
    - the knowledge base's loop (match, follow, investigate, propose).
-   - routing as the answer to an escalation, with Slack buttons (Operator, Bugfix, Dismiss, Mute).
+   - routing as the answer to an escalation, with Slack buttons (Operator, Bugfix, Dismiss, Mute):
+     answers in the core API, Slack the first connector (an ADR).
 
    Without it, nothing below is safe to rely on.
 2. **The mini, disk first** (the most frequent need, the operator, 2026-11-26):
