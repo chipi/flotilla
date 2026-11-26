@@ -113,6 +113,7 @@ nav:
     - ADR-0020 — Routine versions, stations and harnesses: adr/ADR-0020-routine-versions-stations-harnesses.md
     - ADR-0021 — The examples catalogue and run tokens required: adr/ADR-0021-examples-catalogue-and-run-tokens-default.md
     - ADR-0022 — The no-effect check runs only for the code it guards: adr/ADR-0022-no-effect-runs-for-the-code-it-guards.md
+    - "ADR-0023 — Never silent, and answers in the core": adr/ADR-0023-never-silent-and-answers-in-the-core.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
@@ -139,6 +140,7 @@ nav:
     - "The UI, next: three buckets": wip/ui-next-plan.md
     - "Fleets to working: the next steps": wip/fleets-to-working.md
     - "The operator fleet: a plan backed by what broke": wip/operator-fleet-plan.md
+    - "Operator fleet, step 1: build plan": wip/operator-step1-build.md
   - History:
     - Overview: history/README.md
     - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
