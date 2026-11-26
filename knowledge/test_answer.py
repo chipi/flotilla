@@ -16,8 +16,8 @@ import call as plumbing_call  # noqa: E402
 CASE = {"id": "case-1", "kind": "question", "target": "1700000000.000100",
         "data": {"thread": "1700000000.000100", "user": "U1", "text": "Why does attention scale with sequence length squared?",
                  "asker": "ada@example.org", "asker_name": "Ada"}}
-PAPER = "arxiv:1706.03762"
-SEARCH = f"1. {PAPER} Attention Is All You Need (2017) §3.2 Attention: self-attention compares every position with every other"
+PAPER = "arxiv:2001.00001"
+SEARCH = f"1. {PAPER} Repair Agents with Tool Use (2021) §3.2 Tools: the agent calls a tool and reads its result"
 READ = f"{PAPER} §3.2.1 Scaled Dot-Product Attention: the n by n matrix of scores is computed for all pairs of positions."
 TRACE = [{"probe": "library.search", "args": {"query": "attention quadratic"}, "result": SEARCH},
          {"probe": "library.read", "args": {"paper": PAPER, "section": "3.2.1"}, "result": READ},
@@ -37,7 +37,7 @@ class Gate(unittest.TestCase):
             "no_answer": ({"disposition": "no_answer", "reason": "nothing on it"}, "no answer in the sources"),
             "other disposition": (dict(GOOD, disposition="approve"), "not answer or no_answer"),
             "no citations": (dict(GOOD, citations=[]), "cites nothing"),
-            "not read": (dict(GOOD, citations=[{"source": "library", "ref": "arxiv:2005.14165"}]), "not in a read this run made"),
+            "not read": (dict(GOOD, citations=[{"source": "library", "ref": "arxiv:2002.00002"}]), "not in a read this run made"),
             "read from another server": (dict(GOOD, citations=[{"source": "docs", "ref": PAPER}]), "not in a read this run made"),
             "only a refused read holds it": (dict(GOOD, citations=[{"source": "docs", "ref": "docs is at its 6 reads"}]), "not in a read"),
             "ref too short": (dict(GOOD, citations=[{"source": "library", "ref": "the"}]), "ref is"),
