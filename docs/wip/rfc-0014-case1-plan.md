@@ -44,7 +44,9 @@ and the decisions it needs. RFC-0014 is amended where the build differs.
 Everything in steps 1 to 4 is built and proven in the e2e stack against stubs, with nothing on the
 installation. Step 5 needs the installation's side; step 6 is for later.
 
-1. **The asker at the hook** (built 2026-11-26: `internal/hook` `Asker`, `internal/api/hooks.go` `resolveAsker`, a `hook.asker` event; the data is two flat keys, `asker` and `asker_name`). A hook may name one field as its asker, with the tool its ids belong
+1. **The asker at the hook** (built 2026-11-26: `internal/hook` `Asker`,
+   `internal/api/hooks.go` `resolveAsker`, a `hook.asker` event; the data is two flat keys,
+   `asker` and `asker_name`). A hook may name one field as its asker, with the tool its ids belong
    to (`asker: {field: user, tool: slack}`). When the case opens, flotillad looks the id up in the
    directory and writes `asker: {email, name}` or `asker: unknown` into the case's data, with an
    event. It is a fact recorded once, so every later step and its replay read the same answer, and
@@ -60,12 +62,16 @@ installation. Step 5 needs the installation's side; step 6 is for later.
    - the thread and channel come from the case's data;
    - it plans `plumbing.reply` at `propose`, with the cited sources in the plan's detail, so the
      approver sees what each claim rests on.
-3. **The e2e section `ask`** (built 2026-11-26: `deploy/e2e/run.sh` section `ask`, `reads_check.py`, the stub's question script; the library is second-brain's real `sb serve` from a checkout, `SB_DIR`; the mutant is `shadow-reads-live`, in `no-effect.yml`; it found that the answer's label was not the sender's, fixed in `knowledge/answer.py`) (§7's row): a signed `ask` call opens a `question` case; the asker
-   resolves to a person, and a second call to "unknown"; the reads are recorded with their links;
-   the answer cites one; the reply waits for approval and, approved, sends one signed callback;
-   rejected, sends nothing; a shadow replays from the record with the stub servers down. The
-   scripted stub model gets a question prompt (`deploy/e2e/stub.py`). Then the **reads mutation**
-   in `no-effect.yml`: a shadow that reads live instead of from the record must turn the run red.
+3. **The e2e section `ask`** (built 2026-11-26: `deploy/e2e/run.sh` section `ask`,
+   `reads_check.py`, the stub's question script; the library is second-brain's real `sb serve`
+   from a checkout, `SB_DIR`; the mutant is `shadow-reads-live`, in `no-effect.yml`; it found that
+   the answer's label was not the sender's, fixed in `knowledge/answer.py`) (§7's row): a signed
+   `ask` call opens a `question` case; the asker resolves to a person, and a second call to
+   "unknown"; the reads are recorded with their links; the answer cites one; the reply waits for
+   approval and, approved, sends one signed callback; rejected, sends nothing; a shadow replays
+   from the record with the stub servers down. The scripted stub model gets a question prompt
+   (`deploy/e2e/stub.py`). Then the **reads mutation** in `no-effect.yml`: a shadow that reads
+   live instead of from the record must turn the run red.
 4. **The scores.** Each answer's two scores, recorded through the existing evaluation: sources
    cited (from the plan) and approved as sent (from the plan's outcome).
 5. **The installation's run** (§7: ten real questions, each answered in its thread, cited, approved
