@@ -23,6 +23,8 @@ prioritized task lists. Promotion targets:
 - [Bugfix phase B brief](bugfix-phase-b-brief.md): the handover for the bugfix fleet's evaluation.
 - [Fleets to working](fleets-to-working.md): keep every fleet and make each work (the operator,
   2026-11-26); where each stands and what to settle first.
+- [The operator fleet](operator-fleet-plan.md): ops becomes operator, on every host; the cases backed
+  by 60 days of incidents, the rungs, and the order (2026-11-26).
 
 Closed notes are listed in their history entry ([0003](../history/0003-wip-notes-closed.md)).
 

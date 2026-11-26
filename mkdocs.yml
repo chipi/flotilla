@@ -138,6 +138,7 @@ nav:
     - "Bugfix phase B: handover brief": wip/bugfix-phase-b-brief.md
     - "The UI, next: three buckets": wip/ui-next-plan.md
     - "Fleets to working: the next steps": wip/fleets-to-working.md
+    - "The operator fleet: a plan backed by what broke": wip/operator-fleet-plan.md
   - History:
     - Overview: history/README.md
     - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
