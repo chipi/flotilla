@@ -1,4 +1,4 @@
-# The no-effect check (docs/wip/v2-design.md section 4, build step 5): a shadow version changes nothing outside its own record. It runs the
+# The no-effect check (docs/wip/v2-design.md section 4, build step 5; when it runs: ADR-0022): a shadow version changes nothing outside its own record. It runs the
 # e2e's no-effect sections (E2E_SECTIONS=noeffect: routine versions, the host agent, versions on a case, the shadow and station sections and the
 # matrix over the example fleets), and then five mutation checks that must go red, so a check that cannot fail does not pass:
 #   shadow-write-cred   a write credential in the shadow worker's read environment (the hostile shadow's checks)
@@ -7,34 +7,65 @@
 #   shadow-live-handler a shadow's report is also handled by the live path (the brief, slack and cases cells)
 #   shadow-reads-live   a shadow's reads go to the live read path, not the live run's record (the ask section's shadow of knowledge/answer)
 # A deploy requires it (deploy/server/deploy.sh's list, the job name `no-effect`), like e2e. It builds the stack six times (once for the sections,
-# once per mutant); it skips the commits e2e skips (docs only), and a deploy treats a missing run of it as that.
+# once per mutant) when the shadow code changed, the sections alone (one build) for other guarded code, nothing for the rest (paths).
 
 name: no-effect
 
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'requirements-docs.txt'
-      - '*.md'
-      - 'llms.txt'
-      - 'llms.config.json'
-      - '.markdownlint.json'
-      - '.markdownlintignore'
-      - '.github/workflows/docs.yml'
+    paths:
+      # only the code a shadow's isolation rests on (the scheduler, the store, the specs and versions, the worker client, run tokens,
+      # dispatch, the API's handling of reports and cases, the chat connector, flotillad, the workers, the runtime, plumbing, compose,
+      # the images and the e2e stack); test files never change it. Fleets, fleet code, the CLI, the host agent, the UI and docs do not
+      # run it: a deploy of such a commit is judged by the nearest earlier commit that ran it (deploy/server/checks_green.sh).
+      - 'internal/sched/**'
+      - 'internal/store/**'
+      - 'internal/spec/**'
+      - 'internal/versions/**'
+      - 'internal/worker/**'
+      - 'internal/runtoken/**'
+      - 'internal/dispatch/**'
+      - 'internal/api/**'
+      - 'internal/cases/**'
+      - 'internal/slackconn/**'
+      - 'cmd/flotillad/**'
+      - 'worker/**'
+      - 'runtime/**'
+      - 'plumbing/**'
+      - 'deploy/compose/**'
+      - 'deploy/docker/**'
+      - 'deploy/e2e/**'
+      - '.github/workflows/no-effect.yml'
+      - '!**/*_test.go'
+      - '!**/test_*.py'
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'requirements-docs.txt'
-      - '*.md'
-      - 'llms.txt'
-      - 'llms.config.json'
-      - '.markdownlint.json'
-      - '.markdownlintignore'
-      - '.github/workflows/docs.yml'
+    paths:
+      # the same list as push's (kept equal by deploy/server/test_checks_green.py)
+      # only the code a shadow's isolation rests on (the scheduler, the store, the specs and versions, the worker client, run tokens,
+      # dispatch, the API's handling of reports and cases, the chat connector, flotillad, the workers, the runtime, plumbing, compose,
+      # the images and the e2e stack); test files never change it. Fleets, fleet code, the CLI, the host agent, the UI and docs do not
+      # run it: a deploy of such a commit is judged by the nearest earlier commit that ran it (deploy/server/checks_green.sh).
+      - 'internal/sched/**'
+      - 'internal/store/**'
+      - 'internal/spec/**'
+      - 'internal/versions/**'
+      - 'internal/worker/**'
+      - 'internal/runtoken/**'
+      - 'internal/dispatch/**'
+      - 'internal/api/**'
+      - 'internal/cases/**'
+      - 'internal/slackconn/**'
+      - 'cmd/flotillad/**'
+      - 'worker/**'
+      - 'runtime/**'
+      - 'plumbing/**'
+      - 'deploy/compose/**'
+      - 'deploy/docker/**'
+      - 'deploy/e2e/**'
+      - '.github/workflows/no-effect.yml'
+      - '!**/*_test.go'
+      - '!**/test_*.py'
   workflow_dispatch:
 
 concurrency:
@@ -50,6 +81,35 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The five mutants rebuild the stack once each (about 8 minutes apiece): they run only when what they break changed (the files
+      # each one alters and the scripts that put them in), or on a manual run; any other guarded change runs the sections alone.
+      - name: Scope (the sections alone, or the mutants too)
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.sha }}
+        run: |
+          full=false; from=; why=
+          case "$EVENT" in
+            workflow_dispatch) full=true; why="a manual run" ;;
+            pull_request) from="$BASE" ;;
+            *) from="$BEFORE" ;;
+          esac
+          if [ "$full" = false ]; then
+            if [ -z "$from" ] || [ "$from" = 0000000000000000000000000000000000000000 ] || ! changed="$(git diff --name-only "$from" "$HEAD")"; then
+              full=true; why="no diff base ($from)"
+            else
+              hit="$(printf '%s\n' "$changed" | grep -E "$(cat deploy/e2e/mutant-paths.txt | grep -v '^#' | paste -sd'|')" | grep -vE '(_test\.go|/test_[^/]*\.py)$' || true)"
+              if [ -n "$hit" ]; then full=true; why="$(printf '%s ' $hit)"; else why="no change to what the mutants break"; fi
+            fi
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "mutants: $full ($why)"
 
       # RFC-0014 case 1 (section ask): the e2e reads second-brain's real read server (sb serve), over an index it builds from that repo's own
       # fixtures. A public repo, pinned to a commit; bump it with the sb change a flotilla change needs.
@@ -69,26 +129,31 @@ jobs:
 
       # each runs the same sections with one fault put in, and passes only when the run goes red on the check that fault must break
       - name: Mutant shadow-write-cred must go red
+        if: steps.scope.outputs.full == 'true'
         env:
           DOCKER_CONTEXT_DEV: default
         run: bash deploy/e2e/mutant.sh shadow-write-cred noeffect 'hostile shadow|shadow worker secrets'
 
       - name: Mutant shadow-egress-open must go red
+        if: steps.scope.outputs.full == 'true'
         env:
           DOCKER_CONTEXT_DEV: default
         run: bash deploy/e2e/mutant.sh shadow-egress-open noeffect 'a shadow reached GitHub|the shadow.s proxy'
 
       - name: Mutant matrix-live-write must go red
+        if: steps.scope.outputs.full == 'true'
         env:
           DOCKER_CONTEXT_DEV: default
         run: bash deploy/e2e/mutant.sh matrix-live-write noeffect 'the no-effect matrix'
 
       - name: Mutant shadow-live-handler must go red
+        if: steps.scope.outputs.full == 'true'
         env:
           DOCKER_CONTEXT_DEV: default
         run: bash deploy/e2e/mutant.sh shadow-live-handler noeffect 'the no-effect matrix'
 
       - name: Mutant shadow-reads-live must go red
+        if: steps.scope.outputs.full == 'true'
         env:
           DOCKER_CONTEXT_DEV: default
           SB_DIR: ${{ github.workspace }}/second-brain

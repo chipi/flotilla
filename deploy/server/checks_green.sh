@@ -26,12 +26,33 @@ echo "check runs of $REPO@$ref:"
 [ -n "$runs" ] && printf '%s\n' "$runs" | awk -F'\t' '{printf "  %-28s %s/%s (run %s)\n", $2, $3, $4, $1}'
 [ -n "$runs" ] || echo "  (none)"
 
+latest() { awk -F'\t' -v n="$1" '$2 == n && $1 > id {id = $1; line = $3 "/" $4} END {print line}'; }
+DEPTH=30
+
 rc=0
 for name in "${required[@]}"; do
   optional=; [ "${name%\?}" != "$name" ] && { optional=1; name="${name%\?}"; }
-  last="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$2 == n && $1 > id {id = $1; line = $3 "/" $4} END {print line}')"
+  last="$(printf '%s\n' "$runs" | latest "$name")"
   if [ -z "$last" ] && [ -n "$optional" ]; then
-    echo "  required $name: no run for this commit (its workflow skips it, e.g. docs only)"
+    # a path-filtered workflow skips most commits: a later commit it skipped must not hide an earlier one it failed
+    if ! shas="$(gh api "repos/$REPO/commits?sha=$ref&per_page=$DEPTH" --jq '.[].sha' 2>&1)"; then
+      echo "  required $name: no run for this commit, and could not read the commits before it: $shas"; rc=1; continue
+    fi
+    anc=; alast=
+    for s in $(printf '%s\n' "$shas" | tail -n +2); do
+      ar="$(gh api --paginate "repos/$REPO/commits/$s/check-runs?per_page=100" \
+        --jq '.check_runs[] | [.id, .name, .status, (.conclusion // "-")] | @tsv' 2>&1)" \
+        || { echo "  required $name: could not read the check runs of $s: $ar"; rc=1; continue 2; }
+      alast="$(printf '%s\n' "$ar" | latest "$name")"
+      [ -n "$alast" ] && { anc="$s"; break; }
+    done
+    if [ -z "$anc" ]; then
+      echo "  required $name: no run for this commit or its last $((DEPTH - 1)) ancestors (its workflow skips them)"
+    elif [ "$alast" = completed/success ]; then
+      echo "  required $name: no run for this commit; ${anc:0:7} (the nearest ancestor with one): ok"
+    else
+      echo "  required $name: no run for this commit; ${anc:0:7} (the nearest ancestor with one): $alast (needs completed/success)"; rc=1
+    fi
   elif [ "$last" = completed/success ]; then
     echo "  required $name: ok"
   else

@@ -71,4 +71,5 @@ Keep it short. ADRs that grow past 200 lines usually need to be split.
 - [ADR-0020 — Routine versions, stations and harnesses](ADR-0020-routine-versions-stations-harnesses.md)
   (Accepted, 2026-11-18; steps 1 to 5 built)
 - [ADR-0021 — The examples catalogue, and run tokens required by default](ADR-0021-examples-catalogue-and-run-tokens-default.md)
+- [ADR-0022 — The no-effect check runs only for the code it guards](ADR-0022-no-effect-runs-for-the-code-it-guards.md)
   (Accepted, 2026-11-19)

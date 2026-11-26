@@ -1,0 +1,11 @@
+# The files the no-effect mutants alter, or that put them in (.github/workflows/no-effect.yml's scope step): a change to one runs all
+# five mutants; any other guarded change runs the no-effect sections alone. One extended regex per line, anchored, joined with |.
+^internal/sched/shadow[^/]*\.go$
+^internal/store/shadow\.go$
+^cmd/flotillad/shadows\.go$
+^runtime/(harness|reads|recorded)\.py$
+^worker/flotilla_worker\.py$
+^deploy/compose/
+^deploy/docker/smokescreen\.Dockerfile$
+^deploy/e2e/(matrix\.py|mutant\.sh|mutant-paths\.txt|docker-compose[^/]*\.yml)$
+^\.github/workflows/no-effect\.yml$

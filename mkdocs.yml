@@ -112,6 +112,7 @@ nav:
     - ADR-0019 — Durable runs: adr/ADR-0019-durable-runs.md
     - ADR-0020 — Routine versions, stations and harnesses: adr/ADR-0020-routine-versions-stations-harnesses.md
     - ADR-0021 — The examples catalogue and run tokens required: adr/ADR-0021-examples-catalogue-and-run-tokens-default.md
+    - ADR-0022 — The no-effect check runs only for the code it guards: adr/ADR-0022-no-effect-runs-for-the-code-it-guards.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — One fleet platform: rfc/RFC-0001-fleet-platform.md
