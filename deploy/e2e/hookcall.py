@@ -3,6 +3,7 @@ signed with each hook's secret, from the plumbing tool's network. One line per c
 
     hookcall.py URL          (secrets in HOOK_SECRET_MEETING and HOOK_SECRET_SMOKE)
     hookcall.py URL second   one more meeting, for the plumbing section's rejection
+    hookcall.py URL ask      the ask section's questions (secret in HOOK_SECRET_ASK): a known asker, an unknown one with a forged asker, one about "the ghost"
 """
 import hashlib
 import hmac
@@ -14,7 +15,7 @@ import urllib.error
 import urllib.request
 
 URL = sys.argv[1].rstrip("/")
-SECRETS = {"meeting": os.environ["HOOK_SECRET_MEETING"], "smoke": os.environ["HOOK_SECRET_SMOKE"]}
+SECRETS = {n: os.environ["HOOK_SECRET_" + n.upper()] for n in ("meeting", "smoke", "ask") if "HOOK_SECRET_" + n.upper() in os.environ}
 
 
 def call(label, name, delivery, payload, secret=None, at=None, sign=True):
@@ -36,6 +37,16 @@ def call(label, name, delivery, payload, secret=None, at=None, sign=True):
 
 if sys.argv[2:] == ["second"]:   # the plumbing section's second meeting, whose list a person rejects
     call("second", "meeting", "e2e-d8", {"file": "retro-2026-11-22.md", "date": "2026-11-22", "text": "Decided: ship on Friday. Ana sends the notes."})
+    sys.exit(0)
+
+if sys.argv[2:] == ["ask"]:
+    ask = {"thread": "t-e2e-1", "user": "U0E2EASK01", "text": "How do repair agents use tools?"}
+    call("q1", "ask", "e2e-a1", ask)
+    call("q1-replay", "ask", "e2e-a1", ask)
+    # an id the directory does not hold, and a payload that names a person: the asker is the directory's answer alone
+    call("q2", "ask", "e2e-a2", {"thread": "t-e2e-2", "user": "U0NOBODY00", "text": "How do repair agents use tools, again?", "asker": "ada@example.org", "asker_name": "Ada"})
+    call("q3", "ask", "e2e-a3", {"thread": "t-e2e-3", "user": "U0E2EASK01", "text": "Who owns the ghost project?"})
+    call("q-unsigned", "ask", "e2e-a4", ask, sign=False)
     sys.exit(0)
 
 note = {"file": "standup-2026-11-22.md", "date": "2026-11-22",

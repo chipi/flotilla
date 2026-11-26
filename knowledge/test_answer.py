@@ -10,6 +10,8 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import answer  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "plumbing"))
+import call as plumbing_call  # noqa: E402
 
 CASE = {"id": "case-1", "kind": "question", "target": "1700000000.000100",
         "data": {"thread": "1700000000.000100", "user": "U1", "text": "Why does attention scale with sequence length squared?",
@@ -61,6 +63,12 @@ class Gate(unittest.TestCase):
         self.assertTrue(plan["params"]["text"].startswith(answer.LABEL))
         self.assertIn(f"[1] library: {PAPER}", plan["params"]["text"])
         self.assertIn(PAPER, plan["detail"])
+
+    def test_the_sender_accepts_the_replys_text(self):
+        # the e2e found the label here and the sender's disagreeing: send-reply refused the approved text and sent nothing
+        text, cites = answer.parse(GOOD, TRACE)
+        plan = answer.decide(CASE, text, cites)
+        self.assertEqual(plumbing_call.chat_text(plan["params"]["text"]), plan["params"]["text"])
 
     def test_no_thread_is_refused(self):
         text, cites = answer.parse(GOOD, TRACE)

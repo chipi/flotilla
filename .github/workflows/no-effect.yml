@@ -1,11 +1,12 @@
 # The no-effect check (docs/wip/v2-design.md section 4, build step 5): a shadow version changes nothing outside its own record. It runs the
 # e2e's no-effect sections (E2E_SECTIONS=noeffect: routine versions, the host agent, versions on a case, the shadow and station sections and the
-# matrix over the example fleets), and then four mutation checks that must go red, so a check that cannot fail does not pass:
+# matrix over the example fleets), and then five mutation checks that must go red, so a check that cannot fail does not pass:
 #   shadow-write-cred   a write credential in the shadow worker's read environment (the hostile shadow's checks)
 #   shadow-egress-open  the shadow's proxy allows the write host (the stand-ins' record of writes)
 #   matrix-live-write   a generated shadow writes a file the live worker shares (the matrix's "unchanged" cell)
 #   shadow-live-handler a shadow's report is also handled by the live path (the brief, slack and cases cells)
-# A deploy requires it (deploy/server/deploy.sh's list, the job name `no-effect`), like e2e. It builds the stack five times (once for the sections,
+#   shadow-reads-live   a shadow's reads go to the live read path, not the live run's record (the ask section's shadow of knowledge/answer)
+# A deploy requires it (deploy/server/deploy.sh's list, the job name `no-effect`), like e2e. It builds the stack six times (once for the sections,
 # once per mutant); it skips the commits e2e skips (docs only), and a deploy treats a missing run of it as that.
 
 name: no-effect
@@ -50,6 +51,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # RFC-0014 case 1 (section ask): the e2e reads second-brain's real read server (sb serve), over an index it builds from that repo's own
+      # fixtures. A public repo, pinned to a commit; bump it with the sb change a flotilla change needs.
+      - name: second-brain, for the ask section
+        uses: actions/checkout@v7
+        with:
+          repository: chipi/second-brain   # a public repo; facts: allow
+          ref: f24b163286dd45133741410faf05318b4c5260da
+          path: second-brain
+
       # the hosted runner has only the default Docker context (see e2e.yml)
       - name: The no-effect sections of the e2e stack
         env:
@@ -77,6 +87,12 @@ jobs:
         env:
           DOCKER_CONTEXT_DEV: default
         run: bash deploy/e2e/mutant.sh shadow-live-handler noeffect 'the no-effect matrix'
+
+      - name: Mutant shadow-reads-live must go red
+        env:
+          DOCKER_CONTEXT_DEV: default
+          SB_DIR: ${{ github.workspace }}/second-brain
+        run: bash deploy/e2e/mutant.sh shadow-reads-live ask 'the shadow of knowledge/answer'
 
       # run.sh tears its stack down on its own, also after a failure; this catches a script killed by the job's timeout.
       - name: Tear down

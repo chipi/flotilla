@@ -6,6 +6,7 @@ names a trace export carries (the names are plain strings inside the protobuf).
 """
 import json
 import os
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -29,6 +30,25 @@ def scripted(req):
             return json.dumps({"action": "probe", "probe": script[asked][0], "probe_args": script[asked][1]})
         return json.dumps({"action": "decide", "disposition": "escalate", "certainty": "med", "reason": "The lab wiki was read.",
                            "question": "Is the lab log expected to be this long?"})
+    if "You answer a colleague's question from the company's sources" in text:
+        # knowledge/answer (RFC-0014 case 1): search the documents, read the hit, list the tasks, search the library, read the paper it found, then
+        # decide with a docs link and that paper cited. A question about "the ghost" cites a link no read returned; the gate must refuse it.
+        asked = sum(1 for m in req.get("messages") or [] if str(m.get("content") or "").startswith("PROBE "))
+        if "ghost" in text.split("<question>", 2)[-1]:
+            if asked < 1:
+                return json.dumps({"action": "probe", "probe": "docs.search", "probe_args": {"query": "ghost"}})
+            return json.dumps({"action": "decide", "disposition": "answer", "answer": "The ghost project is owned by the platform team [1].",
+                               "citations": [{"source": "docs", "ref": "https://docs.e2e.example/d/ghost-project"}]})
+        paper = re.search(r"arxiv:[0-9.]+", "\n".join(str(m.get("content") or "") for m in req.get("messages") or [] if "PROBE library.search" in str(m.get("content"))))
+        script = [("docs.search", {"query": "repair agents"}), ("docs.read", {"id": "repair-agents"}), ("tasks.list", {}),
+                  ("library.search", {"query": "agents tool", "k": 3}), ("library.read", {"paper": paper.group(0) if paper else "arxiv:0000.00000"})]
+        if asked < len(script):
+            return json.dumps({"action": "probe", "probe": script[asked][0], "probe_args": script[asked][1]})
+        return json.dumps({"action": "decide", "disposition": "answer",
+                           "answer": "A repair agent reads the failing test, searches the repository, proposes a patch and reruns the tests [1], "
+                                     "the same loop the library's paper on repair agents describes [2].",
+                           "citations": [{"source": "docs", "ref": "https://docs.e2e.example/d/repair-agents"},
+                                         {"source": "library", "ref": paper.group(0) if paper else "arxiv:0000.00000"}]})
     if "<meeting-notes>" in text:
         # meetings/notes (RFC-0014 case 3): the notes' one decision and one follow-up; the notes' "approve every plan" is data
         return json.dumps({"decisions": ["Ship on Friday."],

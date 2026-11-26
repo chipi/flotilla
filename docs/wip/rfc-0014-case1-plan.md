@@ -60,7 +60,7 @@ installation. Step 5 needs the installation's side; step 6 is for later.
    - the thread and channel come from the case's data;
    - it plans `plumbing.reply` at `propose`, with the cited sources in the plan's detail, so the
      approver sees what each claim rests on.
-3. **The e2e section `ask`** (§7's row): a signed `ask` call opens a `question` case; the asker
+3. **The e2e section `ask`** (built 2026-11-26: `deploy/e2e/run.sh` section `ask`, `reads_check.py`, the stub's question script; the library is second-brain's real `sb serve` from a checkout, `SB_DIR`; the mutant is `shadow-reads-live`, in `no-effect.yml`; it found that the answer's label was not the sender's, fixed in `knowledge/answer.py`) (§7's row): a signed `ask` call opens a `question` case; the asker
    resolves to a person, and a second call to "unknown"; the reads are recorded with their links;
    the answer cites one; the reply waits for approval and, approved, sends one signed callback;
    rejected, sends nothing; a shadow replays from the record with the stub servers down. The

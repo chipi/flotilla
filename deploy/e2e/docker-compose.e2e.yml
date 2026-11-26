@@ -39,6 +39,8 @@ services:
     volumes:
       - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
       - ${FLOTILLA_CONFIG}/specs/e2e:/opt/flotilla/fleets/e2e:ro
+      # knowledge/answer's v2, the shadow the ask section replays from the live run's record (the image carries v1 only)
+      - ${FLOTILLA_CONFIG}/specs/knowledge:/opt/flotilla/fleets/knowledge:ro
     environment:
       ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem
   # The ops-read worker's shadow worker (the matrix of the example fleets, deploy/e2e/matrix.py): its image and read-only settings, less memory and CPU

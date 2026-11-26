@@ -4,10 +4,15 @@
   reads_check.py record DB RUN_ID          the live run's input_reads row: complete, the two reads in order, the long result whole
   reads_check.py shadow DB ROUTINE VERSION the shadow run of that version: its row in shadow_runs and the run it made, one line (key=value)
   reads_check.py mcpcalls                  (stdin: the stub MCP server's log) which tools it was asked to call, and how many requests were refused or sessionless
+  reads_check.py casedata DB CASE          the data a hook's case opened with (its detected event): the asker, the thread, the sender's id (key=value lines on one line)
+  reads_check.py askrun DB CASE            the live run of knowledge/answer that decided the case: its id, the plan's action, outcome and thread, or the escalation's run
+  reads_check.py contract DB CASE FILE     put the case (id, kind, target, data as the hook opened it) into a contract file's env as FLOTILLA_CASE, for an offline replay
+  reads_check.py askreads DB RUN_ID        the section ask's live run: complete, the five reads in order from their three servers, each link in its result
 
 Prints one line and exits 0 when the check holds, 1 when it does not (the line says what was found).
 """
 import json
+import re
 import sqlite3
 import sys
 
@@ -68,10 +73,80 @@ def mcpcalls(text):
     return True, "CALLS %s UNAUTH %d NOSESSION %s" % (",".join(tools) or "-", sum(1 for r in reqs if not r.get("authed")), ",".join(nosession) or "-")
 
 
+def casedata(db, case):
+    row = con(db).execute("SELECT data FROM case_events WHERE case_id = ? AND kind = 'case.detected'", (case,)).fetchone()
+    if row is None:
+        return False, "no detected event for %s" % case
+    d = json.loads(row[0] or "{}")
+    return True, "asker=%s asker_name=%s thread=%s user=%s" % tuple((d.get(k) or "-").replace(" ", "_") for k in ("asker", "asker_name", "thread", "user"))
+
+
+def askrun(db, case):
+    c = con(db)
+    plan = c.execute("SELECT run_id, action, outcome, autonomy, params FROM plans WHERE case_id = ? ORDER BY id DESC", (case,)).fetchone()
+    if plan:
+        p = json.loads(plan[4])
+        return True, "run=%s action=%s outcome=%s thread=%s channel=%s" % (plan[0], plan[1], plan[2], p.get("thread"), p.get("channel"))
+    ev = c.execute("SELECT detail FROM case_events WHERE case_id = ? AND kind = 'case.escalated' ORDER BY seq DESC", (case,)).fetchone()
+    if ev is None:
+        return False, "no plan and no escalation for %s" % case
+    m = re.match(r"run (\S+): (.*)", ev[0])
+    return True, "run=%s plans=0 escalated=%s" % (m.group(1) if m else "-", (m.group(2) if m else ev[0])[:200].replace(" ", "_"))
+
+
+def contract(db, case, path):
+    c = con(db)
+    row = c.execute("SELECT kind, target FROM cases WHERE id = ?", (case,)).fetchone()
+    ev = c.execute("SELECT data FROM case_events WHERE case_id = ? AND kind = 'case.detected'", (case,)).fetchone()
+    if row is None or ev is None:
+        return False, "no case %s" % case
+    with open(path) as f:
+        doc = json.load(f)
+    doc["env"]["FLOTILLA_CASE"] = json.dumps({"id": case, "kind": row[0], "target": row[1], "data": json.loads(ev[0] or "{}")})
+    with open(path, "w") as f:
+        json.dump(doc, f)
+    return True, "FLOTILLA_CASE set for %s" % case
+
+
+ASK_READS = [("docs.search", {"query": "repair agents"}), ("docs.read", {"id": "repair-agents"}), ("tasks.list", {}),
+             ("library.search", {"query": "agents tool", "k": 3}), ("library.read", None)]
+
+
+def askreads(db, run_id):
+    row = con(db).execute("SELECT lines, complete FROM input_reads WHERE run_id = ?", (run_id,)).fetchone()
+    if row is None:
+        return False, "no input_reads row for %s" % run_id
+    lines = json.loads(row[0])
+    if row[1] != 1:
+        return False, "the record is not complete (%s)" % row[1]
+    if [l.get("tool") for l in lines] != [t for t, _ in ASK_READS]:
+        return False, "the reads recorded are %s" % [l.get("tool") for l in lines]
+    for l, (tool, args) in zip(lines, ASK_READS):
+        if args is not None and l.get("args") != args:
+            return False, "%s was asked %s" % (tool, l.get("args"))
+        if l.get("ok") is not True or l.get("station") != "answer" or not isinstance(l.get("at"), str):
+            return False, "the line of %s: %s" % (tool, json.dumps(l)[:200])
+    if "https://docs.e2e.example/d/repair-agents" not in lines[0]["result"] or "https://tasks.e2e.example/t/101" not in lines[2]["result"]:
+        return False, "the documents' and tasks' links are not in their results"
+    paper = re.search(r"arxiv:[0-9.]+", lines[3]["result"])
+    if not paper or lines[4].get("args") != {"paper": paper.group(0)} or paper.group(0) not in lines[4]["result"]:
+        return False, "the library's search found %s; its read asked %s" % (paper and paper.group(0), lines[4].get("args"))
+    return True, "complete, 5 reads in order (%s), the links in their results, the paper %s searched then read from the real server" % (
+        ", ".join(l["tool"] for l in lines), paper.group(0))
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "mcpcalls" and len(sys.argv) == 2:
         ok, msg = mcpcalls(sys.stdin.read())
+    elif cmd == "contract" and len(sys.argv) == 5:
+        ok, msg = contract(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif cmd == "casedata" and len(sys.argv) == 4:
+        ok, msg = casedata(sys.argv[2], sys.argv[3])
+    elif cmd == "askrun" and len(sys.argv) == 4:
+        ok, msg = askrun(sys.argv[2], sys.argv[3])
+    elif cmd == "askreads" and len(sys.argv) == 4:
+        ok, msg = askreads(sys.argv[2], sys.argv[3])
     elif cmd == "record" and len(sys.argv) == 4:
         ok, msg = record(sys.argv[2], sys.argv[3])
     elif cmd == "shadow" and len(sys.argv) == 5:

@@ -26,6 +26,11 @@
 # the same forms in Chromium. Live reads (RFC-0014 §4.8, section `reads`, deploy/e2e/mcp_stub.py): a routine whose station declares reads from an MCP
 # server, on the reads worker behind its own proxy, records them (a result over 8192 characters whole), is refused a tool it did not declare, is replayed
 # from the record with the server down, and its shadows are served the record, never the server (a read the record lacks fails the shadow).
+# Case 1 (RFC-0014 §4.5, section `ask`): a signed `ask` call opens a question case whose asker is looked up in the people file (a known person, an
+# unknown id); knowledge/answer reads documents and tasks on a stub and the library on second-brain's real server (sb serve, from the checkout SB_DIR),
+# records the reads, cites only what it read (an answer citing a link no read returned escalates), and plans plumbing.reply at propose; approved it is
+# sent once, signed, to the stub plumbing, rejected it sends nothing; its shadow is served the record, and an offline replay with the servers stopped
+# makes the same plan. E2E_MUTANT=shadow-reads-live (a shadow reads live, not from the record) must turn it red.
 # Never on the production engine (the installation's ADR-0009): it uses the `dev` context only.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -47,6 +52,7 @@ if [ "${DEMO:-}" = 1 ]; then DEMO_DISABLED=", platform/model-contract"; else DEM
 #   required-fallback                        flotillad takes a worker's own token as a caller again under required (the run-token probes)
 #   caps-skip                                flotillad takes any worker or agent for run-token capable (the old worker's and the old agent's refusal)
 #   shadow-live-handler                      a shadow's report goes through the live path too: e2e/hostile-brief's case, brief line and Slack ask
+#   shadow-reads-live                        a shadow's reads go to the live read path instead of the live run's record (section ask: the shadow's plan differs)
 # E2E_MUTANT=shadow-write-cred is a mutation check: it puts a write credential into the shadow worker's read environment, and the hostile shadow's
 # check must go red. (E2E_ACL_ACTION=open is the proxy's.)
 # the shadow check's two routines are enabled in their specs and held off in the config (a shadow of a disabled routine does not run) until
@@ -66,8 +72,12 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # E2E_SECTIONS=a,b runs only those sections (the build, the config and `up` always run); unset runs all. `noeffect` is versions, hostagent,
 # versionscase, shadows, stations and matrix: the no-effect proof (docs/wip/v2-design.md section 4) and the sections whose state it reads (the
 # shadow monitor's pairs count the case that versionscase leaves open on the host agent's target, which needs versions' routine). The other sections
-# lean on each other as well (ui reads the shadows' and stations' pairs, hooks uses ui's admin, plumbing hooks' meeting case, remote comes after ui); name those together.
-sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing remote hardening"
+# lean on each other as well (ui reads the shadows' and stations' pairs, plumbing hooks' meeting case, remote comes after ui); name those together. The first
+# admin is made by ui, hooks and ask alike (they approve as a user, never with the operator token).
+# `ask` (RFC-0014 case 1) needs nothing but the first admin (its approvals), which it makes if ui does not; it opens its own cases and approves its own
+# plans. Its shadows need flotillad's `shadows:` (reads adds it, ask adds it, and restarts flotillad, when it is not there).
+# It reads second-brain's real read server from a checkout: SB_DIR (default /work/second-brain/main; a CI job checks it out).
+sections_known="model telemetry cases business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing ask remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
   local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
@@ -102,7 +112,7 @@ if [ "${1:-}" = down ]; then down; echo "e2e torn down"; exit 0; fi
 down
 
 echo "== build"
-case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,required-fallback,*|*,caps-skip,*|*,shadow-live-handler,*)
+case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,required-fallback,*|*,caps-skip,*|*,shadow-live-handler,*|*,shadow-reads-live,*)
   BUILD_CTX="$WORK/mutated-src"; mkdir -p "$BUILD_CTX"
   (cd "$ROOT" && tar --exclude=./.git --exclude=./.e2e --exclude=./.venv --exclude=./site --exclude=./node_modules --exclude=./.claude -cf - .) | tar -xf - -C "$BUILD_CTX"
   if [[ ",${E2E_MUTANT}," == *,station-live-key,* ]]; then
@@ -120,6 +130,10 @@ case ",${E2E_MUTANT:-}," in *,station-live-key,*|*,station-span-mark,*|*,require
   if [[ ",${E2E_MUTANT}," == *,shadow-live-handler,* ]]; then   # a shadow run's report is handled by the live path too: a case, a brief line
     sed -i 's/^\tend := store.ShadowDone$/\tif s.AfterRun != nil \&\& outcome != nil {\n\t\ts.AfterRun(fctx, sj, \&out, outcome)\n\t}\n\tend := store.ShadowDone/' "$BUILD_CTX/internal/sched/shadow.go"
     cmp -s "$ROOT/internal/sched/shadow.go" "$BUILD_CTX/internal/sched/shadow.go" && { echo "MUTANT shadow-live-handler did not change shadow.go"; exit 1; }
+  fi
+  if [[ ",${E2E_MUTANT}," == *,shadow-reads-live,* ]]; then   # a shadow's reads go to the live read path (reads.py) instead of the live run's record
+    sed -i 's/^            tool = lambda name, args: served(name, args) if name in read_names or rep.knows(station, name) else fleet_tool(name, args)$/            pass/' "$BUILD_CTX/runtime/harness.py"
+    cmp -s "$ROOT/runtime/harness.py" "$BUILD_CTX/runtime/harness.py" && { echo "MUTANT shadow-reads-live did not change harness.py"; exit 1; }
   fi
   if [[ ",${E2E_MUTANT}," == *,caps-skip,* ]]; then   # flotillad takes any worker and any agent for run-token capable
     sed -i 's/^\tif cfg.RunTokens != RunTokensRequired {$/\tif true || cfg.RunTokens != RunTokensRequired {/; s/link.RequireRunToken = cfg.RunTokens == RunTokensRequired/link.RequireRunToken = false/' "$BUILD_CTX/cmd/flotillad/main.go"
@@ -154,6 +168,8 @@ mkdir -p "$WORK/config/specs" && cp -r "$ROOT/fleets/." "$WORK/config/specs/"
 [ "${DEMO:-}" = 1 ] || cp -r "$ROOT/deploy/e2e/fleets/." "$WORK/config/specs/"
 # one run-token probe per worker class (token-probe on triage is the fleet's own file); the remote worker's is run in its section
 [ "${DEMO:-}" = 1 ] || python3 "$ROOT/deploy/e2e/make_probes.py" "$WORK/config/specs" triage-candidate ops-read ops-act-host bugfix remote-e2e:/remote/worker.token >/dev/null
+# RFC-0014 case 1: knowledge/answer runs on the reads worker; its v2 (v1 and a marker) is the shadow section ask replays from the live run's record
+[ "${DEMO:-}" = 1 ] || python3 "$ROOT/deploy/e2e/make_shadows.py" "$WORK/config/specs" reads | grep >/dev/null "^knowledge/answer$" || { echo "no shadow v2 made for knowledge/answer"; exit 1; }
 cp "$ROOT/deploy/e2e/registry-e2e.json" "$WORK/config/registry-e2e.json"
 printf '%s\n' "${E2E_ENV[@]}" > "$WORK/.env"
 tok() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
@@ -168,6 +184,15 @@ tok > "$WORK/config/worker-bugfix.token"; tok > "$WORK/config/worker-bugfix-act.
 # server's bearer token, which only the reads worker's volume (secrets.sh) and the stub hold
 tok > "$WORK/config/worker-reads.token"; printf 'E2E_LLM_KEY=%s\n' "$(tok)" > "$WORK/config/reads-model.env"
 mkdir -p "$WORK/config/mcp" && (umask 077; tok > "$WORK/config/mcp/lab.token")
+# RFC-0014 case 1 (section ask): the documents and tasks servers (one stub, two names) share a token; second-brain's server has its own
+(umask 077; tok > "$WORK/config/mcp/docs.token"; cp "$WORK/config/mcp/docs.token" "$WORK/config/mcp/tasks.token"; tok > "$WORK/config/mcp/library.token")
+# who the asker is: the people file (secrets.sh copies it into flotillad's secret volume), the slack ids of the question's askers
+cat > "$WORK/config/people.yaml" <<EOF
+people:
+  - {email: ada@example.org, name: Ada Example, ids: {slack: U0E2EASK01}}
+  - {email: slack@example.org, name: E2E Slack, ids: {slack: U0E2E000001}}
+EOF
+chmod 600 "$WORK/config/people.yaml"
 # RFC-0014 §4.6: each plumbing.call callback's signing secret, shared with the stub plumbing (deploy/e2e/plumbing_stub.py)
 mkdir -p "$WORK/config/plumbing" && (umask 077; for n in create_tasks post_decisions reply post retract; do tok > "$WORK/config/plumbing/$n.secret"; done)
 tok > "$WORK/config/bugfix-model.key"   # a stand-in: the e2e's bugfix routines that would use it are disabled
@@ -228,6 +253,8 @@ models:
     fix-reviewer: {endpoint: gateway-bugfix, model: fleet-bugfix-reviewer}
     meetings-notes: {endpoint: gateway, model: fleet-meetings-notes}   # RFC-0014 case 3: meetings/notes' station extract
     reads-answer: {endpoint: gateway, model: fleet-reads-answer}   # RFC-0014 §4.8: e2e/reads' station; the key is E2E_LLM_KEY on the reads worker and on the shadow worker
+    knowledge-answer: {endpoint: gateway, model: fleet-knowledge-answer}   # RFC-0014 case 1: knowledge/answer's station
+directory: {source: file, path: /run/flotilla/people.yaml}
 hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 # Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
 # That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
@@ -243,6 +270,16 @@ hooks:
     target: file
     target_pattern: '[A-Za-z0-9._-]{1,120}'
     fields: {file: {type: text, max: 120}, date: {type: text, max: 10}, text: {type: text, max: 2000}}
+    max_body: 4096
+  - name: ask   # RFC-0014 case 1: a question in chat; its sender's slack id is looked up in the directory when the case opens
+    secret_file: /run/flotilla/hook-ask.secret
+    kind: question
+    title: "A question was asked"
+    project: knowledge
+    target: thread
+    target_pattern: '[A-Za-z0-9._-]{1,64}'
+    asker: {field: user, tool: slack}
+    fields: {thread: {type: text, max: 64}, user: {type: text, max: 40}, text: {type: text, max: 2000}}
     max_body: 4096
   - name: smoke
     secret_file: /run/flotilla/hook-smoke.secret
@@ -345,15 +382,20 @@ EOF
 # RFC-0014 §4.8: the reads worker is told the stub MCP server's address (a placeholder host: an installation sets its own) and where its token is;
 # its proxy admits that host and the model gateway, nothing else (its settings, with the networks' ranges, are written once the networks exist)
 printf 'ROUTINE_MCP_LAB_URL=http://mcp.e2e.example:8091/mcp\nROUTINE_MCP_LAB_TOKEN_FILE=/run/flotilla/mcp-lab.token\n' > "$WORK/config/worker-reads.env"
+# case 1's three servers (section ask starts them): documents and tasks on the stub, the library on second-brain's own server (sb serve)
+for s in docs:8091 tasks:8091 library:8790; do
+  printf 'ROUTINE_MCP_%s_URL=http://%s.e2e.example:%s/mcp\nROUTINE_MCP_%s_TOKEN_FILE=/run/flotilla/mcp-%s.token\n' "$(echo "${s%%:*}" | tr a-z A-Z)" "${s%%:*}" "${s##*:}" "$(echo "${s%%:*}" | tr a-z A-Z)" "${s%%:*}"
+done >> "$WORK/config/worker-reads.env"
 cat > "$WORK/config/egress-reads-acl.yaml" <<EOF
 version: v1
 services: []
 default:
   project: flotilla-reads
   action: enforce
-  allowed_domains: [litellm, mcp.e2e.example]
+  allowed_domains: [litellm, mcp.e2e.example, docs.e2e.example, tasks.e2e.example, library.e2e.example]
 EOF
 find "$WORK/config" -maxdepth 1 -type f -exec chmod 644 {} +   # the files; the specs folder stays traversable
+chmod 600 "$WORK/config/people.yaml"   # a people file is the owner's alone (secrets.sh copies it as 600)
 chmod -R a+rX "$WORK/config/specs"
 for n in $NETS; do $D network create --label $LABEL $([ "$n" = e2e-plumbing ] || [ "$n" = e2e-mcp ] && echo --internal) "$n" >/dev/null; done   # the plumbing tool's network is internal, as the installation's is
 # the plumbing proxy allows the plumbing network's range alone, as an installation's does (deploy/compose/README.md): smokescreen
@@ -403,7 +445,7 @@ echo "$SK" | grep >/dev/null '^  "e2e1": "[A-Za-z0-9+/]*=*"$' && [ -s "$WORK/con
 SIGNPUB="$(echo "$SK" | sed -n 's/^  "e2e1": "\(.*\)"$/\1/p')"
 
 echo "== secrets and seeded state (deploy/server/secrets.sh, as a deploy runs it)"
-mkdir -p "$WORK/config/hooks" && (umask 077; tok > "$WORK/config/hooks/meeting.secret"; tok > "$WORK/config/hooks/smoke.secret")   # RFC-0014: the hooks' signing secrets, shared with the stub plumbing
+mkdir -p "$WORK/config/hooks" && (umask 077; tok > "$WORK/config/hooks/meeting.secret"; tok > "$WORK/config/hooks/smoke.secret"; tok > "$WORK/config/hooks/ask.secret")   # RFC-0014: the hooks' signing secrets, shared with the stub plumbing
 printf 'SEED_SECRET=must-not-be-copied\nE2E_LLM_KEY=%s\nOPENROUTER_API_KEY=%s\nGLITCHTIP_TOKEN=%s\nGRAFANA_TOKEN=%s\nGITHUB_TOKEN=%s\n' \
   "$(tok)" "$(tok)" "$(tok)" "$(tok)" "$(tok)" > "$WORK/config/fleet.env"   # random stand-in keys, made per run
 mkdir -p "$WORK/seed/results"; printf 'ts\tfingerprint\n' > "$WORK/seed/results/dispositions.tsv"
@@ -1966,13 +2008,15 @@ MXS="$(echo "$MX" | grep '^NOEFFECT PASS')"
   && ok "the no-effect matrix: $(echo "$MXS" | cut -c1-200)" || bad "the no-effect matrix: $(echo "$MX" | grep -E '^   |^NOEFFECT PASS' | head -12 | tr '\n' '|' | cut -c1-900)"
 fi
 fi
-if want ui; then
+if want ui || want hooks || want ask; then   # the first admin is the one hooks and ask approve with: they need no UI checks
 echo "== users and the UI listener (ADR-0014); last, since the first admin retires the operator token"
 UA="$(cli user add ada --role admin 2>&1)"
 ADMIN="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
 [ ${#ADMIN} = 68 ] && ok "the first admin, with the operator token (a 256-bit token, shown once)" || bad "first admin: $UA"
 OUT="$(cli status 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 403" && ok "after it, the operator token is retired" || bad "operator token after the first admin: $OUT"
+fi
+if want ui; then   # the UI's own checks lean on the shadows' and stations' pairs
 OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat 2>&1)"
 echo "$OUT" | grep >/dev/null "needs a reason" && ok "loosening without a reason is refused" || bad "resume without a reason: $OUT"
 OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat --reason "e2e" 2>&1)"
@@ -1992,7 +2036,7 @@ done <<< "$UIB"
 [ "$UIBRC" = 0 ] || bad "ui_browser.py exit $UIBRC: $(echo "$UIB" | tail -3 | tr '\n' ' ')"
 
 fi
-if want hooks; then   # needs ui's admin ($ADMIN): name them together
+if want hooks; then   # needs the first admin ($ADMIN), which it makes if ui does not
 echo "== hooks (RFC-0014 §4.2): the stub plumbing on the plumbing network calls them, signed"
 hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }   # an admin exists by now: the callers-file operator token is refused
 # the meeting case waits, handed over, until the plumbing section resumes its acting routine (a paused routine's case waits)
@@ -2029,7 +2073,7 @@ echo "$OUT" | grep >/dev/null "^hook meeting: " && ! echo "$OUT" | grep >/dev/nu
   && ok "-check lists the hooks, and gives no warning for a kind a routine acts on" || bad "-check hooks: $(echo "$OUT" | grep -i hook)"
 fi
 
-if want plumbing; then   # needs hooks' meeting case ($HCASE) and ui's admin: name them together
+if want plumbing; then   # needs hooks' meeting case ($HCASE) and the first admin: name hooks with it
 echo "== case 3 and plumbing.call (RFC-0014 §4.5, §4.6): a meeting's follow-ups, then its decisions, each approved once, posted signed to the stub plumbing, each checked back"
 n8nlog() { $D logs e2e-n8n 2>&1; }
 sends() { n8nlog | grep '"event": "send"' | grep "\"name\": \"$1\""; }
@@ -2091,6 +2135,163 @@ try:
 except Exception as e:
     print(getattr(e, "code", e))' 2>&1)"
 [ "$PX" = 407 ] || [ "$PX" = 403 ] && ok "the plumbing proxy refuses any host but the plumbing's (flotillad:8488: $PX)" || bad "the plumbing proxy let flotillad:8488 through: $PX"
+fi
+
+if want ask && [ "${DEMO:-}" != 1 ]; then   # needs the first admin ($ADMIN), which it makes if ui does not; nothing else (not hooks, plumbing or reads)
+echo "== case 1 (RFC-0014 §4.2, §4.5, §4.8): a question opens a case, knowledge/answer reads three servers and cites what it read, a person approves the reply"
+hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }
+n8nlog() { $D logs e2e-n8n 2>&1; }
+sends() { n8nlog | grep '"event": "send"' | grep "\"name\": \"$1\""; }
+waitcase() { for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$1 " | grep >/dev/null "$2" && return 0; sleep 2; done; return 1; }
+PYIMG=python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+SB_DIR="${SB_DIR:-/work/second-brain/main}"
+# the library is second-brain's own read server over an index built from its own fixtures (sb seed, sb build), never a stand-in
+if [ ! -f "$SB_DIR/sb/server.py" ]; then
+  bad "second-brain's checkout is not at SB_DIR=$SB_DIR (the ask section reads its real server)"
+else
+  SBW="$WORK/sb"; rm -rf "$SBW"; mkdir -p "$SBW" && cp -r "$SB_DIR/tests/fixtures/content" "$SBW/content" && cp -r "$SB_DIR/tests/fixtures/data" "$SBW/data" && chmod -R a+rwX "$SBW"
+  sbrun() { $D run --rm --network none --user "$(id -u):$(id -g)" -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/sb -v "$SB_DIR:/sb:ro" -v "$SBW:/w" $PYIMG python3 -m sb "$@"; }
+  SBB="$(sbrun seed --content /w/content 2>&1 && sbrun build --content /w/content --data /w/data 2>&1)"
+  chmod -R a+rX "$SBW/data"
+  echo "$SBB" | grep >/dev/null '"papers": 4, "with_text": 3' && ok "second-brain's index built from its fixtures: $(echo "$SBB" | tail -1)" || bad "sb build: $SBB"
+  $D run -d --label $LABEL --name e2e-library --network e2e-mcp --network-alias library.e2e.example --memory 128m --read-only --cap-drop ALL --user "$(id -u):$(id -g)" \
+    -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/sb -v "$SB_DIR:/sb:ro" -v "$SBW/data:/d:ro" -v "$WORK/config/mcp/library.token:/secrets/library.token:ro" \
+    $PYIMG python3 -u -m sb serve --data /d --host 0.0.0.0 --port 8790 --token-file /secrets/library.token >/dev/null || bad "sb serve did not start"
+fi
+# the documents and tasks servers: the stub MCP server under two names, with a token of its own
+$D run -d --label $LABEL --name e2e-mcp-docs --network e2e-mcp --network-alias docs.e2e.example --network-alias tasks.e2e.example --memory 64m \
+  -e MCP_STUB_TOKEN_FILE=/secrets/docs.token -v "$ROOT/deploy/e2e/mcp_stub.py:/mcp_stub.py:ro" -v "$WORK/config/mcp:/secrets:ro" \
+  $PYIMG python3 -u /mcp_stub.py 8091 >/dev/null || bad "the documents and tasks stub did not start"
+LU=""
+for _ in $(seq 1 20); do
+  LU="$($D run --rm --network e2e-mcp $PYIMG python3 -c 'import urllib.request as u, urllib.error as e
+try:
+    u.urlopen(u.Request("http://library.e2e.example:8790/mcp", data=b"{}", headers={"Content-Type": "application/json"}), timeout=5); print(200)
+except e.HTTPError as x:
+    print(x.code)
+except Exception as x:
+    print(type(x).__name__)' 2>&1)"
+  [ "$LU" = 401 ] && break; sleep 1
+done
+LA="$($D run --rm --network e2e-mcp --user "$(id -u):$(id -g)" -v "$WORK/config/mcp/library.token:/t:ro" $PYIMG python3 -c 'import urllib.request as u
+t = open("/t").read().strip()
+r = u.urlopen(u.Request("http://library.e2e.example:8790/mcp", data=b"{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-06-18\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"e2e\", \"version\": \"1\"}}}", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": "Bearer " + t}), timeout=5)
+print(r.status)' 2>&1 | tail -1)"
+[ "$LU" = 401 ] && [ "$LA" = 200 ] && ok "second-brain's server is up on the MCP network: 401 without its bearer token, 200 with it" || bad "sb serve: without a token $LU, with it $LA: $($D logs e2e-library 2>&1 | tail -3)"
+# shadows: a v2 of knowledge/answer waits for the live run (reads added the setting; a run of this section alone adds it, and flotillad reads it at start)
+if ! grep >/dev/null '^shadows:' "$WORK/config/flotillad.yaml"; then
+  printf 'shadows: {enabled: true}\n' >> "$WORK/config/flotillad.yaml"
+  $D restart flotillad >/dev/null
+  for _ in $(seq 1 30); do hcli health >/dev/null 2>&1 && break; sleep 2; done
+fi
+hcli action autonomy plumbing.reply propose --reason "e2e: the answers wait for an approval" >/dev/null 2>&1 || bad "plumbing.reply autonomy: $(hcli action autonomy plumbing.reply propose --reason e2e 2>&1)"
+hcase() { echo "$HA" | awk -v l="$1" '$1 == l {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null; }
+hak() { echo "$HA" | awk -v l="$1" '$1 == l {print $2; exit}'; }
+HA="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
+  -e HOOK_SECRET_ASK="$(cat "$WORK/config/hooks/ask.secret")" --entrypoint python3 "local/flotilla-worker-triage:$TAG" /hookcall.py http://flotillad:8488 ask 2>&1)"
+echo "$HA"
+Q1="$(hcase q1)"; Q2="$(hcase q2)"; Q3="$(hcase q3)"
+# the asker: the directory's answer is written into the case's data when it opens, a payload cannot say it, and every call is an event
+ASNAP() { $D run --rm --network none --user 65532:65532 -e STORE_DIR=/v -v flotilla-e2e-state:/v -v "$ROOT/deploy/server/store_snapshot.py:/s.py:ro" \
+  "local/flotilla-worker-triage:$TAG" python3 /s.py backup > "$WORK/ask.db" 2> "$WORK/ask.err"; }
+RC="python3 $ROOT/deploy/e2e/reads_check.py"
+[ "$(hak q1)" = 202 ] && [ "$(hak q1-replay)" = 200 ] && [ "$(hcase q1-replay)" = "$Q1" ] && [ "$(hak q-unsigned)" = 401 ] && [ -n "$Q2" ] && [ -n "$Q3" ] \
+  && ok "a signed ask call opened a question case ($Q1); the same delivery again opened nothing (200); an unsigned one was refused (401)" || bad "ask calls: $HA"
+ASNAP
+CD1="$($RC casedata "$WORK/ask.db" "$Q1")"; CD2="$($RC casedata "$WORK/ask.db" "$Q2")"
+[ "$CD1" = "PASS asker=ada@example.org asker_name=Ada_Example thread=t-e2e-1 user=U0E2EASK01" ] \
+  && ok "the asker resolved from the directory: slack id U0E2EASK01 is Ada Example (ada@example.org), written into the case's data" || bad "the known asker: $CD1"
+[ "$CD2" = "PASS asker=unknown asker_name=- thread=t-e2e-2 user=U0NOBODY00" ] \
+  && ok "an id the directory does not hold resolved to unknown, though its payload named ada@example.org as asker (the payload cannot say who asked)" || bad "the unknown asker: $CD2"
+AEV="$(hcli events -n 300 2>&1 | grep 'hook.asker')"
+echo "$AEV" | grep >/dev/null "$Q1 .*known: ada@example.org (slack id U0E2EASK01)" && echo "$AEV" | grep >/dev/null "$Q2 .*unknown: slack id U0NOBODY00 is not in the directory" \
+  && [ "$(echo "$AEV" | grep -c "$Q1")" = 1 ] && ok "each asker is a hook.asker event of its case, once (the replayed delivery wrote none)" || bad "hook.asker events: $AEV"
+hcli case show "$Q2" 2>&1 | grep >/dev/null "fields not declared, ignored: asker, asker_name" && ok "the forged asker and asker_name fields were ignored and recorded" || bad "the forged fields: $(hcli case show "$Q2" 2>&1 | tail -3)"
+# knowledge/answer: each case is handed to it; the model is scripted (deploy/e2e/stub.py), its reads are real
+waitcase "$Q1" awaiting_approval && waitcase "$Q2" awaiting_approval && waitcase "$Q3" escalated \
+  && ok "knowledge/answer planned an answer for each of the two questions it could source (awaiting approval) and escalated the one about the ghost" \
+  || bad "the question cases: $(hcli case list --all 2>&1 | grep question)"
+ASNAP
+AR1="$($RC askrun "$WORK/ask.db" "$Q1")"; AR2="$($RC askrun "$WORK/ask.db" "$Q2")"; AR3="$($RC askrun "$WORK/ask.db" "$Q3")"
+RID1="$(echo "$AR1" | sed -n 's/.* run=\([^ ]*\) .*/\1/p')"; RID2="$(echo "$AR2" | sed -n 's/.* run=\([^ ]*\) .*/\1/p')"
+echo "$AR1" | grep >/dev/null "^PASS run=[^ ]* action=plumbing.reply outcome=propose thread=t-e2e-1 channel=general$" && echo "$AR2" | grep >/dev/null "^PASS run=[^ ]* action=plumbing.reply outcome=propose thread=t-e2e-2 channel=general$" \
+  && ok "each plan is plumbing.reply at propose, the thread from its case (t-e2e-1, t-e2e-2) and the channel the action's one (general)" || bad "the plans: $AR1 / $AR2"
+echo "$AR3" | grep >/dev/null "^PASS run=[^ ]* plans=0 escalated=refused_by_the_gates:_no_sourced_answer:_citation_1_(docs:_https://docs.e2e.example/d/ghost-project)_is_not_in_a_read_this_run_made" \
+  && ok "the answer that cited a link no read returned (the ghost project) escalated as \"no sourced answer\" and planned nothing" || bad "the ghost question: $AR3"
+# the reads, recorded with the run: docs and tasks on the stub, library on second-brain's real server
+RK="$($RC askreads "$WORK/ask.db" "$RID1")"
+[ "${RK%% *}" = PASS ] && ok "a live run records its reads in input_reads: ${RK#PASS }" || bad "the answer run's record: $RK"
+LIBLOG="$($D logs e2e-library 2>&1)"
+[ "$(echo "$LIBLOG" | grep -c '"status": "unauthorized"')" = 1 ] && echo "$LIBLOG" | grep >/dev/null '"tool": "search"' && echo "$LIBLOG" | grep >/dev/null '"tool": "read"' \
+  && ok "second-brain's server served the search and the read (sb serve's own log), and refused only the unauthenticated probe" || bad "sb serve's log: $(echo "$LIBLOG" | tail -5)"
+DOCLOG="$($D logs e2e-mcp-docs 2>&1 | $RC mcpcalls)"
+echo "$DOCLOG" | grep >/dev/null "^PASS CALLS .* UNAUTH 0 NOSESSION initialize$" && ! echo "$DOCLOG" | grep >/dev/null "delete\|write" \
+  && ok "the documents and tasks server was asked only to search, read and list, each with its bearer token and session ($DOCLOG)" || bad "the docs server's requests: $DOCLOG"
+cli_input() { hcli input show "$1" 2>&1; }
+cli_input "$RID1" | python3 -c '
+import json, sys
+a = (json.load(sys.stdin)["envelope"].get("recorded_tool_results") or {}).get("answer") or []
+sys.exit(0 if [x["tool"] for x in a] == ["docs.search", "docs.read", "tasks.list", "library.search", "library.read"] and all(x.get("ok") for x in a) else 1)' \
+  && ok "the run's input carries the five reads as recorded_tool_results of its station: what a shadow is served" || bad "input show: $(cli_input "$RID1" | head -c 300)"
+# the plan waits: its detail names what each claim rests on, the text is labelled, nothing was sent
+PSHOW="$(hcli case show "$Q1" 2>&1)"
+echo "$PSHOW" | grep >/dev/null "plumbing.reply" && echo "$PSHOW" | grep >/dev/null "https://docs.e2e.example/d/repair-agents" && echo "$PSHOW" | grep >/dev/null "library: arxiv:2002.00002" \
+  && ok "the plan's detail names its sources: the documents link and the paper (a read this run made each)" || bad "the plan's detail: $(echo "$PSHOW" | tail -6)"
+[ -z "$(sends reply)" ] && ok "nothing reached the plumbing before the approval" || bad "a reply sent before the approval: $(sends reply)"
+# the shadow v2 (v1 and a marker) of knowledge/answer, on the shadow worker, which holds no read server's address, token or route: it is served the live run's record
+OTHER_ENV="$(for w in flotilla-worker-triage-shadow flotilla-worker-triage flotilla-worker-ops-read; do $D exec $w env 2>&1; done | grep -c 'MCP_')"
+[ "$OTHER_ENV" = 0 ] && ok "no shadow worker, nor the live triage or ops-read worker, holds an MCP_* setting (only the reads worker holds the three servers')" || bad "MCP settings elsewhere: $OTHER_ENV"
+pairs_same() {  # the shadow's plan against the live plan, for every plumbing.reply pair: $1 is how many pairs are expected
+  hcli pairs knowledge/answer 2 --json 2>&1 | python3 -c '
+import json, sys
+pl = [x for x in json.load(sys.stdin)["pairs"] if x.get("live") and x.get("shadow") and (x["live"].get("plan") or {}).get("action") == "plumbing.reply"]
+sys.exit(0 if len(pl) == int(sys.argv[1]) and all(x["same"] and x["shadow"]["plan"].get("params") == x["live"]["plan"].get("params") for x in pl) else 1)' "$1"
+}
+for _ in $(seq 1 45); do pairs_same 2 && break; sleep 2; done
+pairs_same 2 && ok "the shadow of knowledge/answer (v2) was served each live run's record and made the same plan: both plumbing.reply pairs are the same" \
+  || bad "the shadow of knowledge/answer made no matching plans: $(hcli pairs knowledge/answer 2 --json 2>&1 | head -c 1200)"
+# now with the servers stopped: a replay of the first question's input on v2's contract (flotillad -stations, then runtime/offline_run.py in the shadow
+# worker's image), served the record alone, makes the live run's plan
+$D stop e2e-mcp-docs e2e-library >/dev/null 2>&1
+[ -z "$($D ps -q --filter name=e2e-mcp-docs --filter name=e2e-library)" ] && ok "the documents, tasks and library servers are stopped" || bad "the read servers are still running"
+OFA="$WORK/offline-ask"
+ask_off_clean() {  # the replay's folders hold files owned by the worker's uid: removed by that uid, then the folder by us
+  [ -d "$OFA" ] && $D run --rm --user 10001:10001 -v "$OFA:/x" --entrypoint sh "local/flotilla-worker-triage:$TAG" -c 'rm -rf /x/out' >/dev/null 2>&1
+  rm -rf "$OFA"
+}
+ask_off_clean; mkdir -p "$OFA"; chmod 777 "$OFA"
+printf 'e2e-eval-key' > "$OFA/eval.key"
+cat > "$OFA/models.json" <<EOM
+{"endpoints": {"gw": {"base_url": "http://litellm:8080/v1", "kind": "litellm", "key_file": "/work/eval.key", "defaults": {"tools": "native", "json": "object", "cost": "reported"}}},
+ "aliases": {"knowledge-answer": {"endpoint": "gw", "model": "fleet-knowledge-answer"}}}
+EOM
+hcli input export "$RID1" --to "/var/lib/flotilla/exports/ask-$RID1" >/dev/null 2>&1 && $D cp "flotillad:/var/lib/flotilla/exports/ask-$RID1" "$OFA/in" >/dev/null 2>&1 && chmod -R a+rX "$OFA/in"
+$D run --rm --network none --user 65532:65532 -v "$OFA:/work" -v "$WORK/config/specs:/etc/flotilla/specs:ro" "local/flotilla-flotillad:$TAG" \
+  -stations /etc/flotilla/specs/knowledge/answer/v2 -models /work/models.json > "$OFA/contract.json" 2> "$OFA/contract.err"
+ASNAP; CJ="$($RC contract "$WORK/ask.db" "$Q1" "$OFA/contract.json")"
+$D run --rm --network e2e-litellm --user 10001:10001 -v "$OFA:/work" -v "$WORK/config/specs/knowledge:/opt/flotilla/fleets/knowledge:ro" "local/flotilla-worker-triage:$TAG" \
+  python3 /opt/flotilla/runtime/offline_run.py --contract /work/contract.json --input /work/in/input.json --models /work/models.json --out /work/out --forbid /opt/flotilla/fleets > "$OFA/offline.out" 2>&1; ORC=$?
+LIVEK="$($D logs flotilla-worker-reads 2>&1 | grep "\"run_id\": \"$RID1\"" | grep -o '"line": "KNOWLEDGE [^"]*"' | sed 's/^"line": "//; s/"$//')"
+OFFK="$(grep '^KNOWLEDGE ' "$OFA/out/output.txt" 2>/dev/null)"
+[ "${CJ%% *}" = PASS ] && [ "$ORC" = 0 ] && echo "$LIVEK" | grep >/dev/null "^KNOWLEDGE outcome=plan plumbing.reply " && [ "$OFFK" = "$LIVEK" ] \
+  && ok "with the three servers stopped, the offline run of v2 on the first question's input was served the record alone and made the live run's plan (the same action and sources)" \
+  || bad "offline replay rc=$ORC contract: $CJ live: '$LIVEK' offline: '$OFFK' $(tail -c 400 "$OFA/offline.out") $(tail -c 300 "$OFA/out/output.txt" 2>/dev/null)"
+ask_off_clean
+# the approvals: the first answer is approved and sent once, signed; the second is rejected and sends nothing
+hcli case approve "$Q1" >/dev/null 2>&1 || bad "approve: $(hcli case approve "$Q1" 2>&1)"
+for _ in $(seq 1 60); do n8nlog | grep '"event": "status"' | grep '"name": "reply"' | grep >/dev/null '"done": true' && break; sleep 2; done
+SEND="$(sends reply)"
+[ "$(echo "$SEND" | grep -c .)" = 1 ] && echo "$SEND" | grep >/dev/null "\"case\": \"$Q1\"" && echo "$SEND" | grep >/dev/null '"action": "plumbing.reply"' \
+  && echo "$SEND" | grep >/dev/null '"thread": "t-e2e-1"' && echo "$SEND" | grep >/dev/null '"channel": "general"' && echo "$SEND" | grep >/dev/null '"text": "\[flotilla\] ' \
+  && echo "$SEND" | grep >/dev/null 'Sources:\\n\[1\] docs: https://docs.e2e.example/d/repair-agents\\n\[2\] library: arxiv:2002.00002' && echo "$SEND" | grep >/dev/null '"delivery": "plan-[0-9a-f]\{16\}"' \
+  && ok "the approved answer reached the plumbing once, signed, labelled, in thread t-e2e-1, its sources listed (a docs link and the paper)" || bad "the plumbing's reply sends: $(n8nlog | tail -5)"
+waitcase "$Q1" closed && hcli case show "$Q1" 2>&1 | grep >/dev/null "reply-plan-" && ok "the check asked the plumbing for the same delivery, and the case closed with the plumbing's ref on its record" || bad "the case after the send: $(hcli case show "$Q1" 2>&1 | tail -5)"
+hcli case reject "$Q2" --reason "e2e: the answer is not wanted" >/dev/null 2>&1 && waitcase "$Q2" escalated \
+  && ok "the second question's plan was rejected ($Q2 escalated)" || bad "the rejection: $(hcli case show "$Q2" 2>&1 | tail -4)"
+[ "$(sends reply | grep -c .)" = 1 ] && [ -z "$(n8nlog | grep '"event": "send"' | grep -e "$Q2" -e "$Q3")" ] \
+  && ok "the rejected answer and the escalated question sent nothing: one reply in all" || bad "sends: $(n8nlog | grep '"event": "send"')"
+[ -z "$(n8nlog | grep '"event": "refused"')" ] && ok "the plumbing refused nothing: the reply carried a valid signature" || bad "refused at the plumbing: $(n8nlog | grep refused)"
+$D start e2e-mcp-docs e2e-library >/dev/null 2>&1
 fi
 
 echo "== hardening"

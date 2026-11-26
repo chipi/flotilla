@@ -29,7 +29,7 @@ MAX_ANSWER = 2400            # the answer's own text; the sources and the label 
 MAX_CITATIONS = 8
 MIN_REF = 6                  # a citation's ref this short could match any read by chance
 MAX_REF = 300
-LABEL = "[flotilla, an agent]"
+LABEL = "[flotilla]"          # plumbing/call.py's LABEL, the one send-reply requires
 END = "</question>"
 # A crowd call reaches everyone in the channel: never in an agent's reply.
 CROWD = re.compile(r"<!(?:channel|here|everyone)[^>]*>|@(?:channel|here|everyone)\b", re.I)
