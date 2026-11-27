@@ -51,18 +51,33 @@ One library block, role `monitor`, code only, no model. Its parameters:
 | --- | --- | --- |
 | `source` | a URL the worker's egress allows | the Hub's `ci.json` |
 | `list` | a JSON path to the ranked list | `steps.7d` |
-| `key` | the fields that name an item | `repo`, `job`, `step` |
+| `key` | the field that names an item | `id` (the Hub's stable row id) |
 | `cost` | the field to rank by | `lost` (seconds) |
 | `top` | how many | 15 |
 | `rise` | the rise that counts as a change | 50 % and 10 min |
-| `signals` | the service-level source and the rows to read | the Hub's `slo.json`, group Platform, service "X3 CI runners" |
+| `signals` | the service-level source and the row ids to read | the Hub's `slo.json`, the three `x3-ci-runners--*` rows and `hub-ci-collector--fresh-within-15-min` |
 | `fixes` | the flow's knowledge file of known fixes | `knowledge/fixes.yaml` |
 
 **Its own snapshots.** The block compares against the previous run's snapshot, which it keeps in the
 routine's memory (ADR-0004), keyed by the item's key. It does not depend on the source holding a
-previous period: on 2026-11-27, every 7-day row of `ci.json` had no previous period (`x3Prev:
-null`), and the service levels held one day of history. The first run records a baseline and
-reports no changes.
+previous period: on the morning of 2026-11-27, every 7-day row of `ci.json` had no previous period
+(`x3Prev: null`), and the service levels held one day of history. The first run records a baseline
+and reports no changes.
+
+**What the Hub provides** (added by the homelab session for this RFC, 2026-11-27, documented in its
+`infra/homelab-home/README.md`):
+
+- an `id` per step row: a hash of repo, workflow, job and step name, the same across periods and
+  snapshots. A renamed step is a new row with a new id, so the watch reports it as one entry gone
+  and one new;
+- `steps.windows.<period>`: the period's bounds and the previous window's, and `prevHeld`, false
+  when the Hub does not hold the previous window whole. A report names the windows it compared;
+- an `id` per service-level row in `slo.json`, kept when its text changes;
+- known fixes stay in flotilla's knowledge (`fixes.yaml`), not in `ci.json` (agreed with homelab).
+
+**A stale source is a finding, not a report.** The block reads the collector's own freshness row
+first. When the source is stale, the run reports that and nothing else, so an old snapshot is never
+compared as if it were new.
 
 **Known fixes are knowledge.** `fixes.yaml` lists each fix under way: the item it targets, a link
 (a PR or an issue) and its owner (a repo or a session). It is shown on the Knowledge tab and
@@ -78,13 +93,15 @@ steps:
   - name: ci-perf-watch
     use: ranked-watch@1
     every: 168h
-    with: {source: hub_ci, list: steps.7d, key: [repo, job, step], cost: lost, top: 15,
-           rise: {ratio: 0.5, at_least: 600}, signals: {source: hub_slo, service: X3 CI runners},
+    with: {source: hub_ci, list: steps.7d, key: id, cost: lost, top: 15,
+           rise: {ratio: 0.5, at_least: 600},
+           signals: {source: hub_slo, ids: ["x3-ci-runners--*"],
+                     fresh: hub-ci-collector--fresh-within-15-min},
            fixes: knowledge/fixes.yaml}
   - name: ci-perf-daily
     use: ranked-watch@1
     every: 24h
-    with: {source: hub_ci, list: steps.yesterday, key: [repo, job, step], cost: lost, top: 5,
+    with: {source: hub_ci, list: steps.yesterday, key: id, cost: lost, top: 5,
            rise: {ratio: 1.0, at_least: 300}, fixes: knowledge/fixes.yaml}
 knowledge:
   - {name: fixes, path: knowledge/fixes.yaml, format: yaml}
