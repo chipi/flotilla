@@ -287,8 +287,18 @@ func (ff *FleetFlows) Expand(libRoot string, actions Actions) (*Expansion, error
 	if len(x.errs) > 0 {
 		return nil, errors.Join(x.errs...)
 	}
+	names2 := make([]string, 0, len(exp.Steps))
+	for _, s := range exp.Steps {
+		names2 = append(names2, s.Name)
+	}
+	sort.Strings(names2)
+	exp.Files[ManifestFile] = []byte("# The routine folders the flows generate (RFC-0016). flotilla flow expand writes this file; do not edit it.\n" + strings.Join(names2, "\n") + "\n")
 	return exp, nil
 }
+
+// ManifestFile lists, under the fleet's folder, the routine folders the flows own: -check flags one that is no longer a step,
+// and a step may only take over a folder that is listed (a hand-written folder is never overwritten by a flow's name).
+const ManifestFile = FlowsDir + "/.generated"
 
 type resolvedStep struct {
 	flow *Flow // nil for a learning block
@@ -408,13 +418,10 @@ func (x *expander) step(f *Flow, st FlowStep, where string, flowKinds map[string
 			bad("max_autonomy %s raises %s's cap, %s: a flow may lower a block's cap, never raise it", st.MaxAutonomy, b.Block, b.MaxAutonomy)
 		}
 	}
-	if st.Autonomy != "" {
-		cap := firstNonEmpty(st.MaxAutonomy, b.MaxAutonomy)
-		if !levels[st.Autonomy] {
-			bad("autonomy %q: record, propose or auto", st.Autonomy)
-		} else if levels[cap] && levelRank[st.Autonomy] > levelRank[cap] {
-			bad("autonomy %s is above the step's cap, %s", st.Autonomy, cap)
-		}
+	if st.Autonomy != "" && !levels[st.Autonomy] {
+		bad("autonomy %q: record, propose or auto", st.Autonomy)
+	} else if auto, cap := firstNonEmpty(st.Autonomy, b.Autonomy), firstNonEmpty(st.MaxAutonomy, b.MaxAutonomy); levels[auto] && levels[cap] && levelRank[auto] > levelRank[cap] {
+		bad("autonomy %s is above the step's cap, %s", auto, cap)
 	}
 	if st.Description != "" {
 		if err := checkDescription(st.Description); err != nil {

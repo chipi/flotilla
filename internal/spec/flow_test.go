@@ -253,10 +253,11 @@ func TestExpandWritesOrdinaryRoutineFolders(t *testing.T) {
 		"chain-monitor/v1/spec.yaml": "run:\n  command: env THE_ACTION=backup.rerun THE_METRIC=some_metric python3 /opt/flotilla/ops/probe.py\n  workdir: .\n  timeout: 1m\n",
 		"chain-act/routine.yaml":     "fleet: demo\nroutine: chain-act\ndescription: >-\n  Acts.\nenabled: true\nworker: ops-act\ntrigger:\n  case: {kind: failed_backup, on_record: watch}\nautonomy: record\nmax_autonomy: record\nbudget:\n  day_usd: 0\n",
 		"chain-act/v1/spec.yaml":     "run:\n  command: python3 /opt/flotilla/ops/doer.py --fleet demo\n  workdir: .\n  timeout: 1m\n",
-		"chain-think/routine.yaml":   "fleet: demo\nroutine: chain-think\ndescription: >-\n  Thinks.\nenabled: true\nworker: triage\ntrigger:\n  case: {kind: failed_backup, stage: investigate, on_record: watch}\nautonomy: propose\nbudget:\n  day_usd: 1\n",
+		"chain-think/routine.yaml":   "fleet: demo\nroutine: chain-think\ndescription: >-\n  Thinks.\nenabled: true\nworker: triage\ntrigger:\n  case: {kind: failed_backup, stage: investigate, on_record: watch}\nautonomy: propose\nmax_autonomy: propose\nbudget:\n  day_usd: 1\n",
 		"chain-think/v1/spec.yaml":   "run:\n  command: python3 /opt/flotilla/ops/thinker.py --fleet demo\n  workdir: .\n  timeout: 3m\nstations:\n  think:\n    model: flash\n    prompts: {system: system.md}\n",
 		"chain-think/v1/system.md":   "You think.\n",
 		"chain-verify/routine.yaml":  "fleet: demo\nroutine: chain-verify\ndescription: >-\n  Checks a thing.\nenabled: true\nworker: ops-read\ntrigger:\n  check: {verify: backup_newer_than_execution}\nautonomy: record\nbudget:\n  day_usd: 0\n",
+		"flows/.generated":           "# The routine folders the flows generate (RFC-0016). flotilla flow expand writes this file; do not edit it.\nchain-act\nchain-monitor\nchain-think\nchain-verify\n",
 		"chain-verify/v1/spec.yaml":  "run:\n  command: env THE_ACTION=backup.rerun python3 /opt/flotilla/ops/check.py\n  workdir: .\n  timeout: 1m\n",
 	}
 	if len(exp.Files) != len(want) {
@@ -378,7 +379,7 @@ func TestDriftNamesTheFileAndTheLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := exp.Drift(fleetDir); len(d) != 9 {
+	if d := exp.Drift(fleetDir); len(d) != 10 {
 		t.Fatalf("nothing is committed yet: every generated file is missing, got %v", d)
 	}
 	if err := exp.Write(fleetDir); err != nil {
@@ -562,5 +563,32 @@ func TestPackCoversFlows(t *testing.T) {
 	}
 	if pack() == with {
 		t.Fatal("the flows are part of the pack")
+	}
+}
+
+// A routine that plans an action always carries a cap: the step's, else its block's. Without it a flow's routine could be
+// raised past what its block allows. Monitors, verify and learning blocks never plan (dispatch.DecidePlan is reached only
+// from a case trigger), so their routines keep no max_autonomy line.
+func TestActingRoutinesAlwaysCarryACap(t *testing.T) {
+	fleetDir, lib := fixture(t)
+	exp, err := expand(t, fleetDir, lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(exp.Files["chain-think/routine.yaml"]); !strings.Contains(got, "autonomy: propose\nmax_autonomy: propose\n") {
+		t.Errorf("a stage step with no cap of its own takes its block's:\n%s", got)
+	}
+	put(t, fleetDir, "flows/chain/flow.yaml", strings.Replace(goodFlow, "    max_autonomy: record\n", "", 1))
+	exp, err = expand(t, fleetDir, lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(exp.Files["chain-act/routine.yaml"]); !strings.Contains(got, "autonomy: record\nmax_autonomy: auto\n") {
+		t.Errorf("an act step takes its block's cap:\n%s", got)
+	}
+	for _, n := range []string{"chain-monitor", "chain-verify"} {
+		if strings.Contains(string(exp.Files[n+"/routine.yaml"]), "max_autonomy") {
+			t.Errorf("%s never plans: no cap line", n)
+		}
 	}
 }

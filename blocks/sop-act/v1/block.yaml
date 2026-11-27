@@ -14,6 +14,7 @@ params:
 env: [VM_URL, BACKUP_INSTANCE, FLOTILLA_CASE]
 model: none
 # a flow lowers the cap; the registry's action and the host's caps still apply
+# a routine that plans always carries this cap in its routine.yaml (the step may lower it)
 max_autonomy: auto
 timeout: 1m
 command: python3 /opt/flotilla/ops/sop_act.py --fleet {{fleet}}

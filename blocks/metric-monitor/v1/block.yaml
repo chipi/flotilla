@@ -16,6 +16,7 @@ params:
 # the worker's own: VictoriaMetrics, the instance the metric is read for, and the case's target
 env: [VM_URL, BACKUP_INSTANCE, BACKUP_TARGET]
 model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
 max_autonomy: record
 timeout: 1m
 command: python3 /opt/flotilla/ops/backup_monitor.py

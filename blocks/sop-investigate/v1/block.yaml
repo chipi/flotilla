@@ -17,6 +17,7 @@ params:
 env: [FLOTILLA_CASE, FLOTILLA_STATIONS]
 # the block ships the station: harness, prompts, tools and limits (ADR-0020 section 6); a flow names the model alias
 model: station
+# a routine that plans always carries this cap in its routine.yaml (the step may lower it)
 max_autonomy: propose
 autonomy: propose
 budget_usd: 1

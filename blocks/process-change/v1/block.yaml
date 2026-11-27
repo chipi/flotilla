@@ -14,6 +14,7 @@ params:
   file: {kind: repo_file, env: PROCESS_CHANGE_FILE}
 env: [FLOTILLA_CASE, FLOTILLA_VERSION]
 model: none
+# a routine that plans always carries this cap in its routine.yaml (the step may lower it)
 max_autonomy: propose
 autonomy: propose
 timeout: 1m

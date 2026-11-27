@@ -276,6 +276,18 @@ Step 1 is on the branch `rfc16/blocks`. Where the build fixed what the sketch le
   expansion (a Go test and `make lint`). The installation's operator chain was expanded from its own
   `flows/` into a fresh folder, and `diff -r` against the live folders shows nothing but the added
   `flows/`.
+- **The cap rule.** A block's `max_autonomy` is written into the generated `routine.yaml` for every
+  act and stage step (the step's, if it lowers it), so a routine that plans an action can never
+  be raised past its block. A monitor, a check and a learning routine never plan: only a case
+  trigger reaches policy (`DecidePlan`), and a monitor's report is detections only. Their
+  `routine.yaml` has a cap line only when the step writes one.
+- **The manifest.** `flows/.generated` lists the routine folders the flows own, and is part of the
+  fleet's pack. `-check` flags a listed folder that is no longer a step, a file beside
+  `routine.yaml`, a folder that is not a version, and a symlinked routine or version folder. A step
+  whose name is a routine folder not in the manifest is refused, so a flow never takes over a
+  hand-written routine by its name alone: list the folder to adopt it, and its bytes must then equal
+  the expansion.
+- **Values after a flag.** A value of a param written as `arg:` may not start with a dash.
 - **Not built:** the `knowledge:` key of a flow (the fleet's `knowledge:` in `fleet.yaml` is
   unchanged); a freeze of block folders (the expansion check is what stops an edit under a pin); the
   shadow of a flow's routines.

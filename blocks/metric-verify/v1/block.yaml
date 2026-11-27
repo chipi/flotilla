@@ -15,6 +15,7 @@ params:
   metric: {kind: metric_name, env: BACKUP_METRIC}
 env: [VM_URL, BACKUP_INSTANCE]
 model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
 max_autonomy: record
 timeout: 1m
 command: python3 /opt/flotilla/ops/verify_backup.py

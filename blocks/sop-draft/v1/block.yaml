@@ -15,6 +15,7 @@ params:
   flows: {kind: flow_list, arg: --kinds}
 env: [FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE]
 model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
 max_autonomy: record
 timeout: 2m
 # the spec tail's explain texts state these
