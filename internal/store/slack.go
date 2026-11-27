@@ -72,6 +72,31 @@ func (s *Store) UseAsk(ctx context.Context, nonce, by, outcome string) error {
 	return nil
 }
 
+// ErrCapReached is UseAskCapped's refusal: the day's approvals from Slack are at the cap.
+var ErrCapReached = errors.New("the daily cap of approvals from Slack is used")
+
+// UseAskCapped spends an ask as an approval only while fewer than max approvals since the given time exist. The
+// count and the mark are one statement, so two clicks at cap-1 cannot both pass.
+func (s *Store) UseAskCapped(ctx context.Context, nonce, by, outcome, since string, max int) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE slack_asks SET decided_at = ?, decided_by = ?, outcome = ? WHERE nonce = ? AND decided_at = ''
+		AND (SELECT COUNT(*) FROM slack_asks WHERE outcome = 'approved' AND decided_at >= ?) < ?`,
+		s.now().Format(ts), by, outcome, nonce, since, max)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	var decided string
+	if err := s.db.QueryRowContext(ctx, `SELECT decided_at FROM slack_asks WHERE nonce = ?`, nonce).Scan(&decided); err != nil {
+		return err
+	}
+	if decided != "" {
+		return ErrAskUsed
+	}
+	return ErrCapReached
+}
+
 // SlackApprovalsSince counts the plans approved from Slack since a time, for the daily cap.
 func (s *Store) SlackApprovalsSince(ctx context.Context, since string) (int, error) {
 	var n int

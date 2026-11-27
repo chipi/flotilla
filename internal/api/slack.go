@@ -177,7 +177,10 @@ func (s *Server) RelayedApproval(ctx context.Context, host string, b hostwire.Ap
 		} else if !ok {
 			return ans(false, "refused: %s", why)
 		}
-		if err := s.Store.UseAsk(ctx, b.Nonce, c.Name, "approved"); err != nil {
+		// the cap is checked again as the ask is spent: two clicks at cap-1 must not both pass
+		if err := s.Store.UseAskCapped(ctx, b.Nonce, c.Name, "approved", s.slackDayStart(), s.Slack.Cap()); errors.Is(err, store.ErrCapReached) {
+			return ans(false, "refused: Slack's daily cap (%d) is used; answer in the UI or the CLI", s.Slack.Cap())
+		} else if err != nil {
 			return ans(false, "refused: %v", err)
 		}
 		if _, err := s.give(ctx, c, "slack", ask.CaseID, AnsApprove, AnswerIn{Plan: ask.PlanHash, Note: "from Slack"}); err != nil {

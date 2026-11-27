@@ -148,6 +148,20 @@ func (s *Server) Answers(ctx context.Context, c Caller, via, id string) (AnswerS
 	return set, nil
 }
 
+// slackDayStart is the start of the daily cap's day (in the scheduler's location), as the store writes times.
+func (s *Server) slackDayStart() string {
+	loc := time.UTC
+	if s.Sched != nil && s.Sched.Location != nil {
+		loc = s.Sched.Location
+	}
+	now := time.Now()
+	if s.Sched != nil {
+		now = s.Sched.Clock()
+	}
+	n := now.In(loc)
+	return time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc).UTC().Format(store.TimeFormat)
+}
+
 // answerPolicy is whether the caller may give this answer through via, and why not. It holds the limits that belong
 // to a connector rather than to the answer: Slack approves only a low or medium risk, reversible or regenerable
 // plan, bound to a plan hash, under its daily cap (ADR-0005 decision 8). Rejecting is not capped.
@@ -171,17 +185,7 @@ func (s *Server) answerPolicy(ctx context.Context, cs store.Case, c Caller, via,
 	if ok, why := s.SlackApprovable(plans[len(plans)-1].Action); !ok {
 		return false, why, nil
 	}
-	loc := time.UTC
-	if s.Sched != nil && s.Sched.Location != nil {
-		loc = s.Sched.Location
-	}
-	now := time.Now()
-	if s.Sched != nil {
-		now = s.Sched.Clock()
-	}
-	n := now.In(loc)
-	day := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc)
-	used, err := s.Store.SlackApprovalsSince(ctx, day.UTC().Format(store.TimeFormat))
+	used, err := s.Store.SlackApprovalsSince(ctx, s.slackDayStart())
 	if err != nil {
 		return false, "", err
 	}
@@ -275,7 +279,7 @@ func (s *Server) AckNotice(ctx context.Context, c Caller, via, id string) error 
 		return problem(409, "case %s is %s: only a watching case has a notice to acknowledge", id, cs.Status)
 	}
 	switch _, err := s.Store.AckNotice(ctx, id, c.Name); {
-	case errors.Is(err, store.ErrNoNotice), errors.Is(err, store.ErrNoticeAcked):
+	case errors.Is(err, store.ErrNoNotice), errors.Is(err, store.ErrNoticeAcked), errors.Is(err, store.ErrNotWatching):
 		return problem(409, "case %s: %v", id, err)
 	case err != nil:
 		return err
@@ -298,8 +302,14 @@ func (s *Server) caseAnswer(w http.ResponseWriter, r *http.Request, c Caller) {
 		Answer string `json:"answer"`
 		AnswerIn
 	}
-	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "the body is not a JSON answer: " + err.Error()})
+		return
+	}
 	body.Plan, body.Reason = strings.TrimSpace(body.Plan), strings.TrimSpace(body.Reason)
+	if n := strings.TrimSpace(body.Note); n != "" {
+		body.Note = "via api: " + n // a note from HTTP cannot pass for the Slack connector's
+	}
 	out, err := s.Answer(r.Context(), c, "api", r.PathValue("id"), body.Answer, body.AnswerIn)
 	writeAction(w, err, 200, out)
 }
@@ -313,7 +323,9 @@ func (s *Server) resolveSlackActor(ctx context.Context, slackID, pinned string) 
 		return "", err
 	}
 	if known {
-		if id := p.IDs["flotilla"]; id != "" && id != pinned {
+		// the directory's flotilla id is a bare user name like the pin and the users table (names compare exactly); the
+		// ledger's "user:" actor form is the same person
+		if id := strings.TrimPrefix(p.IDs["flotilla"], "user:"); id != "" && id != pinned {
 			return "", problem(403, "the directory says this Slack user is flotilla user %s, the pin says %s", id, pinned)
 		}
 	}
