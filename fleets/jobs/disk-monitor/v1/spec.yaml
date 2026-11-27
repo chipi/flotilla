@@ -1,0 +1,4 @@
+run:
+  command: env MONITOR_ACTION=disk.cleanup_known MONITOR_METRIC=node_filesystem_avail_bytes MONITOR_SIZE_METRIC=node_filesystem_size_bytes MONITOR_GROUP_BY=instance,mountpoint MONITOR_EXCLUDE='{"fstype":"tmpfs|overlay|squashfs|autofs|devtmpfs","mountpoint":"/run/.*|/boot/efi"}' MONITOR_CLEAR_AFTER=2 MONITOR_STEP=10m python3 /opt/flotilla/ops/metric_monitor.py --kind disk_low
+  workdir: .
+  timeout: 1m

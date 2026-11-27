@@ -1,0 +1,4 @@
+run:
+  command: python3 /opt/flotilla/ops/sop_act.py --fleet jobs
+  workdir: .
+  timeout: 1m

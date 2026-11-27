@@ -1,0 +1,13 @@
+fleet: jobs
+routine: disk-monitor
+description: >-
+  Reads a filesystem's free ratio (a metric of available bytes over a metric of size bytes, both read) per group of labels and reports one detection for each group below the threshold the registry action declares as its free_ratio_below precondition. A series that matches an exclusion is left out, and a group stays reported until clear_after readings in a row are clear. flotillad opens a case per group and clears it when a run no longer reports it. Code only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  every: 10m
+detects: [disk_low]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 25m

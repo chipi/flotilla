@@ -223,6 +223,10 @@ func Decide(p Plan, s State, lim Limits) Decision {
 		caps = append(caps, spec.AutonomyPropose)
 		say("a change to the repo: at most propose, a person approves it")
 	}
+	if s.Action.RecordOnly() {
+		caps = append(caps, spec.AutonomyRecord)
+		say("record-only action: nothing carries it out, at most record")
+	}
 	if s.FailedHour >= lim.BreakerFailures {
 		caps = append(caps, spec.AutonomyPropose)
 		say("circuit breaker: %d failed or unknown executions in the last hour: at most propose", s.FailedHour)
@@ -245,6 +249,9 @@ func Decide(p Plan, s State, lim Limits) Decision {
 		if lowest(c) != spec.AutonomyRecord {
 			above = append(above, c)
 		}
+	}
+	if s.Action.RecordOnly() {
+		above = append(above, spec.AutonomyPropose) // a person would be shown it, never run it
 	}
 	unrecorded := lowest(above...)
 

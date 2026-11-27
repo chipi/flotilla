@@ -49,6 +49,35 @@ def query(expr, timeout=20):
     return float(result[0]["value"][1])
 
 
+def _post(path, params, timeout):
+    url = env("VM_URL").rstrip("/") + path
+    body = urllib.parse.urlencode(params).encode()
+    with urllib.request.urlopen(urllib.request.Request(url, data=body, method="POST"), timeout=timeout) as r:
+        out = json.load(r)
+    if out.get("status") != "success":
+        raise RuntimeError(f"VictoriaMetrics: {out}")
+    return out["data"]["result"]
+
+
+def query_vector(expr, timeout=20):
+    """One instant query, every series: [(labels, value)]. NaN and infinite values are dropped (a ratio of nothing is no reading)."""
+    out = []
+    for s in _post("/api/v1/query", {"query": expr}, timeout):
+        v = float(s["value"][1])
+        if v == v and v not in (float("inf"), float("-inf")):
+            out.append((s["metric"], v))
+    return out
+
+
+def query_matrix(expr, start, end, step, timeout=30):
+    """A range query, series by series: [(labels, [(time, value)])], NaN and infinite points dropped."""
+    out = []
+    for s in _post("/api/v1/query_range", {"query": expr, "start": int(start), "end": int(end), "step": int(step)}, timeout):
+        pts = [(float(t), float(v)) for t, v in s["values"]]
+        out.append((s["metric"], [(t, v) for t, v in pts if v == v and v not in (float("inf"), float("-inf"))]))
+    return out
+
+
 def rerun_action():
     """The registry action that reruns the backup (BACKUP_ACTION)."""
     return env("BACKUP_ACTION")

@@ -486,6 +486,40 @@
       "spec.yaml": "0732a65bc539ac22b4483071a251c7a614e24f187ce7ee04a03cc77c6e2c6873"
     }
   },
+  "jobs/disk-act@v1": {
+    "routine_hash": "9b37d633eb10",
+    "version_hash": "a56655d81777334c1ffbdbd0d5fb7a617e2c212e8d8a2ce27c5514bf96d1ab60",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "86440db239540760bc21ae13ec2e3ec5fb9f32b64ef3d92f9cfebb6cc4011e76"
+    }
+  },
+  "jobs/disk-investigate@v1": {
+    "routine_hash": "8c334b1be362",
+    "version_hash": "3bac7f96f3fa6e359069cb7f71b5619d3e69dcc104e6919bbe077fc667d52936",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "401b91585cf45fc591b47da85c1d69db65efd1c265d52dfcccd6e01f125a8d32",
+      "system.md": "c5811f23120ed880d9ab6460ad3b63b3948f28715be5ea901dbc381f482b658f",
+      "task.md": "10188932d25e69101776446ca4c55be1de70ddae70f43802241bbd360200df4e"
+    }
+  },
+  "jobs/disk-monitor@v1": {
+    "routine_hash": "a413d9401301",
+    "version_hash": "578d57e08d07449533d3c0a33765da8a08b6d740b5606469077e44a824e9dea6",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "cdc7208e4d57f90150e92966a872141354ada1314d4361ce9d5c30dd0bd4fa46"
+    }
+  },
+  "jobs/disk-verify@v1": {
+    "routine_hash": "c68f5117b371",
+    "version_hash": "3bd27b20c03741ea63192386f68a040b33166e5c3e13ec785d276b2377c9c640",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "dba40aaece3229e8683d2b115812b22bef60c868a9b2b0919a1a0a6c94d4fa67"
+    }
+  },
   "jobs/rerun-backup@v1": {
     "routine_hash": "52bee73a147b",
     "version_hash": "4ce6d2da9b9aaf8b682b41dcd69e264e8c493958ef444aa27642b262bc4b7b12",

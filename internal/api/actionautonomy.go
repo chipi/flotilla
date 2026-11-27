@@ -70,6 +70,9 @@ func (s *Server) SetActionAutonomy(ctx context.Context, c Caller, via, name, lev
 		return problem(400, "autonomy must be record, propose or auto")
 	}
 	if spec.Rank(level) > spec.Rank(a.MaxAutonomy()) {
+		if a.RecordOnly() {
+			return problem(400, "%s is record-only (nothing carries it out): at most record", name)
+		}
 		return problem(400, "%s cannot be undone (reversible: no): at most propose", name)
 	}
 	cur, err := s.Store.Control(ctx, actionSubject(name), "autonomy")

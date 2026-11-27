@@ -1,0 +1,11 @@
+fleet: jobs
+routine: disk-verify
+description: >-
+  The check routine for a free-ratio action's registry check (disk_free_above_threshold): while a case is in checking, it reads the free ratio of the case's own mountpoint and reports verified once it is back at or above the threshold the registry action declares as its free_ratio_below precondition. A read only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: disk_free_above_threshold}
+autonomy: record
+budget:
+  day_usd: 0

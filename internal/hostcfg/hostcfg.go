@@ -17,10 +17,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,7 +56,34 @@ type Param struct {
 // PreKinds are the precondition kinds the agent can check (internal/hostexec), each with its exact
 // arguments; a config naming another is refused at load, not found out at execution.
 var PreKinds = map[string][]string{
-	"launchd_not_running": {"label"},
+	"launchd_not_running":   {"label"},
+	"disk_free_ratio_below": {"path", "ratio"},
+	"path_exists":           {"path"},
+}
+
+var pathArgRe = regexp.MustCompile(`^/[A-Za-z0-9._/-]{0,199}$`)
+
+// PathArg is a precondition's path: absolute and clean (no .., no //, no space or quote), the only paths a host's
+// config may name for a read.
+func PathArg(p string) (string, error) {
+	if !pathArgRe.MatchString(p) || strings.Contains(p, "..") || strings.Contains(p, "//") {
+		return "", fmt.Errorf("path %q: a clean absolute path (letters, digits and . _ / -)", p)
+	}
+	return p, nil
+}
+
+// DiskRatioArgs reads disk_free_ratio_below's arguments: a clean absolute path and a ratio above 0 and at most 1 (a
+// fraction of the filesystem's size, 0.15 for 15%).
+func DiskRatioArgs(args map[string]string) (string, float64, error) {
+	path, err := PathArg(args["path"])
+	if err != nil {
+		return "", 0, err
+	}
+	r, err := strconv.ParseFloat(args["ratio"], 64)
+	if err != nil || math.IsNaN(r) || math.IsInf(r, 0) || r <= 0 || r > 1 {
+		return "", 0, fmt.Errorf("ratio %q: a fraction above 0 and at most 1, such as 0.15", args["ratio"])
+	}
+	return path, r, nil
 }
 
 // Pre is a local precondition the agent checks before it runs (ADR-0006 §7).
@@ -270,6 +299,17 @@ func validAction(name string, a Action) error {
 		for _, k := range args {
 			if p.Args[k] == "" {
 				bad("precondition %s needs %s", p.Kind, k)
+			}
+		}
+		// The disk kinds' values are checked at load, as the agent checks them again before it reads.
+		switch p.Kind {
+		case "disk_free_ratio_below":
+			if _, _, err := DiskRatioArgs(p.Args); err != nil {
+				bad("precondition %s: %v", p.Kind, err)
+			}
+		case "path_exists":
+			if _, err := PathArg(p.Args["path"]); err != nil {
+				bad("precondition %s: %v", p.Kind, err)
 			}
 		}
 	}

@@ -30,6 +30,8 @@ func actionsStub(name string) (ActionInfo, bool) {
 		return ActionInfo{Verify: "x", ForKinds: []string{"failed_backup"}}, true
 	case "disk.cleanup":
 		return ActionInfo{Pre: []string{"x"}, ForKinds: []string{"disk_low"}}, true
+	case "disk.cleanup_known":
+		return ActionInfo{Pre: []string{"free_ratio_below(0.15)"}, Verify: "disk_free_above_threshold", ForKinds: []string{"disk_low"}}, true
 	}
 	return ActionInfo{}, false
 }
@@ -514,18 +516,21 @@ code: [ops/drafter.py]
 	}
 }
 
+// The generator quotes nothing but a label match, which is one single-quoted JSON value of characters that are inert there
+// (disk_flow_test.go); every other kind is still limited to characters a shell passes through unchanged.
 func TestShellUnsafeValuesAreRefused(t *testing.T) {
 	fleetDir, lib := fixture(t)
-	put(t, fleetDir, "flows/chain/flow.yaml", strings.Replace(goodFlow, "metric: some_metric}", "metric: some_metric, skip: {fstype: 'tmpfs|overlay'}}", 1))
+	put(t, fleetDir, "flows/chain/flow.yaml", strings.Replace(goodFlow, "metric: some_metric}", "metric: some_metric, skip: {fstype: tmpfs}, other: 'a|b'}", 1))
+	put(t, lib, "probe/v1/block.yaml", strings.Replace(goodBlock, "env: [VM_URL]", "  other: {kind: string, env: THE_OTHER, optional: true}\nenv: [VM_URL]", 1))
 	if _, err := expand(t, fleetDir, lib); err == nil || !strings.Contains(err.Error(), "the value goes on a command line") {
-		t.Fatalf("the generator quotes nothing: %v", err)
+		t.Fatalf("a string is not quoted: %v", err)
 	}
 	put(t, fleetDir, "flows/chain/flow.yaml", strings.Replace(goodFlow, "metric: some_metric}", "metric: some_metric, skip: {fstype: tmpfs}}", 1))
 	exp, err := expand(t, fleetDir, lib)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(exp.Files["chain-monitor/v1/spec.yaml"]), "THE_SKIP=fstype=tmpfs ") {
+	if !strings.Contains(string(exp.Files["chain-monitor/v1/spec.yaml"]), `THE_SKIP='{"fstype":"tmpfs"}' `) {
 		t.Fatal(string(exp.Files["chain-monitor/v1/spec.yaml"]))
 	}
 }

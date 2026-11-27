@@ -3,6 +3,7 @@ package spec
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -119,24 +120,7 @@ func renderParamValue(p Param, v any, flowKinds map[string]string) (string, erro
 		}
 		return strings.Join(out, ","), nil
 	case KindLabelMatch:
-		m, ok := v.(map[string]any)
-		if !ok || len(m) == 0 {
-			return "", fmt.Errorf("%v: a map of label name to match", v)
-		}
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		var out []string
-		for _, k := range keys {
-			s, ok := m[k].(string)
-			if !ok || !labelNameRe.MatchString(k) || s == "" {
-				return "", fmt.Errorf("%v: label %s needs a text match", v, k)
-			}
-			out = append(out, k+"="+s)
-		}
-		return safe(strings.Join(out, ","))
+		return labelMatchJSON(v)
 	case KindFlowList:
 		l, ok := v.([]any)
 		if !ok || len(l) == 0 {
@@ -158,8 +142,42 @@ func renderParamValue(p Param, v any, flowKinds map[string]string) (string, erro
 	return renderWatchParam(p, v)
 }
 
-// command is the run's command line: the params' environment, the block's command, the params' flags.
-func command(b *Block, fleet string, with map[string]any, flowKinds map[string]string) (string, error) {
+// matchRegexRe is what a label match's regex may hold: what a Prometheus regex needs (anchors, groups, classes, alternation, the
+// quantifiers), never a quote, a backslash, a space, a brace or a control character. The block checks it again before it queries.
+var matchRegexRe = regexp.MustCompile(`^[A-Za-z0-9._/:@%+=,|^$*()\[\]?-]{1,200}$`)
+
+// labelMatchJSON renders a label match ({label: regex}) as one single-quoted JSON object, keys sorted, for the shell to hand to
+// the script in one environment variable (or one flag value) unchanged. This is the one kind the generator quotes, and it can: the
+// label names and every regex are limited to characters that mean nothing inside single quotes, and none is a single quote.
+func labelMatchJSON(v any) (string, error) {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) == 0 {
+		return "", fmt.Errorf("%v: a map of label name to a regex", v)
+	}
+	out := make(map[string]string, len(m))
+	for k, x := range m {
+		s, ok := x.(string)
+		if !ok || !labelNameRe.MatchString(k) || strings.HasPrefix(k, "__") {
+			return "", fmt.Errorf("label %q: a label name (not __name__) with a text match", k)
+		}
+		if !matchRegexRe.MatchString(s) {
+			return "", fmt.Errorf("label %s: %q: a regex of letters, digits and . _ / : @ %% + = , | ^ $ * ( ) [ ] ? - only, up to 200 characters", k, s)
+		}
+		if _, err := regexp.Compile(s); err != nil {
+			return "", fmt.Errorf("label %s: %q is not a regex: %v", k, s, err)
+		}
+		out[k] = s
+	}
+	raw, err := json.Marshal(out) // sorted keys, compact; none of the allowed characters is escaped
+	if err != nil {
+		return "", err
+	}
+	return "'" + string(raw) + "'", nil
+}
+
+// command is the run's command line: the params' environment, the block's command, the params' flags. {{fleet}} is the fleet's
+// name and {{case_kind}} the case kind the step works.
+func command(b *Block, fleet, caseKind string, with map[string]any, flowKinds map[string]string) (string, error) {
 	var env, args []string
 	for _, p := range b.Params {
 		v, given := with[p.Name]
@@ -176,7 +194,7 @@ func command(b *Block, fleet string, with map[string]any, flowKinds map[string]s
 			args = append(args, p.Arg+" "+s)
 		}
 	}
-	cmd := strings.ReplaceAll(b.Command, "{{fleet}}", fleet)
+	cmd := strings.ReplaceAll(strings.ReplaceAll(b.Command, "{{fleet}}", fleet), "{{case_kind}}", caseKind)
 	if len(env) > 0 {
 		cmd = "env " + strings.Join(env, " ") + " " + cmd
 	}
@@ -192,7 +210,7 @@ func (x *expander) render(st FlowStep, es ExpandedStep, flowKinds map[string]str
 	b := es.Block
 	fleet := x.ff.Fleet
 	files := map[string][]byte{}
-	cmd, err := command(b, fleet, st.With, flowKinds)
+	cmd, err := command(b, fleet, es.CaseKind, st.With, flowKinds)
 	if err != nil {
 		return nil, err
 	}

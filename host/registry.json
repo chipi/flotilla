@@ -14,6 +14,18 @@
       "timeout": "30m"
     },
     {
+      "name": "disk.cleanup_known",
+      "executor": "record",
+      "for_kinds": ["disk_low"],
+      "params": {"host": {"kind": "target_host"}},
+      "risk": "low",
+      "reversible": "yes",
+      "pre": ["free_ratio_below(0.15)"],
+      "check": {"verify": "disk_free_above_threshold", "within": "60m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "30m"
+    },
+    {
       "name": "repo.process_change",
       "executor": "repo",
       "for_kinds": ["process_change"],

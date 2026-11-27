@@ -102,6 +102,11 @@ class H(BaseHTTPRequestHandler):
                               "result": [{"metric": {}, "value": [0, value]}]}}).encode()
             self._done(200, out)
             return
+        if self.path == "/api/v1/query_range":
+            # A monitor that keeps hysteresis reads its last readings (the example disk flow's clear_after): the stand-in has no history
+            print(f"{NAME} QUERY_RANGE {body.decode('utf-8', 'replace')}", flush=True)
+            self._done(200, json.dumps({"status": "success", "data": {"resultType": "matrix", "result": []}}).encode())
+            return
         if self.path.endswith("/chat/completions"):
             auth = self.headers.get("Authorization", "")
             print(f"{NAME} CHAT auth={'bearer' if auth.startswith('Bearer ') and len(auth) > 7 else 'none'} "

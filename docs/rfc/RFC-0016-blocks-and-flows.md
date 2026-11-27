@@ -291,3 +291,69 @@ Step 1 is on the branch `rfc16/blocks`. Where the build fixed what the sketch le
 - **Not built:** the `knowledge:` key of a flow (the fleet's `knowledge:` in `fleet.yaml` is
   unchanged); a freeze of block folders (the expansion check is what stops an edit under a pin); the
   shadow of a flow's routines.
+
+### 12.1 Disk step 1 (2026-11-27)
+
+The prerequisites of section 8 and the disk flow at record, in the public repo. The installation's own
+flow, its thresholds and its excluded mounts are in its private fleets repo.
+
+- **New block versions, never edits.** `metric-monitor@2`, `sop-act@2`, `sop-investigate@2` and
+  `metric-verify@2` are new folders. Their `@1` folders are byte-identical, backup still pins them,
+  and its expansion and the shipped goldens are unchanged.
+  - `metric-monitor@2` takes `size_metric`, `group_by`, `exclude`, `clear_after` and `step`, and
+    runs `ops/metric_monitor.py`. Its one form is the free ratio, avail over size, both read; a
+    series of no size is dropped.
+  - `sop-act@2` and `sop-investigate@2` make the backup-only params optional (`metric`,
+    `instance`) and add the disk's two metric names. `sop-investigate@2`'s prompt tells the
+    station it may read a `mountpoint`.
+  - `metric-verify@2` runs `ops/verify_free_ratio.py`.
+- **The threshold stays in the registry.** The monitor, the acting step's re-check and the verify all
+  read the action's `free_ratio_below(<fraction>)` precondition for the run's stage. A flow names the
+  action and never the number.
+- **Quoting.** The generator still quotes nothing, except for a `label_match`. That param is
+  rendered as one single-quoted JSON object, keys sorted, in one environment variable
+  (`MONITOR_EXCLUDE`). Its label names and regexes are limited to characters that mean nothing
+  inside single quotes, and none is a single quote, a double quote, a backslash, a space, a brace
+  or a control character. `-check` refuses anything else, and the block validates the value again
+  before it builds a query. A test runs the rendered command through a real shell. A block's
+  command may also name `{{case_kind}}`.
+- **Hysteresis keeps no state.** `clear_after: N` reads the last N readings from the metrics' own
+  history, one per `step`. A group is reported while it is below the threshold now or in any of
+  them, so it clears after N clear readings in a row, and a disk that hovers at the threshold is
+  one case. `step` is the step's `every`; the flow states it twice, and nothing checks that they
+  agree.
+- **One case per group.** The case target is `host:<instance><mountpoint>`, for example
+  `host:host-01/data`, and the root mountpoint is `host:host-01/`. Policy and the SOP matcher read
+  the host as everything after `host:`, so a hold on `host:host-01` does not cover its disk cases.
+  That is harmless while nothing runs. **Step 3 decides it:** an action that executes needs the
+  host split from the mountpoint.
+  - A group whose labels cannot make a target (a space in a mountpoint, a character outside letters,
+    digits and `. _ / -`) is named in the run's summary and not reported. Exclude such a mount or
+    accept that it is unmonitored.
+  - The monitor reports at most 50 groups, the fullest first, because flotillad refuses a longer
+    report.
+- **The disk fact.** `sop_act` re-checks `free_ratio_below` with a fresh read of the case's own
+  instance and mountpoint. No reading is unknown and escalates; it is never "no longer holds".
+  `sop_investigate.read_metric` takes an optional `mountpoint`, validated as a plain path. A read
+  without it is the same expression as before.
+- **Host agent.** `hostexec` knows `disk_free_ratio_below` (`path`, `ratio`) and `path_exists`
+  (`path`) beside `launchd_not_running`. The first reads statfs, with no command, and holds while the
+  filesystem has less than `ratio` of its size available. Both take only a clean absolute path, are
+  checked when the host's config loads, and treat a read that fails as unknown (nothing runs).
+- **A record-only action.** The registry has no argv: it names a fix, and each host's own config says
+  how it runs. `disk.cleanup_known` therefore holds its threshold (`pre`) and window (`check`) and
+  has `executor: record`, a fourth executor beside host, repo and routine. Policy takes `record`
+  as a cap for it, whatever the ceilings say, and what it would have done is shown as a proposal.
+  Its autonomy can never be promoted. Step 3 changes the executor when a cleanup exists; until
+  then the action cannot run, even if a host's config named it.
+- **The example flow** is `fleets/jobs/flows/disk`: four steps at record, with `on_record: watch`
+  on the acting and the investigate steps. Its folders are committed and checked like the backup
+  flow's. A learning block's `flows:` list is the fleet's to extend (`sop-draft` learns from the
+  flows it names); the example fleet has none.
+- **Order of deploy.** The record executor is new to flotillad's registry loader. An installation's
+  registry may declare `executor: record` only after the flotillad image that carries this change is
+  running, or flotillad refuses its registry at start.
+- **Not covered:** a shadow of the disk routines; a check that a flow's `step` equals its
+  monitor's `every`; a minimum on a `count` param (the block refuses 0 when it runs, not at
+  `-check`); a read of `node_filesystem_readonly` (read-only images are excluded by mountpoint
+  instead); a mount with a space in its path.

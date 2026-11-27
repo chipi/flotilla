@@ -26,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "runtime"))
 import common  # noqa: E402
+import free_ratio  # noqa: E402
 import rerun_backup  # noqa: E402
 import sops  # noqa: E402
 
@@ -33,6 +34,30 @@ INVESTIGATE = "investigate"
 INVESTIGATED = "investigated: "   # how an investigated plan's detail begins; the SOP draft reads it
 # The facts a registry condition needs, fetched only when the action carries that condition: name -> (fact, how to read it).
 FACTS = {"backup_age_above": ("age", common.backup_age_hours)}
+
+
+def disk_free_ratio(case, query=None):
+    """The free ratio of the case's own mountpoint (its target is host:<instance><mountpoint>), read now; None when the target is not
+    one or the disk reports nothing. The metric names are the node exporter's, or DISK_AVAIL_METRIC and DISK_SIZE_METRIC."""
+    where = free_ratio.decode_target((case or {}).get("target"))
+    if where is None:
+        return None
+    avail = os.environ.get("DISK_AVAIL_METRIC") or free_ratio.AVAIL_METRIC
+    size = os.environ.get("DISK_SIZE_METRIC") or free_ratio.SIZE_METRIC
+    return free_ratio.read_ratio(where[0], where[1], avail, size, query)
+
+
+disk_free_ratio.needs_case = True   # a fact read from the case, not from the environment alone
+FACTS["free_ratio_below"] = ("free_ratio", disk_free_ratio)
+
+
+def _free_ratio_below(arg, facts):
+    return facts["free_ratio"] < float(arg)
+
+
+# What this routine evaluates: the backup's, and the disk's. A fact that is None (the disk reports nothing) is unknown, never "holds".
+CONDITIONS = dict(rerun_backup.CONDITIONS, free_ratio_below=_free_ratio_below)
+UNKNOWN_WITHOUT_READING = {"free_ratio_below"}
 
 
 def fills(name, p):
@@ -78,7 +103,7 @@ def parse_investigated(detail):
         return None
     for r in reads:
         if (not isinstance(r, dict) or not isinstance(r.get("name"), str) or not sops.METRIC.fullmatch(r["name"])
-                or not isinstance(r.get("instance", ""), str) or isinstance(r.get("value"), bool)
+                or not isinstance(r.get("instance", ""), str) or not isinstance(r.get("mountpoint", ""), str) or isinstance(r.get("value"), bool)
                 or not (r.get("value") is None or isinstance(r["value"], (int, float)))):
             return None
     return (None if m.group(1) == "no fix" else m.group(1)), reads
@@ -98,24 +123,27 @@ def params_for(action, case):
     return out
 
 
-def check(action, stage, fetch=None):
+def check(action, stage, fetch=None, case=None):
     """Re-check the action's preconditions for the stage, as rerun_backup does: ("holds", [lines]) or ("resolved", detail) when one no
-    longer holds, or ("unknown", detail) for a condition this routine does not know. A condition the host checks is recorded as its."""
+    longer holds, or ("unknown", detail) for a condition this routine does not know, or one that has no reading. A condition the host
+    checks is recorded as its. A fact whose reader sets needs_case is read from the case (the disk's mountpoint)."""
     facts, lines = {}, []
     fetch = FACTS if fetch is None else fetch
     for c in common.preconditions(action, stage):
         name, arg = common.parse(c)
-        if name not in rerun_backup.CONDITIONS and name not in fetch:
+        if name not in CONDITIONS and name not in fetch:
             return "unknown", f"precondition {name} is not one this routine knows"
-        if name in rerun_backup.CONDITIONS and rerun_backup.CONDITIONS[name] is None:
+        if name in CONDITIONS and CONDITIONS[name] is None:
             lines.append(f"{c}: the host's to check")
             continue
         key, read = fetch[name]
         if key not in facts:
-            facts[key] = read()
-        if not rerun_backup.CONDITIONS[name](arg, facts):
+            facts[key] = read(case) if getattr(read, "needs_case", False) else read()
+        if facts[key] is None and name in UNKNOWN_WITHOUT_READING:
+            return "unknown", f"{c}: no reading for the case's target"
+        if not CONDITIONS[name](arg, facts):
             return "resolved", f"{c} no longer holds"
-        lines.append(f"{c}: holds")
+        lines.append(f"{c}: holds" + (f" ({facts[key]:.1%} free)" if name == "free_ratio_below" else ""))
     return "holds", lines
 
 
@@ -131,7 +159,7 @@ def decide(case, sop_list, registry, stage, fetch=None):
         params = params_for(action, case)
     except sops.SopError as e:
         return {"outcome": "escalate", "detail": f"{sop.cite()}: refused: {e}"}
-    state, lines = check(action, stage, fetch)
+    state, lines = check(action, stage, fetch, case)
     if state == "unknown":
         return {"outcome": "escalate", "detail": f"{sop.cite()}: {lines}"}
     if state == "resolved":

@@ -55,6 +55,9 @@ const (
 	// a routine carries it out (its spec's `execute:` trigger) against the system it reaches, such as a
 	// CRM or a mail service; unlike a repo change it may earn auto, unless it cannot be undone
 	ExecRoutine = "routine"
+	// nothing carries it out: it names a fix, holds its threshold (pre) and its check window, and a plan for it is only
+	// recorded (RFC-0016 §12). The step before a cleanup is allowed to run.
+	ExecRecord = "record"
 )
 
 type Check struct {
@@ -78,7 +81,7 @@ type Action struct {
 	Check      Check            `json:"check"`
 	Limits     Limits           `json:"limits"`
 	Timeout    Duration         `json:"timeout"`            // past it, executing becomes unknown (RFC-0004 §3.5)
-	Executor   string           `json:"executor,omitempty"` // host (default), repo (ADR-0016) or routine
+	Executor   string           `json:"executor,omitempty"` // host (default), repo (ADR-0016), routine or record
 }
 
 // Repo reports whether the action changes the repo rather than a host.
@@ -88,10 +91,16 @@ func (a Action) Repo() bool { return a.Executor == ExecRepo }
 // rather than a host agent.
 func (a Action) ByRoutine() bool { return a.Repo() || a.Executor == ExecRoutine }
 
-// MaxAutonomy is the highest level the action may run at: an irreversible action, a high-risk one (a
-// message to a customer or the public, RFC-0014 §4.6) or a repo change only ever proposes (a person
-// approves each).
+// RecordOnly reports whether nothing carries the action out: its plans are recorded, never run.
+func (a Action) RecordOnly() bool { return a.Executor == ExecRecord }
+
+// MaxAutonomy is the highest level the action may run at: a record-only action never leaves record; an
+// irreversible action, a high-risk one (a message to a customer or the public, RFC-0014 §4.6) or a repo
+// change only ever proposes (a person approves each).
 func (a Action) MaxAutonomy() string {
+	if a.RecordOnly() {
+		return "record"
+	}
 	if a.Reversible == "no" || a.Risk == "high" || a.Repo() {
 		return "propose"
 	}
@@ -171,9 +180,9 @@ func validAction(a Action) error {
 		errs = append(errs, errors.New("params is required"))
 	}
 	switch a.Executor {
-	case "", ExecHost, ExecRepo, ExecRoutine:
+	case "", ExecHost, ExecRepo, ExecRoutine, ExecRecord:
 	default:
-		errs = append(errs, fmt.Errorf("executor %q: host, repo or routine", a.Executor))
+		errs = append(errs, fmt.Errorf("executor %q: host, repo, routine or record", a.Executor))
 	}
 	for name, p := range a.Params {
 		switch {

@@ -1,0 +1,14 @@
+run:
+  command: env VM_URL=http://victoria.example:8428 python3 /opt/flotilla/ops/sop_investigate.py --fleet jobs
+  workdir: .
+  timeout: 3m
+stations:
+  investigate:
+    harness: flotilla
+    model: triage-flash
+    prompts: {system: system.md, task: task.md}
+    tools: all
+    tool_names: [metric]
+    gates: []
+    limits: {max_turns: 4, timeout: 2m}
+limits: {operator: 1}

@@ -1,0 +1,4 @@
+run:
+  command: env MONITOR_ACTION=disk.cleanup_known MONITOR_METRIC=node_filesystem_avail_bytes MONITOR_SIZE_METRIC=node_filesystem_size_bytes python3 /opt/flotilla/ops/verify_free_ratio.py
+  workdir: .
+  timeout: 1m

@@ -1,0 +1,34 @@
+block: metric-monitor
+version: 2
+role: monitor
+description: >-
+  Reads a filesystem's free ratio (a metric of available bytes over a metric of size bytes, both read) per group of labels
+  and reports one detection for each group below the threshold the registry action declares as its free_ratio_below
+  precondition. A series that matches an exclusion is left out, and a group stays reported until clear_after readings in a
+  row are clear. flotillad opens a case per group and clears it when a run no longer reports it. Code only: no model, nothing
+  outward.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+# the threshold has one home, the action's precondition: the monitor, the acting step and the verify read the same number
+actions: {precondition_of: action}
+params:
+  action: {kind: registry_action, env: MONITOR_ACTION}
+  metric: {kind: metric_name, env: MONITOR_METRIC}
+  size_metric: {kind: metric_name, env: MONITOR_SIZE_METRIC}
+  # one detection per group; instance first (the case's host), then the labels that tell its parts apart, such as mountpoint
+  group_by: {kind: label_list, env: MONITOR_GROUP_BY}
+  # a series that matches any pair is left out: {label: regex}. One quoted JSON value, checked again by the script
+  exclude: {kind: label_match, env: MONITOR_EXCLUDE, optional: true}
+  # hysteresis: this many readings in a row must be clear before a case clears (default 1)
+  clear_after: {kind: count, env: MONITOR_CLEAR_AFTER, optional: true}
+  # the step's `every`, which the readings are taken at (default 10m)
+  step: {kind: string, env: MONITOR_STEP, optional: true}
+# the worker's own: VictoriaMetrics, and where the report goes
+env: [VM_URL]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/metric_monitor.py --kind {{case_kind}}
+code: [ops/metric_monitor.py, ops/free_ratio.py, ops/common.py]

@@ -930,7 +930,7 @@ func (u *Server) fleetUsesHostAgents(f *fleetSum) bool {
 	}
 	for _, name := range u.API.Registry.Actions() {
 		a, _ := u.API.Registry.Action(name)
-		if a.ByRoutine() {
+		if a.ByRoutine() || a.RecordOnly() {
 			continue
 		}
 		for _, k := range a.ForKinds {

@@ -1,0 +1,23 @@
+block: metric-verify
+version: 2
+role: verify
+description: >-
+  The check routine for a free-ratio action's registry check (disk_free_above_threshold): while a case is in checking, it
+  reads the free ratio of the case's own mountpoint and reports verified once it is back at or above the threshold the
+  registry action declares as its free_ratio_below precondition. A read only: no model, nothing outward.
+consumes: {check: true}
+emits: [verified]
+hands_to: []
+# the verify window stays on the registry action; the step names the check the action declares
+actions: {check_of: action}
+params:
+  action: {kind: registry_action, env: MONITOR_ACTION}
+  metric: {kind: metric_name, env: MONITOR_METRIC}
+  size_metric: {kind: metric_name, env: MONITOR_SIZE_METRIC}
+env: [VM_URL]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/verify_free_ratio.py
+code: [ops/verify_free_ratio.py, ops/free_ratio.py, ops/common.py]

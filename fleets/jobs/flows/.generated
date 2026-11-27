@@ -1,4 +1,8 @@
 # The routine folders the flows generate (RFC-0016). flotilla flow expand writes this file; do not edit it.
 backup-monitor
+disk-act
+disk-investigate
+disk-monitor
+disk-verify
 rerun-backup
 verify-backup

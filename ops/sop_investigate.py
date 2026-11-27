@@ -23,6 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE), "runtime"))
 import common  # noqa: E402
+import free_ratio  # noqa: E402
 import loaded  # noqa: E402
 import sop_act  # noqa: E402
 import sops  # noqa: E402
@@ -40,12 +41,15 @@ class Refused(Exception):
 
 
 def read_metric(args, query=None):
-    """One `metric` read {"name": <metric>, "instance": <label value, optional>}: (state, value, text) with the newest value in the last
-    hour. state is ok, refused (a name or label that is not plain: never sent) or failed (the query raised). A read, never a write."""
-    metric, inst = (args or {}).get("name"), (args or {}).get("instance")
-    if not isinstance(metric, str) or not READ_NAME.fullmatch(metric) or (inst is not None and not (isinstance(inst, str) and LABEL.fullmatch(inst))):
-        return "refused", None, "<read refused: name is a metric name, instance a plain label value>"
-    expr = f"max(last_over_time({metric}{{instance=\"{inst}\"}}[1h]))" if inst else f"max(last_over_time({metric}[1h]))"
+    """One `metric` read {"name": <metric>, "instance": <label value, optional>, "mountpoint": <a path, optional>}: (state, value, text)
+    with the newest value in the last hour. state is ok, refused (a name or label that is not plain: never sent) or failed (the query
+    raised). A read, never a write."""
+    metric, inst, mount = (args or {}).get("name"), (args or {}).get("instance"), (args or {}).get("mountpoint")
+    if (not isinstance(metric, str) or not READ_NAME.fullmatch(metric) or (inst is not None and not (isinstance(inst, str) and LABEL.fullmatch(inst)))
+            or (mount is not None and not (isinstance(mount, str) and free_ratio.MOUNT_RE.fullmatch(mount)))):
+        return "refused", None, "<read refused: name is a metric name, instance a plain label value, mountpoint a plain path>"
+    matchers = ([f'instance="{inst}"'] if inst else []) + ([f'mountpoint="{mount}"'] if mount else [])
+    expr = f"max(last_over_time({metric}{{{','.join(matchers)}}}[1h]))" if matchers else f"max(last_over_time({metric}[1h]))"
     try:
         v = (query or common.query)(expr)
     except Exception as e:  # a metrics outage is a finding, not a crash
@@ -75,7 +79,8 @@ class Reads:
         elif state == "failed":
             self.failed += 1
         else:
-            self.items.append({"name": args["name"], "instance": args.get("instance") or "", "value": value})
+            self.items.append({"name": args["name"], "instance": args.get("instance") or "",
+                               **({"mountpoint": args["mountpoint"]} if args.get("mountpoint") else {}), "value": value})
         loaded.record("probe", "untrusted", f"metric {str(args.get('name'))[:80]}", f"investigate read ({state})",
                       hashlib.sha256(text.encode()).hexdigest())
         return text
@@ -161,7 +166,7 @@ def run_investigate(case, environ, registry, fleet, stage="shadow", client=None,
         if kind == "escalate":
             return {"outcome": "escalate", "detail": detail(None, reason)}
         params = sop_act.params_for(action, case)
-        state, lines = sop_act.check(action, stage, fetch)
+        state, lines = sop_act.check(action, stage, fetch, case)
     except (Refused, sops.SopError) as e:
         return {"outcome": "escalate", "detail": "refused by the gates: " + sop_act.clean_model_text(e) + " " + detail(None, "").split(" | model says")[0]}
     if state != "holds":

@@ -1,0 +1,36 @@
+# The example disk chain as a flow (RFC-0016 §8, disk step 1): one case per mount of each host, at record. `flotilla flow expand fleets/jobs`
+# writes the routine folders beside this one (disk-monitor, disk-act, disk-investigate, disk-verify) from the blocks pinned here, and
+# flotillad -check refuses when they differ. The threshold and the check window are the registry action's (disk.cleanup_known: its
+# free_ratio_below precondition and its check), never repeated here; the action is record-only, so nothing runs: every case is diagnosed
+# from metrics and the operator is told (the acting step keeps its case open as watching, ADR-0023, until the monitor stops reporting it).
+flow: disk
+case_kind: disk_low
+steps:
+  - name: disk-monitor
+    use: metric-monitor@2
+    worker: ops-read
+    every: 10m
+    freshness: 25m
+    # one case per (instance, mountpoint); pseudo filesystems are not disks; a case clears after two clear readings in a row
+    with: {action: disk.cleanup_known, metric: node_filesystem_avail_bytes, size_metric: node_filesystem_size_bytes,
+           group_by: [instance, mountpoint],
+           exclude: {fstype: "tmpfs|overlay|squashfs|autofs|devtmpfs", mountpoint: "/run/.*|/boot/efi"},
+           clear_after: 2, step: 10m}
+  - name: disk-act
+    use: sop-act@2
+    worker: ops-act-host
+    max_autonomy: record
+    case: {on_record: watch}
+  - name: disk-investigate
+    use: sop-investigate@2
+    worker: triage
+    autonomy: record
+    max_autonomy: propose
+    case: {on_record: watch}
+    model: triage-flash
+    with: {vm_url: "http://victoria.example:8428"}
+  - name: disk-verify
+    use: metric-verify@2
+    worker: ops-read
+    verify: disk_free_above_threshold
+    with: {action: disk.cleanup_known, metric: node_filesystem_avail_bytes, size_metric: node_filesystem_size_bytes}
