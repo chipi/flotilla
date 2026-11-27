@@ -163,7 +163,9 @@ own design.
   `routine.yaml`.
 - **Stale.** The collector's freshness row is stale when its 1d ratio is under its objective, or
   the row is missing or has no ratio.
-  - The run then reports that one line, writes no snapshot and opens no case.
+  - The run then reports that one line, compares nothing and writes no snapshot. It carries the
+    detections of the last good run (kept in its snapshot) as "carried, source stale", so a case
+    already open is not closed by the silence and reopened by the next fresh run.
   - A `signals` value may name only `fresh` (the example's daily step), so every step can refuse
     a stale source.
 - **Service levels.** A row is breached when its `state` says so, and is reported with its 7d
@@ -171,11 +173,24 @@ own design.
   - A row in the snapshot's list that is no longer in the source is reported once as "signal
     gone", never as a breach and never as an error.
   - A row that is not in the list is read once as "new, no history, not compared".
-- **Cases.** Target `perf:<row id>`, kind `perf_regression`.
+- **Cases.** Kind `perf_regression`; target `perf:step/<id>` for a ranked entry and
+  `perf:slo/<id>` for a service level, so the two never meet. An id that is not plain
+  (letters, digits, `. _ / -`, at most 100) gets a line in the brief and no case, never a cleaned
+  target that could merge two ids.
+  - Accepted window: the snapshot is written after the report. If flotillad then fails to open a
+    case for a new entry, the next run no longer sees it as new, and that case is lost; a breach
+    is reported again every run, so it is not.
   - A breach that stands is reported every run under the same target, so flotillad attaches it
     to the open case.
   - A new entry or a rise is reported on the run that finds it, and its case clears when a later
     run does not report it (`ClearIncidents`).
+- **Guards.** A snapshot that is not the shape a run reads is no baseline, and the brief says
+  so. A source is read over https only (plain http needs a host in `SOURCE_ALLOW_HTTP`, for
+  tests), may not redirect to another host, fails as a config error that names the source and
+  never its URL, and has a 30 s deadline for the whole read. A `signals` glob that matches over 50
+  rows, a top over 200, or a snapshot over the ledger's row limit is refused. A fixes file the
+  step names but the fleet does not ship is a config error. "fixed?" needs the entry's cost to
+  have fallen, or the source to no longer list it.
 - **Not built:**
   - a `knowledge:` key in `flow.yaml` (RFC-0016 §12): the example fleet declares its knowledge
     in `fleet.yaml`, a markdown collection whose folder also holds `fixes.yaml`, hashed with it;

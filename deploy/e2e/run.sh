@@ -688,9 +688,9 @@ for i in $(seq 1 30); do [ "$(cli runs perf/ci-perf-watch -n 5 2>&1 | grep -c ' 
   && ok "perf/ci-perf-watch ran twice, the second against the snapshot the first kept in its ledger" || bad "perf/ci-perf-watch: $(cli runs perf/ci-perf-watch -n 5 2>&1)"
 $D logs e2e-world 2>&1 | grep >/dev/null -E "world GET (ci-stats.example.com/ci.json|slo-stats.example.com/slo.json)" \
   && ok "the watch read its two sources by name through the proxy (the world saw both)" || bad "the world saw no ci.json or slo.json"
-cli case list --all -n 500 2>&1 | grep >/dev/null "perf_regression .*perf:ci-runners--online" \
+cli case list --all -n 500 2>&1 | grep >/dev/null "perf_regression .*perf:slo/ci-runners--online" \
   && ok "a breached service level is a perf_regression case, kept once across both runs" || bad "no perf_regression case: $(cli case list --all -n 500 2>&1 | head -5)"
-[ "$(cli case list --all -n 500 2>&1 | grep -c 'perf:ci-runners--online')" = 1 ] || bad "the standing breach opened more than one case"
+[ "$(cli case list --all -n 500 2>&1 | grep -c 'perf:slo/ci-runners--online')" = 1 ] || bad "the standing breach opened more than one case"
 
 fi
 if want watching; then
