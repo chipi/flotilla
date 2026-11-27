@@ -141,6 +141,7 @@ nav:
     - "Fleets to working: the next steps": wip/fleets-to-working.md
     - "The operator fleet: a plan backed by what broke": wip/operator-fleet-plan.md
     - "Operator fleet, step 1: build plan": wip/operator-step1-build.md
+    - "Operator fleet, step 1: where it stands": wip/operator-step1-status.md
   - History:
     - Overview: history/README.md
     - 0000 — The evaluation that started flotilla: history/0000-origin-evaluation.md
