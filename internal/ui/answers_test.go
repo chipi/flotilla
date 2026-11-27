@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/store"
@@ -31,7 +32,7 @@ func TestDecisionBoxOffersAnswers(t *testing.T) {
 		PlanHash: "h-w-0123456789", Outcome: "record", Autonomy: "record"}, cases.Watching, "", "host:w", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.st.DueNotice(ctx, watch, store.NoticeWatching, 1, "2026-11-27T00:00:00.000Z"); err != nil {
+	if err := f.st.DueNotice(ctx, watch, store.NoticeWatching, 1, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 	ck, csrf := f.csrfOf(f.addOperator())
