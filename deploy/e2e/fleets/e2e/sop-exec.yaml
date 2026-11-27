@@ -1,0 +1,17 @@
+fleet: e2e
+routine: sop-exec
+description: >-
+  The SOP e2e's executing routine (operator step 1, C6), never shipped: carries out an approved e2e.sop_fix plan by doing nothing, which the
+  e2e registry's check (e2e_nothing) then verifies.
+enabled: true
+worker: ops-read
+trigger:
+  execute: {action: e2e.sop_fix}
+run:
+  command: >-
+    printf '{"outcome": "executed", "detail": "e2e: sop fix", "ref": "e2e-sop"}' > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: propose
+budget:
+  day_usd: 0

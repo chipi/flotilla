@@ -7,6 +7,10 @@ e2e/host-true-act a7986e221cd6
 e2e/host-true-monitor 0ca5c30fcf66
 e2e/host-true-verify bf2f8f61bee3
 e2e/remote-echo eb2856f2a6af
+e2e/sop-act 4375c6b7bc36
+e2e/sop-draft 46c48ab4191b
+e2e/sop-exec 1ae883c64ca9
+e2e/sop-monitor a27fea3cb14b
 e2e/stage-probe d76887fb1d37
 e2e/token-probe 68916df8610a
 e2e/versioned-monitor f40ede417c18

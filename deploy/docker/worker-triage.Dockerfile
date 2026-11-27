@@ -15,6 +15,8 @@ COPY signal-fleet/mvp /opt/flotilla/signal-fleet/mvp
 COPY meetings /opt/flotilla/meetings
 # knowledge/answer (RFC-0014 case 1): runs on the reads worker, which is this image
 COPY knowledge /opt/flotilla/knowledge
+# ops/sop_investigate.py (operator step 1, C6): the SOP loop's investigation, on this worker's model key; it shares sop_act with the ops image
+COPY ops /opt/flotilla/ops
 # the specs, playbooks and fleet skills: the same bytes flotillad's -check saw (ADR-0012)
 COPY fleets /opt/flotilla/fleets
 ARG VERSION=dev

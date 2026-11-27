@@ -18,6 +18,9 @@ services:
   worker-ops-read:
     volumes:
       - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
+      # the SOP e2e (operator step 1, C6): the e2e fleet's SOPs and the registry extension its SOP routines read, as flotillad has them
+      - ${FLOTILLA_CONFIG}/specs/e2e:/opt/flotilla/fleets/e2e:ro
+      - ${FLOTILLA_CONFIG}/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro
     environment:
       ROUTINE_SSL_CERT_FILE: /etc/flotilla/world-ca.pem
   worker-bugfix:
@@ -30,6 +33,8 @@ services:
       - ${FLOTILLA_CONFIG}/world/ca.pem:/etc/flotilla/world-ca.pem:ro
       # the e2e fleet's folder, where its station versions' texts are read from (the image carries the shipped fleets only)
       - ${FLOTILLA_CONFIG}/specs/e2e:/opt/flotilla/fleets/e2e:ro
+      # the registry extension, for the SOP e2e's act and investigate routines (they read the actions flotillad has)
+      - ${FLOTILLA_CONFIG}/registry-e2e.json:/etc/flotilla/registry-e2e.json:ro
     # a monitor on this worker writes its report to a file in HOME (the shadow worker has this tmpfs; the live one has none in the real compose): the
     # e2e's station monitor is the one routine here that does
     tmpfs: ["/tmp:size=64m", "/home/worker:size=64m,uid=10001,gid=10001,mode=0700"]

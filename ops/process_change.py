@@ -84,6 +84,28 @@ def image_commit(version=None):
     return m.group(1) if m else ""
 
 
+def file_diff(path, old, new):
+    """The unified diff that turns `old` into `new` at repo path `path`: a new file when `old` is None (--- /dev/null), a change
+    otherwise, "" when nothing changes. A line with no final newline carries git's marker, so `git apply` takes it."""
+    if old == new:
+        return ""
+
+    def lines(text):
+        return [ln if ln.endswith("\n") else ln + "\n\\ No newline at end of file\n"
+                for ln in ([] if text is None else text.splitlines(keepends=True))]
+    return "".join(difflib.unified_diff(lines(old), lines(new), "/dev/null" if old is None else "a/" + path, "b/" + path))
+
+
+def sop_path(fleet, sop_id, prefix=""):
+    """Where an SOP lives in the repo that holds the fleet: <prefix><fleet>/sops/<id>/SKILL.md."""
+    return f"{prefix}{fleet}/sops/{sop_id}/SKILL.md"
+
+
+def sop_diff(fleet, sop_id, old, new, prefix=""):
+    """The diff that adds (old None) or changes the SOP's SKILL.md: what a person reads in the sop_proposal case, and applies."""
+    return file_diff(sop_path(fleet, sop_id, prefix), old, new)
+
+
 def registry_diff(registry, file, action, key, frm, to):
     """The unified diff, against `file` in the repo, that changes `frm` to `to` in `key` of `action`, on
     that one line of the registry in effect, or "" when the line cannot be found exactly once. The result
@@ -111,7 +133,7 @@ def registry_diff(registry, file, action, key, frm, to):
             a[key] = [to if x == frm else x for x in a[key]]
     if json.loads(new) != want:
         return ""
-    return "".join(difflib.unified_diff(lines, new_lines, "a/" + file, "b/" + file))
+    return file_diff(file, old, new)
 
 
 def decide(case, place=None, version=None):

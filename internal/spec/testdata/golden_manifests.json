@@ -318,6 +318,48 @@
       "spec.yaml": "22bb44a8c4c1d34a8b112d0cb1dc6976c8a615388f80db740015340d4244f1f5"
     }
   },
+  "e2e/sop-act@v1": {
+    "routine_hash": "4375c6b7bc36",
+    "version_hash": "f200dc8fd6b4028e010a0f7701047d436d35345c1ba29e990d5d2c52be6ba3af",
+    "legacy": true,
+    "manifest": {
+      "run": "1af54a97bf2a209a154eefa39ede55d4d6637d9c0c576bbe695965f00f8708bc"
+    }
+  },
+  "e2e/sop-draft@v1": {
+    "routine_hash": "46c48ab4191b",
+    "version_hash": "1a989e498ed4bc8c7a3bb0f2d7b6519d914e257c0c2f1b5681f950f2877df432",
+    "legacy": true,
+    "manifest": {
+      "run": "b79f65949de021459798ec66fd4ed6771060fb21ece010a7aea8ec4c0d789492"
+    }
+  },
+  "e2e/sop-exec@v1": {
+    "routine_hash": "1ae883c64ca9",
+    "version_hash": "faa5ea5652e055ef5c9ecdc88d2c862fa41202745faa5d060d36f703743acd49",
+    "legacy": true,
+    "manifest": {
+      "run": "b5d9459aed95f011000fd57f09b35c0181df8ad65d1c74f14ad8062351dffaf9"
+    }
+  },
+  "e2e/sop-investigate@v1": {
+    "routine_hash": "1d5ba001b20b",
+    "version_hash": "ae0633ca9c7db2ed85bb38fe3224e97cddfcfc613cd2a942d19d4e583997a36d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "90564f779ab83556f2cd4d40253d524e317be4b214c78507478ad4806e60a9d4",
+      "system.md": "66df52bfec85f4de17971117278e03aececb362bc98498e1fe94e5566b22cbbb",
+      "task.md": "10188932d25e69101776446ca4c55be1de70ddae70f43802241bbd360200df4e"
+    }
+  },
+  "e2e/sop-monitor@v1": {
+    "routine_hash": "a27fea3cb14b",
+    "version_hash": "8a6c7cdaba8fafc67f2f34c136166df464ed46c9c52365f7f556325606a0fbba",
+    "legacy": true,
+    "manifest": {
+      "run": "9c3b3dbe4177722a08d74db830121ec50d39d2a5d35e216f3895709c83c6536c"
+    }
+  },
   "e2e/stage-probe@v1": {
     "routine_hash": "d76887fb1d37",
     "version_hash": "0d45b6b5becb1c036c333a0f82c4cbe37985f17177317a950ef943e734d4b3b8",
@@ -486,6 +528,14 @@
     "legacy": false,
     "manifest": {
       "spec.yaml": "4d5ebacece72fa73e87fd6414ad2f40cdfe789f4776b025c8c82b6f3e3149f3b"
+    }
+  },
+  "operator/sop-draft@v1": {
+    "routine_hash": "49602217b1af",
+    "version_hash": "fc67f96e363d53810aa5e3122e2bf20cdc926031912d67613c3cd0472a513296",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "432f60f1bfdb23f417d2445926b8a1b43d328ec3f088cefff787393e5432b246"
     }
   },
   "outbound/check@v1": {

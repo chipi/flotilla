@@ -1,0 +1,17 @@
+fleet: e2e
+routine: sop-act
+description: >-
+  The SOP e2e's acting routine (operator step 1, C6), never shipped: ops/sop_act.py loads the e2e fleet's SOPs and plans the matching one's
+  first fix, citing its name and hash, or hands the case to the investigate stage. Capped at propose, so a plan waits for the operator.
+enabled: true
+worker: triage
+trigger:
+  case: {kind: e2e_sop}
+run:
+  command: env FLOTILLA_REGISTRY=/etc/flotilla/registry-e2e.json python3 /opt/flotilla/ops/sop_act.py --fleet e2e
+  workdir: .
+  timeout: 1m
+autonomy: propose
+max_autonomy: propose
+budget:
+  day_usd: 0

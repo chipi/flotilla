@@ -77,7 +77,7 @@ bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 # `ask` (RFC-0014 case 1) needs nothing but the first admin (its approvals), which it makes if ui does not; it opens its own cases and approves its own
 # plans. Its shadows need flotillad's `shadows:` (reads adds it, ask adds it, and restarts flotillad, when it is not there).
 # It reads second-brain's real read server from a checkout: SB_DIR (default /work/second-brain/main; a CI job checks it out).
-sections_known="model telemetry cases watching business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing ask remote hardening"
+sections_known="model telemetry cases watching sops business world triage bugfix controls ledger runtokens inputs candidate versions confighash hostagent versionscase shadows stations reads matrix ui hooks plumbing ask remote hardening"
 want() {
   [ -z "${E2E_SECTIONS:-}" ] && return 0
   local s="$1"; case "$s" in versions|hostagent|versionscase|shadows|stations|matrix) s="$s,noeffect" ;; esac
@@ -516,9 +516,9 @@ echo "$STORE" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 
 fi
 OUT="$($D exec flotillad /usr/local/bin/flotillad -config /etc/flotilla/flotillad.yaml -check 2>&1)"
 echo "$OUT" | grep >/dev/null "^action backup.rerun$" && echo "$OUT" | grep >/dev/null "^action host.true$" && echo "$OUT" | grep >/dev/null "^action host.absent$" \
-  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 18 actions$" \
+  && echo "$OUT" | grep >/dev/null "^action repo.process_change$" && echo "$OUT" | grep >/dev/null "^action github.open_pr$" && echo "$OUT" | grep >/dev/null "^CHECK PASS.*, 19 actions$" \
   && echo "$OUT" | grep >/dev/null "^action crm.merge$" && echo "$OUT" | grep >/dev/null "^action email.send$" \
-  && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent, host.watch)" || bad "-check: $OUT"
+  && ok "-check reads the registry the image carries and the e2e's extension (the jobs, review, bugfix and business examples' actions, host.true, host.absent, host.watch, e2e.sop_fix)" || bad "-check: $OUT"
 RUNS="$(cli runs platform/heartbeat 2>&1)"; echo "$RUNS"
 echo "$RUNS" | grep >/dev/null " ok " && ok "heartbeat ran through the worker and passed" || bad "heartbeat did not pass"
 # Docker's log driver hands lines to `docker logs` asynchronously, so the line can lag the run's result.
@@ -732,6 +732,95 @@ status_is "$WC" closed && cli case list --all 2>&1 | grep "^$WC " | grep >/dev/n
 cli case show "$WC" 2>&1 | grep >/dev/null "case.closed .*e2e/watch-monitor .*by detector .*resolved_itself" \
   && ok "the close names the monitor and its role (detector)" || bad "case show (clear): $(cli case show "$WC" 2>&1 | tail -3)"
 $D exec flotilla-worker-ops-read rm -f $WFLAG >/dev/null 2>&1
+
+fi
+if want sops; then
+echo "== SOPs (operator step 1, C6): a case that matches an SOP is planned from it, one that matches none is investigated, a verified investigation is proposed as an SOP"
+# deploy/e2e/fleets/e2e: sop-monitor reports three e2e_sop cases (alerts e2e-known, e2e-novel, e2e-rogue); sop-act (ops/sop_act.py) matches them against
+# the fleet's one SOP (sops/e2e-known), sop-investigate (ops/sop_investigate.py, the stub model) takes the rest, sop-draft (ops/sop_draft.py) proposes.
+SOPROOT="$WORK/config/specs"
+sops_sum() { find "$SOPROOT" -path '*/sops/*' -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1; }
+sop_run() {  # sop_run ROUTINE: run e2e/ROUTINE once and wait until that run has ended
+  local n0 n
+  n0="$(runs_json "e2e/$1" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["runs"] or []))')"
+  cli run "e2e/$1" >/dev/null
+  for _ in $(seq 1 30); do
+    n="$(runs_json "e2e/$1" | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"] or []; print(len(r) if r and r[0]["status"] != "running" else -1)')"
+    [ "$n" -gt "$n0" ] && break; sleep 1
+  done
+  sleep 1
+}
+sop_case() {  # sop_case TARGET STATUS: the id of the e2e_sop case on host:TARGET in that status, waited for
+  local id=""
+  for _ in $(seq 1 60); do
+    id="$(cli case list --all 2>&1 | awk -v t="host:$1" -v s="$2" '$2 == "e2e_sop" && $3 == t && $4 == s {print $1; exit}')"
+    [ -n "$id" ] && break; sleep 3
+  done
+  echo "$id"
+}
+SOPS0="$(sops_sum)"
+KNOWN_SHA="$(sha256sum "$SOPROOT/e2e/sops/e2e-known/SKILL.md" | cut -d' ' -f1)"
+cli action autonomy e2e.sop_fix propose --reason "e2e: the SOP check's harmless action" >/dev/null 2>&1
+cli action list 2>&1 | grep >/dev/null "^e2e.sop_fix  *propose " && ok "e2e.sop_fix promoted to propose (operator, with a reason)" || bad "promote e2e.sop_fix: $(cli action list 2>&1 | grep sop_fix)"
+sop_run sop-monitor
+SK="$(sop_case e2e-sop-known awaiting_approval)"
+SHOW="$(cli case show "$SK" 2>&1)"
+[ -n "$SK" ] && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-act .*by act .*SOP e2e-known sha256:$KNOWN_SHA: fix\[0\] e2e.sop_fix; rung 1 requested (policy decides)" \
+  && ! echo "$SHOW" | grep >/dev/null "^stage " \
+  && ok "a case matching the fleet's SOP was planned from it: the plan cites the SOP's name and sha256 ($SK awaiting approval, no investigation)" \
+  || bad "the SOP case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -5)"
+SN="$(sop_case e2e-sop-novel awaiting_approval)"
+SHOW="$(cli case show "$SN" 2>&1)"
+[ -n "$SN" ] && echo "$SHOW" | grep >/dev/null "^stage investigate " && echo "$SHOW" | grep >/dev/null "e2e/sop-act .*no SOP applies among 1 SOP" \
+  && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-investigate .*by act .*investigated: e2e.sop_fix: .*\[reads: metric:e2e_age=[0-9.]*\]" \
+  && ok "a case no SOP covers went to the investigate stage, which read a metric and planned a registry action ($SN awaiting approval); its findings and reads are on the case" \
+  || bad "the investigated case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -6)"
+SR="$(sop_case e2e-sop-rogue escalated)"
+SHOW="$(cli case show "$SR" 2>&1)"
+[ -n "$SR" ] && echo "$SHOW" | grep >/dev/null "case.escalated .*e2e/sop-investigate .*refused by the gates: 'rm.everything' is not an action the registry declares for e2e_sop cases" \
+  && ! echo "$SHOW" | grep >/dev/null "case.planned" \
+  && ok "the model's command the registry lacks was refused by code: no plan, the case escalated ($SR)" \
+  || bad "the rogue case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -4)"
+$D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT_META prompt='You investigate a case" && ok "the investigation's model call went through the one client to the gateway stand-in (its system text opens the call)" || bad "no investigation call at the gateway stand-in"
+for C in "$SK" "$SN"; do
+  cli case approve "$C" >/dev/null 2>&1; status_is "$C" closed
+done
+cli case list --all 2>&1 | grep "^$SK " | grep >/dev/null "closed .*verified" && cli case list --all 2>&1 | grep "^$SN " | grep >/dev/null "closed .*verified" \
+  && cli case show "$SN" 2>&1 | grep >/dev/null "case.executing .*operator .*by operator .*approved e2e.sop_fix" \
+  && ok "the operator approved both plans; each was executed, checked and closed verified" \
+  || bad "the executions: $(cli case list --all 2>&1 | grep e2e_sop)"
+sop_run sop-draft
+PC="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"
+for _ in $(seq 1 20); do [ -n "$PC" ] && break; sleep 2; PC="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"; done
+[ -n "$PC" ] && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 1 ] \
+  && ok "the verified investigation became a sop_proposal case on sop:e2e/e2e-novel ($PC); the case an SOP solved was not drafted" \
+  || bad "the proposal: $(cli case list --all 2>&1 | grep -E 'sop_proposal|e2e_sop')"
+rm -rf "$WORK/storecopy2" && mkdir -p "$WORK/storecopy2" && $D cp flotillad:/var/lib/flotilla "$WORK/storecopy2/" 2>/dev/null
+PROP="$(python3 - "$WORK/storecopy2/flotilla/flotilla.db" "$PC" <<'PY'
+import sqlite3, sys
+c = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+print(c.execute("select data from case_events where case_id = ? and kind = 'case.detected' and data != ''", (sys.argv[2],)).fetchone()[0])
+PY
+)"
+mkdir -p "$WORK/sopcheck" && rm -rf "$WORK/sopcheck/repo" && git init -q "$WORK/sopcheck/repo"
+printf %s "$PROP" | python3 -c 'import json,sys
+d = json.load(sys.stdin)
+assert (d["sop_id"], d["mode"], d["fleet"], d["path"]) == ("e2e-novel", "add", "e2e", "e2e/sops/e2e-novel/SKILL.md"), d
+assert d["diff"].startswith("--- /dev/null\n+++ b/e2e/sops/e2e-novel/SKILL.md\n") and d["evidence"] == [sys.argv[1]], d
+assert "applies_to: " in d["body"] and "fix: [{\"action\":\"e2e.sop_fix\"}]" in d["body"], d["body"]
+open(sys.argv[2], "w").write(d["diff"])
+open(sys.argv[3], "w").write(d["body"])' "$SN" "$WORK/sopcheck/add.patch" "$WORK/sopcheck/body.md" \
+  && ok "the proposal case carries the SOP draft (mode add, evidence the verified case) and its ready diff" || bad "the proposal's data: $PROP"
+(cd "$WORK/sopcheck/repo" && git apply --check ../add.patch) && ok "the proposal's diff applies to an empty repo (git apply --check)" || bad "git apply --check of the proposal's diff"
+[ "$(sops_sum)" = "$SOPS0" ] && ok "no file under any sops/ folder changed: the loop proposes, a person commits" || bad "a SOP folder changed during the section"
+cli case close "$SR" --reason "e2e: the model's command was refused, as it should be" >/dev/null 2>&1
+# the person's commit by hand: the drafted SKILL.md lands in the fleet's folder (here the host's copy the workers mount), and the next draft run
+# has nothing to propose: the SOP cites the case. flotillad closes a proposal no routine acts on once its monitor stops reporting it.
+mkdir -p "$SOPROOT/e2e/sops/e2e-novel" && cp "$WORK/sopcheck/body.md" "$SOPROOT/e2e/sops/e2e-novel/SKILL.md"
+sop_run sop-draft
+status_is "$PC" closed && cli case list --all 2>&1 | grep "^$PC " | grep >/dev/null "resolved_itself" && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 1 ] \
+  && ok "once the SOP is committed the draft run reports nothing, and flotillad closed the proposal as resolved itself: no new proposal" \
+  || bad "after the commit: $(cli case list --all 2>&1 | grep sop_proposal)"
 
 fi
 if want business; then

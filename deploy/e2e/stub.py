@@ -20,6 +20,14 @@ def scripted(req):
     escalated with a question. A meeting's notes (meetings/notes) get one decision and one follow-up. Any other
     prompt gets {"ok": true}."""
     text = "\n".join(str(m.get("content") or "") for m in req.get("messages") or [])
+    if "<sop-investigate>" in text:
+        # ops/sop_investigate (operator step 1, C6): one metric read, then a fix chosen from the registry's list. The case whose alert is
+        # e2e-rogue gets a command the registry lacks, which the code after the model must refuse.
+        asked = sum(1 for m in req.get("messages") or [] if str(m.get("content") or "").startswith("PROBE "))
+        if asked < 1:
+            return json.dumps({"action": "probe", "probe": "metric", "probe_args": {"name": "e2e_age"}})
+        fix = "rm.everything" if "e2e-rogue" in text else "e2e.sop_fix"
+        return json.dumps({"action": "decide", "disposition": "fix", "fix_action": fix, "reason": "The age metric was read; restart is the listed fix."})
     if "<reads-e2e" in text:
         # e2e/reads (RFC-0014 §4.8), one scripted turn per probe already answered: a page, the long log, then a tool the station does not
         # declare (a write on the MCP stub), or for the shadow v3 a page the live run never read (a miss), then the decision

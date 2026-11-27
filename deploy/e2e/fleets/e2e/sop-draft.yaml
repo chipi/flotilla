@@ -1,0 +1,18 @@
+fleet: e2e
+routine: sop-draft
+description: >-
+  The SOP e2e's draft routine (operator step 1, C6), never shipped: run by hand, ops/sop_draft.py drafts an SOP from each e2e_sop case that
+  closed verified through an approved investigation, and reports a sop_proposal detection with the ready diff. It writes no SOP folder.
+enabled: false
+worker: ops-read
+trigger:
+  every: 60m
+detects: [sop_proposal]
+run:
+  command: env FLOTILLA_REGISTRY=/etc/flotilla/registry-e2e.json python3 /opt/flotilla/ops/sop_draft.py --fleet e2e --kinds e2e_sop
+  workdir: .
+  timeout: 1m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

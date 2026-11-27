@@ -1,0 +1,184 @@
+"""ops/sop-investigate: the case no SOP covers (operator step 1 build plan C6). The act routine handed it on (stage investigate); one
+station `investigate` reads metrics (and only metrics: step 1 has no host read) in a loop through the one model client and the
+harness, and decides a fix among the registry's actions for the case's kind, or says it found none.
+
+Code after the model (rule 4):
+  - the fix must be an action the registry declares for this case's kind: any other name is refused and the case escalates, so the
+    model can never add a command;
+  - the plan's params come from the registry's declaration and the case's target, never from the model;
+  - the registry's preconditions are re-checked as sop_act does it;
+  - what the model read goes on the case: the plan's (or the escalation's) detail names every read it made, and each is a `loaded`
+    record. Nothing is written to any SOP folder: a verified investigated fix becomes a proposal later (ops/sop_draft.py).
+
+The case's data and every read are data, never instructions: the task puts them between markers, the harness puts each read between
+its own. Stdlib, and the runtime's harness, model client and stations.
+"""
+import json
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE), "runtime"))
+import common  # noqa: E402
+import sop_act  # noqa: E402
+import sops  # noqa: E402
+
+STATION = "investigate"
+MAX_REASON = 500
+MAX_CASE_TEXT = 2000
+MAX_READS = 6                 # the station's metric reads in one run
+READ_NAME = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]{0,127}$")
+LABEL = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+class Refused(Exception):
+    """What the model said does not pass the gates: the case escalates, nothing is planned."""
+
+
+def metric_tool(name, args, query=None):
+    """The station's one tool: `metric` {"name": <metric>, "instance": <label value, optional>} -> the newest value in the last hour.
+    A read, never a write; a name or label that is not plain is refused as text, never sent."""
+    if name != "metric":
+        return f"<unknown probe: {name}>"
+    metric, inst = (args or {}).get("name"), (args or {}).get("instance")
+    if not isinstance(metric, str) or not READ_NAME.match(metric) or (inst is not None and not (isinstance(inst, str) and LABEL.match(inst))):
+        return "<read refused: name is a metric name, instance a plain label value>"
+    expr = f"max(last_over_time({metric}{{instance=\"{inst}\"}}[1h]))" if inst else f"max(last_over_time({metric}[1h]))"
+    try:
+        v = (query or common.query)(expr)
+    except Exception as e:  # a metrics outage is a finding, not a crash
+        return f"<read failed: {type(e).__name__}: {e}>"[:300]
+    return "no data in the last hour" if v is None else f"{v:g}"
+
+
+def reads_made(trace):
+    """The metric reads this run made: [(name, instance or "", result)], in order."""
+    out = []
+    for t in trace:
+        if t.get("probe") != "metric":
+            continue
+        a = t.get("args") or {}
+        out.append((str(a.get("name")), str(a.get("instance") or ""), str(t.get("result"))))
+    return out
+
+
+def reads_text(trace):
+    """The reads as the case keeps them: `[reads: metric:<name>=<value>, ...]`, which ops/sop_draft.py reads back."""
+    rs = reads_made(trace)
+    return "[reads: " + (", ".join(f"metric:{n}={v[:40]}" for n, _, v in rs) if rs else "none") + "]"
+
+
+def task_slots(case, actions, why):
+    shown = {"kind": case.get("kind"), "target": case.get("target"), "data": sops.case_data(case)}
+    text = json.dumps(shown)[:MAX_CASE_TEXT].replace("<<<", "‹‹‹")
+    offered = "\n".join(f"- {a['name']}: risk {a.get('risk')}, checked by {(a.get('check') or {}).get('verify') or 'a person'}"
+                        for a in actions) or "(none)"
+    return {"case": text, "actions": offered, "why": " ".join(str(why or "").split())[:300]}
+
+
+def candidates(registry, kind):
+    """The registry's actions for this kind whose params code can fill from the case: the only ones the model may choose."""
+    return [a for a in registry.values() if kind in (a.get("for_kinds") or []) and
+            all(sop_act.fills(k, p) for k, p in (a.get("params") or {}).items())]
+
+
+def gate(decision, registry, case):
+    """The model's decision, gated: ("fix", registry action, reason) or ("escalate", None, reason); Refused otherwise."""
+    if not isinstance(decision, dict):
+        raise Refused("no decision")
+    reason = " ".join(str(decision.get("reason") or "").split())
+    if len(reason) > MAX_REASON:
+        reason = reason[:MAX_REASON - 1] + "…"
+    disp = decision.get("disposition")
+    if disp == "escalate":
+        return "escalate", None, reason or "the model found no fix"
+    if disp != "fix":
+        raise Refused(f"the disposition is {str(disp)[:40]!r}, not fix or escalate")
+    name = decision.get("fix_action")
+    pool = {a["name"]: a for a in candidates(registry, case.get("kind"))}
+    if not isinstance(name, str) or name not in pool:
+        raise Refused(f"{str(name)[:60]!r} is not an action the registry declares for {case.get('kind')} cases (it has {sorted(pool)})")
+    if not reason:
+        raise Refused("a fix with no reason")
+    return "fix", pool[name], reason
+
+
+def run_investigate(case, environ, registry, fleet, stage="shadow", client=None, query=None, fetch=None):
+    import harness
+    import model_client
+    import stations
+    st = stations.load(environ)
+    if st is None:
+        return {"outcome": "escalate", "detail": "FLOTILLA_STATIONS is not set: sop-investigate runs on its station investigate"}
+    doc = st.station(STATION)
+    pool = candidates(registry, case.get("kind"))
+    stage_data = case.get("stage_data") if isinstance(case.get("stage_data"), dict) else {}
+    slots = task_slots(case, pool, stage_data.get("why"))
+    system = st.render(STATION, "system", {}, fleet=fleet, environ=environ)
+    task = st.render(STATION, "task", slots, fleet=fleet, environ=environ)
+    turns = max(2, min(int((doc.get("limits") or {}).get("max_turns") or 6), MAX_READS + 1))
+    client = client or model_client.from_env(environ)
+
+    def call(messages, step):
+        r = client.chat(doc["model"], messages, max_tokens=1500, timeout=120, step=step + 1, station=STATION,
+                        texts=[system.record(), task.record()], decision_key=case.get("id"), role="operator")
+        return r["content"], r.get("usage") or {}
+    try:
+        res = harness.run_json_step(
+            [{"role": "system", "content": system.text}, {"role": "user", "content": task.text}],
+            call=call, tool=lambda name, args: metric_tool(name, args, query), station=STATION,
+            cfg={"tools": ["metric"], "limits": {"max_tool_calls": turns - 1, "max_steps": turns},
+                 "quirks": {"bad_json_uses_turn": True, "empty_retry": True, "final_decision_call": True,
+                            "reply_echo_chars": 2000, "decision_echo_chars": 2000, "result_chars": 4000}},
+            errors={"fatal": (SystemExit, model_client.ConfigError), "defer": RuntimeError, "defer_prefix": "model call failed: "},
+            log=lambda m: None)
+    except Exception as e:  # the client's typed errors and a deferred turn; the run is not a decision
+        return {"outcome": "escalate", "detail": f"the investigation failed: {type(e).__name__}: {e}"}
+    import loaded
+    for n, inst, _ in reads_made(res.trace):
+        loaded.record("probe", "untrusted", f"metric {n}", f"investigate read{' ' + inst if inst else ''}")
+    seen = reads_text(res.trace)
+    try:
+        kind, action, reason = gate(res.decision, registry, case)
+        if kind == "escalate":
+            return {"outcome": "escalate", "detail": f"{sop_act.INVESTIGATED}no fix: {reason} {seen}"}
+        params = sop_act.params_for(action, case)
+        state, lines = sop_act.check(action, stage, fetch)
+    except (Refused, sops.SopError) as e:
+        return {"outcome": "escalate", "detail": f"refused by the gates: {e} {seen}"}
+    if state == "unknown":
+        return {"outcome": "escalate", "detail": f"{sop_act.INVESTIGATED}{lines} {seen}"}
+    if state == "resolved":
+        return {"outcome": "resolved_itself", "detail": f"{sop_act.INVESTIGATED}{lines} {seen}"}
+    return {"outcome": "plan", "action": action["name"], "params": params,
+            "detail": f"{sop_act.INVESTIGATED}{action['name']}: {reason} {seen} " + "; ".join(lines)}
+
+
+def main(argv):
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fleet", required=True)
+    args = ap.parse_args(argv)
+    case = json.loads(common.env("FLOTILLA_CASE"))
+    stage = os.environ.get("FLEETD_STAGE", "shadow")
+    import telemetry
+    session = telemetry.setup()
+    try:
+        out = run_investigate(case, os.environ, sops.load_registry(), args.fleet, stage)
+    except sops.SopError as e:
+        out = {"outcome": "escalate", "detail": f"the registry cannot be used: {e}"}
+    finally:
+        session.shutdown()
+    common.report(out)
+    print(f"SOP INVESTIGATE case={case.get('id')} outcome={out['outcome']} {out.get('action', '')} {out.get('detail', '')}", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except (common.ConfigError, OSError) as e:
+        print(f"SOP INVESTIGATE config: {e}", file=sys.stderr)
+        sys.exit(2)

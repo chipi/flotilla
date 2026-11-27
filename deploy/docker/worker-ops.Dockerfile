@@ -6,6 +6,8 @@ FROM python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4f
 RUN groupadd -g 10001 worker && useradd -u 10001 -g 10001 -m -d /home/worker worker
 COPY worker /opt/flotilla/worker
 COPY ops /opt/flotilla/ops
+# the SOP routines (ops/sop_act.py, ops/sop_draft.py) read a fleet's SOPs through the skills layer
+COPY runtime /opt/flotilla/runtime
 COPY business /opt/flotilla/business
 COPY plumbing /opt/flotilla/plumbing
 COPY meetings /opt/flotilla/meetings

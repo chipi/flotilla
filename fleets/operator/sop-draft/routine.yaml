@@ -1,0 +1,15 @@
+fleet: operator
+routine: sop-draft
+description: >-
+  The SOP draft (operator step 1): reads the cases that closed verified through an investigation a person approved, and drafts the SOP each
+  one teaches, as a new or updated fleets/operator/sops/<id>/SKILL.md. It reports each draft as a sop_proposal case that carries the ready
+  diff; a person commits it by hand. It writes no SOP folder: nothing rewrites its own playbooks at runtime.
+enabled: true
+worker: ops-read
+trigger:
+  every: 1h
+detects: [sop_proposal]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 3h

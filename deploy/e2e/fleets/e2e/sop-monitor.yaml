@@ -1,0 +1,24 @@
+fleet: e2e
+routine: sop-monitor
+description: >-
+  The SOP e2e's monitor (operator step 1, C6), never shipped: run by hand, it reports three e2e_sop detections, each with an alert in its data. One
+  alert is the one the fleet's SOP names (e2e-known), one no SOP covers (e2e-novel), one for which the stand-in model proposes a command the
+  registry lacks (e2e-rogue).
+enabled: false
+worker: ops-read
+trigger:
+  every: 60m
+detects: [e2e_sop]
+run:
+  command: >-
+    printf '{"outcome": "detections", "detections": [
+    {"kind": "e2e_sop", "target": "host:e2e-sop-known", "detail": "e2e", "data": {"alert": "e2e-known"}},
+    {"kind": "e2e_sop", "target": "host:e2e-sop-novel", "detail": "e2e", "data": {"alert": "e2e-novel"}},
+    {"kind": "e2e_sop", "target": "host:e2e-sop-rogue", "detail": "e2e", "data": {"alert": "e2e-rogue"}}]}'
+    > "$FLOTILLA_PLAN_FILE"
+  workdir: .
+  timeout: 1m
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 120m

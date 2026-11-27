@@ -44,15 +44,22 @@ def layers(fleet, root=None):
     return [("flotilla", os.path.join(root, "skills")), ("fleet", os.path.join(root, "fleets", fleet, "skills"))]
 
 
-def parse(text, name):
-    """(description, body) of a SKILL.md, or SkillError."""
+def split(text, name):
+    """(the frontmatter's lines, the body) of a SKILL.md, or SkillError. Both the skills and a fleet's SOPs
+    (runtime/sops.py) are cut by it, so the two never disagree about where the frontmatter ends."""
     if not text.startswith("---\n"):
         raise SkillError(f"skill {name}: SKILL.md must start with a --- frontmatter line")
     end = text.find("\n---\n", 3)
     if end < 0:
         raise SkillError(f"skill {name}: frontmatter is not closed by a --- line")
+    return text[4:end].splitlines(), text[end + 5:].strip()
+
+
+def parse(text, name):
+    """(description, body) of a SKILL.md, or SkillError."""
+    head, body = split(text, name)
     fields = {}
-    for line in text[4:end].splitlines():
+    for line in head:
         k, sep, v = line.partition(":")
         if sep and k.strip() in ("name", "description"):
             fields[k.strip()] = v.strip().strip('"').strip("'")
@@ -61,7 +68,6 @@ def parse(text, name):
     desc = fields.get("description", "")
     if not 1 <= len(desc) <= MAX_DESCRIPTION:
         raise SkillError(f"skill {name}: description must be 1 to {MAX_DESCRIPTION} characters")
-    body = text[end + 5:].strip()
     if not body:
         raise SkillError(f"skill {name}: no instructions after the frontmatter")
     return desc, body
@@ -86,18 +92,28 @@ def find(name, fleet, root=None):
     return found[0]
 
 
-def load(name, fleet, root=None, version=None):
-    """{name, layer, version, sha256, text}: the instructions as a load inserts them."""
-    layer, path = find(name, fleet, root)
+def read(path, name, layer, version=None, parse_fn=None):
+    """(record, what parse_fn made of the text) for one SKILL.md at `path`: the size cap (never trimmed), the sha256 and the
+    `loaded` record, as every load has them. The skills use parse; a fleet's SOPs (runtime/sops.py) pass their own parser."""
+    d = os.path.dirname(path)
+    if os.path.islink(d) or os.path.islink(path):
+        raise SkillError(f"skill {name}: {layer} layer has a symlink; refused")
     with open(path, "rb") as f:
         raw = f.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
         raise SkillError(f"skill {name}: SKILL.md is over {MAX_BYTES} bytes (a skill is never trimmed)")
-    _, body = parse(raw.decode("utf-8"), name)
+    parsed = (parse_fn or parse)(raw.decode("utf-8"), name)
     rec = {"name": name, "layer": layer, "version": version or os.environ.get("FLOTILLA_VERSION") or "dev",
            "sha256": hashlib.sha256(raw).hexdigest()}
     _span(rec)
     loaded.record("skill", "source", name, f"{layer} skill {name} @ {rec['version']}", rec["sha256"])
+    return rec, parsed
+
+
+def load(name, fleet, root=None, version=None):
+    """{name, layer, version, sha256, text}: the instructions as a load inserts them."""
+    layer, path = find(name, fleet, root)
+    rec, (_, body) = read(path, name, layer, version)
     return dict(rec, text=body)
 
 
