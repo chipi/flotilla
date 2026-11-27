@@ -1503,7 +1503,7 @@ HC="$(proposed e2e_host_true host-true-monitor)"
   || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
 # Slack approvals (the slack section of flotillad.yaml): the plan that waits is offered to the connector host every 15 seconds. The stand-in host's agent
 # is no connector: it logs each plan it is asked to post and posts nothing, which is the e2e's recording of what Slack would have been sent
-hseen 'not its Slack connector.*"kind":"plan"' && ok "Slack: flotillad asked the connector host to post the plan waiting for approval (kind plan); the stand-in's agent logged it" \
+hseen 'not its Slack connector.*"kind":""' && ok "Slack: flotillad asked the connector host to post the plan waiting for approval, in the old shape (no kind: the stand-in's agent is no connector and reports no notify_answers capability); the stand-in logged it" \
   || bad "no plan was offered to the Slack connector host: $(hostlog | tail -3) / $($D logs flotillad 2>&1 | grep -i slack | tail -2)"
 OUT="$(cli case approve "$HC" 2>&1)"
 echo "$OUT" | grep >/dev/null '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"
