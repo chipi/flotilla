@@ -92,9 +92,10 @@ def find(name, fleet, root=None):
     return found[0]
 
 
-def read(path, name, layer, version=None, parse_fn=None):
+def read(path, name, layer, version=None, parse_fn=None, record=True):
     """(record, what parse_fn made of the text) for one SKILL.md at `path`: the size cap (never trimmed), the sha256 and the
-    `loaded` record, as every load has them. The skills use parse; a fleet's SOPs (runtime/sops.py) pass their own parser."""
+    `loaded` record, as every load has them (record=False defers it to note(): a caller that reads many and uses one records the one).
+    The skills use parse; a fleet's SOPs (runtime/sops.py) pass their own parser."""
     d = os.path.dirname(path)
     if os.path.islink(d) or os.path.islink(path):
         raise SkillError(f"skill {name}: {layer} layer has a symlink; refused")
@@ -105,9 +106,15 @@ def read(path, name, layer, version=None, parse_fn=None):
     parsed = (parse_fn or parse)(raw.decode("utf-8"), name)
     rec = {"name": name, "layer": layer, "version": version or os.environ.get("FLOTILLA_VERSION") or "dev",
            "sha256": hashlib.sha256(raw).hexdigest()}
-    _span(rec)
-    loaded.record("skill", "source", name, f"{layer} skill {name} @ {rec['version']}", rec["sha256"])
+    if record:
+        note(rec)
     return rec, parsed
+
+
+def note(rec):
+    """Record that a run loaded this skill: a `skill.load` span and a `loaded` line."""
+    _span(rec)
+    loaded.record("skill", "source", rec["name"], f"{rec['layer']} skill {rec['name']} @ {rec['version']}", rec["sha256"])
 
 
 def load(name, fleet, root=None, version=None):

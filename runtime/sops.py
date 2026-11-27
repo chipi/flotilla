@@ -61,6 +61,7 @@ class Sop:
     evidence: list = field(default_factory=list)
     sha256: str = ""
     path: str = ""
+    rec: dict = field(default_factory=dict)
 
     def cite(self):
         return f"{CITE}{self.name} sha256:{self.sha256}"
@@ -76,7 +77,7 @@ def _steps(name, key, v, nonempty):
     if not isinstance(v, list) or (nonempty and not v):
         raise SopError(f"SOP {name}: {key} is a list{' of one or more actions' if nonempty else ''}")
     for s in v:
-        if not isinstance(s, dict) or set(s) != {"action"} or not isinstance(s["action"], str) or not ACTION.match(s["action"]):
+        if not isinstance(s, dict) or set(s) != {"action"} or not isinstance(s["action"], str) or not ACTION.fullmatch(s["action"]):
             raise SopError(f"SOP {name}: {key} step {s!r} is not {{\"action\": \"<registry action>\"}}")
     return v
 
@@ -121,12 +122,12 @@ def parse(text, name):
     diagnosis = raw.get("diagnosis", [])
     if not isinstance(diagnosis, list) or any(
             not isinstance(d, dict) or set(d) != {"read", "name"} or d["read"] != "metric"
-            or not isinstance(d["name"], str) or not METRIC.match(d["name"]) for d in diagnosis):
+            or not isinstance(d["name"], str) or not METRIC.fullmatch(d["name"]) for d in diagnosis):
         raise SopError(f"SOP {name}: diagnosis is a list of {{\"read\": \"metric\", \"name\": <metric>}} (no host read exists yet)")
     fix = _steps(name, "fix", raw["fix"], True)
     verify = raw["verify"]
     if not isinstance(verify, dict) or set(verify) != {"check", "within"} or not isinstance(verify["check"], str) \
-            or not verify["check"] or not isinstance(verify["within"], str) or not WITHIN.match(verify["within"]):
+            or not verify["check"] or not isinstance(verify["within"], str) or not WITHIN.fullmatch(verify["within"]):
         raise SopError(f"SOP {name}: verify is {{\"check\": <name>, \"within\": \"60m\"}}")
     rung = raw["rung"]
     if isinstance(rung, bool) or not isinstance(rung, int) or not 0 <= rung <= MAX_RUNG:
@@ -140,9 +141,9 @@ def sops_dir(fleet, root=None):
     return os.path.join(root or skills.code_root(), "fleets", fleet, "sops")
 
 
-def load_all(directory, version=None):
+def load_all(directory, version=None, record=True):
     """Every SOP under `directory` (a fleet's sops folder), by name: each read through the skills layer, so each has its sha256, the
-    size cap and a `loaded` record. A folder that is not an SOP is the installation's mistake and refuses the lot (never skipped);
+    size cap and a `loaded` record (record=False: the caller records the ones it uses, with record()). A folder that is not an SOP is the installation's mistake and refuses the lot (never skipped);
     no folder is no SOPs."""
     if not os.path.isdir(directory):
         return []
@@ -151,15 +152,20 @@ def load_all(directory, version=None):
         d = os.path.join(directory, entry)
         if not os.path.isdir(d) and not os.path.islink(d):
             continue
-        if not skills.NAME_RE.match(entry):
+        if not skills.NAME_RE.fullmatch(entry):
             raise SopError(f"SOP folder {entry!r} does not match {skills.NAME_RE.pattern}")
         path = os.path.join(d, "SKILL.md")
         if not os.path.isfile(path):
             raise SopError(f"SOP {entry}: no SKILL.md")
-        rec, sop = skills.read(path, entry, LAYER, version, parse_fn=parse)
-        sop.sha256, sop.path = rec["sha256"], path
+        rec, sop = skills.read(path, entry, LAYER, version, parse_fn=parse, record=record)
+        sop.sha256, sop.path, sop.rec = rec["sha256"], path, rec
         out.append(sop)
     return out
+
+
+def record(sop):
+    """The `loaded` record of an SOP a run used, for a load_all(record=False)."""
+    skills.note(sop.rec)
 
 
 def case_data(case):

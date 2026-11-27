@@ -19,6 +19,7 @@ Where the SOPs and the registry live is the installation's, set by the spec on t
 import argparse
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +39,49 @@ def fills(name, p):
     """Whether code can fill this registry param from the case alone: a host action's target_host, or (a routine action has no
     target_host) a text param named `host` (the target's host) or `target` (the whole target)."""
     return p.get("kind") == "target_host" or (p.get("kind") == "text" and name in ("host", "target"))
+
+
+MODEL_SAYS = " | model says: "
+HEAD = re.compile(r"(?:run \S+: )?investigated: (no fix|\S+) \| reads: ")
+URL = re.compile(r"(?i)\b(?:https?|ftp)://\S+|\bwww\.\S+")
+MENTION = re.compile(r"<[!@#][^>]*>|(?i:@(?:here|channel|everyone))\b")
+MAX_MODEL_TEXT = 500
+
+
+def clean_model_text(text):
+    """What the model said, as a case may carry it: one line, no link, no Slack mention or crowd call, no angle brackets, cut."""
+    t = " ".join(str(text or "").split())
+    t = MENTION.sub("[mention removed]", URL.sub("[link removed]", t)).replace("<", "‹").replace(">", "›")
+    return t if len(t) <= MAX_MODEL_TEXT else t[:MAX_MODEL_TEXT - 1] + "…"
+
+
+def investigated_detail(action, reads, reason, refused=0, failed=0, checks=""):
+    """An investigation's detail on the case: the code's fields first (the action, the reads it accepted as JSON, how many it refused
+    or that failed, the preconditions), then the model's own words last and labelled. parse_investigated reads only the code's part."""
+    field = json.dumps({"reads": reads, "refused": refused, "failed": failed}, separators=(",", ":"))
+    return f"{INVESTIGATED}{action or 'no fix'} | reads: {field}" + (f" | checks: {checks}" if checks else "") + \
+        MODEL_SAYS + clean_model_text(reason)
+
+
+def parse_investigated(detail):
+    """(action or None for no fix, the reads) of an investigated detail, or None when it does not begin as one. Only the code's JSON
+    field, which comes before any model text, is read: a model that writes a reads line of its own is read as the text it is."""
+    m = HEAD.match(detail or "")
+    if not m:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(detail, m.end())
+    except ValueError:
+        return None
+    reads = obj.get("reads") if isinstance(obj, dict) else None
+    if not isinstance(reads, list):
+        return None
+    for r in reads:
+        if (not isinstance(r, dict) or not isinstance(r.get("name"), str) or not sops.METRIC.fullmatch(r["name"])
+                or not isinstance(r.get("instance", ""), str) or isinstance(r.get("value"), bool)
+                or not (r.get("value") is None or isinstance(r["value"], (int, float)))):
+            return None
+    return (None if m.group(1) == "no fix" else m.group(1)), reads
 
 
 def params_for(action, case):
@@ -80,6 +124,8 @@ def decide(case, sop_list, registry, stage, fetch=None):
     if sop is None:
         return {"outcome": "hand_over", "stage": INVESTIGATE, "detail": f"{why} among {len(sop_list)} SOP(s): investigate",
                 "data": {"why": why, "sops": [s.name for s in sop_list]}}
+    if len(sop.fix) > 1:
+        return {"outcome": "escalate", "detail": f"{sop.cite()}: {len(sop.fix)} fix steps; step 1 follows single-step SOPs only"}
     try:
         action = sops.fix_actions(sop, registry, kind=case.get("kind"))[0]
         params = params_for(action, case)
@@ -102,8 +148,11 @@ def main(argv):
     case = json.loads(common.env("FLOTILLA_CASE"))
     stage = os.environ.get("FLEETD_STAGE", "shadow")
     try:
-        sop_list = sops.load_all(args.sops or sops.sops_dir(args.fleet))
+        sop_list = sops.load_all(args.sops or sops.sops_dir(args.fleet), record=False)
         out = decide(case, sop_list, sops.load_registry(), stage)
+        used = sops.match(sop_list, case)[0]
+        if used is not None:   # what entered the run: the SOP it followed, not every SOP the fleet has
+            sops.record(used)
     except sops.SopError as e:
         out = {"outcome": "escalate", "detail": f"the SOPs cannot be used: {e}"}
     common.report(out)

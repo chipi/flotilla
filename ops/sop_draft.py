@@ -37,9 +37,7 @@ import sops  # noqa: E402
 
 KIND = "sop_proposal"
 MAX_DATA = 8000     # flotillad drops a detection's data over 8192 bytes
-MAX_FINDING = 300
-FINDING = re.compile(r"investigated: ([a-z][a-z0-9_.]*): (.*?) \[reads: ")
-READ = re.compile(r"metric:([a-zA-Z_:][a-zA-Z0-9_:]*)=")
+PLAIN = re.compile(r"[A-Za-z0-9._-]{1,64}")
 SLUG = re.compile(r"[^a-z0-9]+")
 
 
@@ -66,7 +64,7 @@ def investigated_plan(full):
     case is not one (it teaches nothing the SOP lacks), and nor is an investigated plan nobody approved."""
     events, plans = full.get("events") or [], full.get("plans") or []
     planned = [e for e in events if e["kind"] == "case.planned"]
-    if not planned or not plans or sop_act.INVESTIGATED not in (planned[-1].get("detail") or ""):
+    if not planned or not plans or sop_act.parse_investigated(planned[-1].get("detail")) is None:
         return None
     if not any(e["kind"] == "case.executing" and e.get("by") == "operator" for e in events):
         return None
@@ -83,34 +81,40 @@ def build(fleet, case, full, registry, existing):
     if action is None:
         return None, f"{plan['action']} is not in the registry"
     check = (action.get("check") or {})
-    if not check.get("verify") or not sops.WITHIN.match(str(check.get("within"))):
+    if not check.get("verify") or not sops.WITHIN.fullmatch(str(check.get("within"))):
         return None, f"{action['name']} has no check a SOP can name"
     data = event_data(full.get("events") or [], "case.detected")
     alert = str(data.get("alert") or "")
-    sop_id = slug(alert or case["kind"])
-    found = FINDING.search(detail)
-    reads = list(dict.fromkeys(READ.findall(detail)))
-    fix = [{"action": action["name"]}]
+    host = sops.case_host(case)
+    if not PLAIN.fullmatch(host):
+        return None, "the case has no host to bind the SOP to"
+    if alert and not PLAIN.fullmatch(alert):
+        return None, "the case's alert is not a plain name"
+    sop_id = slug(alert or f"{case['kind']}-{host}")
+    # only what code recorded: the reads the tool accepted, in the detail's code-built field, never the model's words
+    reads = list(dict.fromkeys(r["name"] for r in sop_act.parse_investigated(detail)[1]))
+    values = {r["name"]: r["value"] for r in sop_act.parse_investigated(detail)[1]}
     old = existing.get(sop_id)
     if old is not None:
         if case["id"] in old.evidence:
             return None, "the SOP already cites this case"
-        note = f"Also solved by {action['name']} ({case['id']}, verified)."
+        note = f"Also solved by {action['name']} ({case['id']}, verified); this SOP's own fix is {old.fix[0]['action']}."
         new = sops.Sop(name=old.name, description=old.description, applies_to=old.applies_to, fix=old.fix, verify=old.verify,
                        rung=old.rung, body=old.body.rstrip() + "\n\n" + note, diagnosis=old.diagnosis, rollback=old.rollback,
                        evidence=old.evidence + [case["id"]])
         return new, old
     what = f"{case['kind']} on {case['target']}" + (f", alert {alert}" if alert else "")
+    shown = ", ".join(f"{r} ({'no data' if values[r] is None else format(values[r], 'g')})" for r in reads)
     body = [f"Drafted from {case['id']}: an investigation found this fix and a person approved it. Review it before accepting.", "",
             f"What was seen: {what}.",
-            "Diagnosis: " + (", ".join(f"read the metric {r}" for r in reads) if reads else "none was recorded") + ".",
+            ("No alert was recorded on the case, so this SOP is bound to host " + host + " and not to the kind." if not alert else
+             f"It applies to the alert {alert} on host {host}; widen the hosts only after reading more cases."),
+            "Diagnosis: " + (f"the investigation read the metric {shown}." if reads else "no read was recorded."),
             f"Fix: {action['name']} (risk {action.get('risk')}), checked by {check['verify']} within {check['within']}."]
-    if found:
-        body.append("The investigation's finding: " + found.group(2)[:MAX_FINDING])
     new = sops.Sop(
-        name=sop_id, description=f"Use when a {case['kind']} case" + (f" reports the alert {alert}" if alert else "") + " and no earlier SOP covers it.",
-        applies_to={"kinds": [case["kind"]], "hosts": ["*"], "alerts": [alert] if alert else []},
-        fix=fix, verify={"check": check["verify"], "within": check["within"]}, rung=1, body="\n".join(body),
+        name=sop_id, description=f"Use when a {case['kind']} case" + (f" reports the alert {alert}" if alert else "") + f" is on {host}.",
+        applies_to={"kinds": [case["kind"]], "hosts": [host], "alerts": [alert] if alert else []},
+        fix=[{"action": action["name"]}], verify={"check": check["verify"], "within": check["within"]}, rung=2, body="\n".join(body),
         diagnosis=[{"read": "metric", "name": r} for r in reads], evidence=[case["id"]])
     return new, None
 
@@ -177,7 +181,7 @@ def main(argv):
     ap.add_argument("--sops")
     ap.add_argument("--days", type=int, default=30)
     args = ap.parse_args(argv)
-    existing = {s.name: s for s in sops.load_all(args.sops or sops.sops_dir(args.fleet))}
+    existing = {s.name: s for s in sops.load_all(args.sops or sops.sops_dir(args.fleet), record=False)}
     dets = draft(flotilla_api.from_env(), args.fleet, [k for k in args.kinds.split(",") if k], existing, sops.load_registry(),
                  os.environ.get("SOP_REPO_PREFIX", ""), args.days)
     common.report({"outcome": "detections", "detections": dets})

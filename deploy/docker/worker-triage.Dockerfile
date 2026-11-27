@@ -17,6 +17,8 @@ COPY meetings /opt/flotilla/meetings
 COPY knowledge /opt/flotilla/knowledge
 # ops/sop_investigate.py (operator step 1, C6): the SOP loop's investigation, on this worker's model key; it shares sop_act with the ops image
 COPY ops /opt/flotilla/ops
+# the registry's declaration, where sops.load_registry() looks when a spec names no FLOTILLA_REGISTRY: the same file flotillad reads
+COPY host/registry.json /opt/flotilla/host/registry.json
 # the specs, playbooks and fleet skills: the same bytes flotillad's -check saw (ADR-0012)
 COPY fleets /opt/flotilla/fleets
 ARG VERSION=dev

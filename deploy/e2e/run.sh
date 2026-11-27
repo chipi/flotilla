@@ -758,6 +758,8 @@ sop_case() {  # sop_case TARGET STATUS: the id of the e2e_sop case on host:TARGE
   done
   echo "$id"
 }
+NREG="$($D exec -e FLOTILLA_REGISTRY= flotilla-worker-triage python3 -c 'import sys; sys.path.insert(0, "/opt/flotilla/runtime"); import sops; print("backup.rerun" in sops.load_registry())' 2>&1 | tail -1)"
+[ "$NREG" = True ] && ok "the triage image carries the registry at the default path sops.load_registry() reads (backup.rerun is in it)" || bad "the triage image's default registry: $NREG"
 SOPS0="$(sops_sum)"
 KNOWN_SHA="$(sha256sum "$SOPROOT/e2e/sops/e2e-known/SKILL.md" | cut -d' ' -f1)"
 cli action autonomy e2e.sop_fix propose --reason "e2e: the SOP check's harmless action" >/dev/null 2>&1
@@ -772,7 +774,7 @@ SHOW="$(cli case show "$SK" 2>&1)"
 SN="$(sop_case e2e-sop-novel awaiting_approval)"
 SHOW="$(cli case show "$SN" 2>&1)"
 [ -n "$SN" ] && echo "$SHOW" | grep >/dev/null "^stage investigate " && echo "$SHOW" | grep >/dev/null "e2e/sop-act .*no SOP applies among 1 SOP" \
-  && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-investigate .*by act .*investigated: e2e.sop_fix: .*\[reads: metric:e2e_age=[0-9.]*\]" \
+  && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-investigate .*by act .*investigated: e2e.sop_fix [|] reads: .*\"name\":\"e2e_age\",\"instance\":\"\",\"value\":[0-9.]*.*[|] model says: " \
   && ok "a case no SOP covers went to the investigate stage, which read a metric and planned a registry action ($SN awaiting approval); its findings and reads are on the case" \
   || bad "the investigated case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -6)"
 SR="$(sop_case e2e-sop-rogue escalated)"

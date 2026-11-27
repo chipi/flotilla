@@ -86,6 +86,23 @@ class Parse(unittest.TestCase):
             with self.subTest(name), self.assertRaisesRegex(sops.SopError, want):
                 sops.parse(t, "s")
 
+    def test_a_trailing_newline_is_not_part_of_a_name_a_duration_or_an_action(self):
+        for swap, want in (({'"60m"': '"60m\\n"'}, "verify is"), ({'"backup.rerun"': '"backup.rerun\\n"'}, "fix step"),
+                           ({'"name":"backup_age"': '"name":"backup_age\\n"'}, "diagnosis is")):
+            with self.subTest(swap), self.assertRaisesRegex(sops.SopError, want):
+                sops.parse(text(**swap), "s")
+
+    def test_both_worker_images_carry_what_the_sop_routines_import(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        def copies(image):
+            with open(os.path.join(root, "deploy", "docker", image)) as f:
+                return {ln.split()[2] if ln.startswith("COPY") else "" for ln in f}
+        ops, triage = copies("worker-ops.Dockerfile"), copies("worker-triage.Dockerfile")
+        self.assertIn("/opt/flotilla/runtime", ops, "sop_act and sop_draft import runtime/sops.py")
+        self.assertIn("/opt/flotilla/ops", triage, "sop_investigate imports ops/sop_act.py")
+        self.assertIn("/opt/flotilla/host/registry.json", triage, "load_registry's default path must exist where investigate runs")
+        self.assertIn("/opt/flotilla/host/registry.json", ops)
+
     def test_a_sop_error_is_a_skill_error(self):
         self.assertTrue(issubclass(sops.SopError, skills.SkillError))
 

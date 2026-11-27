@@ -167,6 +167,30 @@ The human steps, and why.
 - **`fix` names registry actions only.** The loader refuses any other name, so an SOP never adds a
   command.
 
+### What shipped in C6
+
+- **The code:** `runtime/sops.py`, `ops/sop_act.py`, `ops/sop_investigate.py` and
+  `ops/sop_draft.py`. Step 1 follows single-step SOPs only: an SOP with more than one `fix` step
+  escalates.
+- **The example fleet** holds the example SOP (`sops/backup-stale`) and the `sop-draft` routine.
+  The act and investigate routines are wired in C7, in the installation's own fleet: the spec
+  loader allows one acting routine per case kind, and the example `failed_backup` kind already
+  belongs to `jobs/rerun-backup`. The e2e fleet wires all three.
+- **The investigation's record:** the plan's detail starts with code-built fields (the action,
+  the reads the tool accepted as JSON, how many reads were refused or failed) and ends with the
+  model's own words, labelled `model says:` and stripped of links and Slack mentions. The draft
+  reads only the code's fields, so a model cannot forge a read, and no model text reaches an SOP
+  body.
+- **The proposal:** a `sop_proposal` case on `sop:<fleet>/<id>`, whose data is `sop_id`, `mode`,
+  `fleet`, `path`, `body`, `evidence` and the ready `diff`. flotillad drops a detection's data
+  over 8192 bytes, so a draft is capped at 8000 bytes.
+- **A new SOP** is bound to the evidence's host and requests rung 2. With no alert on the case it
+  says so and is not kind-wide.
+- **Closing a proposal:** an operator can close only an escalated case, so there is no hand close
+  for a handed-over proposal until C6b's Accept and Reject. The draft routine reports each
+  pending proposal on every run, and flotillad closes it as resolved itself once the SOP is
+  committed and deployed and the routine stops reporting it.
+
 ## Commits, each green on its own
 
 | # | Commit | Gates beyond `make lint` and `make test-unit` |
