@@ -5,11 +5,17 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 )
 
-// Slack asks (G9, ADR-0006 decided 4, security T16): each plan waiting for a person gets one ask with a
-// random nonce, posted in Slack by the connector. A click names the nonce; the ask is used once.
+// Slack asks (G9, ADR-0006 decided 4, security T16; ADR-0023 §3): each plan waiting for a person, and each notice about
+// a watched case, gets one ask with a random nonce, posted in Slack by the connector. A click names the nonce and an
+// answer id; the ask keeps the ids it offered, and a click for any other is refused. A plan's ask is used once; a
+// notice's ask stays usable until the notice is acknowledged.
 
 type SlackAsk struct {
 	Nonce     string `json:"nonce"`
@@ -20,13 +26,62 @@ type SlackAsk struct {
 	DecidedAt string `json:"decided_at"`
 	DecidedBy string `json:"decided_by"`
 	Outcome   string `json:"outcome"`
+	Kind      string `json:"kind"`    // plan | notice
+	Answers   string `json:"answers"` // JSON list of the answer ids the message offered
+}
+
+// Ask kinds, and the plan_hash prefix of a notice's ask.
+const (
+	AskPlan         = "plan"
+	AskNotice       = "notice"
+	askNoticePrefix = "notice:"
+)
+
+const askCols = `nonce, case_id, plan_hash, asked_at, sent_at, decided_at, decided_by, outcome, kind, answers`
+
+func scanAsk(r interface{ Scan(...any) error }) (SlackAsk, error) {
+	var a SlackAsk
+	err := r.Scan(&a.Nonce, &a.CaseID, &a.PlanHash, &a.AskedAt, &a.SentAt, &a.DecidedAt, &a.DecidedBy, &a.Outcome, &a.Kind, &a.Answers)
+	return a, err
+}
+
+// Offers is whether the ask offered this answer id.
+func (a SlackAsk) Offers(id string) bool {
+	var ids []string
+	if json.Unmarshal([]byte(a.Answers), &ids) != nil {
+		return false
+	}
+	for _, x := range ids {
+		if x == id {
+			return true
+		}
+	}
+	return false
+}
+
+// NoticeID is the notice a notice's ask is about, 0 for a plan's.
+func (a SlackAsk) NoticeID() int64 {
+	if a.Kind != AskNotice {
+		return 0
+	}
+	id, _ := strconv.ParseInt(strings.TrimPrefix(a.PlanHash, askNoticePrefix), 10, 64)
+	return id
 }
 
 var ErrAskUsed = errors.New("this Slack message was already answered")
 
 // AskInSlack is the ask for this case's plan, made when it has none.
 func (s *Store) AskInSlack(ctx context.Context, caseID, planHash string) (SlackAsk, error) {
-	a, err := s.slackAsk(ctx, `SELECT nonce, case_id, plan_hash, asked_at, sent_at, decided_at, decided_by, outcome FROM slack_asks
+	return s.askInSlack(ctx, caseID, planHash, AskPlan, []string{"approve", "reject"})
+}
+
+// AskNoticeInSlack is the ask for one notice of a case, made when it has none; answers are the ids it offers.
+func (s *Store) AskNoticeInSlack(ctx context.Context, caseID string, noticeID int64, answers []string) (SlackAsk, error) {
+	return s.askInSlack(ctx, caseID, askNoticePrefix+strconv.FormatInt(noticeID, 10), AskNotice, answers)
+}
+
+func (s *Store) askInSlack(ctx context.Context, caseID, planHash, kind string, answers []string) (SlackAsk, error) {
+	a, err := s.slackAsk(ctx, `SELECT `+askCols+` FROM slack_asks
 		WHERE case_id = ? AND plan_hash = ?`, caseID, planHash)
 	if err == nil || !errors.Is(err, sql.ErrNoRows) {
 		return a, err
@@ -35,27 +90,67 @@ func (s *Store) AskInSlack(ctx context.Context, caseID, planHash string) (SlackA
 	if _, err := rand.Read(b); err != nil {
 		return a, err
 	}
-	a = SlackAsk{Nonce: hex.EncodeToString(b), CaseID: caseID, PlanHash: planHash, AskedAt: s.now().Format(ts)}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO slack_asks (nonce, case_id, plan_hash, asked_at) VALUES (?, ?, ?, ?)`,
-		a.Nonce, a.CaseID, a.PlanHash, a.AskedAt)
+	ids, err := json.Marshal(answers)
+	if err != nil {
+		return a, err
+	}
+	a = SlackAsk{Nonce: hex.EncodeToString(b), CaseID: caseID, PlanHash: planHash, AskedAt: s.now().Format(ts), Kind: kind, Answers: string(ids)}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO slack_asks (nonce, case_id, plan_hash, asked_at, kind, answers) VALUES (?, ?, ?, ?, ?, ?)`,
+		a.Nonce, a.CaseID, a.PlanHash, a.AskedAt, a.Kind, a.Answers)
 	return a, err
 }
 
 // SlackAskByNonce is the ask a click names; sql.ErrNoRows for a nonce flotillad never made.
 func (s *Store) SlackAskByNonce(ctx context.Context, nonce string) (SlackAsk, error) {
-	return s.slackAsk(ctx, `SELECT nonce, case_id, plan_hash, asked_at, sent_at, decided_at, decided_by, outcome FROM slack_asks
+	return s.slackAsk(ctx, `SELECT `+askCols+` FROM slack_asks
 		WHERE nonce = ?`, nonce)
 }
 
 func (s *Store) slackAsk(ctx context.Context, q string, args ...any) (SlackAsk, error) {
-	var a SlackAsk
-	err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&a.Nonce, &a.CaseID, &a.PlanHash, &a.AskedAt, &a.SentAt, &a.DecidedAt, &a.DecidedBy, &a.Outcome)
-	return a, err
+	return scanAsk(s.rdb.QueryRowContext(ctx, q, args...))
 }
 
-// MarkAskSent records that the connector posted the ask.
+// MarkAskSent records that the connector posted the ask. A notice's ask also marks the notice sent, with a notice.sent
+// event on its case, in the same transaction.
 func (s *Store) MarkAskSent(ctx context.Context, nonce string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE slack_asks SET sent_at = ? WHERE nonce = ?`, s.now().Format(ts), nonce)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	at := s.now().Format(ts)
+	if _, err := tx.ExecContext(ctx, `UPDATE slack_asks SET sent_at = ? WHERE nonce = ?`, at, nonce); err != nil {
+		return err
+	}
+	a, err := scanAsk(tx.QueryRowContext(ctx, `SELECT `+askCols+` FROM slack_asks WHERE nonce = ?`, nonce))
+	if errors.Is(err, sql.ErrNoRows) {
+		return tx.Commit()
+	}
+	if err != nil {
+		return err
+	}
+	if id := a.NoticeID(); id > 0 {
+		var n, sent int
+		if err := tx.QueryRowContext(ctx, `SELECT n, sent_at <> '' FROM notices WHERE id = ?`, id).Scan(&n, &sent); err != nil {
+			return err
+		}
+		if sent == 0 {
+			if _, err := tx.ExecContext(ctx, `UPDATE notices SET sent_at = ? WHERE id = ?`, at, id); err != nil {
+				return err
+			}
+			if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: a.CaseID, At: at, Kind: "notice.sent", Actor: "flotillad",
+				Detail: fmt.Sprintf("notice %d offered to the Slack connector", n)}); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+// CloseNoticeAsks spends every open notice ask of a case: the notice was acknowledged, so no message of it is usable.
+func (s *Store) CloseNoticeAsks(ctx context.Context, caseID, by, outcome string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE slack_asks SET decided_at = ?, decided_by = ?, outcome = ? WHERE case_id = ? AND kind = ? AND decided_at = ''`,
+		s.now().Format(ts), by, outcome, caseID, AskNotice)
 	return err
 }
 
@@ -106,7 +201,7 @@ func (s *Store) SlackApprovalsSince(ctx context.Context, since string) (int, err
 
 // UnsentAsks are asks the connector has not posted yet, oldest first.
 func (s *Store) UnsentAsks(ctx context.Context) ([]SlackAsk, error) {
-	rows, err := s.rdb.QueryContext(ctx, `SELECT nonce, case_id, plan_hash, asked_at, sent_at, decided_at, decided_by, outcome FROM slack_asks
+	rows, err := s.rdb.QueryContext(ctx, `SELECT `+askCols+` FROM slack_asks
 		WHERE sent_at = '' AND decided_at = '' ORDER BY asked_at`)
 	if err != nil {
 		return nil, err
@@ -114,8 +209,8 @@ func (s *Store) UnsentAsks(ctx context.Context) ([]SlackAsk, error) {
 	defer rows.Close()
 	var out []SlackAsk
 	for rows.Next() {
-		var a SlackAsk
-		if err := rows.Scan(&a.Nonce, &a.CaseID, &a.PlanHash, &a.AskedAt, &a.SentAt, &a.DecidedAt, &a.DecidedBy, &a.Outcome); err != nil {
+		a, err := scanAsk(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, a)

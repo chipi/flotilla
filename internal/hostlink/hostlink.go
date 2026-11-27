@@ -64,7 +64,7 @@ type Server struct {
 	// OnContact, when set, gets a host's state after each change (connect, heartbeat, result, drop):
 	// flotillad keeps it in its store for `host list` and the alerts.
 	OnContact func(HostState)
-	// OnApproval, when set, answers a click a connector relayed (api.RelayedApproval); without it a relayed
+	// OnApproval, when set, answers a click a connector relayed (api.RelayedAnswer); without it a relayed
 	// approval is refused.
 	OnApproval func(ctx context.Context, host string, b hostwire.ApprovalBody) hostwire.AnsweredBody
 	// Workers maps a remote worker's identity (its certificate name) to the worker it serves (RFC-0011);

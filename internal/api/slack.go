@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/chipi/flotilla/internal/cases"
 	"github.com/chipi/flotilla/internal/hostwire"
@@ -55,8 +56,8 @@ func (s *Server) SlackApprovable(action string) (bool, string) {
 	return true, ""
 }
 
-// SlackNotices makes an ask for every case waiting on its newest plan and returns the asks the connector
-// has not posted yet.
+// SlackNotices makes an ask for every case waiting on its newest plan, and for every watched case whose newest notice
+// is due and unsent, and returns the asks the connector has not posted yet (ADR-0023 §3).
 func (s *Server) SlackNotices(ctx context.Context) ([]hostwire.NotifyBody, error) {
 	if s.Slack == nil {
 		return nil, nil
@@ -77,6 +78,22 @@ func (s *Server) SlackNotices(ctx context.Context) ([]hostwire.NotifyBody, error
 			return nil, err
 		}
 	}
+	watched, err := s.Store.Cases(ctx, store.CaseFilter{Status: cases.Watching, Limit: 1000})
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range watched {
+		n, ok, err := s.dueNotice(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		if _, err := s.Store.AskNoticeInSlack(ctx, c.ID, n.ID, []string{AnsAcknowledge}); err != nil {
+			return nil, err
+		}
+	}
 	asks, err := s.Store.UnsentAsks(ctx)
 	if err != nil {
 		return nil, err
@@ -86,6 +103,22 @@ func (s *Server) SlackNotices(ctx context.Context) ([]hostwire.NotifyBody, error
 		c, err := s.Store.Case(ctx, a.CaseID)
 		if err != nil {
 			return nil, err
+		}
+		if a.Kind == store.AskNotice {
+			n, ok, err := s.dueNotice(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || n.ID != a.NoticeID() {
+				continue // acknowledged, closed or superseded before it was posted
+			}
+			detail, err := s.noticeDetail(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, hostwire.NotifyBody{Nonce: a.Nonce, Case: c.ID, Title: caseTitle(c), Plan: detail, URL: s.caseURL(c), Kind: hostwire.KindNotice,
+				Repeat: n.N > 1, Answers: []hostwire.NotifyAnswer{{ID: AnsAcknowledge, Label: "Acknowledge", Allowed: true}}})
+			continue
 		}
 		if c.Status != cases.AwaitingApproval {
 			continue // answered elsewhere before it was posted
@@ -99,18 +132,69 @@ func (s *Server) SlackNotices(ctx context.Context) ([]hostwire.NotifyBody, error
 		}
 		p := plans[len(plans)-1]
 		ok, why := s.SlackApprovable(p.Action)
-		title := c.Title
-		if title == "" {
-			title = c.Kind + " on " + c.Target
-		}
-		out = append(out, hostwire.NotifyBody{Nonce: a.Nonce, Case: c.ID, Title: title, Plan: p.Action + " on " + c.Target,
-			PlanHash: shortHash(p.PlanHash), URL: strings.TrimRight(s.Slack.UIURL, "/") + "/cases/" + c.ID, Approvable: ok, Why: why})
+		// A plan Slack may not approve offers nothing from Slack, as before: the message says where to answer.
+		out = append(out, hostwire.NotifyBody{Nonce: a.Nonce, Case: c.ID, Title: caseTitle(c), Plan: p.Action + " on " + c.Target,
+			PlanHash: shortHash(p.PlanHash), URL: s.caseURL(c), Approvable: ok, Why: why, Kind: hostwire.KindPlan,
+			Answers: []hostwire.NotifyAnswer{
+				{ID: AnsApprove, Label: "Approve", Style: "primary", Allowed: ok, Why: why},
+				{ID: AnsReject, Label: "Reject", Style: "danger", Allowed: ok, Why: why}}})
 	}
 	return out, nil
 }
 
-// RelayedApproval answers a click the connector relayed.
-func (s *Server) RelayedApproval(ctx context.Context, host string, b hostwire.ApprovalBody) hostwire.AnsweredBody {
+func caseTitle(c store.Case) string {
+	if c.Title != "" {
+		return c.Title
+	}
+	return c.Kind + " on " + c.Target
+}
+
+func (s *Server) caseURL(c store.Case) string {
+	return strings.TrimRight(s.Slack.UIURL, "/") + "/cases/" + c.ID
+}
+
+// dueNotice is a watching case's newest notice, when it belongs to this watching period and is unsent and
+// unacknowledged: the one a connector should be told about.
+func (s *Server) dueNotice(ctx context.Context, c store.Case) (store.Notice, bool, error) {
+	ns, err := s.Store.Notices(ctx, c.ID)
+	if err != nil || len(ns) == 0 {
+		return store.Notice{}, false, err
+	}
+	n := ns[len(ns)-1]
+	start, serr := time.Parse(time.RFC3339Nano, c.StatusAt)
+	due, derr := time.Parse(time.RFC3339Nano, n.DueAt)
+	if serr != nil || derr != nil || due.Before(start) || n.Kind != store.NoticeWatching || n.SentAt != "" || n.AckedAt != "" {
+		return store.Notice{}, false, nil
+	}
+	return n, true, nil
+}
+
+// noticeDetail is the line a notice shows under the title: what is watched, how often it repeated, for how long, and
+// what the plan on record would have done.
+func (s *Server) noticeDetail(ctx context.Context, c store.Case) (string, error) {
+	d := "watched: " + c.Kind + " on " + c.Target
+	if c.Repeats > 0 {
+		d += fmt.Sprintf(", repeated %d times unchanged", c.Repeats)
+	}
+	if opened, err := time.Parse(time.RFC3339Nano, c.OpenedAt); err == nil {
+		now := time.Now()
+		if s.Sched != nil {
+			now = s.Sched.Clock()
+		}
+		d += ", open " + now.Sub(opened).Round(time.Minute).String()
+	}
+	plans, err := s.Store.Plans(ctx, c.ID)
+	if err != nil {
+		return "", err
+	}
+	if len(plans) > 0 {
+		d += "; the recorded plan would have run " + plans[len(plans)-1].Action + " on " + c.Target
+	}
+	return d, nil
+}
+
+// RelayedAnswer answers a click the connector relayed: any answer the ask offered (ADR-0023 §3), checked again here.
+func (s *Server) RelayedAnswer(ctx context.Context, host string, b hostwire.ApprovalBody) hostwire.AnsweredBody {
 	ans := func(ok bool, f string, a ...any) hostwire.AnsweredBody {
 		text := fmt.Sprintf(f, a...)
 		if !ok {
@@ -151,12 +235,18 @@ func (s *Server) RelayedApproval(ctx context.Context, host string, b hostwire.Ap
 	if ask.DecidedAt != "" {
 		return ans(false, "already answered: %s by %s", ask.Outcome, strings.TrimPrefix(ask.DecidedBy, "user:"))
 	}
-	plans, err := s.Store.Plans(ctx, ask.CaseID)
-	if err != nil {
-		return ans(false, "refused: %v", err)
+	// the click is checked against what this message offered, never against what the connector drew
+	if !ask.Offers(b.Action) {
+		return ans(false, "refused: unknown action %q: this message does not offer it", b.Action)
 	}
-	if len(plans) == 0 || plans[len(plans)-1].PlanHash != ask.PlanHash {
-		return ans(false, "refused: the plan changed since this message; open the case")
+	if ask.Kind == store.AskPlan {
+		plans, err := s.Store.Plans(ctx, ask.CaseID)
+		if err != nil {
+			return ans(false, "refused: %v", err)
+		}
+		if len(plans) == 0 || plans[len(plans)-1].PlanHash != ask.PlanHash {
+			return ans(false, "refused: the plan changed since this message; open the case")
+		}
 	}
 	actor, err := s.resolveSlackActor(ctx, b.User, name)
 	if err != nil {
@@ -197,6 +287,25 @@ func (s *Server) RelayedApproval(ctx context.Context, host string, b hostwire.Ap
 			return ans(false, "not rejected: %v", err)
 		}
 		return ans(true, "rejected by %s in Slack", u.Name)
+	case AnsAcknowledge:
+		if ask.Kind != store.AskNotice {
+			return ans(false, "refused: unknown action %q", b.Action)
+		}
+		if err := s.Store.UseAsk(ctx, b.Nonce, c.Name, "acknowledged"); err != nil {
+			return ans(false, "refused: %v", err)
+		}
+		if _, err := s.Answer(ctx, c, "slack", ask.CaseID, AnsAcknowledge, AnswerIn{}); err != nil {
+			_ = s.Store.ReopenAsk(ctx, b.Nonce)
+			if pr := AsProblem(err); pr != nil {
+				return ans(false, "not acknowledged: %s", pr.Msg)
+			}
+			return ans(false, "not acknowledged: %v", err)
+		}
+		// the message clicked is spent, and so is any earlier message of the same case's notices
+		if err := s.Store.CloseNoticeAsks(ctx, ask.CaseID, c.Name, "acknowledged"); err != nil {
+			s.Log.Warn("slack notice asks not closed", "case", ask.CaseID, "err", err)
+		}
+		return ans(true, "acknowledged by %s in Slack; the case stays watching", u.Name)
 	}
 	return ans(false, "refused: unknown action %q", b.Action)
 }

@@ -707,6 +707,13 @@ WSHOW="$(cli case show "$WC" 2>&1)"
 [ "$(echo "$WSHOW" | grep -c "notice.due")" = 1 ] && echo "$WSHOW" | grep >/dev/null "notice.due .*flotillad" \
   && ok "the case timer recorded one notice.due (the notice at once), not one per detection" || bad "notice.due: $(echo "$WSHOW" | grep -E 'notice|watching')"
 status_is "$WC" watching && ok "the notice moved nothing: the case is still watching" || bad "after the notice: $(cli case list --all 2>&1 | grep e2e_watching)"
+# ADR-0023 §3: the due notice is offered to the Slack connector host every 15 seconds. That host's agent connects only in section hostagent,
+# so here flotillad's own log of the offer is the record (once per ask, taken or not); the notice stays unsent, with no notice.sent
+seen flotillad '"msg":"slack ask offered".*"case":"'"$WC"'","kind":"notice","repeat":false,"host":"e2e-host"' \
+  && ok "Slack: flotillad offered the notice to the connector host e2e-host (kind notice, not a repeat)" \
+  || bad "no notice was offered to the Slack connector host: $($D logs flotillad 2>&1 | grep -i 'slack' | tail -3)"
+cli case show "$WC" 2>&1 | grep >/dev/null "notice.sent" && bad "notice.sent without a connected connector: $(cli case show "$WC" 2>&1 | grep notice)" \
+  || ok "the notice is not marked sent while the connector host is not connected"
 OUT="$(cli case answers "$WC" 2>&1)"
 echo "$OUT" | grep >/dev/null "(notice)" && echo "$OUT" | grep >/dev/null "acknowledge" \
   && ok "the answers of a watching case: a notice, offering acknowledge" || bad "case answers (watching): $OUT"
@@ -1496,7 +1503,7 @@ HC="$(proposed e2e_host_true host-true-monitor)"
   || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
 # Slack approvals (the slack section of flotillad.yaml): the plan that waits is offered to the connector host every 15 seconds. The stand-in host's agent
 # is no connector: it logs each plan it is asked to post and posts nothing, which is the e2e's recording of what Slack would have been sent
-hseen 'not its Slack connector' && ok "Slack: flotillad asked the connector host to post the plan waiting for approval; the stand-in's agent logged it" \
+hseen 'not its Slack connector.*"kind":"plan"' && ok "Slack: flotillad asked the connector host to post the plan waiting for approval (kind plan); the stand-in's agent logged it" \
   || bad "no plan was offered to the Slack connector host: $(hostlog | tail -3) / $($D logs flotillad 2>&1 | grep -i slack | tail -2)"
 OUT="$(cli case approve "$HC" 2>&1)"
 echo "$OUT" | grep >/dev/null '"approved_by":"operator"' && ok "the operator approved it" || bad "approve: $OUT"

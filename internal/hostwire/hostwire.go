@@ -38,7 +38,7 @@ const (
 	Renewed  = "renewed"  // {chain}
 	Execute  = "execute"  // {envelope}: the signed execution, its exact bytes
 	Refusal  = "refusal"  // {detail}: and the connection closes
-	Notify   = "notify"   // {nonce, case, ...}: a plan waiting for a person, for the connector to post
+	Notify   = "notify"   // {nonce, case, ...}: a plan or a notice waiting for a person, for the connector to post
 	Answered = "answered" // {nonce, ok, text}: what became of a relayed approval
 	// flotillad -> a remote worker's link (RFC-0011)
 	Run    = "run"    // {run_id, request}: the worker's run request, as its HTTP API takes it
@@ -131,18 +131,40 @@ type LogBody struct {
 	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
-// NotifyBody is a plan that waits for a person, for the connector to post in Slack (ADR-0006 §1,
-// decided 4). Approvable is whether policy lets Slack approve it at all (low or medium risk, reversible
-// or regenerable); without it the message only says where to answer.
+// Ask kinds a NotifyBody carries (ADR-0023): a plan that waits for approval, or a notice about a watched case.
+const (
+	KindPlan   = "plan"
+	KindNotice = "notice"
+)
+
+// NotifyAnswer is one answer a message offers: a button when it is allowed, a line saying why not when it is not.
+// flotillad checks a click against the answers it stored for the ask, never against what the connector rendered.
+type NotifyAnswer struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Style   string `json:"style,omitempty"` // primary | danger | empty
+	Allowed bool   `json:"allowed"`
+	Why     string `json:"why,omitempty"`
+}
+
+// NotifyBody is a question for a person, for the connector to post in Slack (ADR-0006 §1, decided 4; ADR-0023): a
+// plan that waits, or a notice about a watched case. Plan is the line under the title: the action and its target for a
+// plan, the case's detail for a notice. Approvable is whether policy lets Slack approve a plan at all (low or medium
+// risk, reversible or regenerable); without it the message only says where to answer. Answers, when present, say what
+// the message offers; a body without them (an older flotillad) is a plan offering approve and reject by Approvable.
+// The decoding is strict, so flotillad and its connector's host agent upgrade together.
 type NotifyBody struct {
-	Nonce      string `json:"nonce"`
-	Case       string `json:"case"`
-	Title      string `json:"title"`
-	Plan       string `json:"plan"` // the action and its target, as a person reads it
-	PlanHash   string `json:"plan_hash"`
-	URL        string `json:"url"`
-	Approvable bool   `json:"approvable"`
-	Why        string `json:"why,omitempty"` // why it is not approvable from Slack
+	Nonce      string         `json:"nonce"`
+	Case       string         `json:"case"`
+	Title      string         `json:"title"`
+	Plan       string         `json:"plan"`
+	PlanHash   string         `json:"plan_hash"`
+	URL        string         `json:"url"`
+	Approvable bool           `json:"approvable"`
+	Why        string         `json:"why,omitempty"` // why it is not approvable from Slack
+	Kind       string         `json:"kind,omitempty"`
+	Answers    []NotifyAnswer `json:"answers,omitempty"`
+	Repeat     bool           `json:"repeat,omitempty"` // a later notice of a case already shown: update that message
 }
 
 // ApprovalBody is a click in Slack as the connector saw it. flotillad decides everything from it again:
@@ -151,7 +173,7 @@ type ApprovalBody struct {
 	Nonce  string `json:"nonce"`
 	Team   string `json:"team"`
 	User   string `json:"user"`
-	Action string `json:"action"` // approve | reject
+	Action string `json:"action"` // any answer id the message offered
 }
 
 // AnsweredBody is flotillad's answer to a relayed approval, for the connector to show on the message.

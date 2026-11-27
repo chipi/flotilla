@@ -548,6 +548,10 @@ var schema = []string{
 		acked_at TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX notices_case ON notices(case_id, id);`,
+	// ADR-0023 §3: a Slack ask is a plan's or a notice's, and keeps the answer ids the message offered (a JSON list; a click is
+	// checked against it). A notice's ask is keyed by plan_hash "notice:<notice id>". Asks made before this are plans offering approve and reject.
+	`ALTER TABLE slack_asks ADD COLUMN kind TEXT NOT NULL DEFAULT 'plan';
+	ALTER TABLE slack_asks ADD COLUMN answers TEXT NOT NULL DEFAULT '["approve","reject"]';`,
 }
 
 // Run statuses. "interrupted" is a run flotillad found unfinished when it started; "cancelled" is a run

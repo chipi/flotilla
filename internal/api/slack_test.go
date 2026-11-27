@@ -75,14 +75,14 @@ func TestRelayedApproval(t *testing.T) {
 		{"a nonce flotilla never made", "backup-01", hostwire.ApprovalBody{Nonce: "beef", Team: "T0001", User: "U0OPER", Action: "approve"}, "not made by flotilla"},
 		{"an unknown action", "backup-01", hostwire.ApprovalBody{Nonce: nonce, Team: "T0001", User: "U0OPER", Action: "delete"}, "unknown action"},
 	} {
-		if a := s.RelayedApproval(ctx, c.host, c.b); a.OK || !strings.Contains(a.Text, c.want) {
+		if a := s.RelayedAnswer(ctx, c.host, c.b); a.OK || !strings.Contains(a.Text, c.want) {
 			t.Errorf("%s: %+v", c.what, a)
 		}
 	}
 	if c := caseStatus(t, s, id); c.Status != cases.AwaitingApproval {
 		t.Fatalf("a refused click moved the case: %s", c.Status)
 	}
-	if a := s.RelayedApproval(ctx, "backup-01", ok); !a.OK || !strings.Contains(a.Text, "approved by ada") {
+	if a := s.RelayedAnswer(ctx, "backup-01", ok); !a.OK || !strings.Contains(a.Text, "approved by ada") {
 		t.Fatalf("the approval: %+v", a)
 	}
 	if c := caseStatus(t, s, id); c.Status != cases.Executing {
@@ -92,14 +92,14 @@ func TestRelayedApproval(t *testing.T) {
 	if who, err := s.approvedBy(ctx, caseStatus(t, s, id), plans[len(plans)-1]); err != nil || who != "user:ada" {
 		t.Fatalf("approved by %q %v", who, err)
 	}
-	if a := s.RelayedApproval(ctx, "backup-01", ok); a.OK || !strings.Contains(a.Text, "already answered: approved by ada") {
+	if a := s.RelayedAnswer(ctx, "backup-01", ok); a.OK || !strings.Contains(a.Text, "already answered: approved by ada") {
 		t.Fatalf("a second click: %+v", a)
 	}
 
 	// a rejection, and a plan that changed after its message
 	rid := slackCase(t, s, "j")
 	ns, _ = s.SlackNotices(ctx)
-	if a := s.RelayedApproval(ctx, "backup-01", hostwire.ApprovalBody{Nonce: ns[0].Nonce, Team: "T0001", User: "U0OPER", Action: "reject"}); !a.OK {
+	if a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: ns[0].Nonce, Team: "T0001", User: "U0OPER", Action: "reject"}); !a.OK {
 		t.Fatalf("the rejection: %+v", a)
 	}
 	if c := caseStatus(t, s, rid); c.Status != cases.Escalated {
@@ -110,7 +110,7 @@ func TestRelayedApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := s.RelayedApproval(ctx, "backup-01", hostwire.ApprovalBody{Nonce: old.Nonce, Team: "T0001", User: "U0OPER", Action: "approve"}); a.OK || !strings.Contains(a.Text, "the plan changed") {
+	if a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: old.Nonce, Team: "T0001", User: "U0OPER", Action: "approve"}); a.OK || !strings.Contains(a.Text, "the plan changed") {
 		t.Fatalf("a changed plan: %+v", a)
 	}
 }
@@ -128,7 +128,7 @@ func TestSlackDailyCap(t *testing.T) {
 				nonce = n.Nonce
 			}
 		}
-		a := s.RelayedApproval(ctx, "backup-01", hostwire.ApprovalBody{Nonce: nonce, Team: "T0001", User: "U0OPER", Action: "approve"})
+		a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: nonce, Team: "T0001", User: "U0OPER", Action: "approve"})
 		if i < 2 && !a.OK {
 			t.Fatalf("approval %d under the cap: %+v", i+1, a)
 		}
@@ -199,7 +199,7 @@ func TestRelayedApprovalOfAHighRiskPlan(t *testing.T) {
 	if len(ns) != 1 || ns[0].Approvable || !strings.Contains(ns[0].Why, "high risk") {
 		t.Fatalf("the notice of a high-risk plan: %+v", ns)
 	}
-	if a := s.RelayedApproval(ctx, "backup-01", hostwire.ApprovalBody{Nonce: ns[0].Nonce, Team: "T0001", User: "U0OPER", Action: "approve"}); a.OK || !strings.Contains(a.Text, "high risk") {
+	if a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: ns[0].Nonce, Team: "T0001", User: "U0OPER", Action: "approve"}); a.OK || !strings.Contains(a.Text, "high risk") {
 		t.Fatalf("approving a high-risk plan from Slack: %+v", a)
 	}
 	if c := caseStatus(t, s, id); c.Status != cases.AwaitingApproval {

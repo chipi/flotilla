@@ -325,12 +325,12 @@ func (a *Agent) session(ctx context.Context) error {
 				return err
 			}
 			if a.Slack == nil {
-				a.Log.Warn("flotillad sent a plan to post, but this host is not its Slack connector", "case", n.Case)
+				a.Log.Warn("flotillad sent a question to post, but this host is not its Slack connector", "case", n.Case, "kind", n.Kind)
 				continue
 			}
 			go func() {
 				if err := a.Slack.Post(ctx, n); err != nil {
-					a.Log.Warn("a plan could not be posted in Slack", "case", n.Case, "err", err)
+					a.Log.Warn("a question could not be posted in Slack", "case", n.Case, "kind", n.Kind, "err", err)
 				}
 			}()
 		case hostwire.Answered:

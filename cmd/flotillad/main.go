@@ -799,7 +799,7 @@ func main() {
 		apiSrv.Remote = remoteWorkers(link, remotes)
 		if cfg.Slack != nil {
 			apiSrv.Slack = cfg.Slack
-			link.OnApproval = apiSrv.RelayedApproval
+			link.OnApproval = apiSrv.RelayedAnswer
 			go slackNotices(ctx, apiSrv, link, cfg.Slack.ConnectorHost, log)
 			log.Info("approvals in Slack", "connector", cfg.Slack.ConnectorHost, "users", len(cfg.Slack.Users), "daily_cap", cfg.Slack.Cap())
 		}
@@ -1056,11 +1056,12 @@ func backup(ctx context.Context, st *store.Store, stateDir, day string, log *slo
 
 var slackUserRe = regexp.MustCompile(`^[UW][A-Z0-9]{6,20}$`)
 
-// slackNotices sends each plan waiting for a person to the Slack connector, every 15 seconds; a plan is
-// marked sent only once its host took it.
+// slackNotices sends each plan waiting for a person, and each due notice of a watched case, to the Slack connector,
+// every 15 seconds; an ask is marked sent only once its host took it. The first offer of each is logged, taken or not.
 func slackNotices(ctx context.Context, a *api.Server, link *hostlink.Server, host string, log *slog.Logger) {
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
+	offered := map[string]bool{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -1073,6 +1074,10 @@ func slackNotices(ctx context.Context, a *api.Server, link *hostlink.Server, hos
 			continue
 		}
 		for _, n := range ns {
+			if !offered[n.Nonce] {
+				offered[n.Nonce] = true
+				log.Info("slack ask offered", "case", n.Case, "kind", n.Kind, "repeat", n.Repeat, "host", host)
+			}
 			if err := link.Notify(host, n); err != nil {
 				break // the connector is not connected: the next tick tries again
 			}

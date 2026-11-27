@@ -221,7 +221,7 @@ func (s *Server) Answer(ctx context.Context, c Caller, via, id, answer string, i
 	return s.give(ctx, c, via, id, answer, in)
 }
 
-// give makes the move an answer names, after the checks above. RelayedApproval calls it directly for a click whose
+// give makes the move an answer names, after the checks above. RelayedAnswer calls it directly for a click whose
 // policy it checked before it spent the ask: the policy counts spent asks, so it must not run again after.
 func (s *Server) give(ctx context.Context, c Caller, via, id, answer string, in AnswerIn) (map[string]string, error) {
 	out := map[string]string{"case": id}

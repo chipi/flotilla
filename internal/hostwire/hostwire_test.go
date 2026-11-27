@@ -82,3 +82,34 @@ func TestFrameCarriesAFullCallsResult(t *testing.T) {
 		t.Fatal("a frame over MaxFrame must be refused")
 	}
 }
+
+// A notify frame from before answers decodes with none, and one with them round-trips; a reader of the older body
+// refuses the new fields (the decoding is strict), which is why flotillad and its connector's agent upgrade together.
+func TestNotifyBodyOldAndNew(t *testing.T) {
+	old := Frame{Type: Notify, Body: []byte(`{"nonce":"n","case":"c","title":"t","plan":"p","plan_hash":"h","url":"u","approvable":true}`)}
+	var n NotifyBody
+	if err := old.Decode(&n); err != nil || n.Kind != "" || len(n.Answers) != 0 || n.Repeat || !n.Approvable {
+		t.Fatalf("an old notify body: %+v %v", n, err)
+	}
+	var buf bytes.Buffer
+	want := NotifyBody{Nonce: "n", Case: "c", Title: "t", Plan: "p", URL: "u", Kind: KindNotice, Repeat: true,
+		Answers: []NotifyAnswer{{ID: "acknowledge", Label: "Acknowledge", Allowed: true}, {ID: "approve", Label: "Approve", Style: "primary", Why: "high risk"}}}
+	if err := Write(&buf, Notify, want); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Read(&buf)
+	var got NotifyBody
+	if err != nil || f.Decode(&got) != nil || got.Kind != KindNotice || !got.Repeat || len(got.Answers) != 2 || got.Answers[1] != want.Answers[1] || got.Answers[0] != want.Answers[0] {
+		t.Fatalf("a new notify body: %+v %v", got, err)
+	}
+	type before struct { // NotifyBody as C3 had it
+		Nonce, Case, Title, Plan string
+		PlanHash                 string `json:"plan_hash"`
+		URL                      string `json:"url"`
+		Approvable               bool   `json:"approvable"`
+		Why                      string `json:"why,omitempty"`
+	}
+	if err := f.Decode(&before{}); err == nil {
+		t.Fatal("a reader that does not know the new fields accepted them")
+	}
+}

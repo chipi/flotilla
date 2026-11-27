@@ -74,7 +74,8 @@ func TestSlackConnectorOverTheLink(t *testing.T) {
 	run(t, a)
 	waitFor(t, "the agent to connect", connected(w, "host-01"))
 	if err := w.link.Notify("host-01", hostwire.NotifyBody{Nonce: "n1", Case: "case-1", Title: "Backup late", Plan: "rerun on host:host-01",
-		PlanHash: "abc", URL: "https://f/cases/case-1", Approvable: true}); err != nil {
+		PlanHash: "abc", URL: "https://f/cases/case-1", Approvable: true, Kind: hostwire.KindPlan,
+		Answers: []hostwire.NotifyAnswer{{ID: "approve", Label: "Approve", Style: "primary", Allowed: true}, {ID: "reject", Label: "Reject", Style: "danger", Allowed: true}}}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the plan posted in Slack", func() bool {
@@ -94,6 +95,24 @@ func TestSlackConnectorOverTheLink(t *testing.T) {
 		_ = json.Unmarshal([]byte(update), &u)
 		return u["ts"] == "1.1" && strings.Contains(update, "approved by ada")
 	})
+	// a notice frame: posted as its own message, then a repeat of it updates that message
+	notice := hostwire.NotifyBody{Nonce: "n3", Case: "case-3", Title: "Backup watched", Plan: "watched: failed_backup on host:host-01", URL: "https://f/cases/case-3",
+		Kind: hostwire.KindNotice, Answers: []hostwire.NotifyAnswer{{ID: "acknowledge", Label: "Acknowledge", Allowed: true}}}
+	count := func(m string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Count(" "+strings.Join(methods, " "), " "+m)
+	}
+	if err := w.link.Notify("host-01", notice); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the notice posted in Slack", func() bool { return count("chat.postMessage") == 2 })
+	notice.Nonce, notice.Repeat = "n4", true
+	updates := count("chat.update")
+	if err := w.link.Notify("host-01", notice); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the repeat updating the notice", func() bool { return count("chat.update") == updates+1 && count("chat.postMessage") == 2 })
 	if err := w.link.Notify("model-host", hostwire.NotifyBody{Nonce: "n2"}); err == nil {
 		t.Error("a notice to a host that is not connected was accepted")
 	}

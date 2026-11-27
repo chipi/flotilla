@@ -149,7 +149,7 @@ func TestSlackRiskLimitInAnswers(t *testing.T) {
 		ns, _ := s.SlackNotices(ctx)
 		for _, n := range ns {
 			if n.Case == id {
-				if a := s.RelayedApproval(ctx, "backup-01", hostwire.ApprovalBody{Nonce: n.Nonce, Team: "T0001", User: "U0OPER", Action: "approve"}); !a.OK {
+				if a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: n.Nonce, Team: "T0001", User: "U0OPER", Action: "approve"}); !a.OK {
 					t.Fatal(a)
 				}
 			}
@@ -230,7 +230,7 @@ func TestAnswerActorIsDirectoryResolved(t *testing.T) {
 		ns, _ := s.SlackNotices(ctx)
 		for _, n := range ns {
 			if n.Case == id {
-				return s.RelayedApproval(ctx, "backup-01", hostwire.ApprovalBody{Nonce: n.Nonce, Team: "T0001", User: "U0OPER", Action: "approve"})
+				return s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: n.Nonce, Team: "T0001", User: "U0OPER", Action: "approve"})
 			}
 		}
 		t.Fatal("no ask")

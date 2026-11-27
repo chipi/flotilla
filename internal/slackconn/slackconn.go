@@ -36,6 +36,7 @@ type Connector struct {
 
 	mu     sync.Mutex
 	posted map[string]posted // nonce -> the message
+	byCase map[string]string // case -> the nonce of the message last shown for it
 }
 
 type posted struct {
@@ -45,7 +46,7 @@ type posted struct {
 
 func New(bot, app, channel string, log *slog.Logger) *Connector {
 	return &Connector{BotToken: bot, AppToken: app, Channel: channel, API: DefaultAPI, Log: log,
-		HTTP: &http.Client{Timeout: 20 * time.Second}, Clicks: make(chan hostwire.ApprovalBody, 64), posted: map[string]posted{}}
+		HTTP: &http.Client{Timeout: 20 * time.Second}, Clicks: make(chan hostwire.ApprovalBody, 64), posted: map[string]posted{}, byCase: map[string]string{}}
 }
 
 // call is one Web API method with a token; Slack answers 200 with ok false on an error.
@@ -85,19 +86,56 @@ func (c *Connector) call(ctx context.Context, method, token string, body any, ou
 	return nil
 }
 
+// answers is what a message offers: the body's own list, or for a body from before answers (a plan) approve and reject
+// by whether Slack may approve it.
+func answers(n hostwire.NotifyBody) []hostwire.NotifyAnswer {
+	if len(n.Answers) > 0 {
+		return n.Answers
+	}
+	return []hostwire.NotifyAnswer{
+		{ID: "approve", Label: "Approve", Style: "primary", Allowed: n.Approvable, Why: n.Why},
+		{ID: "reject", Label: "Reject", Style: "danger", Allowed: n.Approvable, Why: n.Why}}
+}
+
 func blocks(n hostwire.NotifyBody, answer string) []map[string]any {
 	text := fmt.Sprintf("*%s*\n%s · plan `%s`\n<%s|Open the case %s>", esc(n.Title), esc(n.Plan), n.PlanHash, n.URL, n.Case)
+	if n.Kind == hostwire.KindNotice {
+		text = fmt.Sprintf("*%s*\n%s\n<%s|Open the case %s>", esc(n.Title), esc(n.Plan), n.URL, n.Case)
+	}
 	out := []map[string]any{{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": text}}}
-	switch {
-	case answer != "":
-		out = append(out, map[string]any{"type": "context", "elements": []map[string]any{{"type": "mrkdwn", "text": esc(answer)}}})
-	case n.Approvable:
-		out = append(out, map[string]any{"type": "actions", "block_id": "flotilla", "elements": []map[string]any{
-			{"type": "button", "action_id": "approve", "style": "primary", "value": n.Nonce, "text": map[string]any{"type": "plain_text", "text": "Approve"}},
-			{"type": "button", "action_id": "reject", "style": "danger", "value": n.Nonce, "text": map[string]any{"type": "plain_text", "text": "Reject"}},
-		}})
-	default:
-		out = append(out, map[string]any{"type": "context", "elements": []map[string]any{{"type": "mrkdwn", "text": "Not from Slack: " + esc(n.Why)}}})
+	if answer != "" {
+		return append(out, map[string]any{"type": "context", "elements": []map[string]any{{"type": "mrkdwn", "text": esc(answer)}}})
+	}
+	var buttons []map[string]any
+	var refused []string
+	for _, a := range answers(n) {
+		if !a.Allowed {
+			refused = append(refused, a.Why)
+			continue
+		}
+		b := map[string]any{"type": "button", "action_id": a.ID, "value": n.Nonce, "text": map[string]any{"type": "plain_text", "text": a.Label}}
+		if a.Style == "primary" || a.Style == "danger" {
+			b["style"] = a.Style
+		}
+		buttons = append(buttons, b)
+	}
+	if len(buttons) > 0 {
+		out = append(out, map[string]any{"type": "actions", "block_id": "flotilla", "elements": buttons})
+	}
+	if len(refused) > 0 {
+		out = append(out, map[string]any{"type": "context", "elements": []map[string]any{{"type": "mrkdwn", "text": "Not from Slack: " + esc(strings.Join(dedupe(refused), "; "))}}})
+	}
+	return out
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
 	}
 	return out
 }
@@ -107,29 +145,53 @@ func esc(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }
 
-// Post puts a waiting plan in the channel.
+// Post puts a question in the channel. A repeat of a case's notice updates the message the case already has; when this
+// connector does not know it (it restarted), the notice is posted anew.
 func (c *Connector) Post(ctx context.Context, n hostwire.NotifyBody) error {
+	text := "flotilla: " + n.Title + " waits for you"
+	if n.Kind == hostwire.KindNotice {
+		text = "flotilla: " + n.Title + " is still watched"
+	}
+	if n.Repeat {
+		c.mu.Lock()
+		p, ok := c.posted[c.byCase[n.Case]]
+		c.mu.Unlock()
+		if ok {
+			if err := c.call(ctx, "chat.update", c.BotToken, map[string]any{"channel": p.channel, "ts": p.ts, "text": text, "blocks": blocks(n, "")}, nil); err != nil {
+				return err
+			}
+			c.remember(n, p.channel, p.ts)
+			return nil
+		}
+	}
 	var r struct {
 		TS      string `json:"ts"`
 		Channel string `json:"channel"`
 	}
 	if err := c.call(ctx, "chat.postMessage", c.BotToken, map[string]any{"channel": c.Channel,
-		"text": "flotilla: " + n.Title + " waits for you", "blocks": blocks(n, ""), "unfurl_links": false}, &r); err != nil {
+		"text": text, "blocks": blocks(n, ""), "unfurl_links": false}, &r); err != nil {
 		return err
 	}
-	c.mu.Lock()
-	c.posted[n.Nonce] = posted{channel: r.Channel, ts: r.TS, n: n}
-	c.mu.Unlock()
+	c.remember(n, r.Channel, r.TS)
 	return nil
 }
 
-// Answer shows flotillad's answer on the message and takes its buttons away.
+func (c *Connector) remember(n hostwire.NotifyBody, channel, ts string) {
+	c.mu.Lock()
+	c.posted[n.Nonce] = posted{channel: channel, ts: ts, n: n}
+	c.byCase[n.Case] = n.Nonce
+	c.mu.Unlock()
+}
+
+// Answer shows flotillad's answer on the message and takes its buttons away. When the message is not known (the
+// connector restarted since it posted), the answer is posted as a message of its own.
 func (c *Connector) Answer(ctx context.Context, a hostwire.AnsweredBody) error {
 	c.mu.Lock()
 	p, ok := c.posted[a.Nonce]
 	c.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("slack: no message for this answer")
+		return c.call(ctx, "chat.postMessage", c.BotToken, map[string]any{"channel": c.Channel, "text": "flotilla: " + a.Text, "unfurl_links": false,
+			"blocks": []map[string]any{{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": esc(a.Text)}}}}, nil)
 	}
 	return c.call(ctx, "chat.update", c.BotToken, map[string]any{"channel": p.channel, "ts": p.ts,
 		"text": "flotilla: " + p.n.Title + ": " + a.Text, "blocks": blocks(p.n, a.Text)}, nil)
@@ -221,7 +283,7 @@ func (c *Connector) click(raw json.RawMessage) {
 		return
 	}
 	for _, a := range p.Actions {
-		if a.BlockID != "flotilla" || (a.ActionID != "approve" && a.ActionID != "reject") {
+		if a.BlockID != "flotilla" || a.ActionID == "" {
 			continue
 		}
 		b := hostwire.ApprovalBody{Nonce: a.Value, Team: p.Team.ID, User: p.User.ID, Action: a.ActionID}
