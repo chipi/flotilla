@@ -37,8 +37,13 @@ Step 1 of [the operator fleet plan](operator-fleet-plan.md), built overnight to
 
 ## C7: ready, waiting for your go
 
-The rename `ops` to `operator`, wired to all of the above, is on the private fleets repo's branch
-`operator/rename` (`87acbe8`). Nothing deploys from that branch.
+The rename `ops` to `operator`, wired to all of the above, is `87acbe8` in the private fleets repo.
+
+- **On the fleets repo's main since 05:31, by mistake.** Another session pushed it there with its
+  own commit on top (`6d35b36`, one data file outside `fleets/`, no routine).
+- **Part of the cause is mine:** my C7 agent left the shared checkout on `operator/rename`.
+- **The operator chose to keep it** (2026-11-27). Nothing deploys from main by itself: the fleets
+  deploy takes an explicit commit.
 
 - **Checked:**
   - A local `-check` of the fleets against a d848c93-era image: `CHECK PASS: 27 routines`, every
@@ -57,15 +62,15 @@ The rename `ops` to `operator`, wired to all of the above, is on the private fle
 
 1. Deploy flotilla at `acb6742` or later (`deploy.sh`). flotillad and the mini's host agent
    upgrade together.
-2. Run `deploy_fleets.sh --check 87acbe8` on the mini: the real check against the live store.
-3. Run `deploy_fleets.sh 87acbe8`.
+2. Run `deploy_fleets.sh --check 6d35b36` on the mini: the real check against the live store.
+3. Run `deploy_fleets.sh 6d35b36`.
 4. Verify:
    - `flotilla status` shows `operator/*` at v1;
    - `operator/backup-monitor` ran;
    - the Knowledge tab lists `backup-stale`.
 
-**Rollback:** `deploy_fleets.sh --rollback` (back to `cea5ee6`), then the previous flotilla tag's
-`deploy.sh`.
+**Rollback:** `deploy_fleets.sh --rollback` (back to the fleets deploy before it, `cea5ee6`),
+then the previous flotilla tag's `deploy.sh`.
 
 ## Not covered
 
