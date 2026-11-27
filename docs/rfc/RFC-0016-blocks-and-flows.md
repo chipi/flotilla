@@ -1,12 +1,16 @@
 # RFC-0016 — Blocks and flows: a library of reusable steps, and flows that wire them
 
-**Status:** Draft, for the operator's review (2026-11-27).
+**Status:** Draft, for the operator's review (2026-11-27). This is the second draft: it takes the
+advisor's review of the first. The first draft is in this file's history.
+
 **Builds on:**
 
 - [ADR-0001](../adr/ADR-0001-platform-foundations.md) decision 2: specs declare fleets, and code is
   a library of named building blocks;
-- [ADR-0005](../adr/ADR-0005-agent-pipeline.md): one pipeline and one set of building blocks for
-  every fleet;
+- [ADR-0005](../adr/ADR-0005-agent-pipeline.md): one pipeline, and hand-overs are case moves, not a
+  workflow engine;
+- [ADR-0020](../adr/ADR-0020-routine-versions-stations-harnesses.md): a routine is a folder, a
+  version is a folder, and new code ships beside the old;
 - [ADR-0023](../adr/ADR-0023-never-silent-and-answers-in-the-core.md);
 - [the operator fleet plan](../wip/operator-fleet-plan.md), case 2 (disk).
 
@@ -20,146 +24,223 @@ pipeline jobs, the DGX's mode) has the same shape again.
 The operator's model (2026-11-27): a **library of blocks**. A **flow** wires library blocks together
 with blocks of its own. A block that proves useful in one flow moves into the library for the next.
 
-## 2. A block
+Today's routines are already most of the way there. `backup-monitor/v1/spec.yaml` runs a shared
+script with its parameters in the environment, and the e2e fleet reuses `ops/sop_act.py` for
+another case kind. What is missing is:
 
-A block is a folder of code and a `block.yaml` that states its interface:
+- parameters typed and checked before a deploy;
+- the cap a block may run at;
+- the stages a block hands a case to;
+- one shared vocabulary for all of it.
+
+## 2. The seam: committed generation
+
+**A flow is expanded into ordinary routine folders by a generator,** and the expansion is committed:
+`flotilla flow expand` writes `fleets/<fleet>/<routine>/routine.yaml` and `v<n>/spec.yaml` from
+`flow.yaml` and the blocks it pins. `-check` refuses when the committed folders differ from what the
+generator writes now, the way `make lint` refuses a stale `llms.txt`.
+
+What this keeps unchanged: versions, the freeze, shadows, promote, rollback, the UI, the ledger and
+`deploy_fleets.sh`. ADR-0020's "a routine is a folder" stays literally true, and a block update is a
+reviewable diff in each routine it touches.
+
+**The other seams, and why not:**
+
+- **Expansion at load** (this RFC's first draft) would need several ADR-0020 amendments:
+  - flows would carry `v<n>/flow.yaml`;
+  - flotillad would synthesise versions that have no folder;
+  - reconcile's messages, `rerecord` and the version page would all change.
+- **Runtime composition** is a workflow engine, which ADR-0005 rules out.
+
+## 3. A block
+
+A block is a numbered folder, `blocks/<name>/v<n>/`, immutable once published, like a routine's
+version. It holds the block's code and a `block.yaml` that states its interface:
 
 ```yaml
 block: metric-monitor
-role: monitor            # monitor | act | stage | verify | learn
-description: Opens a case for each instance whose metric crosses a threshold; clears it below.
-params:                  # typed; -check validates every flow's values
-  metric:    {kind: metric_name}
-  form:      {kind: enum, of: [value, age, free_ratio]}
-  threshold: {kind: number}
-  group_by:  {kind: label_list}
-  case_kind: {kind: case_kind}
-emits: [detection]       # detections of case_kind, keyed per group
-model: none              # none, or a station that goes through the one model client
-max_autonomy: record     # a flow can lower it, never raise it
-worker: [ops-read]       # the roles whose image carries it
+version: 1
+role: monitor                 # monitor | act | stage | verify | learn
+description: Opens a case per group whose metric crosses its action's precondition; clears it.
+consumes: {every: true}       # what triggers it, per role (below)
+emits: [detection]
+hands_to: []                  # the stages it may hand a case to (an act block: [investigate])
+actions: [precondition_of]    # what it needs in the registry: here, the action whose `pre` it reads
+params:                       # typed; -check validates every flow's values
+  action:     {kind: registry_action}
+  metric:     {kind: metric_name}
+  group_by:   {kind: label_list}
+  exclude:    {kind: label_match, optional: true}
+  clear_after:{kind: count, optional: true}   # hysteresis: N clear readings before it clears
+env: [VM_URL]                 # what its worker must provide
+model: none                   # none, or a station: the block ships its prompts and tools
+max_autonomy: record          # a flow may lower it, never raise it
 ```
 
-- **Blocks are code, reviewed and versioned like any code.** A flow cannot change what a block
-  does, only its declared parameters.
-- **A block's hash is part of every routine made from it.** A changed library block is a new
-  version of every flow that uses it, and goes through shadow and promote in each flow.
+The role sets what `consumes` may say:
 
-## 3. The library
+| Role | Triggered by | Example |
+| --- | --- | --- |
+| monitor | a schedule | `metric-monitor` |
+| act | a case kind, stage "" | `sop-act` |
+| stage | a case kind and a named stage | `sop-investigate` |
+| verify | a registry check name | `metric-verify` |
+| learn | a schedule | `case-review`, `sop-draft` |
 
-flotilla ships generic blocks under `blocks/`. An installation can add private ones in its fleets
-repo, the same way.
+**Each setting has one home.** Thresholds and verify windows stay on the registry action. A
+monitor's threshold is the action's precondition (`pre`), so the monitor and the act agree, and
+case-review's proposals change it in that one place. A flow names the action and never repeats the
+number.
 
-| Block | Role | From | What it does |
-| --- | --- | --- | --- |
-| `metric-monitor` | monitor | the backup monitor, generalised | a metric's value, age or free ratio per group, against a threshold; never silent through `on_record: watch` |
-| `sop-act` | act | `ops/sop_act.py` | matches the flow's SOPs, re-checks the preconditions, plans the SOP's fix; with no SOP, hands over to investigate |
-| `sop-investigate` | stage | `ops/sop_investigate.py` | read-only diagnosis through the one model client; the fix is chosen among registry actions by code |
-| `metric-verify` | verify | the backup verify, generalised | after an execution, the metric condition holds within a window, else escalates |
-| `sop-draft` | learn | `ops/sop_draft.py` | drafts the SOP a verified investigation teaches, as a proposal |
-| `case-review` | learn | `ops/case_review.py` | the post-incident review over every flow's closed cases |
-| `process-change` | act | `ops/process_change.py` | plans a reviewed change to a repo file as a diff |
+**A block with a model is a station** (ADR-0020 §6): harness, prompts, tools and limits, shipped
+with the block. A flow may name the model alias only.
 
-## 4. A flow
+## 4. Pinned, and adopted by choice
 
-A flow is a folder in a fleet, holding a `flow.yaml`, its own blocks, and its knowledge:
+A flow's step pins its block: `use: metric-monitor@1`.
+
+- **Publishing a new block version changes no flow.** Each flow adopts it when its owner bumps the
+  pin. Its expanded routines then change, which makes a new routine version, shadowed and promoted
+  like any other.
+- **A routine's version hash stays what ADR-0020 §6 says:** the files of its version folder. A
+  block's code is reached through that folder's command and pin, never edited under a live version.
+  ADR-0020 is amended only to say that a pinned block counts as the version's code.
+
+## 5. A flow
+
+A flow is a folder in a fleet. It holds a `flow.yaml`, its own blocks, and its knowledge. Each step
+names the routine it becomes, so the ids are the operator's choice:
 
 ```yaml
 flow: disk
 case_kind: disk_low
 steps:
-  - use: library/metric-monitor
+  - name: disk-monitor
+    use: metric-monitor@1
     every: 10m
-    with: {metric: node_filesystem_avail_bytes, form: free_ratio, threshold: 0.10,
-           group_by: [instance, mountpoint], case_kind: disk_low}
-  - use: library/sop-act
+    with: {action: disk.cleanup_known, metric: node_filesystem_avail_bytes,
+           group_by: [instance, mountpoint], exclude: {fstype: "tmpfs|overlay|squashfs|autofs"},
+           clear_after: 2}
+  - name: disk-act
+    use: sop-act@1
     worker: ops-act-host
-  - use: library/sop-investigate
-    with: {reads: [metric, host]}      # host reads once their ADR is accepted (section 7)
+    case: {on_record: watch}
+  - name: disk-investigate
+    use: sop-investigate@1
     model: triage-flash
-  - use: library/metric-verify
-    with: {within: 30m}
+  - name: disk-verify
+    use: metric-verify@1
 knowledge:
   - {name: sops, path: sops/, format: skill, fields: [applies_to, fix, rung], proposals: true}
 ```
 
-The fleet declares the learning blocks once, over all its flows:
+The fleet declares its learning blocks once, over all its flows:
 
 ```yaml
 learn:
-  - use: library/case-review
-  - use: library/sop-draft
-    with: {flows: [backup, disk]}
+  - {name: case-review, use: case-review@1}
+  - {name: sop-draft, use: sop-draft@1, with: {flows: [backup, disk]}}
 ```
 
-**How it runs.** flotillad expands a flow into ordinary routines when it loads the specs, named
-`<fleet>/<flow>-<step>` (`operator/disk-monitor`, `operator/disk-act`).
+**`-check` validates the wiring:**
 
-- **Nothing changes at run time:** the ledger, versions, autonomy, shadows and replay all see
-  routines, as today.
-- **`-check` validates the wiring:**
-  - every stage the flow's blocks hand over to has a step;
-  - one acting step per case kind and stage;
-  - each parameter's value has the declared kind;
-  - no flow raises a block's cap.
+- every stage a step's block hands to has a step;
+- one acting step per case kind and stage;
+- each parameter's value has the declared kind;
+- every action a block needs is in the registry;
+- no flow raises a block's cap;
+- the committed folders match the generator's output.
 
-## 5. A flow brings its own
+**The fleet's pack hash covers its flows,** the same way it covers its knowledge (C6b).
 
-- **Knowledge:** its SOPs (`knowledge:`, RFC C6b), shown on the Knowledge tab per flow.
-- **Registry actions:** the commands its fixes may run on each host, as exact argv templates in the
-  host's allowlist (ADR-0006).
+## 6. A flow brings its own
+
+- **Knowledge:** its SOPs, shown on the Knowledge tab.
+- **Registry actions:** the exact commands its fixes may run on each host (ADR-0006), with the
+  preconditions and checks that hold the flow's thresholds and windows.
 - **Its own blocks:** a step the library has no block for. For example, the DGX's mode check reads
-  `gpu-mode-swap.sh status`.
-  - Once a second flow needs it, the block moves into the library.
+  `gpu-mode-swap.sh status`. Once a second flow needs it, the block moves into the library.
 
-## 6. The first two flows
+**Where block code runs from.** Library blocks ship in the worker images and are tested in this
+repo's CI. An installation's private blocks ship in an image too, built from its fleets repo and
+tested there. They are never run straight from the fleets mount, which a fleets deploy switches
+without a build or its tests.
 
-**Backup, re-expressed as a flow.** No new behaviour: the same five steps, now made of library
-blocks.
+## 7. The library
+
+The library is extracted from today's code, unchanged in behaviour:
+
+| Block | Role | From |
+| --- | --- | --- |
+| `metric-monitor@1` | monitor | `ops/backup_monitor.py` |
+| `sop-act@1` | act | `ops/sop_act.py` |
+| `sop-investigate@1` | stage | `ops/sop_investigate.py`, with its prompts |
+| `metric-verify@1` | verify | the backup verify |
+| `sop-draft@1` | learn | `ops/sop_draft.py` |
+| `case-review@1` | learn | `ops/case_review.py` |
+| `process-change@1` | act | `ops/process_change.py` |
+
+`never silent` belongs to the acting step's case trigger (`case: {on_record: watch}`), as it does
+today. It is not set on a monitor.
+
+## 8. The first two flows
+
+**Backup, re-expressed as a flow, with no new behaviour.** Its steps keep today's names
+(`backup-monitor`, `rerun-backup`, `verify-backup`, `sop-investigate`).
 
 - **Proof:**
-  - its expanded routines decide exactly what today's routines decide, replayed on its two recorded
-    cases;
-  - a shadow beside the live version for a week shows the same decisions;
-  - then it switches.
-- This is how the library is shown to hold before a second flow relies on it.
+  - the generator's output is byte-equal to the live routine folders;
+  - the start re-records them with no new version, as a proven move does (`spec.ProveMoved`,
+    ADR-0020 §3);
+  - nothing is renamed and nothing is shadowed.
+- **What stands in for replay:** there is no replay tool for the operator chain (step 1's build
+  plan). Its unit fixtures and the e2e `sops` and `watching` sections stand in, and the PR says so.
 
 **Disk, across five hosts:** the mini, the operator's laptop, the X3, the DGX and the VPS. All five
 report `node_filesystem_avail_bytes` to VictoriaMetrics today (checked 2026-11-27).
 
-- **Step 1:**
-  - `disk-monitor`, `disk-act` and `disk-verify` at record;
-  - the shared investigation reads metrics;
-  - no cleanup action yet. Every case is diagnosed and the operator is told.
+- **Step 1 prerequisites,** each named because today's code lacks it:
+  - a disk fact in `sop_act` (it knows only `backup_age_above`);
+  - a disk precondition in the host agent (`hostexec` knows only `launchd_not_running`);
+  - metric reads per mountpoint, not only per instance (`sop_investigate.read_metric`);
+  - label exclusion and hysteresis in `metric-monitor`, so 54 episodes in 60 days do not become as
+    many notices. Measure each host's mountpoints first.
+- **Step 1 itself:**
+  - the disk flow at record, with no cleanup action;
+  - the registry action `disk.cleanup_known` exists only to hold the threshold and the check, and
+    runs nothing;
+  - every case is diagnosed from metrics, and the operator is told.
 - **Step 2:**
   - host agents on the laptop, the X3, the DGX and the VPS;
-  - read-only host actions (section 7), so the investigation sees what grew;
-  - the host agent's new preconditions: free space below a value, a path exists.
-- **Step 3:** named cleanups as SOPs, written from what the diagnoses found. A cleanup runs at
-  rung 2 (the operator approves it), except on the VPS, where it stays at rung 3: prepared, and the
-  operator applies it. No broad prune.
+  - read-only host actions (section 9), so the investigation sees what grew.
+- **Step 3:** named cleanups as SOPs, written from what the diagnoses found. They run at rung 2 (the
+  operator approves), except on the VPS, where they stay at rung 3: prepared, and the operator
+  applies them. No broad prune.
 
-## 7. Needed outside the blocks
+## 9. Needed outside the blocks
 
 - **Read-only host actions:** an ADR of their own. A class of host action that reads and never
   writes: `du` over a named root, a journal's size, `docker system df`. Typed parameters, and the
   output bounded and recorded.
-- **A stage step for several kinds:** today a stage routine serves one case kind. A library block
-  used by several flows expands to one routine per flow, which keeps the uniqueness rule as it is.
-  So no platform change is needed for it.
+- **flotillad sees `blocks/`:** in its image, so `-check` can validate pins and parameters.
+- **Shadows for the ops roles:** not needed for the backup proof (above). A flow that wants a week
+  in shadow needs an `ops-read` shadow worker in the stack first. Its acting steps pair only when
+  their case occurs.
 
-## 8. Not decided here
+## 10. Not decided here
 
-- Whether flows can be nested or chained (one flow's verify failure opening another flow's case).
+- Whether flows can be nested or chained. If they are, it is always as case hand-overs, never a
+  workflow engine.
 - Blocks shared across installations (a public block catalogue).
-- A UI for flows. Flows show as their routines and their Knowledge tab until a flow page earns its
+- A UI for flows. A flow shows as its routines and its Knowledge tab until a flow page earns its
   place.
 
-## 9. Order of work
+## 11. Order of work
 
-1. **Blocks:** `block.yaml`, the library folder, flow expansion and its `-check`, and the five
-   operator blocks extracted from today's code. Then backup re-expressed as a flow, replayed, run in
-   shadow and switched.
-2. **Disk step 1** on all five hosts, at record.
+1. **Blocks:**
+   - `block.yaml`, numbered block folders, the generator and its `-check`;
+   - the seven blocks extracted;
+   - backup expanded byte-equal and re-recorded.
+2. **Disk step 1's prerequisites,** then the disk flow at record on five hosts.
 3. **The read-only host actions ADR,** and host agents where the disk flow needs them.
 4. **Disk cleanups as SOPs,** one host at a time.
