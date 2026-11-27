@@ -208,6 +208,12 @@ def scheduled(r):
 
 
 EXAMPLE_KIND_SKIP = ("e2e_", "failed_backup", "code_bug", "dependency_update", "signal", "process_change")
+# The platform allows 10 executions an hour (policy's default; flotillad has no setting for it) and the one stack's sections spend them: the host
+# agent 3, this drive 4, the meeting's two plumbing sends, then section `ask`'s first answer. Measured with case.executing: 10 before `ask` when the
+# email plan below is approved, and `ask`'s plans were deferred ("10 of 10 executions platform-wide this hour"). crm/fix plans the contact's second
+# case about ten seconds after the first round's plans, so approving it raced the loop's own exit (one CI run approved it, the next run on the same
+# code did not). Its plan stays waiting, so the drive always executes 4.
+UNAPPROVED_TARGET_SUFFIX = ("/email",)
 
 
 def acting(r):
@@ -236,8 +242,8 @@ def drive(routines):
             run_by_hand(r)
     for _ in range(8):
         rc, out = cli("case", "list", "--all")
-        todo = [l.split()[0] for l in out.split("\n")[1:] if "awaiting_approval" in l and len(l.split()) > 1
-                and not l.split()[1].startswith(EXAMPLE_KIND_SKIP)]
+        todo = [l.split()[0] for l in out.split("\n")[1:] if "awaiting_approval" in l and len(l.split()) > 2
+                and not l.split()[1].startswith(EXAMPLE_KIND_SKIP) and not l.split()[2].endswith(UNAPPROVED_TARGET_SUFFIX)]
         if not todo:
             break
         for c in todo:

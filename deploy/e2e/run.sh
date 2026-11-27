@@ -2226,6 +2226,13 @@ if ! grep >/dev/null '^shadows:' "$WORK/config/flotillad.yaml"; then
   for _ in $(seq 1 30); do hcli health >/dev/null 2>&1 && break; sleep 2; done
 fi
 hcli action autonomy plumbing.reply propose --reason "e2e: the answers wait for an approval" >/dev/null 2>&1 || bad "plumbing.reply autonomy: $(hcli action autonomy plumbing.reply propose --reason e2e 2>&1)"
+# The platform's cap is 10 executions an hour and every section shares the hour: the questions' plans are proposed only below it, and the first
+# answer's approval is the last execution to fit. A section that spends more makes these plans defer (policy: "10 of 10 executions platform-wide").
+$D run --rm --network none --user 65532:65532 -e STORE_DIR=/v -v flotilla-e2e-state:/v -v "$ROOT/deploy/server/store_snapshot.py:/s.py:ro" \
+  "local/flotilla-worker-triage:$TAG" python3 /s.py backup > "$WORK/store-budget.db" 2> "$WORK/store-budget.err"
+EXN="$(python3 "$ROOT/deploy/e2e/exec_budget.py" "$WORK/store-budget.db" 2>&1)"
+[ "$EXN" -le 9 ] 2>/dev/null && ok "the platform's hourly budget: $EXN of 10 executions spent before the questions, room for the first answer's" \
+  || bad "the platform's hourly budget: '$EXN' executions in the last hour before the questions (at most 9 leave the plans proposable and room to approve one): $(cat "$WORK/store-budget.err" | tail -2)"
 hcase() { echo "$HA" | awk -v l="$1" '$1 == l {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null; }
 hak() { echo "$HA" | awk -v l="$1" '$1 == l {print $2; exit}'; }
 HA="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \
