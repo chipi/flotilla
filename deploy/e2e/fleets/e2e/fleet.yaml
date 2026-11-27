@@ -1,0 +1,11 @@
+fleet: e2e
+description: >-
+  The end-to-end fixtures: routines that exercise the platform on stand-in data, and the one SOP
+  the operator-loop section follows.
+knowledge:
+  - name: sops
+    title: Standard operating procedures
+    path: sops
+    format: skill
+    fields: [applies_to, rung]
+    proposals: true

@@ -352,6 +352,14 @@
       "task.md": "10188932d25e69101776446ca4c55be1de70ddae70f43802241bbd360200df4e"
     }
   },
+  "e2e/sop-monitor-2@v1": {
+    "routine_hash": "744f9617554c",
+    "version_hash": "68bc46157e4e57c309baf92581cfaa990b19a7999f0dc80b3082a635c09f4988",
+    "legacy": true,
+    "manifest": {
+      "run": "8f0a3294ea5fd935af42c2890147ca9ba59c3f4bb3e02ebb4462c1767653e728"
+    }
+  },
   "e2e/sop-monitor@v1": {
     "routine_hash": "a27fea3cb14b",
     "version_hash": "8a6c7cdaba8fafc67f2f34c136166df464ed46c9c52365f7f556325606a0fbba",

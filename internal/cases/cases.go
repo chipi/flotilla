@@ -63,8 +63,10 @@ var table = map[move]struct {
 	{HandedOver, Planned}:   {by: []string{ByAct}},
 	// the monitor that opened it closes a case of a kind no routine acts on, once it stops finding it
 	// (operator, 2026-11-15: RFC-0012's findings)
-	{HandedOver, Closed}: {by: []string{ByAct, ByDetector}, resolutions: []string{ResolvedItself, NotReproducible},
-		only: map[string][]string{ByDetector: {ResolvedItself}}},
+	// a person answers a fleet's proposal that no routine acts on (a sop_proposal: accepted, or rejected); the API
+	// allows it for those kinds only, and every such move writes an event with its actor
+	{HandedOver, Closed}: {by: []string{ByAct, ByDetector, ByOperator}, resolutions: []string{ResolvedItself, NotReproducible, OperatorResolved, Dismissed},
+		only: map[string][]string{ByDetector: {ResolvedItself}, ByAct: {ResolvedItself, NotReproducible}, ByOperator: {OperatorResolved, Dismissed}}},
 	{HandedOver, Escalated}:       {by: []string{ByAct, ByPolicy, ByTimer}},
 	{Planned, Closed}:             {by: []string{ByPolicy}, resolutions: []string{PlanRecorded}},
 	{Planned, Watching}:           {by: []string{ByPolicy}},

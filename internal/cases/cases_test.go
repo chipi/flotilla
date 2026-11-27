@@ -11,7 +11,7 @@ var diagram = map[[2]string][]string{
 	{Diagnosed, HandedOver}:        {ByDiagnose},
 	{Diagnosed, Escalated}:         {ByDiagnose},
 	{HandedOver, Planned}:          {ByAct},
-	{HandedOver, Closed}:           {ByAct, ByDetector},
+	{HandedOver, Closed}:           {ByAct, ByDetector, ByOperator},
 	{HandedOver, Escalated}:        {ByAct, ByPolicy, ByTimer},
 	{Planned, Closed}:              {ByPolicy},
 	{Planned, Watching}:            {ByPolicy},
@@ -23,7 +23,7 @@ var diagram = map[[2]string][]string{
 	{AwaitingApproval, Escalated}:  {ByOperator, ByTimer},
 	{AwaitingApproval, HandedOver}: {ByOperator},
 	{Executing, Checking}:          {ByAct},
-	{Executing, Closed}:            {ByAct},
+	{Executing, Closed}:            {ByAct, ByOperator},
 	{Executing, Escalated}:         {ByAct, ByTimer},
 	{Checking, Closed}:             {ByCheck},
 	{Checking, Escalated}:          {ByCheck, ByTimer},
@@ -45,6 +45,9 @@ func TestTableIsTheDiagram(t *testing.T) {
 				if to == Closed {
 					if m, ok := table[move{from, to}]; ok && len(m.resolutions) > 0 {
 						res = m.resolutions[0]
+						if only := m.only[by]; len(only) > 0 {
+							res = only[0] // a role pinned to some resolutions closes with one of those
+						}
 					}
 				}
 				got := Check(from, to, by, res) == nil
@@ -90,6 +93,22 @@ func TestDismissedMove(t *testing.T) {
 	}
 	if Check(AwaitingApproval, Closed, ByOperator, Dismissed) == nil || Check(Watching, Closed, ByOperator, Dismissed) == nil {
 		t.Error("dismissed outside escalated")
+	}
+}
+
+// A person answers a proposal that waits in handed_over: accepted (operator resolved) or rejected (dismissed), and only
+// by the operator; the acting job and the detector keep their own resolutions.
+func TestHandedOverAnswerMoves(t *testing.T) {
+	for _, res := range []string{OperatorResolved, Dismissed} {
+		if err := Check(HandedOver, Closed, ByOperator, res); err != nil {
+			t.Errorf("the operator closing a handed-over case as %s: %v", res, err)
+		}
+	}
+	for _, c := range []struct{ by, res string }{{ByOperator, ResolvedItself}, {ByOperator, Verified}, {ByAct, OperatorResolved},
+		{ByAct, Dismissed}, {ByDetector, OperatorResolved}, {ByDetector, Dismissed}, {ByTimer, OperatorResolved}, {ByPolicy, Dismissed}} {
+		if Check(HandedOver, Closed, c.by, c.res) == nil {
+			t.Errorf("%s closed a handed-over case as %s", c.by, c.res)
+		}
 	}
 }
 

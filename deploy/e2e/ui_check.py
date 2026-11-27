@@ -6,6 +6,7 @@ Prints one PASS or FAIL line per check; exits 1 on any FAIL.
 """
 import http.client
 import json
+import re
 import sys
 import urllib.parse
 
@@ -81,4 +82,30 @@ code, out = mcp({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"
 res = out.get("result", {}) if isinstance(out, dict) else {}
 check(code == 200 and not res.get("isError") and (res.get("structuredContent") or {}).get("routine") == "platform/heartbeat",
       f"MCP dry-runs a routine as the agent ({code})")
+check(not any(w in n for n in names for w in ("accept", "reject", "answer")), "MCP offers no tool that answers a proposal")
+
+# C6b: a fleet's own knowledge. The e2e fleet declares its SOPs in fleet.yaml: the Knowledge page has their tab, the item and its
+# fields, and (when the sops section ran, giving the case id) the proposal that waits, which Accept closes as the signed-in person.
+proposal = sys.argv[4] if len(sys.argv) > 4 else ""
+ck = {"Cookie": cookie}
+code, _, page = req("GET", "/knowledge", headers=ck)
+check(code == 200 and 'href="/knowledge?tab=e2e.sops"' in page and "Standard operating procedures" in page, f"the Knowledge page has the e2e fleet's tab ({code})")
+code, _, tab = req("GET", "/knowledge?tab=e2e.sops", headers=ck)
+check(code == 200 and "e2e-known" in tab and ">applies_to<" in tab and ">rung<" in tab and "e2e_sop" in tab,
+      f"the tab lists the fleet's SOP with its declared fields ({code})")
+code, _, item = req("GET", "/knowledge/e2e/sops/e2e-known", headers=ck)
+check(code == 200 and "fixture, never shipped" in item, f"the item page shows its text ({code})")
+if proposal:
+    check("Waiting for you" in tab and proposal in tab and "e2e/sops/e2e-novel2/SKILL.md" in tab and f'action="/cases/{proposal}/accept"' in tab,
+          "the sop_proposal waits on the tab with its diff, Accept and Reject")
+    m = re.search(r'name="csrf" value="([0-9a-f]{64})"', tab)
+    code, hdr, _ = req("POST", f"/cases/{proposal}/accept", headers={**ck, "Content-Type": "application/x-www-form-urlencoded"},
+                       body=urllib.parse.urlencode({"csrf": "wrong", "back": "/knowledge?tab=e2e.sops"}))
+    check(code == 403, f"Accept without the session's CSRF token is refused ({code})")
+    code, hdr, _ = req("POST", f"/cases/{proposal}/accept", headers={**ck, "Content-Type": "application/x-www-form-urlencoded"},
+                       body=urllib.parse.urlencode({"csrf": m.group(1) if m else "", "back": "/knowledge?tab=e2e.sops"}))
+    loc = hdr("Location") or ""
+    check(code == 303 and "err=" not in loc, f"Accept answers the proposal ({code} {loc[:80]})")
+    code, _, tab = req("GET", "/knowledge?tab=e2e.sops", headers=ck)
+    check("No proposal waits" in tab, "nothing waits on the tab after Accept")
 sys.exit(1 if bad else 0)

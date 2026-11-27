@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -30,7 +31,8 @@ type fleetSum struct {
 	Spark                    spark
 	Workers                  []string
 	Purpose                  string
-	Pack                     string // the hash of its routines' specs
+	Pack                     string     // the hash of its routines' specs and of its knowledge
+	Know                     []pillLink // the knowledge it declares, each linked to its tab on the Knowledge page
 }
 
 func (f fleetSum) SpendText() string { return usd2(f.Spend24) }
@@ -146,6 +148,9 @@ func (u *Server) fleetSums(ctx context.Context, rows []caseRow) ([]fleetSum, []a
 				f.Purpose = fl.Description
 			}
 			f.Pack = fl.Pack
+			for _, k := range fl.Knowledge {
+				f.Know = append(f.Know, pillLink{Label: k.Title, Href: "/knowledge?tab=" + url.QueryEscape(collKey(id, k.Name)), N: len(k.Items), HasN: true})
+			}
 		}
 		last := "no run yet"
 		if f.Last != "" {

@@ -186,10 +186,51 @@ The human steps, and why.
   over 8192 bytes, so a draft is capped at 8000 bytes.
 - **A new SOP** is bound to the evidence's host and requests rung 2. With no alert on the case it
   says so and is not kind-wide.
-- **Closing a proposal:** an operator can close only an escalated case, so there is no hand close
-  for a handed-over proposal until C6b's Accept and Reject. The draft routine reports each
+- **Closing a proposal:** an operator can close only an escalated case, so C6 had no hand close
+  for a handed-over proposal (C6b adds Accept and Reject, below). The draft routine reports each
   pending proposal on every run, and flotillad closes it as resolved itself once the SOP is
   committed and deployed and the routine stops reporting it.
+
+### What shipped in C6b
+
+- **The spec:** `fleet.yaml` takes a `knowledge:` list (`name`, `title`, `path`, `format`, `fields`,
+  `proposals`), decoded strictly. `LoadFleets` (so `-check`, startup and the examples catalogue)
+  refuses:
+  - a path that is missing, absolute, has `..`, or is or crosses a symlink;
+  - an item that does not parse: a skill folder needs a `SKILL.md` whose `name` is the folder's,
+    a description and a body, with flat `key: value` front matter and values kept as text; a
+    markdown page needs a non-empty first line as its title;
+  - a declared field that no item has, or a duplicate collection name.
+- **The version:** the hash of every file under the path joins the fleet's pack hash. A fleet that
+  declares nothing keeps its pack byte for byte (`TestRepoFleetsKnowledgeAndPacks` compares every
+  such fleet in `fleets/` against the routines' hash alone). `operator` and `triage` now declare
+  knowledge, so their packs moved once, by design.
+- **Declared in the example fleets:** `operator` (`sops`, fields `applies_to`, `fix`, `rung`,
+  proposals on), `triage` (`playbooks`, markdown, and `hints`, the hint skills) and the e2e fleet.
+- **The UI:**
+  - A Knowledge tab per collection of an installed fleet, grouped by fleet. A fleet without
+    knowledge has none, and a fleet that is gone takes its tab with it.
+  - The tab lists the declared fields as escaped text, the page's sha256, and its use: runs whose
+    `loaded` records cite it (by the page's sha256, a skill's name in the fleet's own layer, or a
+    playbook's file), with the latest run and its case linked.
+  - An item page shows the full text as plain text. No file's HTML reaches a page.
+  - The fleet page links to its knowledge.
+- **Proposals:** a `sop_proposal` case in `handed_over` with a diff in its data waits under
+  "Waiting for you" on the tab of its fleet's first `proposals: true` collection.
+  - The core answers API offers `accept` and `reject` for it. Accept closes it
+    `operator_resolved` with "accepted: commit the diff"; Reject needs a reason and closes it
+    `dismissed`. Both write an event with the person as the actor.
+  - Flotilla writes nothing to the fleet's repo (rule 3). The person commits the diff.
+  - The cases table gains `handed_over -> closed` by the operator, as `operator_resolved` or
+    `dismissed`. The detector and the acting job keep their own resolutions only, and the API
+    allows the move for a `sop_proposal` alone.
+  - Slack is not offered them (a diff is read in the UI or the CLI). MCP is refused, and `accept`
+    joins the tool names MCP must never offer.
+- **The data shape:** the draft's data is flat (`sop_id`, `mode`, `fleet`, `path`, `body`,
+  `evidence`, `diff`), so "data.proposal" means a `diff` and an `sop_id` in the detection's data.
+- **Not covered:** an item's use counts the newest 5000 source records of the fleet; a collection
+  is read when flotillad starts, so a changed item shows after the deploy that is its new
+  version; markdown is shown as text, with no renderer.
 
 ## Commits, each green on its own
 

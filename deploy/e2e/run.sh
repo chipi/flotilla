@@ -765,6 +765,7 @@ KNOWN_SHA="$(sha256sum "$SOPROOT/e2e/sops/e2e-known/SKILL.md" | cut -d' ' -f1)"
 cli action autonomy e2e.sop_fix propose --reason "e2e: the SOP check's harmless action" >/dev/null 2>&1
 cli action list 2>&1 | grep >/dev/null "^e2e.sop_fix  *propose " && ok "e2e.sop_fix promoted to propose (operator, with a reason)" || bad "promote e2e.sop_fix: $(cli action list 2>&1 | grep sop_fix)"
 sop_run sop-monitor
+sop_run sop-monitor-2   # a fourth case (e2e-novel2): its proposal stays open for the ui section's Accept (C6b)
 SK="$(sop_case e2e-sop-known awaiting_approval)"
 SHOW="$(cli case show "$SK" 2>&1)"
 [ -n "$SK" ] && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-act .*by act .*SOP e2e-known sha256:$KNOWN_SHA: fix\[0\] e2e.sop_fix; rung 1 requested (policy decides)" \
@@ -777,6 +778,10 @@ SHOW="$(cli case show "$SN" 2>&1)"
   && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-investigate .*by act .*investigated: e2e.sop_fix [|] reads: .*\"name\":\"e2e_age\",\"instance\":\"\",\"value\":[0-9.]*.*[|] model says: " \
   && ok "a case no SOP covers went to the investigate stage, which read a metric and planned a registry action ($SN awaiting approval); its findings and reads are on the case" \
   || bad "the investigated case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -6)"
+SN2="$(sop_case e2e-sop-novel2 awaiting_approval)"
+[ -n "$SN2" ] && cli case show "$SN2" 2>&1 | grep >/dev/null "^stage investigate " \
+  && ok "a second case no SOP covers was investigated and planned too ($SN2): its proposal is the one the UI section answers" \
+  || bad "the second investigated case: $(cli case list --all 2>&1 | grep e2e_sop)"
 SR="$(sop_case e2e-sop-rogue escalated)"
 SHOW="$(cli case show "$SR" 2>&1)"
 [ -n "$SR" ] && echo "$SHOW" | grep >/dev/null "case.escalated .*e2e/sop-investigate .*refused by the gates: 'rm.everything' is not an action the registry declares for e2e_sop cases" \
@@ -784,19 +789,25 @@ SHOW="$(cli case show "$SR" 2>&1)"
   && ok "the model's command the registry lacks was refused by code: no plan, the case escalated ($SR)" \
   || bad "the rogue case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -4)"
 $D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT_META prompt='You investigate a case" && ok "the investigation's model call went through the one client to the gateway stand-in (its system text opens the call)" || bad "no investigation call at the gateway stand-in"
-for C in "$SK" "$SN"; do
+for C in "$SK" "$SN" "$SN2"; do
   cli case approve "$C" >/dev/null 2>&1; status_is "$C" closed
 done
 cli case list --all 2>&1 | grep "^$SK " | grep >/dev/null "closed .*verified" && cli case list --all 2>&1 | grep "^$SN " | grep >/dev/null "closed .*verified" \
+  && cli case list --all 2>&1 | grep "^$SN2 " | grep >/dev/null "closed .*verified" \
   && cli case show "$SN" 2>&1 | grep >/dev/null "case.executing .*operator .*by operator .*approved e2e.sop_fix" \
   && ok "the operator approved both plans; each was executed, checked and closed verified" \
   || bad "the executions: $(cli case list --all 2>&1 | grep e2e_sop)"
 sop_run sop-draft
 PC="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"
 for _ in $(seq 1 20); do [ -n "$PC" ] && break; sleep 2; PC="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"; done
-[ -n "$PC" ] && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 1 ] \
-  && ok "the verified investigation became a sop_proposal case on sop:e2e/e2e-novel ($PC); the case an SOP solved was not drafted" \
+PC2="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel2" {print $1; exit}')"
+[ -n "$PC" ] && [ -n "$PC2" ] && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 2 ] \
+  && ok "the verified investigations became sop_proposal cases on sop:e2e/e2e-novel ($PC) and e2e-novel2 ($PC2); the case an SOP solved was not drafted" \
   || bad "the proposal: $(cli case list --all 2>&1 | grep -E 'sop_proposal|e2e_sop')"
+# C6b: a proposal that waits offers Accept and Reject through the core's answers API (the UI section answers it); a chat connector is not offered it
+ANS="$(cli case answers "$PC2" 2>&1)"
+echo "$ANS" | grep >/dev/null "accept" && echo "$ANS" | grep >/dev/null "reject" && ! echo "$ANS" | grep >/dev/null "approve" \
+  && ok "the waiting proposal offers Accept and Reject through the answers API" || bad "the proposal's answers: $ANS"
 rm -rf "$WORK/storecopy2" && mkdir -p "$WORK/storecopy2" && $D cp flotillad:/var/lib/flotilla "$WORK/storecopy2/" 2>/dev/null
 PROP="$(python3 - "$WORK/storecopy2/flotilla/flotilla.db" "$PC" <<'PY'
 import sqlite3, sys
@@ -820,8 +831,9 @@ cli case close "$SR" --reason "e2e: the model's command was refused, as it shoul
 # has nothing to propose: the SOP cites the case. flotillad closes a proposal no routine acts on once its monitor stops reporting it.
 mkdir -p "$SOPROOT/e2e/sops/e2e-novel" && cp "$WORK/sopcheck/body.md" "$SOPROOT/e2e/sops/e2e-novel/SKILL.md"
 sop_run sop-draft
-status_is "$PC" closed && cli case list --all 2>&1 | grep "^$PC " | grep >/dev/null "resolved_itself" && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 1 ] \
-  && ok "once the SOP is committed the draft run reports nothing, and flotillad closed the proposal as resolved itself: no new proposal" \
+status_is "$PC" closed && cli case list --all 2>&1 | grep "^$PC " | grep >/dev/null "resolved_itself" && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 2 ] \
+  && cli case list --all 2>&1 | grep "^$PC2 " | grep >/dev/null "handed_over" \
+  && ok "once the SOP is committed the draft run no longer reports it, and flotillad closed that proposal as resolved itself: no new proposal, and the other still waits ($PC2)" \
   || bad "after the commit: $(cli case list --all 2>&1 | grep sop_proposal)"
 
 fi
@@ -2173,7 +2185,7 @@ OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resu
 echo "$OUT" | grep >/dev/null "needs a reason" && ok "loosening without a reason is refused" || bad "resume without a reason: $OUT"
 OUT="$($D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla resume platform/heartbeat --reason "e2e" 2>&1)"
 echo "$OUT" | grep >/dev/null '"by":"user:ada"' && ok "the admin resumes with a reason, as user:ada" || bad "admin resume: $OUT"
-UIC="$($D exec -i flotilla-worker-triage python3 - "$ADMIN" "$OP" "$AGENT" < "$ROOT/deploy/e2e/ui_check.py" 2>&1)"; UIRC=$?
+UIC="$($D exec -i flotilla-worker-triage python3 - "$ADMIN" "$OP" "$AGENT" "${PC2:-}" < "$ROOT/deploy/e2e/ui_check.py" 2>&1)"; UIRC=$?
 while IFS= read -r line; do
   case "$line" in PASS*) ok "UI: ${line#PASS }" ;; FAIL*) bad "UI: ${line#FAIL }" ;; esac
 done <<< "$UIC"

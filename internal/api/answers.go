@@ -94,6 +94,14 @@ func (s *Server) Answers(ctx context.Context, c Caller, via, id string) (AnswerS
 		return AnswerSet{}, err
 	}
 	kind, ids, labels := offered(cs.Status)
+	prop, isProp, err := ProposalOf(ctx, s.Store, cs)
+	if err != nil {
+		return AnswerSet{}, err
+	}
+	if isProp {
+		kind, ids = KindProposal, []string{AnsAccept, AnsReject}
+		labels[AnsAccept] = "Accept"
+	}
 	if kind == "" {
 		return AnswerSet{}, problem(409, "case %s is %s: it asks nothing now", id, cs.Status)
 	}
@@ -114,6 +122,8 @@ func (s *Server) Answers(ctx context.Context, c Caller, via, id string) (AnswerS
 		if hasPlan {
 			set.Question.Text, set.Question.PlanHash = plan.Action+" on "+cs.Target, plan.PlanHash
 		}
+	case KindProposal:
+		set.Question.Text = prop.Mode + " " + prop.Path
 	case KindEscalation:
 		set.Question.Text = "escalated: " + cs.Kind + " on " + cs.Target
 	case KindNotice:
@@ -166,6 +176,9 @@ func (s *Server) slackDayStart() string {
 // to a connector rather than to the answer: Slack approves only a low or medium risk, reversible or regenerable
 // plan, bound to a plan hash, under its daily cap (ADR-0005 decision 8). Rejecting is not capped.
 func (s *Server) answerPolicy(ctx context.Context, cs store.Case, c Caller, via, answer string, in AnswerIn) (bool, string, error) {
+	if via == "slack" && (answer == AnsAccept || (answer == AnsReject && IsProposal(cs))) {
+		return false, "a proposal's diff is read, and accepted or rejected, in the UI or the CLI", nil
+	}
 	if via != "slack" || answer != AnsApprove {
 		return true, "", nil
 	}
@@ -202,7 +215,7 @@ func (s *Server) Answer(ctx context.Context, c Caller, via, id, answer string, i
 		return nil, err
 	}
 	switch answer {
-	case AnsApprove, AnsReject, AnsClose, AnsReassign, AnsDismiss, AnsAcknowledge:
+	case AnsApprove, AnsReject, AnsClose, AnsReassign, AnsDismiss, AnsAcknowledge, AnsAccept:
 	default:
 		return nil, problem(409, "%q is not an answer this case offers", answer)
 	}
@@ -232,8 +245,17 @@ func (s *Server) give(ctx context.Context, c Caller, via, id, answer string, in 
 			return nil, err
 		}
 		out["approved_by"], out["plan_hash"] = c.Name, hash
+	case AnsAccept:
+		if err := s.AcceptProposal(ctx, c, via, id, in.Note); err != nil {
+			return nil, err
+		}
+		out["accepted_by"] = c.Name
 	case AnsReject:
-		if err := s.RejectCase(ctx, c, via, id, in.Reason); err != nil {
+		reject := s.RejectCase
+		if cs, err := s.Store.Case(ctx, id); err == nil && IsProposal(cs) {
+			reject = s.RejectProposal // a proposal's reject closes it dismissed; a plan's escalates the case
+		}
+		if err := reject(ctx, c, via, id, in.Reason); err != nil {
 			return nil, err
 		}
 		out["rejected_by"] = c.Name

@@ -28,7 +28,7 @@ const MaxRows = 50
 
 // Never are tools the server must never offer: approving and loosening stay with people (T3). A test
 // asserts none of them is registered.
-var Never = []string{"approve", "reject", "promote", "rollback", "retire", "rerecord", "resume", "start", "unfreeze", "unhold", "autonomy", "users", "hosts_revoke", "enrol", "input", "input_export", "input_pin", "input_unpin", "answer", "acknowledge", "dismiss"}
+var Never = []string{"approve", "reject", "promote", "rollback", "retire", "rerecord", "resume", "start", "unfreeze", "unhold", "autonomy", "users", "hosts_revoke", "enrol", "input", "input_export", "input_pin", "input_unpin", "answer", "acknowledge", "dismiss", "accept"}
 
 type Server struct {
 	API     *api.Server

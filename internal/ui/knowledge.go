@@ -34,7 +34,8 @@ type sourceRow struct {
 
 type knowledgeData struct {
 	Tab       string
-	Tabs      []pillLink
+	Tabs      []knowTab
+	Coll      *knowColl // a fleet's own knowledge, on its tab
 	Proposed  []noteRow
 	Active    []noteRow
 	NoteT     tableQ
@@ -46,7 +47,8 @@ type knowledgeData struct {
 
 func (u *Server) knowledgePage(w http.ResponseWriter, r *http.Request, s *store.Session, sid string) {
 	tab := r.URL.Query().Get("tab")
-	if tab != "sources" {
+	coll, isColl := u.knowledgeColl(tab)
+	if tab != "sources" && !isColl {
 		tab = "memory"
 	}
 	d := knowledgeData{Tab: tab}
@@ -55,9 +57,16 @@ func (u *Server) knowledgePage(w http.ResponseWriter, r *http.Request, s *store.
 		if p[0] != "memory" {
 			href += "?tab=" + p[0]
 		}
-		d.Tabs = append(d.Tabs, pillLink{Label: p[1], Href: href, On: tab == p[0]})
+		d.Tabs = append(d.Tabs, knowTab{pillLink: pillLink{Label: p[1], Href: href, On: tab == p[0]}})
 	}
-	if tab == "memory" {
+	d.Tabs = append(d.Tabs, u.knowledgeTabs(tab)...)
+	if isColl {
+		if err := u.fill(r.Context(), &coll); err != nil {
+			http.Error(w, "knowledge failed", 500)
+			return
+		}
+		d.Coll = &coll
+	} else if tab == "memory" {
 		notes, err := u.API.Store.Notes(r.Context(), "")
 		if err != nil {
 			http.Error(w, "notes failed", 500)

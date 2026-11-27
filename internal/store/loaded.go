@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -76,4 +78,35 @@ func (s *Store) RunLoaded(ctx context.Context, runIDs []string) (map[string][]Lo
 		}
 	}
 	return out, nil
+}
+
+// FleetLoaded is what the runs of a fleet's routines read from source (a playbook, a skill), the newest first, at most limit
+// records. The Knowledge page matches them to a fleet's items to say which runs used what.
+func (s *Store) FleetLoaded(ctx context.Context, fleet string, limit int) ([]Loaded, error) {
+	rows, err := s.rdb.QueryContext(ctx, `SELECT run_id, routine, at, kind, trust, title, source, sha256, version FROM run_loaded
+		WHERE substr(routine, 1, ?) = ? AND trust = ? AND kind IN ('skill', 'playbook') ORDER BY id DESC LIMIT ?`,
+		len(fleet)+1, fleet+"/", TrustSource, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Loaded
+	for rows.Next() {
+		var l Loaded
+		if err := rows.Scan(&l.RunID, &l.Routine, &l.At, &l.Kind, &l.Trust, &l.Title, &l.Source, &l.SHA256, &l.Version); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// PlannedCaseOfRun is the case a run recorded a plan on (CaseOfRun's link exists for resumable routines only), "" when none.
+func (s *Store) PlannedCaseOfRun(ctx context.Context, runID string) (string, error) {
+	var id string
+	err := s.rdb.QueryRowContext(ctx, `SELECT case_id FROM plans WHERE run_id = ? ORDER BY id LIMIT 1`, runID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }

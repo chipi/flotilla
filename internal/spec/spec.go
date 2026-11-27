@@ -574,11 +574,13 @@ func LoadVersions(dir string) ([]*Routine, error) {
 const FleetFile = "fleet.yaml"
 
 // Fleet is what a fleet says about itself (G6): its name and what it is for, for people. Pack is the
-// hash of its routines' specs, so a change to any routine's text changes it.
+// hash of its routines' specs, so a change to any routine's text changes it; a fleet that declares knowledge
+// adds the knowledge's hash, so a changed item is a new version too (knowledge.go).
 type Fleet struct {
-	Fleet       string `yaml:"fleet"`
-	Description string `yaml:"description"`
-	Pack        string `yaml:"-"`
+	Fleet       string      `yaml:"fleet"`
+	Description string      `yaml:"description"`
+	Knowledge   []Knowledge `yaml:"knowledge,omitempty"`
+	Pack        string      `yaml:"-"`
 }
 
 // LoadFleets reads every fleets/<fleet>/fleet.yaml under dir (a fleet without one has none) and the
@@ -604,15 +606,23 @@ func LoadFleets(dir string, routines []*Routine) (map[string]Fleet, error) {
 			return nil, fmt.Errorf("%s: fleet %q, but the file is under %s/", p, f.Fleet, want)
 		}
 		f.Description = strings.Join(strings.Fields(f.Description), " ")
+		if f.Knowledge, err = loadKnowledge(filepath.Dir(p), f.Knowledge); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
 		out[f.Fleet] = f
 	}
 	byFleet := map[string][]string{}
 	for _, j := range routines {
 		byFleet[j.Fleet] = append(byFleet[j.Fleet], j.Routine+"="+j.Hash)
 	}
+	for name, f := range out {
+		if _, has := byFleet[name]; !has && len(f.Knowledge) > 0 {
+			byFleet[name] = nil // a fleet of knowledge alone still has a version
+		}
+	}
 	for name, hs := range byFleet {
 		sort.Strings(hs)
-		sum := sha256.Sum256([]byte(strings.Join(hs, "\n")))
+		sum := sha256.Sum256([]byte(strings.Join(hs, "\n") + knowledgePack(out[name].Knowledge)))
 		f := out[name]
 		f.Fleet, f.Pack = name, hex.EncodeToString(sum[:])
 		out[name] = f

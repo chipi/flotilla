@@ -10,8 +10,51 @@
     </div>
   </section>
   <nav class="utabs" aria-label="Knowledge views">
-    {{range .Tabs}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
+    {{range .Tabs}}{{if .First}}<span class="meta" data-group="{{.Group}}">{{.Group}}:</span> {{end}}<a href="{{.Href}}" aria-selected="{{if .On}}true{{else}}false{{end}}">{{.Label}}</a>{{end}}
   </nav>
+
+  {{with .Coll}}
+  {{if .Proposing}}
+  <section class="casecards" aria-labelledby="waiting">
+    <h2 id="waiting">Waiting for you</h2>
+    {{range .Waiting}}<article class="card card--edge">
+      <span class="meta"><a class="exact" href="/cases/{{.Case.ID}}">{{.Case.ID}}</a> · proposed {{.Opened}}{{if .Evid}} · from {{range $i, $e := .Evid}}{{if $i}}, {{end}}<a class="exact" href="/cases/{{$e}}">{{$e}}</a>{{end}}{{end}}</span>
+      <strong>{{.Heading}}</strong>
+      <details class="fold" open><summary>The diff to commit</summary><pre class="log">{{.P.Diff}}</pre></details>
+      {{if $act}}<div class="actions">
+        <form method="post" action="/cases/{{.Case.ID}}/accept" class="inline">{{template "csrf" $csrf}}<input type="hidden" name="back" value="{{.Back}}"><button class="btn btn--blue" type="submit">Accept</button></form>
+        <details class="decision__rejectwrap">
+          <summary class="btn btn--small">Reject…</summary>
+          <form class="confirm" method="post" action="/cases/{{.Case.ID}}/reject">
+            {{template "csrf" $csrf}}<input type="hidden" name="back" value="{{.Back}}">
+            <label class="field field--strong">Why (kept with the case)<textarea name="reason" rows="2" required data-needs></textarea></label>
+            <div class="actions"><button class="btn btn--stop-outline" type="submit">Reject the proposal</button></div>
+          </form>
+        </details>
+      </div>
+      <p class="footnote">Accepting records your decision. Flotilla writes nothing to the fleet's repo: commit the diff yourself, reviewed like any change.</p>{{end}}
+    </article>{{else}}<p class="card">No proposal waits.</p>{{end}}
+  </section>
+  {{end}}
+  <section class="casecards" aria-labelledby="coll">
+    <h2 id="coll">{{.Title}}</h2>
+    <div class="table-box">
+      <table class="data">
+        <thead><tr><th scope="col">Item</th>{{if eq .Format "skill"}}<th scope="col">Description</th>{{end}}{{range .Heads}}<th scope="col">{{.}}</th>{{end}}<th scope="col">Hash</th><th scope="col">Used</th></tr></thead>
+        <tbody>
+          {{range .Rows}}<tr>
+            <td data-label="Item"><a class="exact" href="{{.Href}}">{{.ID}}</a>{{if ne .Title .ID}}<br><span class="meta">{{.Title}}</span>{{end}}</td>
+            {{if eq $.Data.Coll.Format "skill"}}<td data-label="Description" class="stack">{{.Description}}</td>{{end}}
+            {{range $i, $c := .Cells}}<td data-label="{{index $.Data.Coll.Heads $i}}" class="stack exact">{{$c}}</td>{{end}}
+            <td data-label="Hash" class="exact" title="sha256 of the page">{{.Short}}</td>
+            <td data-label="Used">{{if .Use.Runs}}{{plural .Use.Runs "run" "runs"}} read it · latest <a href="{{.Use.RunHref}}">{{.Use.LatestWhen}}</a>{{if .Use.Case}} on <a class="exact" href="{{.Use.Href}}">{{.Use.Case}}</a>{{end}}{{else}}<span class="meta">not read yet</span>{{end}}</td>
+          </tr>{{else}}<tr><td colspan="9" class="empty">This fleet has nothing here yet.</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote">From the fleet's own folder in git, shipped with the fleet (hash {{hash .Hash}}). A changed item is a new version of the fleet.</p>
+  </section>
+  {{end}}
 
   {{if eq .Tab "memory"}}
   <section class="casecards" aria-labelledby="notes">

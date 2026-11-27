@@ -1,0 +1,31 @@
+{{template "head" .}}
+{{template "nav" .}}
+<main class="page">
+  {{with .Data}}{{$c := .C}}{{$row := .Row}}
+  <nav class="crumb" aria-label="Breadcrumb"><a href="/knowledge">Knowledge</a> / <a href="{{$c.Back}}">{{$c.Title}}</a> / {{$row.ID}}</nav>
+  <section class="head">
+    <div>
+      <h1>{{$row.Title}}</h1>
+      <p class="sub">{{$c.FleetTitle}} fleet · <span class="exact">{{$row.File}}</span> · sha256 <span class="exact">{{$row.Hash}}</span></p>
+    </div>
+  </section>
+  <section class="casecards" aria-labelledby="fields">
+    <h2 id="fields">Front matter</h2>
+    <div class="table-box">
+      <table class="data">
+        <tbody>
+          {{if $row.Description}}<tr><th scope="row">description</th><td class="stack">{{$row.Description}}</td></tr>{{end}}
+          {{range $i, $f := $c.Fields}}<tr><th scope="row">{{$f}}</th><td class="stack exact">{{index $row.Cells $i}}</td></tr>{{end}}
+          <tr><th scope="row">used</th><td>{{if $row.Use.Runs}}{{plural $row.Use.Runs "run" "runs"}} read it · latest <a href="{{$row.Use.RunHref}}">{{$row.Use.LatestWhen}}</a>{{if $row.Use.Case}} on <a class="exact" href="{{$row.Use.Href}}">{{$row.Use.Case}}</a>{{end}}{{else}}<span class="meta">not read yet</span>{{end}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="casecards" aria-labelledby="text">
+    <h2 id="text">Text</h2>
+    <pre class="log">{{$row.Body}}</pre>
+    <p class="footnote">Shown as plain text, as the file holds it.</p>
+  </section>
+  {{end}}
+</main>
+{{template "foot" .}}

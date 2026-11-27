@@ -9,6 +9,7 @@
       <div class="actions"><span class="{{$f.Lamp}} lamp--big" aria-hidden="true"></span><h1>{{$f.Name}}</h1>{{if eq $f.Status "needs you"}}<a class="{{$f.Chip}}" href="/cases?p=fleet%3A{{$f.ID}}">{{$f.Note}}</a>{{else}}<span class="{{$f.Chip}}">{{$f.Note}}</span>{{end}}</div>
       <p class="sub">{{$f.Purpose}} · {{if $f.Workers}}workers {{range $i, $w := $f.Workers}}{{if $i}}, {{end}}<span class="exact">{{$w}}</span>{{end}} · {{end}}budget {{printf "$%.2f" $f.Budget}} a day. {{template "ledgerlink" $f.ID}}</p>
       {{if $f.Pack}}<p class="meta">Pack <span class="exact">{{$f.ID}} · sha256:{{hash $f.Pack}}</span>, the hash of its routines' specs; each spec is in git, linked from its block.</p>{{end}}
+      {{if $f.Know}}<p class="meta">Knowledge: {{range $i, $k := $f.Know}}{{if $i}}, {{end}}<a href="{{$k.Href}}">{{$k.Label}}</a> ({{$k.N}}){{end}}. A changed item is a new version of the fleet.</p>{{end}}
     </div>
     {{if $act}}{{if $f.Stopped}}
     <details class="decision__rejectwrap">

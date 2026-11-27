@@ -660,7 +660,15 @@ func (u *Server) caseAction(w http.ResponseWriter, r *http.Request, s *store.Ses
 		} else if u.repoCase(r.Context(), id) {
 			ok = "Approved the plan on " + id + ": apply the change, then record its commit on the case."
 		}
+	case "accept":
+		_, err = u.API.Answer(r.Context(), caller(s), "ui", id, api.AnsAccept, api.AnswerIn{Note: r.PostFormValue("note")})
+		ok = "Accepted the proposal on " + id + ": commit the diff it shows; flotilla writes nothing to the fleet's repo."
 	case "reject":
+		if cs, cerr := u.API.Store.Case(r.Context(), id); cerr == nil && api.IsProposal(cs) {
+			_, err = u.API.Answer(r.Context(), caller(s), "ui", id, api.AnsReject, api.AnswerIn{Reason: why})
+			ok = "Rejected the proposal on " + id + "."
+			break
+		}
 		err, ok = u.API.RejectCase(r.Context(), caller(s), "ui", id, why), "Rejected the plan on "+id+": nothing ran, and the case is escalated."
 	case "close":
 		err, ok = u.API.CloseCase(r.Context(), caller(s), "ui", id, why), "Closed "+id+"."
