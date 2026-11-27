@@ -9,6 +9,7 @@ addresses are documentation addresses.
 | --- | --- | --- |
 | `triage` | `cycle` (`v1`, and `v2` a candidate) | alerts and errors triaged by a model on one station, filed or dismissed by code gates; a candidate model compared as a shadow version before any switch |
 | `bugfix` | `intake`, `fix`, `open-pr`, `pr-check` | a bug issue becomes a case, a coding agent fixes it under gates, a person approves the PR plan and always merges |
+| `operator` | `intake` | issues triage routed to the operator by label (`triage-fleet/routed:operator`) become `operator_issue` cases; code only, read only |
 | `jobs` | `backup-monitor`, `rerun-backup`, `verify-backup` | a monitor opens a case, an acting routine plans a rerun on a host, the host agent runs only what its own config allows, a check verifies it; shadow, propose, then auto |
 | `review` | `case-review`, `process-change` | closed cases become proposed lessons and process changes with their evidence; a person approves every change |
 | `deps` | `scan`, `upgrade` | vulnerable or outdated pins become cases and one-line upgrade PRs; no model: code finds and plans, the repo's CI tests, a person approves and merges |

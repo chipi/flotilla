@@ -1,0 +1,23 @@
+run:
+  command: python3 /opt/flotilla/bugfix/intake.py --repo example/shop --label triage-fleet/routed:operator --kind operator_issue
+  workdir: .
+  timeout: 2m
+# What the routine page draws (internal/spec/explain.go). Keep each text true to bugfix/intake.py.
+explain:
+  trigger: >-
+    Every hour. Each run reports every open routed issue again: an issue it no longer reports is taken
+    as cleared.
+  freshness: >-
+    With no run ending ok for 3 hours the routine is stale: newly routed issues would wait.
+  worker: >-
+    Runs on the worker bugfix. Read only: GitHub's public issues API, no credential needed.
+  run: >-
+    intake.py lists the repo's open issues that triage routed to the operator by label and reports each
+    as a detection, with the issue in its data.
+  detects: >-
+    Each issue is an operator_issue detection. flotillad opens one case per issue; a detection of a
+    known issue attaches to its case instead.
+  autonomy: >-
+    It only reads and reports; flotillad opens the cases.
+  budget: >-
+    No model: no spend.

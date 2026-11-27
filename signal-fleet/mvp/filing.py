@@ -236,6 +236,7 @@ ESCALATE_LABEL = "triage-fleet/escalated"
 FILED_LABEL = "triage-fleet/filed"
 ACTIONABLE_LABEL = "triage-fleet/actionable"
 ROUTE_LABEL = "triage-fleet/routed:bugfix"
+ROUTE_OPERATOR_LABEL = "triage-fleet/routed:operator"
 # repos Fleet 1's chain can actually build+test today (B3 extends this): the installation's chain_repos
 CHAIN_REPOS = set(installation.get("chain_repos", []))
 # A dev environment runs a branch's unmerged code (GlitchTip project <name>-dev: environment=dev, a `worktree` tag
@@ -953,8 +954,10 @@ def file_escalation(signal, disp):
             "", f"**Fleet analysis:** {disp.get('reason', '')}",
             "", f"**Question for operator:** {q}" if q else "",
             "", "Actions: close = dismiss confirmed · label "
-                "`triage-fleet/routed:bugfix` = send to Fleet 1 · comment = "
-                "answer, fleet re-triages · label `triage-fleet/muted` = never again.",
+                f"`{ROUTE_LABEL}` = send to Fleet 1 · label "
+                f"`{ROUTE_OPERATOR_LABEL}` = send to the operator fleet: an SOP, or an "
+                "investigation and a proposed fix · comment = "
+                f"answer, fleet re-triages · label `{MUTE_LABEL}` = never again.",
             "", "_Escalated by signal-fleet._"]),
     }
     return file_or_update(signal, issue, "escalation")

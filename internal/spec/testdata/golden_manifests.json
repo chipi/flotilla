@@ -480,6 +480,14 @@
       "task.md": "3eb1eca1a1f76a9639f30ca4d0c6fe1d1aa9085a3e2d7d06ed56cb83addad9b6"
     }
   },
+  "operator/intake@v1": {
+    "routine_hash": "58e83b694d13",
+    "version_hash": "14add7c3b57aa767f314db59d65687cd6bcc8a667bd95eabf7d3b25b77f73f06",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "4d5ebacece72fa73e87fd6414ad2f40cdfe789f4776b025c8c82b6f3e3149f3b"
+    }
+  },
   "outbound/check@v1": {
     "routine_hash": "3077da07e773",
     "version_hash": "2443b7610257883f4e7f5ce0a4a5797871f67c378c68c3c0f76115d3087e9c8c",

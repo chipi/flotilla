@@ -147,6 +147,16 @@ class Intake(unittest.TestCase):
         out = self.run_intake(gh, "--repo", "example/api", "--label", "bug")
         self.assertEqual([d["kind"] for d in out["detections"]], ["code_bug"])
 
+    def test_operator_issue_kind_for_the_operator_label(self):
+        # the operator fleet's intake (fleets/operator/intake): only issues triage routed to the operator
+        gh = FakeGitHub([issue(21, "ask the operator", ["triage-fleet/routed:operator"]),
+                         issue(22, "a bug", ["bug"]),
+                         issue(23, "a PR", ["triage-fleet/routed:operator"], pr=True)])
+        self.addCleanup(gh.close)
+        out = self.run_intake(gh, "--repo", "example/shop", "--label", "triage-fleet/routed:operator", "--kind", "operator_issue")
+        self.assertEqual([(d["kind"], d["target"]) for d in out["detections"]],
+                         [("operator_issue", "repo:example/shop/issues/21")])
+
     def test_one_case_per_issue_either_label_no_prs(self):
         gh = FakeGitHub([issue(12, "the orbit is wrong", ["bug"]), issue(15, "crash on /fly", ["triage-fleet/routed:bugfix", "bug"]),
                          issue(16, "a PR", ["bug"], pr=True), issue(17, "routed only", ["triage-fleet/routed:bugfix"])])

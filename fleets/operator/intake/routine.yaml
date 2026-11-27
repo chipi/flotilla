@@ -1,0 +1,15 @@
+fleet: operator
+routine: intake
+description: >-
+  The operator fleet's monitor: the repo's open issues routed to the operator by triage's label, each an
+  operator_issue detection with the issue in its data; flotillad opens a case per issue and absorbs a
+  known one. Code only, read only: GitHub's public issues API.
+enabled: true
+worker: bugfix
+trigger:
+  every: 1h
+detects: [operator_issue]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 3h

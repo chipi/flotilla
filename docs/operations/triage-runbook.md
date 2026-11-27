@@ -471,6 +471,7 @@ On a fleet-filed issue, four native GitHub actions that the fleet reads back:
 | The operator does | Meaning | What happens |
 | --- | --- | --- |
 | label `triage-fleet/routed:bugfix` | dispatch Fleet 1 | the bugfix fleet picks it up (below) |
+| label `triage-fleet/routed:operator` | send to the operator fleet | the operator fleet intake opens an `operator_issue` case |
 | close the issue | not worth it | the filing ledger respects it; a recurrence within 7 days reopens it, a later one files fresh with a back-link |
 | comment | answer or add context | the fleet re-triages with the comment as reporter input |
 | label `triage-fleet/muted` | never again for this fingerprint | permanent silence for that signal |

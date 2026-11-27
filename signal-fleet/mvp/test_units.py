@@ -832,6 +832,18 @@ class TestCrossLinkAndLabels(unittest.TestCase):
         filing.file_or_update(self._bug(), {"title": "t", "body": "b"}, "bug")
         self.assertNotIn("milestone", self.created[0])
 
+    def test_escalation_lists_the_routing_labels(self):
+        sig = {"source": "glitchtip", "fingerprint": "glitchtip:API-ESC", "alertname": "odd failure",
+               "raw": {}, "repo": "example/api"}
+        filing.file_escalation(sig, {"reason": "r", "question": "q?"})
+        body = self.created[0]["body"]
+        self.assertEqual(filing.ROUTE_OPERATOR_LABEL, "triage-fleet/routed:operator")
+        self.assertIn("`triage-fleet/routed:bugfix` = send to Fleet 1", body)
+        self.assertIn("`triage-fleet/routed:operator` = send to the operator fleet: an SOP, or an "
+                      "investigation and a proposed fix", body)
+        self.assertIn("`triage-fleet/muted` = never again", body)
+        self.assertNotIn(filing.ROUTE_OPERATOR_LABEL, self.created[0]["labels"])   # offered to the operator, never set
+
     def test_related_skipped_for_short_or_missing_frame(self):
         self.assertEqual(filing._related_issues("r", {"raw": {"culprit": ""}}), [])
 

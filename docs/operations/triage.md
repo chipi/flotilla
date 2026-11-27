@@ -431,6 +431,7 @@ All under the state volume, `/home/worker/signal-fleet/` in the worker.
 | `triage-fleet/stale-candidate` | fleet | the signal has been quiet 7 days with no human comment ("looks resolved?") |
 | `triage-fleet/substrate` | fleet | the fleet's own infrastructure (e.g. triager down) |
 | `triage-fleet/routed:bugfix` | operator | dispatch to Fleet 1 |
+| `triage-fleet/routed:operator` | operator | send to the operator fleet: an SOP, or an investigation and a proposed fix |
 | `triage-fleet/muted` | operator | never act on this signal again (exact matches only) |
 
 Closing an issue is the operator's dismissal; a recurrence inside 7 days reopens it. A comment from
