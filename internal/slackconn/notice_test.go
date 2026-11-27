@@ -61,11 +61,9 @@ func TestNoticeAnswersRepeatAndRestart(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "notice-1", OK: true, Text: "acknowledged by ada in Slack; the case stays watching"}); err != nil {
-		t.Fatal(err)
-	}
-	if ub := plain(f.all("chat.update")[0]["blocks"]); strings.Contains(ub, `"type":"actions"`) || !strings.Contains(ub, "acknowledged by ada") {
-		t.Fatalf("the answer on the notice: %s", ub)
+	// a refusal of a click on a notice is logged, never shown: it would take the buttons off the message
+	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "notice-1", OK: false, Text: "refused: already answered"}); err != nil || len(f.all("chat.update")) != 0 {
+		t.Fatalf("a refusal was shown on the notice: %v, %d updates", err, len(f.all("chat.update")))
 	}
 
 	rep := n
@@ -74,26 +72,60 @@ func TestNoticeAnswersRepeatAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	ups := f.all("chat.update")
-	if len(ups) != 2 || ups[1]["ts"] != "1700000000.000100" || len(f.all("chat.postMessage")) != 1 || !strings.Contains(plain(ups[1]["blocks"]), `"value":"notice-2"`) {
+	if len(ups) != 1 || ups[0]["ts"] != "1700000000.000100" || len(f.all("chat.postMessage")) != 1 || !strings.Contains(plain(ups[0]["blocks"]), `"value":"notice-2"`) {
 		t.Fatalf("a repeat posted anew instead of updating: %d updates, %d posts", len(ups), len(f.all("chat.postMessage")))
 	}
-	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "notice-2", OK: true, Text: "acknowledged"}); err != nil || len(f.all("chat.update")) != 3 {
-		t.Fatalf("the repeat's own nonce answers its message: %v", err)
+	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "notice-2", OK: true, Text: "acknowledged by ada in Slack; the case stays watching"}); err != nil {
+		t.Fatal(err)
+	}
+	if ub := plain(f.all("chat.update")[1]["blocks"]); strings.Contains(ub, `"type":"actions"`) || !strings.Contains(ub, "acknowledged by ada") {
+		t.Fatalf("the answer on the notice: %s", ub)
 	}
 
-	// after a restart the connector knows no message: a repeat is posted anew, and an answer is posted as a message
+	// an acknowledged notice's message is done: the next notice of the case is a message of its own
+	rep3 := rep
+	rep3.Nonce = "notice-3"
+	if err := c.Post(ctx, rep3); err != nil || len(f.all("chat.postMessage")) != 2 || len(f.all("chat.update")) != 2 {
+		t.Fatalf("a notice after an acknowledgement: %v, %d posts, %d updates", err, len(f.all("chat.postMessage")), len(f.all("chat.update")))
+	}
+
+	// after a restart the connector knows no message: a repeat is posted anew, a refusal is only logged, and an answer
+	// that went through is posted as a message
 	c2 := connector(f)
-	rep2 := rep
-	rep2.Nonce = "notice-3"
-	if err := c2.Post(ctx, rep2); err != nil || len(f.all("chat.postMessage")) != 2 {
+	rep4 := rep
+	rep4.Nonce = "notice-4"
+	if err := c2.Post(ctx, rep4); err != nil || len(f.all("chat.postMessage")) != 3 {
 		t.Fatalf("a repeat after a restart: %v, %d posts", err, len(f.all("chat.postMessage")))
 	}
-	if err := c2.Answer(ctx, hostwire.AnsweredBody{Nonce: "unknown", OK: false, Text: "refused: already answered"}); err != nil {
+	if err := c2.Answer(ctx, hostwire.AnsweredBody{Nonce: "unknown", OK: false, Text: "refused: already answered"}); err != nil || len(f.all("chat.postMessage")) != 3 {
+		t.Fatalf("a refusal for an unknown message was posted: %v, %d posts", err, len(f.all("chat.postMessage")))
+	}
+	if err := c2.Answer(ctx, hostwire.AnsweredBody{Nonce: "unknown", OK: true, Text: "acknowledged by ada in Slack"}); err != nil {
 		t.Fatal(err)
 	}
 	posts := f.all("chat.postMessage")
-	if len(posts) != 3 || !strings.Contains(plain(posts[2]["blocks"]), "already answered") {
+	if len(posts) != 4 || !strings.Contains(plain(posts[3]["blocks"]), "acknowledged by ada") {
 		t.Fatalf("an answer for a message this connector never posted: %d posts", len(posts))
+	}
+}
+
+// A plan's message answered after a notice of the same case is not overwritten by the notice's repeat: only notices are
+// remembered by case.
+func TestRepeatNeverOverwritesAPlanMessage(t *testing.T) {
+	f := newFake(t, `{}`)
+	c := connector(f)
+	ctx := context.Background()
+	plan := hostwire.NotifyBody{Nonce: "p1", Case: "case-5", Title: "t", Plan: "p", Kind: hostwire.KindPlan, Approvable: true}
+	if err := c.Post(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Answer(ctx, hostwire.AnsweredBody{Nonce: "p1", OK: true, Text: "approved by ada in Slack; it runs now"}); err != nil {
+		t.Fatal(err)
+	}
+	rep := hostwire.NotifyBody{Nonce: "n1", Case: "case-5", Title: "t", Plan: "d", Kind: hostwire.KindNotice, Repeat: true,
+		Answers: []hostwire.NotifyAnswer{{ID: "acknowledge", Label: "Acknowledge", Allowed: true}}}
+	if err := c.Post(ctx, rep); err != nil || len(f.all("chat.postMessage")) != 2 || len(f.all("chat.update")) != 1 {
+		t.Fatalf("a notice after a plan: %v, %d posts, %d updates", err, len(f.all("chat.postMessage")), len(f.all("chat.update")))
 	}
 }
 

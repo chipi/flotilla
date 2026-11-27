@@ -104,6 +104,15 @@ func (f Frame) Decode(v any) error {
 	return nil
 }
 
+// DecodeLenient reads f's body into v, ignoring fields v does not know: for a body flotillad may grow (a notify), so an
+// agent older than flotillad still reads it.
+func (f Frame) DecodeLenient(v any) error {
+	if err := json.Unmarshal(f.Body, v); err != nil {
+		return fmt.Errorf("a %s frame: %v", f.Type, err)
+	}
+	return nil
+}
+
 // Bodies. A result is hostexec.Result.
 
 type EnrolBody struct {
@@ -120,6 +129,29 @@ type HelloBody struct {
 	// for a decision (the host enforces its config whatever flotillad believes). Older agents send none.
 	Ceiling   string          `json:"ceiling,omitempty"`
 	Allowlist []AllowedAction `json:"allowlist,omitempty"`
+	// Caps are what the agent can do beyond the first protocol, sent only by an agent that has one (an added field: an
+	// older agent sends none, and a flotillad older than the field refuses a hello that has it, so flotillad upgrades first).
+	Caps []string `json:"caps,omitempty"`
+}
+
+// CapNotifyAnswers is the connector's capability of reading a NotifyBody with kind, answers and repeat, and so of showing
+// notices. flotillad sends an agent without it plans in the old shape and no notices.
+const CapNotifyAnswers = "notify_answers"
+
+// HasCap reports whether the hello lists the capability.
+func (h HelloBody) HasCap(c string) bool {
+	for _, x := range h.Caps {
+		if x == c {
+			return true
+		}
+	}
+	return false
+}
+
+// Legacy is the body as an agent from before answers reads it: a plan, with its approvable flag and no kind, answers or repeat.
+func (n NotifyBody) Legacy() NotifyBody {
+	n.Kind, n.Answers, n.Repeat = "", nil, false
+	return n
 }
 
 // LogBody is one of the agent's own log lines. flotillad logs it as "host log" with the host's name; it
@@ -152,7 +184,8 @@ type NotifyAnswer struct {
 // plan, the case's detail for a notice. Approvable is whether policy lets Slack approve a plan at all (low or medium
 // risk, reversible or regenerable); without it the message only says where to answer. Answers, when present, say what
 // the message offers; a body without them (an older flotillad) is a plan offering approve and reject by Approvable.
-// The decoding is strict, so flotillad and its connector's host agent upgrade together.
+// An agent reads it leniently; one from before answers does not (its decoding is strict), so it says what it reads in its hello
+// (CapNotifyAnswers) and flotillad sends it plans in the old shape and no notices.
 type NotifyBody struct {
 	Nonce      string         `json:"nonce"`
 	Case       string         `json:"case"`

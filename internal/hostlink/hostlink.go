@@ -30,6 +30,7 @@ const DefaultHeartbeat = 30 * time.Second
 
 var (
 	ErrNotConnected = errors.New("the host is not connected: nothing was sent")
+	ErrNotSupported = errors.New("the host agent cannot read this: nothing was sent")
 	ErrUnknown      = errors.New("the execution was sent, and its result never came: unknown")
 )
 
@@ -100,6 +101,7 @@ type conn struct {
 	wmu     sync.Mutex
 	pending map[string]chan hostexec.Result
 	closed  chan struct{}
+	caps    []string // what the agent said it can do in its hello
 }
 
 func (c *conn) write(t string, v any) error {
@@ -193,7 +195,7 @@ func (s *Server) handle(tc *tls.Conn) {
 		refuse(tc, err.Error())
 		return
 	}
-	c := &conn{host: host, tc: tc, pending: map[string]chan hostexec.Result{}, closed: make(chan struct{})}
+	c := &conn{host: host, tc: tc, pending: map[string]chan hostexec.Result{}, closed: make(chan struct{}), caps: hello.Caps}
 	if err := c.write(hostwire.Welcome, hostwire.WelcomeBody{Clock: s.now().UTC()}); err != nil {
 		return
 	}
@@ -503,13 +505,20 @@ func sortedAttrKeys(m map[string]string) []string {
 	return out
 }
 
-// Notify sends a plan that waits for a person to a connected host's connector.
+// Notify sends a plan or a notice that waits for a person to a connected host's connector. An agent that did not say it reads answers is
+// sent plans in the old shape and ErrNotSupported for a notice.
 func (s *Server) Notify(host string, n hostwire.NotifyBody) error {
 	s.mu.Lock()
 	c := s.conns[host]
 	s.mu.Unlock()
 	if c == nil {
 		return ErrNotConnected
+	}
+	if !(hostwire.HelloBody{Caps: c.caps}).HasCap(hostwire.CapNotifyAnswers) {
+		if n.Kind == hostwire.KindNotice {
+			return ErrNotSupported
+		}
+		n = n.Legacy()
 	}
 	return c.write(hostwire.Notify, n)
 }

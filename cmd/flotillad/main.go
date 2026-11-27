@@ -1061,7 +1061,7 @@ var slackUserRe = regexp.MustCompile(`^[UW][A-Z0-9]{6,20}$`)
 func slackNotices(ctx context.Context, a *api.Server, link *hostlink.Server, host string, log *slog.Logger) {
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
-	offered := map[string]bool{}
+	offered, held := map[string]bool{}, map[string]bool{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -1073,14 +1073,32 @@ func slackNotices(ctx context.Context, a *api.Server, link *hostlink.Server, hos
 			log.Error("slack notices", "err", err)
 			continue
 		}
+		open := map[string]bool{}
+		for _, n := range ns {
+			open[n.Nonce] = true
+		}
+		for id := range offered { // an ask that is no longer open is forgotten
+			if !open[id] {
+				delete(offered, id)
+				delete(held, id)
+			}
+		}
 		for _, n := range ns {
 			if !offered[n.Nonce] {
 				offered[n.Nonce] = true
 				log.Info("slack ask offered", "case", n.Case, "kind", n.Kind, "repeat", n.Repeat, "host", host)
 			}
-			if err := link.Notify(host, n); err != nil {
+			if err := link.Notify(host, n); errors.Is(err, hostlink.ErrNotSupported) {
+				// an agent from before notices: held unsent until one that reads them connects
+				if !held[n.Nonce] {
+					held[n.Nonce] = true
+					log.Warn("slack notice held: the connector host's agent cannot read notices; upgrade it", "case", n.Case, "host", host)
+				}
+				continue
+			} else if err != nil {
 				break // the connector is not connected: the next tick tries again
 			}
+			delete(held, n.Nonce)
 			if err := a.Store.MarkAskSent(ctx, n.Nonce); err != nil {
 				log.Error("slack notices", "err", err)
 			}

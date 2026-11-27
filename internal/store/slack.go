@@ -14,8 +14,9 @@ import (
 
 // Slack asks (G9, ADR-0006 decided 4, security T16; ADR-0023 §3): each plan waiting for a person, and each notice about
 // a watched case, gets one ask with a random nonce, posted in Slack by the connector. A click names the nonce and an
-// answer id; the ask keeps the ids it offered, and a click for any other is refused. A plan's ask is used once; a
-// notice's ask stays usable until the notice is acknowledged.
+// answer id; the ask keeps the ids it offered, and a click for any other is refused. An ask is spent by its first
+// click. A notice's ask is also spent when a newer notice's ask replaces it, when the notice is acknowledged anywhere and
+// when the case leaves watching: the message of a spent ask answers nothing.
 
 type SlackAsk struct {
 	Nonce     string `json:"nonce"`
@@ -95,9 +96,21 @@ func (s *Store) askInSlack(ctx context.Context, caseID, planHash, kind string, a
 		return a, err
 	}
 	a = SlackAsk{Nonce: hex.EncodeToString(b), CaseID: caseID, PlanHash: planHash, AskedAt: s.now().Format(ts), Kind: kind, Answers: string(ids)}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO slack_asks (nonce, case_id, plan_hash, asked_at, kind, answers) VALUES (?, ?, ?, ?, ?, ?)`,
-		a.Nonce, a.CaseID, a.PlanHash, a.AskedAt, a.Kind, a.Answers)
-	return a, err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return a, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO slack_asks (nonce, case_id, plan_hash, asked_at, kind, answers) VALUES (?, ?, ?, ?, ?, ?)`,
+		a.Nonce, a.CaseID, a.PlanHash, a.AskedAt, a.Kind, a.Answers); err != nil {
+		return a, err
+	}
+	if kind == AskNotice { // a newer notice's message replaces the earlier one's: that nonce is spent
+		if err := closeNoticeAsks(ctx, tx, caseID, a.Nonce, "flotillad", "superseded", a.AskedAt); err != nil {
+			return a, err
+		}
+	}
+	return a, tx.Commit()
 }
 
 // SlackAskByNonce is the ask a click names; sql.ErrNoRows for a nonce flotillad never made.
@@ -147,10 +160,11 @@ func (s *Store) MarkAskSent(ctx context.Context, nonce string) error {
 	return tx.Commit()
 }
 
-// CloseNoticeAsks spends every open notice ask of a case: the notice was acknowledged, so no message of it is usable.
-func (s *Store) CloseNoticeAsks(ctx context.Context, caseID, by, outcome string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE slack_asks SET decided_at = ?, decided_by = ?, outcome = ? WHERE case_id = ? AND kind = ? AND decided_at = ''`,
-		s.now().Format(ts), by, outcome, caseID, AskNotice)
+// closeNoticeAsks spends every open notice ask of a case but the one named, in the caller's transaction: its notice was
+// acknowledged, a newer one replaced it, or the case left watching, so no message of it may answer anything.
+func closeNoticeAsks(ctx context.Context, tx *sql.Tx, caseID, except, by, outcome, at string) error {
+	_, err := tx.ExecContext(ctx, `UPDATE slack_asks SET decided_at = ?, decided_by = ?, outcome = ? WHERE case_id = ? AND kind = ? AND decided_at = '' AND nonce <> ?`,
+		at, by, outcome, caseID, AskNotice, except)
 	return err
 }
 

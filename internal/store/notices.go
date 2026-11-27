@@ -120,6 +120,9 @@ func (s *Store) AckNotice(ctx context.Context, caseID, actor string) (Notice, er
 		Detail: fmt.Sprintf("%s notice %d acknowledged", n.Kind, n.N)}); err != nil {
 		return Notice{}, err
 	}
+	if err := closeNoticeAsks(ctx, tx, caseID, "", actor, "acknowledged", at); err != nil {
+		return Notice{}, err
+	}
 	n.AckedBy, n.AckedAt = actor, at
 	return n, tx.Commit()
 }

@@ -179,16 +179,30 @@ func (c *Connector) Post(ctx context.Context, n hostwire.NotifyBody) error {
 func (c *Connector) remember(n hostwire.NotifyBody, channel, ts string) {
 	c.mu.Lock()
 	c.posted[n.Nonce] = posted{channel: channel, ts: ts, n: n}
-	c.byCase[n.Case] = n.Nonce
+	if n.Kind == hostwire.KindNotice { // only a notice's message may be updated by its case's next notice
+		c.byCase[n.Case] = n.Nonce
+	}
 	c.mu.Unlock()
 }
 
-// Answer shows flotillad's answer on the message and takes its buttons away. When the message is not known (the
-// connector restarted since it posted), the answer is posted as a message of its own.
+// Answer shows flotillad's answer on the message and takes its buttons away. A refusal is only logged: shown on a notice it
+// would strip the buttons from the message a newer nonce shares. When the message is not known (the connector restarted
+// since it posted), an answer that went through is posted as a message of its own.
 func (c *Connector) Answer(ctx context.Context, a hostwire.AnsweredBody) error {
 	c.mu.Lock()
 	p, ok := c.posted[a.Nonce]
+	if ok && a.OK && c.byCase[p.n.Case] == a.Nonce {
+		delete(c.byCase, p.n.Case) // answered: the case's next notice is a message of its own
+	}
 	c.mu.Unlock()
+	if ok && !a.OK && p.n.Kind == hostwire.KindNotice {
+		c.Log.Warn("slack: a click on a notice was refused", "case", p.n.Case, "text", a.Text)
+		return nil
+	}
+	if !ok && !a.OK {
+		c.Log.Warn("slack: a click was refused for a message this connector did not post", "text", a.Text)
+		return nil
+	}
 	if !ok {
 		return c.call(ctx, "chat.postMessage", c.BotToken, map[string]any{"channel": c.Channel, "text": "flotilla: " + a.Text, "unfurl_links": false,
 			"blocks": []map[string]any{{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": esc(a.Text)}}}}, nil)

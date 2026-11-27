@@ -227,6 +227,11 @@ func (s *Store) moveCaseAs(ctx context.Context, tx *sql.Tx, kind, id, to, by, re
 	if err := addCaseEvent(ctx, tx, CaseEvent{CaseID: id, At: at, Kind: kind, Actor: actor, By: by, From: from, To: to, Detail: d}); err != nil {
 		return err
 	}
+	if from == cases.Watching && to != cases.Watching { // its notices' messages answer nothing once the case is not watched
+		if err := closeNoticeAsks(ctx, tx, id, "", actor, "left_watching", at); err != nil {
+			return err
+		}
+	}
 	if to == cases.Closed || (from == cases.AwaitingApproval && to == cases.Escalated) || (from == cases.Escalated && to == cases.HandedOver) ||
 		(from == cases.AwaitingApproval && to == cases.HandedOver) {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM target_locks WHERE case_id = ?`, id); err != nil {

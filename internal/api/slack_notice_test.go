@@ -161,7 +161,7 @@ func TestRelayedAcknowledgeSiblingsAndRace(t *testing.T) {
 	if _, err := s.Answer(ctx, opCaller, "ui", id2, "acknowledge", AnswerIn{}); err != nil {
 		t.Fatal(err)
 	}
-	if a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: nonce, Team: "T0001", User: "U0OPER", Action: "acknowledge"}); a.OK || !strings.Contains(a.Text, "not acknowledged") {
+	if a := s.RelayedAnswer(ctx, "backup-01", hostwire.ApprovalBody{Nonce: nonce, Team: "T0001", User: "U0OPER", Action: "acknowledge"}); a.OK || !strings.Contains(a.Text, "already answered") {
 		t.Fatalf("acknowledging what the UI already acknowledged: %+v", a)
 	}
 }

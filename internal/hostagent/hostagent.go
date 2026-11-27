@@ -218,8 +218,12 @@ func (a *Agent) session(ctx context.Context) error {
 	defer nc.Close()
 	stop := context.AfterFunc(ctx, func() { nc.Close() })
 	defer stop()
+	var caps []string
+	if a.Slack != nil { // only the connector says so: a hello with a field an older flotillad does not know is refused
+		caps = []string{hostwire.CapNotifyAnswers}
+	}
 	if err := s.write(hostwire.Hello, hostwire.HelloBody{Version: a.Version, Clock: a.now().UTC(), ChainHead: a.Exec.ChainHead(),
-		Ceiling: a.Ceiling, Allowlist: a.Allowlist}); err != nil {
+		Ceiling: a.Ceiling, Allowlist: a.Allowlist, Caps: caps}); err != nil {
 		return err
 	}
 	nc.SetReadDeadline(time.Now().Add(15 * time.Second))
@@ -321,7 +325,7 @@ func (a *Agent) session(ctx context.Context) error {
 			return errRenewed
 		case hostwire.Notify:
 			var n hostwire.NotifyBody
-			if err := f.Decode(&n); err != nil {
+			if err := f.DecodeLenient(&n); err != nil {
 				return err
 			}
 			if a.Slack == nil {

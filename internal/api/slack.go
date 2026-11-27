@@ -110,7 +110,11 @@ func (s *Server) SlackNotices(ctx context.Context) ([]hostwire.NotifyBody, error
 				return nil, err
 			}
 			if !ok || n.ID != a.NoticeID() {
-				continue // acknowledged, closed or superseded before it was posted
+				// acknowledged, left watching or superseded before it was posted: nothing will ever post it
+				if err := s.Store.UseAsk(ctx, a.Nonce, "flotillad", "superseded"); err != nil && !errors.Is(err, store.ErrAskUsed) {
+					return nil, err
+				}
+				continue
 			}
 			detail, err := s.noticeDetail(ctx, c)
 			if err != nil {
@@ -153,9 +157,8 @@ func (s *Server) caseURL(c store.Case) string {
 	return strings.TrimRight(s.Slack.UIURL, "/") + "/cases/" + c.ID
 }
 
-// dueNotice is a watching case's newest notice, when it belongs to this watching period and is unsent and
-// unacknowledged: the one a connector should be told about.
-func (s *Server) dueNotice(ctx context.Context, c store.Case) (store.Notice, bool, error) {
+// currentNotice is a watching case's newest notice, when it belongs to this watching period.
+func (s *Server) currentNotice(ctx context.Context, c store.Case) (store.Notice, bool, error) {
 	ns, err := s.Store.Notices(ctx, c.ID)
 	if err != nil || len(ns) == 0 {
 		return store.Notice{}, false, err
@@ -163,8 +166,17 @@ func (s *Server) dueNotice(ctx context.Context, c store.Case) (store.Notice, boo
 	n := ns[len(ns)-1]
 	start, serr := time.Parse(time.RFC3339Nano, c.StatusAt)
 	due, derr := time.Parse(time.RFC3339Nano, n.DueAt)
-	if serr != nil || derr != nil || due.Before(start) || n.Kind != store.NoticeWatching || n.SentAt != "" || n.AckedAt != "" {
+	if serr != nil || derr != nil || due.Before(start) || n.Kind != store.NoticeWatching {
 		return store.Notice{}, false, nil
+	}
+	return n, true, nil
+}
+
+// dueNotice is the current notice when it is unsent and unacknowledged: the one a connector should be told about.
+func (s *Server) dueNotice(ctx context.Context, c store.Case) (store.Notice, bool, error) {
+	n, ok, err := s.currentNotice(ctx, c)
+	if err != nil || !ok || n.SentAt != "" || n.AckedAt != "" {
+		return store.Notice{}, false, err
 	}
 	return n, true, nil
 }
@@ -291,19 +303,31 @@ func (s *Server) RelayedAnswer(ctx context.Context, host string, b hostwire.Appr
 		if ask.Kind != store.AskNotice {
 			return ans(false, "refused: unknown action %q", b.Action)
 		}
+		// The acknowledgement lands on the case's newest notice, so the message must be that notice's: an older one
+		// (its repeat fell due, its own message not out yet) would acknowledge what its reader has not seen.
+		if cs, err := s.Store.Case(ctx, ask.CaseID); err != nil {
+			return ans(false, "refused: %v", err)
+		} else if n, ok, err := s.currentNotice(ctx, cs); err != nil {
+			return ans(false, "refused: %v", err)
+		} else if ok && (n.ID != ask.NoticeID() || n.AckedAt != "") {
+			_ = s.Store.UseAsk(ctx, b.Nonce, "flotillad", "superseded")
+			if n.ID != ask.NoticeID() {
+				return ans(false, "superseded: a newer notice is waiting; open the case")
+			}
+			return ans(false, "already acknowledged: open the case")
+		}
 		if err := s.Store.UseAsk(ctx, b.Nonce, c.Name, "acknowledged"); err != nil {
 			return ans(false, "refused: %v", err)
 		}
 		if _, err := s.Answer(ctx, c, "slack", ask.CaseID, AnsAcknowledge, AnswerIn{}); err != nil {
-			_ = s.Store.ReopenAsk(ctx, b.Nonce)
-			if pr := AsProblem(err); pr != nil {
-				return ans(false, "not acknowledged: %s", pr.Msg)
+			// only an error that may pass (the store) reopens the ask; the core's refusals (not watching, already
+			// acknowledged) are final, so the ask stays spent
+			pr := AsProblem(err)
+			if pr == nil {
+				_ = s.Store.ReopenAsk(ctx, b.Nonce)
+				return ans(false, "not acknowledged: %v", err)
 			}
-			return ans(false, "not acknowledged: %v", err)
-		}
-		// the message clicked is spent, and so is any earlier message of the same case's notices
-		if err := s.Store.CloseNoticeAsks(ctx, ask.CaseID, c.Name, "acknowledged"); err != nil {
-			s.Log.Warn("slack notice asks not closed", "case", ask.CaseID, "err", err)
+			return ans(false, "not acknowledged: %s", pr.Msg)
 		}
 		return ans(true, "acknowledged by %s in Slack; the case stays watching", u.Name)
 	}
