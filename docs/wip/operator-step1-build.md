@@ -135,12 +135,13 @@ POST /v1/cases/{id}/answers
   ask's stored answers.
 - **Rendering:** `slackconn` shows one button per allowed answer.
 - **After a restart:** when a lost message `ts` is unknown, the connector posts a new message.
-- **Deploy:** flotillad upgrades first (the agent's hello gains a `caps` field that an older flotillad refuses).
-  - An agent without the `notify_answers` capability is sent plans in the old shape and no notices. Its notices wait
-    unsent, logged once, until an upgraded agent connects.
+- **Deploy:** flotillad upgrades first. The agent's hello gains a `caps` field, which an older
+  flotillad refuses.
+  - An agent without the `notify_answers` capability is sent plans in the old shape and no
+    notices. Its notices wait unsent, logged once, until an upgraded agent connects.
   - From now on the agent reads a notify body leniently.
-- **A notice's ask is spent by its first click,** when a newer notice's ask replaces it, when the notice is
-  acknowledged anywhere, and when the case leaves watching.
+- **A notice's ask is spent** by its first click, when a newer notice's ask replaces it, when the
+  notice is acknowledged anywhere, and when the case leaves watching.
 
 ### SOP file
 
