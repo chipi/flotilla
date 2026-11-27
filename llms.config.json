@@ -7,7 +7,11 @@
   ],
   "max_bytes": 30000,
   "purposes": {
-    "fleetd/README.md": "the earlier supervisor that flotillad grew from; the host stopped running it on 2026-11-16, kept for the record"
+    "fleetd/README.md": "the earlier supervisor that flotillad grew from; the host stopped running it on 2026-11-16, kept for the record",
+    "docs/wip/operator-fleet-plan.md": "the operator fleet's cases",
+    "docs/wip/operator-step1-build.md": "step 1's contracts",
+    "docs/wip/operator-step1-status.md": "step 1's state",
+    "docs/rfc/RFC-0016-blocks-and-flows.md": "blocks and flows"
   },
   "sections": [
     {

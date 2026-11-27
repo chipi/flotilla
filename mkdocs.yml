@@ -130,6 +130,7 @@ nav:
     - RFC-0013 — The bugfix clarifier: rfc/RFC-0013-bugfix-clarifier.md
     - RFC-0014 — The visual plane and mashups: rfc/RFC-0014-visual-plane-and-mashups.md
     - RFC-0015 — The library in flotilla: rfc/RFC-0015-the-library.md
+    - RFC-0016 — Blocks and flows: rfc/RFC-0016-blocks-and-flows.md
   - In progress:
     - Overview: wip/README.md
     - "Routine versions, stations and harnesses (design)": wip/v2-design.md
