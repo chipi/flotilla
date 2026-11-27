@@ -534,13 +534,13 @@ seen() { for _ in $(seq 1 30); do $D logs "$1" 2>&1 | grep "$2" >/dev/null && re
 # each, and policy records the plan in shadow and closes the case. The gates' refusals escalate instead.
 want_closed() {  # kind target: a case of that kind on that target closed as a recorded shadow plan
   for _ in $(seq 1 45); do
-    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*[^_[:alnum:]]plan_recorded" && return 0; sleep 2
+    cli case list --all -n 500 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*closed .*[^_[:alnum:]]plan_recorded" && return 0; sleep 2
   done
   return 1
 }
 want_case() {  # kind target status: a case of that kind on that target in that status
   for _ in $(seq 1 45); do
-    cli case list --all 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*$3" && return 0; sleep 2
+    cli case list --all -n 500 2>&1 | grep >/dev/null "^[^ ]* *$1 .*$2 .*$3" && return 0; sleep 2
   done
   return 1
 }
@@ -567,13 +567,13 @@ proposed() {  # proposed KIND MONITOR: run the monitor, print the case it opened
   local id=""
   cli run "e2e/$2" >/dev/null
   for _ in $(seq 1 45); do
-    id="$(cli case list --all 2>&1 | awk -v k="$1" '$2 == k && /host:e2e-host/ && /awaiting_approval/ {print $1; exit}')"
+    id="$(cli case list --all -n 500 2>&1 | awk -v k="$1" '$2 == k && /host:e2e-host/ && /awaiting_approval/ {print $1; exit}')"
     [ -n "$id" ] && break; sleep 2
   done
   echo "$id"
 }
 status_is() {  # status_is CASE STATUS: wait for it
-  for _ in $(seq 1 45); do cli case list --all 2>&1 | grep >/dev/null "^$1 .* $2 " && return 0; sleep 2; done
+  for _ in $(seq 1 45); do cli case list --all -n 500 2>&1 | grep >/dev/null "^$1 .* $2 " && return 0; sleep 2; done
   return 1
 }
 # A second, idle flotillad on the stack's network (its one routine runs `true` once a year, and flotillad ends when no timed routine is
@@ -659,7 +659,7 @@ echo "== cases: pipeline v1's chain (RFC-0004 §10), the ops workers, in shadow"
 # The monitor runs at start; the stand-in says the backup is 25.5h old, above shadow's 25h. The dispatcher
 # (every 15s) hands the case to jobs/rerun-backup, whose plan policy records in shadow, closing the case.
 for i in $(seq 1 45); do
-  CASES="$(cli case list --all 2>&1)"
+  CASES="$(cli case list --all -n 500 2>&1)"
   echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*[^_[:alnum:]]plan_recorded" && break; sleep 2
 done
 echo "$CASES" | grep >/dev/null "failed_backup .*host:backup-01 .*closed .*[^_[:alnum:]]plan_recorded" \
@@ -692,21 +692,21 @@ wmon() {  # run e2e/watch-monitor once and wait until that run has ended
 wmon
 WC=""
 for _ in $(seq 1 45); do
-  WC="$(cli case list --all 2>&1 | awk '$2 == "e2e_watching" {print $1; exit}')"
+  WC="$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_watching" {print $1; exit}')"
   [ -n "$WC" ] && status_is "$WC" watching && break; sleep 2
 done
 [ -n "$WC" ] && status_is "$WC" watching \
-  && ok "the recorded plan kept the case open: $WC is watching, not closed as plan_recorded" || bad "the watching case: $(cli case list --all 2>&1 | grep e2e_watching)"
+  && ok "the recorded plan kept the case open: $WC is watching, not closed as plan_recorded" || bad "the watching case: $(cli case list --all -n 500 2>&1 | grep e2e_watching)"
 for _ in 1 2 3; do wmon; done
 WSHOW="$(cli case show "$WC" 2>&1)"
 echo "$WSHOW" | grep >/dev/null "case.watching .*flotillad .*by policy" && ok "case.watching names its actor (flotillad, by policy)" || bad "case show (watching): $WSHOW"
-echo "$WSHOW" | grep >/dev/null "^repeated 3 times unchanged" && [ "$(cli case list --all 2>&1 | grep -c e2e_watching)" = 1 ] \
+echo "$WSHOW" | grep >/dev/null "^repeated 3 times unchanged" && [ "$(cli case list --all -n 500 2>&1 | grep -c e2e_watching)" = 1 ] \
   && ok "three unchanged detections attached to the open case as repeats: one case" || bad "repeats: $(echo "$WSHOW" | grep -E 'repeated|signal')"
 for _ in $(seq 1 40); do cli case show "$WC" 2>&1 | grep >/dev/null "notice.due" && break; sleep 3; done
 WSHOW="$(cli case show "$WC" 2>&1)"
 [ "$(echo "$WSHOW" | grep -c "notice.due")" = 1 ] && echo "$WSHOW" | grep >/dev/null "notice.due .*flotillad" \
   && ok "the case timer recorded one notice.due (the notice at once), not one per detection" || bad "notice.due: $(echo "$WSHOW" | grep -E 'notice|watching')"
-status_is "$WC" watching && ok "the notice moved nothing: the case is still watching" || bad "after the notice: $(cli case list --all 2>&1 | grep e2e_watching)"
+status_is "$WC" watching && ok "the notice moved nothing: the case is still watching" || bad "after the notice: $(cli case list --all -n 500 2>&1 | grep e2e_watching)"
 # ADR-0023 §3: the due notice is offered to the Slack connector host every 15 seconds. That host's agent connects only in section hostagent,
 # so here flotillad's own log of the offer is the record (once per ask, taken or not); the notice stays unsent, with no notice.sent
 seen flotillad '"msg":"slack ask offered".*"case":"'"$WC"'","kind":"notice","repeat":false,"host":"e2e-host"' \
@@ -720,15 +720,15 @@ echo "$OUT" | grep >/dev/null "(notice)" && echo "$OUT" | grep >/dev/null "ackno
 OUT="$(cli case answer "$WC" acknowledge 2>&1)"
 echo "$OUT" | grep >/dev/null "acknowledged_by" && cli case show "$WC" 2>&1 | grep >/dev/null "notice.acked" \
   && ok "acknowledging the notice recorded notice.acked on the case" || bad "case answer acknowledge: $OUT"
-status_is "$WC" watching && ok "the acknowledgement moved nothing: the case is still watching" || bad "after the ack: $(cli case list --all 2>&1 | grep e2e_watching)"
+status_is "$WC" watching && ok "the acknowledgement moved nothing: the case is still watching" || bad "after the ack: $(cli case list --all -n 500 2>&1 | grep e2e_watching)"
 OUT="$(cli case answer "$WC" acknowledge 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 409" && ok "a second acknowledgement of the same notice is refused (409)" || bad "second ack: $OUT"
 OUT="$(cli case answer "$WC" mute 2>&1)"
 echo "$OUT" | grep >/dev/null "HTTP 409.*not an answer this case offers" && ok "an answer no case kind declares is refused (409)" || bad "case answer mute: $OUT"
 $D exec flotilla-worker-ops-read touch $WFLAG
 wmon
-status_is "$WC" closed && cli case list --all 2>&1 | grep "^$WC " | grep >/dev/null "resolved_itself" \
-  && ok "the monitor's clear closed it as resolved_itself" || bad "after the clear: $(cli case list --all 2>&1 | grep e2e_watching)"
+status_is "$WC" closed && cli case list --all -n 500 2>&1 | grep "^$WC " | grep >/dev/null "resolved_itself" \
+  && ok "the monitor's clear closed it as resolved_itself" || bad "after the clear: $(cli case list --all -n 500 2>&1 | grep e2e_watching)"
 cli case show "$WC" 2>&1 | grep >/dev/null "case.closed .*e2e/watch-monitor .*by detector .*resolved_itself" \
   && ok "the close names the monitor and its role (detector)" || bad "case show (clear): $(cli case show "$WC" 2>&1 | tail -3)"
 $D exec flotilla-worker-ops-read rm -f $WFLAG >/dev/null 2>&1
@@ -753,7 +753,7 @@ sop_run() {  # sop_run ROUTINE: run e2e/ROUTINE once and wait until that run has
 sop_case() {  # sop_case TARGET STATUS: the id of the e2e_sop case on host:TARGET in that status, waited for
   local id=""
   for _ in $(seq 1 60); do
-    id="$(cli case list --all 2>&1 | awk -v t="host:$1" -v s="$2" '$2 == "e2e_sop" && $3 == t && $4 == s {print $1; exit}')"
+    id="$(cli case list --all -n 500 2>&1 | awk -v t="host:$1" -v s="$2" '$2 == "e2e_sop" && $3 == t && $4 == s {print $1; exit}')"
     [ -n "$id" ] && break; sleep 3
   done
   echo "$id"
@@ -771,39 +771,40 @@ SHOW="$(cli case show "$SK" 2>&1)"
 [ -n "$SK" ] && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-act .*by act .*SOP e2e-known sha256:$KNOWN_SHA: fix\[0\] e2e.sop_fix; rung 1 requested (policy decides)" \
   && ! echo "$SHOW" | grep >/dev/null "^stage " \
   && ok "a case matching the fleet's SOP was planned from it: the plan cites the SOP's name and sha256 ($SK awaiting approval, no investigation)" \
-  || bad "the SOP case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -5)"
+  || bad "the SOP case: $(cli case list --all -n 500 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -5)"
 SN="$(sop_case e2e-sop-novel awaiting_approval)"
 SHOW="$(cli case show "$SN" 2>&1)"
 [ -n "$SN" ] && echo "$SHOW" | grep >/dev/null "^stage investigate " && echo "$SHOW" | grep >/dev/null "e2e/sop-act .*no SOP applies among 1 SOP" \
   && echo "$SHOW" | grep >/dev/null "case.planned .*e2e/sop-investigate .*by act .*investigated: e2e.sop_fix [|] reads: .*\"name\":\"e2e_age\",\"instance\":\"\",\"value\":[0-9.]*.*[|] model says: " \
   && ok "a case no SOP covers went to the investigate stage, which read a metric and planned a registry action ($SN awaiting approval); its findings and reads are on the case" \
-  || bad "the investigated case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -6)"
+  || bad "the investigated case: $(cli case list --all -n 500 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -6)"
 SN2="$(sop_case e2e-sop-novel2 awaiting_approval)"
 [ -n "$SN2" ] && cli case show "$SN2" 2>&1 | grep >/dev/null "^stage investigate " \
   && ok "a second case no SOP covers was investigated and planned too ($SN2): its proposal is the one the UI section answers" \
-  || bad "the second investigated case: $(cli case list --all 2>&1 | grep e2e_sop)"
+  || bad "the second investigated case: $(cli case list --all -n 500 2>&1 | grep e2e_sop)"
 SR="$(sop_case e2e-sop-rogue escalated)"
 SHOW="$(cli case show "$SR" 2>&1)"
 [ -n "$SR" ] && echo "$SHOW" | grep >/dev/null "case.escalated .*e2e/sop-investigate .*refused by the gates: 'rm.everything' is not an action the registry declares for e2e_sop cases" \
   && ! echo "$SHOW" | grep >/dev/null "case.planned" \
   && ok "the model's command the registry lacks was refused by code: no plan, the case escalated ($SR)" \
-  || bad "the rogue case: $(cli case list --all 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -4)"
+  || bad "the rogue case: $(cli case list --all -n 500 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -4)"
 $D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT_META prompt='You investigate a case" && ok "the investigation's model call went through the one client to the gateway stand-in (its system text opens the call)" || bad "no investigation call at the gateway stand-in"
-for C in "$SK" "$SN" "$SN2"; do
+# Two of the three plans are carried out, not all: every execution counts against the platform's 10 an hour (the ask section's budget check),
+# and the case an SOP planned proves nothing more by executing than the two investigated ones do. It is rejected and closed at the end.
+for C in "$SN" "$SN2"; do
   cli case approve "$C" >/dev/null 2>&1; status_is "$C" closed
 done
-cli case list --all 2>&1 | grep "^$SK " | grep >/dev/null "closed .*verified" && cli case list --all 2>&1 | grep "^$SN " | grep >/dev/null "closed .*verified" \
-  && cli case list --all 2>&1 | grep "^$SN2 " | grep >/dev/null "closed .*verified" \
+cli case list --all -n 500 2>&1 | grep "^$SN " | grep >/dev/null "closed .*verified" && cli case list --all -n 500 2>&1 | grep "^$SN2 " | grep >/dev/null "closed .*verified" \
   && cli case show "$SN" 2>&1 | grep >/dev/null "case.executing .*operator .*by operator .*approved e2e.sop_fix" \
-  && ok "the operator approved both plans; each was executed, checked and closed verified" \
-  || bad "the executions: $(cli case list --all 2>&1 | grep e2e_sop)"
+  && ok "the operator approved the two investigated plans; each was executed, checked and closed verified" \
+  || bad "the executions: $(cli case list --all -n 500 2>&1 | grep e2e_sop)"
 sop_run sop-draft
-PC="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"
-for _ in $(seq 1 20); do [ -n "$PC" ] && break; sleep 2; PC="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"; done
-PC2="$(cli case list --all 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel2" {print $1; exit}')"
-[ -n "$PC" ] && [ -n "$PC2" ] && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 2 ] \
+PC="$(cli case list --all -n 500 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"
+for _ in $(seq 1 20); do [ -n "$PC" ] && break; sleep 2; PC="$(cli case list --all -n 500 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel" {print $1; exit}')"; done
+PC2="$(cli case list --all -n 500 2>&1 | awk '$2 == "sop_proposal" && $3 == "sop:e2e/e2e-novel2" {print $1; exit}')"
+[ -n "$PC" ] && [ -n "$PC2" ] && [ "$(cli case list --all -n 500 2>&1 | grep -c ' sop_proposal ')" = 2 ] \
   && ok "the verified investigations became sop_proposal cases on sop:e2e/e2e-novel ($PC) and e2e-novel2 ($PC2); the case an SOP solved was not drafted" \
-  || bad "the proposal: $(cli case list --all 2>&1 | grep -E 'sop_proposal|e2e_sop')"
+  || bad "the proposal: $(cli case list --all -n 500 2>&1 | grep -E 'sop_proposal|e2e_sop')"
 # C6b: a proposal that waits offers Accept and Reject through the core's answers API (the UI section answers it); a chat connector is not offered it
 ANS="$(cli case answers "$PC2" 2>&1)"
 echo "$ANS" | grep >/dev/null "accept" && echo "$ANS" | grep >/dev/null "reject" && ! echo "$ANS" | grep >/dev/null "approve" \
@@ -827,51 +828,54 @@ open(sys.argv[3], "w").write(d["body"])' "$SN" "$WORK/sopcheck/add.patch" "$WORK
 (cd "$WORK/sopcheck/repo" && git apply --check ../add.patch) && ok "the proposal's diff applies to an empty repo (git apply --check)" || bad "git apply --check of the proposal's diff"
 [ "$(sops_sum)" = "$SOPS0" ] && ok "no file under any sops/ folder changed: the loop proposes, a person commits" || bad "a SOP folder changed during the section"
 cli case close "$SR" --reason "e2e: the model's command was refused, as it should be" >/dev/null 2>&1
+cli case reject "$SK" --reason "e2e: the SOP's plan is not carried out here (the hour's execution budget)" >/dev/null 2>&1
+cli case close "$SK" --reason "e2e: the SOP's plan was checked, not carried out" >/dev/null 2>&1
+status_is "$SK" closed && ok "the plan an SOP made was rejected and closed by the operator, never executed (the section's executions: two)" || bad "closing the SOP's case: $(cli case show "$SK" 2>&1 | tail -2)"
 # the person's commit by hand: the drafted SKILL.md lands in the fleet's folder (here the host's copy the workers mount), and the next draft run
 # has nothing to propose: the SOP cites the case. flotillad closes a proposal no routine acts on once its monitor stops reporting it.
 mkdir -p "$SOPROOT/e2e/sops/e2e-novel" && cp "$WORK/sopcheck/body.md" "$SOPROOT/e2e/sops/e2e-novel/SKILL.md"
 sop_run sop-draft
-status_is "$PC" closed && cli case list --all 2>&1 | grep "^$PC " | grep >/dev/null "resolved_itself" && [ "$(cli case list --all 2>&1 | grep -c ' sop_proposal ')" = 2 ] \
-  && cli case list --all 2>&1 | grep "^$PC2 " | grep >/dev/null "handed_over" \
+status_is "$PC" closed && cli case list --all -n 500 2>&1 | grep "^$PC " | grep >/dev/null "resolved_itself" && [ "$(cli case list --all -n 500 2>&1 | grep -c ' sop_proposal ')" = 2 ] \
+  && cli case list --all -n 500 2>&1 | grep "^$PC2 " | grep >/dev/null "handed_over" \
   && ok "once the SOP is committed the draft run no longer reports it, and flotillad closed that proposal as resolved itself: no new proposal, and the other still waits ($PC2)" \
-  || bad "after the commit: $(cli case list --all 2>&1 | grep sop_proposal)"
+  || bad "after the commit: $(cli case list --all -n 500 2>&1 | grep sop_proposal)"
 
 fi
 if want business; then
 echo "== the business examples (crm, campaigns, outbound, renewals), on their stand-in data, in shadow"
 want_closed crm_fix "crm:contact/c-101/email" && ok "crm: the email to normalize became a case, planned and recorded in shadow" \
-  || bad "crm: $(cli case list --all 2>&1 | grep crm_fix)"
+  || bad "crm: $(cli case list --all -n 500 2>&1 | grep crm_fix)"
 want_closed crm_fix "crm:contact/c-103/merge" && ok "crm: the duplicate became a merge plan, recorded in shadow" \
-  || bad "crm merge: $(cli case list --all 2>&1 | grep crm_fix)"
-cli case list --all 2>&1 | grep >/dev/null "crm:contact/c-104/country" && bad "crm: a field a person edited became a case" \
+  || bad "crm merge: $(cli case list --all -n 500 2>&1 | grep crm_fix)"
+cli case list --all -n 500 2>&1 | grep >/dev/null "crm:contact/c-104/country" && bad "crm: a field a person edited became a case" \
   || ok "crm: a field a person edited is never proposed"
 want_closed campaign_ready "campaign:k-201" && want_closed campaign_ready "campaign:k-202" \
-  && ok "campaigns: both ready campaigns decided (launch and hold), recorded in shadow" || bad "campaigns: $(cli case list --all 2>&1 | grep campaign_ready)"
+  && ok "campaigns: both ready campaigns decided (launch and hold), recorded in shadow" || bad "campaigns: $(cli case list --all -n 500 2>&1 | grep campaign_ready)"
 want_closed prospect_new "prospect:p-301" && ok "outbound: a first touch drafted from cited facts, recorded in shadow" \
-  || bad "outbound: $(cli case list --all 2>&1 | grep prospect_new)"
-for _ in $(seq 1 45); do cli case list --all 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && break; sleep 2; done
-cli case list --all 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && ok "outbound: the do-not-contact prospect is refused by the gate, escalated" \
-  || bad "outbound gate: $(cli case list --all 2>&1 | grep prospect_new)"
+  || bad "outbound: $(cli case list --all -n 500 2>&1 | grep prospect_new)"
+for _ in $(seq 1 45); do cli case list --all -n 500 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && break; sleep 2; done
+cli case list --all -n 500 2>&1 | grep >/dev/null "prospect:p-303 .*escalated" && ok "outbound: the do-not-contact prospect is refused by the gate, escalated" \
+  || bad "outbound gate: $(cli case list --all -n 500 2>&1 | grep prospect_new)"
 want_closed renewal_risk "account:a-401" && ok "renewals: the account at risk flagged for its owner, recorded in shadow" \
-  || bad "renewals: $(cli case list --all 2>&1 | grep renewal_risk)"
+  || bad "renewals: $(cli case list --all -n 500 2>&1 | grep renewal_risk)"
 
 fi
 if want world; then
 echo "== the examples that reach the outside world (sites, deps), on deploy/e2e/world.py, in shadow"
 want_case seo_live_regression "site:description/www.example.com/about" "" && ok "sites: the page without a description is a case" \
-  || bad "sites description: $(cli case list --all 2>&1 | grep seo_live)"
+  || bad "sites description: $(cli case list --all -n 500 2>&1 | grep seo_live)"
 want_case seo_live_regression "site:link/www.example.com/old-offers" "" && ok "sites: the link that answers 404 is a case" \
-  || bad "sites link: $(cli case list --all 2>&1 | grep seo_live)"
+  || bad "sites link: $(cli case list --all -n 500 2>&1 | grep seo_live)"
 want_case seo_live_regression "site:certificate/www.example.com/" "" && ok "sites: the certificate that expires in 9 days (under 21) is a case" \
-  || bad "sites certificate: $(cli case list --all 2>&1 | grep seo_live)"
-cli case list --all 2>&1 | grep >/dev/null "site:retired" && bad "sites: the retired host answering 404 became a case" \
+  || bad "sites certificate: $(cli case list --all -n 500 2>&1 | grep seo_live)"
+cli case list --all -n 500 2>&1 | grep >/dev/null "site:retired" && bad "sites: the retired host answering 404 became a case" \
   || ok "sites: the retired host answers 404, as it should: no case"
 want_case dependency_update "repo:example/shop/deps/requests" "closed .*[^_[:alnum:]]plan_recorded" \
   && ok "deps: the vulnerable pin became a case, its upgrade PR planned and recorded in shadow" \
-  || bad "deps vulnerable: $(cli case list --all 2>&1 | grep dependency_update)"
+  || bad "deps vulnerable: $(cli case list --all -n 500 2>&1 | grep dependency_update)"
 want_case dependency_update "repo:example/api/deps/fastapi" "" && ok "deps: the outdated pin of a repo that asks for them is a case" \
-  || bad "deps outdated: $(cli case list --all 2>&1 | grep dependency_update)"
-cli case list --all 2>&1 | grep >/dev/null "repo:example/shop/deps/flask" && bad "deps: an outdated pin of a repo that does not ask became a case" \
+  || bad "deps outdated: $(cli case list --all -n 500 2>&1 | grep dependency_update)"
+cli case list --all -n 500 2>&1 | grep >/dev/null "repo:example/shop/deps/flask" && bad "deps: an outdated pin of a repo that does not ask became a case" \
   || ok "deps: an outdated pin of a repo that does not ask for them is no case"
 $D logs e2e-world 2>&1 | grep >/dev/null "world GET api.github.com/repos/example/shop/commits/HEAD" \
   && ok "deps reached the GitHub stand-in through the bugfix proxy, over TLS from the stack's CA" || bad "no GitHub request at the world stand-in"
@@ -902,13 +906,13 @@ if want bugfix; then
 echo "== the bugfix example's intake, on the world's GitHub"
 want_case code_bug "repo:example/shop/issues/7" "handed_over" \
   && ok "bugfix: the open bug issue became a code_bug case (its fix needs a real coding model: off here)" \
-  || bad "bugfix intake: $(cli case list --all 2>&1 | grep code_bug)"
+  || bad "bugfix intake: $(cli case list --all -n 500 2>&1 | grep code_bug)"
 
 fi
 if [ "${DEMO:-}" = 1 ]; then
   echo "== the demo"
   echo "cases the example fleets opened (they keep running on their schedules):"
-  cli case list --all 2>&1 | awk 'NR == 1 || /crm_fix|campaign_ready|prospect_new|renewal_risk|failed_backup|dependency_update|seo_live_regression|signal/' | sed 's/^/   /'
+  cli case list --all -n 500 2>&1 | awk 'NR == 1 || /crm_fix|campaign_ready|prospect_new|renewal_risk|failed_backup|dependency_update|seo_live_regression|signal/' | sed 's/^/   /'
   UA="$(cli user add demo --role admin 2>&1)"
   DEMOTOK="$(echo "$UA" | sed -n 's/.*"token":"\(flt_[0-9a-f]*\)".*/\1/p')"
   [ ${#DEMOTOK} = 68 ] || { echo "DEMO FAIL: the demo admin: $UA"; exit 1; }
@@ -918,9 +922,9 @@ if [ "${DEMO:-}" = 1 ]; then
   dcli action autonomy crm.update_field propose --reason "demo: a plan that waits for you" >/dev/null 2>&1
   $D exec flotilla-worker-ops-read python3 -c 'import json; p="/tmp/flotilla-example/crm/contacts.json"; c=json.load(open(p)); c.append({"id": "c-110", "name": "Eva Novak", "email": "eva.novak@example.org", "country": "france", "created": "2025-09-02"}); json.dump(c, open(p, "w"), indent=1)' \
     && dcli run crm/scan >/dev/null 2>&1
-  for _ in $(seq 1 45); do dcli case list --all 2>&1 | grep >/dev/null "crm:contact/c-110/country .*awaiting_approval" && break; sleep 2; done
-  dcli case list --all 2>&1 | grep >/dev/null "crm:contact/c-110/country .*awaiting_approval" \
-    && ok "demo: a CRM field fix waits for approval" || bad "demo: no plan awaits approval: $(dcli case list --all 2>&1 | grep c-110)"
+  for _ in $(seq 1 45); do dcli case list --all -n 500 2>&1 | grep >/dev/null "crm:contact/c-110/country .*awaiting_approval" && break; sleep 2; done
+  dcli case list --all -n 500 2>&1 | grep >/dev/null "crm:contact/c-110/country .*awaiting_approval" \
+    && ok "demo: a CRM field fix waits for approval" || bad "demo: no plan awaits approval: $(dcli case list --all -n 500 2>&1 | grep c-110)"
   printf 'localhost {\n\ttls internal\n\treverse_proxy flotillad:8486\n}\n' > "$WORK/Caddyfile.demo"
   $D run -d --name flotilla-e2e-caddy --label $LABEL -p "127.0.0.1:$DEMO_PORT:443" --memory 256m \
     -v "$WORK/Caddyfile.demo:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" >/dev/null && $D network connect e2e-ui flotilla-e2e-caddy \
@@ -1445,10 +1449,10 @@ for i in $(seq 1 30); do cli health >/dev/null 2>&1 && break; sleep 2; done
 # ("repeated N times unchanged", 13c46f6).
 cli run jobs/backup-monitor >/dev/null
 for i in $(seq 1 20); do
-  CID="$(agent case list --all 2>&1 | awk '/failed_backup/ {print $1}')"
+  CID="$(agent case list --all -n 500 2>&1 | awk '/failed_backup/ {print $1}')"
   agent case show $CID 2>/dev/null | grep >/dev/null -E "signal.absorbed|^repeated [0-9]+ times unchanged" && break; sleep 2
 done
-N="$(agent case list --all 2>&1 | grep -c failed_backup)"
+N="$(agent case list --all -n 500 2>&1 | grep -c failed_backup)"
 [ "$N" = 1 ] && agent case show $CID 2>&1 | grep >/dev/null -E "signal.absorbed .*jobs/backup-monitor|^repeated [0-9]+ times unchanged" \
   && ok "after the restart the monitor's repeat went into the incident's case (one case, absorbed or counted)" \
   || bad "one case per incident: $N failed_backup cases; $(agent case show $CID 2>&1 | tail -3)"
@@ -1524,7 +1528,7 @@ echo "== routine versions on a case: a v2 plan waits for approval, a rollback wi
 cli action autonomy host.vtrue propose --reason "e2e: the versions check's harmless action" >/dev/null 2>&1
 VC="$(proposed e2e_versioned versioned-monitor)"
 [ -n "$VC" ] && ok "the case went to the live version (v2); its plan waits for approval at propose ($VC awaiting approval)" \
-  || bad "no e2e_versioned case awaiting approval: $(cli case list --all 2>&1 | grep e2e_versioned)"
+  || bad "no e2e_versioned case awaiting approval: $(cli case list --all -n 500 2>&1 | grep e2e_versioned)"
 [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(len(r), r[0]["version"], r[0]["status"])')" = "1 2 ok" ] \
   && ok "the run after the promote recorded version 2" || bad "the run's version: $(runs_json e2e/versioned | head -c 300)"
 OUT="$(cli rollback e2e/versioned --autonomy propose 2>&1)"
@@ -1548,10 +1552,10 @@ OUT="$(cli rollback e2e/versioned --autonomy propose --reason "e2e: again" 2>&1)
 echo "$OUT" | grep >/dev/null "HTTP 409.*no previous" && ok "with no previous version a rollback is refused" || bad "second rollback: $OUT"
 # v1 plans again (the previous version, on this image): the same case waits again, a v1 plan
 status_is "$VC" awaiting_approval && [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"]; print(r[0]["version"], r[0]["status"])')" = "1 ok" ] \
-  && ok "the live version (v1, the previous one on this image) planned the case again: its run recorded version 1" || bad "re-plan by v1: $(cli case list --all 2>&1 | grep e2e_versioned) $(runs_json e2e/versioned | head -c 200)"
+  && ok "the live version (v1, the previous one on this image) planned the case again: its run recorded version 1" || bad "re-plan by v1: $(cli case list --all -n 500 2>&1 | grep e2e_versioned) $(runs_json e2e/versioned | head -c 200)"
 cli case reject "$VC" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case answers "$VC" 2>&1 | grep >/dev/null "dismiss" \
   && cli case answer "$VC" dismiss --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC" closed \
-  && cli case list --all 2>&1 | grep "^$VC " | grep >/dev/null "dismissed" \
+  && cli case list --all -n 500 2>&1 | grep "^$VC " | grep >/dev/null "dismissed" \
   && ok "the case was rejected and dismissed by the operator through its answers (closed as dismissed, the target is released)" || bad "closing the versions case: $(cli case show "$VC" 2>&1 | tail -2)"
 cli action autonomy host.vtrue propose --reason "e2e: back to propose after the rejection's demotion" >/dev/null 2>&1
 # a run in flight at promote finishes with the version it started with (e2e/hang's pattern: a hold file in the worker makes the run last)
@@ -1567,10 +1571,10 @@ echo "$OUT" | grep >/dev/null '"state":"live"' && [ "$(vstates e2e/versioned | c
 for i in $(seq 1 90); do cli status | grep -E "^e2e/versioned " | grep >/dev/null "running " || break; sleep 1; done
 [ "$(runs_json e2e/versioned | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runs"] if x["id"] == sys.argv[1]][0]; print(r["version"], r["status"])' "$RUNID")" = "1 ok" ] \
   && ok "the run in flight finished as v1 (the version it started with) and counted" || bad "the run in flight: $(runs_json e2e/versioned | head -c 300)"
-VC2="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"
-for i in $(seq 1 30); do [ -n "$VC2" ] && break; sleep 2; VC2="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"; done
+VC2="$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"
+for i in $(seq 1 30); do [ -n "$VC2" ] && break; sleep 2; VC2="$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_versioned" && /awaiting_approval/ {print $1; exit}')"; done
 [ -n "$VC2" ] && ! cli case show "$VC2" 2>&1 | grep >/dev/null "rolled_back" \
-  && ok "the plan v1 made stays approvable (it was live when it made it): $VC2 awaits approval, not marked rolled back" || bad "the in-flight plan: $(cli case list --all 2>&1 | grep e2e_versioned)"
+  && ok "the plan v1 made stays approvable (it was live when it made it): $VC2 awaits approval, not marked rolled back" || bad "the in-flight plan: $(cli case list --all -n 500 2>&1 | grep e2e_versioned)"
 cli case reject "$VC2" --reason "e2e: versions check, plan not needed" >/dev/null 2>&1 && cli case close "$VC2" --reason "e2e: versions check done" >/dev/null 2>&1 && status_is "$VC2" closed \
   && ok "that case was rejected and closed by the operator" || bad "closing the second versions case: $(cli case show "$VC2" 2>&1 | tail -2)"
 
@@ -1596,14 +1600,14 @@ cli events -n 60 | grep "run.cancel .*e2e/versioned .*run $RUN3: v3 rolled back"
   && ok "the worker was asked to stop it (a run.cancel event, delivered)" || bad "run.cancel event: $(cli events -n 60 | grep run.cancel | head -2)"
 # The cancelled run made no decision, so the case waits out the dispatcher's backoff (10 minutes) before the live version
 # (v1 again) plans it: the e2e shows the case is still with the acting routine, handed over, with no plan from v3.
-VC3="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && /handed_over/ {print $1; exit}')"
+VC3="$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_versioned" && /handed_over/ {print $1; exit}')"
 SHOW="$(cli case show "$VC3" 2>&1)"
 [ -n "$VC3" ] && echo "$SHOW" | grep >/dev/null "run.no_decision .*e2e/versioned" && ! echo "$SHOW" | grep >/dev/null "case.planned" \
-  && ok "the case stayed with the acting routine: the cancelled run made no decision and filed no plan ($VC3 handed over, waiting its backoff)" || bad "the case after the rollback with a run in flight: $(cli case list --all 2>&1 | grep e2e_versioned) $(echo "$SHOW" | tail -4)"
+  && ok "the case stayed with the acting routine: the cancelled run made no decision and filed no plan ($VC3 handed over, waiting its backoff)" || bad "the case after the rollback with a run in flight: $(cli case list --all -n 500 2>&1 | grep e2e_versioned) $(echo "$SHOW" | tail -4)"
 
 HC="$(proposed e2e_host_true host-true-monitor)"
 [ -n "$HC" ] && ok "the detection became a case; the acting routine planned host.true; policy proposed it ($HC awaiting approval)" \
-  || bad "no e2e_host_true case awaiting approval: $(cli case list --all 2>&1 | grep e2e_host_true)"
+  || bad "no e2e_host_true case awaiting approval: $(cli case list --all -n 500 2>&1 | grep e2e_host_true)"
 # Slack approvals (the slack section of flotillad.yaml): the plan that waits is offered to the connector host every 15 seconds. The stand-in host's agent
 # is no connector: it logs each plan it is asked to post and posts nothing, which is the e2e's recording of what Slack would have been sent
 hseen 'not its Slack connector.*"kind":""' && ok "Slack: flotillad asked the connector host to post the plan waiting for approval, in the old shape (no kind: the stand-in's agent is no connector and reports no notify_answers capability); the stand-in logged it" \
@@ -1718,7 +1722,7 @@ ns, tok = sys.argv[1], sys.stdin.read().strip()
 r = urllib.request.Request("http://flotillad:8485/v1/ledger/counts?ns=" + ns, headers={"Authorization": "Bearer " + tok})
 print(ns, json.load(urllib.request.urlopen(r, timeout=10)))' "$ns" <<<"$OPT" 2>&1
     done
-    cli case list --all 2>&1 | awk '{print $1, $2, $3}'
+    cli case list --all -n 500 2>&1 | awk '{print $1, $2, $3}'
     cli action list 2>&1
   } | sha256sum | cut -c1-16
 }
@@ -1844,8 +1848,8 @@ cli pairs export e2e/shadow-monitor v2 --to /var/lib/flotilla/pairs-export >/dev
   && ok "pairs export wrote a folder (0700, files 0600) with a production-data README" || bad "pairs export: $(ls -la "$WORK/pairs-export" 2>&1 | head -4)"
 # the monitor's live case (opened by the live v1) belongs to the acting routine: the shadows of e2e/versioned plan on it and send nothing
 VCS=""
-for i in $(seq 1 45); do VCS="$(cli case list --all 2>&1 | awk '$2 == "e2e_versioned" && $3 == "host:e2e-shadowed" && $4 != "detected" {print $1; exit}')"; [ -n "$VCS" ] && break; sleep 2; done
-[ -n "$VCS" ] && ok "the live version took the monitor's case ($VCS)" || bad "the acting routine did not take the case: $(cli case list --all 2>&1 | grep e2e_versioned)"
+for i in $(seq 1 45); do VCS="$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_versioned" && $3 == "host:e2e-shadowed" && $4 != "detected" {print $1; exit}')"; [ -n "$VCS" ] && break; sleep 2; done
+[ -n "$VCS" ] && ok "the live version took the monitor's case ($VCS)" || bad "the acting routine did not take the case: $(cli case list --all -n 500 2>&1 | grep e2e_versioned)"
 SHP=""
 for i in $(seq 1 45); do
   SHP="$(for v in 3 5 6; do cli pairs e2e/versioned v$v --json 2>/dev/null; echo; done)"
@@ -1920,7 +1924,7 @@ SQ="$(python3 "$WORK/stationq.py" "$WORK/store.db" 2>&1)"; SQRC=$?
 [ "$SQRC" = 0 ] && ok "store: the shadow's station calls are keyed e2e/station-monitor@v2 with their texts' hashes, no call of a shadow run is under a live key, and the three distinct texts are kept once each ($SQ)" || bad "store rows of the station routine: $SQ"
 rm -f "$WORK/stationq.py"
 # no effect: the live case list holds the one case the live version opened; the shadow's run is in no runs list
-[ "$(cli case list --all 2>&1 | awk '$2 == "e2e_stations"' | wc -l)" = 1 ] && ok "the shadow opened no case: one e2e_stations case, the live version's" || bad "e2e_stations cases: $(cli case list --all 2>&1 | grep e2e_stations)"
+[ "$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_stations"' | wc -l)" = 1 ] && ok "the shadow opened no case: one e2e_stations case, the live version's" || bad "e2e_stations cases: $(cli case list --all -n 500 2>&1 | grep e2e_stations)"
 cli runs e2e/station-monitor -json -n 50 | python3 -c 'import json,sys; r=json.load(sys.stdin)["runs"] or []; sys.exit(0 if r and all(not x.get("shadow") and x["version"] == 1 for x in r) else 1)' \
   && ok "the routine's runs list holds only the live version's run" || bad "station-monitor runs: $(cli runs e2e/station-monitor -json -n 5 | head -c 300)"
 # signals: the station's model span carries flotilla.station, and the shadow's carries the shadow mark as well
@@ -1929,7 +1933,7 @@ STR="$($D logs e2e-victoriatraces 2>&1)"
 echo "$STR" | grep >/dev/null "STATION_LIVE_SPAN" && echo "$STR" | grep >/dev/null "STATION_SHADOW_SPAN" && ! echo "$STR" | grep >/dev/null "UNMARKED_STATION_SHADOW_SPAN" \
   && ok "traces: the live station's model span and the shadow's reached the trace store with flotilla.station, and none of the shadow's lacked flotilla.shadow" \
   || bad "station spans: $(echo "$STR" | grep -c STATION_LIVE_SPAN) live, $(echo "$STR" | grep -c STATION_SHADOW_SPAN) shadow, $(echo "$STR" | grep -c UNMARKED_STATION_SHADOW_SPAN) unmarked shadow"
-cli case close "$(cli case list --all 2>&1 | awk '$2 == "e2e_stations" {print $1; exit}')" --reason "e2e: the stations check is done" >/dev/null 2>&1
+cli case close "$(cli case list --all -n 500 2>&1 | awk '$2 == "e2e_stations" {print $1; exit}')" --reason "e2e: the stations check is done" >/dev/null 2>&1
 echo "-- the offline run of the same version, on an authored input (flotillad -stations, then runtime/offline_run.py in the worker image)"
 OFF="$WORK/offline"
 off_clean() {  # the offline runs' folders hold files owned by the worker's uid (and 0700 homes): removed by that uid, then the folder by us
@@ -2211,22 +2215,22 @@ HK="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROO
 echo "$HK"
 hk() { echo "$HK" | awk -v l="$1" '$1 == l {print $2; exit}'; }
 HCASE="$(echo "$HK" | awk '$1 == "opened" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
-[ "$(hk opened)" = 202 ] && [ -n "$HCASE" ] && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "handed_over" \
-  && ok "a signed call opened one meeting case, handed over ($HCASE)" || bad "hook opened: $(hk opened) case '$HCASE': $(hcli case list --all 2>&1 | grep "^$HCASE " )"
+[ "$(hk opened)" = 202 ] && [ -n "$HCASE" ] && hcli case list --all -n 500 2>&1 | grep "^$HCASE " | grep >/dev/null "handed_over" \
+  && ok "a signed call opened one meeting case, handed over ($HCASE)" || bad "hook opened: $(hk opened) case '$HCASE': $(hcli case list --all -n 500 2>&1 | grep "^$HCASE " )"
 [ "$(hk replay)" = 200 ] && echo "$HK" | grep '^replay ' | grep >/dev/null "\"case\":\"$HCASE\"" \
   && ok "the same delivery again opened nothing (200, the same case)" || bad "hook replay: $(echo "$HK" | grep '^replay ')"
 [ "$(hk unsigned)" = 401 ] && [ "$(hk wrong-key)" = 401 ] && [ "$(hk stale)" = 401 ] \
   && ok "an unsigned call, one signed with another key and a stale one are refused (401)" || bad "hook signatures: $(echo "$HK" | grep -E '^(unsigned|wrong-key|stale) ')"
 [ "$(hk oversized)" = 413 ] && [ "$(hk bad-target)" = 400 ] && [ "$(hk undeclared)" = 404 ] \
   && ok "an oversized body (413), a target outside its pattern (400) and an undeclared hook (404) are refused" || bad "hook refusals: $(echo "$HK" | grep -E '^(oversized|bad-target|undeclared) ')"
-[ "$(hcli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 1 ] \
-  && ok "the refused calls opened no case: one meeting case in all" || bad "meeting cases: $(hcli case list --all 2>&1 | awk '$2 == "meeting"')"
+[ "$(hcli case list --all -n 500 2>&1 | awk '$2 == "meeting"' | wc -l)" = 1 ] \
+  && ok "the refused calls opened no case: one meeting case in all" || bad "meeting cases: $(hcli case list --all -n 500 2>&1 | awk '$2 == "meeting"')"
 HSHOW="$(hcli case show "$HCASE" 2>&1)"
 echo "$HSHOW" | grep >/dev/null " hook:meeting=standup-2026-11-22.md$" && echo "$HSHOW" | grep >/dev/null "fields not declared, ignored: kind" && echo "$HSHOW" | grep >/dev/null "by detector  detected->handed_over" \
   && ok "the case is in the hook's own key space, a payload field the hook does not declare (kind) was ignored and recorded, the hook handed it over" || bad "hook case: $HSHOW"
 SCASE="$(echo "$HK" | awk '$1 == "smoke" {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null)"
-[ "$(hk smoke)" = 202 ] && hcli case list --all 2>&1 | grep "^$SCASE " | grep >/dev/null "closed" \
-  && ok "the smoke hook's case closed on arrival ($SCASE)" || bad "smoke: $(hk smoke) $(hcli case list --all 2>&1 | grep "^$SCASE ")"
+[ "$(hk smoke)" = 202 ] && hcli case list --all -n 500 2>&1 | grep "^$SCASE " | grep >/dev/null "closed" \
+  && ok "the smoke hook's case closed on arrival ($SCASE)" || bad "smoke: $(hk smoke) $(hcli case list --all -n 500 2>&1 | grep "^$SCASE ")"
 [ "$(hk api-route)" = 404 ] && ok "the hooks' listener serves no API route (/v1/status: 404)" || bad "hooks listener /v1/status: $(hk api-route)"
 HEV="$(hcli events -n 200 2>&1)"
 [ "$(echo "$HEV" | grep -c 'hook.refused')" -ge 5 ] && [ "$(echo "$HEV" | grep -c 'hook.accepted')" -ge 3 ] \
@@ -2241,14 +2245,14 @@ if want plumbing; then   # needs hooks' meeting case ($HCASE) and the first admi
 echo "== case 3 and plumbing.call (RFC-0014 §4.5, §4.6): a meeting's follow-ups, then its decisions, each approved once, posted signed to the stub plumbing, each checked back"
 n8nlog() { $D logs e2e-n8n 2>&1; }
 sends() { n8nlog | grep '"event": "send"' | grep "\"name\": \"$1\""; }
-waitcase() { for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$1 " | grep >/dev/null "$2" && return 0; sleep 2; done; return 1; }
+waitcase() { for _ in $(seq 1 60); do hcli case list --all -n 500 2>&1 | grep "^$1 " | grep >/dev/null "$2" && return 0; sleep 2; done; return 1; }
 hcli action autonomy plumbing.create_tasks propose --reason "e2e: the meeting's follow-ups wait for an approval" >/dev/null 2>&1
 hcli action autonomy plumbing.post_decisions propose --reason "e2e: the meeting's decisions wait for an approval" >/dev/null 2>&1
 # the no-effect matrix's rollback left meetings/decisions (an ops-read routine) at record; its spec says propose
 hcli autonomy meetings/decisions propose --reason "e2e: back to its spec's autonomy after the matrix" >/dev/null 2>&1 || bad "autonomy meetings/decisions: $(hcli autonomy meetings/decisions propose --reason e2e 2>&1)"
 hcli resume meetings/notes --reason "e2e: the plumbing section" >/dev/null 2>&1 || bad "resume meetings/notes: $(hcli resume meetings/notes --reason e2e 2>&1)"
 waitcase "$HCASE" awaiting_approval; PSHOW="$(hcli case show "$HCASE" 2>&1)"
-echo "$PSHOW" | grep >/dev/null "plumbing.create_tasks" && echo "$PSHOW" | grep >/dev/null "then decisions" && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
+echo "$PSHOW" | grep >/dev/null "plumbing.create_tasks" && echo "$PSHOW" | grep >/dev/null "then decisions" && hcli case list --all -n 500 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
   && ok "meetings/notes read the notes with the scripted model and planned one plumbing.create_tasks, then decisions; it waits for an approval" || bad "the first plan: $(echo "$PSHOW" | tail -8)"
 [ -z "$(n8nlog | grep '"event": "send"')" ] && ok "nothing reached the plumbing before the approval" || bad "a send before the approval: $(n8nlog)"
 # a second meeting whose list a person rejects, before any send (a rejection executes nothing, so the platform's hourly cap
@@ -2270,9 +2274,9 @@ DL="$(echo "$SEND" | sed -n 's/.*"delivery": "\(plan-[0-9a-f]*\)".*/\1/p')"
 n8nlog | grep '"event": "status"' | grep >/dev/null "\"delivery\": \"$DL\"" \
   && ok "the check asked the plumbing for the same delivery ($DL)" || bad "the check's status call: $(n8nlog | grep status)"
 # verified, the case is not closed: its plan's then hands it to the stage decisions (RFC-0013 §2, amended 2026-11-22)
-for _ in $(seq 1 60); do hcli case show "$HCASE" 2>&1 | grep >/dev/null "plumbing.post_decisions" && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" && break; sleep 2; done
+for _ in $(seq 1 60); do hcli case show "$HCASE" 2>&1 | grep >/dev/null "plumbing.post_decisions" && hcli case list --all -n 500 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" && break; sleep 2; done
 PSHOW="$(hcli case show "$HCASE" 2>&1)"
-echo "$PSHOW" | grep >/dev/null "checking->handed_over" && echo "$PSHOW" | grep >/dev/null "plumbing.post_decisions" && hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
+echo "$PSHOW" | grep >/dev/null "checking->handed_over" && echo "$PSHOW" | grep >/dev/null "plumbing.post_decisions" && hcli case list --all -n 500 2>&1 | grep "^$HCASE " | grep >/dev/null "awaiting_approval" \
   && ok "verified, the same case went on to its stage decisions, whose plumbing.post_decisions waits for its own approval" || bad "after the follow-ups: $(echo "$PSHOW" | tail -10)"
 [ -z "$(sends post_decisions)" ] && ok "the decisions were not sent before their own approval" || bad "post_decisions before its approval: $(sends post_decisions)"
 hcli case approve "$HCASE" >/dev/null 2>&1 || bad "approve the decisions: $(hcli case approve "$HCASE" 2>&1)"
@@ -2283,14 +2287,14 @@ SEND2="$(sends post_decisions)"
   && ok "the approved decisions reached the plumbing once, for the decisions page, labelled" || bad "the plumbing's post_decisions sends: $(n8nlog)"
 DL2="$(echo "$SEND2" | sed -n 's/.*"delivery": "\(plan-[0-9a-f]*\)".*/\1/p')"
 waitcase "$HCASE" closed; PSHOW="$(hcli case show "$HCASE" 2>&1)"
-hcli case list --all 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && echo "$PSHOW" | grep >/dev/null "create_tasks-$DL" && echo "$PSHOW" | grep >/dev/null "post_decisions-$DL2" \
+hcli case list --all -n 500 2>&1 | grep "^$HCASE " | grep >/dev/null "closed" && echo "$PSHOW" | grep >/dev/null "create_tasks-$DL" && echo "$PSHOW" | grep >/dev/null "post_decisions-$DL2" \
   && ok "the case closed on the second check, both refs on its record (create_tasks-$DL, post_decisions-$DL2)" || bad "the case after the decisions: $PSHOW"
 [ -z "$(n8nlog | grep '"event": "refused"')" ] && ok "the plumbing refused nothing: every call carried a valid signature" || bad "refused at the plumbing: $(n8nlog | grep refused)"
 [ -n "$RCASE" ] && [ -z "$(n8nlog | grep '"event": "send"' | grep "\"case\": \"$RCASE\"")" ] && ! hcli case show "$RCASE" 2>&1 | grep >/dev/null "plumbing.post_decisions" \
-  && hcli case list --all 2>&1 | grep "^$RCASE " | grep >/dev/null "escalated" \
+  && hcli case list --all -n 500 2>&1 | grep "^$RCASE " | grep >/dev/null "escalated" \
   && ok "the rejected list sent nothing, and its case never went on to its decisions" || bad "after the rejection: $(n8nlog | grep "$RCASE") $(hcli case show "$RCASE" 2>&1 | tail -6)"
-[ "$(hcli case list --all 2>&1 | awk '$2 == "meeting"' | wc -l)" = 2 ] \
-  && ok "two meetings, two cases: no case was opened for a follow-up" || bad "meeting cases: $(hcli case list --all 2>&1 | awk '$2 == "meeting"')"
+[ "$(hcli case list --all -n 500 2>&1 | awk '$2 == "meeting"' | wc -l)" = 2 ] \
+  && ok "two meetings, two cases: no case was opened for a follow-up" || bad "meeting cases: $(hcli case list --all -n 500 2>&1 | awk '$2 == "meeting"')"
 # the worker reaches the plumbing only through its proxy's allowlist: flotillad's hooks listener is on the same network, and refused
 PX="$($D exec flotilla-worker-plumbing python3 -c 'import urllib.request as u
 p = u.ProxyHandler({"http": "http://egress-plumbing:4750"})
@@ -2306,7 +2310,7 @@ echo "== case 1 (RFC-0014 §4.2, §4.5, §4.8): a question opens a case, knowled
 hcli() { $D exec -e FLOTILLA_TOKEN="$ADMIN" flotillad /usr/local/bin/flotilla "$@"; }
 n8nlog() { $D logs e2e-n8n 2>&1; }
 sends() { n8nlog | grep '"event": "send"' | grep "\"name\": \"$1\""; }
-waitcase() { for _ in $(seq 1 60); do hcli case list --all 2>&1 | grep "^$1 " | grep >/dev/null "$2" && return 0; sleep 2; done; return 1; }
+waitcase() { for _ in $(seq 1 60); do hcli case list --all -n 500 2>&1 | grep "^$1 " | grep >/dev/null "$2" && return 0; sleep 2; done; return 1; }
 PYIMG=python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 SB_DIR="${SB_DIR:-/work/second-brain/main}"
 # the library is second-brain's own read server over an index built from its own fixtures (sb seed, sb build), never a stand-in
@@ -2381,7 +2385,7 @@ hcli case show "$Q2" 2>&1 | grep >/dev/null "fields not declared, ignored: asker
 # knowledge/answer: each case is handed to it; the model is scripted (deploy/e2e/stub.py), its reads are real
 waitcase "$Q1" awaiting_approval && waitcase "$Q2" awaiting_approval && waitcase "$Q3" escalated \
   && ok "knowledge/answer planned an answer for each of the two questions it could source (awaiting approval) and escalated the one about the ghost" \
-  || bad "the question cases: $(hcli case list --all 2>&1 | grep question)"
+  || bad "the question cases: $(hcli case list --all -n 500 2>&1 | grep question)"
 ASNAP
 AR1="$($RC askrun "$WORK/ask.db" "$Q1")"; AR2="$($RC askrun "$WORK/ask.db" "$Q2")"; AR3="$($RC askrun "$WORK/ask.db" "$Q3")"
 RID1="$(echo "$AR1" | sed -n 's/.* run=\([^ ]*\) .*/\1/p')"; RID2="$(echo "$AR2" | sed -n 's/.* run=\([^ ]*\) .*/\1/p')"
