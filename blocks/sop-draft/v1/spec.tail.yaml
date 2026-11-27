@@ -1,0 +1,19 @@
+# What the routine page draws (internal/spec/explain.go). Keep each text true to ops/sop_draft.py.
+explain:
+  trigger: >-
+    Every hour. Each run reports every proposal still pending again: a proposal it no longer reports is taken as answered.
+  freshness: >-
+    With no run ending ok for 3 hours the routine is stale: a verified fix would wait for its draft.
+  worker: >-
+    Runs on the worker $WORKER. Read only: flotillad's cases, through the worker listener.
+  run: >-
+    sop_draft.py lists the cases of the kinds it is given that closed verified in the last 30 days, keeps those an investigation solved and
+    a person approved, and drafts the SOP from the case's own record and the registry's check. A case an existing SOP solved teaches
+    nothing and is not drafted.
+  detects: >-
+    Each draft is a sop_proposal detection: the target names the fleet and the SOP, the data holds the whole SKILL.md, its evidence and the
+    unified diff that adds or changes it. flotillad opens one case per proposal.
+  autonomy: >-
+    It only reads and reports. A person reads the diff and commits it by hand; nothing is written to any SOP folder.
+  budget: >-
+    No model: no spend.

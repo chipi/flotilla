@@ -25,6 +25,7 @@ COPY fleets /opt/flotilla/fleets
 # examples catalogue when its config sets examples_dir: /opt/flotilla/examples (v2 step 5). The same source as the line above (a test pins it)
 COPY fleets /opt/flotilla/examples
 COPY host/registry.json /opt/flotilla/host/registry.json
+COPY blocks /opt/flotilla/blocks
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/flotillad"]
 CMD ["-config", "/etc/flotilla/flotillad.yaml"]

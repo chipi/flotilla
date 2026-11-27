@@ -1,0 +1,27 @@
+block: sop-investigate
+version: 1
+role: stage
+description: >-
+  The investigate stage of cases no SOP covers. One station reads metrics through the one model client and decides a fix
+  among the registry's actions for the case's kind; code refuses any other name and fills the plan's params from the
+  case.
+consumes: {case: true, stage: investigate}
+emits: [plan, hand_over]
+hands_to: []
+actions: {}
+params:
+  vm_url: {kind: url, env: VM_URL}
+  metric: {kind: metric_name, env: BACKUP_METRIC}
+  instance: {kind: string, env: BACKUP_INSTANCE}
+  registry: {kind: path, env: FLOTILLA_REGISTRY, optional: true}
+env: [FLOTILLA_CASE, FLOTILLA_STATIONS]
+# the block ships the station: harness, prompts, tools and limits (ADR-0020 section 6); a flow names the model alias
+model: station
+max_autonomy: propose
+autonomy: propose
+budget_usd: 1
+timeout: 3m
+command: python3 /opt/flotilla/ops/sop_investigate.py --fleet {{fleet}}
+code: [ops/sop_investigate.py, ops/sop_act.py, ops/common.py, runtime/sops.py, runtime/loaded.py]
+texts: [system.md, task.md]
+spec_tail: spec.tail.yaml

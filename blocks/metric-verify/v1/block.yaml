@@ -1,0 +1,21 @@
+block: metric-verify
+version: 1
+role: verify
+description: >-
+  The check routine for an action's registry check (backup_newer_than_execution): while a case is in checking, it
+  reads when the source last succeeded and reports verified once that is after the execution, not yet before. A read
+  only: no model, nothing outward.
+consumes: {check: true}
+emits: [verified]
+hands_to: []
+# the verify window stays on the registry action; the step names the check the action declares
+actions: {check_of: action}
+params:
+  action: {kind: registry_action, env: BACKUP_ACTION}
+  metric: {kind: metric_name, env: BACKUP_METRIC}
+env: [VM_URL, BACKUP_INSTANCE]
+model: none
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/verify_backup.py
+code: [ops/verify_backup.py, ops/common.py]

@@ -622,7 +622,11 @@ func LoadFleets(dir string, routines []*Routine) (map[string]Fleet, error) {
 	}
 	for name, hs := range byFleet {
 		sort.Strings(hs)
-		sum := sha256.Sum256([]byte(strings.Join(hs, "\n") + knowledgePack(out[name].Knowledge)))
+		flows, err := flowsPack(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("fleet %s: flows: %w", name, err)
+		}
+		sum := sha256.Sum256([]byte(strings.Join(hs, "\n") + knowledgePack(out[name].Knowledge) + flows))
 		f := out[name]
 		f.Fleet, f.Pack = name, hex.EncodeToString(sum[:])
 		out[name] = f

@@ -1,0 +1,20 @@
+block: case-review
+version: 1
+role: learn
+description: >-
+  The post-incident review (ADR-0016): reads the cases closed in the last 7 days and proposes what to learn, each
+  proposal naming its evidence. It changes nothing; a person answers every proposal.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+actions: {}
+params: {}
+env: [FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE]
+model: none
+max_autonomy: record
+timeout: 2m
+every: 30m
+freshness: 75m
+command: python3 /opt/flotilla/ops/case_review.py
+case_kind: process_change
+code: [ops/case_review.py, ops/flotilla_api.py, ops/common.py]

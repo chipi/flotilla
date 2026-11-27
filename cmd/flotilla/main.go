@@ -24,7 +24,8 @@
 //	flotilla user list | role NAME ROLE | rotate NAME | revoke NAME   (admin)
 //	flotilla eval record --routine R --prompt-sha S --model M --metric NAME=VALUE [--n N] [--repeats N] [--source TEXT]   (operator)
 //	flotilla eval list [--routine R]                     (what evals measured for a routine's prompt on a model)
-//	flotilla hash-token < token                        (the line for flotillad's callers file)
+//	flotilla flow expand [-check] [-blocks DIR] [-registry FILE]... FLEETDIR   (offline: the flows' routine folders from their pinned blocks, RFC-0016)
+//	flotilla hash-token < token                       (the line for flotillad's callers file)
 //	flotilla host list | enrolment NAME | revoke NAME     (operator: host agents; the token is shown once)
 //	flotilla host audit NAME --log FILE                (the host's audit log against flotillad's record)
 //	flotilla ca root DIR                               (offline: the host agents' root CA, kept by the operator)
@@ -74,6 +75,13 @@ func main() {
 	if cmd == "ca" { // offline, on the operator's machine: no flotillad involved
 		if err := caCmd(args, time.Now()); err != nil {
 			fmt.Fprintln(os.Stderr, "flotilla ca:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if cmd == "flow" { // offline: the generator of the flows' routine folders, no flotillad involved
+		if err := flowCmd(os.Stdout, args); err != nil {
+			fmt.Fprintln(os.Stderr, "flotilla flow:", err)
 			os.Exit(1)
 		}
 		return

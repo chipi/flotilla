@@ -244,3 +244,38 @@ report `node_filesystem_avail_bytes` to VictoriaMetrics today (checked 2026-11-2
 2. **Disk step 1's prerequisites,** then the disk flow at record on five hosts.
 3. **The read-only host actions ADR,** and host agents where the disk flow needs them.
 4. **Disk cleanups as SOPs,** one host at a time.
+
+## 12. As built, step 1 (2026-11-27)
+
+Step 1 is on the branch `rfc16/blocks`. Where the build fixed what the sketch left open:
+
+- **The seven blocks** are in `blocks/<name>/v1/`. Their code stays at `ops/*.py`, so every
+  `/opt/flotilla/ops/...` command is the live one. `code:` in `block.yaml` lists the repo files, and
+  a test checks they exist.
+- **`block.yaml`** also carries `autonomy`, `budget_usd`, `timeout`, `command`, `case_kind` (a
+  block's own kind: process_change, sop_proposal), `texts` (the prompts each routine version
+  carries, copied byte for byte) and `spec_tail` (a file appended to `v<n>/spec.yaml`: stations,
+  limits, explain; `$MODEL` and `$WORKER` are the step's). `actions` is a map from a need
+  (`precondition_of`, `check_of`) to the param that names the action.
+- **v1 params are today's.** `metric-monitor@1` takes `action` and `metric`, because
+  `backup_monitor.py` reads no more; `group_by`, `exclude` and `clear_after` come with the disk
+  prerequisites, as a new block version.
+- **A step** names the routine, pins the block, and carries what is the installation's:
+  `description` (one line of the folded text per line), `worker`, `every`, `freshness`,
+  `max_autonomy`, `model`, `case: {on_record}`, `verify`, `with`. `version: n` is the routine
+  version folder it writes; a bumped pin writes a new folder and leaves the old.
+- **The fleet's learning blocks** are `fleets/<fleet>/flows/learn.yaml`, not `fleet.yaml`, so a
+  flotillad built before this does not refuse the fleet. `sop-draft`'s `with: {flows: [...]}` gives
+  it the flows' case kinds.
+- **A flow's own block** is `flows/<flow>/blocks/<name>/v<n>/`, and wins over the library's. The
+  example `jobs` fleet has one (`rerun-backup`).
+- **Where it is checked:** `flotilla flow expand [-check]`, `make lint` (every fleet with flows,
+  against `host/registry.json`), and `flotillad -check` and its start (`blocks_dir`, default
+  `/opt/flotilla/blocks`, in the image).
+- **Proof:** the example `jobs` chain is a flow and its committed folders are byte-equal to the
+  expansion (a Go test and `make lint`). The installation's operator chain was expanded from its own
+  `flows/` into a fresh folder, and `diff -r` against the live folders shows nothing but the added
+  `flows/`.
+- **Not built:** the `knowledge:` key of a flow (the fleet's `knowledge:` in `fleet.yaml` is
+  unchanged); a freeze of block folders (the expansion check is what stops an edit under a pin); the
+  shadow of a flow's routines.

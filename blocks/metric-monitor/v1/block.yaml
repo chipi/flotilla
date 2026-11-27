@@ -1,0 +1,22 @@
+block: metric-monitor
+version: 1
+role: monitor
+description: >-
+  Reads the age of a source's last success from a metric and reports one detection when it is above the threshold the
+  registry action declares as its precondition (backup_age_above, for the run's stage). flotillad opens the case. Code
+  only: no model, nothing outward.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+# the threshold has one home, the action's precondition: the monitor and the acting step read the same number
+actions: {precondition_of: action}
+params:
+  action: {kind: registry_action, env: BACKUP_ACTION}
+  metric: {kind: metric_name, env: BACKUP_METRIC}
+# the worker's own: VictoriaMetrics, the instance the metric is read for, and the case's target
+env: [VM_URL, BACKUP_INSTANCE, BACKUP_TARGET]
+model: none
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/backup_monitor.py
+code: [ops/backup_monitor.py, ops/common.py]

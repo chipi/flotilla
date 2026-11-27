@@ -326,6 +326,15 @@ tool results; `flotillad -stations` and one command run a version's own `run:` o
 the shadow worker, with a models config of its own and recorded tool results standing in for tools
 (a call with no recorded result fails, never sent live).
 
+#### Amended 2026-11-27 (RFC-0016): a pinned block counts as the version's code
+
+A routine folder may be generated from a flow's step (`flotilla flow expand`), and the generated
+folder is committed. A version's hash is still the files of its folder (section 3), and nothing
+about the freeze, shadows, promote or rollback changes. The one addition: a block pinned by a step
+(`use: name@n`) is part of the version's code, reached through the folder's command, and it is
+never edited under a pinned number. An edit would change what the pin expands to, and `flotillad
+-check` refuses a committed folder that differs from the expansion.
+
 ### Build order
 
 | Step | What | State |

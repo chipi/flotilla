@@ -61,6 +61,7 @@ lint: ## gofmt check + go vet (both modules), byte-compile every Python file, ll
 	@cd fleetd && $(if $(filter scripts/%,$(GO)),../$(GO),$(GO)) vet ./...
 	@python3 -m compileall -q -x "/fleets/" signal-fleet worker deploy runtime bugfix business plumbing meetings knowledge >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@python3 scripts/llms_txt.py --check >/dev/null || { echo "lint FAIL: llms.txt"; python3 scripts/llms_txt.py --check; exit 1; }
+	@for d in $$(ls -d fleets/*/flows 2>/dev/null); do $(GO) run ./cmd/flotilla flow expand -check -blocks blocks -registry host/registry.json $$(dirname $$d) || { echo "lint FAIL: the committed routine folders of $$(dirname $$d) differ from their flows' expansion (RFC-0016; fix: flotilla flow expand)"; exit 1; }; done
 	@python3 scripts/installation_facts.py >$${TMPDIR:-/var/tmp}/flotilla-installation-facts.log 2>&1 || { echo "lint FAIL: installation facts in the code (vision plan step 7):"; cat $${TMPDIR:-/var/tmp}/flotilla-installation-facts.log; exit 1; }
 	@echo "lint PASS"
 

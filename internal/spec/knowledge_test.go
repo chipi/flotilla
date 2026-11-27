@@ -104,6 +104,9 @@ func TestRepoFleetsKnowledgeAndPacks(t *testing.T) {
 		if len(fs[name].Knowledge) > 0 {
 			continue
 		}
+		if _, err := os.Stat(filepath.Join(dir, name, FlowsDir)); err == nil {
+			continue // RFC-0016: a fleet's flows are part of its pack (flow_test.go TestPackCoversFlows)
+		}
 		sort.Strings(hs)
 		if want := sha256hex(strings.Join(hs, "\n")); fs[name].Pack != want {
 			t.Errorf("fleet %s declares no knowledge and its pack moved: %s, the routines' hash is %s", name, fs[name].Pack, want)

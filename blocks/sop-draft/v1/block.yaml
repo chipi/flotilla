@@ -1,0 +1,26 @@
+block: sop-draft
+version: 1
+role: learn
+description: >-
+  Reads the cases of its flows' kinds that closed verified through an investigation a person approved, and drafts the SOP
+  each one teaches as a sop_proposal case that carries the ready diff; a person commits it by hand. It writes no SOP
+  folder: nothing rewrites its own playbooks at runtime.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+actions: {}
+params:
+  repo_prefix: {kind: string, env: SOP_REPO_PREFIX, optional: true}
+  # the case kinds of the named flows: the flow owns its kind, this block never repeats it
+  flows: {kind: flow_list, arg: --kinds}
+env: [FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE]
+model: none
+max_autonomy: record
+timeout: 2m
+# the spec tail's explain texts state these
+every: 1h
+freshness: 3h
+command: python3 /opt/flotilla/ops/sop_draft.py --fleet {{fleet}}
+case_kind: sop_proposal
+code: [ops/sop_draft.py, ops/flotilla_api.py, ops/common.py, runtime/sops.py]
+spec_tail: spec.tail.yaml

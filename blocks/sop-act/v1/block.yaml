@@ -1,0 +1,20 @@
+block: sop-act
+version: 1
+role: act
+description: >-
+  The SOP-aware acting step: follows the SOP that applies to its case, re-checks the registry's preconditions with fresh
+  numbers and plans the SOP's action, or hands the case to the investigate stage when no SOP applies. It plans only:
+  policy decides.
+consumes: {case: true}
+emits: [plan, hand_over]
+hands_to: [investigate]
+actions: {}
+params:
+  metric: {kind: metric_name, env: BACKUP_METRIC}
+env: [VM_URL, BACKUP_INSTANCE, FLOTILLA_CASE]
+model: none
+# a flow lowers the cap; the registry's action and the host's caps still apply
+max_autonomy: auto
+timeout: 1m
+command: python3 /opt/flotilla/ops/sop_act.py --fleet {{fleet}}
+code: [ops/sop_act.py, ops/rerun_backup.py, ops/common.py, runtime/sops.py]

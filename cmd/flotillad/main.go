@@ -107,6 +107,8 @@ type Config struct {
 	// Optional: the registry's declarations (ADR-0011, RFC-0006 §10 step 4). Unset: the host agent's,
 	// which the image carries. An installation's extension adds its own file here.
 	RegistryFiles []string `yaml:"registry_files"`
+	// Optional: the block library the fleets' flows pin (RFC-0016). Unset: the image's. Only a fleet with a flows folder reads it.
+	BlocksDir string `yaml:"blocks_dir"`
 	// Optional: the installation's values for an action's enum parameter, replacing the registry's
 	// examples ({github.open_pr: {repo: [owner/repo, ...]}}). Unset: the registry's own.
 	ActionEnums map[string]map[string][]string `yaml:"action_enums"`
@@ -251,6 +253,19 @@ const (
 
 // defaultRegistry is the declaration flotillad's image carries for its own tag.
 var defaultRegistry = []string{"/opt/flotilla/host/registry.json"}
+
+// defaultBlocks is the block library flotillad's image carries for its own tag.
+const defaultBlocks = "/opt/flotilla/blocks"
+
+// flowLines is the flows' gate (RFC-0016): every fleet with a flows folder is expanded and its wiring checked against the
+// pinned blocks and the registry, and its committed routine folders must equal the expansion. It runs at -check and at a start.
+func flowLines(cfg *Config, reg *registry.Registry) ([]string, error) {
+	blocks := cfg.BlocksDir
+	if blocks == "" {
+		blocks = defaultBlocks
+	}
+	return spec.CheckFlows(cfg.SpecsDir, blocks, reg.FlowActions())
+}
 
 // applyActionEnums puts the installation's enum values (action_enums) into the loaded registry, in
 // sorted order so an error names the same entry every time.
@@ -506,6 +521,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "registry:", err)
 		os.Exit(2)
 	}
+	flows, err := flowLines(cfg, reg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flows:", err)
+		os.Exit(2)
+	}
 	loc := time.Local
 	if cfg.Timezone != "" {
 		if loc, err = time.LoadLocation(cfg.Timezone); err != nil {
@@ -617,6 +637,9 @@ func main() {
 		}
 		for _, a := range reg.Actions() {
 			fmt.Printf("action %s\n", a)
+		}
+		for _, l := range flows {
+			fmt.Println(l)
 		}
 		fmt.Println(examplesLine(cfg, examples))
 		for _, line := range workerCapLines(context.Background(), cfg, clients) {

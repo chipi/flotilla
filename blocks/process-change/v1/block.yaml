@@ -1,0 +1,22 @@
+block: process-change
+version: 1
+role: act
+description: >-
+  The acting step for process_change cases (ADR-0016): re-checks the proposal against the repo files of its image and
+  plans repo.process_change with the change as a diff, or closes the case when the change is already made. Policy caps a
+  repo change at propose.
+consumes: {case: true}
+emits: [plan]
+hands_to: []
+actions: {}
+params:
+  repo: {kind: repo, env: PROCESS_CHANGE_REPO}
+  file: {kind: repo_file, env: PROCESS_CHANGE_FILE}
+env: [FLOTILLA_CASE, FLOTILLA_VERSION]
+model: none
+max_autonomy: propose
+autonomy: propose
+timeout: 1m
+command: python3 /opt/flotilla/ops/process_change.py
+case_kind: process_change
+code: [ops/process_change.py, ops/common.py]
