@@ -205,6 +205,7 @@ callers:
   - {name: e2e-agent, role: agent, token_sha256: $(hash "$AGENT")}
   - {name: deploy, role: agent, token_sha256: $(hash "$DEPLOYTOK")}
 EOF
+E2E_PLATFORM_CAP=12   # limits.platform_per_hour in the e2e's flotillad.yaml; the suite's executions an hour: 9 before the SOPs section, +2 there, +1 for ask's first answer
 cat > "$WORK/config/flotillad.yaml" <<EOF
 listen: 127.0.0.1:8484
 worker_listen: 0.0.0.0:8485
@@ -255,7 +256,8 @@ models:
     reads-answer: {endpoint: gateway, model: fleet-reads-answer}   # RFC-0014 §4.8: e2e/reads' station; the key is E2E_LLM_KEY on the reads worker and on the shadow worker
     knowledge-answer: {endpoint: gateway, model: fleet-knowledge-answer}   # RFC-0014 case 1: knowledge/answer's station
 directory: {source: file, path: /run/flotilla/people.yaml}
-hosts: {listen: "0.0.0.0:8487", ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
+limits: {platform_per_hour: $E2E_PLATFORM_CAP}   # the suite spends 11 of the hour's executions before section ask (see there); production keeps the default 10
+hosts: {listen: "0.0.0.0:8487",ca_dir: /run/flotilla, server_names: [flotillad], heartbeat: 2s, signing_key_file: /run/flotilla/signing.key, signing_key_id: e2e1}
 # Slack approvals through the host e2e-host (section hostagent): its agent is no connector, so it logs each plan flotillad asks it to post and posts none.
 # That log and the store's slack_asks are the e2e's recording of what Slack would have been sent (the matrix compares them around the shadow runs).
 slack: {connector_host: e2e-host, team_id: T0E2E000001, ui_url: "https://$UI_HOST", users: {U0E2E000001: e2e-slack}}
@@ -789,7 +791,7 @@ SHOW="$(cli case show "$SR" 2>&1)"
   && ok "the model's command the registry lacks was refused by code: no plan, the case escalated ($SR)" \
   || bad "the rogue case: $(cli case list --all -n 500 2>&1 | grep e2e_sop) $(echo "$SHOW" | tail -4)"
 $D logs e2e-litellm 2>&1 | grep >/dev/null "CHAT_META prompt='You investigate a case" && ok "the investigation's model call went through the one client to the gateway stand-in (its system text opens the call)" || bad "no investigation call at the gateway stand-in"
-# Two of the three plans are carried out, not all: every execution counts against the platform's 10 an hour (the ask section's budget check),
+# Two of the three plans are carried out, not all: every execution counts against the platform's hourly cap (the ask section's budget check),
 # and the case an SOP planned proves nothing more by executing than the two investigated ones do. It is rejected and closed at the end.
 for C in "$SN" "$SN2"; do
   cli case approve "$C" >/dev/null 2>&1; status_is "$C" closed
@@ -2353,13 +2355,15 @@ if ! grep >/dev/null '^shadows:' "$WORK/config/flotillad.yaml"; then
   for _ in $(seq 1 30); do hcli health >/dev/null 2>&1 && break; sleep 2; done
 fi
 hcli action autonomy plumbing.reply propose --reason "e2e: the answers wait for an approval" >/dev/null 2>&1 || bad "plumbing.reply autonomy: $(hcli action autonomy plumbing.reply propose --reason e2e 2>&1)"
-# The platform's cap is 10 executions an hour and every section shares the hour: the questions' plans are proposed only below it, and the first
-# answer's approval is the last execution to fit. A section that spends more makes these plans defer (policy: "10 of 10 executions platform-wide").
+# The platform's cap is limits.platform_per_hour (12 here: E2E_PLATFORM_CAP, production keeps its default 10) executions an hour and every section
+# shares the hour: the questions' plans are proposed only below the cap, and the first answer's approval is the last execution to fit. Measured with
+# case.executing: host agent 3, SOPs 2, matrix drive 4, meeting plumbing 2 = 11 before the questions, then ask's first answer = 12. A section that
+# spends more makes these plans defer (policy: "12 of 12 executions platform-wide"); the next one to need an execution raises the cap and this count.
 $D run --rm --network none --user 65532:65532 -e STORE_DIR=/v -v flotilla-e2e-state:/v -v "$ROOT/deploy/server/store_snapshot.py:/s.py:ro" \
   "local/flotilla-worker-triage:$TAG" python3 /s.py backup > "$WORK/store-budget.db" 2> "$WORK/store-budget.err"
 EXN="$(python3 "$ROOT/deploy/e2e/exec_budget.py" "$WORK/store-budget.db" 2>&1)"
-[ "$EXN" -le 9 ] 2>/dev/null && ok "the platform's hourly budget: $EXN of 10 executions spent before the questions, room for the first answer's" \
-  || bad "the platform's hourly budget: '$EXN' executions in the last hour before the questions (at most 9 leave the plans proposable and room to approve one): $(cat "$WORK/store-budget.err" | tail -2)"
+[ "$EXN" -le $((E2E_PLATFORM_CAP - 1)) ] 2>/dev/null && ok "the platform's hourly budget: $EXN of $E2E_PLATFORM_CAP executions spent before the questions, room for the first answer's" \
+  || bad "the platform's hourly budget: '$EXN' executions in the last hour before the questions (at most $((E2E_PLATFORM_CAP - 1)) leave the plans proposable and room to approve one): $(cat "$WORK/store-budget.err" | tail -2)"
 hcase() { echo "$HA" | awk -v l="$1" '$1 == l {print $3}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("case", ""))' 2>/dev/null; }
 hak() { echo "$HA" | awk -v l="$1" '$1 == l {print $2; exit}'; }
 HA="$($D run --rm --network e2e-plumbing --read-only --user 10001:10001 -v "$ROOT/deploy/e2e/hookcall.py:/hookcall.py:ro" \

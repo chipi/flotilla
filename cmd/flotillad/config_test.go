@@ -25,6 +25,25 @@ func load(t *testing.T, extra string) (*Config, error) {
 	return loadConfig(p)
 }
 
+// The guardrails' numbers (RFC-0004 §5.3): a config without a limits block keeps the policy's defaults (10 executions an hour platform-wide,
+// 3 a host); a block sets only the numbers it names; a negative or misspelt one is refused.
+func TestLimitsConfig(t *testing.T) {
+	c, err := load(t, "")
+	if err != nil || c.Limits.WithDefaults().PlatformPerHour != 10 || c.Limits.WithDefaults().HostPerHour != 3 {
+		t.Fatalf("unset keeps the defaults: %+v %v", c, err)
+	}
+	c, err = load(t, "limits:\n  platform_per_hour: 12\n")
+	if err != nil || c.Limits.WithDefaults().PlatformPerHour != 12 || c.Limits.WithDefaults().HostPerHour != 3 {
+		t.Fatalf("a named number is set, the rest stay: %+v %v", c, err)
+	}
+	if _, err := load(t, "limits:\n  platform_per_hour: -1\n"); err == nil || !strings.Contains(err.Error(), "limits platform_per_hour") {
+		t.Fatalf("a negative number is refused: %v", err)
+	}
+	if _, err := load(t, "limits:\n  platform_an_hour: 12\n"); err == nil {
+		t.Fatal("a misspelt key is refused")
+	}
+}
+
 func TestCaseTimersConfig(t *testing.T) {
 	c, err := load(t, "case_timers: {detected_alert: 45m, handed_over_escalate: 36h}\n")
 	if err != nil {

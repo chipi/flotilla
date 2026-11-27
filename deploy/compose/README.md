@@ -58,7 +58,7 @@ flag, and never overwritten after:
 ```
 
 `config/flotillad.yaml` (every field is required except `timezone`, `otlp_traces_url`,
-`disabled_routines`, `case_timers`, `models` and `hosts`):
+`disabled_routines`, `case_timers`, `limits`, `models` and `hosts`):
 
 ```yaml
 listen: 127.0.0.1:8484                 # inside the container: the CLI runs there (docker exec)
@@ -77,6 +77,7 @@ workers:
 disabled_routines: [triage/cycle-shadow]   # without a candidate worker (below); -check refuses a routine whose worker is missing
 examples_dir: /opt/flotilla/examples        # optional: the image's example fleets, listed as examples (flotilla status, the Examples page), never run
 case_timers: {detected_alert: 30m, handed_over_escalate: 24h, watch_notify: [4h, 24h], watch_ack_snooze: 24h}   # optional, these are the defaults: a case detected that long alerts, handed over that long escalates; a watching case is due a notice at once, at each watch_notify step, then daily (at most 7), and an acknowledged one holds the next back for watch_ack_snooze
+limits: {platform_per_hour: 10}         # optional, the guardrails' numbers (RFC-0004 §5.3); a number left out keeps its default: host_per_hour 3, platform_per_hour 10 (executions an hour, all cases), breaker_failures 3, host_incident_cases 5; a negative one is refused
 models:                                 # optional (ADR-0004): the aliases routines name; every run gets it as FLOTILLA_MODELS
   endpoints:
     gateway:

@@ -208,9 +208,9 @@ def scheduled(r):
 
 
 EXAMPLE_KIND_SKIP = ("e2e_", "failed_backup", "code_bug", "dependency_update", "signal", "process_change")
-# The platform allows 10 executions an hour (policy's default; flotillad has no setting for it) and the one stack's sections spend them: the host
-# agent 3, this drive 4, the meeting's two plumbing sends, then section `ask`'s first answer. Measured with case.executing: 10 before `ask` when the
-# email plan below is approved, and `ask`'s plans were deferred ("10 of 10 executions platform-wide this hour"). crm/fix plans the contact's second
+# The platform allows limits.platform_per_hour executions an hour (default 10; the e2e's flotillad.yaml sets 12, E2E_PLATFORM_CAP in run.sh) and the
+# one stack's sections spend them: the host agent 3, the SOPs 2, this drive 4, the meeting's two plumbing sends, then section `ask`'s first answer
+# = 12. Measured with case.executing: with the email plan below approved the drive spends 5 and the suite exceeds the cap. crm/fix plans the contact's second
 # case about ten seconds after the first round's plans, so approving it raced the loop's own exit (one CI run approved it, the next run on the same
 # code did not). Its plan stays waiting, so the drive always executes 4.
 UNAPPROVED_TARGET_SUFFIX = ("/email",)

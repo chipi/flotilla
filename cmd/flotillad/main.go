@@ -35,6 +35,7 @@ import (
 	"github.com/chipi/flotilla/internal/hostlink"
 	"github.com/chipi/flotilla/internal/mcpserver"
 	"github.com/chipi/flotilla/internal/models"
+	"github.com/chipi/flotilla/internal/policy"
 	"github.com/chipi/flotilla/internal/prompts"
 	"github.com/chipi/flotilla/internal/registry"
 	"github.com/chipi/flotilla/internal/runtoken"
@@ -122,6 +123,9 @@ type Config struct {
 	// Optional: how far a routine action (ADR-0017) may go. max_autonomy is propose (the default) or auto; an action still has to earn auto
 	// and its routine be at auto. Host actions keep the host executor's ceiling (propose) and repo changes never go above propose.
 	RoutineActions RoutineActionsConfig `yaml:"routine_actions"`
+	// Optional: the guardrails' numbers (RFC-0004 §5.3): host_per_hour (3), platform_per_hour (10), breaker_failures (3), host_incident_cases (5).
+	// A number left out keeps its default.
+	Limits policy.Limits `yaml:"limits"`
 }
 
 // RoutineActionsConfig is flotillad.yaml's routine_actions block.
@@ -311,6 +315,12 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Environment == "" {
 		errs = append(errs, errors.New("environment is required (the installation label: operations)"))
+	}
+	for name, n := range map[string]int{"host_per_hour": c.Limits.HostPerHour, "platform_per_hour": c.Limits.PlatformPerHour,
+		"breaker_failures": c.Limits.BreakerFailures, "host_incident_cases": c.Limits.HostIncidentCases} {
+		if n < 0 {
+			errs = append(errs, fmt.Errorf("limits %s %d: a positive number, or unset for the default", name, n))
+		}
 	}
 	errs = append(errs, hook.Check(c.Hooks)...)
 	if len(c.Hooks) > 0 && c.HooksListen == "" {
@@ -737,7 +747,7 @@ func main() {
 	runTokens := runtoken.New()
 	s.RunTokens = runTokens
 	apiSrv := &api.Server{Sched: s, Store: st, Workers: clients, Callers: callers, Version: version, Log: log, Registry: reg, SpecsDir: cfg.SpecsDir,
-		RunTokens: runTokens, RoutineActionMax: cfg.RoutineActions.MaxAutonomy, Examples: examples, Hooks: hooksByName(cfg.Hooks)}
+		RunTokens: runTokens, Limits: cfg.Limits, RoutineActionMax: cfg.RoutineActions.MaxAutonomy, Examples: examples, Hooks: hooksByName(cfg.Hooks)}
 	// Cases: monitors' detections open them, a handed-over case starts its kind's acting routine (pipeline
 	// v1 steps 5 and 6). Set before anything can start a run.
 	if cfg.Directory != nil {
