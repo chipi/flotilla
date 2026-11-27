@@ -61,3 +61,4 @@ landed on an answer.
 - [RFC-0014 — The visual plane and mashups](RFC-0014-visual-plane-and-mashups.md) (Draft, 2026-11-22)
 - [RFC-0015 — The library in flotilla](RFC-0015-the-library.md) (Draft, 2026-11-26)
 - [RFC-0016 — Blocks and flows](RFC-0016-blocks-and-flows.md) (Draft, 2026-11-27)
+- [RFC-0017 — Performance watch](RFC-0017-performance-watch.md) (Draft, 2026-11-27)
