@@ -1,0 +1,17 @@
+fleet: perf
+routine: ci-perf-daily
+description: >-
+  Yesterday's regressions on the CI runners, daily, so a slow step is found the day after it lands: ranks the top 5
+  steps of yesterday by time lost, compares them with the previous run and reports new entries and rises. It reads no
+  service levels except the collector's freshness row, so a stale collector is never compared. Code only: no model,
+  nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  every: 24h
+detects: [perf_regression]
+brief_section: Performance
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 36h

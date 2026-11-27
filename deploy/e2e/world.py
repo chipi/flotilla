@@ -5,6 +5,7 @@ CA, so the examples run unchanged against it.
   www.example.com, docs.example.com, shop.example.org   the sites/site-check example's sites
   errors.example.com, grafana.example.com               the triage example's sources (GlitchTip, Grafana)
   api.github.com, pypi.org, api.osv.dev                 the deps example's sources; GitHub also for triage and bugfix/intake
+  ci-stats.example.com, slo-stats.example.com           the perf example's sources (RFC-0017): a CI step ranking and service levels
 
 Some answers are wrong on purpose, so each example has something to find: a page with no description, a
 link that answers 404, the certificate (its validity is the stack's choice: run.sh makes it short), a
@@ -86,6 +87,21 @@ BUG_ISSUES = [{
             "instead of throwing (code-invariant).",
 }]
 
+# The performance watch's sources (RFC-0017, fleets/perf): a ranked list of slow CI steps with the windows it covers, and the service
+# levels of the runners with the collector's own freshness row (fresh: the watch compares). The first run is a baseline.
+CI_STATS = {"steps": {
+    "7d": [{"id": f"e2e-step-{i}", "repo": "example/shop", "workflow": "CI", "job": "test", "step": f"Step {i}", "lost": 1000 - 100 * i,
+            "x3": {"med": 100, "n": 5}, "gh": {"med": 20, "n": 9}, "x3Prev": None} for i in range(6)],
+    "yesterday": [{"id": "e2e-step-0", "repo": "example/shop", "workflow": "CI", "job": "test", "step": "Step 0", "lost": 150,
+                   "x3": {"med": 100, "n": 1}, "gh": {"med": 20, "n": 2}, "x3Prev": None}],
+    "windows": {p: {"from": "2026-11-10T00:00:00Z", "to": "2026-11-17T00:00:00Z", "prevFrom": "2026-11-03T00:00:00Z",
+                    "prevTo": "2026-11-10T00:00:00Z", "prevHeld": True} for p in ("7d", "yesterday")}}}
+SLO_STATS = {"rows": [
+    {"id": "ci-runners--online", "service": "CI runners", "sli": "online", "objective": 0.99,
+     "ratio": {"28d": 0.97, "7d": 0.97, "1d": 0.97}, "state": "breached"},
+    {"id": "ci-collector--fresh-within-15-min", "service": "CI collector", "sli": "fresh within 15 min", "objective": 0.99,
+     "ratio": {"28d": 1, "7d": 1, "1d": 1}, "state": "meeting"}]}
+
 SHA = "4f2c1d0e9b8a7f6e5d4c3b2a19087f6e5d4c3b2a"
 FILES = {
     ("example/shop", "requirements.txt"): "flask==3.0.0\nrequests==2.31.0\nidna>=3.0\n",
@@ -119,6 +135,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send(404, "not found")
             ctype = "application/xml" if path.endswith(".xml") else "text/plain" if path.endswith(".txt") else "text/html; charset=utf-8"
             return self.send(200, body, ctype)
+        if host == "ci-stats.example.com" and path == "/ci.json":
+            return self.json(CI_STATS)
+        if host == "slo-stats.example.com" and path == "/slo.json":
+            return self.json(SLO_STATS)
         if host == "errors.example.com":   # GlitchTip's API
             if path.endswith("/projects/"):
                 return self.json(GLITCHTIP_PROJECTS)

@@ -155,7 +155,7 @@ func renderParamValue(p Param, v any, flowKinds map[string]string) (string, erro
 		}
 		return strings.Join(kinds, ","), nil
 	}
-	return "", fmt.Errorf("kind %q", p.Kind)
+	return renderWatchParam(p, v)
 }
 
 // command is the run's command line: the params' environment, the block's command, the params' flags.
@@ -221,6 +221,9 @@ func (x *expander) render(st FlowStep, es ExpandedStep, flowKinds map[string]str
 	}
 	if contains(b.Emits, "detection") {
 		fmt.Fprintf(&r, "detects: [%s]\n", es.CaseKind)
+		if b.BriefSection != "" {
+			fmt.Fprintf(&r, "brief_section: %s\n", b.BriefSection)
+		}
 	}
 	fmt.Fprintf(&r, "autonomy: %s\n", firstNonEmpty(st.Autonomy, b.Autonomy))
 	// A routine that plans an action always carries a cap (the step's, else its block's); only a case trigger reaches policy, so

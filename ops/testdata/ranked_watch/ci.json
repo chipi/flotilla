@@ -1,0 +1,22 @@
+{
+  "takenAt": "2026-01-15T06:00:00Z",
+  "steps": {
+    "7d": [
+      {"id": "a1b2c3d4e501", "repo": "example/web-app", "workflow": "CI", "job": "test", "step": "Restore model cache", "x3": {"med": 418, "n": 11}, "gh": {"med": 20, "n": 32}, "lost": 4378, "x3Prev": null},
+      {"id": "a1b2c3d4e502", "repo": "example/web-app", "workflow": "CI", "job": "test", "step": "Python environment (cached)", "x3": {"med": 273, "n": 11}, "gh": {"med": 37, "n": 32}, "lost": 2596, "x3Prev": null},
+      {"id": "a1b2c3d4e503", "repo": "example/web-app", "workflow": "CI", "job": "web", "step": "Restore model cache", "x3": {"med": 441, "n": 6}, "gh": {"med": 21, "n": 20}, "lost": 2520, "x3Prev": null},
+      {"id": "a1b2c3d4e504", "repo": "example/api-service", "workflow": "CI", "job": "build", "step": "Build image", "x3": {"med": 300, "n": 9}, "gh": {"med": 120, "n": 30}, "lost": 1800, "x3Prev": null},
+      {"id": "a1b2c3d4e505", "repo": "example/api-service", "workflow": "CI", "job": "lint", "step": "Install dependencies", "x3": {"med": 95, "n": 10}, "gh": {"med": 15, "n": 30}, "lost": 900, "x3Prev": null},
+      {"id": "a1b2c3d4e506", "repo": "example/api-service", "workflow": "CI", "job": "test", "step": "Run tests", "x3": {"med": 80, "n": 10}, "gh": {"med": 40, "n": 30}, "lost": 400, "x3Prev": null}
+    ],
+    "yesterday": [
+      {"id": "a1b2c3d4e501", "repo": "example/web-app", "workflow": "CI", "job": "test", "step": "Restore model cache", "x3": {"med": 430, "n": 2}, "gh": {"med": 20, "n": 6}, "lost": 820, "x3Prev": {"med": 410, "n": 2}},
+      {"id": "a1b2c3d4e504", "repo": "example/api-service", "workflow": "CI", "job": "build", "step": "Build image", "x3": {"med": 310, "n": 2}, "gh": {"med": 120, "n": 6}, "lost": 380, "x3Prev": {"med": 300, "n": 2}},
+      {"id": "a1b2c3d4e506", "repo": "example/api-service", "workflow": "CI", "job": "test", "step": "Run tests", "x3": {"med": 85, "n": 2}, "gh": {"med": 40, "n": 6}, "lost": 90, "x3Prev": {"med": 80, "n": 2}}
+    ],
+    "windows": {
+      "7d": {"from": "2026-01-08T00:00:00Z", "to": "2026-01-15T00:00:00Z", "prevFrom": "2026-01-01T00:00:00Z", "prevTo": "2026-01-08T00:00:00Z", "prevHeld": true},
+      "yesterday": {"from": "2026-01-14T00:00:00Z", "to": "2026-01-15T00:00:00Z", "prevFrom": "2026-01-13T00:00:00Z", "prevTo": "2026-01-14T00:00:00Z", "prevHeld": true}
+    }
+  }
+}

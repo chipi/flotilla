@@ -1,0 +1,33 @@
+block: ranked-watch
+version: 1
+role: monitor
+description: >-
+  Watches how well a process performs (RFC-0017): ranks the top items of a JSON source's list by cost, compares them with
+  its previous run's snapshot (new entries, rises past both thresholds, entries that dropped out, "fixed?" when a fix is
+  listed), reads each health signal of a service-level source against its objective, and names the top 3 with their known
+  fix and owner. A stale collector is reported alone. Each run writes a brief section and one perf_regression detection
+  per new entry, qualifying rise and breached service level. Code only: no model, nothing outward.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+actions: {}
+params:
+  # a source is a NAME; its URL is host config (SOURCE_<NAME> in the worker's environment) and the worker's egress allows its host
+  source: {kind: source_name, env: RW_SOURCE}
+  list: {kind: json_path, env: RW_LIST}
+  key: {kind: field, env: RW_KEY}
+  cost: {kind: field, env: RW_COST}
+  top: {kind: count, env: RW_TOP}
+  rise: {kind: rise_rule, env: RW_RISE, optional: true}
+  signals: {kind: signals, env: RW_SIGNALS, optional: true}
+  fixes: {kind: repo_file, env: RW_FIXES, optional: true}
+  unit: {kind: unit, env: RW_UNIT, optional: true}
+# the worker's own: flotillad's worker listener, where the routine's ledger keeps the snapshot
+env: [FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 2m
+brief_section: Performance
+command: python3 /opt/flotilla/ops/ranked_watch.py --fleet {{fleet}}
+code: [ops/ranked_watch.py, ops/common.py, runtime/ledger.py]

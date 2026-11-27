@@ -1,0 +1,48 @@
+# The example CI runners watch as a flow (RFC-0017). `flotilla flow expand fleets/perf` writes the routine folders beside this
+# one (ci-perf-watch, ci-perf-daily) from the block pinned here, and flotillad -check refuses when they differ.
+#
+# The sources are names: the worker's host config gives each its URL (ROUTINE_SOURCE_CI_STATS, ROUTINE_SOURCE_SLO_STATS) and its
+# egress allows that host. The known fixes are knowledge/fixes.yaml, shown on the Knowledge tab and changed by a person.
+flow: ci-runners
+case_kind: perf_regression
+steps:
+  - name: ci-perf-watch
+    use: ranked-watch@1
+    description: |-
+      The whole picture of where the CI runners lose time, weekly: ranks the top 15 steps of the last 7 days by time lost
+      against hosted runners, compares them with the previous run (new entries, rises, entries that dropped out), reads
+      the runners' service levels against their objectives and names the top 3 with their known fix and owner. A stale
+      collector is reported alone. Code only: no model, nothing outward.
+    worker: ops-read
+    every: 168h
+    freshness: 192h
+    with:
+      source: ci_stats
+      list: steps.7d
+      key: id
+      cost: lost
+      top: 15
+      unit: seconds
+      rise: {ratio: 0.5, at_least: 600}
+      signals: {source: slo_stats, ids: ["ci-runners--*"], fresh: ci-collector--fresh-within-15-min}
+      fixes: knowledge/fixes.yaml
+  - name: ci-perf-daily
+    use: ranked-watch@1
+    description: |-
+      Yesterday's regressions on the CI runners, daily, so a slow step is found the day after it lands: ranks the top 5
+      steps of yesterday by time lost, compares them with the previous run and reports new entries and rises. It reads no
+      service levels except the collector's freshness row, so a stale collector is never compared. Code only: no model,
+      nothing outward.
+    worker: ops-read
+    every: 24h
+    freshness: 36h
+    with:
+      source: ci_stats
+      list: steps.yesterday
+      key: id
+      cost: lost
+      top: 5
+      unit: seconds
+      rise: {ratio: 1.0, at_least: 300}
+      signals: {source: slo_stats, fresh: ci-collector--fresh-within-15-min}
+      fixes: knowledge/fixes.yaml

@@ -1,0 +1,13 @@
+{
+  "takenAt": "2026-01-15T06:00:00Z",
+  "windowDays": 28,
+  "egressOk": true,
+  "summary": {"meeting": 3, "breached": 2},
+  "rows": [
+    {"id": "ci-runners--online-share-of-runners-seen-online", "service": "CI runners", "group": "Platform", "sli": "online (share of runners seen online)", "app": null, "link": "#ci", "note": "Runner-minutes online over all runners.", "objective": 0.99, "ratio": {"28d": 0.962, "7d": 0.962, "1d": 0.9623}, "errors": [], "left": -2.8, "state": "breached", "budgetSeconds": 24192, "leftSeconds": -67771},
+    {"id": "ci-runners--queue-wait-under-10-min", "service": "CI runners", "group": "Platform", "sli": "queue wait under 10 min", "app": null, "link": "#ci", "note": "Minutes when no job had waited 10 min for a runner.", "objective": 0.95, "ratio": {"28d": 0.848, "7d": 0.848, "1d": 0.847}, "errors": [], "left": -2.04, "state": "breached", "budgetSeconds": 120960, "leftSeconds": -246339},
+    {"id": "ci-runners--cpu-headroom", "service": "CI runners", "group": "Platform", "sli": "CPU headroom (throttled under 5% of periods)", "app": null, "link": "#ci", "note": null, "objective": 0.95, "ratio": {"28d": 0.97, "7d": 0.97, "1d": 0.971}, "errors": [], "left": 0.4, "state": "meeting", "budgetSeconds": 120960, "leftSeconds": 48000},
+    {"id": "ci-collector--fresh-within-15-min", "service": "CI collector", "group": "Platform", "sli": "fresh within 15 min", "app": null, "link": "#ci", "note": null, "objective": 0.99, "ratio": {"28d": 1, "7d": 1, "1d": 1}, "errors": [], "left": 1, "state": "meeting", "budgetSeconds": 24192, "leftSeconds": 24192},
+    {"id": "web-app--availability", "service": "Web app", "group": "Public sites and apps", "sli": "availability", "app": "web-app", "link": "#projects/web-app", "note": null, "objective": 0.995, "ratio": {"28d": 0.9992, "7d": 0.9998, "1d": 0.9993}, "errors": [], "left": 0.85, "state": "meeting", "budgetSeconds": 12096, "leftSeconds": 10232}
+  ]
+}

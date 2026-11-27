@@ -209,7 +209,8 @@ services:
   # roles. ops-read runs the monitors, ops-act-host the acting routines (it holds no host key: flotillad
   # signs executions, ADR-0006). Neither holds a fleet secret, only its worker token. A run writes its
   # plan file under HOME, a tmpfs (the root is read-only). worker-ops.env sets ROUTINE_VM_URL,
-  # ROUTINE_BACKUP_INSTANCE and ROUTINE_BACKUP_TARGET (installation facts).
+  # ROUTINE_BACKUP_INSTANCE and ROUTINE_BACKUP_TARGET (installation facts), and a ROUTINE_SOURCE_<NAME> (a URL) for each source a
+  # ranked-watch step names (RFC-0017); the egress proxy's allowlist gains each source's host.
   worker-ops-read:
     <<: *hardening
     profiles: [ops]

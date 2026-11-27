@@ -1,0 +1,399 @@
+"""ops/ranked-watch: the performance watch of RFC-0017. Code only: no model, nothing outward, nothing written outside flotilla.
+
+Each run reads one JSON source (a ranked list of items with a cost, and optionally the health signals of a service-level file),
+ranks the top N by cost, compares them with the previous run's snapshot and reports:
+
+  the brief   up to 20 lines for the routine's brief_section: the windows compared, the top 3 with their known fix and owner (or
+              "no owner"), the changes (new, rose, dropped out, "fixed?" when a fix is listed), each signal against its objective
+  the cases   one perf_regression detection per new top entry, per rise past both thresholds, and per breached service level.
+              The target is perf:<id>, so a standing breach attaches to its open case and is not reopened each run.
+
+A stale collector (its freshness row under its objective over the last day, or missing) is reported alone: the snapshot is kept
+and nothing is compared. The first run records a baseline and reports no changes.
+
+The snapshot is the routine's own ledger row (runtime/ledger.py, the namespace flotillad gives the run): the newest filing under
+the fingerprint "snapshot". It is written after the report, so a run that fails to write it fails and its report is dropped.
+
+Environment (the step's `with:` values, set on the command by the generator, and the worker's):
+  RW_SOURCE    the source's NAME; its URL is SOURCE_<NAME> in the worker's environment (host config: ROUTINE_SOURCE_<NAME>), reached
+               through the worker's egress proxy
+  RW_LIST      the dotted path of the ranked list in the source (steps.7d)
+  RW_KEY       the field that names an item (id)
+  RW_COST      the field to rank by (lost)
+  RW_TOP       how many to rank
+  RW_RISE      ratio:at_least (0.5:600): a rise counts when it is at least that share of the previous cost and that many units
+  RW_SIGNALS   source:fresh[:ids], the service-level source's name, the freshness row's id, and the comma-separated row ids to read
+  RW_FIXES     the knowledge file of known fixes, under fleets/<fleet>/
+  RW_UNIT      seconds: costs are shown as durations
+  --fleet      the fleet the step belongs to
+"""
+import argparse
+import datetime
+import fnmatch
+import json
+import os
+import re
+import sys
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "runtime"))
+import common  # noqa: E402
+
+KIND = "perf_regression"
+MAX_LINES = 20
+MAX_BYTES = 16 << 20
+FINGERPRINT = "snapshot"
+TARGET_BAD = re.compile(r"[^A-Za-z0-9._/-]")
+
+
+def source_url(name, environ=None):
+    environ = os.environ if environ is None else environ
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", name or ""):
+        raise common.ConfigError(f"source {name!r}: a name such as hub_ci")
+    url = environ.get("SOURCE_" + name.upper(), "").strip()
+    if not url:
+        raise common.ConfigError(f"source {name}: SOURCE_{name.upper()} is not set (host config: ROUTINE_SOURCE_{name.upper()})")
+    if not re.match(r"https?://", url):
+        raise common.ConfigError(f"source {name}: SOURCE_{name.upper()} is not an http or https URL")
+    return url
+
+
+def fetch_json(url, timeout=30):
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        raw = r.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise common.ConfigError(f"{url}: over {MAX_BYTES} bytes")
+    return json.loads(raw)
+
+
+def dig(doc, path):
+    cur = doc
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            raise common.ConfigError(f"path {path}: no {part!r} in the source")
+        cur = cur[part]
+    return cur
+
+
+def parse_fixes(text):
+    """The known fixes: `fixes:` and a list of flat maps, `- item: <key>` then `  link: ...` and `  owner: ...`. A restricted YAML, so the
+    worker needs no parser: whole-line comments, blank lines and quoted or plain scalars, nothing nested."""
+    out, cur, seen_head = [], None, False
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = "" if raw.lstrip().startswith("#") else raw.rstrip()
+        if not line.strip():
+            continue
+        if not seen_head:
+            if line.strip() != "fixes:":
+                raise common.ConfigError(f"fixes line {n}: the file starts with 'fixes:'")
+            seen_head = True
+            continue
+        m = re.fullmatch(r"(\s*)(- )?([a-z_]+):\s*(.*)", line)
+        if not m or not m.group(1) and not m.group(2):
+            raise common.ConfigError(f"fixes line {n}: '- item: <key>' or '  link: <text>', not {raw.strip()!r}")
+        val = m.group(4).strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        if m.group(2):
+            cur = {}
+            out.append(cur)
+        elif cur is None:
+            raise common.ConfigError(f"fixes line {n}: a key before the first '- '")
+        if m.group(3) in cur:
+            raise common.ConfigError(f"fixes line {n}: {m.group(3)} twice in one fix")
+        cur[m.group(3)] = val
+    for i, f in enumerate(out, 1):
+        if not f.get("item"):
+            raise common.ConfigError(f"fix {i}: no item (the key of the entry it targets)")
+    return out
+
+
+def load_fixes(path):
+    if not path:
+        return {}
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        return {}
+    return {f["item"]: f for f in parse_fixes(text)}
+
+
+def fix_text(fix):
+    if not fix:
+        return "no known fix, no owner"
+    link = fix.get("link") or "a fix is listed"
+    return f"fix {link}, " + (f"owner {fix['owner']}" if fix.get("owner") else "no owner")
+
+
+def cost_text(v, unit):
+    if unit == "seconds":
+        s = int(round(v))
+        if s >= 7200:
+            return f"{s / 3600:.1f} h"
+        if s >= 120:
+            return f"{s / 60:.0f} min"
+        return f"{s} s"
+    return f"{v:g}"
+
+
+def rank(rows, key, cost, top):
+    """The top N rows by cost, largest first; a row with no key or no numeric cost is the source's fault and refuses the run."""
+    items = []
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict) or not r.get(key) or not isinstance(r.get(cost), (int, float)) or isinstance(r.get(cost), bool):
+            raise common.ConfigError(f"row {i}: needs a {key} and a numeric {cost}")
+        items.append(r)
+    keys = [str(r[key]) for r in items]
+    if len(set(keys)) != len(keys):
+        raise common.ConfigError(f"the source lists a {key} twice")
+    items.sort(key=lambda r: (-r[cost], str(r[key])))
+    return items[:top], {str(r[key]): r for r in items}
+
+
+def label(row, key):
+    name = next((row[k] for k in ("name", "title", "step") if isinstance(row.get(k), str) and row[k]), str(row[key]))
+    where = row.get("repo") if isinstance(row.get("repo"), str) else ""
+    return f"{name} ({where})" if where else name
+
+
+def windows(doc, list_path):
+    """steps.windows.<period> for steps.<period>: the period's bounds and the previous window's, as the source says them."""
+    head, _, period = list_path.rpartition(".")
+    try:
+        w = dig(doc, f"{head}.windows.{period}" if head else f"windows.{period}")
+    except common.ConfigError:
+        return None
+    return w if isinstance(w, dict) else None
+
+
+def day(s):
+    return str(s)[:10] if s else "?"
+
+
+def windows_text(w, period):
+    if not w:
+        return f"{period}: the source names no window"
+    held = {True: "held", False: "not held"}.get(w.get("prevHeld"), "unknown")
+    return f"{period} {day(w.get('from'))} to {day(w.get('to'))}, previous window {day(w.get('prevFrom'))} to {day(w.get('prevTo'))} ({held})"
+
+
+def stale(slo, fresh_id):
+    """Why the collector's freshness row says the source is not current, or "" when it is. The 1d ratio is the freshest window the row has."""
+    if not fresh_id:
+        return ""
+    rows = {r.get("id"): r for r in slo.get("rows", []) if isinstance(r, dict)}
+    row = rows.get(fresh_id)
+    if row is None:
+        return f"the freshness row {fresh_id} is not in the service-level source"
+    ratio = (row.get("ratio") or {}).get("1d")
+    obj = row.get("objective")
+    if not isinstance(ratio, (int, float)) or not isinstance(obj, (int, float)):
+        return f"the freshness row {fresh_id} has no 1d ratio and objective"
+    if ratio < obj:
+        return f"the collector was fresh {ratio:.1%} of the last day, below its {obj:.1%} objective ({fresh_id})"
+    return ""
+
+
+def signal_rows(slo, ids, skip):
+    out = []
+    for r in slo.get("rows", []):
+        rid = r.get("id")
+        if isinstance(rid, str) and rid != skip and any(fnmatch.fnmatchcase(rid, p) for p in ids):
+            out.append(r)
+    return out
+
+
+def pct(x):
+    return f"{x:.1%}" if isinstance(x, (int, float)) else "?"
+
+
+def signal_name(r):
+    return " ".join(x for x in (r.get("service"), r.get("sli")) if x) or r.get("id")
+
+
+def signal_line(r):
+    ratio = r.get("ratio") or {}
+    shown = next(((w, ratio[w]) for w in ("7d", "28d", "1d") if isinstance(ratio.get(w), (int, float))), ("", None))
+    name = signal_name(r)
+    return f"{name}: {pct(shown[1])} over {shown[0] or 'no window'} against {pct(r.get('objective'))}, {r.get('state', 'unknown')}"
+
+
+def target(rid):
+    return "perf:" + TARGET_BAD.sub("-", str(rid))[:110]
+
+
+def compare(top, prev, key, cost, rise, fixes, everything):
+    """(new, rose, dropped) against the previous snapshot's top: a baseline (prev None) has no changes."""
+    if prev is None:
+        return [], [], []
+    old = prev["items"]
+    new = [r for r in top if str(r[key]) not in old]
+    rose = []
+    if rise:
+        ratio, at_least = rise
+        for r in top:
+            o = old.get(str(r[key]))
+            if o is None:
+                continue
+            d = r[cost] - o["cost"]
+            if d >= at_least and d >= ratio * o["cost"]:
+                rose.append((r, o["cost"]))
+    now = {str(r[key]) for r in top}
+    dropped = [(k, o) for k, o in old.items() if k not in now]
+    dropped.sort(key=lambda t: -t[1]["cost"])
+    return new, rose, [(k, o, everything.get(k), k in fixes) for k, o in dropped]
+
+
+def build(cfg, doc, slo, prev, fixes, taken):
+    """The run's report and the snapshot to keep: (report dict, snapshot dict or None). Pure: no network, no store."""
+    period = cfg["list"].rpartition(".")[2]
+    w = windows(doc, cfg["list"])
+    tag = f"[{period}]"
+    why = stale(slo, cfg["fresh"]) if slo is not None else ""
+    if why:
+        return {"outcome": "detections", "detections": [], "summary": [f"{tag} the source is stale, nothing compared: {why}"]}, None
+    unit = cfg["unit"]
+    key, cost = cfg["key"], cfg["cost"]
+    top, everything = rank(dig(doc, cfg["list"]), key, cost, cfg["top"])
+    # a ranking that is not the previous run's (another N or list) has nothing to compare with: every entry would be "new"
+    same = prev is not None and prev.get("top") == cfg["top"] and prev.get("list") == cfg["list"]
+    new, rose, dropped = compare(top, prev if same else None, key, cost, cfg["rise"], fixes, everything)
+    found, lines = [], []
+    head = f"{tag} top {len(top)} by {cost}, {windows_text(w, period)}"
+    if same:
+        head += f"; compared with the run of {day(prev['taken'])}"
+    elif prev:
+        head += f"; the ranking changed (top {prev.get('top')} of {prev.get('list')} before): a new baseline for it, no changes"
+    else:
+        head += "; the first run: a baseline, no changes"
+    lines.append(head)
+    for i, r in enumerate(top[:3], 1):
+        lines.append(f"{tag} {i}. {label(r, key)}: {cost_text(r[cost], unit)}; {fix_text(fixes.get(str(r[key])))}")
+    for r in new:
+        lines.append(f"{tag} new in the top: {label(r, key)}, {cost_text(r[cost], unit)}")
+        found.append(_detection(r, key, cost, f"New in the top {cfg['top']}: {label(r, key)} costs {cost_text(r[cost], unit)}",
+                                f"new entry, {cost} {r[cost]:g}", 0))
+    for r, was in rose:
+        lines.append(f"{tag} rose: {label(r, key)}, {cost_text(was, unit)} to {cost_text(r[cost], unit)}")
+        found.append(_detection(r, key, cost, f"{label(r, key)} rose from {cost_text(was, unit)} to {cost_text(r[cost], unit)}",
+                                f"rose from {was:g} to {r[cost]:g}", was))
+    for k, o, row, listed in dropped:
+        where = f"now {cost_text(row[cost], unit)}" if row is not None else "no longer listed"
+        lines.append(f"{tag} dropped out: {o.get('label', k)}, was {cost_text(o['cost'], unit)}, {where}"
+                     + ("; fixed? a fix is listed, confirm and remove it" if listed else ""))
+    seen = {}
+    if slo is not None and cfg["signal_ids"]:
+        # a snapshot from before signals were kept has no list to compare: nothing is new or gone then
+        old = prev.get("signals") if prev else None
+        rows = signal_rows(slo, cfg["signal_ids"], cfg["fresh"])
+        for r in rows:
+            seen[r["id"]] = signal_name(r)
+            fresh_row = old is not None and r["id"] not in old
+            lines.append(f"{tag} {signal_line(r)}" + ("; new, no history, not compared" if fresh_row else ""))
+            if r.get("state") == "breached":
+                found.append({"kind": KIND, "target": target(r["id"]), "detail": signal_line(r),
+                              "title": f"Service level breached: {signal_line(r)}",
+                              "data": {"measure": {"name": str(r.get("sli") or r["id"]), "value": (r.get("ratio") or {}).get("7d"),
+                                                   "threshold": r.get("objective")}}})
+        for rid, name in sorted((old or {}).items()):
+            if rid not in seen:
+                lines.append(f"{tag} signal gone: {name} is no longer in the source")
+    summary = lines[:MAX_LINES]
+    if len(lines) > MAX_LINES:
+        summary[-1] = f"{tag} and {len(lines) - MAX_LINES + 1} more lines (the run's detections have them)"
+    snap = {"taken": taken, "list": cfg["list"], "top": cfg["top"], "windows": w, "signals": seen,
+            "items": {str(r[key]): {"cost": r[cost], "label": label(r, key)} for r in top}}
+    return {"outcome": "detections", "detections": found, "summary": summary}, snap
+
+
+def _detection(row, key, cost, title, detail, was):
+    return {"kind": KIND, "target": target(row[key]), "detail": detail, "title": title,
+            "data": {"measure": {"name": cost, "value": row[cost], "threshold": was}}}
+
+
+def parse_rise(s):
+    if not s:
+        return None
+    m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?):([0-9]+)", s)
+    if not m:
+        raise common.ConfigError(f"RW_RISE {s!r}: ratio:at_least such as 0.5:600")
+    return float(m.group(1)), int(m.group(2))
+
+
+def parse_signals(s):
+    if not s:
+        return None
+    parts = s.split(":", 2)
+    if len(parts) < 2 or not parts[0]:
+        raise common.ConfigError(f"RW_SIGNALS {s!r}: source:fresh or source:fresh:ids")
+    return parts[0], parts[1], [i for i in (parts[2] if len(parts) == 3 else "").split(",") if i]
+
+
+def config(environ, fleet):
+    top = environ.get("RW_TOP", "").strip()
+    if not top.isdigit() or int(top) < 1:
+        raise common.ConfigError(f"RW_TOP {top!r}: a number from 1")
+    sig = parse_signals(environ.get("RW_SIGNALS", "").strip())
+    fixes = environ.get("RW_FIXES", "").strip()
+    if fixes and (".." in fixes.split("/") or fixes.startswith("/")):
+        raise common.ConfigError(f"RW_FIXES {fixes!r}: a path inside the fleet's folder")
+    root = environ.get("FLOTILLA_CODE_ROOT") or os.path.dirname(HERE)
+    def need(name):
+        if not environ.get(name, "").strip():
+            raise common.ConfigError(f"{name} is not set")
+        return environ[name].strip()
+
+    return {"source": need("RW_SOURCE"), "list": need("RW_LIST"), "key": need("RW_KEY"), "cost": need("RW_COST"),
+            "top": int(top), "rise": parse_rise(environ.get("RW_RISE", "").strip()),
+            "signal_source": sig[0] if sig else "", "fresh": sig[1] if sig else "", "signal_ids": sig[2] if sig else [],
+            "fixes": os.path.join(root, "fleets", fleet, fixes) if fixes else "", "unit": environ.get("RW_UNIT", "").strip()}
+
+
+class LedgerStore:
+    """The previous run's snapshot, in the routine's own ledger namespace (runtime/ledger.py): the newest filing under one fingerprint."""
+
+    def __init__(self, client=None):
+        if client is None:
+            import ledger
+            client = ledger.from_env()
+        self.client = client
+
+    def load(self):
+        rows = self.client.filings({"fingerprint": FINGERPRINT})
+        return json.loads(rows[-1]["data"]) if rows else None
+
+    def save(self, snap):
+        self.client.write_filing({"fingerprint": FINGERPRINT, "taken": snap["taken"], "data": json.dumps(snap, sort_keys=True)})
+
+
+def run(cfg, store, fetch=fetch_json, environ=None, now=None):
+    environ = os.environ if environ is None else environ
+    doc = fetch(source_url(cfg["source"], environ))
+    slo = fetch(source_url(cfg["signal_source"], environ)) if cfg["signal_source"] else None
+    taken = (now or datetime.datetime.now(datetime.timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    prev = store.load()
+    report, snap = build(cfg, doc, slo, prev, load_fixes(cfg["fixes"]), taken)
+    common.report(report)
+    if snap is not None:
+        store.save(snap)
+    return report, snap, "stale" if snap is None else "baseline" if prev is None else "compared"
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fleet", required=True)
+    a = ap.parse_args(argv)
+    cfg = config(os.environ, a.fleet)
+    report, snap, mode = run(cfg, LedgerStore())
+    print(f"RANKED WATCH {cfg['list']} {mode} items={len((snap or {}).get('items', {}))} detections={len(report['detections'])}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except common.ConfigError as e:
+        print(f"RANKED WATCH config: {e}", file=sys.stderr)
+        sys.exit(2)

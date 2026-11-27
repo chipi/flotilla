@@ -1,0 +1,7 @@
+# Known fixes for the slow steps of the example CI runners (the test fixture of ops/test_ranked_watch.py).
+fixes:
+  - item: a1b2c3d4e501
+    link: example/web-app#12
+    owner: example/web-app
+  - item: a1b2c3d4e502
+    link: example/web-app#13

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-var libraryNames = []string{"metric-monitor", "sop-act", "sop-investigate", "metric-verify", "sop-draft", "case-review", "process-change"}
+var libraryNames = []string{"metric-monitor", "sop-act", "sop-investigate", "metric-verify", "sop-draft", "case-review", "process-change", "ranked-watch"}
 
 // TestTheLibraryIsTheSevenBlocks pins RFC-0016 section 7: each block loads, its roles are the table's, and the code
 // it names is in the repo (the workers carry it at the same paths, so no routine's command moves).
@@ -16,7 +16,7 @@ func TestTheLibraryIsTheSevenBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	roles := map[string]string{"metric-monitor": RoleMonitor, "sop-act": RoleAct, "sop-investigate": RoleStage, "metric-verify": RoleVerify,
-		"sop-draft": RoleLearn, "case-review": RoleLearn, "process-change": RoleAct}
+		"sop-draft": RoleLearn, "case-review": RoleLearn, "process-change": RoleAct, "ranked-watch": RoleMonitor}
 	if len(lib) != len(libraryNames) {
 		t.Fatalf("%d blocks, want %d", len(lib), len(libraryNames))
 	}
@@ -47,7 +47,8 @@ func TestLibraryCommandsAreTheLiveOnes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for n, script := range map[string]string{"metric-monitor": "backup_monitor.py", "sop-act": "sop_act.py", "sop-investigate": "sop_investigate.py",
-		"metric-verify": "verify_backup.py", "sop-draft": "sop_draft.py", "case-review": "case_review.py", "process-change": "process_change.py"} {
+		"metric-verify": "verify_backup.py", "sop-draft": "sop_draft.py", "case-review": "case_review.py", "process-change": "process_change.py",
+		"ranked-watch": "ranked_watch.py"} {
 		b := lib[BlockRef{n, 1}]
 		if b == nil || b.Command[:len("python3 /opt/flotilla/ops/")+len(script)] != "python3 /opt/flotilla/ops/"+script {
 			t.Errorf("%s: command %q", n, b.Command)

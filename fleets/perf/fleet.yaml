@@ -1,0 +1,11 @@
+fleet: perf
+description: >-
+  Performance watch (RFC-0017): how well a process works, not only whether it works. Each run ranks where the time goes,
+  says what changed since the last run, reads the health signals against their service levels and names the fix and its
+  owner for the top three; a new entry, a large rise or a breached service level is a case, at record. The example is a
+  CI runners watch on placeholder sources. Code only, read only: nothing is written outside flotilla.
+knowledge:
+  - name: ci-fixes
+    title: Known CI fixes
+    path: knowledge
+    format: markdown

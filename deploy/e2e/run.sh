@@ -316,6 +316,8 @@ cat > "$WORK/config/worker-ops.env" <<EOF
 ROUTINE_VM_URL=http://victoriametrics:8080
 ROUTINE_BACKUP_INSTANCE=backup-01
 ROUTINE_BACKUP_TARGET=host:backup-01
+ROUTINE_SOURCE_CI_STATS=https://ci-stats.example.com/ci.json
+ROUTINE_SOURCE_SLO_STATS=https://slo-stats.example.com/slo.json
 EOF
 # plumbing.call's callbacks: the stub plumbing on e2e-plumbing answers as the installation's n8n (deploy/e2e/plumbing_stub.py)
 for n in create_tasks post_decisions reply post retract; do
@@ -325,7 +327,7 @@ done > "$WORK/config/worker-plumbing.env"
 # The outside world the example fleets read (sites, deps): deploy/e2e/world.py answers as these hosts, with a
 # certificate from the stack's own CA (the workers that reach it trust that CA, docker-compose.e2e.yml). The
 # certificate is valid for 9 days, below the example sites' 21: the certificate check has something to find.
-WORLD_HOSTS="www.example.com docs.example.com shop.example.org errors.example.com grafana.example.com api.github.com pypi.org api.osv.dev"
+WORLD_HOSTS="www.example.com docs.example.com shop.example.org errors.example.com grafana.example.com api.github.com pypi.org api.osv.dev ci-stats.example.com slo-stats.example.com"
 WORLD_HOSTS_ACL="$(echo $WORLD_HOSTS | sed 's/ /, /g')"
 W="$WORK/config/world"; mkdir -p "$W"
 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=flotilla e2e world CA" -keyout "$W/ca.key" -out "$W/ca.pem" \
@@ -675,6 +677,20 @@ echo "$SHOW" | grep >/dev/null "case.closed .*by policy .*[^_[:alnum:]]plan_reco
   && ok "policy recorded it in shadow, and what it would have done (propose: a new host's ceiling)" || bad "case show (policy): $SHOW"
 $D logs e2e-victoriametrics 2>&1 | grep 'QUERY .*backup_last_success_timestamp.*instance%3D%22backup-01%22' >/dev/null \
   && ok "the jobs workers queried the example metric for its instance through the proxy" || bad "no backup query at the VictoriaMetrics stand-in"
+# RFC-0017: perf/ci-perf-watch (ranked-watch@1) reads the world's two sources by their names through the proxy, keeps its snapshot in its own
+# ledger (the first run is the baseline, the second compares with it), and the stand-in's breached service level is a perf_regression case
+for i in $(seq 1 45); do
+  cli runs perf/ci-perf-watch -n 1 2>&1 | grep >/dev/null -E " (ok|error|timeout) " && break; sleep 2
+done
+cli run perf/ci-perf-watch >/dev/null 2>&1
+for i in $(seq 1 30); do [ "$(cli runs perf/ci-perf-watch -n 5 2>&1 | grep -c ' ok ')" -ge 2 ] && break; sleep 2; done
+[ "$(cli runs perf/ci-perf-watch -n 5 2>&1 | grep -c ' ok ')" -ge 2 ] \
+  && ok "perf/ci-perf-watch ran twice, the second against the snapshot the first kept in its ledger" || bad "perf/ci-perf-watch: $(cli runs perf/ci-perf-watch -n 5 2>&1)"
+$D logs e2e-world 2>&1 | grep >/dev/null -E "world GET (ci-stats.example.com/ci.json|slo-stats.example.com/slo.json)" \
+  && ok "the watch read its two sources by name through the proxy (the world saw both)" || bad "the world saw no ci.json or slo.json"
+cli case list --all -n 500 2>&1 | grep >/dev/null "perf_regression .*perf:ci-runners--online" \
+  && ok "a breached service level is a perf_regression case, kept once across both runs" || bad "no perf_regression case: $(cli case list --all -n 500 2>&1 | head -5)"
+[ "$(cli case list --all -n 500 2>&1 | grep -c 'perf:ci-runners--online')" = 1 ] || bad "the standing breach opened more than one case"
 
 fi
 if want watching; then

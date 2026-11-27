@@ -1,0 +1,4 @@
+run:
+  command: env RW_SOURCE=ci_stats RW_LIST=steps.yesterday RW_KEY=id RW_COST=lost RW_TOP=5 RW_RISE=1:300 RW_SIGNALS=slo_stats:ci-collector--fresh-within-15-min RW_FIXES=knowledge/fixes.yaml RW_UNIT=seconds python3 /opt/flotilla/ops/ranked_watch.py --fleet perf
+  workdir: .
+  timeout: 2m

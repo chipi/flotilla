@@ -77,6 +77,8 @@ var (
 		"operator/intake": "operator step 1, C5",
 		// C6: the SOP draft, which reads verified cases and proposes an SOP for a person to commit
 		"operator/sop-draft": "operator step 1, C6",
+		// RFC-0017: the performance watch's example flow, ranked-watch@1 twice
+		"perf/ci-perf-watch": "RFC-0017", "perf/ci-perf-daily": "RFC-0017",
 	}
 	stepFiveVersion = map[string]int{"triage/cycle": 2, "platform/heartbeat": 2} // routine id -> the first version number step 5 added to it
 	// stepFiveStations are routines whose v1 became a station version on purpose: the routine's own fields must still be the flat spec's,

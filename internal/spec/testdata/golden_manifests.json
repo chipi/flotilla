@@ -578,6 +578,22 @@
       "spec.yaml": "18b07bf133bc740a92ec4b7ece9b533d0d19b4ae69fecaf27bfc11fc56a77282"
     }
   },
+  "perf/ci-perf-daily@v1": {
+    "routine_hash": "3623a243ef77",
+    "version_hash": "dbbcdaa70e419961791f3f638bcc25ff5e88d5f6ffa8b1d1f070f78667513408",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "769a9257ed89fccfafe48ea755d41e8c4cef94ac2f478e830c737bc71065b76f"
+    }
+  },
+  "perf/ci-perf-watch@v1": {
+    "routine_hash": "f90db7386458",
+    "version_hash": "a168895b60feebfe659bd01b4b56a57b879735c25f0c6af1b1829739c167ad9f",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "8cfd7483d75c2c6df4d0bde6366a148d6ceef65f3db26fdbcd304fd881cf8d7d"
+    }
+  },
   "platform/heartbeat@v1": {
     "routine_hash": "865a23bba985",
     "version_hash": "6de31acf271ac95346d5bf7c8833bdb0fb690dd593736d6168a06c6f425bfc8d",

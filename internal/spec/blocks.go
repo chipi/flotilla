@@ -129,6 +129,8 @@ type Block struct {
 	Command string `yaml:"command"`
 	// CaseKind is the kind the block works on when it is its own (process_change, sop_proposal); empty: the flow's.
 	CaseKind string `yaml:"case_kind"`
+	// BriefSection is the brief's section the block's summary lines go to (a block that emits detections), written to its routines.
+	BriefSection string `yaml:"brief_section"`
 	// Code lists the repo files the block runs (checked by the repo's tests: the workers carry them at the same paths).
 	Code []string `yaml:"code"`
 	// Texts are files of the block's folder that each routine version carries (prompts), copied byte for byte.
@@ -298,6 +300,13 @@ func (b *Block) validate() error {
 	}
 	if b.CaseKind != "" && !caseFieldRe.MatchString(b.CaseKind) {
 		bad("case_kind %q: a case kind", b.CaseKind)
+	}
+	if b.BriefSection != "" {
+		if !contains(b.Emits, "detection") {
+			bad("brief_section: only a block that emits detections reports summary lines")
+		} else if why := briefSectionProblem(b.BriefSection); why != "" {
+			bad("%s", why)
+		}
 	}
 	if len(b.Code) == 0 {
 		bad("code: the repo files the block runs")

@@ -1,0 +1,8 @@
+# Known fixes for the CI runners' slow steps (RFC-0017). One map per fix; item is the row's id in the source.
+# The values here are placeholders: an installation mounts its own over this fleet.
+fixes:
+  - item: a1b2c3d4e501
+    link: example/web-app#12
+    owner: example/web-app
+  - item: a1b2c3d4e504
+    link: example/api-service#34

@@ -1,0 +1,17 @@
+fleet: perf
+routine: ci-perf-watch
+description: >-
+  The whole picture of where the CI runners lose time, weekly: ranks the top 15 steps of the last 7 days by time lost
+  against hosted runners, compares them with the previous run (new entries, rises, entries that dropped out), reads
+  the runners' service levels against their objectives and names the top 3 with their known fix and owner. A stale
+  collector is reported alone. Code only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  every: 168h
+detects: [perf_regression]
+brief_section: Performance
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 192h

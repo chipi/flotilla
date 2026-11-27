@@ -141,3 +141,43 @@ own design.
    baseline.
 4. After two weekly runs: read the reports with the operator, and decide whether the rise
    thresholds and the top N are right.
+
+## 8. As built, step 2 (2026-11-27)
+
+`ranked-watch@1` is `blocks/ranked-watch/v1/`, its code `ops/ranked_watch.py`, its example flow
+`fleets/perf/flows/ci-runners/`. Where the build fixed what the sketch left open:
+
+- **Sources are names.** `source` and `signals.source` are names such as `ci_stats`.
+  - The worker's host config gives each its URL as `ROUTINE_SOURCE_<NAME>` (`SOURCE_<NAME>` in
+    the run), and the worker's egress allows that host. The spec carries no address.
+  - A name with no URL is a config error (exit 2), not an empty report.
+- **The snapshot is the routine's ledger.** One filing under the fingerprint `snapshot`,
+  written through the worker's ledger client (`runtime/ledger.py`) in the routine's own namespace.
+  - It is written after the report, so a run that cannot write it fails and its report is
+    dropped.
+  - A new write replaces the current row and keeps the older ones in the ledger. A run compares
+    with the latest; no pruning to 12 weeks is built.
+- **Param kinds.** `source_name`, `json_path`, `field`, `rise_rule`, `signals` and `unit` are
+  new. A `signals` value with a glob is single-quoted on the command line, which the shell would
+  otherwise expand. `brief_section` is a `block.yaml` key, written to the routine's
+  `routine.yaml`.
+- **Stale.** The collector's freshness row is stale when its 1d ratio is under its objective, or
+  the row is missing or has no ratio.
+  - The run then reports that one line, writes no snapshot and opens no case.
+  - A `signals` value may name only `fresh` (the example's daily step), so every step can refuse
+    a stale source.
+- **Service levels.** A row is breached when its `state` says so, and is reported with its 7d
+  ratio (else 28d, else 1d) against its objective.
+  - A row in the snapshot's list that is no longer in the source is reported once as "signal
+    gone", never as a breach and never as an error.
+  - A row that is not in the list is read once as "new, no history, not compared".
+- **Cases.** Target `perf:<row id>`, kind `perf_regression`.
+  - A breach that stands is reported every run under the same target, so flotillad attaches it
+    to the open case.
+  - A new entry or a rise is reported on the run that finds it, and its case clears when a later
+    run does not report it (`ClearIncidents`).
+- **Not built:**
+  - a `knowledge:` key in `flow.yaml` (RFC-0016 §12): the example fleet declares its knowledge
+    in `fleet.yaml`, a markdown collection whose folder also holds `fixes.yaml`, hashed with it;
+  - the `yaml` knowledge format;
+  - a replay of the rise thresholds against recorded cases (there are none yet).
