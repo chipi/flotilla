@@ -13,6 +13,8 @@ unknown never permits a switch (the caller escalates).
   None     unknown (no mode reading, two modes at once, prod mode, no process reading outside the robotics mode)
 
 Environment (set by the flow's params): HOLDER_MODE_METRIC, HOLDER_MODE_LABEL, HOLDER_PROCESS_METRIC, HOLDER_CONTAINER_METRIC (optional),
+HOLDER_RESIDENT and HOLDER_PROCESS_LABEL (optional: services that stay on the GPU in every mode, named by a per-process metric's label;
+only a process outside them holds the host),
 HOLDER_PROD_MODE (default prod), HOLDER_TRAINER_MODE (default robotics), VM_URL. Python stdlib only.
 """
 import os
@@ -53,6 +55,16 @@ def classify(mode, procs, trainer, prod_mode="prod", trainer_mode="robotics"):
     return "free", f"mode {mode}: no process on the GPU (left behind)"
 
 
+def holder_processes(inst, metric, label, resident, query_vector):
+    """How many GPU processes of the instance are not resident services, from a per-process metric (one series per process, its
+    container in `label`): None when it has no series at all (the collector is gone: unknown, never "nothing runs"). A process without
+    the label is counted: it cannot be shown to be resident."""
+    rows = query_vector(f'last_over_time({metric}{{instance="{inst}"}}[{WINDOW}])')
+    if not rows:
+        return None
+    return float(sum(1 for lab, _ in rows if lab.get(label) not in resident))
+
+
 def _need(environ, name):
     v = (environ.get(name) or "").strip()
     if not v:
@@ -83,7 +95,12 @@ def read(case, environ=None, query=None, query_vector=None):
     mode = modes[0] if len(modes) == 1 else None
     if len(modes) > 1:
         return None, f"two modes read 1 at once ({', '.join(modes)})"
-    procs = query(f'max(last_over_time({proc_metric}{{instance="{inst}"}}[{WINDOW}]))')
+    resident = [s.strip() for s in (environ.get("HOLDER_RESIDENT") or "").split(",") if s.strip()]
+    if resident:
+        procs = holder_processes(inst, proc_metric, service_up.plain_label(_need(environ, "HOLDER_PROCESS_LABEL")),
+                                 [service_up.plain_service(s) for s in resident], query_vector)
+    else:
+        procs = query(f'max(last_over_time({proc_metric}{{instance="{inst}"}}[{WINDOW}]))')
     if container:
         c = query(f'min(last_over_time({container}{{instance="{inst}"}}[{WINDOW}]))')
         trainer = None if _bad(c) else c >= 1

@@ -25,6 +25,8 @@ params:
   holder_mode_label: {kind: string, env: HOLDER_MODE_LABEL, optional: true}
   holder_process_metric: {kind: metric_name, env: HOLDER_PROCESS_METRIC, optional: true}
   holder_container_metric: {kind: metric_name, env: HOLDER_CONTAINER_METRIC, optional: true}
+  holder_process_label: {kind: string, env: HOLDER_PROCESS_LABEL, optional: true}
+  holder_resident: {kind: string, env: HOLDER_RESIDENT, optional: true}
   holder_prod_mode: {kind: string, env: HOLDER_PROD_MODE, optional: true}
   holder_trainer_mode: {kind: string, env: HOLDER_TRAINER_MODE, optional: true}
   health_source: {kind: source_name, env: HEALTH_SOURCE, optional: true}

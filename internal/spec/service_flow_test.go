@@ -27,9 +27,9 @@ func TestTheServiceBlocksAreNewAndLeaveTheDiskVersionsAsTheyWere(t *testing.T) {
 		{"service-verify", 1}:  "action metric service_label",
 		// the health contract's versions (flotilla's side): the holder of the host, the health route, the alternatives of an SOP
 		{"sop-act", 4}: "metric avail_metric size_metric service_metric service_label fixes holder_mode_metric holder_mode_label " +
-			"holder_process_metric holder_container_metric holder_prod_mode holder_trainer_mode health_source",
+			"holder_process_metric holder_container_metric holder_process_label holder_resident holder_prod_mode holder_trainer_mode health_source",
 		{"sop-investigate", 4}: "vm_url metric instance registry service_metric service_label holder_mode_metric holder_mode_label " +
-			"holder_process_metric holder_container_metric holder_prod_mode holder_trainer_mode health_source",
+			"holder_process_metric holder_container_metric holder_process_label holder_resident holder_prod_mode holder_trainer_mode health_source",
 		{"health-probe", 1}:  "action url_source capability components instance report readings clear_after",
 		{"health-verify", 1}: "action run_source",
 	} {

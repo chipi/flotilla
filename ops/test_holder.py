@@ -132,6 +132,58 @@ class Read(unittest.TestCase):
             dgx_holder.read(self.CASE, self.ENV, query=boom, query_vector=boom)
 
 
+class Resident(unittest.TestCase):
+    """Services that stay on the GPU in every mode (measured 2026-11-28: three or four processes in the free mode, never none) are
+    declared resident; only a process outside them holds the host."""
+
+    CASE = {"id": "c", "kind": "dgx_not_serving", "target": "host:host-a"}
+    ENV = {"HOLDER_MODE_METRIC": "gpu_mode", "HOLDER_MODE_LABEL": "mode", "HOLDER_PROCESS_METRIC": "gpu_process_bytes",
+           "HOLDER_PROCESS_LABEL": "container", "HOLDER_RESIDENT": "asr,diarize,tts"}
+
+    def read(self, mode, procs, env=None):
+        asked = []
+
+        def qv(expr, **kw):
+            asked.append(expr)
+            if "gpu_mode" in expr:
+                return [({"instance": "host-a", "mode": mode}, 1.0)]
+            return [({"instance": "host-a", "container": c}, 1e9) for c in procs]
+
+        def q(expr, **kw):
+            raise AssertionError(f"no instant single-value read with a resident set: {expr}")
+        return dgx_holder.read(self.CASE, dict(self.ENV, **(env or {})), query=q, query_vector=qv), asked
+
+    def test_only_resident_processes_in_a_non_prod_mode_is_left_behind(self):
+        (state, why), asked = self.read("free", ["asr", "diarize", "tts"])
+        self.assertEqual(state, "free")
+        self.assertIn('last_over_time(gpu_process_bytes{instance="host-a"}[10m])', asked[1])
+
+    def test_a_process_outside_the_resident_set_holds_the_host(self):
+        (state, why), _ = self.read("free", ["asr", "diarize", "tts", "hand-started"])
+        self.assertEqual(state, "held")
+        (state, why), _ = self.read("robotics", ["asr", "diarize", "tts", "robotics-train"])
+        self.assertEqual(state, "held")
+
+    def test_robotics_with_only_residents_is_left_behind(self):
+        self.assertEqual(self.read("robotics", ["asr", "diarize"])[0][0], "free")
+
+    def test_no_process_series_at_all_is_unknown_never_free(self):
+        self.assertIsNone(self.read("free", [])[0][0])
+        self.assertEqual(self.read("robotics", [])[0][0], "held")
+
+    def test_a_process_with_no_container_label_holds_the_host(self):
+        def qv(expr, **kw):
+            if "gpu_mode" in expr:
+                return [({"instance": "host-a", "mode": "free"}, 1.0)]
+            return [({"instance": "host-a", "container": "asr"}, 1e9), ({"instance": "host-a"}, 1e9)]
+        self.assertEqual(dgx_holder.read(self.CASE, self.ENV, query=None, query_vector=qv)[0], "held")
+
+    def test_resident_names_and_the_label_must_be_plain(self):
+        for env in ({"HOLDER_RESIDENT": 'a"b'}, {"HOLDER_PROCESS_LABEL": "a b"}, {"HOLDER_PROCESS_LABEL": ""}):
+            with self.assertRaises(common.ConfigError, msg=env):
+                self.read("free", ["asr"], env=env)
+
+
 def sop_dir(fixes, verify="service_up_again", kind="dgx_not_serving"):
     d = tempfile.mkdtemp()
     os.makedirs(os.path.join(d, "dgx-not-prod"))
