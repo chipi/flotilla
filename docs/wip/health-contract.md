@@ -80,7 +80,19 @@ and history agree with the route.
 
 **H10. Failures count as failures.** A circuit breaker or fuse that guards a dependency counts a
 refused connection and a timeout as failures, not only 429 and 5xx, and its state (`open`,
-`half-open`, `closed`) is reported as that component's `degraded` or `down` with the reason.
+`half-open`, `closed`) is reported as that component's `degraded` or `down` with the reason. A
+breaker's state lives in the process that calls: a route served by another process checks live
+(H2) and does not read it.
+
+**H11. Busy is not down.** A single-flight server that is busy with a long job stops answering HTTP
+while it still serves. A check that finds the port open but the server busy reports `up` with
+`busy` in `reason`, never `down`; `down` needs a refused connection, or a `down` the server reports
+itself.
+
+**H12. Configured is not reachable.** A gateway's model list says an alias is configured, not that
+its backend answers. A component behind a gateway is checked through the backend (a 1-token request
+through the alias, or the backend's own readiness), and a 200 that says it is still loading is not
+`up`.
 
 ## A re-run on demand (for a system with a scheduled batch)
 
