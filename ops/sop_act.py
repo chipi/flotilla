@@ -18,6 +18,7 @@ Where the SOPs and the registry live is the installation's, set by the spec on t
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -163,6 +164,8 @@ def check(action, stage, fetch=None, case=None):
         if key not in facts:
             facts[key] = (read(case, arg) if getattr(read, "needs_arg", False)
                           else read(case) if getattr(read, "needs_case", False) else read())
+        if isinstance(facts[key], float) and not math.isfinite(facts[key]):
+            return "unknown", f"{c}: the reading is {facts[key]}, not a number"
         if facts[key] is None and name in UNKNOWN_WITHOUT_READING:
             return "unknown", f"{c}: no reading for the case's target"
         if not CONDITIONS[name](arg, facts):

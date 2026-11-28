@@ -1,6 +1,7 @@
 """python3 ops/test_service.py: the operator fleet's service watch (the DGX case, step 1, RFC-0016 §8's model): the service monitor
 (readings before a detection, hysteresis, an absent series is unknown and holds a case, a failed query fails the run), the
 service_down fact the acting step re-checks with a fresh read, the check that verifies it, and the investigate station's series read."""
+import io
 import json
 import os
 import shutil
@@ -100,11 +101,14 @@ class Detections(unittest.TestCase):
     def test_a_series_that_was_never_down_and_is_gone_reports_nothing(self):
         self.assertEqual(run([UP, UP, GONE, GONE])[0], [])
 
-    def test_a_target_a_case_cannot_have_is_named_in_the_summary(self):
-        found, summary = service_monitor.run(cfg(), [hist([DOWN, DOWN], instance="bad host")], {})
-        self.assertEqual(found, [])
-        self.assertEqual(len(summary), 1)
-        self.assertIn("cannot make a case target", summary[0])
+    def test_a_target_a_case_cannot_have_fails_the_run(self):
+        for bad in ("bad host", "10.0.0.5:9100"):
+            with self.assertRaises(RuntimeError, msg=bad) as e:
+                service_monitor.run(cfg(), [hist([DOWN, DOWN], instance=bad)], {})
+            self.assertIn("cannot make a case target", str(e.exception))
+
+    def test_a_target_a_case_cannot_have_that_is_not_down_is_no_failure(self):
+        self.assertEqual(service_monitor.run(cfg(), [hist([UP, UP], instance="10.0.0.5:9100")], {}), ([], []))
 
     def test_no_context_reading_says_unknown(self):
         found, _ = run([DOWN, DOWN], context={})
@@ -235,6 +239,12 @@ class MainRun(unittest.TestCase):
             self.go({"host-a": {n - 2: DOWN}}, matrix_error=RuntimeError("VictoriaMetrics: boom"))
         self.assertFalse(os.path.exists(self.plan))
 
+    def test_no_series_at_all_fails_the_run_rather_than_clear_every_case(self):
+        with self.assertRaises(RuntimeError) as e:
+            self.go({})
+        self.assertIn("no series", str(e.exception))
+        self.assertFalse(os.path.exists(self.plan))
+
     def test_a_failed_context_query_fails_the_run_too(self):
         n = service_monitor.lookback(cfg())
 
@@ -284,6 +294,12 @@ class Fact(unittest.TestCase):
         (state, detail), _ = self.check(1.0)
         self.assertEqual(state, "resolved")
         self.assertIn("service_down(model-prod) no longer holds", detail)
+
+    def test_a_reading_that_is_not_a_number_is_unknown_never_resolved(self):
+        for v in (float("nan"), float("inf"), float("-inf")):
+            (state, detail), _ = self.check(v)
+            self.assertEqual(state, "unknown", msg=repr(v))
+            self.assertIn("not a number", detail)
 
     def test_no_reading_is_unknown_never_resolved(self):
         (state, detail), _ = self.check(None)
@@ -454,6 +470,37 @@ class Registry(unittest.TestCase):
     def test_the_action_is_record_only_and_for_the_flows_kind(self):
         a = common.action(ACTION)
         self.assertEqual((a["executor"], a["for_kinds"], a["params"]), ("record", ["dgx_not_serving"], {"host": {"kind": "target_host"}}))
+
+
+
+class Answers(unittest.TestCase):
+    """What VictoriaMetrics answers, through common: a partial answer is an error, an instant NaN is no reading."""
+
+    def answer(self, body, fn, *args):
+        class R(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        with mock.patch.dict(os.environ, {"VM_URL": "http://vm:8428"}), \
+                mock.patch("urllib.request.urlopen", lambda *a, **k: R(json.dumps(body).encode())):
+            return fn(*args)
+
+    def test_an_instant_nan_or_infinity_is_no_reading(self):
+        for v in ("NaN", "+Inf", "-Inf"):
+            body = {"status": "success", "data": {"result": [{"metric": {}, "value": [1, v]}]}}
+            self.assertIsNone(self.answer(body, common.query, "x"), msg=v)
+
+    def test_an_instant_zero_is_a_reading(self):
+        body = {"status": "success", "data": {"result": [{"metric": {}, "value": [1, "0"]}]}}
+        self.assertEqual(self.answer(body, common.query, "x"), 0.0)
+
+    def test_a_partial_answer_is_an_error_for_every_query(self):
+        body = {"status": "success", "isPartial": True, "data": {"result": []}}
+        for fn, args in ((common.query, ("x",)), (common.query_vector, ("x",)), (common.query_matrix, ("x", 0, 600, 600))):
+            with self.assertRaises(RuntimeError, msg=fn.__name__):
+                self.answer(body, fn, *args)
 
 
 if __name__ == "__main__":

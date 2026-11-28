@@ -145,7 +145,7 @@ def run(cfg, groups, context):
     """(detections, summary lines) from the readings: groups [(labels, [reading])] the last lookback readings of each group, oldest first
     (a missing one is None), context {instance: value of the context label} or empty. A group is reported while it is open: down for
     `readings` readings in a row, and not since up for `clear_after` readings in a row."""
-    found, skipped = [], []
+    found = []
     for labels, readings in groups:
         opened, down = scan(readings, cfg.readings, cfg.clear_after)
         if not opened:
@@ -153,8 +153,8 @@ def run(cfg, groups, context):
         lab = {g: labels.get(g, "") for g in cfg.group_by}
         target = service_up.encode_target(cfg.group_by, lab)
         if target is None:
-            skipped.append(f"{', '.join(f'{k}={v}' for k, v in lab.items())}: not reported, its labels cannot make a case target")
-            continue
+            raise RuntimeError(f"{', '.join(f'{k}={v[:60]}' for k, v in lab.items())} cannot make a case target (an instance is "
+                               f"letters, digits, dot, dash and underscore, no port): the run fails rather than leave it unreported")
         held = down < cfg.readings
         last = readings[-1]
         what = lab[cfg.service_label] if cfg.service_label in lab else ", ".join(cfg.services)
@@ -179,7 +179,7 @@ def run(cfg, groups, context):
         found.append({"kind": cfg.kind, "target": target, "title": title_of(what, lab["instance"], held, ctx), "detail": detail,
                       "data": data})
     found.sort(key=lambda d: d["target"])
-    summary = skipped
+    summary = []
     if len(found) > MAX_DETECTIONS:
         summary = [f"{len(found)} groups are down: the first {MAX_DETECTIONS} are reported"] + summary
         found = found[:MAX_DETECTIONS]
@@ -219,6 +219,9 @@ def main(argv):
     n = lookback(cfg)
     start = now - (n - 1) * cfg.step
     matrix = common.query_matrix(expr(cfg), start, now, cfg.step)
+    if not matrix:
+        raise RuntimeError(f"{cfg.metric} has no series for {', '.join(cfg.services)} in the last day: the run fails rather than "
+                           f"clear every open case")
     groups = readings_of(cfg, matrix, start)
     context = {}
     if cfg.context and any(scan(r, cfg.readings, cfg.clear_after)[0] for _, r in groups):

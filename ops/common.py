@@ -41,12 +41,15 @@ def query(expr, timeout=20):
         out = json.load(r)
     if out.get("status") != "success":
         raise RuntimeError(f"VictoriaMetrics: {out}")
+    if out.get("isPartial"):
+        raise RuntimeError("VictoriaMetrics: a partial answer (a storage node did not reply)")
     result = out["data"]["result"]
     if not result:
         return None
     if len(result) != 1:
         raise RuntimeError(f"expected one series, got {len(result)}")
-    return float(result[0]["value"][1])
+    v = float(result[0]["value"][1])
+    return v if v == v and v not in (float("inf"), float("-inf")) else None
 
 
 def _post(path, params, timeout):
@@ -56,6 +59,8 @@ def _post(path, params, timeout):
         out = json.load(r)
     if out.get("status") != "success":
         raise RuntimeError(f"VictoriaMetrics: {out}")
+    if out.get("isPartial"):
+        raise RuntimeError("VictoriaMetrics: a partial answer (a storage node did not reply)")
     return out["data"]["result"]
 
 
