@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 NAME = sys.argv[1] if len(sys.argv) > 1 else "stub"
@@ -104,8 +105,16 @@ class H(BaseHTTPRequestHandler):
             return
         if self.path == "/api/v1/query_range":
             # A monitor that keeps hysteresis reads its last readings (the example disk flow's clear_after): the stand-in has no history
+            # A service watch (the example service flow's service_up) refuses a read with no series at all, so the stand-in answers
+            # one instance whose service read up at every step: a healthy installation, no detection.
             print(f"{NAME} QUERY_RANGE {body.decode('utf-8', 'replace')}", flush=True)
-            self._done(200, json.dumps({"status": "success", "data": {"resultType": "matrix", "result": []}}).encode())
+            q = urllib.parse.parse_qs(body.decode("utf-8", "replace"))
+            result = []
+            if "service_up" in (q.get("query") or [""])[0]:
+                start, end, step = (int(float((q.get(k) or ["0"])[0])) for k in ("start", "end", "step"))
+                result = [{"metric": {"instance": "e2e-host"},
+                           "values": [[t, "1"] for t in range(start, end + 1, max(step, 1))]}]
+            self._done(200, json.dumps({"status": "success", "data": {"resultType": "matrix", "result": result}}).encode())
             return
         if self.path.endswith("/chat/completions"):
             auth = self.headers.get("Authorization", "")
