@@ -9,6 +9,9 @@
   "purposes": {
     "fleetd/README.md": "the retired supervisor flotillad grew from",
     "docs/rfc/RFC-0017-performance-watch.md": "a performance watch",
+    "docs/history/0010-operator-fleet-blocks-disk-perf.md": "the operator fleet live",
+    "docs/history/0009-rfc-0014-case3-to-live-reads.md": "RFC-0014 to live reads",
+    "docs/history/0008-rfc-0014-hook-and-plumbing-call.md": "RFC-0014 steps 1 and 2",
     "docs/rfc/RFC-0014-visual-plane-and-mashups.md": "the visual plane, and flotilla in business processes",
     "signal-fleet/REVIEW-2026-07-24-fleet1-architectural.md": "a July review of TRIAGE.md",
     "docs/wip/operator-fleet-plan.md": "the operator fleet's cases",

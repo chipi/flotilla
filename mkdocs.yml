@@ -156,6 +156,7 @@ nav:
     - "0007 — A flat routine moves to the folder layout in one deploy": history/0007-folder-move-rerecord.md
     - "0008 — RFC-0014 steps 1 and 2, the hook and plumbing.call": history/0008-rfc-0014-hook-and-plumbing-call.md
     - "0009 — RFC-0014 case 3 to live reads, the UI pass and the mini's clock": history/0009-rfc-0014-case3-to-live-reads.md
+    - "0010 — The operator fleet, blocks and flows, disk and the performance watch": history/0010-operator-fleet-blocks-disk-perf.md
     - From the origin (moved 2026-11-17):
       - Fleet architecture: history/origin/fleet-architecture.md
       - fleetd deploy: history/origin/fleetd-deploy.md

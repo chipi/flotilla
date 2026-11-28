@@ -1,6 +1,6 @@
 # RFC-0017 — Performance watch: where the time goes, what changed, what to fix next
 
-**Status:** Draft, for the operator's review (2026-11-27).
+**Status:** Accepted: built and live on the installation (the operator's go, 2026-11-27; history 0010).
 
 **Builds on:**
 

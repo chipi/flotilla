@@ -1,7 +1,8 @@
 # RFC-0016 — Blocks and flows: a library of reusable steps, and flows that wire them
 
-**Status:** Draft, for the operator's review (2026-11-27). This is the second draft: it takes the
-advisor's review of the first. The first draft is in this file's history.
+**Status:** Accepted: built and live on the installation (the operator's go, 2026-11-27;
+history 0010). The second draft took the advisor's review of the first, which is in this file's
+history.
 
 **Builds on:**
 
