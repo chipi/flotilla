@@ -1,0 +1,24 @@
+block: health-verify
+version: 1
+role: verify
+description: >-
+  The check routine for the re-run of a scheduled batch (window_failed_episodes_processed): while a case is in checking,
+  it reads the re-run's outcome from a route named in host config (the health contract's T5 shape) and reports verified
+  once the re-run finished, processed episodes and none failed; failed when episodes failed in it. Anything it cannot read
+  or does not recognise is not yet, never verified. A read only: no model, nothing outward.
+consumes: {check: true}
+emits: [verified]
+hands_to: []
+# the verify window stays on the registry action; the step names the check the action declares
+actions: {check_of: action}
+params:
+  action: {kind: registry_action, env: PROBE_ACTION}
+  # the run outcome's route is a NAME; its URL is host config (SOURCE_<NAME>)
+  run_source: {kind: source_name, env: PROCESS_SOURCE}
+env: [FLOTILLA_CASE, FLOTILLA_CHECK]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/verify_run_processed.py
+code: [ops/verify_run_processed.py, ops/health.py, ops/service_up.py, ops/free_ratio.py, ops/common.py]

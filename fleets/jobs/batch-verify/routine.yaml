@@ -1,0 +1,11 @@
+fleet: jobs
+routine: batch-verify
+description: >-
+  The check routine for the re-run of a scheduled batch (window_failed_episodes_processed): while a case is in checking, it reads the re-run's outcome from a route named in host config (the health contract's T5 shape) and reports verified once the re-run finished, processed episodes and none failed; failed when episodes failed in it. Anything it cannot read or does not recognise is not yet, never verified. A read only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: window_failed_episodes_processed}
+autonomy: record
+budget:
+  day_usd: 0

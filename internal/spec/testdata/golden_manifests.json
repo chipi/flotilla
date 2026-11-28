@@ -486,6 +486,40 @@
       "spec.yaml": "0732a65bc539ac22b4483071a251c7a614e24f187ce7ee04a03cc77c6e2c6873"
     }
   },
+  "jobs/batch-act@v1": {
+    "routine_hash": "9c9b0a341b47",
+    "version_hash": "a10148eee8c95d14c1e432cad6ed450bcd75908a9899ceedf661a0a0f6c0a910",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "920d43ad90b6a15e58c4923ffe06bde9d0ae9e1cf6edb33415debd543abb3ed9"
+    }
+  },
+  "jobs/batch-investigate@v1": {
+    "routine_hash": "e968783ca344",
+    "version_hash": "7a3987239902c14e9184c53a80c7822ac854cb29eaca1d12c585c5675de69bf7",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "56d86a9ac8a9ea7b8071f291994ca792c058227af1b010143cfd4e0d5f645f70",
+      "system.md": "c9b8af92a5cb4f421007d7c6089d6b9b33949105928aa2a25d734d6f44174da3",
+      "task.md": "3b2263ada9e5eb1856abcd11befadc6798b6c22854f4b1f935fe48c6afd0c490"
+    }
+  },
+  "jobs/batch-probe@v1": {
+    "routine_hash": "b80a84f9f0c4",
+    "version_hash": "b7a5ae634b7ea1d859b2cc2e9c46dc1b64e1edd51f1d00499561840a4f965521",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "e615c3ff0892e78b1ce1af060584854f86805eef674a8a96ceab9d4282fda1d3"
+    }
+  },
+  "jobs/batch-verify@v1": {
+    "routine_hash": "18aeed0bc8f5",
+    "version_hash": "b95f89c454ee88e3541081135478bf2a9041824e279300647d38fc93049d89f6",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "4989ffb75ba2ffce3bf4e6dcbd7c597962ee9ba2fb0cd489ec8f157fb5dd2875"
+    }
+  },
   "jobs/disk-act@v1": {
     "routine_hash": "9b37d633eb10",
     "version_hash": "a56655d81777334c1ffbdbd0d5fb7a617e2c212e8d8a2ce27c5514bf96d1ab60",
@@ -529,19 +563,19 @@
     }
   },
   "jobs/service-act@v1": {
-    "routine_hash": "1f6e154a70be",
-    "version_hash": "4159cb046f12df8de73a30959cc2e5391b2ba33f8e9f0b9d0ce3d1ea7a3f7f9d",
+    "routine_hash": "9e09fcae12fc",
+    "version_hash": "ffb0bc9ce3850697145a92b7f836f4ca5003cb2f5bb756aeebce49009b8c6540",
     "legacy": false,
     "manifest": {
-      "spec.yaml": "be48764fb26c8192a55525cc5cbce795c878aac523defc82f767f13d6b4033b4"
+      "spec.yaml": "60a14c57d8c2868125435f12cc9341e95a94be22922a721cf4fbb438030c4376"
     }
   },
   "jobs/service-investigate@v1": {
-    "routine_hash": "0b0b43c425a9",
-    "version_hash": "a4fe89599fa54bf686f6308df5b21008bad62905682f724ca17fb9a2f40b54d8",
+    "routine_hash": "ea9fb1e1ef6d",
+    "version_hash": "9989fa7d638731214e6975687d83858546d76f9fbf2d702ffa4ca69d84306aae",
     "legacy": false,
     "manifest": {
-      "spec.yaml": "26efef943a221b8885a4e067cc6476d735c70f9da3e87e364d1830cd514fedd7",
+      "spec.yaml": "7fd6fd15836f25b98dfa887fc30d56e01022fe63ea86b225e5478853250c6dfc",
       "system.md": "c9b8af92a5cb4f421007d7c6089d6b9b33949105928aa2a25d734d6f44174da3",
       "task.md": "3b2263ada9e5eb1856abcd11befadc6798b6c22854f4b1f935fe48c6afd0c490"
     }

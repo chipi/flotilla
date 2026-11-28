@@ -19,8 +19,9 @@ func TestTheLibraryIsTheSevenBlocks(t *testing.T) {
 		"sop-draft": RoleLearn, "case-review": RoleLearn, "process-change": RoleAct, "ranked-watch": RoleMonitor}
 	// the eight v1 blocks, the four that disk step 1 versions (RFC-0016 §12: metric-monitor, sop-act, sop-investigate, metric-verify @2),
 	// and the service watch's four: service-monitor@1, service-verify@1, sop-act@3, sop-investigate@3
-	if len(lib) != len(libraryNames)+4+4 {
-		t.Fatalf("%d block versions, want %d", len(lib), len(libraryNames)+4+4)
+	// and the health contract's four: health-probe@1, health-verify@1, sop-act@4, sop-investigate@4
+	if len(lib) != len(libraryNames)+4+4+4 {
+		t.Fatalf("%d block versions, want %d", len(lib), len(libraryNames)+4+4+4)
 	}
 	for _, n := range libraryNames {
 		b := lib[BlockRef{n, 1}]
@@ -67,7 +68,7 @@ func TestJobsFlowIsByteEqualToItsFolders(t *testing.T) {
 	if err != nil || fe == nil {
 		t.Fatalf("%v %v", fe, err)
 	}
-	if len(fe.Exp.Steps) != 11 { // backup: 3, disk: 4, service: 4
+	if len(fe.Exp.Steps) != 15 { // backup: 3, disk: 4, service: 4, batch: 4
 		t.Fatalf("%d steps", len(fe.Exp.Steps))
 	}
 	if d := fe.Exp.Drift(fleetDir); len(d) != 0 {

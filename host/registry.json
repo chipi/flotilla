@@ -32,10 +32,34 @@
       "params": {"host": {"kind": "target_host"}},
       "risk": "medium",
       "reversible": "yes",
-      "pre": ["service_down(model-prod)"],
+      "pre": ["service_down(model-prod)", "no_holder_active"],
       "check": {"verify": "service_up_again", "within": "30m"},
       "limits": {"per_target_per_day": 1},
       "timeout": "10m"
+    },
+    {
+      "name": "dgx.wait_for_holder",
+      "executor": "record",
+      "for_kinds": ["dgx_not_serving"],
+      "params": {"host": {"kind": "target_host"}},
+      "risk": "low",
+      "reversible": "yes",
+      "pre": ["service_down(model-prod)", "holder_active"],
+      "check": {"verify": "service_up_again", "within": "30m"},
+      "limits": {"per_target_per_day": 24},
+      "timeout": "10m"
+    },
+    {
+      "name": "pipeline.rerun_scheduled",
+      "executor": "record",
+      "for_kinds": ["batch_window_failed"],
+      "params": {"host": {"kind": "target_host"}},
+      "risk": "medium",
+      "reversible": "regenerable",
+      "pre": ["capability_ready(scheduled-run)"],
+      "check": {"verify": "window_failed_episodes_processed", "within": "6h"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "30m"
     },
     {
       "name": "repo.process_change",

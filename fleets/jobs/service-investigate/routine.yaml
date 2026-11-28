@@ -1,7 +1,7 @@
 fleet: jobs
 routine: service-investigate
 description: >-
-  The investigate stage of cases no SOP covers. One station reads metrics through the one model client, by instance and by mountpoint, and reads every series of a metric with its labels (a service gauge, a mode, the processes holding a GPU), and decides a fix among the registry's actions for the case's kind; code refuses any other name and fills the plan's params from the case.
+  The investigate stage of cases no SOP covers. One station reads metrics through the one model client, by instance and by mountpoint, and reads every series of a metric with its labels (a service gauge, a mode, the processes holding a GPU), and decides a fix among the registry's actions for the case's kind; code refuses any other name and fills the plan's params from the case. The registry's preconditions are re-checked with fresh reads, a holder of the host and a health route's capability included.
 enabled: true
 worker: triage
 trigger:

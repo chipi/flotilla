@@ -1,4 +1,4 @@
 run:
-  command: env SERVICE_METRIC=service_up SERVICE_LABEL=service python3 /opt/flotilla/ops/sop_act.py --fleet jobs
+  command: env SERVICE_METRIC=service_up SERVICE_LABEL=service SOP_FIXES=first_holding HOLDER_MODE_METRIC=gpu_mode HOLDER_MODE_LABEL=mode HOLDER_PROCESS_METRIC=gpu_process_count HOLDER_PROD_MODE=prod HOLDER_TRAINER_MODE=robotics python3 /opt/flotilla/ops/sop_act.py --fleet jobs
   workdir: .
   timeout: 1m

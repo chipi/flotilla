@@ -1,0 +1,12 @@
+fleet: jobs
+routine: batch-act
+description: >-
+  The SOP-aware acting step: follows the SOP that applies to its case, re-checks the registry's preconditions with fresh numbers (a backup's age, the free ratio of the case's mountpoint, whether a service on the case's instance still reads down, whether a job holds the host, or whether a capability of the health route is ready; no reading is unknown, never resolved) and plans the SOP's action, or hands the case to the investigate stage when no SOP applies. An SOP may list several fixes as alternatives (the first whose preconditions hold wins, an unknown one escalates), when the step says so. It plans only: policy decides.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: batch_window_failed, on_record: watch}
+autonomy: record
+max_autonomy: record
+budget:
+  day_usd: 0

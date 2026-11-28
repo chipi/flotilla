@@ -83,6 +83,8 @@ var (
 		"jobs/disk-monitor": "RFC-0016 disk step 1", "jobs/disk-act": "RFC-0016 disk step 1", "jobs/disk-investigate": "RFC-0016 disk step 1", "jobs/disk-verify": "RFC-0016 disk step 1",
 		// the example service watch (the DGX case, step 1), at record (generated from fleets/jobs/flows/service)
 		"jobs/service-monitor": "service watch step 1", "jobs/service-act": "service watch step 1", "jobs/service-investigate": "service watch step 1", "jobs/service-verify": "service watch step 1",
+		// the example re-run of a scheduled batch (the health contract), at record (generated from fleets/jobs/flows/batch)
+		"jobs/batch-probe": "health contract step 1", "jobs/batch-act": "health contract step 1", "jobs/batch-investigate": "health contract step 1", "jobs/batch-verify": "health contract step 1",
 	}
 	stepFiveVersion = map[string]int{"triage/cycle": 2, "platform/heartbeat": 2} // routine id -> the first version number step 5 added to it
 	// stepFiveStations are routines whose v1 became a station version on purpose: the routine's own fields must still be the flat spec's,

@@ -281,13 +281,17 @@ class Fact(unittest.TestCase):
             return value
         read.needs_case = True
         read.needs_arg = True
-        out = sop_act.check(common.action(ACTION), stage, {"service_down": ("service_up", read)}, case or self.CASE)
+        # the switch also needs no holder (ops/test_holder.py): a host nothing holds
+        facts = {"service_down": ("service_up", read), "no_holder_active": ("holder", lambda c: "free (mode code: no GPU process)")}
+        facts["no_holder_active"][1].needs_case = True
+        out = sop_act.check(common.action(ACTION), stage, facts, case or self.CASE)
         return out, seen
 
     def test_a_service_that_reads_down_holds_and_says_what_it_read(self):
         (state, lines), seen = self.check(0.0)
         self.assertEqual(state, "holds")
-        self.assertEqual(lines, ["service_down(model-prod): holds (reads 0)"])
+        self.assertEqual(lines, ["service_down(model-prod): holds (reads 0)",
+                                 "no_holder_active: holds (free (mode code: no GPU process))"])
         self.assertEqual(seen, [(self.CASE, "model-prod")])
 
     def test_a_service_that_reads_up_again_resolved_itself(self):
@@ -356,12 +360,17 @@ class Fact(unittest.TestCase):
 
         def gone(c, arg):
             return None
+        def free(c):
+            return "free (mode code: no GPU process)"
         for r in (read, gone):
             r.needs_case = r.needs_arg = True
-        out = sop_act.decide(self.CASE, sops.load_all(d), reg, "propose", fetch={"service_down": ("service_up", read)})
+        free.needs_case = True
+        out = sop_act.decide(self.CASE, sops.load_all(d), reg, "propose",
+                             fetch={"service_down": ("service_up", read), "no_holder_active": ("holder", free)})
         self.assertEqual((out["outcome"], out["action"], out["params"]), ("plan", ACTION, {"host": "host-a"}), out)
         self.assertIn("service_down(model-prod): holds (reads 0)", out["detail"])
-        out = sop_act.decide(self.CASE, sops.load_all(d), reg, "propose", fetch={"service_down": ("service_up", gone)})
+        out = sop_act.decide(self.CASE, sops.load_all(d), reg, "propose",
+                             fetch={"service_down": ("service_up", gone), "no_holder_active": ("holder", free)})
         self.assertEqual(out["outcome"], "escalate", out)
 
 
@@ -465,7 +474,8 @@ class Registry(unittest.TestCase):
         for c in common.action(ACTION)["pre"]:
             name, arg = common.parse(c)
             self.assertIn(name, sop_act.CONDITIONS, f"{c} is declared but not implemented")
-            self.assertRegex(arg, service_up.SERVICE_RE)
+            if name == service_up.CONDITION:   # the holder condition (ops/test_holder.py) takes no argument
+                self.assertRegex(arg, service_up.SERVICE_RE)
 
     def test_the_action_is_record_only_and_for_the_flows_kind(self):
         a = common.action(ACTION)

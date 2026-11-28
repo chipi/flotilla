@@ -318,6 +318,8 @@ ROUTINE_BACKUP_INSTANCE=backup-01
 ROUTINE_BACKUP_TARGET=host:backup-01
 ROUTINE_SOURCE_CI_STATS=https://ci-stats.example.com/ci.json
 ROUTINE_SOURCE_SLO_STATS=https://slo-stats.example.com/slo.json
+ROUTINE_SOURCE_HEALTH_EXAMPLE=https://health.example.com/health/ready
+ROUTINE_SOURCE_RUN_OUTCOME=https://health.example.com/runs/latest
 EOF
 # plumbing.call's callbacks: the stub plumbing on e2e-plumbing answers as the installation's n8n (deploy/e2e/plumbing_stub.py)
 for n in create_tasks post_decisions reply post retract; do
@@ -327,7 +329,7 @@ done > "$WORK/config/worker-plumbing.env"
 # The outside world the example fleets read (sites, deps): deploy/e2e/world.py answers as these hosts, with a
 # certificate from the stack's own CA (the workers that reach it trust that CA, docker-compose.e2e.yml). The
 # certificate is valid for 9 days, below the example sites' 21: the certificate check has something to find.
-WORLD_HOSTS="www.example.com docs.example.com shop.example.org errors.example.com grafana.example.com api.github.com pypi.org api.osv.dev ci-stats.example.com slo-stats.example.com"
+WORLD_HOSTS="www.example.com docs.example.com shop.example.org errors.example.com grafana.example.com api.github.com pypi.org api.osv.dev ci-stats.example.com slo-stats.example.com health.example.com"
 WORLD_HOSTS_ACL="$(echo $WORLD_HOSTS | sed 's/ /, /g')"
 W="$WORK/config/world"; mkdir -p "$W"
 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=flotilla e2e world CA" -keyout "$W/ca.key" -out "$W/ca.pem" \

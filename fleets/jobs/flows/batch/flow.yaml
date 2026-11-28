@@ -1,0 +1,41 @@
+# The example re-run of a scheduled batch as a flow (docs/wip/health-contract.md, "A re-run on demand"): once everything the scheduled run
+# needs is up again after an outage, offer to repeat the run so its failed episodes are processed the same night. `flotilla flow expand
+# fleets/jobs` writes the routine folders beside this one (batch-probe, batch-act, batch-investigate, batch-verify).
+#
+# The probe reads ONE health route (flotilla.health/1), named in host config, never the URL: ROUTINE_SOURCE_HEALTH_EXAMPLE. In its
+# recovered mode it opens a case only after an outage of two readings and then two readings up in a row, so "everything it needs is up" is
+# the producer's own `scheduled-run` capability, not assembled per case. The acting step re-checks the capability with one fresh read
+# before it plans pipeline.rerun_scheduled: not ready blocks it, and a route it cannot read is unknown, never ready.
+#
+# Record only: pipeline.rerun_scheduled is record-only until the producer's trigger reports a run id and refuses cleanly (contract T1 to
+# T4); then it becomes a routine action held at propose, called through the egress proxy with a key kept as a host-config secret, never
+# in a spec or a plan. The check reads the re-run's outcome (T5) and is unexercised until a producer serves one. Names are placeholders.
+flow: batch
+case_kind: batch_window_failed
+steps:
+  - name: batch-probe
+    use: health-probe@1
+    worker: ops-read
+    every: 10m
+    freshness: 25m
+    with: {action: pipeline.rerun_scheduled, url_source: health_example, capability: scheduled-run, instance: pipeline-host,
+           report: recovered, readings: 2, clear_after: 2}
+  - name: batch-act
+    use: sop-act@4
+    worker: ops-act-host
+    max_autonomy: record
+    case: {on_record: watch}
+    with: {health_source: health_example}
+  - name: batch-investigate
+    use: sop-investigate@4
+    worker: triage
+    autonomy: record
+    max_autonomy: propose
+    case: {on_record: watch}
+    model: triage-flash
+    with: {vm_url: "http://victoria.example:8428", health_source: health_example}
+  - name: batch-verify
+    use: health-verify@1
+    worker: ops-read
+    verify: window_failed_episodes_processed
+    with: {action: pipeline.rerun_scheduled, run_source: run_outcome}

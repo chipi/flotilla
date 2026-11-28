@@ -33,7 +33,11 @@ func actionsStub(name string) (ActionInfo, bool) {
 	case "disk.cleanup_known":
 		return ActionInfo{Pre: []string{"free_ratio_below(0.15)"}, Verify: "disk_free_above_threshold", ForKinds: []string{"disk_low"}}, true
 	case "dgx.gpu_mode_prod":
-		return ActionInfo{Pre: []string{"service_down(model-prod)"}, Verify: "service_up_again", ForKinds: []string{"dgx_not_serving"}}, true
+		return ActionInfo{Pre: []string{"service_down(model-prod)", "no_holder_active"}, Verify: "service_up_again", ForKinds: []string{"dgx_not_serving"}}, true
+	case "dgx.wait_for_holder":
+		return ActionInfo{Pre: []string{"service_down(model-prod)", "holder_active"}, Verify: "service_up_again", ForKinds: []string{"dgx_not_serving"}}, true
+	case "pipeline.rerun_scheduled":
+		return ActionInfo{Pre: []string{"capability_ready(scheduled-run)"}, Verify: "window_failed_episodes_processed", ForKinds: []string{"batch_window_failed"}}, true
 	}
 	return ActionInfo{}, false
 }

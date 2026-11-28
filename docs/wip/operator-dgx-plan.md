@@ -38,6 +38,36 @@ a flow, everything at record first.
 - An example flow in `fleets/jobs/flows/service` with placeholder names, expanded and committed; the
   installation's own flow and SOP are in its private fleets repo.
 
+## Step 1b: holder-aware (2026-11-28, built, at record)
+
+The operator's decision: when the DGX is not serving prod because a job HOLDS it (the robotics mode
+with its trainer running, a code session, a judging sweep), wait: no switch, prod keeps failing
+until the holder ends. Switch only a mode LEFT BEHIND (non-prod, its holder ended). Every mode other
+than robotics stops the robotics trainer after a checkpoint grace, so the robotics mode is read the
+strictest way.
+
+- `dgx.wait_for_holder`: a record-only action for `dgx_not_serving`: `service_down(model-prod)` and
+  `holder_active`. `on_record: watch` keeps the case open as watching with the holder in the detail
+  (ADR-0023). `dgx.gpu_mode_prod` gained `no_holder_active`.
+- The holder is read from metrics (`ops/dgx_holder.py`): a mode gauge's `mode` label where it reads
+  1, the processes on the GPU, and, when the installation has one, a signal that the trainer's
+  container is up. No such signal is known to exist for the training container: without it the
+  robotics mode rests on the mode and the process count, and a trainer reading that is missing
+  counts as held. An unknown reading never permits the switch: robotics plans the wait, any other
+  mode escalates. A `service_up` gauge that is a TCP-open check says the port is open, not that the
+  model serves.
+- `sop-act@4` (new version: its params and behaviour differ): a `fixes: first_holding` param makes
+  an SOP's several fixes alternatives, the first whose preconditions hold wins, one fresh read
+  serves them all, and an unknown never steps past to a later one. Without it a several-fix SOP
+  escalates, as before. The example `service` flow's act and investigate steps are
+  pinned to `sop-act@4` and `sop-investigate@4`, still version 1: the example is not deployed, and a
+  second version needs a shadow worker per worker in every stack that runs the examples.
+- The re-run of the nightly pipeline is its own case (`batch_window_failed`), opened by
+  `health-probe@1` once the pipeline's `scheduled-run` capability is ready again after an outage;
+  see the [health contract](health-contract.md). The nightly never sets the DGX's mode.
+- The installation's flow, SOPs and registry are in its private fleets repo; the files built here
+  were reconstructed from the public example, not patched from the committed ones.
+
 ## Step 2 (not built)
 
 `gpu-mode-swap.sh prod` on the DGX through a host agent, held at propose: a robotics or code session
@@ -46,7 +76,8 @@ case's host and its approval need the same decisions as disk's step 3.
 
 ## Not covered
 
-- Nothing is deployed, and the installation's flow and SOP are not committed to the private repo.
+- Nothing is deployed, and the installation's flow and SOP are not committed to the private repo
+  (step 1b's are drafted, not committed).
 - No host agent on the DGX, and no swap.
 - The metric names and the instance of the installation are in the private flow only.
 - `metric-monitor@2` still reads a vanished series as clear (the open thread in history 0010). A

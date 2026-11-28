@@ -111,16 +111,55 @@ re-run processes only what failed or never ran.
 **T5. A run's outcome is readable by id:** status, episodes processed, failed (with their stage and
 error type), skipped.
 
-## flotilla's side (built with it)
+## flotilla's side (built 2026-11-28, step 1)
 
-- `health-probe@1`, a library block: it reads the route named in host config through the one egress
-  proxy, refuses a body that is not `flotilla.health/1`, treats `unknown` and a missing component as
-  unknown (never up), and serves as a monitor, a readiness fact (`capability_ready(<capability>)`, N
-  readings in a row) and a check.
-- A registry action that triggers the re-run (T1), held at propose, with the precondition
-  `capability_ready(scheduled-run)` and the check "the window's failed episodes are processed" (T5).
-- The first flow: the GPU host case. Wait while a job holds the host, switch only a mode left
-  behind, re-run the batch once ready.
+What is built, all at record, none deployed:
+
+- `ops/health.py`, the reader: the route is a source NAME (`url_source`; its URL is `SOURCE_<NAME>`
+  in the worker's environment, host config `ROUTINE_SOURCE_<NAME>`), read through the egress proxy
+  over https (plain http only for a host named in `HEALTH_ALLOW_HTTP`, a test's), with a whole-fetch
+  deadline, a size cap, no redirect to another host and no URL in any message. A 503 is read for its
+  body (H7). A body that is not `flotilla.health/1`, or is mis-shaped, is refused, and a refused
+  body is unknown, never up. A component or capability the body does not name is unknown. `up` is up
+  whatever its reason says (H11: `busy` in the reason is still up). A capability whose `ready` a
+  need contradicts is not trusted.
+- `health-probe@1`, a library block (monitor, code only, `ops/health_probe.py`). It watches one
+  capability or a list of components, the ones its registry action's precondition names
+  (`capability_ready(x)` or `component_up(x)`: one home). `report: down` opens a case after
+  `readings` not-up readings and holds it until `clear_after` up readings; `report: recovered` is
+  the readiness gate: after an outage it reports the recovery once the capability has read up for
+  `clear_after` readings, for at most 12 runs. Unknown breaks both streaks, so it never opens,
+  clears or recovers a case. State is the probe's own snapshot in its ledger: the route has no
+  history, and `since` says when a status began, not how long a case was open. A route that cannot
+  be read, a refused body or an unreadable snapshot fails the run: nothing is reported, no case is
+  cleared. No `step` param: the readings are the probe's own runs, and the step's `every` is their
+  interval.
+- Facts in `sop_act` (`capability_ready(x)`, `component_up(x)`): one fresh read of the route named
+  by the step's `health_source`; true holds, false does not (the case resolves), unknown (an
+  unreadable or refused body, a name the body lacks) escalates and never resolves. The N-readings
+  gate is the probe's, not the act step's.
+- `pipeline.rerun_scheduled` (kind `batch_window_failed`, medium risk, regenerable): record-only in
+  this step, with the precondition `capability_ready(scheduled-run)` and the check
+  `window_failed_episodes_processed` within 6 hours. Record-only caps it at record; its executor
+  changes to a routine action held at propose when the producer's trigger is live. The trigger is an
+  HTTP call through the egress proxy with the operator key as a host-config secret name, never in a
+  spec or a plan, not a host CLI.
+- `health-verify@1` (`ops/verify_run_processed.py`): the check, written against T5's shape.
+  Finished, episodes processed and none failed is verified; failed episodes escalate; anything
+  unreadable is not yet. **Unexercised**: no producer serves T5, and `FLOTILLA_CHECK` carries no run
+  id, so it reads the newest on-demand run that started after the case went to checking.
+- The example flows: `fleets/jobs/flows/batch` (probe, act, investigate, verify) and the
+  holder-aware `service` flow (see the DGX plan). The e2e world answers an all-up health body.
+
+## Not covered by flotilla's side
+
+- No producer serves the contract yet; the probe has run against fixtures and the e2e stand-in only.
+- The re-run is not triggered by anything: T1 to T4 are not live, so no run id is recorded and no
+  clean refusal is read. The check is unexercised (above).
+- `component_up` as a monitor use has tests, and no example flow runs it.
+- The probe's recovery report is bounded (12 runs) and a case it opens is closed by the monitor
+  clearing, not by the re-run's verification; an operator who approves late may find the case gone.
+- H9 (the metrics that agree with the route) is not read by flotilla.
 
 ## Not covered yet
 

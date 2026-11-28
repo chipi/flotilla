@@ -1,5 +1,5 @@
 run:
-  command: env VM_URL=http://victoria.example:8428 SERVICE_METRIC=service_up SERVICE_LABEL=service python3 /opt/flotilla/ops/sop_investigate.py --fleet jobs
+  command: env VM_URL=http://victoria.example:8428 SERVICE_METRIC=service_up SERVICE_LABEL=service HOLDER_MODE_METRIC=gpu_mode HOLDER_MODE_LABEL=mode HOLDER_PROCESS_METRIC=gpu_process_count HOLDER_PROD_MODE=prod HOLDER_TRAINER_MODE=robotics python3 /opt/flotilla/ops/sop_investigate.py --fleet jobs
   workdir: .
   timeout: 5m
 stations:

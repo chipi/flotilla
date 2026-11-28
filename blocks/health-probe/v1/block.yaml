@@ -1,0 +1,40 @@
+block: health-probe
+version: 1
+role: monitor
+description: >-
+  Reads a system's health route (the contract flotilla.health/1) and reports one detection per capability or component it
+  watches: while it has read not up for N readings in a row (held until clear_after readings read up), or, as the
+  readiness gate, once it has read up for clear_after readings after an outage. The capability or components are the ones
+  the registry action's precondition names. Unknown is neither up nor down: a refused body, a component the body does not
+  name or one that says unknown never opens a case and never clears one. A route that cannot be read fails the run. State
+  is the probe's own snapshot in its ledger. Code only: no model, nothing outward.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+# the condition has one home, the action's precondition: the probe, the acting step and the verify read the same thing
+actions: {precondition_of: action}
+params:
+  action: {kind: registry_action, env: PROBE_ACTION}
+  # the route is a NAME; its URL is host config (SOURCE_<NAME> in the worker's environment) and the worker's egress allows its host
+  url_source: {kind: source_name, env: PROBE_SOURCE}
+  # one of the two: a capability (one case per instance), or components (one case each)
+  capability: {kind: string, env: PROBE_CAPABILITY, optional: true}
+  components: {kind: string, env: PROBE_COMPONENTS, optional: true}
+  # the case's host: the target is host:<instance>, and /<component> for a component's case
+  instance: {kind: string, env: PROBE_INSTANCE}
+  # down: report while not up; recovered: the readiness gate, report once it is up again after an outage (default down)
+  report: {kind: string, env: PROBE_REPORT, optional: true}
+  # this many readings (runs of the probe) in a row must read not up before a detection (default 2)
+  readings: {kind: count, env: PROBE_READINGS, optional: true}
+  # this many readings in a row must read up before a case clears, or a recovery is reported (default 2)
+  clear_after: {kind: count, env: PROBE_CLEAR_AFTER, optional: true}
+# the worker's own: flotillad's worker listener, where the routine's ledger keeps the snapshot
+env: [FLOTILLA_API_URL, FLOTILLA_API_TOKEN_FILE]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 2m
+every: 10m
+freshness: 25m
+command: python3 /opt/flotilla/ops/health_probe.py --kind {{case_kind}}
+code: [ops/health_probe.py, ops/health.py, ops/service_up.py, ops/free_ratio.py, ops/common.py, runtime/ledger.py]

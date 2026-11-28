@@ -1,0 +1,4 @@
+run:
+  command: env PROBE_ACTION=pipeline.rerun_scheduled PROBE_SOURCE=health_example PROBE_CAPABILITY=scheduled-run PROBE_INSTANCE=pipeline-host PROBE_REPORT=recovered PROBE_READINGS=2 PROBE_CLEAR_AFTER=2 python3 /opt/flotilla/ops/health_probe.py --kind batch_window_failed
+  workdir: .
+  timeout: 2m

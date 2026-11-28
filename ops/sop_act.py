@@ -27,7 +27,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "runtime"))
 import common  # noqa: E402
+import dgx_holder  # noqa: E402
 import free_ratio  # noqa: E402
+import health  # noqa: E402
 import rerun_backup  # noqa: E402
 import service_up  # noqa: E402
 import sops  # noqa: E402
@@ -56,7 +58,8 @@ FACTS["free_ratio_below"] = ("free_ratio", disk_free_ratio)
 def service_up_reading(case, service, query=None):
     """The newest reading of one service (the precondition's argument) on the case's own instance, read now: 1 up, 0 down, None when the
     case is not on a host or the service reports nothing in the window (unknown, never up and never down). The metric and the label are
-    SERVICE_METRIC and SERVICE_LABEL, which the flow sets."""
+    SERVICE_METRIC and SERVICE_LABEL, which the flow sets. A 1 is only as good as the gauge: a TCP-open check says the port is open, not
+    that the model serves."""
     service_up.plain_service(service)
     metric, label = common.env("SERVICE_METRIC"), common.env("SERVICE_LABEL")
     inst = service_up.host_of((case or {}).get("target"))
@@ -68,6 +71,38 @@ service_up_reading.needs_arg = True
 FACTS[service_up.CONDITION] = ("service_up", service_up_reading)
 
 
+def holder_reading(case, query=None, query_vector=None):
+    """Whether a job holds the case's host, read now: "held (why)", "free (why)" or None (unknown). See ops/dgx_holder.py: the robotics
+    mode's trainer that cannot be confirmed down is held, and an unknown reading never permits a mode switch."""
+    state, why = dgx_holder.read(case, os.environ, query, query_vector)
+    return None if state is None else f"{state} ({why})"
+
+
+holder_reading.needs_case = True
+FACTS["holder_active"] = FACTS["no_holder_active"] = ("holder", holder_reading)
+
+
+def health_fact(pick, fetch=health.fetch):
+    """A fact read from the health route named by HEALTH_SOURCE, one fresh read per fact: pick(body, name) is True, False or None. A route
+    that cannot be read, or whose body is refused, reads None: unknown, never up. A source that is not configured is a ConfigError."""
+    def read(case, arg):
+        body = health.fact_body(common.env("HEALTH_SOURCE"), os.environ, fetch)
+        return None if body is None else pick(body, arg)
+    read.needs_case = read.needs_arg = True
+    return read
+
+
+def _component_up(body, name):
+    s = health.component_status(body, name)
+    return None if s == "unknown" else s == "up"
+
+
+capability_reading = health_fact(health.capability_ready)
+component_reading = health_fact(_component_up)
+FACTS["capability_ready"] = ("capability", capability_reading)
+FACTS["component_up"] = ("component", component_reading)
+
+
 def _free_ratio_below(arg, facts):
     return facts["free_ratio"] < float(arg)
 
@@ -76,10 +111,15 @@ def _service_down(arg, facts):
     return facts[f"service_up:{arg}"] < 1
 
 
-# What this routine evaluates: the backup's, the disk's and a service's. A fact that is None (the disk or the service reports nothing)
-# is unknown, never "holds" and never resolved.
-CONDITIONS = dict(rerun_backup.CONDITIONS, free_ratio_below=_free_ratio_below, **{service_up.CONDITION: _service_down})
-UNKNOWN_WITHOUT_READING = {"free_ratio_below", service_up.CONDITION}
+# What this routine evaluates: the backup's, the disk's, a service's, whether a job holds the host, and the health route's. A fact that is
+# None (the disk, the service or the route reports nothing) is unknown, never "holds" and never resolved.
+CONDITIONS = dict(rerun_backup.CONDITIONS, free_ratio_below=_free_ratio_below, **{service_up.CONDITION: _service_down},
+                  holder_active=lambda arg, facts: str(facts["holder"]).startswith("held"),
+                  no_holder_active=lambda arg, facts: str(facts["holder"]).startswith("free"),
+                  capability_ready=lambda arg, facts: facts[f"capability:{arg}"] is True,
+                  component_up=lambda arg, facts: facts[f"component:{arg}"] is True)
+HEALTH_CONDITIONS = {"capability_ready", "component_up"}
+UNKNOWN_WITHOUT_READING = {"free_ratio_below", service_up.CONDITION, "holder_active", "no_holder_active"} | HEALTH_CONDITIONS
 
 
 def fills(name, p):
@@ -145,11 +185,12 @@ def params_for(action, case):
     return out
 
 
-def check(action, stage, fetch=None, case=None):
+def check(action, stage, fetch=None, case=None, cache=None):
     """Re-check the action's preconditions for the stage, as rerun_backup does: ("holds", [lines]) or ("resolved", detail) when one no
     longer holds, or ("unknown", detail) for a condition this routine does not know, or one that has no reading. A condition the host
-    checks is recorded as its. A fact whose reader sets needs_case is read from the case (the disk's mountpoint)."""
-    facts, lines = {}, []
+    checks is recorded as its. A fact whose reader sets needs_case is read from the case (the disk's mountpoint). A `cache` shared by
+    several checks (one decision's alternatives) reads each fact once."""
+    facts, lines = ({} if cache is None else cache), []
     fetch = FACTS if fetch is None else fetch
     for c in common.preconditions(action, stage):
         name, arg = common.parse(c)
@@ -167,33 +208,56 @@ def check(action, stage, fetch=None, case=None):
         if isinstance(facts[key], float) and not math.isfinite(facts[key]):
             return "unknown", f"{c}: the reading is {facts[key]}, not a number"
         if facts[key] is None and name in UNKNOWN_WITHOUT_READING:
-            return "unknown", f"{c}: no reading for the case's target"
+            return "unknown", f"{c}: no reading" + (" (the health route could not be read, was refused, or does not name it)"
+                                                    if name in HEALTH_CONDITIONS else " for the case's target")
         if not CONDITIONS[name](arg, facts):
             return "resolved", f"{c} no longer holds"
         lines.append(f"{c}: holds" + (f" ({facts[key]:.1%} free)" if name == "free_ratio_below" else
-                                       f" (reads {facts[key]:g})" if name == service_up.CONDITION else ""))
+                                       f" (reads {facts[key]:g})" if name == service_up.CONDITION else
+                                       f" ({facts[key]})" if name in ("holder_active", "no_holder_active") else ""))
     return "holds", lines
 
 
-def decide(case, sop_list, registry, stage, fetch=None):
+def fix_alternatives():
+    """Whether an SOP's several fixes are alternatives (the first whose preconditions hold): SOP_FIXES=first_holding, set by sop-act@4's
+    param. Without it an SOP with several fixes is escalated, as step 1 always did."""
+    return os.environ.get("SOP_FIXES", "").strip() == "first_holding"
+
+
+def decide(case, sop_list, registry, stage, fetch=None, alternatives=None, health_fetch=None):
     sop, why = sops.match(sop_list, case)
     if sop is None:
         return {"outcome": "hand_over", "stage": INVESTIGATE, "detail": f"{why} among {len(sop_list)} SOP(s): investigate",
                 "data": {"why": why, "sops": [s.name for s in sop_list]}}
-    if len(sop.fix) > 1:
+    alternatives = fix_alternatives() if alternatives is None else alternatives
+    if len(sop.fix) > 1 and not alternatives:
         return {"outcome": "escalate", "detail": f"{sop.cite()}: {len(sop.fix)} fix steps; step 1 follows single-step SOPs only"}
     try:
-        action = sops.fix_actions(sop, registry, kind=case.get("kind"))[0]
-        params = params_for(action, case)
+        actions = sops.fix_actions(sop, registry, kind=case.get("kind"))
+        if alternatives:
+            odd = [a["name"] for a in actions if (a.get("check") or {}).get("verify") != sop.verify["check"]]
+            if odd:
+                raise sops.SopError(f"{', '.join(odd)}: the registry's check is not {sop.verify['check']!r}, the one the SOP verifies "
+                                    f"(alternatives share one check)")
+        plans = [(a, params_for(a, case)) for a in actions]
     except sops.SopError as e:
         return {"outcome": "escalate", "detail": f"{sop.cite()}: refused: {e}"}
-    state, lines = check(action, stage, fetch, case)
-    if state == "unknown":
-        return {"outcome": "escalate", "detail": f"{sop.cite()}: {lines}"}
-    if state == "resolved":
-        return {"outcome": "resolved_itself", "detail": f"{sop.cite()}: {lines}"}
-    detail = f"{sop.cite()}: fix[0] {action['name']}; rung {sop.rung} requested (policy decides); " + "; ".join(lines)
-    return {"outcome": "plan", "action": action["name"], "params": params, "detail": detail}
+    if health_fetch is not None:
+        fetch = dict(FACTS if fetch is None else fetch, capability_ready=("capability", health_fact(health.capability_ready, health_fetch)),
+                     component_up=("component", health_fact(_component_up, health_fetch)))
+    cache, skipped = {}, []
+    for i, (action, params) in enumerate(plans):
+        state, lines = check(action, stage, fetch, case, cache)
+        if state == "unknown":   # never step past an unknown to a later alternative: it may be the one that holds
+            return {"outcome": "escalate", "detail": f"{sop.cite()}: " + "; ".join(skipped + [lines])}
+        if state == "resolved":
+            skipped.append(f"fix[{i}] {action['name']} skipped: {lines}")
+            continue
+        detail = f"{sop.cite()}: fix[{i}] {action['name']}; rung {sop.rung} requested (policy decides); " + "; ".join(lines)
+        return {"outcome": "plan", "action": action["name"], "params": params, "detail": detail + "".join("; " + k for k in skipped)}
+    if len(plans) == 1:
+        return {"outcome": "resolved_itself", "detail": f"{sop.cite()}: {skipped[0].split(' skipped: ', 1)[1]}"}
+    return {"outcome": "resolved_itself", "detail": f"{sop.cite()}: " + "; ".join(skipped)}
 
 
 def main(argv):

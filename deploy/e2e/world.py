@@ -6,6 +6,7 @@ CA, so the examples run unchanged against it.
   errors.example.com, grafana.example.com               the triage example's sources (GlitchTip, Grafana)
   api.github.com, pypi.org, api.osv.dev                 the deps example's sources; GitHub also for triage and bugfix/intake
   ci-stats.example.com, slo-stats.example.com           the perf example's sources (RFC-0017): a CI step ranking and service levels
+  health.example.com                                    the batch example's health route (flotilla.health/1, all up) and run outcome
 
 Some answers are wrong on purpose, so each example has something to find: a page with no description, a
 link that answers 404, the certificate (its validity is the stack's choice: run.sh makes it short), a
@@ -102,6 +103,16 @@ SLO_STATS = {"rows": [
     {"id": "ci-collector--fresh-within-15-min", "service": "CI collector", "sli": "fresh within 15 min", "objective": 0.99,
      "ratio": {"28d": 1, "7d": 1, "1d": 1}, "state": "meeting"}]}
 
+# The health example's route (docs/wip/health-contract.md, flotilla.health/1): every component up, the capability ready. The batch example's
+# probe reads it as an installation's system that is healthy, so no case opens and the no-effect run of the probe stays clean. RUN_OUTCOME
+# is the T5 shape the re-run's check reads; no real producer serves it yet.
+HEALTH = {"contract": "flotilla.health/1", "status": "up", "checked_at": "2026-11-28T10:00:00Z", "version": "sha-e2e",
+          "components": [{"name": n, "kind": "service", "status": "up", "since": "2026-11-27T03:10:00Z", "reason": "", "latency_ms": 12,
+                          "checked_at": "2026-11-28T10:00:00Z"} for n in ("model-prod", "asr", "database")],
+          "capabilities": {"scheduled-run": {"ready": True, "needs": ["model-prod", "asr", "database"], "blocked_by": []}}}
+RUN_OUTCOME = {"run_id": "run-e2e", "trigger": "on_demand", "status": "finished", "started_at": "2026-11-28T01:05:00Z",
+               "finished_at": "2026-11-28T02:40:00Z", "episodes": {"processed": 3, "failed": [], "skipped": 9}}
+
 SHA = "4f2c1d0e9b8a7f6e5d4c3b2a19087f6e5d4c3b2a"
 FILES = {
     ("example/shop", "requirements.txt"): "flask==3.0.0\nrequests==2.31.0\nidna>=3.0\n",
@@ -139,6 +150,10 @@ class H(BaseHTTPRequestHandler):
             return self.json(CI_STATS)
         if host == "slo-stats.example.com" and path == "/slo.json":
             return self.json(SLO_STATS)
+        if host == "health.example.com" and path == "/health/ready":
+            return self.json(HEALTH)
+        if host == "health.example.com" and path == "/runs/latest":
+            return self.json(RUN_OUTCOME)
         if host == "errors.example.com":   # GlitchTip's API
             if path.endswith("/projects/"):
                 return self.json(GLITCHTIP_PROJECTS)

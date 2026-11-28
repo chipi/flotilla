@@ -65,7 +65,7 @@
     {
       "name": "Fleets and routines (specs)",
       "glob": ["fleets/*/*.yaml", "fleets/*/*/routine.yaml"],
-      "exclude": ["fleets/perf/*/routine.yaml", "fleets/jobs/disk-*/routine.yaml", "fleets/jobs/service-*/routine.yaml"]
+      "exclude": ["fleets/perf/*/routine.yaml", "fleets/jobs/disk-*/routine.yaml", "fleets/jobs/service-*/routine.yaml", "fleets/jobs/batch-*/routine.yaml"]
     },
     {
       "name": "Operations",

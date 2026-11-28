@@ -1,0 +1,42 @@
+block: sop-act
+version: 4
+role: act
+description: >-
+  The SOP-aware acting step: follows the SOP that applies to its case, re-checks the registry's preconditions with fresh
+  numbers (a backup's age, the free ratio of the case's mountpoint, whether a service on the case's instance still reads
+  down, whether a job holds the host, or whether a capability of the health route is ready; no reading is unknown, never
+  resolved) and plans the SOP's action, or hands the case to the investigate stage when no SOP applies. An SOP may list
+  several fixes as alternatives (the first whose preconditions hold wins, an unknown one escalates), when the step says so.
+  It plans only: policy decides.
+consumes: {case: true}
+emits: [plan, hand_over]
+hands_to: [investigate]
+actions: {}
+# every param is optional: a flow sets the ones its action's preconditions read
+params:
+  metric: {kind: metric_name, env: BACKUP_METRIC, optional: true}
+  avail_metric: {kind: metric_name, env: DISK_AVAIL_METRIC, optional: true}
+  size_metric: {kind: metric_name, env: DISK_SIZE_METRIC, optional: true}
+  # a service gauge (1 up, 0 down): a TCP-open gauge says the port is open, not that the model serves
+  service_metric: {kind: metric_name, env: SERVICE_METRIC, optional: true}
+  service_label: {kind: string, env: SERVICE_LABEL, optional: true}
+  # first_holding: an SOP's several fixes are alternatives in order, the first whose preconditions hold is planned (default: refused)
+  fixes: {kind: string, env: SOP_FIXES, optional: true}
+  # who holds the host: a gauge whose label is the mode (where it reads 1), the processes on the GPU, and when one exists a signal that
+  # the trainer's container is up; the mode names are the installation's. The trainer mode with no confirmed-down trainer reads as held
+  holder_mode_metric: {kind: metric_name, env: HOLDER_MODE_METRIC, optional: true}
+  holder_mode_label: {kind: string, env: HOLDER_MODE_LABEL, optional: true}
+  holder_process_metric: {kind: metric_name, env: HOLDER_PROCESS_METRIC, optional: true}
+  holder_container_metric: {kind: metric_name, env: HOLDER_CONTAINER_METRIC, optional: true}
+  holder_prod_mode: {kind: string, env: HOLDER_PROD_MODE, optional: true}
+  holder_trainer_mode: {kind: string, env: HOLDER_TRAINER_MODE, optional: true}
+  # a health route's source NAME (flotilla.health/1): its URL is host config, SOURCE_<NAME>; one fresh read per fact
+  health_source: {kind: source_name, env: HEALTH_SOURCE, optional: true}
+env: [VM_URL, BACKUP_INSTANCE, FLOTILLA_CASE]
+model: none
+# a flow lowers the cap; the registry's action and the host's caps still apply
+# a routine that plans always carries this cap in its routine.yaml (the step may lower it)
+max_autonomy: auto
+timeout: 1m
+command: python3 /opt/flotilla/ops/sop_act.py --fleet {{fleet}}
+code: [ops/sop_act.py, ops/rerun_backup.py, ops/free_ratio.py, ops/service_up.py, ops/dgx_holder.py, ops/health.py, ops/common.py, runtime/sops.py]
