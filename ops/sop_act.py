@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "runtime"))
 import common  # noqa: E402
 import free_ratio  # noqa: E402
 import rerun_backup  # noqa: E402
+import service_up  # noqa: E402
 import sops  # noqa: E402
 
 INVESTIGATE = "investigate"
@@ -51,13 +52,33 @@ disk_free_ratio.needs_case = True   # a fact read from the case, not from the en
 FACTS["free_ratio_below"] = ("free_ratio", disk_free_ratio)
 
 
+def service_up_reading(case, service, query=None):
+    """The newest reading of one service (the precondition's argument) on the case's own instance, read now: 1 up, 0 down, None when the
+    case is not on a host or the service reports nothing in the window (unknown, never up and never down). The metric and the label are
+    SERVICE_METRIC and SERVICE_LABEL, which the flow sets."""
+    service_up.plain_service(service)
+    metric, label = common.env("SERVICE_METRIC"), common.env("SERVICE_LABEL")
+    inst = service_up.host_of((case or {}).get("target"))
+    return None if inst is None else service_up.read_up(inst, service, metric, label, query)
+
+
+service_up_reading.needs_case = True   # a fact read from the case, and from the condition's argument (the service)
+service_up_reading.needs_arg = True
+FACTS[service_up.CONDITION] = ("service_up", service_up_reading)
+
+
 def _free_ratio_below(arg, facts):
     return facts["free_ratio"] < float(arg)
 
 
-# What this routine evaluates: the backup's, and the disk's. A fact that is None (the disk reports nothing) is unknown, never "holds".
-CONDITIONS = dict(rerun_backup.CONDITIONS, free_ratio_below=_free_ratio_below)
-UNKNOWN_WITHOUT_READING = {"free_ratio_below"}
+def _service_down(arg, facts):
+    return facts[f"service_up:{arg}"] < 1
+
+
+# What this routine evaluates: the backup's, the disk's and a service's. A fact that is None (the disk or the service reports nothing)
+# is unknown, never "holds" and never resolved.
+CONDITIONS = dict(rerun_backup.CONDITIONS, free_ratio_below=_free_ratio_below, **{service_up.CONDITION: _service_down})
+UNKNOWN_WITHOUT_READING = {"free_ratio_below", service_up.CONDITION}
 
 
 def fills(name, p):
@@ -137,13 +158,17 @@ def check(action, stage, fetch=None, case=None):
             lines.append(f"{c}: the host's to check")
             continue
         key, read = fetch[name]
+        if getattr(read, "needs_arg", False):   # a fact per argument: service_down(a) and service_down(b) read two services
+            key = f"{key}:{arg}"
         if key not in facts:
-            facts[key] = read(case) if getattr(read, "needs_case", False) else read()
+            facts[key] = (read(case, arg) if getattr(read, "needs_arg", False)
+                          else read(case) if getattr(read, "needs_case", False) else read())
         if facts[key] is None and name in UNKNOWN_WITHOUT_READING:
             return "unknown", f"{c}: no reading for the case's target"
         if not CONDITIONS[name](arg, facts):
             return "resolved", f"{c} no longer holds"
-        lines.append(f"{c}: holds" + (f" ({facts[key]:.1%} free)" if name == "free_ratio_below" else ""))
+        lines.append(f"{c}: holds" + (f" ({facts[key]:.1%} free)" if name == "free_ratio_below" else
+                                       f" (reads {facts[key]:g})" if name == service_up.CONDITION else ""))
     return "holds", lines
 
 

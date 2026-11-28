@@ -1,0 +1,4 @@
+run:
+  command: env MONITOR_ACTION=dgx.gpu_mode_prod MONITOR_METRIC=service_up MONITOR_SERVICE_LABEL=service MONITOR_SERVICES=model-prod MONITOR_GROUP_BY=instance MONITOR_CONTEXT=gpu_mode MONITOR_CONTEXT_LABEL=mode MONITOR_READINGS=2 MONITOR_CLEAR_AFTER=2 MONITOR_STEP=10m python3 /opt/flotilla/ops/service_monitor.py --kind dgx_not_serving
+  workdir: .
+  timeout: 1m

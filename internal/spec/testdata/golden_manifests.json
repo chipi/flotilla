@@ -528,6 +528,40 @@
       "spec.yaml": "3ece745f114a98c5478b1498144d3c63ec8f95b3c680835bea05a3ce5cb90c7a"
     }
   },
+  "jobs/service-act@v1": {
+    "routine_hash": "1f6e154a70be",
+    "version_hash": "4159cb046f12df8de73a30959cc2e5391b2ba33f8e9f0b9d0ce3d1ea7a3f7f9d",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "be48764fb26c8192a55525cc5cbce795c878aac523defc82f767f13d6b4033b4"
+    }
+  },
+  "jobs/service-investigate@v1": {
+    "routine_hash": "0b0b43c425a9",
+    "version_hash": "a4fe89599fa54bf686f6308df5b21008bad62905682f724ca17fb9a2f40b54d8",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "26efef943a221b8885a4e067cc6476d735c70f9da3e87e364d1830cd514fedd7",
+      "system.md": "c9b8af92a5cb4f421007d7c6089d6b9b33949105928aa2a25d734d6f44174da3",
+      "task.md": "3b2263ada9e5eb1856abcd11befadc6798b6c22854f4b1f935fe48c6afd0c490"
+    }
+  },
+  "jobs/service-monitor@v1": {
+    "routine_hash": "6b2b622dc313",
+    "version_hash": "23f07f42a886f5fc6e26fa3f1e631ed8480831e9f594cbe31d029a7ae90fd747",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "f4f4f4bf986f7ff0848050c98f658f074d2c1d683875e6c48dcb6f54020f5de9"
+    }
+  },
+  "jobs/service-verify@v1": {
+    "routine_hash": "63ec6af1235e",
+    "version_hash": "5c204fcdd9f39be4fd912b1343c6c7ee6868cd448c87e99283a531cc00799d81",
+    "legacy": false,
+    "manifest": {
+      "spec.yaml": "1374c155815e07fbb2c1c685d649536bba06c7ee1e9e2d8d39744af7b33dc97e"
+    }
+  },
   "jobs/verify-backup@v1": {
     "routine_hash": "a67f60b8b608",
     "version_hash": "d2849480a37fc3f45c845b6d541acf6de068289aff7c9da033c5c42d02a609bf",

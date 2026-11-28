@@ -34,6 +34,11 @@ MAX_CASE_TEXT = 2000
 MAX_READS = 6                 # the station's metric reads in one run
 READ_NAME = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]{0,127}$")
 LABEL = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+PROBES = ("metric", "series")   # the tools this routine serves; a station declares the ones it offers in its tool_names
+MAX_SERIES_LINES = 20           # a `series` read: the series shown, the characters of the text, of one label value
+MAX_SERIES_TEXT = 2000
+MAX_LABEL_TEXT = 60
+LABEL_TEXT = re.compile(r"[^A-Za-z0-9._:/@%+=,-]")
 
 
 class Refused(Exception):
@@ -57,6 +62,37 @@ def read_metric(args, query=None):
     return "ok", v, "no data in the last hour" if v is None else f"{v:g}"
 
 
+def clean_label(v):
+    """A label value as text for the model: plain characters only, one line, cut. It is data from the metric store, never instructions."""
+    return LABEL_TEXT.sub("?", str(v))[:MAX_LABEL_TEXT]
+
+
+def read_series(args, query=None):
+    """One `series` read {"name": <metric>, "instance": <label value, optional>}: (state, series count, text), the newest value in the last
+    hour of every series of the metric (its labels and its value, a line each), for a gauge that tells its parts apart by a label (a
+    service, a mode, a process). state is ok, refused (a name or instance that is not plain: never sent) or failed. A read, never a write."""
+    metric, inst = (args or {}).get("name"), (args or {}).get("instance")
+    if not isinstance(metric, str) or not READ_NAME.fullmatch(metric) or (inst is not None and not (isinstance(inst, str) and LABEL.fullmatch(inst))):
+        return "refused", None, "<read refused: name is a metric name, instance a plain label value>"
+    sel = f'{{instance="{inst}"}}' if inst else ""
+    try:
+        rows = (query or common.query_vector)(f"last_over_time({metric}{sel}[1h])")
+    except Exception as e:  # a metrics outage is a finding, not a crash
+        return "failed", None, f"<read failed: {type(e).__name__}: {e}>"[:300]
+    if not rows:
+        return "ok", 0, "no data in the last hour"
+    lines = sorted(" ".join(f"{k}={clean_label(v)}" for k, v in sorted(lab.items()) if k != "__name__") + f" = {val:g}" for lab, val in rows)
+    more = len(lines) - MAX_SERIES_LINES
+    text = "\n".join(lines[:MAX_SERIES_LINES]) + (f"\n(+{more} more series)" if more > 0 else "")
+    return "ok", len(rows), text[:MAX_SERIES_TEXT]
+
+
+def tool_names(doc):
+    """The probes the station declares that this routine serves, in its order: `metric` when it declares none."""
+    names = [n for n in (doc.get("tool_names") or []) if n in PROBES]
+    return names or ["metric"]
+
+
 def metric_tool(name, args, query=None):
     """The station's one tool as text, for a caller that keeps no record."""
     return f"<unknown probe: {name}>" if name != "metric" else read_metric(args, query)[2]
@@ -64,24 +100,25 @@ def metric_tool(name, args, query=None):
 
 class Reads:
     """What the station's tool did, kept by the tool itself as it runs (so a harness that raises later leaves it): the reads it accepted
-    (name, instance, value: all validated, never the model's text) and how many it refused or that failed."""
+    (name, instance, value: all validated, never the model's text) and how many it refused or that failed. A `series` read keeps the
+    number of series it returned as its value."""
 
-    def __init__(self, query=None):
-        self.items, self.refused, self.failed, self.query = [], 0, 0, query
+    def __init__(self, query=None, allowed=("metric", "series")):
+        self.items, self.refused, self.failed, self.query, self.allowed = [], 0, 0, query, list(allowed)
 
     def tool(self, name, args):
-        if name != "metric":
+        if name not in self.allowed:
             return f"<unknown probe: {name}>"
         args = args if isinstance(args, dict) else {}
-        state, value, text = read_metric(args, self.query)
+        state, value, text = (read_series if name == "series" else read_metric)(args, self.query)
         if state == "refused":
             self.refused += 1
         elif state == "failed":
             self.failed += 1
         else:
             self.items.append({"name": args["name"], "instance": args.get("instance") or "",
-                               **({"mountpoint": args["mountpoint"]} if args.get("mountpoint") else {}), "value": value})
-        loaded.record("probe", "untrusted", f"metric {str(args.get('name'))[:80]}", f"investigate read ({state})",
+                               **({"mountpoint": args["mountpoint"]} if name == "metric" and args.get("mountpoint") else {}), "value": value})
+        loaded.record("probe", "untrusted", f"{name} {str(args.get('name'))[:80]}", f"investigate read ({state})",
                       hashlib.sha256(text.encode()).hexdigest())
         return text
 
@@ -145,12 +182,13 @@ def run_investigate(case, environ, registry, fleet, stage="shadow", client=None,
         r = client.chat(doc["model"], messages, max_tokens=1500, timeout=timeout, step=step + 1, station=STATION,
                         texts=[system.record(), task.record()], decision_key=case.get("id"), role="operator")
         return r["content"], r.get("usage") or {}
-    reads = Reads(query)
+    probes = tool_names(doc)
+    reads = Reads(query, allowed=probes)
     try:
         res = harness.run_json_step(
             [{"role": "system", "content": system.text}, {"role": "user", "content": task.text}],
             call=call, tool=reads.tool, station=STATION,
-            cfg={"tools": ["metric"], "limits": {"max_tool_calls": turns - 1, "max_steps": turns},
+            cfg={"tools": probes, "limits": {"max_tool_calls": turns - 1, "max_steps": turns},
                  "quirks": {"bad_json_uses_turn": True, "empty_retry": True, "final_decision_call": True,
                             "reply_echo_chars": 2000, "decision_echo_chars": 2000, "result_chars": 4000}},
             errors={"fatal": (SystemExit, model_client.ConfigError), "defer": RuntimeError, "defer_prefix": "model call failed: "},

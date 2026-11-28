@@ -5,4 +5,8 @@ disk-investigate
 disk-monitor
 disk-verify
 rerun-backup
+service-act
+service-investigate
+service-monitor
+service-verify
 verify-backup

@@ -1,0 +1,39 @@
+block: service-monitor
+version: 1
+role: monitor
+description: >-
+  Reads a service gauge (1 up, 0 down, a series per service) per group of labels and reports one detection for each group
+  whose watched service has read down for N readings in a row. The service is the one the registry action declares in its
+  service_down precondition. A series that is absent is unknown, never up: a group that was down stays reported until
+  clear_after readings in a row actually read up. A query that fails fails the run. flotillad opens a case per group and
+  clears it when a run no longer reports it. Code only: no model, nothing outward.
+consumes: {every: true}
+emits: [detection]
+hands_to: []
+# the condition has one home, the action's precondition: the monitor, the acting step and the verify read the same service
+actions: {precondition_of: action}
+params:
+  action: {kind: registry_action, env: MONITOR_ACTION}
+  metric: {kind: metric_name, env: MONITOR_METRIC}
+  # the label that names the service, and the values of it to watch (a comma-separated list: every one the action names must be in it)
+  service_label: {kind: string, env: MONITOR_SERVICE_LABEL}
+  services: {kind: string, env: MONITOR_SERVICES}
+  # one detection per group; instance first (the case's host), then at most one more label
+  group_by: {kind: label_list, env: MONITOR_GROUP_BY}
+  # a metric whose label (where it reads 1, such as a mode gauge) is reported with the detection; both or neither
+  context: {kind: metric_name, env: MONITOR_CONTEXT, optional: true}
+  context_label: {kind: string, env: MONITOR_CONTEXT_LABEL, optional: true}
+  # this many readings in a row must read down before a detection (default 2)
+  readings: {kind: count, env: MONITOR_READINGS, optional: true}
+  # hysteresis: this many readings in a row must read up before a case clears (default 2)
+  clear_after: {kind: count, env: MONITOR_CLEAR_AFTER, optional: true}
+  # the step's `every`, in whole minutes, which the readings are taken at (default 10m)
+  step: {kind: string, env: MONITOR_STEP, optional: true}
+# the worker's own: VictoriaMetrics, and where the report goes
+env: [VM_URL]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/service_monitor.py --kind {{case_kind}}
+code: [ops/service_monitor.py, ops/service_up.py, ops/free_ratio.py, ops/common.py]

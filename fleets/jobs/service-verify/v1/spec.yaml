@@ -1,0 +1,4 @@
+run:
+  command: env MONITOR_ACTION=dgx.gpu_mode_prod MONITOR_METRIC=service_up MONITOR_SERVICE_LABEL=service python3 /opt/flotilla/ops/verify_service_up.py
+  workdir: .
+  timeout: 1m

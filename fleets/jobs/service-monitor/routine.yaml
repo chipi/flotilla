@@ -1,0 +1,13 @@
+fleet: jobs
+routine: service-monitor
+description: >-
+  Reads a service gauge (1 up, 0 down, a series per service) per group of labels and reports one detection for each group whose watched service has read down for N readings in a row. The service is the one the registry action declares in its service_down precondition. A series that is absent is unknown, never up: a group that was down stays reported until clear_after readings in a row actually read up. A query that fails fails the run. flotillad opens a case per group and clears it when a run no longer reports it. Code only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  every: 10m
+detects: [dgx_not_serving]
+autonomy: record
+budget:
+  day_usd: 0
+freshness: 25m

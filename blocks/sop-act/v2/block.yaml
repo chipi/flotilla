@@ -21,4 +21,4 @@ model: none
 max_autonomy: auto
 timeout: 1m
 command: python3 /opt/flotilla/ops/sop_act.py --fleet {{fleet}}
-code: [ops/sop_act.py, ops/rerun_backup.py, ops/free_ratio.py, ops/common.py, runtime/sops.py]
+code: [ops/sop_act.py, ops/rerun_backup.py, ops/free_ratio.py, ops/service_up.py, ops/common.py, runtime/sops.py]

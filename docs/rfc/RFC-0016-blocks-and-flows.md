@@ -358,3 +358,24 @@ flow, its thresholds and its excluded mounts are in its private fleets repo.
   monitor's `every`; a minimum on a `count` param (the block refuses 0 when it runs, not at
   `-check`); a read of `node_filesystem_readonly` (read-only images are excluded by mountpoint
   instead); a mount with a space in its path.
+
+### 12.2 The service watch, step 1 (2026-11-28)
+
+The DGX not serving prod, on section 8's model, at record. The plan is
+[operator-dgx-plan](../wip/operator-dgx-plan.md).
+
+- **New blocks and versions, never edits.** `service-monitor@1`, `service-verify@1`, `sop-act@3`
+  and `sop-investigate@3`. The `@2` folders keep their params and prompts; only their `code:` lists
+  gain `ops/service_up.py`, which `sop_act.py` now imports.
+- **The condition has one home.** The registry action's `service_down(<service>)` precondition
+  names the service. The monitor refuses a flow whose `services` omit it, the acting step re-checks
+  it with a fresh read of the case's instance, and the verify reads the same service.
+- **An absent series is unknown.** The monitor replays the last day of the gauge's own history, one
+  reading per step. A group opens after `readings` down readings in a row and closes after
+  `clear_after` up readings in a row. A missing reading counts for neither and breaks both runs, so
+  a host that stops reporting keeps its case until its history is empty. A failed query fails the
+  run. `metric-monitor@2` clears a group that vanishes; a `@3` can adopt the same replay.
+- **A `series` read** in the investigate station returns every series of a metric with its labels,
+  at most 20 lines, plain characters only. A station declares it in `tool_names`; `@2` does not.
+- **Not covered:** the target of a group with a second label, `host:<instance>/<value>`, is read as
+  a host of its own by the SOP matcher (as disk's is); the example flow uses one case per instance.

@@ -1,0 +1,37 @@
+# The example service watch as a flow (the DGX case, step 1, on RFC-0016 §8's model): one case per instance whose watched service has read
+# down for two readings in a row (15 to 20 minutes at a 10m step), at record. `flotilla flow expand fleets/jobs` writes the routine
+# folders beside this one (service-monitor, service-act, service-investigate, service-verify) from the blocks pinned here, and
+# flotillad -check refuses when they differ. The service and the check window are the registry action's (dgx.gpu_mode_prod: its
+# service_down precondition and its check), never repeated here except in `services`, which must list it; the action is record-only, so
+# nothing runs: every case is diagnosed from metrics and the operator is told (a later step makes the action a host action held at
+# propose). The metric names and the services are placeholders: an installation's own live in its private fleets repo.
+flow: service
+case_kind: dgx_not_serving
+steps:
+  - name: service-monitor
+    use: service-monitor@1
+    worker: ops-read
+    every: 10m
+    freshness: 25m
+    # an absent series is unknown, so a case stays open until two readings in a row read up; the mode gauge names what the host is doing
+    with: {action: dgx.gpu_mode_prod, metric: service_up, service_label: service, services: model-prod, group_by: [instance],
+           context: gpu_mode, context_label: mode, readings: 2, clear_after: 2, step: 10m}
+  - name: service-act
+    use: sop-act@3
+    worker: ops-act-host
+    max_autonomy: record
+    case: {on_record: watch}
+    with: {service_metric: service_up, service_label: service}
+  - name: service-investigate
+    use: sop-investigate@3
+    worker: triage
+    autonomy: record
+    max_autonomy: propose
+    case: {on_record: watch}
+    model: triage-flash
+    with: {vm_url: "http://victoria.example:8428", service_metric: service_up, service_label: service}
+  - name: service-verify
+    use: service-verify@1
+    worker: ops-read
+    verify: service_up_again
+    with: {action: dgx.gpu_mode_prod, metric: service_up, service_label: service}

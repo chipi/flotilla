@@ -32,6 +32,8 @@ func actionsStub(name string) (ActionInfo, bool) {
 		return ActionInfo{Pre: []string{"x"}, ForKinds: []string{"disk_low"}}, true
 	case "disk.cleanup_known":
 		return ActionInfo{Pre: []string{"free_ratio_below(0.15)"}, Verify: "disk_free_above_threshold", ForKinds: []string{"disk_low"}}, true
+	case "dgx.gpu_mode_prod":
+		return ActionInfo{Pre: []string{"service_down(model-prod)"}, Verify: "service_up_again", ForKinds: []string{"dgx_not_serving"}}, true
 	}
 	return ActionInfo{}, false
 }

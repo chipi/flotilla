@@ -81,6 +81,8 @@ var (
 		"perf/ci-perf-watch": "RFC-0017", "perf/ci-perf-daily": "RFC-0017",
 		// RFC-0016 §12: the example disk flow, at record (generated from fleets/jobs/flows/disk)
 		"jobs/disk-monitor": "RFC-0016 disk step 1", "jobs/disk-act": "RFC-0016 disk step 1", "jobs/disk-investigate": "RFC-0016 disk step 1", "jobs/disk-verify": "RFC-0016 disk step 1",
+		// the example service watch (the DGX case, step 1), at record (generated from fleets/jobs/flows/service)
+		"jobs/service-monitor": "service watch step 1", "jobs/service-act": "service watch step 1", "jobs/service-investigate": "service watch step 1", "jobs/service-verify": "service watch step 1",
 	}
 	stepFiveVersion = map[string]int{"triage/cycle": 2, "platform/heartbeat": 2} // routine id -> the first version number step 5 added to it
 	// stepFiveStations are routines whose v1 became a station version on purpose: the routine's own fields must still be the flat spec's,

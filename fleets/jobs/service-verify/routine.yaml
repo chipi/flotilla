@@ -1,0 +1,11 @@
+fleet: jobs
+routine: service-verify
+description: >-
+  The check routine for a service action's registry check (service_up_again): while a case is in checking, it reads the case's service on the case's own instance and reports verified once it has read up throughout the last five minutes. The service is the one the registry action declares in its service_down precondition. A read only: no model, nothing outward.
+enabled: true
+worker: ops-read
+trigger:
+  check: {verify: service_up_again}
+autonomy: record
+budget:
+  day_usd: 0

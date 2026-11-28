@@ -26,6 +26,18 @@
       "timeout": "30m"
     },
     {
+      "name": "dgx.gpu_mode_prod",
+      "executor": "record",
+      "for_kinds": ["dgx_not_serving"],
+      "params": {"host": {"kind": "target_host"}},
+      "risk": "medium",
+      "reversible": "yes",
+      "pre": ["service_down(model-prod)"],
+      "check": {"verify": "service_up_again", "within": "30m"},
+      "limits": {"per_target_per_day": 1},
+      "timeout": "10m"
+    },
+    {
       "name": "repo.process_change",
       "executor": "repo",
       "for_kinds": ["process_change"],

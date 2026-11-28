@@ -20,7 +20,7 @@ func TestRepoFleetsFlowsAgreeWithTheRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lines) == 0 || !strings.Contains(lines[0], "flows: jobs: 2 flows, 7 routines") {
+	if len(lines) == 0 || !strings.Contains(lines[0], "flows: jobs: 3 flows, 11 routines") {
 		t.Fatalf("the example fleet jobs is a flow: %v", lines)
 	}
 }

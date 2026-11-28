@@ -1,0 +1,23 @@
+block: service-verify
+version: 1
+role: verify
+description: >-
+  The check routine for a service action's registry check (service_up_again): while a case is in checking, it reads the
+  case's service on the case's own instance and reports verified once it has read up throughout the last five minutes. The
+  service is the one the registry action declares in its service_down precondition. A read only: no model, nothing outward.
+consumes: {check: true}
+emits: [verified]
+hands_to: []
+# the verify window stays on the registry action; the step names the check the action declares
+actions: {check_of: action}
+params:
+  action: {kind: registry_action, env: MONITOR_ACTION}
+  metric: {kind: metric_name, env: MONITOR_METRIC}
+  service_label: {kind: string, env: MONITOR_SERVICE_LABEL}
+env: [VM_URL]
+model: none
+# never plans (only a case trigger reaches policy): its routine.yaml has no cap line unless the step writes one
+max_autonomy: record
+timeout: 1m
+command: python3 /opt/flotilla/ops/verify_service_up.py
+code: [ops/verify_service_up.py, ops/service_up.py, ops/free_ratio.py, ops/common.py]

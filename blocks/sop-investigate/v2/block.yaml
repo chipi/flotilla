@@ -24,6 +24,6 @@ autonomy: propose
 budget_usd: 1
 timeout: 3m
 command: python3 /opt/flotilla/ops/sop_investigate.py --fleet {{fleet}}
-code: [ops/sop_investigate.py, ops/sop_act.py, ops/free_ratio.py, ops/common.py, runtime/sops.py, runtime/loaded.py]
+code: [ops/sop_investigate.py, ops/sop_act.py, ops/free_ratio.py, ops/service_up.py, ops/common.py, runtime/sops.py, runtime/loaded.py]
 texts: [system.md, task.md]
 spec_tail: spec.tail.yaml

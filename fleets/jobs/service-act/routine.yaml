@@ -1,0 +1,12 @@
+fleet: jobs
+routine: service-act
+description: >-
+  The SOP-aware acting step: follows the SOP that applies to its case, re-checks the registry's preconditions with fresh numbers (a backup's age, the free ratio of the case's mountpoint, or whether a service on the case's instance still reads down; no reading is unknown, never resolved) and plans the SOP's action, or hands the case to the investigate stage when no SOP applies. It plans only: policy decides.
+enabled: true
+worker: ops-act-host
+trigger:
+  case: {kind: dgx_not_serving, on_record: watch}
+autonomy: record
+max_autonomy: record
+budget:
+  day_usd: 0
