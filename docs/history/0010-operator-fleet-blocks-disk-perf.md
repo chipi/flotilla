@@ -107,13 +107,19 @@ runners, all at record. Follows [0009](0009-rfc-0014-case3-to-live-reads.md).
   - about 1100 errors on 5 days;
   - no alert fired on 11-26;
   - it needs a monitor for "prod cannot reach the DGX" and a host agent there.
-- **The X3's bugfix workers** are on `sha-7ee5e53` and refused (GlitchTip FLOTILLA-5); the fleet
-  is stopped.
+- **The bugfix remote workers** (on the operator's laptop, not the X3) stayed on `sha-7ee5e53`
+  through the three mini deploys of 11-27 and were refused, the GlitchTip flood FLOTILLA-5.
+  - Updated to `sha-9905dbe` on 11-28: all four are accepted.
+  - The cause: the laptop step was not run after each mini deploy. It belongs in the deploy
+    itself, or it recurs on every deploy.
 - **Disk:** a host that stops reporting reads as clear and closes its case.
 - **Performance watch:**
-  - `perf_regression` cases have no acting routine;
-  - its first report text reaches the morning brief of 11-28;
-  - Player #64 (the public checkout) is not yet in `fixes.yaml`.
+  - `perf_regression` cases have no acting routine, so they wait at `handed_over`, and the stuck
+    timer escalates them after 24 hours as stuck, not as a breached service level. The flow
+    needs a small acting step that keeps them open as watching.
+  - Its first report text reaches the morning brief of 11-28.
+  - Player #64 (the public checkout) is in the fleets repo's `fixes.yaml` (`186b571`), not yet
+    deployed.
 - **Waiting on the operator:**
   - the Slack connector;
   - the `routed:operator` labels;
