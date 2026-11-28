@@ -18,6 +18,8 @@
     "docs/wip/operator-step1-build.md": "step 1's contracts",
     "docs/wip/operator-step1-status.md": "step 1's state",
     "docs/wip/operator-dgx-plan.md": "step 1",
+    "docs/wip/health-contract.md": "requirements",
+    "docs/rfc/RFC-0013-bugfix-clarifier.md": "Accepted. Asking once before the fix",
     "docs/rfc/RFC-0016-blocks-and-flows.md": "blocks and flows"
   },
   "sections": [
